@@ -704,7 +704,7 @@ class _TimeSegmentDragTooltip extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: cs.surfaceContainerHigh.withValues(alpha: 0.96),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.4)),
           boxShadow: [
             BoxShadow(

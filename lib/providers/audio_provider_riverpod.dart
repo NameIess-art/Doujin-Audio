@@ -151,7 +151,7 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
   );
   final provider = ref.watch(audioProviderFacadeProvider);
   return LibraryListState(
-    rawTree: provider.libraryTree,
+    rawTree: provider.libraryCards,
     watchedFolders: provider.watchedFolders,
     watchedLibraries: provider.watchedLibraries,
     watchedFolderCount: libraryState.watchedFolderCount,

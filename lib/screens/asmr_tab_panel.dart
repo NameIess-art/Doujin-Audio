@@ -119,7 +119,7 @@ ThemeData _asmrPanelTheme(BuildContext context) {
     ),
     inputDecorationTheme: base.inputDecorationTheme.copyWith(
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         borderSide: BorderSide(color: blue, width: 1.5),
       ),
     ),
@@ -151,7 +151,7 @@ class _AsmrPanelCard extends StatelessWidget {
       constraints: BoxConstraints(maxHeight: maxHeight),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(16),
           color: cs.surfaceContainerLow.withValues(alpha: 0.96),
           boxShadow: [
             BoxShadow(
@@ -203,7 +203,7 @@ class _AsmrPanelTitle extends StatelessWidget {
           height: 40,
           decoration: BoxDecoration(
             color: cs.primaryContainer,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Icon(icon, color: cs.onPrimaryContainer, size: 20),
         ),

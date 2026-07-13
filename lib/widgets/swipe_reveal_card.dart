@@ -176,7 +176,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           position.dy,
         ),
         items: items,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         elevation: 4,
       );
     } finally {

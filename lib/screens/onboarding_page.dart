@@ -58,7 +58,7 @@ class OnboardingPage extends StatelessWidget {
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
                       color: cs.primaryContainer,
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     child: Icon(
                       Icons.graphic_eq_rounded,
@@ -138,7 +138,7 @@ class _TrustPoint extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: cs.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
             ),
             child: Icon(icon, size: 21, color: cs.primary),
           ),

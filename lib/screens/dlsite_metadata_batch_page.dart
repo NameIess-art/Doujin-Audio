@@ -484,7 +484,7 @@ class _DlsiteMetadataWorkPickerPageState
           margin: const EdgeInsets.only(right: 16),
           decoration: BoxDecoration(
             color: cs.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(21),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: TextField(
             controller: _searchController,

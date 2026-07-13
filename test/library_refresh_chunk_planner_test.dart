@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/models/library_node.dart';
 import 'package:nameless_audio/models/music_track.dart';
 import 'package:nameless_audio/services/library_refresh_chunk_planner.dart';
 import 'package:nameless_audio/services/library_snapshot_cache_service.dart';
@@ -66,24 +67,31 @@ void main() {
     expect(chunks.single.progressLabel, 'music');
   });
 
-  test('derived snapshot builds indexes, natural order, and tree together', () {
-    final snapshot = buildLibraryDerivedSnapshot(
-      LibraryDerivedSnapshotPayload(
-        tracks: <MusicTrack>[track(10), track(2), track(1)],
-        watchedFolders: const <String>['/music'],
-        nodeOrder: const <String>['/music'],
-      ),
-    );
+  test(
+    'derived snapshot builds indexes, natural order, and cards together',
+    () {
+      final snapshot = buildLibraryDerivedSnapshot(
+        LibraryDerivedSnapshotPayload(
+          tracks: <MusicTrack>[track(10), track(2), track(1)],
+          watchedFolders: const <String>['/music'],
+          nodeOrder: const <String>['/music'],
+        ),
+      );
 
-    expect(snapshot.libraryByPath.keys, contains('/music/10.mp3'));
-    expect(snapshot.libraryIndexByPath['/music/2.mp3'], 1);
-    expect(snapshot.sortedLibraryTrackPaths, const <String>[
-      '/music/1.mp3',
-      '/music/2.mp3',
-      '/music/10.mp3',
-    ]);
-    expect(snapshot.tracksByGroup['/music'], hasLength(3));
-    expect(snapshot.treeSnapshot.tree, hasLength(1));
-    expect(snapshot.treeSnapshot.tree.single.path, '/music');
-  });
+      expect(snapshot.libraryByPath.keys, contains('/music/10.mp3'));
+      expect(snapshot.libraryIndexByPath['/music/2.mp3'], 1);
+      expect(snapshot.sortedLibraryTrackPaths, const <String>[
+        '/music/1.mp3',
+        '/music/2.mp3',
+        '/music/10.mp3',
+      ]);
+      expect(snapshot.tracksByGroup['/music'], hasLength(3));
+      expect(snapshot.cardSnapshot.tree, hasLength(1));
+      expect(snapshot.cardSnapshot.tree.single.path, '/music');
+      expect(
+        (snapshot.cardSnapshot.tree.single as FolderNode).children,
+        isEmpty,
+      );
+    },
+  );
 }

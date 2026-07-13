@@ -26,7 +26,7 @@ class _ModeSelector extends StatelessWidget {
     ) {
       final selected = value == mode;
       return InkWell(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         onTap: () {
           AppInteractionFeedback.trigger(
             AppInteractionFeedbackType.tap,
@@ -43,7 +43,7 @@ class _ModeSelector extends StatelessWidget {
           ),
           decoration: BoxDecoration(
             color: selected ? cs.primaryContainer : cs.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
               color: selected ? cs.primary : Colors.transparent,
               width: 1.5,
@@ -56,7 +56,7 @@ class _ModeSelector extends StatelessWidget {
                 height: compact ? 30 : 36,
                 decoration: BoxDecoration(
                   color: selected ? cs.primary : cs.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(16),
                 ),
                 child: Icon(
                   icon,
@@ -130,7 +130,7 @@ class _TimerPanelCard extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(16),
         color: cs.surfaceContainerLow,
         border: accentColor == null
             ? null
@@ -218,7 +218,7 @@ class _TimerSectionTitle extends StatelessWidget {
           height: 40,
           decoration: BoxDecoration(
             color: cs.primaryContainer,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Icon(icon, color: cs.onPrimaryContainer, size: 20),
         ),

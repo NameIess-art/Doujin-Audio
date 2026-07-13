@@ -54,7 +54,7 @@ extension AudioProviderLibrary on AudioProvider {
     _libraryService.reorderLibraryNodes(
       oldIndex,
       newIndex,
-      currentTree: buildLibraryTree(),
+      currentTree: libraryCards,
       onPersist: () => unawaited(_saveLibraryNodeOrder()),
     );
     _librarySnapshotCacheService.applyCurrentTopLevelOrder();
@@ -811,8 +811,8 @@ extension AudioProviderLibrary on AudioProvider {
           ..sortedLibraryTracks = derivedSnapshot.sortedLibraryTracks
           ..sortedLibraryTrackPaths = derivedSnapshot.sortedLibraryTrackPaths;
         _markLibraryStructureDirty();
-        _librarySnapshotCacheService.adoptTreeSnapshot(
-          derivedSnapshot.treeSnapshot,
+        _librarySnapshotCacheService.adoptCardSnapshot(
+          derivedSnapshot.cardSnapshot,
         );
         if (notify) {
           _notifyLibraryAndPlaybackChanged();
@@ -883,7 +883,7 @@ extension AudioProviderLibrary on AudioProvider {
       _rebuildLibraryIndexes();
       _syncLibraryNodeOrder(persist: false);
       if (!notify) {
-        unawaited(_ensureLibraryTreeSnapshot(notifyOnCommit: false));
+        unawaited(_ensureLibraryCardSnapshot(notifyOnCommit: false));
       }
       if (notify) {
         _notifyLibraryAndPlaybackChanged();
@@ -971,7 +971,7 @@ extension AudioProviderLibrary on AudioProvider {
     _syncGroupOrderFromLibrary();
     _syncLibraryNodeOrder(persist: false);
     if (!notify) {
-      unawaited(_ensureLibraryTreeSnapshot(notifyOnCommit: false));
+      unawaited(_ensureLibraryCardSnapshot(notifyOnCommit: false));
     }
     if (notify) {
       _notifyLibraryAndPlaybackChanged();
@@ -1381,8 +1381,6 @@ extension AudioProviderLibrary on AudioProvider {
   int getTrackComparator(MusicTrack a, MusicTrack b) {
     return _libraryOrganizer.compareTracks(a, b);
   }
-
-  List<LibraryNode> buildLibraryTree() => libraryTree;
 
   MusicTrack? trackByPath(String trackPath) {
     final resolvedPath = _resolveRetargetedPath(trackPath);

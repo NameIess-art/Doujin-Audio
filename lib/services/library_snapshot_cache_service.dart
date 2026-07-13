@@ -34,7 +34,7 @@ class LibraryDerivedSnapshot {
     required this.tracksByGroup,
     required this.sortedLibraryTracks,
     required this.sortedLibraryTrackPaths,
-    required this.treeSnapshot,
+    required this.cardSnapshot,
   });
 
   final List<MusicTrack> library;
@@ -43,7 +43,7 @@ class LibraryDerivedSnapshot {
   final Map<String, List<MusicTrack>> tracksByGroup;
   final List<MusicTrack> sortedLibraryTracks;
   final List<String> sortedLibraryTrackPaths;
-  final LibraryTreeSnapshot treeSnapshot;
+  final LibraryTreeSnapshot cardSnapshot;
 }
 
 LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
@@ -69,7 +69,7 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
   );
   final sortedTracks = List<MusicTrack>.of(library)
     ..sort(organizer.compareTracks);
-  final treeSnapshot = organizer.buildTree(
+  final cardSnapshot = organizer.buildCardTree(
     tracks: library,
     watchedFolders: payload.watchedFolders,
     nodeOrder: payload.nodeOrder,
@@ -83,7 +83,7 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
     sortedLibraryTrackPaths: List<String>.unmodifiable(
       sortedTracks.map((track) => track.path),
     ),
-    treeSnapshot: treeSnapshot,
+    cardSnapshot: cardSnapshot,
   );
 }
 
@@ -98,6 +98,7 @@ class LibrarySnapshotCacheService {
            interactionCoordinator ?? UiInteractionCoordinator.instance {
     if (_libraryService.library.isEmpty &&
         _libraryService.watchedFolders.isEmpty) {
+      _cachedCardRevision = _libraryService.structureRevision;
       _cachedTreeRevision = _libraryService.structureRevision;
     }
   }
@@ -105,6 +106,13 @@ class LibrarySnapshotCacheService {
   final LibraryService _libraryService;
   final AudioDetailCacheService _detailCacheService;
   final UiInteractionCoordinator _interactionCoordinator;
+
+  List<LibraryNode> _cachedCards = const <LibraryNode>[];
+  int _cachedCardRevision = -1;
+  int _cachedCardLeafFolderCount = 0;
+  Future<LibraryTreeSnapshot>? _cardFuture;
+  int _cardFutureRevision = -1;
+  final List<VoidCallback> _cardCommitCallbacks = <VoidCallback>[];
 
   List<LibraryNode> _cachedTree = const <LibraryNode>[];
   int _cachedTreeRevision = -1;
@@ -119,22 +127,93 @@ class LibrarySnapshotCacheService {
   int _categoryFutureDetailRevision = -1;
   int _categorySnapshotRevision = 0;
 
+  List<LibraryNode> get cards => _cachedCards;
+
+  int get cardSnapshotRevision => _cachedCardRevision;
+
   List<LibraryNode> get tree => _cachedTree;
 
   int get treeSnapshotRevision => _cachedTreeRevision;
 
-  int get leafFolderCount => _cachedLeafFolderCount;
+  int get leafFolderCount => _cachedCardLeafFolderCount;
 
   int get categorySnapshotRevision => _categorySnapshotRevision;
 
   AudioLibraryCategorySnapshot? get categorySnapshotSync => _categorySnapshot;
 
-  void adoptTreeSnapshot(LibraryTreeSnapshot snapshot) {
-    _cacheTreeSnapshot(snapshot);
-    _treeFuture = null;
-    _treeFutureRevision = -1;
-    _treeCommitCallbacks.clear();
+  void adoptCardSnapshot(LibraryTreeSnapshot snapshot) {
+    _cacheCardSnapshot(snapshot);
+    _cardFuture = null;
+    _cardFutureRevision = -1;
+    _cardCommitCallbacks.clear();
     _categoryFuture = null;
+  }
+
+  Future<LibraryTreeSnapshot> cardSnapshot({
+    required VoidCallback onCommitted,
+  }) {
+    final revision = _libraryService.structureRevision;
+    if (_cachedCardRevision == revision) {
+      return Future<LibraryTreeSnapshot>.value(
+        LibraryTreeSnapshot(
+          tree: _cachedCards,
+          leafFolderCount: _cachedCardLeafFolderCount,
+        ),
+      );
+    }
+    final inFlight = _cardFuture;
+    if (inFlight != null && _cardFutureRevision == revision) {
+      _cardCommitCallbacks.add(onCommitted);
+      return inFlight;
+    }
+
+    final payload = _LibraryTreeBuildPayload(
+      tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
+      watchedFolders: List<String>.unmodifiable(_libraryService.watchedFolders),
+      nodeOrder: List<String>.unmodifiable(_libraryService.libraryNodeOrder),
+    );
+    final future = AppLogService.measureAsync(
+      'library_card_snapshot_build',
+      () => compute(_buildLibraryCardsFromPayload, payload),
+      details: <String, Object?>{'tracks': payload.tracks.length},
+    );
+    _cardFuture = future;
+    _cardFutureRevision = revision;
+    _cardCommitCallbacks
+      ..clear()
+      ..add(onCommitted);
+    unawaited(
+      future
+          .then((snapshot) {
+            if (_libraryService.structureRevision != revision) return;
+            final callbacks = List<VoidCallback>.of(_cardCommitCallbacks);
+            _cardCommitCallbacks.clear();
+            void commit() {
+              if (_libraryService.structureRevision != revision) return;
+              _cacheCardSnapshot(snapshot);
+              for (final callback in callbacks) {
+                callback();
+              }
+            }
+
+            if (_interactionCoordinator.isInteracting) {
+              _interactionCoordinator.scheduleCommit(
+                key: 'library_card_snapshot',
+                priority: 0,
+                commit: commit,
+              );
+            } else {
+              commit();
+            }
+          })
+          .whenComplete(() {
+            if (identical(_cardFuture, future)) {
+              _cardFuture = null;
+              _cardCommitCallbacks.clear();
+            }
+          }),
+    );
+    return future;
   }
 
   Future<LibraryTreeSnapshot> treeSnapshot({
@@ -273,6 +352,9 @@ class LibrarySnapshotCacheService {
   }
 
   void markStructureChanged() {
+    _cachedCardRevision = -1;
+    _cardFuture = null;
+    _cardCommitCallbacks.clear();
     _cachedTreeRevision = -1;
     _treeFuture = null;
     _treeCommitCallbacks.clear();
@@ -280,24 +362,32 @@ class LibrarySnapshotCacheService {
   }
 
   bool applyCurrentTopLevelOrder() {
-    if (_cachedTree.isEmpty) return false;
+    if (_cachedCards.isEmpty) return false;
     final nodesByPath = <String, LibraryNode>{
-      for (final node in _cachedTree) node.path: node,
+      for (final node in _cachedCards) node.path: node,
     };
     final nodeOrder = _libraryService.libraryNodeOrder;
-    if (nodesByPath.length != _cachedTree.length ||
-        nodeOrder.length != _cachedTree.length ||
+    if (nodesByPath.length != _cachedCards.length ||
+        nodeOrder.length != _cachedCards.length ||
         nodeOrder.any((path) => !nodesByPath.containsKey(path))) {
       return false;
     }
 
-    _cachedTree = List<LibraryNode>.unmodifiable(
+    _cachedCards = List<LibraryNode>.unmodifiable(
       nodeOrder.map((path) => nodesByPath[path]!),
     );
-    _cachedTreeRevision = _libraryService.structureRevision;
-    _treeFuture = null;
-    _treeFutureRevision = -1;
-    _treeCommitCallbacks.clear();
+    _cachedCardRevision = _libraryService.structureRevision;
+    _cardFuture = null;
+    _cardFutureRevision = -1;
+    _cardCommitCallbacks.clear();
+    if (_cachedTreeRevision == _libraryService.structureRevision) {
+      final treeByPath = <String, LibraryNode>{
+        for (final node in _cachedTree) node.path: node,
+      };
+      _cachedTree = List<LibraryNode>.unmodifiable(
+        nodeOrder.map((path) => treeByPath[path]!).whereType<LibraryNode>(),
+      );
+    }
     _categoryFuture = null;
     return true;
   }
@@ -310,6 +400,12 @@ class LibrarySnapshotCacheService {
   }
 
   void clear() {
+    _cachedCards = const <LibraryNode>[];
+    _cachedCardRevision = -1;
+    _cachedCardLeafFolderCount = 0;
+    _cardFuture = null;
+    _cardFutureRevision = -1;
+    _cardCommitCallbacks.clear();
     _cachedTree = const <LibraryNode>[];
     _cachedTreeRevision = -1;
     _cachedLeafFolderCount = 0;
@@ -329,15 +425,21 @@ class LibrarySnapshotCacheService {
     _cachedTreeRevision = _libraryService.structureRevision;
   }
 
+  void _cacheCardSnapshot(LibraryTreeSnapshot snapshot) {
+    _cachedCards = snapshot.tree;
+    _cachedCardLeafFolderCount = snapshot.leafFolderCount;
+    _cachedCardRevision = _libraryService.structureRevision;
+  }
+
   Future<AudioLibraryCategorySnapshot> _buildCategorySnapshot({
     required int structureRevision,
     required int detailRevision,
   }) async {
-    final snapshot = await treeSnapshot(onCommitted: () {});
+    final snapshot = await cardSnapshot(onCommitted: () {});
     var tree = snapshot.tree;
     if (_libraryService.structureRevision != structureRevision) {
-      tree = _cachedTreeRevision == structureRevision
-          ? _cachedTree
+      tree = _cachedCardRevision == structureRevision
+          ? _cachedCards
           : const <LibraryNode>[];
     }
 
@@ -530,6 +632,16 @@ LibraryTreeSnapshot _buildLibraryTreeFromPayload(
   _LibraryTreeBuildPayload payload,
 ) {
   return const LibraryOrganizer().buildTree(
+    tracks: payload.tracks,
+    watchedFolders: payload.watchedFolders,
+    nodeOrder: payload.nodeOrder,
+  );
+}
+
+LibraryTreeSnapshot _buildLibraryCardsFromPayload(
+  _LibraryTreeBuildPayload payload,
+) {
+  return const LibraryOrganizer().buildCardTree(
     tracks: payload.tracks,
     watchedFolders: payload.watchedFolders,
     nodeOrder: payload.nodeOrder,

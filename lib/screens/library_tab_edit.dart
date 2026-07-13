@@ -1337,7 +1337,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
       child: ListTile(
         dense: true,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         tileColor: cs.surfaceContainerHigh.withValues(alpha: 0.4),
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
         leading: Icon(

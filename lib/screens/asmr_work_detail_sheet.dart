@@ -124,7 +124,7 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
                 ),
                 const SizedBox(height: 16),
                 ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(16),
                   child: AspectRatio(
                     aspectRatio: 1.45,
                     child: AsyncRemoteCoverImage(
@@ -405,7 +405,7 @@ class _AsmrDetailDescriptionBlock extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     return InkWell(
       onTap: () => _copyText(context, text),
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 14),
         child: Column(

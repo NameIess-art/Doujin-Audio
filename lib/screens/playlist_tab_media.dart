@@ -36,7 +36,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
           child: Container(
             width: displayWidth,
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(32),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: cs.onSurface.withValues(alpha: 0.12),
                 width: 0.5,
@@ -57,7 +57,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
             ),
             child: Material(
               type: MaterialType.transparency,
-              borderRadius: BorderRadius.circular(32),
+              borderRadius: BorderRadius.circular(16),
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 fit: StackFit.expand,

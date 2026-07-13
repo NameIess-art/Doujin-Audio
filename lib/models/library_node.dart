@@ -104,11 +104,13 @@ class FolderNode extends LibraryNode {
     required int leafFolderCount,
     required MusicTrack? firstTrack,
     Duration? totalDuration,
+    List<MusicTrack>? allTracks,
   }) {
     _cachedTotalTrackCount = totalTrackCount;
     _cachedLeafFolderCount = leafFolderCount;
     _firstTrackCache = firstTrack;
     _cachedTotalDuration = totalDuration;
+    _allTracksCache = allTracks;
   }
 }
 

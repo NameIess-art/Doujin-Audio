@@ -10,10 +10,16 @@ class LibraryOrganizer {
   const LibraryOrganizer();
 
   String rootPathForTrack(MusicTrack track, List<String> watchedRoots) {
+    final sortedRoots = watchedRoots.toList(growable: false)
+      ..sort((a, b) => b.length.compareTo(a.length));
+    return _rootPathForTrack(track, sortedRoots);
+  }
+
+  String _rootPathForTrack(MusicTrack track, List<String> sortedRoots) {
     if (track.isSingle) {
       return track.path;
     }
-    for (final root in watchedRoots) {
+    for (final root in sortedRoots) {
       if (PathMatcher.isWithinOrEqual(track.groupKey, root) ||
           PathMatcher.isWithinOrEqual(track.path, root)) {
         return root;
@@ -31,7 +37,7 @@ class LibraryOrganizer {
     final ids = <String>[];
     final seen = <String>{};
     for (final track in tracks) {
-      final nodeId = rootPathForTrack(track, watchedRoots);
+      final nodeId = _rootPathForTrack(track, watchedRoots);
       if (seen.add(nodeId)) {
         ids.add(nodeId);
       }
@@ -43,6 +49,83 @@ class LibraryOrganizer {
     final groupResult = compareNatural(a.groupTitle, b.groupTitle);
     if (groupResult != 0) return groupResult;
     return compareNatural(a.displayName, b.displayName);
+  }
+
+  LibraryTreeSnapshot buildCardTree({
+    required List<MusicTrack> tracks,
+    required List<String> watchedFolders,
+    required List<String> nodeOrder,
+  }) {
+    final watchedRoots = watchedFolders.toList(growable: false)
+      ..sort((a, b) => b.length.compareTo(a.length));
+    final groups = <String, _LibraryCardGroup>{};
+    final singleFiles = <TrackNode>[];
+
+    for (final track in tracks) {
+      if (track.isSingle) {
+        singleFiles.add(TrackNode(track));
+        continue;
+      }
+      final rootPath = _rootPathForTrack(track, watchedRoots);
+      final group = groups.putIfAbsent(
+        rootPath,
+        () => _LibraryCardGroup(
+          rootPath: rootPath,
+          rootName: _resolveRootNodeName(rootPath, track),
+        ),
+      );
+      group.tracks.add(track);
+
+      final directoryPath = PathMatcher.isContentUri(track.path)
+          ? track.groupKey
+          : path.dirname(track.path);
+      final relativeDirectory = PathMatcher.relativeWithin(
+        directoryPath,
+        rootPath,
+      );
+      final parts = (relativeDirectory ?? '')
+          .replaceAll('\\', '/')
+          .split('/')
+          .where((part) => part.isNotEmpty)
+          .toList(growable: false);
+      final directoryKey = parts.join('/');
+      group.directories.add(directoryKey);
+      if (parts.isNotEmpty) {
+        group.nonLeafDirectories.add('');
+      }
+      for (var index = 1; index < parts.length; index++) {
+        group.nonLeafDirectories.add(parts.take(index).join('/'));
+      }
+    }
+
+    var leafFolderCount = 0;
+    final topLevel = <LibraryNode>[];
+    for (final group in groups.values) {
+      group.tracks.sort(compareTracks);
+      final immutableTracks = List<MusicTrack>.unmodifiable(group.tracks);
+      final groupLeafFolderCount = group.directories
+          .where((directory) => !group.nonLeafDirectories.contains(directory))
+          .length;
+      final folder = FolderNode(group.rootName, group.rootPath)
+        ..cacheTreeMetrics(
+          totalTrackCount: immutableTracks.length,
+          leafFolderCount: groupLeafFolderCount,
+          firstTrack: immutableTracks.first,
+          totalDuration: immutableTracks.fold<Duration>(
+            Duration.zero,
+            (total, track) => total + track.duration,
+          ),
+          allTracks: immutableTracks,
+        );
+      leafFolderCount += groupLeafFolderCount;
+      topLevel.add(folder);
+    }
+    topLevel.addAll(singleFiles);
+    _sortTopLevel(topLevel, nodeOrder);
+    return LibraryTreeSnapshot(
+      tree: List<LibraryNode>.unmodifiable(topLevel),
+      leafFolderCount: leafFolderCount,
+    );
   }
 
   LibraryTreeSnapshot buildTree({
@@ -65,7 +148,7 @@ class LibraryOrganizer {
       final dirPath = PathMatcher.isContentUri(track.path)
           ? track.groupKey
           : path.dirname(track.path);
-      final matchedRoot = rootPathForTrack(track, watchedRoots);
+      final matchedRoot = _rootPathForTrack(track, watchedRoots);
 
       if (!rootNodes.containsKey(matchedRoot)) {
         final rootName = _resolveRootNodeName(matchedRoot, track);
@@ -118,10 +201,6 @@ class LibraryOrganizer {
     }
 
     var leafFolderCount = 0;
-    final topLevelOrderIndex = <String, int>{
-      for (var i = 0; i < nodeOrder.length; i++) nodeOrder[i]: i,
-    };
-
     final roots = rootNodes.values.toList();
     for (final root in roots) {
       _sortFolder(root);
@@ -143,6 +222,18 @@ class LibraryOrganizer {
     }
 
     topLevel.addAll(singleFiles);
+    _sortTopLevel(topLevel, nodeOrder);
+
+    return LibraryTreeSnapshot(
+      tree: List<LibraryNode>.unmodifiable(topLevel),
+      leafFolderCount: leafFolderCount,
+    );
+  }
+
+  void _sortTopLevel(List<LibraryNode> topLevel, List<String> nodeOrder) {
+    final topLevelOrderIndex = <String, int>{
+      for (var i = 0; i < nodeOrder.length; i++) nodeOrder[i]: i,
+    };
     topLevel.sort((a, b) {
       final aIndex = topLevelOrderIndex[a.path];
       final bIndex = topLevelOrderIndex[b.path];
@@ -153,11 +244,6 @@ class LibraryOrganizer {
       if (bIndex != null) return 1;
       return compareNatural(a.name, b.name);
     });
-
-    return LibraryTreeSnapshot(
-      tree: List<LibraryNode>.unmodifiable(topLevel),
-      leafFolderCount: leafFolderCount,
-    );
   }
 
   void _pruneEmptyFolders(FolderNode folder) {
@@ -274,4 +360,14 @@ class LibraryOrganizer {
       firstTrack: firstTrack,
     );
   }
+}
+
+class _LibraryCardGroup {
+  _LibraryCardGroup({required this.rootPath, required this.rootName});
+
+  final String rootPath;
+  final String rootName;
+  final List<MusicTrack> tracks = <MusicTrack>[];
+  final Set<String> directories = <String>{};
+  final Set<String> nonLeafDirectories = <String>{};
 }

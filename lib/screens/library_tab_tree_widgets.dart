@@ -65,16 +65,57 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
 
   final ExpansibleController _expansionController = ExpansibleController();
   late bool _expanded = widget.initiallyExpanded;
+  FolderNode? _loadedFolder;
+  bool _isLoadingChildren = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initiallyExpanded && widget.folder.children.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_loadChildren());
+      });
+    }
+  }
 
   @override
   void didUpdateWidget(covariant _FolderNodeWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.folder, widget.folder)) {
+      _loadedFolder = null;
+      _isLoadingChildren = false;
+    }
     if (widget.initiallyExpanded && !_expanded) {
       _expanded = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _expansionController.expand();
+        if (!mounted) return;
+        _expansionController.expand();
+        unawaited(_loadChildren());
       });
     }
+  }
+
+  Future<void> _loadChildren() async {
+    if (_loadedFolder != null ||
+        _isLoadingChildren ||
+        widget.folder.children.isNotEmpty) {
+      return;
+    }
+    final requestedCard = widget.folder;
+    final requestedPath = widget.folder.path;
+    setState(() => _isLoadingChildren = true);
+    final folder = await ref
+        .read(audioProviderFacadeProvider)
+        .loadLibraryFolderTree(requestedPath);
+    if (!mounted ||
+        !identical(widget.folder, requestedCard) ||
+        !PathMatcher.equalsNormalized(widget.folder.path, requestedPath)) {
+      return;
+    }
+    setState(() {
+      _loadedFolder = folder;
+      _isLoadingChildren = false;
+    });
   }
 
   String? _findParentLibraryPath(AudioProvider provider) {
@@ -131,15 +172,17 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final provider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isRootFolder = widget.folder.depth == 0;
+    final folder = _loadedFolder ?? widget.folder;
+    final isRootFolder = folder.depth == 0;
     final rootDetailState = isRootFolder
         ? ref.watch(
             libraryDetailForTargetProvider(
-              AudioDetailTarget.libraryRootFolder(widget.folder.path),
+              AudioDetailTarget.libraryRootFolder(folder.path),
             ),
           )
         : null;
-    final hasChildren = widget.folder.children.isNotEmpty;
+    final hasChildren =
+        folder.children.isNotEmpty || folder.totalTrackCount > 0;
     final cardShape = LibraryLikeCardMetrics.cardShape(
       cs,
       borderAlpha: isDark ? 0.26 : 0.42,
@@ -160,6 +203,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
           setState(() {
             _expanded = expanded;
           });
+          if (expanded) unawaited(_loadChildren());
         },
         shape: isRootFolder
             ? RoundedRectangleBorder(
@@ -182,9 +226,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 8 : 4, 0, 0, 0),
         title: isRootFolder
             ? _RootFolderCardContent(
-                folderPath: widget.folder.path,
-                folderName: widget.folder.name,
-                folderDuration: widget.folder.totalDuration,
+                folderPath: folder.path,
+                folderName: folder.name,
+                folderDuration: folder.totalDuration,
                 detail: rootDetail,
                 detailLoading: isRootDetailLoading,
                 expanded: _expanded,
@@ -211,7 +255,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _HighlightedText(
-                            text: widget.folder.name,
+                            text: folder.name,
                             query: widget.searchQuery,
                             style:
                                 Theme.of(
@@ -272,8 +316,14 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
               ),
         children: !_expanded
             ? const <Widget>[]
-            : widget.folder.children
-                  .map(
+            : <Widget>[
+                if (_isLoadingChildren)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 12),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else
+                  ...folder.children.map(
                     (childNode) => Padding(
                       padding: EdgeInsets.zero,
                       child: RepaintBoundary(
@@ -285,8 +335,8 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                         ),
                       ),
                     ),
-                  )
-                  .toList(),
+                  ),
+              ],
       ),
     );
 

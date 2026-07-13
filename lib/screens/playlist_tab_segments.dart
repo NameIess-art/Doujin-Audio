@@ -324,7 +324,7 @@ class _PlaybackSecondaryControls extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           decoration: BoxDecoration(
             color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -798,7 +798,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                                 .withValues(alpha: 0.28),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                     onPressed: widget.onToggleLoop,
@@ -826,7 +826,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                       ).colorScheme.errorContainer.withValues(alpha: 0.5),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                        borderRadius: BorderRadius.circular(16),
                       ),
                     ),
                     onPressed: widget.onDelete,
@@ -1163,7 +1163,7 @@ class _EqualizerPage extends ConsumerWidget {
           alignment: AlignmentDirectional.centerStart,
           decoration: InputDecoration(
             labelText: i18n.tr('eq_preset'),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
               vertical: 10,
@@ -1688,7 +1688,7 @@ class _SegmentTimeRow extends StatelessWidget {
                   minimumSize: const Size(48, 36),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                 ),
                 onPressed: onSet,
@@ -1741,7 +1741,7 @@ Future<Duration?> _showSegmentTimeInputDialog(
         keyboardType: TextInputType.datetime,
         decoration: InputDecoration(
           hintText: 'MM:SS / HH:MM:SS',
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
         ),
         onSubmitted: (value) {
           final parsed = _parseSegmentTime(value);

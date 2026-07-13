@@ -74,7 +74,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                         Container(
                           decoration: BoxDecoration(
                             color: cs.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(16),
                           ),
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
@@ -85,7 +85,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                                   height: 30,
                                   decoration: BoxDecoration(
                                     color: cs.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(12),
+                                    borderRadius: BorderRadius.circular(16),
                                   ),
                                   child: Icon(
                                     Icons.restore_rounded,
@@ -198,7 +198,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                             foregroundColor: cs.error,
                             side: BorderSide(color: cs.error),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(18),
+                              borderRadius: BorderRadius.circular(16),
                             ),
                           ),
                         ),

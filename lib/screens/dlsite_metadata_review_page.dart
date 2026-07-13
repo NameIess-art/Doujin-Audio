@@ -292,7 +292,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
                 children: [
                   if (coverUrl != null) ...[
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(16),
                       child: AspectRatio(
                         aspectRatio: 4 / 3,
                         child: RetryingNetworkImage(

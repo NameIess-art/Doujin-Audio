@@ -251,7 +251,7 @@ class _ScrollToTopButton extends StatelessWidget {
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOutCubic,
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(16),
               child: BackdropFilter(
                 key: const ValueKey('main_scroll_to_top_blur'),
                 filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
@@ -603,7 +603,7 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
                         height: 100,
                         decoration: BoxDecoration(
                           color: cs.primary,
-                          borderRadius: BorderRadius.circular(28),
+                          borderRadius: BorderRadius.circular(16),
                           boxShadow: [
                             BoxShadow(
                               color: cs.primary.withValues(alpha: 0.3),

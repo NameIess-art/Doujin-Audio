@@ -154,14 +154,13 @@ internal class PowerMethodHandler(
     }
 
     private fun getBackgroundRunDiagnostics(): Map<String, Any?> {
-        val recentExits = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val lastExit = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             (activity.getSystemService(Activity.ACTIVITY_SERVICE) as? ActivityManager)
-                ?.getHistoricalProcessExitReasons(activity.packageName, 0, 5)
-                .orEmpty()
+                ?.getHistoricalProcessExitReasons(activity.packageName, 0, 1)
+                ?.firstOrNull()
         } else {
-            emptyList()
+            null
         }
-        val lastExit = recentExits.firstOrNull()
         return mapOf(
             "manufacturer" to Build.MANUFACTURER,
             "batteryOptimizationExempt" to isIgnoringBatteryOptimizations(),
@@ -174,18 +173,7 @@ internal class PowerMethodHandler(
             "cleanerForceStopDetected" to isCleanerForceStop(
                 reason = lastExit?.reason,
                 description = lastExit?.description
-            ),
-            "recentExits" to recentExits.map { exit ->
-                mapOf(
-                    "reason" to exit.reason,
-                    "reasonName" to applicationExitReasonName(exit.reason),
-                    "subReason" to applicationExitSubReason(exit),
-                    "description" to exit.description,
-                    "timestampMs" to exit.timestamp,
-                    "cleanerForceStop" to isCleanerForceStop(exit.reason, exit.description)
-                )
-            },
-            "nativePlayback" to NativePlaybackService.controller()?.runtimeDiagnostics()
+            )
         )
     }
 
@@ -222,28 +210,6 @@ internal class PowerMethodHandler(
 internal fun isCleanerForceStop(reason: Int?, description: String?): Boolean {
     return reason == ApplicationExitInfo.REASON_USER_REQUESTED &&
         description?.contains("cleaner", ignoreCase = true) == true
-}
-
-internal fun applicationExitReasonName(reason: Int?): String {
-    return when (reason) {
-        ApplicationExitInfo.REASON_EXIT_SELF -> "exit_self"
-        ApplicationExitInfo.REASON_SIGNALED -> "signaled"
-        ApplicationExitInfo.REASON_LOW_MEMORY -> "low_memory"
-        ApplicationExitInfo.REASON_CRASH -> "crash"
-        ApplicationExitInfo.REASON_CRASH_NATIVE -> "native_crash"
-        ApplicationExitInfo.REASON_ANR -> "anr"
-        ApplicationExitInfo.REASON_INITIALIZATION_FAILURE -> "initialization_failure"
-        ApplicationExitInfo.REASON_PERMISSION_CHANGE -> "permission_change"
-        ApplicationExitInfo.REASON_EXCESSIVE_RESOURCE_USAGE -> "excessive_resource_usage"
-        ApplicationExitInfo.REASON_USER_REQUESTED -> "user_requested"
-        ApplicationExitInfo.REASON_USER_STOPPED -> "user_stopped"
-        ApplicationExitInfo.REASON_DEPENDENCY_DIED -> "dependency_died"
-        ApplicationExitInfo.REASON_OTHER -> "other"
-        ApplicationExitInfo.REASON_FREEZER -> "freezer"
-        ApplicationExitInfo.REASON_PACKAGE_STATE_CHANGE -> "package_state_change"
-        ApplicationExitInfo.REASON_PACKAGE_UPDATED -> "package_updated"
-        else -> "unknown"
-    }
 }
 
 private fun applicationExitSubReason(exitInfo: ApplicationExitInfo?): Int? {

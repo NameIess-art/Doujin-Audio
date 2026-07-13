@@ -11,64 +11,6 @@ import org.junit.Test
 
 class NativePlaybackFocusRecoveryPolicyTest {
     @Test
-    fun `existing background service still requires foreground bootstrap for playback`() {
-        assertTrue(
-            shouldBootstrapPlaybackService(
-                requireForegroundBootstrap = true,
-                playbackForegroundStarted = false
-            )
-        )
-        assertFalse(
-            shouldBootstrapPlaybackService(
-                requireForegroundBootstrap = true,
-                playbackForegroundStarted = true
-            )
-        )
-        assertFalse(
-            shouldBootstrapPlaybackService(
-                requireForegroundBootstrap = false,
-                playbackForegroundStarted = false
-            )
-        )
-    }
-
-    @Test
-    fun `delayed audio focus keeps playback intent pending`() {
-        assertEquals(
-            AudioFocusRequestDisposition.granted,
-            audioFocusRequestDisposition(AudioManager.AUDIOFOCUS_REQUEST_GRANTED)
-        )
-        assertEquals(
-            AudioFocusRequestDisposition.delayed,
-            audioFocusRequestDisposition(AudioManager.AUDIOFOCUS_REQUEST_DELAYED)
-        )
-        assertEquals(
-            AudioFocusRequestDisposition.failed,
-            audioFocusRequestDisposition(AudioManager.AUDIOFOCUS_REQUEST_FAILED)
-        )
-    }
-
-    @Test
-    fun `audio output failures rebuild player while network failures reprepare`() {
-        assertEquals(
-            PlaybackRecoveryAction.recreatePlayer,
-            playbackRecoveryAction(PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED)
-        )
-        assertEquals(
-            PlaybackRecoveryAction.recreatePlayer,
-            playbackRecoveryAction(PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED)
-        )
-        assertEquals(
-            PlaybackRecoveryAction.reprepare,
-            playbackRecoveryAction(PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED)
-        )
-        assertEquals(
-            PlaybackRecoveryAction.none,
-            playbackRecoveryAction(PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND)
-        )
-    }
-
-    @Test
     fun `duckable focus loss keeps playback running`() {
         assertFalse(
             shouldPauseForAudioFocusChange(

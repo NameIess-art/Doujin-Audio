@@ -30,6 +30,7 @@ class PlatformChannelsTest {
             FileCacheMethods.DOCUMENT_PATH_EXISTS,
             FileCacheMethods.ENFORCE_APPLICATION_CACHE_LIMIT,
             FileCacheMethods.ENSURE_FOLDER_PATH,
+            FileCacheMethods.EXPORT_FILE,
             FileCacheMethods.LIST_CHILD_FOLDERS,
             FileCacheMethods.PICK_AUDIO_FILES,
             FileCacheMethods.PICK_AUDIO_FOLDER,
@@ -58,6 +59,7 @@ class PlatformChannelsTest {
         assertEquals("snapshot", NativePlaybackMethods.SNAPSHOT)
         assertEquals("startFolderScan", FileCacheMethods.START_FOLDER_SCAN)
         assertEquals("cancelFolderScan", FileCacheMethods.CANCEL_FOLDER_SCAN)
+        assertEquals("exportFile", FileCacheMethods.EXPORT_FILE)
         assertEquals(
             "syncUnifiedPlaybackNotifications",
             NotificationsMethods.SYNC_UNIFIED_PLAYBACK_NOTIFICATIONS

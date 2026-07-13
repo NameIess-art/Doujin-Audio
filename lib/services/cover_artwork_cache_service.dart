@@ -755,13 +755,9 @@ class CoverArtworkCacheService {
         _trimResolvedFolderCovers();
         return indexedCoverPath;
       }
-      final candidates = await _resolveFolderCoverCandidates(
+      final coverPath = await _resolvePreferredFolderCover(
         normalizedFolderPath,
       );
-      final coverPath =
-          selectedCover != null && candidates.contains(selectedCover)
-          ? selectedCover
-          : candidates.firstOrNull;
       if (selectedCover != null && selectedCover != coverPath) {
         _folderCoverSelections.remove(normalizedFolderPath);
         await _saveFolderCoverSelections();
@@ -1054,6 +1050,19 @@ class CoverArtworkCacheService {
     return List<String>.unmodifiable(candidates);
   }
 
+  Future<String?> _resolvePreferredFolderCover(String folderPath) async {
+    final images = await _discoverFolderImages(folderPath);
+    if (images.isNotEmpty) return images.first;
+
+    for (final track in _tracksInCoverScope(folderPath)) {
+      final candidate = track.isVideo
+          ? await _resolveVideoFramePathForTrack(track)
+          : await _resolvePlatformCoverPathForTrack(track);
+      if (candidate != null && candidate.trim().isNotEmpty) return candidate;
+    }
+    return null;
+  }
+
   Future<List<String>> _discoverFolderImages(String folderPath) async {
     if (PathMatcher.isContentUri(folderPath)) {
       try {
@@ -1104,12 +1113,11 @@ class CoverArtworkCacheService {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     if (normalizedFolderPath.isEmpty) return const <MusicTrack>[];
     final tracks = <MusicTrack>[];
-    for (final track in _libraryService.library) {
-      final groupKey = track.groupKey.trim();
-      if (PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
-          (groupKey.isNotEmpty &&
-              PathMatcher.isWithinOrEqual(groupKey, normalizedFolderPath))) {
-        tracks.add(track);
+    for (final entry in _libraryService.tracksByGroup.entries) {
+      final groupKey = PathMatcher.normalize(entry.key.trim());
+      if (groupKey.isNotEmpty &&
+          PathMatcher.isWithinOrEqual(groupKey, normalizedFolderPath)) {
+        tracks.addAll(entry.value);
       }
     }
     return tracks;

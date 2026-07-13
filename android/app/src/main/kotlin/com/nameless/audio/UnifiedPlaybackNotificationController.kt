@@ -5,11 +5,10 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Build
 import android.os.Bundle
-import android.util.LruCache
+import android.os.Handler
+import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.media3.session.MediaStyleNotificationHelper
@@ -126,7 +125,10 @@ internal object UnifiedPlaybackNotificationController {
     private val activeNotificationIds = linkedSetOf<Int>()
     val activeNotificationCount: Int get() = activeNotificationIds.size
     private val activeItemsById = linkedMapOf<String, UnifiedPlaybackNotificationItem>()
-    private val artCache = object : LruCache<String, Bitmap>(12) {}
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
+    private var artworkLoader: NotificationArtworkLoader? = null
+    private var latestSyncRequest: NotificationSyncRequest? = null
+    private var syncGeneration = 0L
     private var lastSummarySignature: String? = null
     private var lastStyleVariant: String? = null
     private val lastNotifyTimestampsMs = mutableMapOf<Int, Long>()
@@ -160,6 +162,9 @@ internal object UnifiedPlaybackNotificationController {
     }
 
     internal fun clearForTest() {
+        syncGeneration += 1
+        latestSyncRequest = null
+        artworkLoader?.clear()
         activeNotificationIds.clear()
         activeItemsById.clear()
         lastSummarySignature = null
@@ -188,30 +193,87 @@ internal object UnifiedPlaybackNotificationController {
         // UnifiedPlaybackActionReceiver. Suppress re-posts so the
         // notification does not reappear after the user swiped it away.
         if (dismissPending) return
-        val manager = NotificationManagerCompat.from(context)
-        ensureChannel(context)
-        val postedNotificationIds = postedNotificationIds(context)
-
         if (items.isEmpty()) {
             clear(context)
             return
         }
 
-        if (mode == "multi") {
+        val appContext = context.applicationContext
+        val request = NotificationSyncRequest(
+            mode = mode,
+            mainSessionId = mainSessionId,
+            items = items.toList(),
+            summaryText = summaryText,
+            summaryLines = summaryLines.toList(),
+            styleVariant = styleVariant
+        )
+        syncGeneration += 1
+        val generation = syncGeneration
+        latestSyncRequest = request
+        val loader = artworkLoader ?: NotificationArtworkLoader.create(appContext).also {
+            artworkLoader = it
+        }
+        render(appContext, request, forceArtworkPath = null)
+        request.items
+            .mapNotNull { item -> item.artPath?.trim()?.takeIf(String::isNotEmpty) }
+            .distinct()
+            .filter { path -> loader.cached(path) == null }
+            .forEach { path ->
+                loader.request(path) { loadedPath ->
+                    mainHandler.post {
+                        refreshArtwork(appContext, generation, loadedPath)
+                    }
+                }
+            }
+    }
+
+    private fun render(
+        context: Context,
+        request: NotificationSyncRequest,
+        forceArtworkPath: String?
+    ) {
+        if (dismissPending) return
+        val manager = NotificationManagerCompat.from(context)
+        ensureChannel(context)
+        val postedNotificationIds = postedNotificationIds(context)
+
+        if (request.mode == "multi") {
             syncMultiSession(
                 context,
                 manager,
                 postedNotificationIds,
-                mainSessionId,
-                items,
-                summaryText,
-                summaryLines,
-                styleVariant
+                request.mainSessionId,
+                request.items,
+                request.summaryText,
+                request.summaryLines,
+                request.styleVariant,
+                forceArtworkPath
             )
             return
         }
 
-        syncSingleSession(context, manager, postedNotificationIds, items, styleVariant)
+        syncSingleSession(
+            context,
+            manager,
+            postedNotificationIds,
+            request.items,
+            request.styleVariant,
+            forceArtworkPath
+        )
+    }
+
+    @Synchronized
+    private fun refreshArtwork(context: Context, generation: Long, path: String) {
+        val request = latestSyncRequest ?: return
+        if (
+            !shouldRefreshNotificationArtwork(
+                generation,
+                syncGeneration,
+                path,
+                request.items.map { it.artPath }
+            )
+        ) return
+        render(context, request, forceArtworkPath = path)
     }
 
     private fun syncSingleSession(
@@ -219,7 +281,8 @@ internal object UnifiedPlaybackNotificationController {
         manager: NotificationManagerCompat,
         postedNotificationIds: Set<Int>,
         items: List<UnifiedPlaybackNotificationItem>,
-        styleVariant: String?
+        styleVariant: String?,
+        forceArtworkPath: String?
     ) {
         val previousIds = buildSet {
             addAll(activeNotificationIds)
@@ -234,12 +297,13 @@ internal object UnifiedPlaybackNotificationController {
         val postedUnifiedNotifications = postedUnifiedNotificationIds(context)
         val styleKey = styleVariant ?: "single_thread"
         if (
-            activeItemsById[item.id] != item ||
+            item.artPath == forceArtworkPath ||
+                activeItemsById[item.id] != item ||
                 !postedNotificationIds.contains(notificationId) ||
                 !postedUnifiedNotifications.contains(notificationId) ||
                 lastStyleVariant != styleKey
         ) {
-            if (!isNotifyThrottled(notificationId, item)) {
+            if (item.artPath == forceArtworkPath || !isNotifyThrottled(notificationId, item)) {
                 val notification = buildSingleSessionNotification(context, item)
                 manager.notify(notificationId, notification)
                 lastRichSummaryNotification = notification
@@ -269,7 +333,8 @@ internal object UnifiedPlaybackNotificationController {
         items: List<UnifiedPlaybackNotificationItem>,
         summaryText: String?,
         summaryLines: List<String>,
-        styleVariant: String?
+        styleVariant: String?,
+        forceArtworkPath: String?
     ) {
         val previousIds = buildSet {
             addAll(activeNotificationIds)
@@ -300,11 +365,15 @@ internal object UnifiedPlaybackNotificationController {
             postedNotificationIds.contains(summaryNotificationId) &&
                 !postedUnifiedNotifications.contains(summaryNotificationId)
         if (
-            summaryChanged ||
+            mainItem.artPath == forceArtworkPath ||
+                summaryChanged ||
                 summaryWasReplacedByForegroundService ||
                 !postedNotificationIds.contains(summaryNotificationId)
         ) {
-            if (!isNotifyThrottled(summaryNotificationId, mainItem)) {
+            if (
+                mainItem.artPath == forceArtworkPath ||
+                    !isNotifyThrottled(summaryNotificationId, mainItem)
+            ) {
                 val notification = buildMultiSessionNotification(
                     context,
                     mainItem,
@@ -324,11 +393,12 @@ internal object UnifiedPlaybackNotificationController {
         for (item in items) {
             val notificationId = notificationIdFor(item.id)
             if (
-                activeItemsById[item.id]?.hasSameStableNotification(item) != true ||
+                item.artPath == forceArtworkPath ||
+                    activeItemsById[item.id]?.hasSameStableNotification(item) != true ||
                     !postedUnifiedNotifications.contains(notificationId) ||
                     !postedNotificationIds.contains(notificationId)
             ) {
-                if (!isNotifyThrottled(notificationId, item)) {
+                if (item.artPath == forceArtworkPath || !isNotifyThrottled(notificationId, item)) {
                     manager.notify(
                         notificationId,
                         buildMultiSessionChildNotification(context, item)
@@ -491,7 +561,7 @@ internal object UnifiedPlaybackNotificationController {
         if (!ongoing) {
             builder.setDeleteIntent(buildDismissIntent(context, notificationId))
         }
-        resolveLargeIcon(item.artPath)?.let(builder::setLargeIcon)
+        artworkLoader?.cached(item.artPath)?.let(builder::setLargeIcon)
         return builder
     }
 
@@ -527,6 +597,9 @@ internal object UnifiedPlaybackNotificationController {
 
     @Synchronized
     fun clear(context: Context) {
+        syncGeneration += 1
+        latestSyncRequest = null
+        artworkLoader?.clear()
         dismissPending = false
         lastRichSummaryNotification = null
         val manager = NotificationManagerCompat.from(context)
@@ -695,17 +768,18 @@ internal object UnifiedPlaybackNotificationController {
             ?: emptySet()
     }
 
-    private fun resolveLargeIcon(artPath: String?): Bitmap? {
-        val path = artPath?.takeIf { it.isNotBlank() } ?: return null
-        artCache.get(path)?.let { return it }
-        val decoded = BitmapFactory.decodeFile(path) ?: return null
-        artCache.put(path, decoded)
-        return decoded
-    }
-
     private fun notificationIdFor(sessionId: String): Int {
         val hash = sessionId.hashCode()
         val positiveHash = if (hash == Int.MIN_VALUE) 0 else kotlin.math.abs(hash)
         return 20_000 + (positiveHash % 50_000)
     }
 }
+
+private data class NotificationSyncRequest(
+    val mode: String,
+    val mainSessionId: String?,
+    val items: List<UnifiedPlaybackNotificationItem>,
+    val summaryText: String?,
+    val summaryLines: List<String>,
+    val styleVariant: String?
+)

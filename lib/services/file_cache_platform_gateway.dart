@@ -299,6 +299,22 @@ class FileCachePlatformGateway {
         false;
   }
 
+  Future<String?> exportFile({
+    required String sourcePath,
+    required String fileName,
+    required String mimeType,
+  }) {
+    if (!_isAndroid()) return Future<String?>.value();
+    return _channel.invokeMethod<String>(
+      FileCacheMethod.exportFile,
+      <String, Object?>{
+        'sourcePath': sourcePath,
+        'fileName': fileName,
+        'mimeType': mimeType,
+      },
+    );
+  }
+
   Future<bool> deleteDocumentPath(String path) async {
     return await _channel.invokeMethod<bool>(
           FileCacheMethod.deleteDocumentPath,

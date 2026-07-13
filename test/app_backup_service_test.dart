@@ -45,6 +45,22 @@ void main() {
     );
   }
 
+  Future<void> writePatternFile(File file, int byteCount) async {
+    final chunk = List<int>.generate(64 * 1024, (index) => index & 0xff);
+    final output = await file.open(mode: FileMode.write);
+    try {
+      var remaining = byteCount;
+      while (remaining > 0) {
+        final length = remaining < chunk.length ? remaining : chunk.length;
+        await output.writeFrom(chunk, 0, length);
+        remaining -= length;
+      }
+      await output.flush();
+    } finally {
+      await output.close();
+    }
+  }
+
   test('exports and validates a complete backup', () async {
     final service = createService();
     final outputPath = '${tempDirectory.path}/backup.nalbackup';
@@ -60,6 +76,33 @@ void main() {
     expect(closeCount, 1);
     expect(reopenCount, 1);
   });
+
+  test(
+    'large database fixture exports validates and restores by stream',
+    () async {
+      const fixtureBytes = 16 * 1024 * 1024;
+      await writePatternFile(databaseFile, fixtureBytes);
+      final expectedDigest = await sha256.bind(databaseFile.openRead()).first;
+      final service = createService();
+
+      final output = await service.exportBackup(
+        '${tempDirectory.path}/large.nalbackup',
+      );
+      final validation = await service.validateBackup(output.path);
+      await databaseFile.writeAsString('changed');
+      final restore = await service.restoreBackup(output.path);
+
+      expect(validation.isValid, isTrue);
+      expect(
+        validation.manifest?.entries[AppBackupService.databaseEntry]?.size,
+        fixtureBytes,
+      );
+      expect(restore.isValid, isTrue);
+      expect(await databaseFile.length(), fixtureBytes);
+      expect(await sha256.bind(databaseFile.openRead()).first, expectedDigest);
+      expect(preferences, containsPair('language', 'zh'));
+    },
+  );
 
   test('stores the database entry without buffering compression', () async {
     final output = await createService().exportBackup(

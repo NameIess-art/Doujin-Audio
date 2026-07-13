@@ -362,7 +362,10 @@ void main() {
     const coverPath = 'content://covers/work-a.jpg';
     final details = _MemoryAudioDetailCacheService();
     final library = LibraryService()
-      ..library.add(_track(path: trackPath, groupKey: root));
+      ..library.add(_track(path: trackPath, groupKey: root))
+      ..tracksByGroup[root] = <MusicTrack>[
+        _track(path: trackPath, groupKey: root),
+      ];
     final firstGateway = _FakeFileCachePlatformGateway(
       coversByPath: const <String, String>{trackPath: coverPath},
     );
@@ -417,6 +420,7 @@ void main() {
           isSingle: false,
         ),
       ]);
+    library.tracksByGroup[root] = List<MusicTrack>.from(library.library);
     final gateway = _FakeFileCachePlatformGateway(
       coversByPath: const <String, String>{
         'content://com.android.externalstorage.documents/tree/primary%3AMusic::WorkA/02.mp3':
@@ -454,6 +458,9 @@ void main() {
           _track(path: firstPath, groupKey: directory.path),
           _track(path: secondPath, groupKey: directory.path),
         ]);
+      library.tracksByGroup[directory.path] = List<MusicTrack>.from(
+        library.library,
+      );
       final gateway = _FakeFileCachePlatformGateway(
         coversByPath: <String, String>{secondPath: '/cache/02-cover.image'},
       );
@@ -467,6 +474,91 @@ void main() {
         '/cache/02-cover.image',
       );
       expect(gateway.resolveTrackCoverPaths, <String>[firstPath, secondPath]);
+    },
+  );
+
+  test('folder card cover stops after the first embedded cover hit', () async {
+    final library = LibraryService();
+    final tracks = List<MusicTrack>.generate(
+      3,
+      (index) => _track(path: '/work/0$index.flac', groupKey: '/work'),
+    );
+    library
+      ..library.addAll(tracks)
+      ..tracksByGroup['/work'] = tracks;
+    final gateway = _FakeFileCachePlatformGateway(
+      coversByPath: <String, String>{tracks.first.path: '/cache/first.image'},
+    );
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      fileCacheGateway: gateway,
+    );
+
+    expect(await cache.futureForFolder('/work'), '/cache/first.image');
+    expect(gateway.resolveTrackCoverPaths, <String>[tracks.first.path]);
+  });
+
+  test('folder image avoids embedded cover lookups', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cover_cache_preferred_folder_image_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final cover = File('${directory.path}${Platform.pathSeparator}cover.jpg');
+    await cover.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+    final track = _track(
+      path: '${directory.path}${Platform.pathSeparator}audio.flac',
+      groupKey: directory.path,
+    );
+    final library = LibraryService()
+      ..library.add(track)
+      ..tracksByGroup[directory.path] = <MusicTrack>[track];
+    final gateway = _FakeFileCachePlatformGateway(
+      coversByPath: <String, String>{track.path: '/cache/unused.image'},
+    );
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      fileCacheGateway: gateway,
+    );
+
+    expect(await cache.futureForFolder(directory.path), cover.path);
+    expect(gateway.resolveTrackCoverPaths, isEmpty);
+  });
+
+  test(
+    'indexed content groups keep insertion order and visit all tracks only on miss',
+    () async {
+      const root =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic::Work';
+      const subfolder = '$root/Sub';
+      const sibling =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic::Other';
+      final rootTrack = _track(path: '$root/01.flac', groupKey: root);
+      final subfolderTrack = _track(
+        path: '$subfolder/02.flac',
+        groupKey: subfolder,
+      );
+      final siblingTrack = _track(
+        path: '$sibling/ignored.flac',
+        groupKey: sibling,
+      );
+      final library = LibraryService()
+        ..library.addAll(<MusicTrack>[siblingTrack, subfolderTrack, rootTrack])
+        ..tracksByGroup[root] = <MusicTrack>[rootTrack]
+        ..tracksByGroup[subfolder] = <MusicTrack>[subfolderTrack]
+        ..tracksByGroup[sibling] = <MusicTrack>[siblingTrack];
+      final gateway = _FakeFileCachePlatformGateway(coversByPath: const {});
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+      );
+
+      expect(await cache.futureForFolder(root), isNull);
+      expect(gateway.resolveTrackCoverPaths, <String>[
+        rootTrack.path,
+        subfolderTrack.path,
+      ]);
     },
   );
 
@@ -627,7 +719,9 @@ void main() {
         groupKey: '/work',
         isVideo: true,
       );
-      library.library.addAll(<MusicTrack>[audio, video]);
+      library
+        ..library.addAll(<MusicTrack>[audio, video])
+        ..tracksByGroup['/work'] = <MusicTrack>[audio, video];
       final cache = CoverArtworkCacheService(
         libraryService: library,
         fileCacheGateway: _FakeFileCachePlatformGateway(

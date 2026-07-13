@@ -7,11 +7,13 @@ import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../i18n/app_language_provider.dart';
+import '../platform/app_platform.dart';
 import '../providers/audio_provider.dart';
 import '../services/app_backup_service.dart';
 import '../services/app_log_service.dart';
 import '../services/diagnostic_report_service.dart';
 import '../services/asmr_library_controller.dart';
+import '../services/file_cache_platform_gateway.dart';
 import '../services/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
 import '../widgets/app_feedback.dart';
@@ -30,6 +32,7 @@ class _DataSupportPageState extends State<DataSupportPage> {
   final _backupService = AppBackupService();
   final _diagnosticService = DiagnosticReportService();
   final _operationService = UiOperationService.instance;
+  final _fileCacheGateway = FileCachePlatformGateway.instance;
 
   Future<File> _temporaryFile(String name) async {
     final directory = await getTemporaryDirectory();
@@ -63,6 +66,31 @@ class _DataSupportPageState extends State<DataSupportPage> {
         '${two(now.hour)}${two(now.minute)}${two(now.second)}';
   }
 
+  Future<String?> _saveGeneratedFile({
+    required File source,
+    required String dialogTitle,
+    required List<String> allowedExtensions,
+    required String mimeType,
+  }) async {
+    if (AppPlatform.isAndroid) {
+      return _fileCacheGateway.exportFile(
+        sourcePath: source.path,
+        fileName: path.basename(source.path),
+        mimeType: mimeType,
+      );
+    }
+    final savedPath = await FilePicker.platform.saveFile(
+      dialogTitle: dialogTitle,
+      fileName: path.basename(source.path),
+      type: FileType.custom,
+      allowedExtensions: allowedExtensions,
+      lockParentWindow: true,
+    );
+    if (savedPath == null) return null;
+    await source.openRead().pipe(File(savedPath).openWrite());
+    return savedPath;
+  }
+
   Future<void> _exportBackup() async {
     final dialogTitle = context.read<AppLanguageProvider>().tr('export_backup');
     await _run(
@@ -74,13 +102,11 @@ class _DataSupportPageState extends State<DataSupportPage> {
         );
         try {
           final backup = await _backupService.exportBackup(temporary.path);
-          final savedPath = await FilePicker.platform.saveFile(
+          final savedPath = await _saveGeneratedFile(
+            source: backup,
             dialogTitle: dialogTitle,
-            fileName: path.basename(backup.path),
-            type: FileType.custom,
             allowedExtensions: const <String>['nalbackup'],
-            bytes: await backup.readAsBytes(),
-            lockParentWindow: true,
+            mimeType: 'application/zip',
           );
           if (savedPath != null && mounted) {
             _showSuccess(
@@ -118,25 +144,16 @@ class _DataSupportPageState extends State<DataSupportPage> {
         final selection = await FilePicker.platform.pickFiles(
           type: FileType.custom,
           allowedExtensions: const <String>['nalbackup'],
-          withData: true,
           lockParentWindow: true,
         );
         final selected = selection?.files.singleOrNull;
         if (selected == null) return;
-        final temporary = await _temporaryFile(
-          'restore-${_timestamp()}.nalbackup',
-        );
         try {
-          final bytes = selected.bytes;
-          if (bytes != null) {
-            await temporary.writeAsBytes(bytes, flush: true);
-          } else if (selected.path != null) {
-            await File(selected.path!).copy(temporary.path);
-          } else {
+          final selectedPath = selected.path;
+          if (selectedPath == null || selectedPath.trim().isEmpty) {
             throw const FileSystemException('Selected backup is not readable.');
           }
-
-          final result = await _backupService.restoreBackup(temporary.path);
+          final result = await _backupService.restoreBackup(selectedPath);
           if (!result.isValid) {
             if (!mounted) return;
             showAppSnackBar(
@@ -163,7 +180,17 @@ class _DataSupportPageState extends State<DataSupportPage> {
             duration: const Duration(seconds: 4),
           );
         } finally {
-          await _deleteTemporaryFile(temporary);
+          if (AppPlatform.isAndroid) {
+            try {
+              await FilePicker.platform.clearTemporaryFiles();
+            } catch (error, stackTrace) {
+              AppLogService.warning(
+                'backup_picker_cache_cleanup_failed',
+                error: error,
+                stackTrace: stackTrace,
+              );
+            }
+          }
         }
       },
     );
@@ -182,13 +209,11 @@ class _DataSupportPageState extends State<DataSupportPage> {
         );
         try {
           final report = await _diagnosticService.exportReport(temporary.path);
-          final savedPath = await FilePicker.platform.saveFile(
+          final savedPath = await _saveGeneratedFile(
+            source: report,
             dialogTitle: dialogTitle,
-            fileName: path.basename(report.path),
-            type: FileType.custom,
             allowedExtensions: const <String>['zip'],
-            bytes: await report.readAsBytes(),
-            lockParentWindow: true,
+            mimeType: 'application/zip',
           );
           if (savedPath != null && mounted) {
             _showSuccess(

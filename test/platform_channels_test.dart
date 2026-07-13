@@ -40,6 +40,7 @@ void main() {
       FileCacheMethod.documentPathExists,
       FileCacheMethod.ensureFolderPath,
       FileCacheMethod.copyFileToFolder,
+      FileCacheMethod.exportFile,
       FileCacheMethod.deleteDocumentPath,
       FileCacheMethod.clearApplicationCache,
       FileCacheMethod.setApplicationCacheLimit,
@@ -66,6 +67,7 @@ void main() {
     expect(NativePlaybackMethod.snapshot, 'snapshot');
     expect(FileCacheMethod.startFolderScan, 'startFolderScan');
     expect(FileCacheMethod.cancelFolderScan, 'cancelFolderScan');
+    expect(FileCacheMethod.exportFile, 'exportFile');
     expect(FileCacheMethod.resolveTrackSubtitle, 'resolveTrackSubtitle');
     expect(SubtitleOverlayMethod.updateSubtitle, 'updateSubtitle');
     expect(

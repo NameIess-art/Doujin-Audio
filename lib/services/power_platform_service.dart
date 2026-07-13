@@ -14,8 +14,6 @@ class BackgroundRunDiagnostics {
     this.lastExitSubReason,
     this.lastExitDescription,
     this.lastExitTimestampMs,
-    this.recentExits = const <Map<String, Object?>>[],
-    this.nativePlayback,
   });
 
   final String manufacturer;
@@ -26,8 +24,6 @@ class BackgroundRunDiagnostics {
   final int? lastExitSubReason;
   final String? lastExitDescription;
   final int? lastExitTimestampMs;
-  final List<Map<String, Object?>> recentExits;
-  final Map<String, Object?>? nativePlayback;
 
   bool get isVivo => manufacturer.toLowerCase() == 'vivo';
 
@@ -40,8 +36,6 @@ class BackgroundRunDiagnostics {
     'lastExitSubReason': lastExitSubReason,
     'lastExitDescription': lastExitDescription,
     'lastExitTimestampMs': lastExitTimestampMs,
-    'recentExits': recentExits,
-    'nativePlayback': nativePlayback,
   };
 
   factory BackgroundRunDiagnostics.fromMap(Map<dynamic, dynamic> map) {
@@ -57,25 +51,8 @@ class BackgroundRunDiagnostics {
       lastExitSubReason: (map['lastExitSubReason'] as num?)?.toInt(),
       lastExitDescription: map['lastExitDescription'] as String?,
       lastExitTimestampMs: (map['lastExitTimestampMs'] as num?)?.toInt(),
-      recentExits: _stringKeyedMapList(map['recentExits']),
-      nativePlayback: _stringKeyedMap(map['nativePlayback']),
     );
   }
-}
-
-Map<String, Object?>? _stringKeyedMap(Object? value) {
-  if (value is! Map) return null;
-  return value.map<String, Object?>(
-    (key, entryValue) => MapEntry(key.toString(), entryValue),
-  );
-}
-
-List<Map<String, Object?>> _stringKeyedMapList(Object? value) {
-  if (value is! List) return const <Map<String, Object?>>[];
-  return value
-      .map(_stringKeyedMap)
-      .whereType<Map<String, Object?>>()
-      .toList(growable: false);
 }
 
 class PowerPlatformService {

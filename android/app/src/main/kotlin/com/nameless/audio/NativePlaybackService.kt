@@ -108,16 +108,7 @@ class NativePlaybackService : MediaSessionService() {
             context: Context,
             requireForegroundBootstrap: Boolean = false
         ): NativePlaybackService? {
-            controller()?.let { service ->
-                if (shouldBootstrapPlaybackService(
-                        requireForegroundBootstrap = requireForegroundBootstrap,
-                        playbackForegroundStarted = service.playbackForegroundStarted
-                    )
-                ) {
-                    service.ensurePlaybackForegroundBootstrap("existing_service")
-                }
-                return service
-            }
+            controller()?.let { return it }
             val intent = Intent(context.applicationContext, NativePlaybackService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP, requireForegroundBootstrap)
@@ -267,7 +258,6 @@ class NativePlaybackService : MediaSessionService() {
     private var playbackForegroundSignature: String? = null
     private var audioFocusRequest: AudioFocusRequest? = null
     private var audioFocusHeld = false
-    private var audioFocusDelayed = false
     private var transientAudioFocusLossActive = false
     private val pendingAudioFocusResumeSessionIds = linkedSetOf<String>()
     private val intendedPlaybackSessionIds = linkedSetOf<String>()
@@ -277,7 +267,6 @@ class NativePlaybackService : MediaSessionService() {
     private val errorRetryRunnables = mutableMapOf<String, Runnable>()
     private val recoveryExpiryRunnables = mutableMapOf<String, Runnable>()
     private val recoveryStartedElapsedRealtimeMs = mutableMapOf<String, Long>()
-    private val playbackRecoveryActions = mutableMapOf<String, PlaybackRecoveryAction>()
     private var recoveryNetworkCallback: ConnectivityManager.NetworkCallback? = null
     private var recoveryNetworkAvailable = false
     private var screenOnReceiverRegistered = false
@@ -294,26 +283,18 @@ class NativePlaybackService : MediaSessionService() {
         logInfo("audio_focus_change focus=${audioFocusChangeName(change)}")
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {
-                // A permanent loss ends this playback interaction. A future
-                // user play command starts a new foreground/focus transaction.
+                // Mark focus as no longer held so the next syncForegroundState
+                // call will re-request it when playback resumes.
                 audioFocusHeld = false
-                audioFocusDelayed = false
                 transientAudioFocusLossActive = false
                 pendingAudioFocusResumeSessionIds.clear()
                 intendedPlaybackSessionIds.clear()
                 clearAllPlaybackRecovery()
-                sessions.values.forEach { session -> session.playerOrNull()?.pause() }
-                publishAllSessionStates()
-                persistSessionStateNow()
-                if (!stopPlaybackKeepAliveIfIdle("permanent_audio_focus_loss")) {
-                    syncForegroundState()
-                }
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 if (shouldPauseForAudioFocusChange(change)) {
                     audioFocusHeld = false
-                    audioFocusDelayed = false
                     transientAudioFocusLossActive = true
                     sessions.values.forEach { session ->
                         val player = session.playerOrNull()
@@ -332,7 +313,6 @@ class NativePlaybackService : MediaSessionService() {
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 audioFocusHeld = true
-                audioFocusDelayed = false
                 transientAudioFocusLossActive = false
                 if (resumePendingAudioFocusSessionsIfPossible("audio_focus_gain")) {
                     schedulePersistSessionState()
@@ -587,8 +567,10 @@ class NativePlaybackService : MediaSessionService() {
         exclusive: Boolean = false
     ): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
-        val focusDisposition = beginPlaybackStart(sessionId, "play")
-        if (focusDisposition == AudioFocusRequestDisposition.failed) {
+        if (!requestAudioFocusIfNeeded()) {
+            clearPlaybackIntent(sessionId)
+            session.playerOrNull()?.pause()
+            publishSessionState(sessionId)
             return errorResult("Audio focus was denied.")
         }
         val pausedSessionIds = if (exclusive) {
@@ -617,14 +599,13 @@ class NativePlaybackService : MediaSessionService() {
         if (transportCommandId > 0L) {
             session.transportCommandId = transportCommandId
         }
+        pendingAudioFocusResumeSessionIds.remove(sessionId)
+        notificationsDismissed = false
+        playbackSuspended = false
+        markPlaybackIntended(sessionId)
         session.applyFadeMultiplier(1f)
         focusSession(sessionId)
-        val player = ensureFocusedPlayer(session)
-        if (focusDisposition == AudioFocusRequestDisposition.granted) {
-            player.play()
-        } else {
-            player.pause()
-        }
+        ensureFocusedPlayer(session).play()
         evictPlayersIfNeeded()
         pausedSessionIds.forEach(::publishSessionState)
         val snapshot = publishSessionState(sessionId)
@@ -705,15 +686,15 @@ class NativePlaybackService : MediaSessionService() {
             clearPlaybackIntent(sessionId)
             player.pause()
         } else {
-            val focusDisposition = beginPlaybackStart(sessionId, "toggle")
-            if (focusDisposition == AudioFocusRequestDisposition.failed) {
+            if (!requestAudioFocusIfNeeded()) {
+                clearPlaybackIntent(sessionId)
                 player.pause()
+                publishSessionState(sessionId)
                 return errorResult("Audio focus was denied.")
             }
+            markPlaybackIntended(sessionId)
             session.applyFadeMultiplier(1f)
-            if (focusDisposition == AudioFocusRequestDisposition.granted) {
-                player.play()
-            }
+            player.play()
         }
         evictPlayersIfNeeded()
         publishSessionState(sessionId)
@@ -911,29 +892,8 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(
             mapOf(
                 "sessions" to sessions.values.map { it.snapshot() },
-                "focusedSessionId" to focusedSessionId,
-                "runtime" to runtimeDiagnostics()
+                "focusedSessionId" to focusedSessionId
             )
-        )
-    }
-
-    fun runtimeDiagnostics(): Map<String, Any?> {
-        return mapOf(
-            "foregroundStarted" to playbackForegroundStarted,
-            "wakeLockHeld" to playbackWakeLock.isHeld(),
-            "audioFocusState" to when {
-                audioFocusHeld -> "held"
-                audioFocusDelayed -> "delayed"
-                else -> "none"
-            },
-            "playbackIntent" to intendedPlaybackSessionIds.toList(),
-            "recoveryState" to pendingRecoverySessionIds.associateWith { sessionId ->
-                (playbackRecoveryActions[sessionId] ?: PlaybackRecoveryAction.reprepare).name
-            },
-            "pendingAudioFocusResume" to pendingAudioFocusResumeSessionIds.toList(),
-            "foregroundStopGracePending" to foregroundStopGracePending,
-            "activeSessionCount" to sessions.size,
-            "focusedSessionId" to focusedSessionId
         )
     }
 
@@ -1007,33 +967,18 @@ class NativePlaybackService : MediaSessionService() {
 
     fun resumeSessionsForTimer(sessionIds: List<String>): List<String> {
         if (sessionIds.isEmpty()) return emptyList()
+        if (!requestAudioFocusIfNeeded()) return emptyList()
         restorePersistedSessionsForTimer(sessionIds)
         notificationsDismissed = false
         playbackSuspended = false
-        val restorableSessionIds = sessionIds.filter(sessions::containsKey)
-        restorableSessionIds.forEach(::markPlaybackIntended)
-        ensurePlaybackForegroundBootstrap("timer_resume")
-        val focusDisposition = requestAudioFocusIfNeeded()
-        if (focusDisposition == AudioFocusRequestDisposition.failed) {
-            restorableSessionIds.forEach(::clearPlaybackIntent)
-            if (!stopPlaybackKeepAliveIfIdle("timer_resume_focus_denied")) {
-                syncForegroundState()
-            }
-            return emptyList()
-        }
         val resumedSessionIds = mutableListOf<String>()
-        restorableSessionIds.forEach { sessionId ->
+        sessionIds.forEach { sessionId ->
+            pendingAudioFocusResumeSessionIds.remove(sessionId)
             val session = sessions[sessionId] ?: return@forEach
+            markPlaybackIntended(sessionId)
             session.applyFadeMultiplier(1f)
             focusSession(sessionId)
-            val player = ensureFocusedPlayer(session)
-            if (focusDisposition == AudioFocusRequestDisposition.granted) {
-                pendingAudioFocusResumeSessionIds.remove(sessionId)
-                player.play()
-            } else {
-                pendingAudioFocusResumeSessionIds.add(sessionId)
-                player.pause()
-            }
+            ensureFocusedPlayer(session).play()
             resumedSessionIds += sessionId
         }
         if (resumedSessionIds.isNotEmpty()) {
@@ -1107,7 +1052,7 @@ class NativePlaybackService : MediaSessionService() {
         val preservePendingTransientFocusResume =
             shouldPreservePendingAudioFocusResume(
                 playWhenReady = playWhenReady,
-                focusLossMayResume = transientAudioFocusLossActive || audioFocusDelayed,
+                focusLossMayResume = transientAudioFocusLossActive,
                 alreadyPending = pendingAudioFocusResumeSessionIds.contains(sessionId)
             )
         if (
@@ -1155,7 +1100,6 @@ class NativePlaybackService : MediaSessionService() {
         publishSessionState(sessionId)
         persistSessionStateNow()
         if (recoverable && intended) {
-            playbackRecoveryActions[sessionId] = playbackRecoveryAction(error.errorCode)
             pendingRecoverySessionIds.add(sessionId)
             ensurePlaybackRecoveryCallbacks()
             scheduleRecoveryExpiry(sessionId)
@@ -1208,31 +1152,18 @@ class NativePlaybackService : MediaSessionService() {
         }
         errorRetryRunnables.remove(sessionId)?.let(mainHandler::removeCallbacks)
         logInfo("player_error_retry_executing sessionId=$sessionId trigger=$trigger")
-        ensurePlaybackForegroundBootstrap("recovery:$trigger")
-        when (requestAudioFocusIfNeeded()) {
-            AudioFocusRequestDisposition.delayed -> {
-                pendingAudioFocusResumeSessionIds.add(sessionId)
-                session.playerOrNull()?.pause()
-                publishSessionState(sessionId)
-                syncForegroundState()
-                return
-            }
-            AudioFocusRequestDisposition.failed -> {
-                session.playerOrNull()?.pause()
-                publishSessionState(sessionId)
-                syncForegroundState()
-                return
-            }
-            AudioFocusRequestDisposition.granted -> Unit
+        if (!requestAudioFocusIfNeeded()) {
+            clearPlaybackRecovery(sessionId)
+            clearPlaybackIntent(sessionId)
+            session.playerOrNull()?.pause()
+            publishSessionState(sessionId)
+            syncForegroundState()
+            return
         }
         try {
             focusSession(sessionId)
             session.applyFadeMultiplier(1f)
-            when (playbackRecoveryActions[sessionId] ?: PlaybackRecoveryAction.reprepare) {
-                PlaybackRecoveryAction.recreatePlayer -> session.recreatePlayerForRecovery()
-                PlaybackRecoveryAction.reprepare -> session.reprepareCurrentMediaItem()
-                PlaybackRecoveryAction.none -> return
-            }
+            session.reprepareCurrentMediaItem()
             ensureFocusedPlayer(session).play()
             publishSessionState(sessionId)
             schedulePersistSessionState()
@@ -1365,13 +1296,10 @@ class NativePlaybackService : MediaSessionService() {
             recoveryExpiryRunnables.remove(sessionId)
             if (!pendingRecoverySessionIds.contains(sessionId)) return@Runnable
             logInfo("playback_recovery_expired sessionId=$sessionId")
-            pendingAudioFocusResumeSessionIds.remove(sessionId)
             clearPlaybackIntent(sessionId)
             publishSessionState(sessionId)
             persistSessionStateNow()
-            if (!stopPlaybackKeepAliveIfIdle("playback_recovery_expired")) {
-                syncForegroundState()
-            }
+            syncForegroundState()
         }
         recoveryExpiryRunnables[sessionId] = runnable
         mainHandler.postDelayed(runnable, delayMs)
@@ -1381,7 +1309,6 @@ class NativePlaybackService : MediaSessionService() {
         pendingRecoverySessionIds.remove(sessionId)
         errorRetryAttempts.remove(sessionId)
         recoveryStartedElapsedRealtimeMs.remove(sessionId)
-        playbackRecoveryActions.remove(sessionId)
         errorRetryRunnables.remove(sessionId)?.let(mainHandler::removeCallbacks)
         recoveryExpiryRunnables.remove(sessionId)?.let(mainHandler::removeCallbacks)
         if (pendingRecoverySessionIds.isEmpty()) {
@@ -1396,7 +1323,6 @@ class NativePlaybackService : MediaSessionService() {
         recoveryExpiryRunnables.clear()
         errorRetryAttempts.clear()
         recoveryStartedElapsedRealtimeMs.clear()
-        playbackRecoveryActions.clear()
         pendingRecoverySessionIds.clear()
         unregisterPlaybackRecoveryCallbacks()
     }
@@ -1533,18 +1459,10 @@ class NativePlaybackService : MediaSessionService() {
     private fun recoverIntendedPlaybackIfStalled(trigger: String) {
         val sessionIds = intendedPlaybackSessionIds.toList()
         if (sessionIds.isEmpty()) return
-        ensurePlaybackForegroundBootstrap("recover_intended:$trigger")
-        when (requestAudioFocusIfNeeded()) {
-            AudioFocusRequestDisposition.delayed -> {
-                pendingAudioFocusResumeSessionIds.addAll(sessionIds.filter(sessions::containsKey))
-                publishAllSessionStates()
-                return
-            }
-            AudioFocusRequestDisposition.failed -> {
-                publishAllSessionStates()
-                return
-            }
-            AudioFocusRequestDisposition.granted -> Unit
+        if (!requestAudioFocusIfNeeded()) {
+            intendedPlaybackSessionIds.removeAll(sessionIds.toSet())
+            publishAllSessionStates()
+            return
         }
 
         var recoveredAny = false
@@ -1746,12 +1664,6 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    private fun ensurePlaybackForegroundBootstrap(trigger: String) {
-        if (playbackForegroundStarted) return
-        logInfo("foreground_bootstrap trigger=$trigger")
-        startBootstrapForeground()
-    }
-
     private fun stopPlaybackForeground(
         reason: String,
         removeNotification: Boolean = true
@@ -1885,12 +1797,11 @@ class NativePlaybackService : MediaSessionService() {
         )
     }
 
-    private fun requestAudioFocusIfNeeded(): AudioFocusRequestDisposition {
-        if (audioFocusHeld) return AudioFocusRequestDisposition.granted
-        if (audioFocusDelayed) return AudioFocusRequestDisposition.delayed
+    private fun requestAudioFocusIfNeeded(): Boolean {
+        if (audioFocusHeld) return true
         val manager = getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: run {
             logInfo("audio_focus_request_skip no_audio_manager")
-            return AudioFocusRequestDisposition.failed
+            return false
         }
         val result = try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -1903,7 +1814,7 @@ class NativePlaybackService : MediaSessionService() {
                             .setContentType(AndroidAudioAttributes.CONTENT_TYPE_MUSIC)
                             .build()
                     )
-                    .setAcceptsDelayedFocusGain(true)
+                    .setAcceptsDelayedFocusGain(false)
                     .setWillPauseWhenDucked(false)
                     .setOnAudioFocusChangeListener(audioFocusChangeListener, mainHandler)
                     .build()
@@ -1922,12 +1833,11 @@ class NativePlaybackService : MediaSessionService() {
             AudioManager.AUDIOFOCUS_REQUEST_FAILED
         }
         audioFocusHeld = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
-        audioFocusDelayed = result == AudioManager.AUDIOFOCUS_REQUEST_DELAYED
         logInfo(
             "audio_focus_request_result result=${audioFocusRequestResultName(result)} " +
-                "held=$audioFocusHeld delayed=$audioFocusDelayed"
+                "held=$audioFocusHeld"
         )
-        return audioFocusRequestDisposition(result)
+        return audioFocusHeld
     }
 
     private fun resumePendingAudioFocusSessionsIfPossible(trigger: String): Boolean {
@@ -1976,44 +1886,7 @@ class NativePlaybackService : MediaSessionService() {
             logWarn("audio_focus_abandon_failed reason=$reason", error = e)
         } finally {
             audioFocusHeld = false
-            audioFocusDelayed = false
         }
-    }
-
-    private fun beginPlaybackStart(
-        sessionId: String,
-        trigger: String
-    ): AudioFocusRequestDisposition {
-        notificationsDismissed = false
-        playbackSuspended = false
-        pendingAudioFocusResumeSessionIds.remove(sessionId)
-        markPlaybackIntended(sessionId)
-        ensurePlaybackForegroundBootstrap(trigger)
-        val disposition = requestAudioFocusIfNeeded()
-        when (disposition) {
-            AudioFocusRequestDisposition.granted -> Unit
-            AudioFocusRequestDisposition.delayed -> pendingAudioFocusResumeSessionIds.add(sessionId)
-            AudioFocusRequestDisposition.failed -> {
-                clearPlaybackIntent(sessionId)
-                sessions[sessionId]?.playerOrNull()?.pause()
-                publishSessionState(sessionId)
-                if (!stopPlaybackKeepAliveIfIdle("$trigger-focus_denied")) {
-                    syncForegroundState()
-                }
-            }
-        }
-        return disposition
-    }
-
-    private fun stopPlaybackKeepAliveIfIdle(reason: String): Boolean {
-        if (hasPlaybackToKeepAlive()) return false
-        cancelForegroundStopGrace()
-        stopForegroundWatchdog()
-        abandonAudioFocus(reason)
-        releaseWakeLock()
-        persistSessionStateNow()
-        stopPlaybackForeground(reason = reason, removeNotification = sessions.isEmpty())
-        return true
     }
 
     private fun acquireWakeLock() {
@@ -2061,14 +1934,6 @@ class NativePlaybackService : MediaSessionService() {
             "isPlaying=${player?.isPlaying ?: target?.lastIsPlaying} " +
             "playbackState=${player?.playbackStateName() ?: target?.lastPlaybackState} " +
             "foregroundStarted=$playbackForegroundStarted " +
-            "wakeLockHeld=${playbackWakeLock.isHeld()} " +
-            "audioFocus=${when {
-                audioFocusHeld -> "held"
-                audioFocusDelayed -> "delayed"
-                else -> "none"
-            }} " +
-            "playbackIntent=${target?.sessionId?.let(intendedPlaybackSessionIds::contains) ?: false} " +
-            "recovery=${target?.sessionId?.let(pendingRecoverySessionIds::contains) ?: false} " +
             "activePlayback=${hasActivePlayback()} " +
             "keepAlivePlayback=${hasPlaybackToKeepAlive()}"
     }
@@ -2216,44 +2081,6 @@ internal fun shouldKeepAliveForIntendedPlayback(
         (!hasPlayerError || hasRecoverablePlaybackError)
 }
 
-internal fun shouldBootstrapPlaybackService(
-    requireForegroundBootstrap: Boolean,
-    playbackForegroundStarted: Boolean
-): Boolean = requireForegroundBootstrap && !playbackForegroundStarted
-
-internal enum class AudioFocusRequestDisposition {
-    granted,
-    delayed,
-    failed
-}
-
-internal fun audioFocusRequestDisposition(result: Int): AudioFocusRequestDisposition {
-    return when (result) {
-        AudioManager.AUDIOFOCUS_REQUEST_GRANTED -> AudioFocusRequestDisposition.granted
-        AudioManager.AUDIOFOCUS_REQUEST_DELAYED -> AudioFocusRequestDisposition.delayed
-        else -> AudioFocusRequestDisposition.failed
-    }
-}
-
-internal enum class PlaybackRecoveryAction {
-    none,
-    reprepare,
-    recreatePlayer
-}
-
-internal fun playbackRecoveryAction(errorCode: Int): PlaybackRecoveryAction {
-    return when (errorCode) {
-        PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
-        PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
-        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> PlaybackRecoveryAction.recreatePlayer
-        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
-        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
-        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> PlaybackRecoveryAction.reprepare
-        else -> PlaybackRecoveryAction.none
-    }
-}
-
 internal fun shouldRecoverIntendedPlayback(
     playbackState: Int,
     hasPlayerError: Boolean,
@@ -2277,5 +2104,14 @@ internal fun playbackRecoveryDelayMs(
 }
 
 internal fun isRecoverablePlaybackErrorCode(errorCode: Int): Boolean {
-    return playbackRecoveryAction(errorCode) != PlaybackRecoveryAction.none
+    return when (errorCode) {
+        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED -> true
+        else -> false
+    }
 }

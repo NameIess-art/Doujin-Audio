@@ -139,17 +139,6 @@ void main() {
               'lastExitReason': 10,
               'lastExitDescription': 'single-cleaner',
               'lastExitTimestampMs': 123,
-              'recentExits': <Object?>[
-                <String, Object?>{
-                  'reason': 10,
-                  'reasonName': 'user_requested',
-                  'description': 'single-cleaner',
-                },
-              ],
-              'nativePlayback': <String, Object?>{
-                'foregroundStarted': true,
-                'wakeLockHeld': true,
-              },
             };
           });
       final service = PowerPlatformService(
@@ -163,8 +152,6 @@ void main() {
       expect(diagnostics?.batteryOptimizationExempt, isTrue);
       expect(diagnostics?.cleanerForceStopDetected, isTrue);
       expect(diagnostics?.lastExitTimestampMs, 123);
-      expect(diagnostics?.recentExits.single['reasonName'], 'user_requested');
-      expect(diagnostics?.nativePlayback?['foregroundStarted'], isTrue);
     });
   });
 

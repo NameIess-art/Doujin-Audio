@@ -263,12 +263,13 @@ class _SessionListCard extends ConsumerWidget {
     final isPlaying = cardState.isPlaying;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isAsmrOne = track?.remoteMetadataKind == 'asmr.one';
-    final detailDuration = track == null || isAsmrOne
+    final isAsmrOne = currentTrack?.remoteMetadataKind == 'asmr.one';
+    final detailDuration =
+        currentTrack == null || isAsmrOne || !currentTrack.isSingle
         ? null
         : ref.watch(
             libraryDetailForTargetProvider(
-              provider.audioDetailTargetForTrack(track!),
+              provider.audioDetailTargetForTrack(currentTrack),
             ).select((state) => state.detail?.duration),
           );
     final tokens = AppDesignTokens.of(context);

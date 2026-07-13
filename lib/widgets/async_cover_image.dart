@@ -160,6 +160,11 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
     bool resetRetry = true,
   }) {
     final token = ++_token;
+    final preserveResolvedPath =
+        keepState &&
+        widget.retryFutureBuilder != null &&
+        _resolvedPath != null &&
+        _resolvedPath!.isNotEmpty;
     _retryTimer?.cancel();
     if (resetRetry) {
       _retryAttempt = 0;
@@ -184,8 +189,11 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
             allowDuringInteraction: true,
             commit: () {
               if (!mounted || token != _token) return;
+              final hasResolvedPath = path != null && path.isNotEmpty;
               setState(() {
-                _resolvedPath = path;
+                if (hasResolvedPath || !preserveResolvedPath) {
+                  _resolvedPath = path;
+                }
                 _isResolved = true;
               });
               if (path == null || path.isEmpty) {
@@ -205,7 +213,7 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
             commit: () {
               if (!mounted || token != _token) return;
               setState(() {
-                _resolvedPath = null;
+                if (!preserveResolvedPath) _resolvedPath = null;
                 _isResolved = true;
               });
               _scheduleRetry(token);
@@ -216,9 +224,13 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
 
   void _scheduleRetry(int token) {
     final retryFutureBuilder = widget.retryFutureBuilder;
-    if (retryFutureBuilder == null ||
-        _retryAttempt >= widget.maxRetryAttempts ||
-        _retryTimer?.isActive == true) {
+    if (retryFutureBuilder == null || _retryTimer?.isActive == true) {
+      return;
+    }
+    if (_retryAttempt >= widget.maxRetryAttempts) {
+      if (_resolvedPath != null && _resolvedPath!.isNotEmpty) {
+        setState(() => _resolvedPath = null);
+      }
       return;
     }
     final nextAttempt = _retryAttempt + 1;

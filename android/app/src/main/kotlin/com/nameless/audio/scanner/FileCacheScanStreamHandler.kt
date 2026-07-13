@@ -204,8 +204,18 @@ internal class FileCacheScanStreamHandler(
         event: HashMap<String, Any?>
     ) {
         if (!canPublish(taskId, generationId, cancelled)) return
+        val scheduledSink = sink ?: return
         activity.runOnUiThread {
-            if (canPublish(taskId, generationId, cancelled)) sink?.success(event)
+            if (shouldDeliverQueuedFolderScanEvent(
+                    closed = closed.get(),
+                    cancelled = cancelled.get(),
+                    listenerGenerationId = listenerGenerationId,
+                    eventGenerationId = generationId,
+                    listenerStillCurrent = sink === scheduledSink
+                )
+            ) {
+                scheduledSink.success(event)
+            }
         }
     }
 
@@ -228,3 +238,14 @@ internal class FileCacheScanStreamHandler(
         }
     }
 }
+
+internal fun shouldDeliverQueuedFolderScanEvent(
+    closed: Boolean,
+    cancelled: Boolean,
+    listenerGenerationId: String?,
+    eventGenerationId: String,
+    listenerStillCurrent: Boolean
+): Boolean = !closed &&
+    !cancelled &&
+    listenerGenerationId == eventGenerationId &&
+    listenerStillCurrent

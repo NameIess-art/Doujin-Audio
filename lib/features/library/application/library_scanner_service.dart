@@ -1152,8 +1152,11 @@ class LibraryScannerService {
           const <MusicTrack>[],
         );
       }
-      await provider.endLibraryBatch();
-      provider.finishScan(generation);
+      try {
+        await provider.endLibraryBatch();
+      } finally {
+        provider.finishScan(generation);
+      }
       if (completed) {
         unawaited(_prefillRjDetailForFolder(provider, normalizedFolderPath));
       }
@@ -1293,8 +1296,11 @@ class LibraryScannerService {
           },
         );
       }
-      await provider.endLibraryBatch();
-      provider.finishScan(generation);
+      try {
+        await provider.endLibraryBatch();
+      } finally {
+        provider.finishScan(generation);
+      }
       if (completed) {
         for (final childFolder in importTargets) {
           if (!provider.isLibraryPathExcluded(
@@ -1361,8 +1367,11 @@ class LibraryScannerService {
         added = provider.library.length - beforeCount;
       }
     } finally {
-      await provider.endLibraryBatch();
-      provider.finishScan(generation);
+      try {
+        await provider.endLibraryBatch();
+      } finally {
+        provider.finishScan(generation);
+      }
     }
     if (fileExists) {
       return const LibraryScanOutcome(

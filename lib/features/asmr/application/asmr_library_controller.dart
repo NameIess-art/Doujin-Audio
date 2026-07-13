@@ -1090,11 +1090,22 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrTrackFile target,
   ) async {
     final tracks = await loadPlayableTracks(work);
-    final targetTrackPath = target.toMusicTrack().path;
     final targetIndex = tracks.indexWhere(
-      (track) => track.path == targetTrackPath,
+      (track) =>
+          track.remoteMetadata?['trackRelativePath'] == target.relativePath,
     );
-    if (targetIndex <= 0) return tracks;
+    if (targetIndex < 0) {
+      final targetTrackPath = target.toMusicTrack().path;
+      final fallbackIndex = tracks.indexWhere(
+        (track) => track.path == targetTrackPath,
+      );
+      if (fallbackIndex <= 0) return tracks;
+      return <MusicTrack>[
+        ...tracks.skip(fallbackIndex),
+        ...tracks.take(fallbackIndex),
+      ];
+    }
+    if (targetIndex == 0) return tracks;
     return <MusicTrack>[
       ...tracks.skip(targetIndex),
       ...tracks.take(targetIndex),

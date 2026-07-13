@@ -89,9 +89,21 @@ void registerAsmrControllerStateTests({
 
   test('ASMR single-track playback keeps the complete work tree', () async {
     await resetPrefs();
-    final first = _trackFile('first.mp3', 'root/part-a/first.mp3');
-    final target = _trackFile('target.mp3', 'root/part-b/target.mp3');
-    final last = _trackFile('last.mp3', 'root/part-c/last.mp3');
+    final first = _trackFile(
+      'first.mp3',
+      'root/part-a/first.mp3',
+      officialMedia: true,
+    );
+    final target = _trackFile(
+      'target.mp3',
+      'root/part-b/target.mp3',
+      officialMedia: true,
+    );
+    final last = _trackFile(
+      'last.mp3',
+      'root/part-c/last.mp3',
+      officialMedia: true,
+    );
     final api = _FakeAsmrApiService(
       trackTree: <AsmrTrackFile>[
         _trackFolder(

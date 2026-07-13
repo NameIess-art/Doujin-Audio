@@ -710,34 +710,105 @@ void main() {
   });
 
   test(
-    'folder cover candidates include audio covers and video frames',
+    'playlist tracks use the same preferred cover as their work card',
     () async {
       final library = LibraryService();
-      final audio = _track(path: '/work/audio.flac', groupKey: '/work');
-      final video = _track(
-        path: '/work/video.mp4',
-        groupKey: '/work',
-        isVideo: true,
-      );
+      final first = _track(path: '/work/01.flac', groupKey: '/work');
+      final second = _track(path: '/work/02.flac', groupKey: '/work');
       library
-        ..library.addAll(<MusicTrack>[audio, video])
-        ..tracksByGroup['/work'] = <MusicTrack>[audio, video];
+        ..library.addAll(<MusicTrack>[first, second])
+        ..tracksByGroup['/work'] = <MusicTrack>[first, second];
       final cache = CoverArtworkCacheService(
         libraryService: library,
         fileCacheGateway: _FakeFileCachePlatformGateway(
           coversByPath: const <String, String>{
-            '/work/audio.flac': '/cache/audio.image',
-          },
-          videoFramesByPath: const <String, String>{
-            '/work/video.mp4': '/cache/video.image',
+            '/work/01.flac': '/cache/work.image',
+            '/work/02.flac': '/cache/second.image',
           },
         ),
       );
 
-      expect(await cache.discoverCoverCandidatesInFolder('/work'), <String>[
-        '/cache/audio.image',
-        '/cache/video.image',
+      expect(await cache.futureForTrack(second), '/cache/second.image');
+      expect(await cache.futureForFolder('/work'), '/cache/work.image');
+      expect(await cache.futureForPlaybackTrack(second), '/cache/work.image');
+      expect(cache.resolvedForPlaybackTrack(second), '/cache/work.image');
+    },
+  );
+
+  test(
+    'folder detail candidates include every image audio cover and video frame',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_detail_candidates_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final nested = Directory(
+        '${directory.path}${Platform.pathSeparator}nested',
+      );
+      await nested.create();
+      final firstImage =
+          '${directory.path}${Platform.pathSeparator}01-cover.jpg';
+      final secondImage = '${nested.path}${Platform.pathSeparator}02-cover.png';
+      await File(firstImage).writeAsBytes(<int>[1]);
+      await File(secondImage).writeAsBytes(<int>[2]);
+
+      final library = LibraryService();
+      final audioPath = '${directory.path}${Platform.pathSeparator}audio.flac';
+      final videoPath = '${nested.path}${Platform.pathSeparator}video.mp4';
+      final audio = _track(path: audioPath, groupKey: directory.path);
+      final video = _track(
+        path: videoPath,
+        groupKey: nested.path,
+        isVideo: true,
+      );
+      library.library.addAll(<MusicTrack>[audio, video]);
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: _FakeFileCachePlatformGateway(
+          coversByPath: <String, String>{audioPath: '/cache/audio.image'},
+          videoFramesByPath: <String, String>{videoPath: '/cache/video.image'},
+        ),
+      );
+
+      expect(
+        await cache.discoverCoverCandidatesInFolder(directory.path),
+        <String>[
+          firstImage,
+          secondImage,
+          '/cache/audio.image',
+          '/cache/video.image',
+        ],
+      );
+    },
+  );
+
+  test(
+    'folder detail audio candidates do not repeat the content folder image',
+    () async {
+      const root =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic::WorkA';
+      final tracks = <MusicTrack>[
+        _track(path: '$root/01.mp3', groupKey: root),
+        _track(path: '$root/02.mp3', groupKey: root),
+      ];
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: <String, String>{
+          tracks.first.path: '/cache/embedded-01.image',
+          tracks.last.path: '/cache/embedded-02.image',
+        },
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService()..library.addAll(tracks),
+        fileCacheGateway: gateway,
+      );
+
+      expect(await cache.discoverCoverCandidatesInFolder(root), <String>[
+        '/cache/embedded-01.image',
+        '/cache/embedded-02.image',
       ]);
+      expect(gateway.resolveTrackCoverGroupKeys, <String?>[null, null]);
     },
   );
 
@@ -929,6 +1000,7 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
   final Map<String, String> coversByPath;
   final Map<String, String> videoFramesByPath;
   final List<String> resolveTrackCoverPaths = <String>[];
+  final List<String?> resolveTrackCoverGroupKeys = <String?>[];
 
   @override
   Future<String?> resolveTrackCover({
@@ -937,8 +1009,16 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
     String? rootFolder,
   }) async {
     resolveTrackCoverPaths.add(path);
+    resolveTrackCoverGroupKeys.add(groupKey);
     return coversByPath[path];
   }
+
+  @override
+  Future<List<String>> discoverRootImages({
+    required String path,
+    String? groupKey,
+    String? rootFolder,
+  }) async => const <String>[];
 
   @override
   Future<String?> resolveVideoFrame({required String path, int? modifiedAtMs}) {

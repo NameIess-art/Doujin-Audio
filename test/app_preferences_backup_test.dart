@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/app_preferences.dart';
-import 'package:nameless_audio/services/asmr_auth_service.dart';
+import 'package:nameless_audio/features/settings/application/app_preferences.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_auth_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

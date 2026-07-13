@@ -5,21 +5,21 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:nameless_audio/providers/audio_provider.dart';
-import 'package:nameless_audio/providers/audio_provider_library_catalog.dart';
-import 'package:nameless_audio/services/app_database.dart';
-import 'package:nameless_audio/services/asmr_playback_cache_service.dart';
-import 'package:nameless_audio/services/audio_database_repository.dart';
-import 'package:nameless_audio/services/audio_detail_repository.dart';
-import 'package:nameless_audio/services/audio_state_services.dart';
-import 'package:nameless_audio/services/cover_artwork_cache_service.dart';
-import 'package:nameless_audio/services/library_scanner_service.dart';
-import 'package:nameless_audio/services/native_playback_bridge.dart';
-import 'package:nameless_audio/services/notifications_platform_service.dart';
-import 'package:nameless_audio/services/path_matcher.dart';
-import 'package:nameless_audio/services/playback_notification_service.dart';
-import 'package:nameless_audio/services/platform_channels.dart';
-import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'package:nameless_audio/app/state/audio_provider_library_catalog.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_playback_cache_service.dart';
+import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
+import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
+import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
+import 'package:nameless_audio/core/platform/notifications_platform_service.dart';
+import 'package:nameless_audio/core/media/path_matcher.dart';
+import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
+import 'package:nameless_audio/core/platform/platform_channels.dart';
+import 'package:nameless_audio/features/player/application/ui_interaction_coordinator.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -2288,9 +2288,9 @@ void main() {
           .setMockMethodCallHandler(fileCacheChannel, (call) async {
             calls.add(call);
             if (call.method == FileCacheMethod.resolveVideoFrame) {
-              return framePath;
+              return <String, Object?>{'ok': true, 'value': framePath};
             }
-            return null;
+            return <String, Object?>{'ok': true, 'value': null};
           });
 
       const videoTrack = MusicTrack(
@@ -2337,7 +2337,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(fileCacheChannel, (call) async {
             calls.add(call);
-            return null;
+            return <String, Object?>{'ok': true, 'value': null};
           });
 
       await provider.coverPathFutureForTrack(provider.trackByPath(trackPath));
@@ -2364,7 +2364,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(fileCacheChannel, (call) async {
             calls.add(call);
-            return null;
+            return <String, Object?>{'ok': true, 'value': const <String>[]};
           });
 
       await provider.coverPathFutureForFolder(workScope);
@@ -3768,18 +3768,21 @@ void main() {
             }
             final arguments = call.arguments as Map<Object?, Object?>;
             if (arguments['folder'] != restoredFolder) {
-              return const <Object?>[];
+              return <String, Object?>{'ok': true, 'value': const <Object?>[]};
             }
-            return <Object?>[
-              <Object?, Object?>{
-                'path': trackPath,
-                'groupKey': restoredFolder,
-                'groupTitle': 'WorkA',
-                'groupSubtitle': 'WorkA',
-                'title': '01',
-                'isVideo': true,
-              },
-            ];
+            return <String, Object?>{
+              'ok': true,
+              'value': <Object?>[
+                <Object?, Object?>{
+                  'path': trackPath,
+                  'groupKey': restoredFolder,
+                  'groupTitle': 'WorkA',
+                  'groupSubtitle': 'WorkA',
+                  'title': '01',
+                  'isVideo': true,
+                },
+              ],
+            };
           });
 
       provider.setLibraryFolderExcluded(libraryRoot, restoredFolder, false);

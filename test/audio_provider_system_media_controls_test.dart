@@ -1,11 +1,11 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/providers/audio_provider.dart';
-import 'package:nameless_audio/services/app_database.dart';
-import 'package:nameless_audio/services/audio_database_repository.dart';
-import 'package:nameless_audio/services/playback_notification_service.dart';
-import 'package:nameless_audio/services/platform_channels.dart';
-import 'package:nameless_audio/services/system_media_controls_service.dart';
+import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
+import 'package:nameless_audio/core/platform/platform_channels.dart';
+import 'package:nameless_audio/features/player/application/system_media_controls_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 

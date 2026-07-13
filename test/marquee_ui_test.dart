@@ -2,13 +2,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/i18n/app_language_provider.dart';
-import 'package:nameless_audio/i18n/app_language_ja.dart';
-import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
-import 'package:nameless_audio/widgets/library_like_cards.dart';
-import 'package:nameless_audio/widgets/marquee_text.dart';
-import 'package:nameless_audio/widgets/scroll_activity_gate.dart';
-import 'package:nameless_audio/widgets/top_page_header.dart';
+import 'package:nameless_audio/app/localization/app_language_provider.dart';
+import 'package:nameless_audio/app/localization/app_language_ja.dart';
+import 'package:nameless_audio/features/player/application/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/core/widgets/library_like_cards.dart';
+import 'package:nameless_audio/core/widgets/marquee_text.dart';
+import 'package:nameless_audio/core/widgets/scroll_activity_gate.dart';
+import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:provider/provider.dart';
 
 Widget _buildApp(Widget child) {

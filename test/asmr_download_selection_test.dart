@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:nameless_audio/models/asmr_models.dart';
-import 'package:nameless_audio/services/asmr_download_selection.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_download_selection.dart';
 
 void main() {
   AsmrTrackFile folder(

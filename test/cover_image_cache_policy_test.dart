@@ -1,7 +1,7 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/audio_state_services.dart';
-import 'package:nameless_audio/services/cover_image_cache_policy.dart';
+import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/library/application/cover_image_cache_policy.dart';
 
 void main() {
   test('cover image cache budgets follow selected resolution', () {

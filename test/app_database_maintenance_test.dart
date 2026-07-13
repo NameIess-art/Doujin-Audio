@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/services/app_database.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {

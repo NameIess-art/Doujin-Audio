@@ -2,11 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/audio_detail.dart';
-import 'package:nameless_audio/services/app_database.dart';
-import 'package:nameless_audio/services/audio_database_repository.dart';
-import 'package:nameless_audio/services/audio_detail_repository.dart';
-import 'package:nameless_audio/services/file_cache_platform_gateway.dart';
+import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
+import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {

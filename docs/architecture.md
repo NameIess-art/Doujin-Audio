@@ -20,6 +20,8 @@ Current platform responsibility boundaries include:
 - `LibraryScanDataSource`: permission requests, file/folder selection, local file-system enumeration, and native local/SAF scanning.
 - `LibraryScanRules`: pure duplicate, nested-directory, path-overlap, and standalone-folder promotion rules.
 - `AudioProviderLibraryCatalog`: the compatibility adapter from the catalog ports to the existing `AudioProvider` facade; it must not own a second state copy.
+- `AsmrRemoteCatalogService`: loads category/search pages, recommendations, details, and track trees without owning controller cache or UI state.
+- `AsmrAccountSyncService`: owns session recovery, local favorite/history transactions, outbox draining, and remote merge rules. Auth epoch changes cancel stale writes.
 - `AsmrPlaybackCoordinator`: resolves an ASMR work or track queue and launches it through `PlaybackSessionLauncher`, without coupling `AsmrLibraryController` to `AudioProvider`.
 - `AsmrPreferencesStore`: instance-scoped ASMR persistence backed by an injected `AppDatabase`.
 - `LibraryEntryEditorService`: local/SAF disk snapshots used by library editing; presentation only applies the typed snapshot to the existing facade.
@@ -29,8 +31,10 @@ Current platform responsibility boundaries include:
 - `FileCacheMediaScanOrchestrator`: media-scan strategy and fallback ordering.
 - `MediaNameMetadata`: display-name normalization and media-type rules.
 - `ApplicationCachePolicy`: application-cache preferences, accounting, and eviction.
-- `NativePlaybackService`: MediaSession lifecycle, playback commands, session recovery coordination, and foreground-service decisions.
+- `FileCacheOperations`: thin compatibility facade delegating to scanner, storage, metadata, subtitle, and cover components.
+- `NativePlaybackService`: MediaSession lifecycle, playback commands, session coordination, and foreground-service decisions.
 - `NativeAudioFocusController`: Android AudioFocus request/abandon mechanics and focus-held state.
+- `NativePlaybackRecoveryController`: intended playback, retry/expiry scheduling, network and screen triggers, and stalled-session recovery through a testable host/environment boundary.
 - `NativePlaybackSessionRestorer`: persisted native-session reconstruction.
 
 Screens, providers, repositories, and feature services must use
@@ -43,13 +47,24 @@ delivery, and notification intent delivery. Power, update, and subtitle-overlay
 method handling live in their dedicated handlers; new platform behavior should
 extend the matching handler instead of growing `MainActivity`.
 
-New core business rules should prefer pure Dart helpers under `lib/services` when they can be tested without Flutter widgets, method channels, or Android services. Current extracted helpers include:
+Production Dart ownership is reflected directly by the directory tree:
+
+- `lib/app`: bootstrap-facing presentation, localization, theme, the compatibility `AudioProvider` facade, and Riverpod projections.
+- `lib/core`: errors, logging, media primitives, persistence, platform gateways, and shared widgets.
+- `lib/features/<feature>/{domain,application,presentation}`: library, player, ASMR, settings, data support, and video conversion code.
+
+New core business rules should prefer a pure helper in the owning feature or
+`core` when they can be tested without Flutter widgets, method channels, or
+Android services. Current extracted helpers include:
 
 - `LibraryOrganizer`: builds library folder trees, groups tracks by watched folders, sorts tracks, and handles duplicate or `content://` paths.
 - `PlaybackQueueResolver`: resolves next and previous track paths for sequential, folder-scoped, and random playback modes.
 - `TimerRuntimeCalculator`: calculates timer runtime state, countdown ticks, trigger waiting, and auto-resume readiness.
 
-Shared lightweight models live under `lib/models`. Tests for these pure helpers live in `test/*_test.dart` and should be expanded before changing behavior in the corresponding provider methods.
+Shared media models live under `lib/core/media`; feature-specific models remain
+under the owning feature's `domain` directory. Tests for pure helpers live in
+`test/*_test.dart` and should be expanded before changing behavior in the
+corresponding application service.
 
 Large screen and provider files are split with same-library `part` files when the extracted code still depends on private state. This keeps public APIs unchanged while separating page state, UI widgets, notification helpers, playback helpers, and persistence helpers into smaller maintenance units.
 
@@ -66,6 +81,11 @@ schema/migration, maintenance, and shared row codecs are separated into
 `app_database_maintenance.dart`, and `app_database_row_codecs.dart` within the
 same Dart library. This preserves private helper access, transactions, schema
 version, and backup compatibility.
+
+Android package ownership mirrors the native boundary: `channel`, `scanner`,
+`storage`, `metadata`, `subtitle`, `update`, `common`, and
+`player/{service,session,notification,recovery,effects,common}`. The root
+`com.nameless.audio` package retains only `MainActivity`.
 
 See [`platform-channels.md`](platform-channels.md) and
 [`library-scanning.md`](library-scanning.md) for the boundary contracts and

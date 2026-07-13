@@ -1,5 +1,8 @@
 package com.nameless.audio
 
+import com.nameless.audio.player.notification.*
+import com.nameless.audio.player.service.*
+
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

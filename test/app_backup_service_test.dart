@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/app_backup_service.dart';
-import 'package:nameless_audio/services/app_database.dart';
-import 'package:nameless_audio/services/app_update_service.dart';
+import 'package:nameless_audio/features/data_support/application/app_backup_service.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 
 void main() {
   late Directory tempDirectory;

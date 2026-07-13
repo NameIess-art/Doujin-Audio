@@ -1,5 +1,12 @@
 package com.nameless.audio
 
+import com.nameless.audio.channel.*
+import com.nameless.audio.player.common.*
+import com.nameless.audio.scanner.*
+import com.nameless.audio.storage.*
+import com.nameless.audio.subtitle.*
+import com.nameless.audio.update.*
+
 import android.content.Intent
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.android.RenderMode
@@ -60,7 +67,7 @@ class MainActivity : FlutterFragmentActivity() {
         this.fileCacheTaskExecutor = fileCacheTaskExecutor
         val fileExportCoordinator = FileExportCoordinator(
             this,
-            fileCacheOperations,
+            fileCacheOperations.documentStorage,
             fileCacheTaskExecutor
         )
         this.fileExportCoordinator = fileExportCoordinator

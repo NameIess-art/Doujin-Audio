@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/file_cache_platform_gateway.dart';
-import 'package:nameless_audio/services/platform_channels.dart';
+import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:nameless_audio/core/platform/platform_channels.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -11,6 +11,11 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   late FileCachePlatformGateway gateway;
   late List<MethodCall> calls;
+
+  Map<String, Object?> success(Object? value) => <String, Object?>{
+    'ok': true,
+    'value': value,
+  };
 
   setUp(() {
     calls = <MethodCall>[];
@@ -24,7 +29,7 @@ void main() {
   test('typed document operations preserve the platform payload', () async {
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
-      return true;
+      return success(true);
     });
 
     expect(
@@ -51,7 +56,7 @@ void main() {
     () async {
       messenger.setMockMethodCallHandler(channel, (call) async {
         calls.add(call);
-        return calls.length == 1 ? 'content://exported' : null;
+        return success(calls.length == 1 ? 'content://exported' : null);
       });
 
       expect(
@@ -103,7 +108,7 @@ void main() {
   test('typed media helpers parse native values', () async {
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
-      return switch (call.method) {
+      return success(switch (call.method) {
         FileCacheMethod.discoverRootImages => <String>[
           ' content://cover-a ',
           '',
@@ -116,7 +121,7 @@ void main() {
         },
         FileCacheMethod.resolveMediaDuration => 123456,
         _ => null,
-      };
+      });
     });
 
     expect(
@@ -139,11 +144,11 @@ void main() {
   test('typed backup and byte-write helpers preserve values', () async {
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
-      return switch (call.method) {
+      return success(switch (call.method) {
         FileCacheMethod.writeAudioDetailBackup => true,
         FileCacheMethod.writeFileBytesToFolder => 'content://saved',
         _ => null,
-      };
+      });
     });
 
     expect(
@@ -167,6 +172,32 @@ void main() {
       FileCacheMethod.writeFileBytesToFolder,
     ]);
   });
+
+  test(
+    'malformed and failed optional envelopes keep technical errors out of values',
+    () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        return switch (call.method) {
+          FileCacheMethod.resolveTrackCover => <String, Object?>{
+            'value': 'legacy-without-ok',
+          },
+          FileCacheMethod.resolveTrackSubtitle => <String, Object?>{
+            'ok': false,
+            'errorCode': 'subtitle_resolve_failed',
+            'error': 'native parser failed',
+            'details': <String, Object?>{'exception': 'IOException'},
+          },
+          _ => success(null),
+        };
+      });
+
+      expect(await gateway.resolveTrackCover(path: 'content://track'), isNull);
+      expect(
+        await gateway.resolveTrackSubtitle(path: 'content://track'),
+        isNull,
+      );
+    },
+  );
 
   test(
     'non-Android scan and listing report unsupported without calls',

@@ -1,5 +1,7 @@
 package com.nameless.audio
 
+import com.nameless.audio.channel.*
+
 import java.util.Collections
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit

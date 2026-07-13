@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/screens/main_screen.dart';
+import 'package:nameless_audio/app/presentation/main_screen.dart';
 
 void main() {
   test(

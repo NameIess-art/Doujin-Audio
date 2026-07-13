@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/native_result.dart';
-import 'package:nameless_audio/services/platform_channels.dart';
+import 'package:nameless_audio/core/errors/native_result.dart';
+import 'package:nameless_audio/core/platform/platform_channels.dart';
 
 void main() {
   test('platform channel names remain stable and unique', () {

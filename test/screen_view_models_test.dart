@@ -1,13 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:nameless_audio/models/audio_effects.dart';
-import 'package:nameless_audio/models/library_node.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/models/playback_mode.dart';
-import 'package:nameless_audio/models/playback_queue.dart';
-import 'package:nameless_audio/models/playback_session.dart';
-import 'package:nameless_audio/screens/screen_view_models.dart';
-import 'package:nameless_audio/services/audio_state_services.dart';
+import 'package:nameless_audio/features/player/domain/audio_effects.dart';
+import 'package:nameless_audio/features/library/domain/library_node.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/player/domain/playback_mode.dart';
+import 'package:nameless_audio/features/player/domain/playback_queue.dart';
+import 'package:nameless_audio/features/player/domain/playback_session.dart';
+import 'package:nameless_audio/app/presentation/screen_view_models.dart';
+import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 
 void main() {
   MusicTrack track(String name, String path) {

@@ -1,8 +1,10 @@
 // ignore_for_file: prefer_const_literals_to_create_immutables, prefer_const_constructors
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/asmr_models.dart';
-import 'package:nameless_audio/services/asmr_library_controller.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
 
 void main() {
   test('ASMR tracks persist ordered deduplicated playback candidates', () {
@@ -53,7 +55,9 @@ void main() {
         voiceActors: <String>[],
         tags: <String>[],
       );
-      final controller = AsmrLibraryController();
+      final controller = AsmrLibraryController(
+        preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+      );
 
       for (final extension in <String>['.vtt', '.srt', '.ass', '.ssa']) {
         final folder = AsmrTrackFile(
@@ -136,7 +140,9 @@ void main() {
       voiceActors: <String>[],
       tags: <String>[],
     );
-    final controller = AsmrLibraryController();
+    final controller = AsmrLibraryController(
+      preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+    );
 
     for (final extension in <String>['.vtt', '.srt', '.ass', '.ssa']) {
       final folder = AsmrTrackFile(

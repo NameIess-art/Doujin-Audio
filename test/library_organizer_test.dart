@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/library_node.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/services/library_organizer.dart';
+import 'package:nameless_audio/features/library/domain/library_node.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/library/application/library_organizer.dart';
 
 void main() {
   const organizer = LibraryOrganizer();

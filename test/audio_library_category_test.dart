@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/audio_library_category.dart';
+import 'package:nameless_audio/features/library/domain/audio_library_category.dart';
 
 void main() {
   test('splitTerms handles Chinese and English commas with dedupe', () {

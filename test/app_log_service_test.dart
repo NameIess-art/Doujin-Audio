@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/app_log_service.dart';
+import 'package:nameless_audio/core/logging/app_log_service.dart';
 
 void main() {
   test('sanitizes credentials and authorization headers', () {

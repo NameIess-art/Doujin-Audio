@@ -1,5 +1,7 @@
 package com.nameless.audio
 
+import com.nameless.audio.scanner.*
+
 import java.nio.file.Files
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -85,12 +87,12 @@ class FileCacheMediaScanOrchestratorTest {
     ): FolderScanObserver = object : FolderScanObserver {
         override fun isCancelled(): Boolean = isCancelled()
 
-        override fun onTrack(track: FileCacheOperations.ScannedTrack) {
+        override fun onTrack(track: ScannedTrack) {
             observed.add(track.path)
         }
     }
 
-    private fun track(path: String) = FileCacheOperations.ScannedTrack(
+    private fun track(path: String) = ScannedTrack(
         path = path,
         title = path.substringAfterLast('/'),
         groupKey = path.substringBeforeLast('/'),

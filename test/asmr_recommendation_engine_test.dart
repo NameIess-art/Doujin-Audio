@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/asmr_models.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/services/asmr_recommendation_engine.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_recommendation_engine.dart';
 
 void main() {
   const engine = AsmrRecommendationEngine();

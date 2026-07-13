@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/library_node.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/services/library_refresh_chunk_planner.dart';
-import 'package:nameless_audio/services/library_snapshot_cache_service.dart';
+import 'package:nameless_audio/features/library/domain/library_node.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/library/application/library_refresh_chunk_planner.dart';
+import 'package:nameless_audio/features/library/application/library_snapshot_cache_service.dart';
 
 void main() {
   MusicTrack track(int index) => MusicTrack(

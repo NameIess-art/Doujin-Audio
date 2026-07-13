@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/video_conversion_plan.dart';
-import 'package:nameless_audio/services/video_conversion_runner.dart';
+import 'package:nameless_audio/features/video_converter/application/video_conversion_plan.dart';
+import 'package:nameless_audio/features/video_converter/application/video_conversion_runner.dart';
 
 void main() {
   const plan = VideoConversionPlan(

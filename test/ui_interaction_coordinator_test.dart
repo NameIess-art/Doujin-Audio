@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/features/player/application/ui_interaction_coordinator.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

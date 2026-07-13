@@ -47,9 +47,11 @@
         </activity>
         
         <!-- SUBTITLE OVERLAY SERVICE -->
-        <service android:name=".SubtitleOverlayService" android:exported="false" />
         <service
-            android:name=".NativePlaybackService"
+            android:name=".subtitle.SubtitleOverlayService"
+            android:exported="false" />
+        <service
+            android:name=".player.service.NativePlaybackService"
             android:exported="true"
             android:foregroundServiceType="mediaPlayback"
             android:stopWithTask="false">
@@ -59,13 +61,13 @@
             </intent-filter>
         </service>
         <receiver
-            android:name=".UnifiedPlaybackActionReceiver"
+            android:name=".player.notification.UnifiedPlaybackActionReceiver"
             android:exported="false" />
         <receiver
-            android:name=".PlaybackTimerAlarmReceiver"
+            android:name=".player.notification.PlaybackTimerAlarmReceiver"
             android:exported="false" />
         <receiver
-            android:name=".PlaybackTimerStateRestoreReceiver"
+            android:name=".player.notification.PlaybackTimerStateRestoreReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>

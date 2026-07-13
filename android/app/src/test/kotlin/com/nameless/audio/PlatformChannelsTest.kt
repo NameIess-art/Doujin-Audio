@@ -1,5 +1,7 @@
 package com.nameless.audio
 
+import com.nameless.audio.channel.*
+
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

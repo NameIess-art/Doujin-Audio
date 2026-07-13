@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/audio_detail.dart';
-import 'package:nameless_audio/services/audio_detail_cache_service.dart';
-import 'package:nameless_audio/services/audio_detail_repository.dart';
+import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 
 void main() {
   test('load reuses in-flight and resolved detail results by target', () async {

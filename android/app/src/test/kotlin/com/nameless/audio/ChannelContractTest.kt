@@ -1,12 +1,31 @@
 package com.nameless.audio
 
+import com.nameless.audio.channel.*
+
 import io.flutter.plugin.common.MethodCall
+import io.flutter.plugin.common.MethodChannel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChannelContractTest {
+    @Test
+    fun `envelope result converts success and platform errors without result error`() {
+        val delegate = RecordingMethodResult()
+        val result = ChannelEnvelopeResult(delegate)
+
+        result.success("saved")
+        assertEquals(channelSuccess("saved"), delegate.successValue)
+
+        result.error("copy_failed", "copy failed", mapOf("path" to "source"))
+        assertEquals(
+            channelFailure("copy_failed", "copy failed", mapOf("path" to "source")),
+            delegate.successValue
+        )
+        assertEquals(0, delegate.errorCalls)
+    }
+
     @Test
     fun `failure envelope keeps stable code message and details`() {
         val result = channelFailure(
@@ -71,4 +90,19 @@ class ChannelContractTest {
             .argumentReader()
             .requiredLong("positionMs")
     }
+}
+
+private class RecordingMethodResult : MethodChannel.Result {
+    var successValue: Any? = null
+    var errorCalls = 0
+
+    override fun success(result: Any?) {
+        successValue = result
+    }
+
+    override fun error(errorCode: String, errorMessage: String?, errorDetails: Any?) {
+        errorCalls++
+    }
+
+    override fun notImplemented() = Unit
 }

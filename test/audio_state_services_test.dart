@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:nameless_audio/models/asmr_download.dart';
-import 'package:nameless_audio/i18n/app_language_provider.dart';
-import 'package:nameless_audio/models/library_entry.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/models/playback_mode.dart';
-import 'package:nameless_audio/models/playback_session.dart';
-import 'package:nameless_audio/services/audio_state_services.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_download.dart';
+import 'package:nameless_audio/app/localization/app_language_provider.dart';
+import 'package:nameless_audio/features/library/domain/library_entry.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/player/domain/playback_mode.dart';
+import 'package:nameless_audio/features/player/domain/playback_session.dart';
+import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 
 void main() {
   group('AudioStateSlice', () {

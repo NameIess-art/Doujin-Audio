@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/services/asmr_api_service.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_api_service.dart';
 
 void main() {
   test('official media hashes use API redirect endpoints before raw URLs', () {

@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/models/music_track.dart';
-import 'package:nameless_audio/services/embedded_cover_artwork_service.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/library/application/embedded_cover_artwork_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/i18n/app_language_en.dart';
-import 'package:nameless_audio/i18n/app_language_zh.dart';
-import 'package:nameless_audio/models/asmr_models.dart';
-import 'package:nameless_audio/models/audio_detail.dart';
-import 'package:nameless_audio/models/card_info_field.dart';
-import 'package:nameless_audio/widgets/library_like_cards.dart';
-import 'package:nameless_audio/widgets/marquee_text.dart';
+import 'package:nameless_audio/app/localization/app_language_en.dart';
+import 'package:nameless_audio/app/localization/app_language_zh.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:nameless_audio/core/media/card_info_field.dart';
+import 'package:nameless_audio/core/widgets/library_like_cards.dart';
+import 'package:nameless_audio/core/widgets/marquee_text.dart';
 
 Widget _buildSurface(Widget child) => MaterialApp(
   theme: ThemeData.dark(useMaterial3: true),

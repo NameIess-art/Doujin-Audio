@@ -1,5 +1,8 @@
 package com.nameless.audio
 
+import com.nameless.audio.player.notification.*
+import com.nameless.audio.player.session.*
+
 import android.content.Intent
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

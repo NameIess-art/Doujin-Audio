@@ -68,7 +68,8 @@ It keeps future UI changes small, consistent, and easy to verify.
 - Run `flutter analyze` for every experience change.
 - Run the focused widget tests for touched screens, usually
   `test/experience_quality_widgets_test.dart`, `test/marquee_ui_test.dart`,
-  and `test/library_playlist_widgets_test.dart`.
+  `test/player_playlist_widgets_test.dart`, `test/library_widgets_test.dart`,
+  `test/audio_detail_widgets_test.dart`, and `test/settings_widgets_test.dart`.
 - Run `test/document_encoding_test.dart` when documentation is touched. It
   verifies `README.md` and `docs/*.md` remain readable as UTF-8 and do not
   contain replacement characters.

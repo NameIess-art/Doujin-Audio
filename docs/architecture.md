@@ -30,11 +30,13 @@ Current platform responsibility boundaries include:
 - `FileCachePlatformGateway`: the only Dart owner of `file_cache` MethodChannel/EventChannel I/O, including scanning, document operations, cache operations, media helpers, backup, and subtitle resolution.
 - `PlatformMethodClient`: the shared strict decoder for envelope-based request/response channels. Best-effort services keep their public safe defaults but log preserved `NativeFailure` details.
 - `AppUpdateFlow`: the single presentation coordinator used by startup and settings update checks; it reuses `AppUpdateService`, operation progress, install permission handling, retry, and install feedback.
+- `AppUpdateService`: the stable update API. GitHub API and expanded-assets HTML are decoded immediately into private typed release/asset models; malformed rows and non-HTTP(S) URLs do not cross the application boundary.
 - `FileCacheMediaScanOrchestrator`: media-scan strategy and fallback ordering.
 - `MediaNameMetadata`: display-name normalization and media-type rules.
 - `ApplicationCachePolicy`: application-cache preferences, accounting, and eviction.
 - `FileCacheOperations`: thin compatibility facade delegating to scanner, storage, metadata, subtitle, and cover components.
-- `NativePlaybackService`: MediaSession lifecycle, playback commands, session coordination, and foreground-service decisions.
+- `NativePlaybackService`: MediaSession lifecycle, playback commands, session coordination, AudioFocus, recovery, and persistence.
+- `NativePlaybackForegroundCoordinator`: foreground bootstrap/update signature deduplication, grace-stop, watchdog scheduling, and unified-notification retention through a small service host boundary. Notification construction remains in the existing factory/controller.
 - `NativeAudioFocusController`: Android AudioFocus request/abandon mechanics and focus-held state.
 - `NativePlaybackRecoveryController`: intended playback, retry/expiry scheduling, network and screen triggers, and stalled-session recovery through a testable host/environment boundary.
 - `NativePlaybackSessionRestorer`: persisted native-session reconstruction.
@@ -69,7 +71,7 @@ under the owning feature's `domain` directory. Tests for pure helpers live in
 `test/*_test.dart` and should be expanded before changing behavior in the
 corresponding application service.
 
-Large screen and provider files are split with same-library `part` files when the extracted code still depends on private state. This keeps public APIs unchanged while separating page state, UI widgets, notification helpers, playback helpers, and persistence helpers into smaller maintenance units.
+Large screen and provider files are split with same-library `part` files when the extracted code still depends on private state. This keeps public APIs unchanged while separating page state, UI widgets, notification helpers, playback helpers, and persistence helpers into smaller maintenance units. `SettingsTab` keeps lifecycle and flow composition in its main file while general, appearance, playback, ASMR, data, and update sections are private part builders with explicit inputs and callbacks.
 
 Player-only carousel and progress widgets live in player presentation instead of `core/widgets`. Playlist controls are grouped into transport, time-segment, audio-feature/equalizer, and speed-control parts. Audio-detail cover, field, and fetch-dialog widgets remain private same-library parts.
 

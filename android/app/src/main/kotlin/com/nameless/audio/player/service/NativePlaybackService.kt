@@ -252,10 +252,7 @@ class NativePlaybackService : MediaSessionService() {
     var focusedSessionId: String? = null
         private set
     private var tickerScheduled = false
-    private var foregroundWatchdogScheduled = false
     private var playbackSuspended = false
-    private var playbackForegroundStarted = false
-    private var playbackForegroundSignature: String? = null
     private val audioFocusController by lazy {
         NativeAudioFocusController(
             context = applicationContext,
@@ -296,12 +293,132 @@ class NativePlaybackService : MediaSessionService() {
             recoveryWindowMs = PLAYBACK_RECOVERY_WINDOW_MS
         )
     }
+    private val foregroundCoordinator by lazy {
+        NativePlaybackForegroundCoordinator(
+            host = object : NativePlaybackForegroundHost {
+                override val hasPlaybackToKeepAlive: Boolean
+                    get() = this@NativePlaybackService.hasPlaybackToKeepAlive()
+                override val hasSessions: Boolean
+                    get() = sessions.isNotEmpty()
+                override val playbackSuspended: Boolean
+                    get() = this@NativePlaybackService.playbackSuspended
+                override val foregroundSuppressed: Boolean
+                    get() = NativePlaybackService.foregroundSuppressed
+
+                override fun playbackSignature(): String? {
+                    val foregroundSession = foregroundSession() ?: return null
+                    return if (usesUnifiedForegroundNotification()) {
+                        "unified|$FOREGROUND_NOTIFICATION_ID"
+                    } else {
+                        foregroundSession.foregroundNotificationSignature()
+                    }
+                }
+
+                override fun onActiveSync() {
+                    acquireWakeLock()
+                    requestAudioFocusIfNeeded()
+                    if (resumePendingAudioFocusSessionsIfPossible("foreground_sync_focus_available")) {
+                        schedulePersistSessionState()
+                    }
+                    playbackRecovery.trigger("foreground_sync")
+                    ensureStatePersistenceTicker()
+                }
+
+                override fun onSuppressedIdle() {
+                    abandonAudioFocus(reason = "suppressed_no_active_playback")
+                    releaseWakeLock()
+                    persistSessionStateNow()
+                }
+
+                override fun onGraceExpired() {
+                    abandonAudioFocus(reason = "grace_expired_no_active_playback")
+                    releaseWakeLock()
+                    persistSessionStateNow()
+                }
+
+                override fun onWatchdog() {
+                    playbackWakeLock.refresh()
+                    playbackRecovery.trigger("foreground_watchdog")
+                }
+
+                override fun startPlaybackForeground() {
+                    val foregroundSession = foregroundSession()
+                        ?: error("No playback session is available for foreground notification")
+                    ServiceCompat.startForeground(
+                        this@NativePlaybackService,
+                        FOREGROUND_NOTIFICATION_ID,
+                        foregroundNotificationFactory.buildPlaybackNotification(
+                            title = foregroundSession.title,
+                            subtitle = foregroundSession.subtitle,
+                            mediaSession = ensureFocusedMediaSession(),
+                            allowRichSummary = usesUnifiedForegroundNotification(),
+                            playing = foregroundSession.playerOrNull()?.let { player ->
+                                player.isPlaying || player.playWhenReady
+                            } ?: false
+                        ),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                }
+
+                override fun startBootstrapForeground() {
+                    ensureMediaSessionForBootstrap()
+                    ServiceCompat.startForeground(
+                        this@NativePlaybackService,
+                        FOREGROUND_NOTIFICATION_ID,
+                        foregroundNotificationFactory.buildBootstrapNotification(
+                            currentMediaSession()
+                        ),
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+                    )
+                    acquireWakeLock()
+                }
+
+                override fun shouldRemoveForegroundNotification(
+                    removeNotification: Boolean
+                ): Boolean =
+                    UnifiedPlaybackNotificationController.shouldRemoveForegroundNotification(
+                        removeNotification
+                    )
+
+                override fun stopForeground(wasStarted: Boolean, removeNotification: Boolean) {
+                    if (wasStarted) {
+                        stopForegroundCompat(removeNotification = removeNotification)
+                    }
+                    if (removeNotification) {
+                        val manager =
+                            getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                        manager?.cancel(FOREGROUND_NOTIFICATION_ID)
+                    }
+                }
+
+                override fun logInfo(message: String) {
+                    this@NativePlaybackService.logInfo(message, foregroundSession())
+                }
+
+                override fun logWarn(message: String, error: Throwable) {
+                    this@NativePlaybackService.logWarn(
+                        message,
+                        foregroundSession(),
+                        error
+                    )
+                }
+            },
+            environment = object : NativePlaybackForegroundEnvironment {
+                override fun postDelayed(runnable: Runnable, delayMs: Long) {
+                    mainHandler.postDelayed(runnable, delayMs)
+                }
+
+                override fun remove(runnable: Runnable) {
+                    mainHandler.removeCallbacks(runnable)
+                }
+            },
+            stopGraceMs = PLAYBACK_STOP_GRACE_MS,
+            watchdogIntervalMs = FOREGROUND_WATCHDOG_INTERVAL_MS
+        )
+    }
     private var transientAudioFocusLossActive = false
     private val pendingAudioFocusResumeSessionIds = linkedSetOf<String>()
     private var attemptedStickyPlaybackRestore = false
-    // Whether a deferred foreground-stop is pending (grace period after
-    // playback appears to have stopped).
-    private var foregroundStopGracePending = false
     private fun handleAudioFocusChange(change: Int) {
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {
@@ -339,25 +456,6 @@ class NativePlaybackService : MediaSessionService() {
             }
         }
     }
-    // Deferred runnable that actually stops the foreground service and releases
-    // the wake lock after the grace period expires.  If playback resumes within
-    // the grace window this runnable is cancelled.
-    private val foregroundStopGraceRunnable = Runnable {
-        foregroundStopGracePending = false
-        if (!hasPlaybackToKeepAlive()) {
-            logInfo("foreground_stop_grace_expired executing_deferred_stop")
-            abandonAudioFocus(reason = "grace_expired_no_active_playback")
-            releaseWakeLock()
-            stopForegroundWatchdog()
-            persistSessionStateNow()
-            stopPlaybackForeground(
-                reason = "grace_expired_no_active_playback",
-                removeNotification = sessions.isEmpty()
-            )
-        } else {
-            logInfo("foreground_stop_grace_expired playback_resumed_skip")
-        }
-    }
     private var lastProgressHeartbeatElapsedRealtimeMs = 0L
 
     private val positionTicker = object : Runnable {
@@ -384,27 +482,6 @@ class NativePlaybackService : MediaSessionService() {
             mainHandler.postDelayed(this, PROGRESS_HEARTBEAT_INTERVAL_MS)
         }
     }
-    private val foregroundWatchdog = object : Runnable {
-        override fun run() {
-            if (!hasPlaybackToKeepAlive()) {
-                // Don't stop the watchdog immediately 鈥?a grace-period stop may
-                // already be pending.  Just reschedule; the grace runnable will
-                // clean up if playback truly stopped.
-                mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
-                return
-            }
-            
-            playbackWakeLock.refresh()
-            playbackRecovery.trigger("foreground_watchdog")
-
-            if (playbackForegroundStarted) {
-                startPlaybackForeground(forceRefresh = true)
-            } else {
-                startPlaybackForeground(forceRefresh = true)
-            }
-            mainHandler.postDelayed(this, FOREGROUND_WATCHDOG_INTERVAL_MS)
-        }
-    }
     override fun onCreate() {
         super.onCreate()
         ensurePlaybackChannel()
@@ -423,7 +500,7 @@ class NativePlaybackService : MediaSessionService() {
             !hasPlaybackToKeepAlive()
         ) {
             logInfo("on_start_command foreground_bootstrap_requested")
-            startBootstrapForeground()
+            foregroundCoordinator.startBootstrap()
         }
         return START_STICKY
     }
@@ -434,7 +511,7 @@ class NativePlaybackService : MediaSessionService() {
 
     override fun onUpdateNotification(session: MediaSession, startInForeground: Boolean) {
         // We manage the foreground service and notification manually using
-        // UnifiedPlaybackNotificationController and startPlaybackForeground().
+        // UnifiedPlaybackNotificationController and foregroundCoordinator.
         // Doing nothing here prevents Media3 from automatically posting notifications
         // and accidentally calling stopForeground(), which drops the foreground
         // status and causes Doze mode to suspend the app during screen-off.
@@ -442,26 +519,7 @@ class NativePlaybackService : MediaSessionService() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         logInfo("on_task_removed hasActivePlayback=${hasPlaybackToKeepAlive()}")
-        if (hasPlaybackToKeepAlive()) {
-            // Keep the foreground service alive; stopWithTask="false" in the
-            // manifest already prevents the OS from stopping us, but we also
-            // explicitly re-sync to be safe.
-            syncForegroundState()
-        } else if (sessions.isNotEmpty()) {
-            // Sessions exist but nothing is actively playing right now (e.g.
-            // the user swiped the app away during a brief buffering gap).
-            // Do NOT call stopSelf() 鈥?let the grace-period runnable decide.
-            // The foreground service will keep us alive until the grace window
-            // expires or playback resumes.
-            logInfo("on_task_removed sessions_present_deferring_stop")
-            scheduleForegroundStopGrace()
-        } else {
-            stopForegroundWatchdog()
-            cancelForegroundStopGrace()
-            stopPlaybackForeground(
-                reason = "task_removed_no_sessions",
-                removeNotification = true
-            )
+        if (foregroundCoordinator.onTaskRemoved()) {
             stopSelf()
         }
     }
@@ -469,20 +527,19 @@ class NativePlaybackService : MediaSessionService() {
     override fun onDestroy() {
         logInfo(
             "on_destroy_begin sessions=${sessions.size} " +
-                "foregroundStarted=$playbackForegroundStarted wakeLockHeld=${playbackWakeLock.isHeld()}"
+                "foregroundStarted=${foregroundCoordinator.isStarted} " +
+                "wakeLockHeld=${playbackWakeLock.isHeld()}"
         )
         stateListeners.clear()
         mainHandler.removeCallbacks(positionTicker)
         progressPublisher.shutdown()
         statePersistence.shutdown()
         playbackRecovery.dispose()
-        cancelForegroundStopGrace()
-        stopForegroundWatchdog()
         tickerScheduled = false
         releaseMediaSession("on_destroy")
         sessions.values.forEach { it.release() }
         sessions.clear()
-        stopPlaybackForeground(reason = "on_destroy", removeNotification = true)
+        foregroundCoordinator.shutdown()
         abandonAudioFocus(reason = "on_destroy")
         releaseWakeLock()
         instance = null
@@ -820,8 +877,8 @@ class NativePlaybackService : MediaSessionService() {
             updateMediaSessionPlayer()
         }
         if (sessions.isEmpty()) {
-            cancelForegroundStopGrace()
-            stopForegroundWatchdog()
+            foregroundCoordinator.cancelGrace()
+            foregroundCoordinator.stopWatchdog()
             stopStatePersistenceTicker()
             cancelScheduledPersistSessionState()
             NativePlaybackStateStore.clearSessions(this)
@@ -830,7 +887,7 @@ class NativePlaybackService : MediaSessionService() {
             NativePlaybackStateStore.clearTimerRuntimeState(this)
             releaseMediaSession("remove_session_empty")
             abandonAudioFocus(reason = "remove_session_empty")
-            stopPlaybackForeground(reason = "remove_session_empty", removeNotification = true)
+            foregroundCoordinator.stop(reason = "remove_session_empty", removeNotification = true)
             stopSelf()
         } else {
             persistSessionStateNow()
@@ -848,12 +905,12 @@ class NativePlaybackService : MediaSessionService() {
         evictPlayersIfNeeded()
         publishAllSessionStates()
         persistSessionStateNow()
-        cancelForegroundStopGrace()
-        stopForegroundWatchdog()
+        foregroundCoordinator.cancelGrace()
+        foregroundCoordinator.stopWatchdog()
         playbackSuspended = true
         abandonAudioFocus(reason = "pause_all")
         releaseWakeLock()
-        stopPlaybackForeground(reason = "pause_all", removeNotification = sessions.isEmpty())
+        foregroundCoordinator.stop(reason = "pause_all", removeNotification = sessions.isEmpty())
         return okResult(null)
     }
 
@@ -866,8 +923,8 @@ class NativePlaybackService : MediaSessionService() {
         sessions.clear()
         focusedSessionId = null
         releaseMediaSession("clear_all")
-        cancelForegroundStopGrace()
-        stopForegroundWatchdog()
+        foregroundCoordinator.cancelGrace()
+        foregroundCoordinator.stopWatchdog()
         stopStatePersistenceTicker()
         cancelScheduledPersistSessionState()
         NativePlaybackStateStore.clearSessions(this)
@@ -875,7 +932,7 @@ class NativePlaybackService : MediaSessionService() {
         NativePlaybackStateStore.clearTimerCandidateSessionIds(this)
         NativePlaybackStateStore.clearTimerRuntimeState(this)
         abandonAudioFocus(reason = "clear_all")
-        stopPlaybackForeground(reason = "clear_all", removeNotification = true)
+        foregroundCoordinator.stop(reason = "clear_all", removeNotification = true)
         stopSelf()
         return okResult(null)
     }
@@ -897,11 +954,11 @@ class NativePlaybackService : MediaSessionService() {
                 acquireWakeLock()
                 updateMediaSessionPlayer()
                 requestAudioFocusIfNeeded()
-                startPlaybackForeground(forceRefresh = true)
-                ensureForegroundWatchdog()
+                foregroundCoordinator.startOrUpdate(forceRefresh = true)
+                foregroundCoordinator.ensureWatchdog()
             } else {
-                stopForegroundWatchdog()
-                stopPlaybackForeground(
+                foregroundCoordinator.stopWatchdog()
+                foregroundCoordinator.stop(
                     reason = "foreground_disabled_no_active_playback",
                     removeNotification = true
                 )
@@ -912,8 +969,8 @@ class NativePlaybackService : MediaSessionService() {
             if (hasPlaybackToKeepAlive()) {
                 acquireWakeLock()
                 requestAudioFocusIfNeeded()
-                startPlaybackForeground(forceRefresh = true)
-                ensureForegroundWatchdog()
+                foregroundCoordinator.startOrUpdate(forceRefresh = true)
+                foregroundCoordinator.ensureWatchdog()
             }
         }
         return okResult(null)
@@ -922,8 +979,8 @@ class NativePlaybackService : MediaSessionService() {
     fun dismissNotifications(): Map<String, Any?> {
         notificationsDismissed = true
         if (hasPlaybackToKeepAlive()) {
-            startPlaybackForeground(forceRefresh = true)
-            ensureForegroundWatchdog()
+            foregroundCoordinator.startOrUpdate(forceRefresh = true)
+            foregroundCoordinator.ensureWatchdog()
         }
         return okResult(null)
     }
@@ -1201,173 +1258,22 @@ class NativePlaybackService : MediaSessionService() {
             hasPendingAudioFocusResume() ||
             playbackRecovery.shouldKeepAlive()
     }
-    private fun syncForegroundState() {
-        if (hasPlaybackToKeepAlive()) {
-            // Playback is active 鈥?cancel any pending grace-period stop and
-            // make sure the foreground service + wake lock are held.
-            cancelForegroundStopGrace()
-            acquireWakeLock()
-            requestAudioFocusIfNeeded()
-            if (resumePendingAudioFocusSessionsIfPossible("foreground_sync_focus_available")) {
-                schedulePersistSessionState()
-            }
-            playbackRecovery.trigger("foreground_sync")
-            startPlaybackForeground()
-            ensureForegroundWatchdog()
-            ensureStatePersistenceTicker()
-        } else if (foregroundSuppressed) {
-            // Foreground is intentionally suppressed (notification control
-            // disabled). No foreground service to stop, just release resources.
-            cancelForegroundStopGrace()
-            abandonAudioFocus(reason = "suppressed_no_active_playback")
-            releaseWakeLock()
-            persistSessionStateNow()
-        } else {
-            // Playback is not active right now, but it may be a transient gap
-            // (track transition, buffering, seek).  Schedule a grace-period
-            // stop instead of releasing resources immediately.  If playback
-            // resumes within the window the grace runnable will be cancelled.
-            scheduleForegroundStopGrace()
-        }
-    }
-
-    private fun scheduleForegroundStopGrace() {
-        if (foregroundStopGracePending) return
-        foregroundStopGracePending = true
-        logInfo("foreground_stop_grace_scheduled delay=${PLAYBACK_STOP_GRACE_MS}ms")
-        mainHandler.postDelayed(foregroundStopGraceRunnable, PLAYBACK_STOP_GRACE_MS)
-    }
-
-    private fun cancelForegroundStopGrace() {
-        if (!foregroundStopGracePending) return
-        mainHandler.removeCallbacks(foregroundStopGraceRunnable)
-        foregroundStopGracePending = false
-        logInfo("foreground_stop_grace_cancelled")
-    }
-
-    private fun startPlaybackForeground() {
-        startPlaybackForeground(forceRefresh = false)
-    }
-
-    private fun startPlaybackForeground(forceRefresh: Boolean) {
-        if (playbackSuspended) {
-            logInfo("start_foreground_skip playback_suspended forceRefresh=$forceRefresh")
-            return
-        }
-        if (foregroundSuppressed) {
-            logInfo("start_foreground_minimal foreground_suppressed forceRefresh=$forceRefresh")
-        }
-        val foregroundSession = sessions[focusedSessionId]
+    private fun foregroundSession(): NativePlaybackSession? =
+        sessions[focusedSessionId]
             ?: sessions.values.firstOrNull { session ->
                 val player = session.playerOrNull()
                 player != null && (player.isPlaying || player.playWhenReady)
             }
             ?: sessions.values.firstOrNull()
-            ?: run {
-                logInfo("start_foreground_skip no_session")
-                return
-            }
-        val mediaSession = ensureFocusedMediaSession()
-        val usesUnifiedNotification =
-            !notificationsDismissed &&
-                !foregroundSuppressed &&
-                UnifiedPlaybackNotificationController.hasUnifiedNotifications()
-        val signature = if (usesUnifiedNotification) {
-            "unified|$FOREGROUND_NOTIFICATION_ID"
-        } else {
-            foregroundSession.foregroundNotificationSignature()
-        }
-        if (!forceRefresh && playbackForegroundStarted && playbackForegroundSignature == signature) {
-            logInfo("start_foreground_skip unchanged signature=$signature", foregroundSession)
-            return
-        }
-        try {
-            ServiceCompat.startForeground(
-                this,
-                FOREGROUND_NOTIFICATION_ID,
-                foregroundNotificationFactory.buildPlaybackNotification(
-                    title = foregroundSession.title,
-                    subtitle = foregroundSession.subtitle,
-                    mediaSession = mediaSession,
-                    allowRichSummary = usesUnifiedNotification,
-                    playing = foregroundSession.playerOrNull()?.let { player ->
-                        player.isPlaying || player.playWhenReady
-                    } ?: false
-                ),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-            playbackForegroundStarted = true
-            playbackForegroundSignature = signature
-            logInfo(
-                "start_foreground_success forceRefresh=$forceRefresh " +
-                    "notificationId=$FOREGROUND_NOTIFICATION_ID signature=$signature",
-                foregroundSession
-            )
-        } catch (e: Exception) {
-            logWarn(
-                "start_foreground_failed forceRefresh=$forceRefresh " +
-                    "notificationId=$FOREGROUND_NOTIFICATION_ID signature=$signature",
-                foregroundSession,
-                e
-            )
-            // Keep ExoPlayer and our wake lock alive best-effort if a device
-            // rejects a foreground-service refresh from its current state.
-        }
-    }
 
-    private fun startBootstrapForeground() {
-        if (playbackForegroundStarted) {
-            logInfo("start_bootstrap_foreground_skip already_started")
-            return
-        }
-        try {
-            ensureMediaSessionForBootstrap()
-            ServiceCompat.startForeground(
-                this,
-                FOREGROUND_NOTIFICATION_ID,
-                foregroundNotificationFactory.buildBootstrapNotification(
-                    currentMediaSession()
-                ),
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
-            )
-            playbackForegroundStarted = true
-            playbackForegroundSignature = "bootstrap|$FOREGROUND_NOTIFICATION_ID"
-            acquireWakeLock()
-            logInfo("start_bootstrap_foreground_success notificationId=$FOREGROUND_NOTIFICATION_ID")
-        } catch (e: Exception) {
-            logWarn(
-                "start_bootstrap_foreground_failed notificationId=$FOREGROUND_NOTIFICATION_ID",
-                error = e
-            )
-            // If the bootstrap foreground notification is rejected, the alarm
-            // receiver still retries delivery while its async result is alive.
-        }
-    }
+    private fun usesUnifiedForegroundNotification(): Boolean =
+        !notificationsDismissed &&
+            !foregroundSuppressed &&
+            UnifiedPlaybackNotificationController.hasUnifiedNotifications()
 
-    private fun stopPlaybackForeground(
-        reason: String,
-        removeNotification: Boolean = true
-    ) {
-        val shouldRemoveNotification =
-            UnifiedPlaybackNotificationController.shouldRemoveForegroundNotification(
-                removeNotification
-            )
-        logInfo(
-            "stop_foreground reason=$reason removeNotification=$removeNotification " +
-                "shouldRemoveNotification=$shouldRemoveNotification " +
-                "wasStarted=$playbackForegroundStarted"
-        )
-        if (playbackForegroundStarted) {
-            stopForegroundCompat(removeNotification = shouldRemoveNotification)
-        }
-        playbackForegroundStarted = false
-        playbackForegroundSignature = null
-        if (shouldRemoveNotification) {
-            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
-            manager?.cancel(FOREGROUND_NOTIFICATION_ID)
-        }
+    private fun syncForegroundState() {
+        foregroundCoordinator.sync()
     }
-
     private fun stopForegroundCompat(removeNotification: Boolean) {
         val behavior = if (removeNotification) {
             STOP_FOREGROUND_REMOVE
@@ -1380,18 +1286,6 @@ class NativePlaybackService : MediaSessionService() {
             @Suppress("DEPRECATION")
             stopForeground(removeNotification)
         }
-    }
-
-    private fun ensureForegroundWatchdog() {
-        if (foregroundWatchdogScheduled) return
-        foregroundWatchdogScheduled = true
-        mainHandler.postDelayed(foregroundWatchdog, FOREGROUND_WATCHDOG_INTERVAL_MS)
-    }
-
-    private fun stopForegroundWatchdog() {
-        if (!foregroundWatchdogScheduled) return
-        mainHandler.removeCallbacks(foregroundWatchdog)
-        foregroundWatchdogScheduled = false
     }
 
     private fun ensureStatePersistenceTicker() {
@@ -1423,7 +1317,7 @@ class NativePlaybackService : MediaSessionService() {
         }
 
         logInfo("sticky_restore_begin sessionCount=${storedSessions.size}")
-        startBootstrapForeground()
+        foregroundCoordinator.startBootstrap()
         notificationsDismissed = false
         playbackSuspended = false
 
@@ -1435,7 +1329,7 @@ class NativePlaybackService : MediaSessionService() {
         if (restoredSessionIds.isEmpty()) {
             logInfo("sticky_restore_skip restore_failed")
             releaseWakeLock()
-            stopPlaybackForeground(
+            foregroundCoordinator.stop(
                 reason = "sticky_restore_failed",
                 removeNotification = true
             )
@@ -1556,7 +1450,7 @@ class NativePlaybackService : MediaSessionService() {
             "playWhenReady=${player?.playWhenReady ?: target?.lastPlayWhenReady} " +
             "isPlaying=${player?.isPlaying ?: target?.lastIsPlaying} " +
             "playbackState=${player?.playbackStateName() ?: target?.lastPlaybackState} " +
-            "foregroundStarted=$playbackForegroundStarted " +
+            "foregroundStarted=${foregroundCoordinator.isStarted} " +
             "activePlayback=${hasActivePlayback()} " +
             "keepAlivePlayback=${hasPlaybackToKeepAlive()}"
     }

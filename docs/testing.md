@@ -45,6 +45,12 @@ Android notification-routing tests. Keep these tests aligned with the native
 notification payload instead of introducing a second Dart notification
 handler.
 
+Foreground-service scheduling is covered by the pure JVM
+`NativePlaybackForegroundCoordinatorTest`. Extend its fake host when changing
+bootstrap, notification signatures, grace-stop, watchdog, or task-removal
+decisions; keep platform notification rendering in the existing notification
+tests.
+
 MethodChannel names and methods are centralized in Dart and Kotlin platform
 channel constants. Keep `test/platform_channels_test.dart` and
 `android/app/src/test/.../PlatformChannelsTest.kt` aligned whenever the
@@ -96,7 +102,8 @@ flutter test test/accessibility_motion_test.dart test/i18n_language_tables_test.
 Experience quality checks have focused UI and documentation baselines:
 
 ```bash
-flutter test test/experience_quality_widgets_test.dart test/marquee_ui_test.dart test/library_playlist_widgets_test.dart
+flutter test test/experience_quality_widgets_test.dart test/marquee_ui_test.dart
+flutter test test/player_playlist_widgets_test.dart test/library_widgets_test.dart test/audio_detail_widgets_test.dart test/settings_widgets_test.dart
 flutter test test/document_encoding_test.dart test/accessibility_motion_test.dart test/i18n_language_tables_test.dart
 ```
 
@@ -104,6 +111,19 @@ Use these when changing list cards, settings groups, empty/error states,
 feedback copy, permissions, update/backup result flows, or documentation
 encoding. The manual performance process remains observational and is recorded
 in [`docs/release-quality.md`](release-quality.md).
+
+The former large provider integration suite is organized by responsibility and
+shares `test/support/audio_provider_test_fixture.dart` for SQLite schema 3,
+platform-channel cleanup, provider disposal, widget hosting, and pump helpers:
+
+```bash
+flutter test --concurrency=1 test/audio_provider_playback_race_test.dart test/audio_provider_playback_features_test.dart
+flutter test --concurrency=1 test/audio_provider_queue_test.dart test/audio_provider_media_library_test.dart test/audio_provider_audio_detail_cover_test.dart
+```
+
+Update parsing and selection remain focused in
+`test/app_update_service_test.dart`; add malformed GitHub JSON/URL and
+asset/checksum pairing cases there without exposing the private typed models.
 
 Run the Android device integration smoke test and use the release-candidate
 matrix and performance baseline process in

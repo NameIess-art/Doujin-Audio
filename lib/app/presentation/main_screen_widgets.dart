@@ -380,10 +380,10 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
   @override
   void initState() {
     super.initState();
-    // Total duration 1600ms: 0.8s entrance (0.0->0.5) + 0.8s exit (0.5->1.0)
+    // Total duration 450ms: 225ms entrance, then 225ms exit once settings load.
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1600),
+      duration: const Duration(milliseconds: 450),
     );
 
     _logoScale = TweenSequence<double>([

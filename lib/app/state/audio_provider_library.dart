@@ -528,26 +528,21 @@ extension AudioProviderLibrary on AudioProvider {
   /// Called once during startup after both the library and exclusion maps have
   /// been loaded, so that excluded items are not shown on the first render.
   void _applyExclusionsToLibrary() {
-    // Flatten all excluded track paths into a single Set for O(1) lookup.
     final allExcludedTracks = <String>{};
     for (final paths in _excludedLibraryTracks.values) {
       allExcludedTracks.addAll(paths);
     }
-    // Flatten all excluded folder paths into a flat list for prefix checks.
-    final allExcludedFolders = <String>[];
+    final allExcludedFolders = <String>{};
     for (final paths in _excludedLibraryFolders.values) {
       allExcludedFolders.addAll(paths);
     }
     if (allExcludedTracks.isEmpty && allExcludedFolders.isEmpty) return;
+    final excludedTrackIndex = PathMembershipIndex(allExcludedTracks);
+    final excludedFolderIndex = PathMembershipIndex(allExcludedFolders);
     _removeTracksWhere((track) {
-      if (allExcludedTracks.contains(track.path)) return true;
-      for (final folderPath in allExcludedFolders) {
-        if (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
-            PathMatcher.isWithinOrEqual(track.groupKey, folderPath)) {
-          return true;
-        }
-      }
-      return false;
+      return excludedTrackIndex.containsEquivalent(track.path) ||
+          excludedFolderIndex.containsAncestorOrEqual(track.path) ||
+          excludedFolderIndex.containsAncestorOrEqual(track.groupKey);
     });
   }
 

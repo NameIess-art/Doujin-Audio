@@ -55,6 +55,7 @@ class LibraryOrganizer {
     required List<MusicTrack> tracks,
     required List<String> watchedFolders,
     required List<String> nodeOrder,
+    bool tracksAlreadySorted = false,
   }) {
     final watchedRoots = watchedFolders.toList(growable: false)
       ..sort((a, b) => b.length.compareTo(a.length));
@@ -101,7 +102,9 @@ class LibraryOrganizer {
     var leafFolderCount = 0;
     final topLevel = <LibraryNode>[];
     for (final group in groups.values) {
-      group.tracks.sort(compareTracks);
+      if (!tracksAlreadySorted) {
+        group.tracks.sort(compareTracks);
+      }
       final immutableTracks = List<MusicTrack>.unmodifiable(group.tracks);
       final groupLeafFolderCount = group.directories
           .where((directory) => !group.nonLeafDirectories.contains(directory))

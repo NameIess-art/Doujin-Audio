@@ -94,4 +94,43 @@ void main() {
       PathMatcher.equivalenceKey('$root::Album/Disc'),
     );
   });
+
+  test('path membership index finds Windows ancestors case-insensitively', () {
+    final index = PathMembershipIndex(const <String>{r'C:\Audio\Library'});
+
+    expect(
+      index.containsAncestorOrEqual(r'c:\audio\library\Work\01.mp3'),
+      isTrue,
+    );
+    expect(
+      index.containsAncestorOrEqual(r'C:\Audio\Library 2\01.mp3'),
+      isFalse,
+    );
+  });
+
+  test('path membership index finds SAF ancestors without prefix leakage', () {
+    const root =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+    final index = PathMembershipIndex(const <String>{'$root::Album'});
+
+    expect(
+      index.containsAncestorOrEqual(
+        '$root/document/primary%3AMusic%2FAlbum%2FDisc%2F01.mp3',
+      ),
+      isTrue,
+    );
+    expect(index.containsAncestorOrEqual('$root::Album Two/01.mp3'), isFalse);
+  });
+
+  test('remote membership only treats exact URLs as ancestors', () {
+    final index = PathMembershipIndex(const <String>{
+      'https://example.com/audio',
+    });
+
+    expect(index.containsAncestorOrEqual('https://example.com/audio'), isTrue);
+    expect(
+      index.containsAncestorOrEqual('https://example.com/audio/01.mp3'),
+      isFalse,
+    );
+  });
 }

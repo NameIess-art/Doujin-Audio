@@ -256,27 +256,34 @@ extension AudioProviderPersistence on AudioProvider {
 
   Future<void> _loadData() async {
     try {
-      await Future.wait<void>([
-        _loadLibrary(),
-        Future.wait<void>([
-          _loadGroupOrder(),
-          _loadWatchedFolders(),
-          _loadWatchedLibraries(),
-          _loadLibraryExclusions(),
-          _loadLibraryNodeOrder(),
-          _loadSessionOrder(),
-          _loadPlaybackSettings(),
-          _loadConverterSettings(),
-          _loadTimerSettings(),
-        ]),
+      final libraryFuture = _loadLibrary();
+      final libraryEntriesFuture = _readLibraryEntries();
+      final startupSettingsFuture = Future.wait<void>([
+        _loadPlaybackSettings(),
+        _loadConverterSettings(),
       ]);
+      final remainingPreferencesFuture = Future.wait<void>([
+        _loadGroupOrder(),
+        _loadWatchedFolders(),
+        _loadWatchedLibraries(),
+        _loadLibraryExclusions(),
+        _loadLibraryNodeOrder(),
+        _loadSessionOrder(),
+        _loadTimerSettings(),
+      ]);
+
+      await startupSettingsFuture;
       _settingsInitialized = true;
       _syncSettingsStateSlice();
+      _notifyPresentationListeners();
+
+      await Future.wait<void>([libraryFuture, remainingPreferencesFuture]);
+      final libraryEntries = await libraryEntriesFuture;
 
       beginLibraryBatch();
       _libraryBatchChanged = _library.isNotEmpty;
       try {
-        await _loadLibraryEntries();
+        _applyLoadedLibraryEntries(libraryEntries);
       } finally {
         await endLibraryBatch(notify: false, waitForPersistence: false);
       }
@@ -333,13 +340,9 @@ extension AudioProviderPersistence on AudioProvider {
         .map((track) => track.path)
         .toList(growable: false);
     late final Future<void> task;
-    task = Future<void>.delayed(const Duration(milliseconds: 500))
-        .then((_) async {
-          while (!_isDisposed &&
-              UiInteractionCoordinator.instance.isInteracting) {
-            await Future<void>.delayed(const Duration(milliseconds: 160));
-          }
-          if (_isDisposed) return;
+    task = _waitForContinuousUiIdle(const Duration(seconds: 3))
+        .then((idleReached) async {
+          if (!idleReached) return;
           await AppLogService.measureAsync(
             'audio_provider_post_startup_library_maintenance',
             () async {
@@ -357,6 +360,22 @@ extension AudioProviderPersistence on AudioProvider {
           }
         });
     _postStartupLibraryMaintenance = task;
+  }
+
+  Future<bool> _waitForContinuousUiIdle(Duration quietWindow) async {
+    DateTime? idleSince;
+    while (!_isDisposed) {
+      if (UiInteractionCoordinator.instance.isInteracting) {
+        idleSince = null;
+      } else {
+        idleSince ??= DateTime.now();
+        if (DateTime.now().difference(idleSince) >= quietWindow) {
+          return true;
+        }
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+    }
+    return false;
   }
 
   Future<void> _loadPlaybackSettings() async {
@@ -581,24 +600,21 @@ extension AudioProviderPersistence on AudioProvider {
     }
   }
 
-  Future<void> _loadLibraryEntries() async {
+  Future<List<LibraryEntry>> _readLibraryEntries() async {
     try {
-      final entries = await _audioDatabaseRepository.loadAllLibraryEntries();
-      if (entries.isEmpty) return;
-      _libraryService.replaceLibraryEntries(entries);
-      // Rebuild the in-memory exclusion maps from the database so that
-      // exclusions survive app restarts even if SharedPreferences is cleared.
-      // SQLite is the durable source of truth; this call overwrites whatever
-      // _loadLibraryExclusions() loaded from SharedPreferences.
-      _libraryService.rebuildExclusionsFromEntries(entries);
-      // Remove any tracks that are marked excluded in the database from the
-      // in-memory library.  _loadLibrary() loads all tracks unconditionally,
-      // so we must prune the excluded ones here.  _removeTracksWhere will
-      // call _rebuildLibraryIndexes again, but only if there are exclusions.
-      _applyExclusionsToLibrary();
+      return await _audioDatabaseRepository.loadAllLibraryEntries();
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
+      return const <LibraryEntry>[];
     }
+  }
+
+  void _applyLoadedLibraryEntries(List<LibraryEntry> entries) {
+    if (entries.isEmpty) return;
+    _libraryService.replaceLibraryEntries(entries);
+    // SQLite remains the durable source of truth when preferences were reset.
+    _libraryService.rebuildExclusionsFromEntries(entries);
+    _applyExclusionsToLibrary();
   }
 
   Future<void> _ensureLibraryEntriesForLoadedTracks() async {

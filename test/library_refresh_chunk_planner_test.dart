@@ -94,4 +94,38 @@ void main() {
       );
     },
   );
+
+  test('derived snapshot reuses natural order for groups and cards', () {
+    final tracks = <MusicTrack>[
+      track(10),
+      const MusicTrack(
+        path: '/music/other/11.mp3',
+        displayName: '11',
+        groupKey: '/music/other',
+        groupTitle: 'other',
+        groupSubtitle: '/music/other',
+        isSingle: false,
+      ),
+      track(2),
+      track(1),
+    ];
+
+    final snapshot = buildLibraryDerivedSnapshot(
+      LibraryDerivedSnapshotPayload(
+        tracks: tracks,
+        watchedFolders: const <String>['/music'],
+        nodeOrder: const <String>['/music'],
+      ),
+    );
+    final folder = snapshot.cardSnapshot.tree.single as FolderNode;
+
+    expect(
+      snapshot.tracksByGroup['/music']!.map((item) => item.displayName),
+      const <String>['1', '2', '10'],
+    );
+    expect(
+      folder.allTracks.map((item) => item.path),
+      snapshot.sortedLibraryTracks.map((item) => item.path),
+    );
+  });
 }

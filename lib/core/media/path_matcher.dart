@@ -365,6 +365,18 @@ final class PathMembershipIndex {
     }
     return low < _sortedKeys.length && _sortedKeys[low].startsWith(prefix);
   }
+
+  bool containsAncestorOrEqual(String value) {
+    var key = PathMatcher.equivalenceKey(value);
+    if (_keys.contains(key)) return true;
+    if (key.startsWith('remote:')) return false;
+    while (true) {
+      final separator = key.lastIndexOf('/');
+      if (separator < 0) return false;
+      key = key.substring(0, separator);
+      if (_keys.contains(key)) return true;
+    }
+  }
 }
 
 extension _TrimSlash on String {

@@ -506,6 +506,41 @@ void main() {
     expect((await appDatabase.loadAudioDetail(second))?.workTitle, 'Second');
   });
 
+  test('loadMany reads a shared content backup once', () async {
+    final gateway = _MemoryFileCacheGateway();
+    repository = AudioDetailRepository(
+      databaseRepository: AudioDatabaseRepository(database: appDatabase),
+      fileCacheGateway: gateway,
+      now: () => fixedNow,
+      portableCoverDirectory: () async =>
+          Directory('${tempDir.path}${Platform.pathSeparator}portable-covers'),
+    );
+    const tree =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+    const firstPath = '$tree/document/primary%3AMusic%2FAlbum%2F01.mp3';
+    const secondPath = '$tree/document/primary%3AMusic%2FAlbum%2F02.mp3';
+    final first = AudioDetailTarget.singleAudioFile(firstPath);
+    final second = AudioDetailTarget.singleAudioFile(secondPath);
+    gateway.singleBackup = jsonEncode(<Map<String, dynamic>>[
+      AudioDetail.empty(first).copyWith(workTitle: 'First').toBackupJson(),
+      AudioDetail.empty(second).copyWith(workTitle: 'Second').toBackupJson(),
+    ]);
+
+    final results = await repository.loadMany(<AudioDetailTarget>[
+      second,
+      first,
+      second,
+    ]);
+
+    expect(gateway.singleBackupReadCount, 1);
+    expect(results.map((result) => result.detail.workTitle), <String>[
+      'Second',
+      'First',
+      'Second',
+    ]);
+    expect(results.every((result) => result.restoredFromBackup), isTrue);
+  });
+
   test('malformed backup returns an empty root detail', () async {
     final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
     final backupFile = File(
@@ -859,6 +894,7 @@ class _MemoryFileCacheGateway extends FileCachePlatformGateway {
 
   String? backup;
   String? singleBackup;
+  int singleBackupReadCount = 0;
 
   @override
   Future<bool> writeAudioDetailBackup({
@@ -882,6 +918,8 @@ class _MemoryFileCacheGateway extends FileCachePlatformGateway {
   }
 
   @override
-  Future<String?> readSingleFileDetailBackup(String filePath) async =>
-      singleBackup;
+  Future<String?> readSingleFileDetailBackup(String filePath) async {
+    singleBackupReadCount++;
+    return singleBackup;
+  }
 }

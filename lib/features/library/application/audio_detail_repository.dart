@@ -103,44 +103,57 @@ class AudioDetailRepository {
     final loadedDatabaseDetails = await _databaseRepository.loadAudioDetails(
       targetsByKey.values,
     );
-    final databaseDetails = await Future.wait(
-      loadedDatabaseDetails.map(_restoreMissingDatabaseCover),
-    );
+    final databaseDetailsByKey = <String, AudioDetail>{
+      for (final detail in loadedDatabaseDetails)
+        _detailKeyForTarget(detail.target): detail,
+    };
     final resultsByKey = <String, AudioDetailLoadResult>{
-      for (final detail in databaseDetails)
+      for (final detail in loadedDatabaseDetails)
         _detailKeyForTarget(detail.target): AudioDetailLoadResult(
           detail: detail,
         ),
     };
-    final missingTargets = targetsByKey.entries
-        .where((entry) => !resultsByKey.containsKey(entry.key))
-        .toList(growable: false);
-    final restoredDetails = <AudioDetail>[];
-    const concurrency = 8;
-    for (var start = 0; start < missingTargets.length; start += concurrency) {
-      final end = (start + concurrency).clamp(0, missingTargets.length);
-      final chunk = missingTargets.sublist(start, end);
-      final backups = await Future.wait(
-        chunk.map((entry) => _readBackup(entry.value)),
-      );
-      for (var index = 0; index < chunk.length; index++) {
-        final entry = chunk[index];
-        final backup = backups[index];
-        if (backup == null) {
+
+    final backupTargetsByKey = <String, AudioDetailTarget>{};
+    for (final entry in targetsByKey.entries) {
+      final databaseDetail = databaseDetailsByKey[entry.key];
+      if (databaseDetail == null ||
+          await _needsBackupCoverRestore(databaseDetail)) {
+        backupTargetsByKey[entry.key] = entry.value;
+      }
+    }
+    final backupDetailsByKey = await _readBackupsForTargets(
+      backupTargetsByKey.values,
+    );
+    final detailsToUpsert = <AudioDetail>[];
+    for (final entry in backupTargetsByKey.entries) {
+      final databaseDetail = databaseDetailsByKey[entry.key];
+      final backupDetail = backupDetailsByKey[entry.key];
+      if (databaseDetail == null) {
+        if (backupDetail == null) {
           resultsByKey[entry.key] = AudioDetailLoadResult(
             detail: AudioDetail.empty(entry.value),
           );
           continue;
         }
-        final normalized = backup.normalizedForSave(_now());
-        restoredDetails.add(normalized);
+        final normalized = backupDetail.normalizedForSave(_now());
+        detailsToUpsert.add(normalized);
         resultsByKey[entry.key] = AudioDetailLoadResult(
           detail: normalized,
           restoredFromBackup: true,
         );
+        continue;
       }
+      final restored = await _restoreMissingDatabaseCoverFromBackup(
+        databaseDetail,
+        backupDetail,
+      );
+      if (restored.cardCoverPath != databaseDetail.cardCoverPath) {
+        detailsToUpsert.add(restored);
+      }
+      resultsByKey[entry.key] = AudioDetailLoadResult(detail: restored);
     }
-    await _databaseRepository.upsertAudioDetails(restoredDetails);
+    await _databaseRepository.upsertAudioDetails(detailsToUpsert);
     return <AudioDetailLoadResult>[
       for (final target in normalizedTargets)
         resultsByKey[_detailKeyForTarget(target)]!,
@@ -241,32 +254,22 @@ class AudioDetailRepository {
   Future<AudioDetail?> _readSingleFileBackupEntry(
     AudioDetailTarget target,
   ) async {
-    if (PathMatcher.isContentUri(target.targetPath)) {
-      return _readSingleFileBackupEntryViaChannel(target);
-    }
-    final backupFile = _singleDirBackupFile(target.targetPath);
-    if (!await backupFile.exists()) return null;
     try {
-      final raw = await backupFile.readAsString();
+      final raw = await _readSingleFileBackupJson(target);
+      if (raw == null || raw.isEmpty) return null;
       return _parseSingleFileEntry(target, raw);
     } catch (_) {
       return null;
     }
   }
 
-  /// Reads the backup via the native channel for content URI paths.
-  Future<AudioDetail?> _readSingleFileBackupEntryViaChannel(
-    AudioDetailTarget target,
-  ) async {
-    try {
-      final raw = await _fileCacheGateway.readSingleFileDetailBackup(
-        target.targetPath,
-      );
-      if (raw == null || raw.isEmpty) return null;
-      return _parseSingleFileEntry(target, raw);
-    } catch (_) {
-      return null;
+  Future<String?> _readSingleFileBackupJson(AudioDetailTarget target) async {
+    if (PathMatcher.isContentUri(target.targetPath)) {
+      return _fileCacheGateway.readSingleFileDetailBackup(target.targetPath);
     }
+    final backupFile = _singleDirBackupFile(target.targetPath);
+    if (!await backupFile.exists()) return null;
+    return backupFile.readAsString();
   }
 
   /// Parses [raw] JSON and returns the entry whose
@@ -279,25 +282,9 @@ class AudioDetailRepository {
     try {
       final decoded = json.decode(raw);
       if (decoded is List) {
-        Map<String, dynamic>? matchedEntry;
-        var matchedScore = 0;
-        var hasTie = false;
-        for (final item in decoded) {
-          final entry = _stringKeyedMap(item);
-          if (entry == null) continue;
-          final entryPath = entry['targetPath'] as String?;
-          if (entryPath == null) continue;
-          final score = _singleFileEntryMatchScore(target, entryPath);
-          if (score <= 0) continue;
-          if (score > matchedScore) {
-            matchedEntry = entry;
-            matchedScore = score;
-            hasTie = false;
-          } else if (score == matchedScore) {
-            hasTie = true;
-          }
-        }
-        if (matchedEntry != null && !hasTie) {
+        final index = _SingleFileBackupIndex(_stringKeyedMapList(decoded));
+        final matchedEntry = index.match(target);
+        if (matchedEntry != null) {
           final detail = await _detailFromBackup(target, matchedEntry);
           if (detail.target.targetType == target.targetType) {
             return detail.copyWith(target: target);
@@ -406,14 +393,172 @@ class AudioDetailRepository {
     if (!target.isLibraryRootFolder) {
       return _readSingleFileBackupEntry(target);
     }
+    final rawJson = await _readBackupJsonSafely(target);
+    if (rawJson == null || rawJson.isEmpty) return null;
+    return _parseFolderBackup(target, rawJson);
+  }
+
+  Future<Map<String, AudioDetail?>> _readBackupsForTargets(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final groups = <String, List<AudioDetailTarget>>{};
+    for (final target in targets) {
+      groups.putIfAbsent(_backupSourceKey(target), () => []).add(target);
+    }
+    final results = <String, AudioDetail?>{};
+    final groupEntries = groups.entries.toList(growable: false);
+    const concurrency = 8;
+    for (var start = 0; start < groupEntries.length; start += concurrency) {
+      final end = (start + concurrency).clamp(0, groupEntries.length);
+      final chunk = groupEntries.sublist(start, end);
+      final raws = await Future.wait(
+        chunk.map((entry) => _readBackupJsonSafely(entry.value.first)),
+      );
+      for (var index = 0; index < chunk.length; index++) {
+        final groupedTargets = chunk[index].value;
+        final raw = raws[index];
+        if (raw == null || raw.isEmpty) {
+          for (final target in groupedTargets) {
+            results[_detailKeyForTarget(target)] = null;
+          }
+          continue;
+        }
+        if (groupedTargets.first.isLibraryRootFolder) {
+          final decoded = _decodeFolderBackup(raw);
+          final details = await Future.wait(
+            groupedTargets.map(
+              (target) => _detailFromFolderBackup(target, decoded),
+            ),
+          );
+          for (
+            var targetIndex = 0;
+            targetIndex < groupedTargets.length;
+            targetIndex++
+          ) {
+            results[_detailKeyForTarget(groupedTargets[targetIndex])] =
+                details[targetIndex];
+          }
+          continue;
+        }
+        final singleFileIndex = _decodeSingleFileBackupIndex(raw);
+        for (
+          var targetStart = 0;
+          targetStart < groupedTargets.length;
+          targetStart += concurrency
+        ) {
+          final targetEnd = (targetStart + concurrency).clamp(
+            0,
+            groupedTargets.length,
+          );
+          final targetChunk = groupedTargets.sublist(targetStart, targetEnd);
+          final details = await Future.wait(
+            targetChunk.map(
+              (target) => _detailFromSingleFileIndex(target, singleFileIndex),
+            ),
+          );
+          for (
+            var targetIndex = 0;
+            targetIndex < targetChunk.length;
+            targetIndex++
+          ) {
+            results[_detailKeyForTarget(targetChunk[targetIndex])] =
+                details[targetIndex];
+          }
+        }
+      }
+    }
+    return results;
+  }
+
+  String _backupSourceKey(AudioDetailTarget target) {
+    return target.isLibraryRootFolder
+        ? 'root|${PathMatcher.equivalenceKey(target.targetPath)}'
+        : 'single|${PathMatcher.parentEquivalenceKey(target.targetPath)}';
+  }
+
+  Future<String?> _readBackupJsonSafely(AudioDetailTarget target) async {
     try {
-      final rawJson = await _readFolderBackupJson(target);
-      if (rawJson == null || rawJson.isEmpty) return null;
-      final decoded = json.decode(rawJson);
-      if (decoded is! Map<String, dynamic>) return null;
+      return target.isLibraryRootFolder
+          ? _readFolderBackupJson(target)
+          : _readSingleFileBackupJson(target);
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'audio_detail_backup_read_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  Future<AudioDetail?> _parseFolderBackup(
+    AudioDetailTarget target,
+    String raw,
+  ) async {
+    return _detailFromFolderBackup(target, _decodeFolderBackup(raw));
+  }
+
+  Map<String, dynamic>? _decodeFolderBackup(String raw) {
+    try {
+      final decoded = json.decode(raw);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'audio_detail_backup_invalid',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  Future<AudioDetail?> _detailFromFolderBackup(
+    AudioDetailTarget target,
+    Map<String, dynamic>? decoded,
+  ) async {
+    if (decoded == null) return null;
+    try {
       final detail = await _detailFromBackup(target, decoded);
-      if (detail.target.targetType != target.targetType) return null;
-      return detail.copyWith(target: target);
+      return detail.target.targetType == target.targetType
+          ? detail.copyWith(target: target)
+          : null;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'audio_detail_backup_invalid',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  _SingleFileBackupIndex? _decodeSingleFileBackupIndex(String raw) {
+    try {
+      final decoded = json.decode(raw);
+      return decoded is List
+          ? _SingleFileBackupIndex(_stringKeyedMapList(decoded))
+          : null;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'audio_detail_backup_invalid',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    }
+  }
+
+  Future<AudioDetail?> _detailFromSingleFileIndex(
+    AudioDetailTarget target,
+    _SingleFileBackupIndex? index,
+  ) async {
+    final entry = index?.match(target);
+    if (entry == null) return null;
+    try {
+      final detail = await _detailFromBackup(target, entry);
+      return detail.target.targetType == target.targetType
+          ? detail.copyWith(target: target)
+          : null;
     } catch (error, stackTrace) {
       AppLogService.warning(
         'audio_detail_backup_invalid',
@@ -684,15 +829,31 @@ class AudioDetailRepository {
   }
 
   Future<AudioDetail> _restoreMissingDatabaseCover(AudioDetail detail) async {
-    final coverPath = detail.cardCoverPath;
-    if (coverPath == null ||
-        PathMatcher.isContentUri(coverPath) ||
-        PathMatcher.isRemoteUri(coverPath) ||
-        await File(coverPath).exists()) {
-      return detail;
-    }
-
+    if (!await _needsBackupCoverRestore(detail)) return detail;
     final backupDetail = await _readBackup(detail.target);
+    final restored = await _restoreMissingDatabaseCoverFromBackup(
+      detail,
+      backupDetail,
+    );
+    if (restored.cardCoverPath != detail.cardCoverPath) {
+      await _databaseRepository.upsertAudioDetail(restored);
+    }
+    return restored;
+  }
+
+  Future<bool> _needsBackupCoverRestore(AudioDetail detail) async {
+    final coverPath = detail.cardCoverPath;
+    return coverPath != null &&
+        !PathMatcher.isContentUri(coverPath) &&
+        !PathMatcher.isRemoteUri(coverPath) &&
+        !await File(coverPath).exists();
+  }
+
+  Future<AudioDetail> _restoreMissingDatabaseCoverFromBackup(
+    AudioDetail detail,
+    AudioDetail? backupDetail,
+  ) async {
+    final coverPath = detail.cardCoverPath;
     final restoredCoverPath = backupDetail?.cardCoverPath;
     if (restoredCoverPath == null || restoredCoverPath == coverPath) {
       return detail;
@@ -703,9 +864,7 @@ class AudioDetailRepository {
       return detail;
     }
 
-    final restored = detail.copyWith(cardCoverPath: restoredCoverPath);
-    await _databaseRepository.upsertAudioDetail(restored);
-    return restored;
+    return detail.copyWith(cardCoverPath: restoredCoverPath);
   }
 
   AudioDetailTarget _normalizeTarget(AudioDetailTarget target) {
@@ -756,12 +915,7 @@ class AudioDetailRepository {
   }
 
   String _singleFileCopyKey(String fileName) {
-    final extension = path.extension(fileName);
-    final stem = extension.isEmpty
-        ? fileName
-        : fileName.substring(0, fileName.length - extension.length);
-    final stableStem = stem.replaceFirst(RegExp(r'\s+\(\d+\)$'), '');
-    return '${stableStem.toLowerCase()}${extension.toLowerCase()}';
+    return _singleFileCopyKeyValue(fileName);
   }
 
   List<Map<String, dynamic>> _stringKeyedMapList(List<dynamic> values) {
@@ -782,4 +936,54 @@ class AudioDetailRepository {
   File _folderBackupFile(String folderPath) {
     return File(path.join(folderPath, backupFileName));
   }
+}
+
+final class _SingleFileBackupIndex {
+  _SingleFileBackupIndex(Iterable<Map<String, dynamic>> entries) {
+    for (final entry in entries) {
+      final entryPath = entry['targetPath'] as String?;
+      if (entryPath == null) continue;
+      _add(_byPath, PathMatcher.equivalenceKey(entryPath), entry);
+      final fileName = PathDisplay.fileName(entryPath).trim();
+      if (fileName.isEmpty) continue;
+      _add(_byFileName, fileName, entry);
+      _add(_byCopyKey, _singleFileCopyKeyValue(fileName), entry);
+    }
+  }
+
+  final Map<String, List<Map<String, dynamic>>> _byPath = {};
+  final Map<String, List<Map<String, dynamic>>> _byFileName = {};
+  final Map<String, List<Map<String, dynamic>>> _byCopyKey = {};
+
+  Map<String, dynamic>? match(AudioDetailTarget target) {
+    final exactMatches = _byPath[PathMatcher.equivalenceKey(target.targetPath)];
+    if (exactMatches != null) return _unique(exactMatches);
+    final fileName = PathDisplay.fileName(target.targetPath).trim();
+    if (fileName.isEmpty) return null;
+    final fileNameMatches = _byFileName[fileName];
+    if (fileNameMatches != null) return _unique(fileNameMatches);
+    final copyMatches = _byCopyKey[_singleFileCopyKeyValue(fileName)];
+    return copyMatches == null ? null : _unique(copyMatches);
+  }
+
+  static void _add(
+    Map<String, List<Map<String, dynamic>>> index,
+    String key,
+    Map<String, dynamic> entry,
+  ) {
+    index.putIfAbsent(key, () => []).add(entry);
+  }
+
+  static Map<String, dynamic>? _unique(List<Map<String, dynamic>> matches) {
+    return matches.length == 1 ? matches.single : null;
+  }
+}
+
+String _singleFileCopyKeyValue(String fileName) {
+  final extension = path.extension(fileName);
+  final stem = extension.isEmpty
+      ? fileName
+      : fileName.substring(0, fileName.length - extension.length);
+  final stableStem = stem.replaceFirst(RegExp(r'\s+\(\d+\)$'), '');
+  return '${stableStem.toLowerCase()}${extension.toLowerCase()}';
 }

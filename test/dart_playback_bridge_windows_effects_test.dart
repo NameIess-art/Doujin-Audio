@@ -101,6 +101,72 @@ void main() {
   });
 
   test(
+    'Windows detects a silent MPV filter rejection and restores filters',
+    () async {
+      final platformPlayer = _FakePlatformPlayer();
+      final activeFilters = <String, String>{};
+      var rejectNoiseReduction = false;
+      final bridge = DartPlaybackBridge(
+        playerFactory: () => media.Player(platformPlayer: platformPlayer),
+        mpvCommandRunner: (_, command) async {
+          final operation = command[1];
+          final value = command[2];
+          if (operation == 'remove') {
+            activeFilters.remove(value);
+          } else if (operation == 'add') {
+            final label = value.split(':').first;
+            if (!(rejectNoiseReduction && label == '@na_noise_reduction')) {
+              activeFilters[label] = value;
+            }
+          }
+        },
+        mpvFilterStateReader: (_) async => activeFilters.values.join(','),
+      );
+      addTearDown(bridge.dispose);
+      await bridge.prepareSession(
+        sessionId: 'session-1',
+        uri: Uri.file('C:\\audio\\effects.mp3'),
+        title: 'effects',
+      );
+      final initial = await bridge.setAudioEffects(
+        'session-1',
+        const NativeAudioEffects(
+          state: AudioEffectsState(skipSilenceEnabled: true),
+          channelSwapEnabled: false,
+        ),
+      );
+      expect(initial.isOk, isTrue);
+      rejectNoiseReduction = true;
+
+      final rejected = await bridge.setAudioEffects(
+        'session-1',
+        const NativeAudioEffects(
+          state: AudioEffectsState(noiseReductionEnabled: true),
+          channelSwapEnabled: false,
+        ),
+      );
+
+      expect(rejected.isFailure, isTrue);
+      expect(activeFilters.keys, contains('@na_skip_silence'));
+      expect(activeFilters.keys, isNot(contains('@na_noise_reduction')));
+      final snapshot = await bridge.snapshot();
+      expect(
+        snapshot.valueOrNull!.sessions.single.audioEffects.skipSilenceEnabled,
+        isTrue,
+      );
+      expect(
+        snapshot
+            .valueOrNull!
+            .sessions
+            .single
+            .audioEffects
+            .noiseReductionEnabled,
+        isFalse,
+      );
+    },
+  );
+
+  test(
     'Windows prepare resets a playing session without issuing a late pause',
     () async {
       final platformPlayer = _FakePlatformPlayer();

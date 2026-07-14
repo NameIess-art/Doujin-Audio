@@ -6,6 +6,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -65,7 +66,10 @@ class ChannelContractTest {
                 "enabled" to true,
                 "items" to listOf("one"),
                 "metadata" to mapOf("title" to "Track"),
-                "bytes" to byteArrayOf(1, 2)
+                "bytes" to byteArrayOf(1, 2),
+                "nullable" to null,
+                "names" to listOf(" one ", "two"),
+                "hour" to 23
             )
         ).argumentReader()
 
@@ -75,6 +79,9 @@ class ChannelContractTest {
         assertEquals(listOf("one"), reader.requiredList("items"))
         assertEquals(mapOf("title" to "Track"), reader.requiredMap("metadata"))
         assertTrue(byteArrayOf(1, 2).contentEquals(reader.requiredByteArray("bytes")))
+        assertNull(reader.requiredNullableLong("nullable"))
+        assertEquals(listOf("one", "two"), reader.requiredStringList("names"))
+        assertEquals(23, reader.requiredIntInRange("hour", 0..23))
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -89,6 +96,20 @@ class ChannelContractTest {
         MethodCall("seek", mapOf("positionMs" to 1.5))
             .argumentReader()
             .requiredLong("positionMs")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `required nullable argument still rejects a missing key`() {
+        MethodCall("sync", emptyMap<String, Any?>())
+            .argumentReader()
+            .requiredNullableLong("timerEndsAtWallClockMs")
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `strict string list rejects non-string items`() {
+        MethodCall("sync", mapOf("ids" to listOf("one", 2)))
+            .argumentReader()
+            .requiredStringList("ids")
     }
 }
 

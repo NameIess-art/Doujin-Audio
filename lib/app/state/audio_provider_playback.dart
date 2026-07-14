@@ -161,6 +161,7 @@ extension AudioProviderPlayback on AudioProvider {
       await _persistSessionConsoleSettings(session);
       return;
     }
+    final previous = session.channelSwapEnabled;
     session.channelSwapEnabled = enabled;
     _markActiveSessionsDirty();
     _notifyPlaybackChanged(); // Optimistic update
@@ -168,6 +169,9 @@ extension AudioProviderPlayback on AudioProvider {
     final response = await _syncSessionAudioEffects(session);
 
     if (response.isFailure) {
+      session.channelSwapEnabled = previous;
+      _markActiveSessionsDirty();
+      _notifyPlaybackChanged();
       AppLogService.warning(
         'AudioProvider.setSessionChannelSwap error: '
         '${response.errorOrNull}',
@@ -324,6 +328,9 @@ extension AudioProviderPlayback on AudioProvider {
 
     final response = await _syncSessionAudioEffects(session);
     if (response.isFailure) {
+      session.audioEffects = previous;
+      _markActiveSessionsDirty();
+      _notifyPlaybackChanged();
       AppLogService.warning(
         'AudioProvider.$errorLabel error: ${response.errorOrNull}',
       );
@@ -578,15 +585,12 @@ extension AudioProviderPlayback on AudioProvider {
       return;
     }
     final index = queueIndex.clamp(0, tracks.length - 1);
-    if (index != session.currentQueueIndex) {
-      _forcePlaybackQueueDuplicateReload(session, tracks[index].path);
-    }
-    session.currentQueueIndex = index;
     await _prepareAndPlay(
       session,
       nextPath: tracks[index].path,
       forceStartAtZero: true,
       showLoading: false,
+      targetQueueIndex: index,
     );
     _scheduleSaveSessionState();
   }
@@ -594,17 +598,14 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> seekSessionToNext(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    final previousQueueIndex = session.currentQueueIndex;
-    final nextPath = _nextPathFor(session, forward: true);
-    if (nextPath != null) {
-      if (session.currentQueueIndex != previousQueueIndex) {
-        _forcePlaybackQueueDuplicateReload(session, nextPath);
-      }
+    final nextTarget = _nextPathFor(session, forward: true);
+    if (nextTarget != null) {
       await _prepareAndPlay(
         session,
-        nextPath: nextPath,
+        nextPath: nextTarget.path,
         forceStartAtZero: true,
         showLoading: false,
+        targetQueueIndex: nextTarget.queueIndex,
       );
     }
   }
@@ -612,7 +613,6 @@ extension AudioProviderPlayback on AudioProvider {
   Future<void> seekSessionToPrev(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    final previousQueueIndex = session.currentQueueIndex;
     if (!session.isPlaybackQueue && session.position.inSeconds > 3) {
       session.setOptimisticPosition(Duration.zero);
       session.lastPersistedPositionBucket = 0;
@@ -625,27 +625,15 @@ extension AudioProviderPlayback on AudioProvider {
       await _nativePlaybackRepository.seek(session.id, Duration.zero);
       return;
     }
-    final prevPath = _nextPathFor(session, forward: false);
-    if (prevPath != null) {
-      if (session.currentQueueIndex != previousQueueIndex) {
-        _forcePlaybackQueueDuplicateReload(session, prevPath);
-      }
+    final previousTarget = _nextPathFor(session, forward: false);
+    if (previousTarget != null) {
       await _prepareAndPlay(
         session,
-        nextPath: prevPath,
+        nextPath: previousTarget.path,
         forceStartAtZero: true,
         showLoading: false,
+        targetQueueIndex: previousTarget.queueIndex,
       );
-    }
-  }
-
-  void _forcePlaybackQueueDuplicateReload(
-    PlaybackSession session,
-    String nextPath,
-  ) {
-    if (session.isPlaybackQueue &&
-        PathMatcher.equalsNormalized(nextPath, session.currentTrackPath)) {
-      session.loadedPath = null;
     }
   }
 

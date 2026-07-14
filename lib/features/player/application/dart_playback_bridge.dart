@@ -47,6 +47,23 @@ const String _windowsVolumeNormalizationFilter =
 const int _windowsLoadAttemptCount = 3;
 const Duration _windowsLoadRetryDelay = Duration(milliseconds: 400);
 
+typedef DartMpvCommandRunner =
+    Future<void> Function(media.Player player, List<String> command);
+typedef DartMpvFilterStateReader = Future<String> Function(media.Player player);
+
+Future<void> _defaultMpvCommandRunner(
+  media.Player player,
+  List<String> command,
+) async {
+  final platform = player.platform;
+  if (platform is media.NativePlayer) await platform.command(command);
+}
+
+Future<String> _defaultMpvFilterStateReader(media.Player player) async {
+  final platform = player.platform;
+  return platform is media.NativePlayer ? platform.getProperty('af') : '';
+}
+
 @visibleForTesting
 const EqCapabilities dartPlaybackWindowsEqCapabilities = EqCapabilities(
   supported: true,
@@ -75,7 +92,12 @@ List<String> buildDartPlaybackAudioFiltersForTest(NativeAudioEffects effects) {
 class DartPlaybackBridge implements NativePlaybackBridgeBase {
   DartPlaybackBridge({
     @visibleForTesting media.Player Function()? playerFactory,
-  }) : _playerFactory = playerFactory ?? media.Player.new {
+    @visibleForTesting DartMpvCommandRunner? mpvCommandRunner,
+    @visibleForTesting DartMpvFilterStateReader? mpvFilterStateReader,
+  }) : _playerFactory = playerFactory ?? media.Player.new,
+       _mpvCommandRunner = mpvCommandRunner ?? _defaultMpvCommandRunner,
+       _mpvFilterStateReader =
+           mpvFilterStateReader ?? _defaultMpvFilterStateReader {
     if (playerFactory == null) {
       _ensureMediaKitInitialized();
     }
@@ -91,6 +113,8 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
 
   final Map<String, _DartPlaybackSession> _sessions = {};
   final media.Player Function() _playerFactory;
+  final DartMpvCommandRunner _mpvCommandRunner;
+  final DartMpvFilterStateReader _mpvFilterStateReader;
   final StreamController<NativePlaybackSnapshot> _snapshots =
       StreamController<NativePlaybackSnapshot>.broadcast();
   String? _focusedSessionId;
@@ -161,6 +185,8 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
             }
           },
           player: _playerFactory(),
+          mpvCommandRunner: _mpvCommandRunner,
+          mpvFilterStateReader: _mpvFilterStateReader,
         ),
       );
       _focusedSessionId = sessionId;
@@ -473,6 +499,8 @@ class _DartPlaybackSession {
     required this.sessionId,
     required this.onChanged,
     required this.player,
+    required this.mpvCommandRunner,
+    required this.mpvFilterStateReader,
   }) {
     void bind<T>(Stream<T> stream, void Function(T value) update) {
       subscriptions.add(
@@ -567,6 +595,8 @@ class _DartPlaybackSession {
   final String sessionId;
   final VoidCallback onChanged;
   final media.Player player;
+  final DartMpvCommandRunner mpvCommandRunner;
+  final DartMpvFilterStateReader mpvFilterStateReader;
   final List<StreamSubscription<dynamic>> subscriptions = [];
   _DartPlaybackItem? item;
   List<Uri> candidateUris = const <Uri>[];
@@ -717,12 +747,20 @@ class _DartPlaybackSession {
     try {
       await _applyManagedAudioFilters();
       restorePlaybackState();
-    } catch (_) {
+    } catch (error, stackTrace) {
       channelSwapEnabled = previous;
       audioEffects = previousEffects;
-      await _applyManagedAudioFilters();
+      try {
+        await _applyManagedAudioFilters();
+      } catch (rollbackError, rollbackStackTrace) {
+        AppLogService.warning(
+          'DartPlaybackBridge audio effects rollback failed',
+          error: rollbackError,
+          stackTrace: rollbackStackTrace,
+        );
+      }
       restorePlaybackState();
-      rethrow;
+      Error.throwWithStackTrace(error, stackTrace);
     } finally {
       scheduleMicrotask(() {
         suppressPlaybackEvents = false;
@@ -984,22 +1022,29 @@ class _DartPlaybackSession {
   }
 
   Future<void> _applyManagedAudioFilters() async {
-    final platform = player.platform;
-    if (platform is media.NativePlayer) {
-      for (final label in _managedAudioFilterLabels) {
-        try {
-          await platform.command(['af', 'remove', label]);
-        } catch (_) {}
-      }
-      final filters = _buildDartPlaybackAudioFilters(
-        audioEffects,
-        channelSwapEnabled: channelSwapEnabled,
+    for (final label in _managedAudioFilterLabels) {
+      await mpvCommandRunner(player, ['af', 'remove', label]);
+    }
+    final filters = _buildDartPlaybackAudioFilters(
+      audioEffects,
+      channelSwapEnabled: channelSwapEnabled,
+    );
+    for (final filter in filters) {
+      await mpvCommandRunner(player, ['af', 'add', filter.value]);
+    }
+    final applied = await mpvFilterStateReader(player);
+    final expectedLabels = filters.map((filter) => filter.label).toSet();
+    final missing = expectedLabels.where(
+      (label) => !applied.contains('$label:'),
+    );
+    final unexpected = _managedAudioFilterLabels.where(
+      (label) => !expectedLabels.contains(label) && applied.contains('$label:'),
+    );
+    if (missing.isNotEmpty || unexpected.isNotEmpty) {
+      throw StateError(
+        'MPV rejected managed audio filters '
+        '(missing: ${missing.join(", ")}; unexpected: ${unexpected.join(", ")}).',
       );
-      for (final filter in filters) {
-        try {
-          await platform.command(['af', 'add', filter.value]);
-        } catch (_) {}
-      }
     }
   }
 

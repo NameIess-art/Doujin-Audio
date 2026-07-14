@@ -307,6 +307,62 @@ void main() {
     }
   });
 
+  test('failed local replacement restores the previous file', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_replace_failure_',
+    );
+    addTearDown(() async {
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    });
+    final target = File('${tempDir.path}${Platform.pathSeparator}track.mp3');
+    final staging = File('${target.path}.nameless.part');
+    await target.writeAsBytes(<int>[1, 2, 3], flush: true);
+    await staging.writeAsBytes(<int>[7, 8, 9], flush: true);
+    var renameCount = 0;
+
+    await expectLater(
+      commitLocalDownloadedFile(
+        staging: staging,
+        target: target,
+        rename: (file, destination) async {
+          renameCount++;
+          if (renameCount == 2) {
+            throw const FileSystemException('injected commit failure');
+          }
+          return file.rename(destination);
+        },
+      ),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    expect(await target.readAsBytes(), <int>[1, 2, 3]);
+    expect(await File('${target.path}.nameless.bak').exists(), isFalse);
+    expect(await staging.exists(), isTrue);
+  });
+
+  test(
+    'local replacement recovers an interrupted backup and cleans artifacts',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_replace_recovery_',
+      );
+      addTearDown(() async {
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      });
+      final target = File('${tempDir.path}${Platform.pathSeparator}track.mp3');
+      final backup = File('${target.path}.nameless.bak');
+      final staging = File('${target.path}.nameless.part');
+      await backup.writeAsBytes(<int>[1, 2, 3], flush: true);
+      await staging.writeAsBytes(<int>[7, 8, 9], flush: true);
+
+      await commitLocalDownloadedFile(staging: staging, target: target);
+
+      expect(await target.readAsBytes(), <int>[7, 8, 9]);
+      expect(await backup.exists(), isFalse);
+      expect(await staging.exists(), isFalse);
+    },
+  );
+
   test('download backup includes ASMR.ONE extended metadata', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_backup_',

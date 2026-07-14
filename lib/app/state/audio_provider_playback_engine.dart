@@ -10,11 +10,11 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         token.isCurrent;
   }
 
-  Future<void> _startSessionPlayback(
+  Future<bool> _startSessionPlayback(
     PlaybackSession session, {
     required bool shouldStartTriggerCountdown,
   }) async {
-    if (!_sessions.containsKey(session.id)) return;
+    if (!_sessions.containsKey(session.id)) return false;
     final generation = ++_transportCommandSequence;
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
@@ -62,7 +62,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         exclusive: !_multiThreadPlaybackEnabled,
       );
       if (!_isSessionCommandCurrent(session, token)) {
-        return;
+        return false;
       }
       if (!playResult.isOk) {
         session.failTransportCommand(generation);
@@ -71,6 +71,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         }
         _syncKeepCpuAwake();
         _notifyPlaybackChanged();
+        return false;
       } else {
         final snapshot = playResult.valueOrNull;
         if (snapshot != null) {
@@ -91,19 +92,21 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         error: e,
         stackTrace: stackTrace,
       );
+      return false;
     }
 
     if (!_isSessionCommandCurrent(session, token)) {
-      return;
+      return false;
     }
     _syncKeepCpuAwake();
     if (shouldStartTriggerCountdown) {
       _maybeStartTriggerCountdown();
     }
+    return true;
   }
 
-  Future<void> _pauseSessionPlayback(PlaybackSession session) async {
-    if (!_sessions.containsKey(session.id)) return;
+  Future<bool> _pauseSessionPlayback(PlaybackSession session) async {
+    if (!_sessions.containsKey(session.id)) return false;
     final generation = ++_transportCommandSequence;
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
@@ -120,17 +123,18 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         session.id,
         transportCommandId: generation,
       );
-      if (!_isSessionCommandCurrent(session, token)) return;
+      if (!_isSessionCommandCurrent(session, token)) return false;
       if (!pauseResult.isOk) {
         session.failTransportCommand(generation);
         _syncKeepCpuAwake();
         _notifyPlaybackChanged();
-        return;
+        return false;
       }
       final snapshot = pauseResult.valueOrNull;
       if (snapshot != null) {
         _handleNativePlaybackSnapshot(snapshot);
       }
+      return true;
     } catch (error, stackTrace) {
       if (_isSessionCommandCurrent(session, token)) {
         session.failTransportCommand(generation);
@@ -142,6 +146,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         error: error,
         stackTrace: stackTrace,
       );
+      return false;
     }
   }
 
@@ -233,8 +238,8 @@ extension AudioProviderPlaybackEngine on AudioProvider {
   Future<void> _handleSessionCompleted(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    final nextPath = _nextPathFor(session, forward: true);
-    if (nextPath == null) {
+    final nextTarget = _nextPathFor(session, forward: true);
+    if (nextTarget == null) {
       session.isAdvancingAfterCompletion = false;
       session.isLoading = false;
       _syncKeepCpuAwake();
@@ -248,7 +253,9 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     _syncKeepCpuAwake();
     _syncNotificationState();
 
-    if (nextPath == session.currentTrackPath) {
+    if (nextTarget.path == session.currentTrackPath &&
+        (nextTarget.queueIndex == null ||
+            nextTarget.queueIndex == session.currentQueueIndex)) {
       try {
         await _nativePlaybackRepository.seek(session.id, Duration.zero);
         if (!_sessions.containsKey(session.id) ||
@@ -273,15 +280,22 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         );
       }
     } else {
-      await _prepareAndPlay(session, nextPath: nextPath);
+      await _prepareAndPlay(
+        session,
+        nextPath: nextTarget.path,
+        targetQueueIndex: nextTarget.queueIndex,
+      );
       if (_sessions.containsKey(session.id)) {
         session.isAdvancingAfterCompletion = false;
       }
     }
   }
 
-  String? _nextPathFor(PlaybackSession session, {required bool forward}) {
-    final result = _playbackQueueResolver.resolveAdvance(
+  PlaybackAdvanceResult? _nextPathFor(
+    PlaybackSession session, {
+    required bool forward,
+  }) {
+    return _playbackQueueResolver.resolveAdvance(
       scope: _playbackQueueScopeFor(
         session,
         currentPath: session.currentTrackPath,
@@ -290,11 +304,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       loopMode: session.loopMode,
       nextInt: _random.nextInt,
     );
-    final queueIndex = result?.queueIndex;
-    if (queueIndex != null) {
-      session.currentQueueIndex = queueIndex;
-    }
-    return result?.path;
   }
 
   bool _hasAdjacentPathFor(PlaybackSession session, {required bool forward}) {

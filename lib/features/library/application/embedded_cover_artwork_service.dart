@@ -1,13 +1,33 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
+
+typedef EmbeddedCoverPartialDelete = Future<void> Function();
+
+@visibleForTesting
+Future<void> cleanupEmbeddedCoverPartial(
+  File partial, {
+  EmbeddedCoverPartialDelete? delete,
+}) async {
+  try {
+    if (await partial.exists()) {
+      if (delete != null) {
+        await delete();
+      } else {
+        await partial.delete();
+      }
+    }
+  } catch (_) {
+    // Cleanup is best effort and must not replace the extraction result.
+  }
+}
 
 class EmbeddedCoverArtworkService {
   static const String _flacCacheVersion = 'flac-picture-v1';
@@ -41,9 +61,14 @@ class EmbeddedCoverArtworkService {
         .toString();
     Uint8List? picture;
     try {
-      final raf = await trackFile.open();
-      final header = await raf.read(12);
-      await raf.close();
+      RandomAccessFile? raf;
+      late final Uint8List header;
+      try {
+        raf = await trackFile.open();
+        header = await raf.read(12);
+      } finally {
+        await raf?.close();
+      }
 
       if (header.length >= 3 &&
           header[0] == 0x49 &&
@@ -87,7 +112,7 @@ class EmbeddedCoverArtworkService {
     } catch (_) {
       return null;
     } finally {
-      if (await partial.exists()) await partial.delete();
+      await cleanupEmbeddedCoverPartial(partial);
     }
   }
 

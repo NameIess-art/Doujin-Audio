@@ -29,6 +29,61 @@ Map<String, String> asmrMediaRequestHeadersForUrl(String url) {
       : const <String, String>{};
 }
 
+typedef LocalFileRename =
+    Future<File> Function(File source, String destination);
+
+@visibleForTesting
+Future<void> commitLocalDownloadedFile({
+  required File staging,
+  required File target,
+  LocalFileRename? rename,
+}) async {
+  final renameFile =
+      rename ?? (source, destination) => source.rename(destination);
+  final backup = File('${target.path}.nameless.bak');
+
+  if (!await target.exists() && await backup.exists()) {
+    await renameFile(backup, target.path);
+  }
+  if (await target.exists()) {
+    if (await backup.exists()) {
+      throw FileSystemException(
+        'Cannot replace file while a previous backup is still present.',
+        backup.path,
+      );
+    }
+    await renameFile(target, backup.path);
+  }
+
+  try {
+    await renameFile(staging, target.path);
+  } catch (error, stackTrace) {
+    try {
+      if (await backup.exists()) {
+        if (await target.exists()) await target.delete();
+        await renameFile(backup, target.path);
+      }
+    } catch (rollbackError, rollbackStackTrace) {
+      AppLogService.error(
+        'commitLocalDownloadedFile rollback failed',
+        error: rollbackError,
+        stackTrace: rollbackStackTrace,
+      );
+    }
+    Error.throwWithStackTrace(error, stackTrace);
+  }
+
+  try {
+    if (await backup.exists()) await backup.delete();
+  } catch (error, stackTrace) {
+    AppLogService.warning(
+      'commitLocalDownloadedFile backup cleanup failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+}
+
 enum AsmrDownloadTaskStatus {
   idle,
   preparing,
@@ -942,9 +997,11 @@ class AsmrDownloadManager extends ChangeNotifier {
             bytesDownloaded: tempResult.bytesDownloaded,
           );
         }
-        await targetFile.delete();
       }
-      await tempResult.file.rename(targetFile.path);
+      await commitLocalDownloadedFile(
+        staging: tempResult.file,
+        target: targetFile,
+      );
       if (!targetExisted) {
         _createdOutputPaths[workId]?.add(targetFile.path);
       }

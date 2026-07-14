@@ -1,13 +1,14 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
 import '../../../app/state/audio_provider.dart';
+import '../../../app/state/audio_provider_riverpod.dart';
 import '../application/asmr_library_controller.dart';
-import '../../player/application/audio_state_services.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
@@ -21,16 +22,17 @@ Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
   );
 }
 
-class _AsmrWorkDetailSheet extends StatefulWidget {
+class _AsmrWorkDetailSheet extends ConsumerStatefulWidget {
   const _AsmrWorkDetailSheet({required this.work});
 
   final AsmrWork work;
 
   @override
-  State<_AsmrWorkDetailSheet> createState() => _AsmrWorkDetailSheetState();
+  ConsumerState<_AsmrWorkDetailSheet> createState() =>
+      _AsmrWorkDetailSheetState();
 }
 
-class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
+class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
   Future<AsmrWorkDetail>? _detailFuture;
 
   @override
@@ -62,9 +64,7 @@ class _AsmrWorkDetailSheetState extends State<_AsmrWorkDetailSheet> {
         final detail = snapshot.data;
         final effectiveWork = detail?.work ?? widget.work;
         final coverCacheWidth = coverCacheWidthForResolution(
-          context.select<AudioProvider, CoverImageResolution>(
-            (provider) => provider.coverImageResolution,
-          ),
+          ref.watch(coverImageResolutionProvider),
         );
         final provider = context.read<AudioProvider>();
         final coverUrl = effectiveWork.preferredCoverUrl;

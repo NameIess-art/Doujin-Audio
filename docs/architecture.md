@@ -1,12 +1,26 @@
 # Architecture Notes
 
-Nameless Audio currently keeps `AudioProvider` as the UI-facing facade. Screens continue to read state and call commands through the provider, while platform-specific playback work remains behind the existing native playback bridge and notification services.
+Nameless Audio keeps `AudioProvider` as the only compatibility `ChangeNotifier`
+facade. New presentation state reads go through Riverpod projections of the
+owning facades; legacy commands can still be forwarded through `AudioProvider`.
+Platform playback remains behind the existing native playback bridge and
+notification services.
 
 State ownership is intentionally split by responsibility:
 
-- `AudioProvider` is the single mutable `ChangeNotifier` facade for legacy UI commands and orchestration.
-- Riverpod exposes repositories, service state slices, and derived UI projections. It must not create a second mutable source for library, queue, session, timer, or playback state.
-- New business rules belong in an existing pure Dart service when possible; `AudioProvider` should coordinate those rules and publish state changes.
+- `AudioProvider` is constructed from exactly `LibraryFacade`,
+  `PlaybackFacade`, `TimerFacade`, `NotificationFacade`, and
+  `SettingsRepository`. It coalesces legacy listener notifications in one
+  microtask and suppresses them after disposal.
+- Riverpod exposes those five high-level dependencies, their immutable state
+  slices, and derived UI projections. Database/native repositories, command
+  runners, and mutable services are not UI-level providers.
+- `LibraryService`, `PlaybackSessionService`, `TimerService`,
+  `NotificationCoordinatorService`, and `SettingsRepository` remain the sole
+  mutable owners of their respective state during the progressive extraction.
+- `MainScreenController` owns scroll-to-top presentation signals and
+  `PlaylistUiController` owns carousel positioning. Neither state is stored in
+  `AudioProvider`.
 
 Playback notifications use `PlaybackNotificationService` and
 `NotificationsPlatformService` on the Dart side, with routing and rendering
@@ -19,10 +33,14 @@ Current platform responsibility boundaries include:
 - `LibraryScannerService`: scan generation, rollback, merge, and catalog writes. It reads and writes the catalog only through `LibraryCatalogReader` / `LibraryCatalogWriter` and returns typed outcomes instead of localized UI messages.
 - `LibraryScanDataSource`: permission requests, file/folder selection, local file-system enumeration, and native local/SAF scanning.
 - `LibraryScanRules`: pure duplicate, nested-directory, path-overlap, and standalone-folder promotion rules.
-- `AudioProviderLibraryCatalog`: the compatibility adapter from the catalog ports to the existing `AudioProvider` facade; it must not own a second state copy.
+- `LibraryFacade.catalog`: the catalog port used by scanning presentation. Its
+  temporary compatibility command bridge owns no state and will disappear as
+  the remaining library mutations move into `LibraryFacade`.
 - `AsmrRemoteCatalogService`: loads category/search pages, recommendations, details, and track trees without owning controller cache or UI state.
 - `AsmrAccountSyncService`: owns session recovery, local favorite/history transactions, outbox draining, and remote merge rules. Auth epoch changes cancel stale writes.
-- `AsmrPlaybackCoordinator`: resolves an ASMR work or track queue and launches it through `PlaybackSessionLauncher`, without coupling `AsmrLibraryController` to `AudioProvider`.
+- `AsmrPlaybackCoordinator`: resolves an ASMR work or track queue and launches
+  it through `PlaybackFacadeSessionLauncher`, without coupling
+  `AsmrLibraryController` to `AudioProvider`.
 - `AsmrPreferencesStore`: instance-scoped ASMR persistence backed by an injected `AppDatabase`.
 - `LibraryEntryEditorService`: local/SAF disk snapshots used by library editing; presentation only applies the typed snapshot to the existing facade.
 - `DataSupportFileService` and `DiagnosticReportExporter`: picker, temporary-file, backup, and diagnostic-export lifecycles kept outside presentation.
@@ -71,7 +89,11 @@ under the owning feature's `domain` directory. Tests for pure helpers live in
 `test/*_test.dart` and should be expanded before changing behavior in the
 corresponding application service.
 
-Large screen and provider files are split with same-library `part` files when the extracted code still depends on private state. This keeps public APIs unchanged while separating page state, UI widgets, notification helpers, playback helpers, and persistence helpers into smaller maintenance units. `SettingsTab` keeps lifecycle and flow composition in its main file while general, appearance, playback, ASMR, data, and update sections are private part builders with explicit inputs and callbacks.
+Large screen and compatibility-provider files may use same-library `part` files
+only while extracted code still depends on private compatibility state. New
+business behavior belongs in an owning facade/service, and replaced parts must
+be deleted rather than retained in parallel. `SettingsTab` keeps lifecycle and
+flow composition in its main file while its sections remain private builders.
 
 Player-only carousel and progress widgets live in player presentation instead of `core/widgets`. Playlist controls are grouped into transport, time-segment, audio-feature/equalizer, and speed-control parts. Audio-detail cover, field, and fetch-dialog widgets remain private same-library parts.
 

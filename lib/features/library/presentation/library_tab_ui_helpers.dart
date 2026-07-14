@@ -215,7 +215,7 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                   ),
                   TextButton.icon(
                     onPressed: () => _scanCoordinator.cancel(
-                      AudioProviderLibraryCatalog(provider),
+                      ref.read(libraryFacadeProvider).catalog,
                     ),
                     icon: Icon(Icons.close_rounded, size: 16, color: cs.error),
                     label: Text(

@@ -172,8 +172,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final shouldDismiss = _dismissController.value >= (1 / 3) || velocity > 500;
     if (shouldDismiss) {
       ref
-          .read(audioProviderFacadeProvider)
-          .requestCarouselSnapTo(_currentSessionId);
+          .read(playlistUiControllerProvider)
+          .requestCarouselSnap(_currentSessionId);
       _beginDismissInteraction();
       await _animateDismissToEnd(velocity: velocity);
       _endDismissInteraction();
@@ -337,8 +337,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                           _segmentPanelExpandedNotifier,
                       onClose: () async {
                         ref
-                            .read(audioProviderFacadeProvider)
-                            .requestCarouselSnapTo(_currentSessionId);
+                            .read(playlistUiControllerProvider)
+                            .requestCarouselSnap(_currentSessionId);
                         _beginDismissInteraction();
                         await _animateDismissToEnd();
                         _endDismissInteraction();

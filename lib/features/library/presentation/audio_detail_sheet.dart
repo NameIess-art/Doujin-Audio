@@ -3,12 +3,13 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' hide Consumer;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
-import '../../player/application/audio_state_services.dart';
+import '../../../app/state/audio_provider_riverpod.dart';
 import '../application/audio_detail_repository.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/media/path_display.dart';
@@ -36,7 +37,7 @@ Future<void> showAudioDetailSheet(
   );
 }
 
-class AudioDetailSheet extends StatefulWidget {
+class AudioDetailSheet extends ConsumerStatefulWidget {
   const AudioDetailSheet({
     super.key,
     required this.target,
@@ -49,10 +50,10 @@ class AudioDetailSheet extends StatefulWidget {
   durationCalculator;
 
   @override
-  State<AudioDetailSheet> createState() => _AudioDetailSheetState();
+  ConsumerState<AudioDetailSheet> createState() => _AudioDetailSheetState();
 }
 
-class _AudioDetailSheetState extends State<AudioDetailSheet> {
+class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   late AudioDetailTarget _target = widget.target;
   AudioDetail? _detail;
   Duration? _calculatedDuration;
@@ -457,11 +458,13 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       context,
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
     final detail = _detail;
-    final provider = context.watch<AudioProvider>();
+    final provider = context.read<AudioProvider>();
+    final track = ref.watch(libraryTrackProvider(_target.targetPath));
+    final coverGeneration = ref.watch(coverGenerationProvider);
 
     Duration? duration = detail?.duration ?? _calculatedDuration;
     if (duration == null && !_target.isLibraryRootFolder) {
-      final trackDuration = provider.trackByPath(_target.targetPath)?.duration;
+      final trackDuration = track?.duration;
       if (trackDuration != null && trackDuration > Duration.zero) {
         duration = trackDuration;
       }
@@ -571,22 +574,16 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
               ),
               const SizedBox(height: 12),
               if (_target.isLibraryRootFolder) ...[
-                Selector<AudioProvider, int>(
-                  selector: (_, provider) => provider.coverGeneration,
-                  builder: (context, coverGeneration, _) {
-                    final provider = context.read<AudioProvider>();
-                    return _FolderCoverSelector(
-                      key: ValueKey('${_target.targetPath}:$coverGeneration'),
-                      folderPath: _target.targetPath,
-                      initialCoverPath: provider.resolvedCoverPathForFolder(
-                        _target.targetPath,
-                      ),
-                      onCoverSelected: (coverPath) {
-                        setState(() {
-                          _detail = _detail?.copyWith(cardCoverPath: coverPath);
-                        });
-                      },
-                    );
+                _FolderCoverSelector(
+                  key: ValueKey('${_target.targetPath}:$coverGeneration'),
+                  folderPath: _target.targetPath,
+                  initialCoverPath: provider.resolvedCoverPathForFolder(
+                    _target.targetPath,
+                  ),
+                  onCoverSelected: (coverPath) {
+                    setState(() {
+                      _detail = _detail?.copyWith(cardCoverPath: coverPath);
+                    });
                   },
                 ),
                 const SizedBox(height: 12),

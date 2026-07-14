@@ -116,7 +116,10 @@ Android 应用内自动更新始终下载 universal APK 并交给系统安装器
 
 ## 代码结构
 
-- `lib/app`：应用壳、主页面、本地化、主题，以及兼容的 `AudioProvider` / Riverpod 投影。
+- `lib/app`：应用壳、主页面、本地化、主题，以及仅作旧 API 门面的
+  `AudioProvider`；Riverpod 直接投影 Library / Playback / Timer /
+  Notification / Settings 五个状态所有者，并由 presentation controller
+  管理滚动与轮播定位。
 - `lib/core`：错误、日志、平台网关、SQLite 持久化、共享媒体对象和通用组件。
 - `lib/features`：library、player、ASMR、settings、data-support 和 video-converter 的 domain/application/presentation 代码。
 - Android 原生代码按 `channel`、`scanner`、`storage`、`metadata`、`subtitle`、`update` 和 `player/*` 分包；根包仅保留 `MainActivity`。

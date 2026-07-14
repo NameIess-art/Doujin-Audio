@@ -43,6 +43,8 @@ import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/dlsite_metadata_service.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/library/application/library_snapshot_cache_service.dart';
+import '../../features/library/application/library_facade.dart';
+import 'library_catalog_compatibility.dart';
 import '../../features/library/application/library_scan_models.dart';
 import '../../features/library/application/library_organizer.dart';
 import '../../core/media/media_file_support.dart';
@@ -76,6 +78,9 @@ import '../../features/player/application/playback_command_runner.dart';
 import '../../core/media/path_matcher.dart';
 import '../../core/media/path_display.dart';
 import '../../features/player/application/system_media_controls_service.dart';
+import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/timer_facade.dart';
+import '../../features/player/application/notification_facade.dart';
 import '../../core/media/subtitle_parser.dart';
 
 part 'audio_provider_notifications.dart';
@@ -95,7 +100,6 @@ part 'audio_provider_persistence_sessions.dart';
 part 'audio_provider_persistence_timer.dart';
 part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
-part 'audio_provider_controllers.dart';
 part 'audio_provider_library_covers.dart';
 part 'audio_provider_warmup.dart';
 part 'audio_provider_time_segments.dart';
@@ -124,25 +128,49 @@ class AudioProvider with ChangeNotifier {
   );
   static final FileCachePlatformGateway _fileCacheGateway =
       FileCachePlatformGateway.instance;
-  final PlaybackNotificationService _notificationService;
-  final AudioDatabaseRepository _audioDatabaseRepository;
-  final AudioDetailCacheService _audioDetailCacheService;
-  final DlsiteMetadataService _dlsiteMetadataService;
-  final AsmrMetadataService _asmrMetadataService;
-  final AsmrPlaybackCacheService _asmrPlaybackCacheService;
-  final NativePlaybackRepository _nativePlaybackRepository;
-  final PlaybackCommandRunner _playbackCommandRunner;
-  final PowerPlatformService _powerPlatformService;
-  final LibraryService _libraryService;
-  final LibrarySnapshotCacheService _librarySnapshotCacheService;
-  late final CoverArtworkCacheService _coverArtworkCacheService;
-  final PlaybackSessionService _playbackService;
-  final TimerService _timerService;
-  final NotificationCoordinatorService _notificationStateService;
+  final LibraryFacade _libraryFacade;
+  final PlaybackFacade _playbackFacade;
+  final TimerFacade _timerFacade;
+  final NotificationFacade _notificationFacade;
   final SettingsRepository _settingsRepository;
-  final SystemMediaControlsService _systemMediaControlsService;
   final bool _skipDisposePersistence;
   SharedPreferences? _cachedPrefs;
+
+  LibraryFacade get libraryFacade => _libraryFacade;
+  PlaybackFacade get playbackFacade => _playbackFacade;
+  TimerFacade get timerFacade => _timerFacade;
+  NotificationFacade get notificationFacade => _notificationFacade;
+  SettingsRepository get settingsRepository => _settingsRepository;
+
+  PlaybackNotificationService get _notificationService =>
+      _notificationFacade.service;
+  AudioDatabaseRepository get _audioDatabaseRepository =>
+      _libraryFacade.databaseRepository;
+  AudioDetailCacheService get _audioDetailCacheService =>
+      _libraryFacade.detailCacheService;
+  DlsiteMetadataService get _dlsiteMetadataService =>
+      _libraryFacade.metadataService;
+  AsmrMetadataService get _asmrMetadataService =>
+      _libraryFacade.asmrMetadataService;
+  AsmrPlaybackCacheService get _asmrPlaybackCacheService =>
+      _playbackFacade.playbackCacheService;
+  NativePlaybackRepository get _nativePlaybackRepository =>
+      _playbackFacade.nativeRepository;
+  PlaybackCommandRunner get _playbackCommandRunner =>
+      _playbackFacade.commandRunner;
+  PowerPlatformService get _powerPlatformService =>
+      _timerFacade.powerPlatformService;
+  LibraryService get _libraryService => _libraryFacade.service;
+  LibrarySnapshotCacheService get _librarySnapshotCacheService =>
+      _libraryFacade.snapshotCacheService;
+  CoverArtworkCacheService get _coverArtworkCacheService =>
+      _libraryFacade.coverArtworkCacheService;
+  PlaybackSessionService get _playbackService => _playbackFacade.service;
+  TimerService get _timerService => _timerFacade.service;
+  NotificationCoordinatorService get _notificationStateService =>
+      _notificationFacade.stateService;
+  SystemMediaControlsService get _systemMediaControlsService =>
+      _playbackFacade.systemMediaControlsService;
 
   static const List<String> converterFormats = [
     'mp3',
@@ -236,35 +264,21 @@ class AudioProvider with ChangeNotifier {
       <String, _TimeSegmentLoopRuntime>{};
   final Set<String> _timeSegmentLoopBoundSessionIds = <String>{};
   final Set<String> _timeSegmentLoopSeekPendingSessionIds = <String>{};
-  final ValueNotifier<int?> _scrollToTopTabNotifier = ValueNotifier<int?>(null);
-  ValueListenable<int?> get scrollToTopTabListenable => _scrollToTopTabNotifier;
-  final ValueNotifier<String?> _carouselSnapNotifier = ValueNotifier<String?>(
-    null,
-  );
-  ValueListenable<String?> get carouselSnapListenable => _carouselSnapNotifier;
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
   bool _nativeRuntimeStarted = false;
   bool _warmupPausedForLifecycle = false;
   int _transportCommandSequence = 0;
+  int _persistenceLoadEpoch = 0;
   Future<void>? _postStartupLibraryMaintenance;
   Future<void>? _missingLibraryDurationBackfill;
   bool _missingLibraryDurationBackfillRequestedAgain = false;
-
-  void requestCarouselSnapTo(String sessionId) {
-    _carouselSnapNotifier.value = sessionId;
-  }
 
   final Random _random = Random();
 
   StreamSubscription<NativePlaybackSnapshot>? _nativePlaybackSubscription;
   StreamSubscription<NativePlaybackProgressUpdate>?
   _nativePlaybackProgressSubscription;
-
-  late final LibraryController libraryController;
-  late final PlaybackSessionController playbackSessionController;
-  late final TimerController timerController;
-  late final NotificationCoordinator notificationCoordinator;
 
   List<MusicTrack> get _library => _libraryService.library;
   Map<String, MusicTrack> get _libraryByPath => _libraryService.libraryByPath;
@@ -497,24 +511,23 @@ class AudioProvider with ChangeNotifier {
 
   bool get _keepCpuAwake => _settingsRepository.keepCpuAwake;
   set _keepCpuAwake(bool value) => _settingsRepository.keepCpuAwake = value;
-  bool get _keepAliveHasPlayback => _settingsRepository.keepAliveHasPlayback;
+  bool get _keepAliveHasPlayback => _timerFacade.keepAliveHasPlayback;
   set _keepAliveHasPlayback(bool value) {
-    _settingsRepository.keepAliveHasPlayback = value;
+    _timerFacade.keepAliveHasPlayback = value;
   }
 
-  bool get _keepAliveHasTimer => _settingsRepository.keepAliveHasTimer;
-  set _keepAliveHasTimer(bool value) =>
-      _settingsRepository.keepAliveHasTimer = value;
+  bool get _keepAliveHasTimer => _timerFacade.keepAliveHasTimer;
+  set _keepAliveHasTimer(bool value) => _timerFacade.keepAliveHasTimer = value;
   bool get _keepAliveUsesUnifiedNotifications =>
-      _settingsRepository.keepAliveUsesUnifiedNotifications;
+      _timerFacade.keepAliveUsesUnifiedNotifications;
   set _keepAliveUsesUnifiedNotifications(bool value) {
-    _settingsRepository.keepAliveUsesUnifiedNotifications = value;
+    _timerFacade.keepAliveUsesUnifiedNotifications = value;
   }
 
   bool get _keepAliveKeepsForegroundService =>
-      _settingsRepository.keepAliveKeepsForegroundService;
+      _timerFacade.keepAliveKeepsForegroundService;
   set _keepAliveKeepsForegroundService(bool value) {
-    _settingsRepository.keepAliveKeepsForegroundService = value;
+    _timerFacade.keepAliveKeepsForegroundService = value;
   }
 
   TimerMode? get _timerMode => _timerService.timerMode;
@@ -556,84 +569,31 @@ class AudioProvider with ChangeNotifier {
   DateTime? get _autoResumeAt => _timerService.autoResumeAt;
   set _autoResumeAt(DateTime? value) => _timerService.autoResumeAt = value;
 
-  void triggerScrollToTop(int index) {
-    _scrollToTopTabNotifier.value = index;
-    // Reset to null in the next frame so it can be triggered again with the same index
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollToTopTabNotifier.value != null) {
-        _scrollToTopTabNotifier.value = null;
-      }
-    });
-  }
-
   factory AudioProvider({
-    required PlaybackNotificationService notificationService,
-    AudioDatabaseRepository? audioDatabaseRepository,
-    AudioDetailRepository? audioDetailRepository,
-    AudioDetailCacheService? audioDetailCacheService,
-    CoverArtworkCacheService? coverArtworkCacheService,
-    DlsiteMetadataService? dlsiteMetadataService,
-    AsmrMetadataService? asmrMetadataService,
-    AsmrPlaybackCacheService asmrPlaybackCacheService =
-        const AsmrPlaybackCacheService(),
-    NativePlaybackRepository? nativePlaybackRepository,
-    PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
-    PowerPlatformService? powerPlatformService,
-    LibraryService? libraryService,
-    LibrarySnapshotCacheService? librarySnapshotCacheService,
-    PlaybackSessionService? playbackService,
-    TimerService? timerService,
-    NotificationCoordinatorService? notificationStateService,
-    SettingsRepository? settingsRepository,
-    SystemMediaControlsService? systemMediaControlsService,
+    required LibraryFacade library,
+    required PlaybackFacade playback,
+    required TimerFacade timer,
+    required NotificationFacade notification,
+    required SettingsRepository settings,
     bool deferRuntimeStart = false,
-  }) {
-    final resolvedAudioDatabaseRepository =
-        audioDatabaseRepository ?? AudioDatabaseRepository();
-    final resolvedAudioDetailCacheService =
-        audioDetailCacheService ??
-        AudioDetailCacheService(
-          repository:
-              audioDetailRepository ??
-              AudioDetailRepository(
-                databaseRepository: resolvedAudioDatabaseRepository,
-              ),
-        );
-    final resolvedLibraryService = libraryService ?? LibraryService();
-    return AudioProvider._(
-      notificationService: notificationService,
-      audioDatabaseRepository: resolvedAudioDatabaseRepository,
-      audioDetailCacheService: resolvedAudioDetailCacheService,
-      dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
-      asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
-      asmrPlaybackCacheService: asmrPlaybackCacheService,
-      nativePlaybackRepository:
-          nativePlaybackRepository ?? NativePlaybackRepository(),
-      playbackCommandRunner: playbackCommandRunner,
-      powerPlatformService: powerPlatformService ?? PowerPlatformService(),
-      libraryService: resolvedLibraryService,
-      librarySnapshotCacheService:
-          librarySnapshotCacheService ??
-          LibrarySnapshotCacheService(
-            libraryService: resolvedLibraryService,
-            detailCacheService: resolvedAudioDetailCacheService,
-          ),
-      coverArtworkCacheService: coverArtworkCacheService,
-      playbackService: playbackService ?? PlaybackSessionService(),
-      timerService: timerService ?? TimerService(),
-      notificationStateService:
-          notificationStateService ?? NotificationCoordinatorService(),
-      settingsRepository: settingsRepository ?? SettingsRepository(),
-      systemMediaControlsService:
-          systemMediaControlsService ?? SystemMediaControlsService(),
-      skipDisposePersistence: false,
-      startNativeRuntime: !deferRuntimeStart,
-    );
-  }
+  }) => AudioProvider._(
+    library: library,
+    playback: playback,
+    timer: timer,
+    notification: notification,
+    settings: settings,
+    skipDisposePersistence: false,
+    startNativeRuntime: !deferRuntimeStart,
+  );
 
   @visibleForTesting
   factory AudioProvider.test({
-    required PlaybackNotificationService notificationService,
+    LibraryFacade? library,
+    PlaybackFacade? playback,
+    TimerFacade? timer,
+    NotificationFacade? notification,
+    SettingsRepository? settings,
+    PlaybackNotificationService? notificationService,
     AudioDatabaseRepository? audioDatabaseRepository,
     AudioDetailRepository? audioDetailRepository,
     AudioDetailCacheService? audioDetailCacheService,
@@ -653,6 +613,7 @@ class AudioProvider with ChangeNotifier {
     SettingsRepository? settingsRepository,
     SystemMediaControlsService? systemMediaControlsService,
     bool skipPersistence = true,
+    bool startRuntime = false,
   }) {
     final resolvedAudioDatabaseRepository =
         audioDatabaseRepository ?? AudioDatabaseRepository();
@@ -666,87 +627,76 @@ class AudioProvider with ChangeNotifier {
               ),
         );
     final resolvedLibraryService = libraryService ?? LibraryService();
+    final resolvedLibrary =
+        library ??
+        LibraryFacade.create(
+          databaseRepository: resolvedAudioDatabaseRepository,
+          detailCacheService: resolvedAudioDetailCacheService,
+          metadataService: dlsiteMetadataService,
+          asmrMetadataService: asmrMetadataService,
+          service: resolvedLibraryService,
+          snapshotCacheService: librarySnapshotCacheService,
+          coverArtworkCacheService: coverArtworkCacheService,
+        );
+    final resolvedPlayback =
+        playback ??
+        PlaybackFacade.create(
+          databaseRepository: resolvedLibrary.databaseRepository,
+          nativeRepository: nativePlaybackRepository,
+          commandRunner: playbackCommandRunner,
+          playbackCacheService: asmrPlaybackCacheService,
+          service: playbackService,
+          systemMediaControlsService: systemMediaControlsService,
+        );
     return AudioProvider._(
-      notificationService: notificationService,
-      audioDatabaseRepository: resolvedAudioDatabaseRepository,
-      audioDetailCacheService: resolvedAudioDetailCacheService,
-      dlsiteMetadataService: dlsiteMetadataService ?? DlsiteMetadataService(),
-      asmrMetadataService: asmrMetadataService ?? AsmrMetadataService(),
-      asmrPlaybackCacheService: asmrPlaybackCacheService,
-      nativePlaybackRepository:
-          nativePlaybackRepository ?? NativePlaybackRepository(),
-      playbackCommandRunner: playbackCommandRunner,
-      powerPlatformService: powerPlatformService ?? PowerPlatformService(),
-      libraryService: resolvedLibraryService,
-      librarySnapshotCacheService:
-          librarySnapshotCacheService ??
-          LibrarySnapshotCacheService(
-            libraryService: resolvedLibraryService,
-            detailCacheService: resolvedAudioDetailCacheService,
+      library: resolvedLibrary,
+      playback: resolvedPlayback,
+      timer:
+          timer ??
+          TimerFacade.create(
+            service: timerService,
+            powerPlatformService: powerPlatformService,
           ),
-      coverArtworkCacheService: coverArtworkCacheService,
-      playbackService: playbackService ?? PlaybackSessionService(),
-      timerService: timerService ?? TimerService(),
-      notificationStateService:
-          notificationStateService ?? NotificationCoordinatorService(),
-      settingsRepository: settingsRepository ?? SettingsRepository(),
-      systemMediaControlsService:
-          systemMediaControlsService ?? SystemMediaControlsService(),
+      notification:
+          notification ??
+          NotificationFacade.create(
+            service: notificationService ?? PlaybackNotificationService(),
+            stateService: notificationStateService,
+          ),
+      settings: settings ?? settingsRepository ?? SettingsRepository(),
       skipDisposePersistence: skipPersistence,
-      startNativeRuntime: false,
+      startNativeRuntime: startRuntime,
     );
   }
 
   AudioProvider._({
-    required PlaybackNotificationService notificationService,
-    required AudioDatabaseRepository audioDatabaseRepository,
-    required AudioDetailCacheService audioDetailCacheService,
-    required DlsiteMetadataService dlsiteMetadataService,
-    required AsmrMetadataService asmrMetadataService,
-    required AsmrPlaybackCacheService asmrPlaybackCacheService,
-    required NativePlaybackRepository nativePlaybackRepository,
-    required PlaybackCommandRunner playbackCommandRunner,
-    required PowerPlatformService powerPlatformService,
-    required LibraryService libraryService,
-    required LibrarySnapshotCacheService librarySnapshotCacheService,
-    required CoverArtworkCacheService? coverArtworkCacheService,
-    required PlaybackSessionService playbackService,
-    required TimerService timerService,
-    required NotificationCoordinatorService notificationStateService,
-    required SettingsRepository settingsRepository,
-    required SystemMediaControlsService systemMediaControlsService,
+    required LibraryFacade library,
+    required PlaybackFacade playback,
+    required TimerFacade timer,
+    required NotificationFacade notification,
+    required SettingsRepository settings,
     required bool skipDisposePersistence,
     required bool startNativeRuntime,
-  }) : _notificationService = notificationService,
-       _audioDatabaseRepository = audioDatabaseRepository,
-       _audioDetailCacheService = audioDetailCacheService,
-       _dlsiteMetadataService = dlsiteMetadataService,
-       _asmrMetadataService = asmrMetadataService,
-       _asmrPlaybackCacheService = asmrPlaybackCacheService,
-       _nativePlaybackRepository = nativePlaybackRepository,
-       _playbackCommandRunner = playbackCommandRunner,
-       _powerPlatformService = powerPlatformService,
-       _libraryService = libraryService,
-       _librarySnapshotCacheService = librarySnapshotCacheService,
-       _playbackService = playbackService,
-       _timerService = timerService,
-       _notificationStateService = notificationStateService,
-       _settingsRepository = settingsRepository,
-       _systemMediaControlsService = systemMediaControlsService,
+  }) : _libraryFacade = library,
+       _playbackFacade = playback,
+       _timerFacade = timer,
+       _notificationFacade = notification,
+       _settingsRepository = settings,
        _skipDisposePersistence = skipDisposePersistence {
-    _coverArtworkCacheService =
-        coverArtworkCacheService ??
-        CoverArtworkCacheService(
-          libraryService: _libraryService,
-          databaseRepository: _audioDatabaseRepository,
-          audioDetailCacheService: _audioDetailCacheService,
-          isActiveCoverKey: _isActiveCoverKey,
-          onActiveCoverChanged: () {
-            _syncNotificationState();
-            _notifyNotificationChanged();
-          },
-        );
-    _initializeControllers();
+    _libraryFacade.attachCatalog(AudioProviderCompatibilityCatalog(this));
+    _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
+    _libraryFacade.attachCoverArtworkCacheService(
+      () => CoverArtworkCacheService(
+        libraryService: _libraryService,
+        databaseRepository: _audioDatabaseRepository,
+        audioDetailCacheService: _audioDetailCacheService,
+        isActiveCoverKey: _isActiveCoverKey,
+        onActiveCoverChanged: () {
+          _syncNotificationState();
+          _notifyNotificationChanged();
+        },
+      ),
+    );
     UiInteractionCoordinator.instance.addListener(
       _handleWarmupInteractionChanged,
     );
@@ -772,53 +722,10 @@ class AudioProvider with ChangeNotifier {
 
   void startRuntime() => _startNativeRuntime();
 
-  void _initializeControllers() {
-    libraryController = LibraryController(
-      beginBatch: beginLibraryBatch,
-      endBatch: ({bool notify = true}) => endLibraryBatch(notify: notify),
-      setScanning: setScanning,
-      setScanProgress:
-          ({
-            String? currentFolder,
-            int? foundCount,
-            int? duplicateCount,
-            int? failureCount,
-          }) => setScanProgress(
-            currentFolder: currentFolder,
-            foundCount: foundCount,
-            duplicateCount: duplicateCount,
-            failureCount: failureCount,
-          ),
-      addTracks:
-          (
-            List<MusicTrack> tracks, {
-            bool notify = true,
-            bool persist = true,
-          }) => addTracks(tracks, notify: notify, persist: persist),
-    );
-    playbackSessionController = PlaybackSessionController(
-      spawn: (MusicTrack track, {bool? autoPlay}) =>
-          spawnSession(track, autoPlay: autoPlay),
-      toggle: toggleSessionPlayPause,
-      pauseAll: pauseAllSessions,
-      clearAll: clearAllSessions,
-    );
-    timerController = TimerController(
-      configure: configureTimer,
-      startCountdown: startCountdown,
-      cancel: cancelTimer,
-      setAutoResume: setAutoResume,
-    );
-    notificationCoordinator = NotificationCoordinator(
-      resyncAfterResume: resyncNotificationsAfterResume,
-      restoreAfterSystemClear: restoreNotificationsAfterSystemClear,
-      dismissAfterPauseAll: dismissNotificationsAfterPauseAll,
-    );
-  }
-
   @override
   void dispose() {
     _isDisposed = true;
+    _persistenceLoadEpoch++;
     UiInteractionCoordinator.instance.removeListener(
       _handleWarmupInteractionChanged,
     );
@@ -832,10 +739,6 @@ class AudioProvider with ChangeNotifier {
     _unifiedNotificationSyncTimer?.cancel();
     _notificationActionRefreshTimer?.cancel();
     _notificationActionGuardTimeout?.cancel();
-    if (!_skipDisposePersistence) {
-      unawaited(_saveSessionState());
-      unawaited(_saveSessionOrder());
-    }
     unawaited(
       _setKeepCpuAwake(
         false,
@@ -848,14 +751,11 @@ class AudioProvider with ChangeNotifier {
     unawaited(_deactivateAudioSession());
     unawaited(_nativePlaybackSubscription?.cancel());
     unawaited(_nativePlaybackProgressSubscription?.cancel());
-    unawaited(_nativePlaybackRepository.dispose());
-    _coverArtworkCacheService.dispose();
-    unawaited(_libraryService.dispose());
-    unawaited(_playbackService.dispose());
-    unawaited(_timerService.dispose());
-    unawaited(_notificationStateService.dispose());
+    unawaited(_libraryFacade.dispose());
+    unawaited(_playbackFacade.dispose());
+    unawaited(_timerFacade.dispose());
+    unawaited(_notificationFacade.dispose());
     unawaited(_settingsRepository.dispose());
-    unawaited(_systemMediaControlsService.dispose());
     for (final session in _sessions.values) {
       session.dispose();
     }

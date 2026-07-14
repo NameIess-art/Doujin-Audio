@@ -213,7 +213,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _scrollCurrentPageToTop() {
     if (!Platform.isWindows) return;
-    ref.read(audioProviderFacadeProvider).triggerScrollToTop(_currentIndex);
+    ref.read(mainScreenControllerProvider).requestScrollToTop(_currentIndex);
     if (_showScrollToTopButton && mounted) {
       setState(() {
         _showScrollToTopButton = false;
@@ -550,11 +550,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _switchPage(int index, {bool withFeedback = true}) {
-    final provider = ref.read(audioProviderFacadeProvider);
     if (index == _currentIndex) {
-      provider.triggerScrollToTop(index);
+      ref.read(mainScreenControllerProvider).requestScrollToTop(index);
       return;
     }
+    final provider = ref.read(audioProviderFacadeProvider);
     if (withFeedback) {
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     }

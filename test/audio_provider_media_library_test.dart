@@ -3,7 +3,6 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
-import 'package:nameless_audio/app/state/audio_provider_library_catalog.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
@@ -576,7 +575,7 @@ void main() {
 
         final scanner = LibraryScannerService();
         await scanner.refreshWatchedFolders(
-          provider: AudioProviderLibraryCatalog(provider),
+          provider: provider.libraryFacade.catalog,
           labels: const LibraryScanLabels(
             chooseMusicFolder: 'Choose music folder',
             chooseLibraryFolder: 'Choose library folder',

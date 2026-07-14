@@ -221,8 +221,8 @@ extension _MainScreenNotifications on _MainScreenState {
     if (!mounted) return;
     final sessionId = _pendingNotificationSessionId;
     if (sessionId == null || sessionId.isEmpty) return;
-    final playbackService = ref.read(playbackSessionServiceProvider);
-    if (playbackService.sessionById(sessionId) == null) {
+    final playback = ref.read(playbackFacadeProvider);
+    if (playback.sessionById(sessionId) == null) {
       _pendingNotificationSessionRetryCount++;
       final startedAt = _pendingNotificationSessionStartedAt;
       if (startedAt == null ||

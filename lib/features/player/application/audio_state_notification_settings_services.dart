@@ -197,10 +197,6 @@ class SettingsRepository {
   int maxCacheBytes = 300 * 1024 * 1024;
   bool asmrPlaybackCacheEnabled = false;
   bool keepCpuAwake = false;
-  bool keepAliveHasPlayback = false;
-  bool keepAliveHasTimer = false;
-  bool keepAliveUsesUnifiedNotifications = false;
-  bool keepAliveKeepsForegroundService = false;
   bool recordPlaybackProgress = true;
   bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;

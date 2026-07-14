@@ -351,9 +351,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   void initState() {
     super.initState();
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
-    initTabState(
-      ref.read(audioProviderFacadeProvider).scrollToTopTabListenable,
-    );
+    initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
   }
 
   void _schedulePlaybackCoverWarmup(

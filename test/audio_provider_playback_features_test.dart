@@ -528,11 +528,13 @@ void main() {
         );
         addTearDown(() => restartDb.close());
         await AppDatabase.createSchemaForTest(restartDb);
-        final restartProvider = AudioProvider(
+        final restartProvider = AudioProvider.test(
           notificationService: notificationService,
           audioDatabaseRepository: AudioDatabaseRepository(
             database: AppDatabase.test(restartDb),
           ),
+          skipPersistence: false,
+          startRuntime: true,
         );
         addTearDown(restartProvider.dispose);
         await restartProvider.playbackStateStream.firstWhere(
@@ -632,9 +634,11 @@ void main() {
 
         provider.dispose();
         notificationService = PlaybackNotificationService();
-        provider = AudioProvider(
+        provider = AudioProvider.test(
           notificationService: notificationService,
           audioDatabaseRepository: repository,
+          skipPersistence: false,
+          startRuntime: true,
         );
         await provider.playbackStateStream.firstWhere(
           (state) => state.isInitialized,
@@ -785,9 +789,11 @@ void main() {
               }
             });
 
-        final restoredProvider = AudioProvider(
+        final restoredProvider = AudioProvider.test(
           notificationService: notificationService,
           audioDatabaseRepository: restoredRepository,
+          skipPersistence: false,
+          startRuntime: true,
         );
         addTearDown(restoredProvider.dispose);
 

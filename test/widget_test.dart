@@ -17,7 +17,6 @@ import 'package:nameless_audio/features/settings/application/app_preferences.dar
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
-import 'package:nameless_audio/features/player/application/playback_command_runner.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
@@ -317,7 +316,6 @@ void main() {
     final notificationService = PlaybackNotificationService();
     final audioDatabaseRepository = AudioDatabaseRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
-    const playbackCommandRunner = PlaybackCommandRunner();
     final libraryService = LibraryService();
     final playbackService = PlaybackSessionService();
     final timerService = TimerService();
@@ -366,17 +364,7 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: createAudioProviderOverrides(
-          audioProvider: audioProvider,
-          audioDatabaseRepository: audioDatabaseRepository,
-          nativePlaybackRepository: nativePlaybackRepository,
-          playbackCommandRunner: playbackCommandRunner,
-          libraryService: libraryService,
-          playbackService: playbackService,
-          timerService: timerService,
-          notificationCoordinatorService: notificationCoordinatorService,
-          settingsRepository: settingsRepository,
-        ),
+        overrides: createAudioProviderOverrides(audioProvider: audioProvider),
         child: legacy_provider.MultiProvider(
           providers: [
             legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
@@ -733,7 +721,6 @@ Future<_AppShellHarness> _pumpAppShell(
   final notificationService = PlaybackNotificationService();
   final audioDatabaseRepository = AudioDatabaseRepository();
   final nativePlaybackRepository = NativePlaybackRepository();
-  const playbackCommandRunner = PlaybackCommandRunner();
   final libraryService = LibraryService();
   final playbackService = PlaybackSessionService();
   final timerService = TimerService();
@@ -778,17 +765,7 @@ Future<_AppShellHarness> _pumpAppShell(
 
   await tester.pumpWidget(
     ProviderScope(
-      overrides: createAudioProviderOverrides(
-        audioProvider: audioProvider,
-        audioDatabaseRepository: audioDatabaseRepository,
-        nativePlaybackRepository: nativePlaybackRepository,
-        playbackCommandRunner: playbackCommandRunner,
-        libraryService: libraryService,
-        playbackService: playbackService,
-        timerService: timerService,
-        notificationCoordinatorService: notificationCoordinatorService,
-        settingsRepository: settingsRepository,
-      ),
+      overrides: createAudioProviderOverrides(audioProvider: audioProvider),
       child: legacy_provider.MultiProvider(
         providers: [
           legacy_provider.ChangeNotifierProvider.value(value: themeProvider),

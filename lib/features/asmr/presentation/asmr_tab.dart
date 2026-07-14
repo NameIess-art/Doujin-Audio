@@ -4,17 +4,18 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' hide Consumer;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../../app/state/audio_provider.dart';
+import '../../../app/state/audio_provider_riverpod.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_api_service.dart';
 import '../application/asmr_library_controller.dart';
 import '../application/asmr_playback_coordinator.dart';
-import '../../player/application/audio_state_services.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -43,14 +44,14 @@ part 'asmr_tab_panel.dart';
 part 'asmr_tab_work_tree.dart';
 part 'asmr_tab_cover.dart';
 
-class AsmrTab extends StatefulWidget {
+class AsmrTab extends ConsumerStatefulWidget {
   const AsmrTab({super.key});
 
   @override
-  State<AsmrTab> createState() => _AsmrTabState();
+  ConsumerState<AsmrTab> createState() => _AsmrTabState();
 }
 
-class _AsmrTabState extends State<AsmrTab>
+class _AsmrTabState extends ConsumerState<AsmrTab>
     with
         AutomaticKeepAliveClientMixin,
         TickerProviderStateMixin,
@@ -124,7 +125,7 @@ class _AsmrTabState extends State<AsmrTab>
   @override
   void initState() {
     super.initState();
-    initTabState(context.read<AudioProvider>().scrollToTopTabListenable);
+    initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
     _tabController.addListener(_handleTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {

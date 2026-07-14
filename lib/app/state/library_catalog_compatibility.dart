@@ -1,10 +1,13 @@
-import '../../features/player/application/audio_state_services.dart';
 import '../../features/library/application/library_catalog.dart';
 import '../../features/library/application/library_scan_models.dart';
+import '../../features/player/application/audio_state_services.dart';
 import 'audio_provider.dart';
 
-class AudioProviderLibraryCatalog implements LibraryCatalog {
-  const AudioProviderLibraryCatalog(this._provider);
+/// Temporary command bridge while library mutations move into [LibraryFacade].
+///
+/// Presentation code receives this only through `LibraryFacade.catalog`.
+final class AudioProviderCompatibilityCatalog implements LibraryCatalog {
+  const AudioProviderCompatibilityCatalog(this._provider);
 
   final AudioProvider _provider;
 
@@ -178,10 +181,8 @@ class AudioProviderLibraryCatalog implements LibraryCatalog {
   Future<void> prefillAudioDetailRjCodeFromText(
     String folderPath,
     String displayName,
-  ) async {
-    await _provider.prefillAudioDetailRjCodeFromText(
-      AudioDetailTarget.libraryRootFolder(folderPath),
-      displayName,
-    );
-  }
+  ) => _provider.prefillAudioDetailRjCodeFromText(
+    AudioDetailTarget.libraryRootFolder(folderPath),
+    displayName,
+  );
 }

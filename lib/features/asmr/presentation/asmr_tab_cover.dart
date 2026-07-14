@@ -1,6 +1,6 @@
 part of 'asmr_tab.dart';
 
-class _AsmrWorkCover extends StatelessWidget {
+class _AsmrWorkCover extends ConsumerWidget {
   const _AsmrWorkCover({required this.url, required this.width, this.duration});
 
   final String url;
@@ -8,14 +8,12 @@ class _AsmrWorkCover extends StatelessWidget {
   final Duration? duration;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final width = this.width;
     final height = width * 0.8;
     final url = this.url.trim();
     final coverCacheWidth = coverCacheWidthForResolution(
-      context.select<AudioProvider, CoverImageResolution>(
-        (provider) => provider.coverImageResolution,
-      ),
+      ref.watch(coverImageResolutionProvider),
     );
     final provider = context.read<AudioProvider>();
     return ClipRRect(

@@ -10,7 +10,7 @@ final _libraryEditTrackViewStateProvider =
           (value) => value.valueOrNull?.contentRevision ?? 0,
         ),
       );
-      final libraryService = ref.read(libraryServiceProvider);
+      final libraryService = ref.read(libraryFacadeProvider);
       final track = libraryService.trackByPath(key.trackPath);
       final persistedDisplayName = libraryService
           .libraryEntryDisplayNameForPath(key.libraryPath, key.trackPath);
@@ -315,7 +315,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
       ),
     );
     final i18n = context.watch<AppLanguageProvider>();
-    final libraryService = ref.read(libraryServiceProvider);
+    final libraryService = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final localSnapshotPending = _initialLoadPending;
     final excludedTracks = localSnapshotPending
@@ -550,7 +550,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     );
   }
 
-  int _libraryTrackPathsHash(LibraryService libraryService) {
+  int _libraryTrackPathsHash(LibraryFacade libraryService) {
     return Object.hashAll(
       libraryService.library
           .where((track) => _trackBelongsToLibrary(track.path))
@@ -632,7 +632,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
   }
 
   List<String> _collectLibraryEditTrackPaths(
-    LibraryService libraryService,
+    LibraryFacade libraryService,
     List<String> diskAudioFilePaths,
     List<String> excludedTracks,
     List<LibraryEntry> persistedEntries,
@@ -870,7 +870,10 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
   }
 
   bool _trackPathMatchesQuery(String trackPath, String normalizedQuery) {
-    final track = ref.read(libraryServiceProvider).trackByPath(trackPath);
+    final track = ref
+        .read(libraryFacadeProvider)
+        .service
+        .trackByPath(trackPath);
     return path
             .basenameWithoutExtension(trackPath)
             .toLowerCase()
@@ -883,7 +886,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
 
   int _includedEditTrackCount(
     _LibraryEditFolderTreeNode folder,
-    LibraryService libraryService,
+    LibraryFacade libraryService,
   ) {
     var count = 0;
     for (final child in folder.children) {
@@ -1050,7 +1053,7 @@ class _LibraryEditFolderTreeTileState
       ),
     );
     final i18n = context.watch<AppLanguageProvider>();
-    final libraryService = ref.read(libraryServiceProvider);
+    final libraryService = ref.read(libraryFacadeProvider);
     final audioProvider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final editState = context.findAncestorStateOfType<_LibraryEditPageState>();

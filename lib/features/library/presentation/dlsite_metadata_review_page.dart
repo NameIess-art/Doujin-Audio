@@ -1,11 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
-import '../../player/application/audio_state_services.dart';
+import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -29,7 +30,7 @@ class DlsiteMetadataReviewResult {
   bool get isApplied => outcome == DlsiteMetadataReviewOutcome.applied;
 }
 
-class DlsiteMetadataReviewPage extends StatefulWidget {
+class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
   const DlsiteMetadataReviewPage({
     super.key,
     required this.detail,
@@ -52,11 +53,12 @@ class DlsiteMetadataReviewPage extends StatefulWidget {
   final bool initialSaveCover;
 
   @override
-  State<DlsiteMetadataReviewPage> createState() =>
+  ConsumerState<DlsiteMetadataReviewPage> createState() =>
       _DlsiteMetadataReviewPageState();
 }
 
-class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
+class _DlsiteMetadataReviewPageState
+    extends ConsumerState<DlsiteMetadataReviewPage> {
   final _titleController = TextEditingController();
   final _circleController = TextEditingController();
   final _voiceActorsController = TextEditingController();
@@ -232,9 +234,7 @@ class _DlsiteMetadataReviewPageState extends State<DlsiteMetadataReviewPage> {
         ? metadata?.coverUrl
         : null;
     final coverCacheWidth = coverCacheWidthForResolution(
-      context.select<AudioProvider, CoverImageResolution>(
-        (provider) => provider.coverImageResolution,
-      ),
+      ref.watch(coverImageResolutionProvider),
     );
 
     return Scaffold(

@@ -8,7 +8,8 @@ playback and scanning behavior to their services.
 
 ```text
 Flutter UI
-  -> AudioProvider / Riverpod projection
+  -> Riverpod playback projection / legacy AudioProvider command
+  -> PlaybackFacade
   -> NativePlaybackRepository
   -> NativePlaybackBridge (Dart)
   -> NativePlaybackBridge (Kotlin channel handler)
@@ -30,6 +31,11 @@ they must not silently become zero or an empty identifier. Dart preserves the
 code and optional details in `NativeFailure` through `PlatformMethodClient`.
 Playback retains its specialized stream and batched-state bridge; ordinary
 request/response channels use the shared client.
+
+`AudioProvider` does not create a `MethodChannel`. `PlaybackFacade` owns the
+native repository lifecycle, while UI code receives only facade/state
+providers. Existing channel names, payloads, and Android playback semantics are
+unchanged by the facade migration.
 
 Wire names remain maintained on both Dart and Kotlin sides. Whenever a channel,
 method, or stable error code changes, update both

@@ -11,7 +11,9 @@ void _logAudioProviderPersistenceFailure(Object error, StackTrace stackTrace) {
 extension AudioProviderPersistence on AudioProvider {
   Future<void> reloadPersistedStateAfterBackupRestore() async {
     if (_isDisposed) return;
+    _persistenceLoadEpoch++;
     await _resetRuntimeStateForPersistenceReload();
+    if (_isDisposed) return;
     await _loadData();
     _clearResolvedCoverPaths();
     scheduleUiWarmup(currentPageIndex: 0, immediate: true);
@@ -255,6 +257,8 @@ extension AudioProviderPersistence on AudioProvider {
   }
 
   Future<void> _loadData() async {
+    final loadEpoch = ++_persistenceLoadEpoch;
+    bool isCurrentLoad() => !_isDisposed && loadEpoch == _persistenceLoadEpoch;
     try {
       final libraryFuture = _loadLibrary();
       final libraryEntriesFuture = _readLibraryEntries();
@@ -273,12 +277,15 @@ extension AudioProviderPersistence on AudioProvider {
       ]);
 
       await startupSettingsFuture;
+      if (!isCurrentLoad()) return;
       _settingsInitialized = true;
       _syncSettingsStateSlice();
       _notifyPresentationListeners();
 
       await Future.wait<void>([libraryFuture, remainingPreferencesFuture]);
+      if (!isCurrentLoad()) return;
       final libraryEntries = await libraryEntriesFuture;
+      if (!isCurrentLoad()) return;
 
       beginLibraryBatch();
       _libraryBatchChanged = _library.isNotEmpty;
@@ -306,6 +313,7 @@ extension AudioProviderPersistence on AudioProvider {
         'audio_provider_load_sessions',
         _loadSessions,
       );
+      if (!isCurrentLoad()) return;
 
       // Phase 6: Post-session operations (sequenced to avoid timer/session races).
       if (!_multiThreadPlaybackEnabled) {
@@ -318,19 +326,23 @@ extension AudioProviderPersistence on AudioProvider {
         'audio_provider_load_timer_runtime',
         loadTimerRuntimeFromSystem,
       );
+      if (!isCurrentLoad()) return;
+      _syncNotificationState(immediateUnifiedSync: true);
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     } finally {
-      // Phase 7: Deferred warmup, keep-alive sync, final UI update.
-      scheduleUiWarmup(currentPageIndex: 0);
-      _syncKeepCpuAwake();
-      await _ensureLibraryCardSnapshot(notifyOnCommit: false);
-      _settingsInitialized = true;
-      _libraryInitialized = true;
-      _playbackInitialized = true;
-      _isInitialized = true;
-      _notifyListeners();
-      _schedulePostStartupLibraryMaintenance();
+      if (isCurrentLoad()) {
+        // Phase 7: Deferred warmup, keep-alive sync, final UI update.
+        scheduleUiWarmup(currentPageIndex: 0);
+        _syncKeepCpuAwake();
+        await _ensureLibraryCardSnapshot(notifyOnCommit: false);
+        _settingsInitialized = true;
+        _libraryInitialized = true;
+        _playbackInitialized = true;
+        _isInitialized = true;
+        _notifyListeners();
+        _schedulePostStartupLibraryMaintenance();
+      }
     }
   }
 

@@ -256,6 +256,8 @@ const Map<String, String> appLanguageJa = {
   'audio_detail_edit_title': '{name}を編集',
   'audio_detail_multi_hint': '複数項目は中国語の読点「，」で区切ってください',
   'audio_detail_backup_failed': 'データベースに保存しましたが、ローカルバックアップに失敗しました。',
+  'audio_detail_cover_portability_skipped':
+      'カバーが 8 MiB を超えているため、端末上のパスのみ保持し、ポータブルバックアップには保存しませんでした。',
   'audio_detail_restored_from_backup': 'ローカルバックアップから復元しました。',
   'audio_detail_rj_format_hint': 'RJ番号は RJ + 数字の形式を推奨します。',
   'audio_detail_save_failed': '保存に失敗しました。もう一度お試しください。',

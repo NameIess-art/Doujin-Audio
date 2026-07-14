@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -15,6 +16,7 @@ import '../../settings/application/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import 'audio_detail_cache_service.dart';
+import 'cover_image_cache_policy.dart';
 import '../../player/application/audio_state_services.dart';
 import 'embedded_cover_artwork_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
@@ -34,6 +36,7 @@ const int _resolvedTrackCoverLimit = 600;
 const int _resolvedFolderCoverLimit = 300;
 const int _resolvedRemoteCoverLimit = 300;
 const int _manualCoverValidityLimit = 1200;
+const int _maxConcurrentRemoteDownloads = 4;
 const String _asmrOneAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
 
 class CoverArtworkCacheService {
@@ -43,6 +46,8 @@ class CoverArtworkCacheService {
     AudioDetailCacheService? audioDetailCacheService,
     FileCachePlatformGateway? fileCacheGateway,
     Future<String?> Function(String remoteUrl)? remoteCoverDownloader,
+    DateTime Function()? now,
+    Future<Directory> Function()? temporaryDirectory,
     bool Function(String coverSearchKey)? isActiveCoverKey,
     VoidCallback? onActiveCoverChanged,
   }) : _libraryService = libraryService,
@@ -51,6 +56,8 @@ class CoverArtworkCacheService {
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
        _remoteCoverDownloader = remoteCoverDownloader,
+       _now = now ?? DateTime.now,
+       _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
        _isActiveCoverKey = isActiveCoverKey,
        _onActiveCoverChanged = onActiveCoverChanged;
 
@@ -59,6 +66,8 @@ class CoverArtworkCacheService {
   final AudioDetailCacheService? _audioDetailCacheService;
   final FileCachePlatformGateway _fileCacheGateway;
   final Future<String?> Function(String remoteUrl)? _remoteCoverDownloader;
+  final DateTime Function() _now;
+  final Future<Directory> Function() _temporaryDirectory;
   final bool Function(String coverSearchKey)? _isActiveCoverKey;
   final VoidCallback? _onActiveCoverChanged;
 
@@ -77,12 +86,17 @@ class CoverArtworkCacheService {
   final Map<String, Future<String?>> _remoteCoverFutures =
       <String, Future<String?>>{};
   final Map<String, String?> _resolvedRemoteCovers = <String, String?>{};
+  final Map<String, _RemoteCoverFailure> _remoteCoverFailures = {};
+  final Queue<Completer<void>> _remoteDownloadWaiters = Queue();
   final Map<String, bool> _manualCoverPathValidityCache = <String, bool>{};
   final Map<String, Future<String?>> _manualCoverValidationFutures =
       <String, Future<String?>>{};
   final Map<String, String> _folderCoverSelections = <String, String>{};
   Future<void>? _folderCoverSelectionsLoadFuture;
+  HttpClient? _remoteHttpClient;
+  int _activeRemoteDownloads = 0;
   int _generation = 0;
+  bool _disposed = false;
 
   int get generation => _generation;
 
@@ -412,6 +426,7 @@ class CoverArtworkCacheService {
       _removeTrackCoverEntriesInScope(scope);
       _remoteCoverFutures.remove(scope);
       _resolvedRemoteCovers.remove(scope);
+      _remoteCoverFailures.remove(scope);
     }
   }
 
@@ -426,6 +441,7 @@ class CoverArtworkCacheService {
     _resolvedTrackCoverFutures.clear();
     _remoteCoverFutures.clear();
     _resolvedRemoteCovers.clear();
+    _remoteCoverFailures.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
   }
@@ -828,6 +844,13 @@ class CoverArtworkCacheService {
   }
 
   Future<String?> _resolveRemoteCover(String remoteKey, String remoteUrl) {
+    if (_disposed) return Future<String?>.value();
+    final inFlight = _remoteCoverFutures[remoteKey];
+    if (inFlight != null) return inFlight;
+    final failure = _remoteCoverFailures[remoteKey];
+    if (failure != null && _now().isBefore(failure.retryAt)) {
+      return Future<String?>.value();
+    }
     return _remoteCoverFutures.putIfAbsent(remoteKey, () async {
       try {
         final previous = _resolvedRemoteCovers[remoteKey];
@@ -835,14 +858,19 @@ class CoverArtworkCacheService {
         if (coverPath == null || !await _isUsableRemoteCoverPath(coverPath)) {
           _resolvedRemoteCovers.remove(remoteKey);
           final downloader = _remoteCoverDownloader;
-          coverPath = await (downloader == null
-              ? _downloadRemoteCover(remoteUrl)
-              : downloader(remoteUrl));
+          coverPath = await _runRemoteDownload(
+            () => downloader == null
+                ? _downloadRemoteCover(remoteUrl)
+                : downloader(remoteUrl),
+          );
         }
 
+        if (_disposed) return null;
         if (coverPath == null) {
           _resolvedRemoteCovers.remove(remoteKey);
+          _recordRemoteCoverFailure(remoteKey);
         } else {
+          _remoteCoverFailures.remove(remoteKey);
           _resolvedRemoteCovers.remove(remoteKey);
           _resolvedRemoteCovers[remoteKey] = coverPath;
           _trimResolvedRemoteCovers();
@@ -859,6 +887,45 @@ class CoverArtworkCacheService {
         if (removedRemoteFuture != null) unawaited(removedRemoteFuture);
       }
     });
+  }
+
+  Future<String?> _runRemoteDownload(
+    Future<String?> Function() download,
+  ) async {
+    if (_disposed) return null;
+    if (_activeRemoteDownloads >= _maxConcurrentRemoteDownloads) {
+      final waiter = Completer<void>();
+      _remoteDownloadWaiters.add(waiter);
+      await waiter.future;
+      if (_disposed) return null;
+    } else {
+      _activeRemoteDownloads++;
+    }
+    try {
+      return await download();
+    } finally {
+      if (_remoteDownloadWaiters.isNotEmpty) {
+        _remoteDownloadWaiters.removeFirst().complete();
+      } else {
+        _activeRemoteDownloads--;
+      }
+    }
+  }
+
+  void _recordRemoteCoverFailure(String remoteKey) {
+    final failureCount = (_remoteCoverFailures[remoteKey]?.count ?? 0) + 1;
+    var delaySeconds = 10;
+    for (var attempt = 1; attempt < failureCount; attempt++) {
+      delaySeconds = (delaySeconds * 2).clamp(10, 300).toInt();
+    }
+    _remoteCoverFailures.remove(remoteKey);
+    _remoteCoverFailures[remoteKey] = _RemoteCoverFailure(
+      count: failureCount,
+      retryAt: _now().add(Duration(seconds: delaySeconds)),
+    );
+    while (_remoteCoverFailures.length > _resolvedRemoteCoverLimit) {
+      _remoteCoverFailures.remove(_remoteCoverFailures.keys.first);
+    }
   }
 
   Future<bool> _isUsableRemoteCoverPath(String? coverPath) async {
@@ -878,9 +945,10 @@ class CoverArtworkCacheService {
   }
 
   Future<String?> _downloadRemoteCover(String remoteUrl) async {
-    HttpClient? client;
+    File? partial;
+    IOSink? sink;
     try {
-      final cacheRoot = await getTemporaryDirectory();
+      final cacheRoot = await _temporaryDirectory();
       final coverDirectory = Directory(
         path.join(cacheRoot.path, 'notification_covers'),
       );
@@ -892,11 +960,15 @@ class CoverArtworkCacheService {
         ),
       );
       if (await file.exists() && await file.length() > 0) {
-        await file.setLastModified(DateTime.now());
-        return file.path;
+        if (await file.length() > maxCoverFileBytes) {
+          await file.delete();
+        } else {
+          await file.setLastModified(DateTime.now());
+          return file.path;
+        }
       }
 
-      client = HttpClient();
+      final client = _remoteHttpClient ??= HttpClient();
       final request = await client.getUrl(Uri.parse(remoteUrl));
       for (final header in remoteCoverRequestHeadersForUrl(remoteUrl).entries) {
         request.headers.set(header.key, header.value);
@@ -905,9 +977,32 @@ class CoverArtworkCacheService {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
-      final bytes = await consolidateHttpClientResponseBytes(response);
-      if (bytes.isEmpty) return null;
-      await file.writeAsBytes(bytes, flush: true);
+      if (response.contentLength > maxCoverFileBytes) return null;
+
+      partial = File('${file.path}.part');
+      if (await partial.exists()) await partial.delete();
+      sink = partial.openWrite();
+      final headerBytes = <int>[];
+      var totalBytes = 0;
+      await for (final chunk in response) {
+        totalBytes += chunk.length;
+        if (totalBytes > maxCoverFileBytes) {
+          throw const _RemoteCoverTooLargeException();
+        }
+        if (headerBytes.length < 64) {
+          final remaining = 64 - headerBytes.length;
+          headerBytes.addAll(chunk.take(remaining));
+        }
+        sink.add(chunk);
+      }
+      await sink.flush();
+      await sink.close();
+      sink = null;
+      if (totalBytes <= 0 || detectCoverMimeType('', headerBytes) == null) {
+        return null;
+      }
+      await partial.rename(file.path);
+      partial = null;
       AppCacheService.scheduleEnforce();
       return file.path;
     } catch (error, stackTrace) {
@@ -918,8 +1013,23 @@ class CoverArtworkCacheService {
       );
       return null;
     } finally {
-      client?.close(force: true);
+      await sink?.close();
+      if (partial != null && await partial.exists()) {
+        await partial.delete();
+      }
     }
+  }
+
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _remoteHttpClient?.close(force: true);
+    _remoteHttpClient = null;
+    while (_remoteDownloadWaiters.isNotEmpty) {
+      _remoteDownloadWaiters.removeFirst().complete();
+    }
+    _remoteCoverFutures.clear();
+    _remoteCoverFailures.clear();
   }
 
   Future<String?> _resolveVideoFramePathForTrack(MusicTrack track) async {
@@ -1154,6 +1264,17 @@ class CoverArtworkCacheService {
     }
     return tracks;
   }
+}
+
+final class _RemoteCoverFailure {
+  const _RemoteCoverFailure({required this.count, required this.retryAt});
+
+  final int count;
+  final DateTime retryAt;
+}
+
+final class _RemoteCoverTooLargeException implements Exception {
+  const _RemoteCoverTooLargeException();
 }
 
 String? _mostSpecificContainingRoot(Iterable<String> roots, String value) {

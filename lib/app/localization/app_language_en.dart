@@ -280,6 +280,8 @@ const Map<String, String> appLanguageEn = {
       'Separate multiple items with the Chinese comma "，"',
   'audio_detail_backup_failed':
       'Saved to the database, but local backup failed.',
+  'audio_detail_cover_portability_skipped':
+      'The cover exceeds 8 MiB. Its local path was kept, but it was not included in the portable backup.',
   'audio_detail_restored_from_backup': 'Restored from local backup.',
   'audio_detail_rj_format_hint':
       'RJ number should usually look like RJ + digits.',

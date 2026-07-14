@@ -39,6 +39,8 @@ class _AsmrWorkCover extends StatelessWidget {
                     initialPath: provider.resolvedCoverPathForRemoteCover(url),
                     retryFutureBuilder: () =>
                         provider.coverPathFutureForRemoteCover(url),
+                    retryDelay: const Duration(seconds: 5),
+                    maxRetryAttempts: 2,
                     fit: BoxFit.cover,
                     cacheWidth: coverCacheWidth,
                     useDefaultCacheWidth: coverCacheWidth != null,

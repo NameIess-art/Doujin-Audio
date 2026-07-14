@@ -15,14 +15,17 @@ class DataSupportFileService {
     AppBackupService? backupService,
     DiagnosticReportService? diagnosticService,
     FileCachePlatformGateway? fileCacheGateway,
+    bool Function()? isAndroid,
   }) : _backupService = backupService ?? AppBackupService(),
        _diagnosticService = diagnosticService ?? DiagnosticReportService(),
        _fileCacheGateway =
-           fileCacheGateway ?? FileCachePlatformGateway.instance;
+           fileCacheGateway ?? FileCachePlatformGateway.instance,
+       _isAndroid = isAndroid ?? (() => AppPlatform.isAndroid);
 
   final AppBackupService _backupService;
   final DiagnosticReportService _diagnosticService;
   final FileCachePlatformGateway _fileCacheGateway;
+  final bool Function() _isAndroid;
 
   Future<String?> exportBackup({required String dialogTitle}) async {
     final temporary = await _temporaryFile(
@@ -30,7 +33,7 @@ class DataSupportFileService {
     );
     try {
       final backup = await _backupService.exportBackup(temporary.path);
-      return _saveGeneratedFile(
+      return await _saveGeneratedFile(
         source: backup,
         dialogTitle: dialogTitle,
         allowedExtensions: const <String>['nalbackup'],
@@ -54,9 +57,9 @@ class DataSupportFileService {
       if (selectedPath == null || selectedPath.trim().isEmpty) {
         throw const FileSystemException('Selected backup is not readable.');
       }
-      return _backupService.restoreBackup(selectedPath);
+      return await _backupService.restoreBackup(selectedPath);
     } finally {
-      if (AppPlatform.isAndroid) {
+      if (_isAndroid()) {
         try {
           await FilePicker.platform.clearTemporaryFiles();
         } catch (error, stackTrace) {
@@ -76,7 +79,7 @@ class DataSupportFileService {
     );
     try {
       final report = await _diagnosticService.exportReport(temporary.path);
-      return _saveGeneratedFile(
+      return await _saveGeneratedFile(
         source: report,
         dialogTitle: dialogTitle,
         allowedExtensions: const <String>['zip'],
@@ -100,7 +103,7 @@ class DataSupportFileService {
     required List<String> allowedExtensions,
     required String mimeType,
   }) async {
-    if (AppPlatform.isAndroid) {
+    if (_isAndroid()) {
       return _fileCacheGateway.exportFile(
         sourcePath: source.path,
         fileName: path.basename(source.path),

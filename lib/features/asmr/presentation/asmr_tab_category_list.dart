@@ -109,110 +109,99 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
               displacement: 32,
               triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
               onRefresh: widget.onRefresh,
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 750),
-                reverseDuration: const Duration(milliseconds: 750),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) =>
-                    FadeTransition(opacity: animation, child: child),
-                child: showPlaceholder
-                    ? ListView.builder(
-                        key: const ValueKey('loading'),
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: _TopOnlyBouncingScrollPhysics(),
+              child: PlaceholderContentTransition(
+                showPlaceholder: showPlaceholder,
+                placeholder: ListView.builder(
+                  key: const ValueKey('loading'),
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: _TopOnlyBouncingScrollPhysics(),
+                  ),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    widget.topInset,
+                    16,
+                    widget.bottomInset + 24,
+                  ),
+                  itemCount: 1,
+                  itemBuilder: (context, index) {
+                    return Column(
+                      children: [
+                        for (int i = 0; i < 5; i++)
+                          const Padding(
+                            padding: EdgeInsets.only(bottom: 6),
+                            child: LibraryLikeSkeletonCard(),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+                content: ListView.builder(
+                  key: const ValueKey('content'),
+                  controller: widget.scrollController,
+                  cacheExtent: 520,
+                  physics: const AlwaysScrollableScrollPhysics(
+                    parent: BouncingScrollPhysics(),
+                  ),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    widget.topInset,
+                    16,
+                    widget.bottomInset + 24,
+                  ),
+                  itemCount: works.isEmpty
+                      ? 1
+                      : works.length +
+                            ((state.isLoadingMore || state.hasMore) ? 1 : 0),
+                  itemBuilder: (context, index) {
+                    if (works.isEmpty) {
+                      final errorText = state.lastError?.toString();
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 80),
+                        child: AppEmptyView(
+                          icon: state.lastError != null
+                              ? Icons.error_outline_rounded
+                              : Icons.search_off_rounded,
+                          title: state.lastError != null
+                              ? i18n.tr('error')
+                              : i18n.tr('asmr_empty_category'),
+                          subtitle: errorText,
                         ),
-                        padding: EdgeInsets.fromLTRB(
-                          16,
-                          widget.topInset,
-                          16,
-                          widget.bottomInset + 24,
-                        ),
-                        itemCount: 1,
-                        itemBuilder: (context, index) {
-                          return Column(
-                            children: [
-                              for (int i = 0; i < 5; i++)
-                                const Padding(
-                                  padding: EdgeInsets.only(bottom: 6),
-                                  child: LibraryLikeSkeletonCard(),
+                      );
+                    }
+                    if (index >= works.length) {
+                      return Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 4),
+                        child: Center(
+                          child: state.isLoadingMore
+                              ? SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.2,
+                                    color: asmrBlue,
+                                  ),
+                                )
+                              : Text(
+                                  i18n.tr('asmr_load_more_hint'),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                            ],
-                          );
-                        },
-                      )
-                    : ListView.builder(
-                        key: const ValueKey('content'),
-                        controller: widget.scrollController,
-                        cacheExtent: 520,
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics(),
                         ),
-                        padding: EdgeInsets.fromLTRB(
-                          16,
-                          widget.topInset,
-                          16,
-                          widget.bottomInset + 24,
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: RepaintBoundary(
+                        child: _AsmrWorkTreeCard(
+                          work: works[index],
+                          searchQuery: widget.searchQuery,
                         ),
-                        itemCount: works.isEmpty
-                            ? 1
-                            : works.length +
-                                  ((state.isLoadingMore || state.hasMore)
-                                      ? 1
-                                      : 0),
-                        itemBuilder: (context, index) {
-                          if (works.isEmpty) {
-                            final errorText = state.lastError?.toString();
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 80),
-                              child: AppEmptyView(
-                                icon: state.lastError != null
-                                    ? Icons.error_outline_rounded
-                                    : Icons.search_off_rounded,
-                                title: state.lastError != null
-                                    ? i18n.tr('error')
-                                    : i18n.tr('asmr_empty_category'),
-                                subtitle: errorText,
-                              ),
-                            );
-                          }
-                          if (index >= works.length) {
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 4, bottom: 4),
-                              child: Center(
-                                child: state.isLoadingMore
-                                    ? SizedBox(
-                                        width: 22,
-                                        height: 22,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.2,
-                                          color: asmrBlue,
-                                        ),
-                                      )
-                                    : Text(
-                                        i18n.tr('asmr_load_more_hint'),
-                                        style: theme.textTheme.bodySmall
-                                            ?.copyWith(
-                                              color: theme
-                                                  .colorScheme
-                                                  .onSurfaceVariant,
-                                              fontWeight: FontWeight.w600,
-                                            ),
-                                      ),
-                              ),
-                            );
-                          }
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: RepaintBoundary(
-                              child: _AsmrWorkTreeCard(
-                                work: works[index],
-                                searchQuery: widget.searchQuery,
-                              ),
-                            ),
-                          );
-                        },
                       ),
+                    );
+                  },
+                ),
               ),
             ),
           ),

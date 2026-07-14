@@ -1,6 +1,7 @@
 package com.nameless.audio
 
 import com.nameless.audio.channel.*
+import com.nameless.audio.player.notification.notificationSessionIdFromIntent
 import com.nameless.audio.player.common.*
 import com.nameless.audio.scanner.*
 import com.nameless.audio.storage.*
@@ -158,8 +159,12 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private fun extractNotificationSessionId(intent: Intent?): String? {
-        return intent
-            ?.getStringExtra(notificationSessionIdExtra)
-            ?.takeIf { it.isNotBlank() }
+        if (intent?.action != openSessionFromNotificationAction) return null
+        val sessionId = try {
+            intent.getStringExtra(notificationSessionIdExtra)
+        } catch (_: RuntimeException) {
+            null
+        }
+        return notificationSessionIdFromIntent(intent.action, sessionId)
     }
 }

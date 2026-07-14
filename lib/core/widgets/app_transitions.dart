@@ -24,6 +24,7 @@ class _PlaceholderContentTransitionState
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _placeholderOpacity;
+  late final Animation<double> _contentOpacity;
   bool _fadingPlaceholder = false;
 
   @override
@@ -33,10 +34,12 @@ class _PlaceholderContentTransitionState
       vsync: this,
       duration: kPlaceholderContentTransitionDuration,
     )..addStatusListener(_handleAnimationStatus);
-    _placeholderOpacity = Tween<double>(
-      begin: 1,
-      end: 0,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInCubic));
+    final crossFade = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.easeInOutCubic,
+    );
+    _contentOpacity = crossFade;
+    _placeholderOpacity = ReverseAnimation(crossFade);
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
@@ -73,7 +76,12 @@ class _PlaceholderContentTransitionState
     return Stack(
       fit: StackFit.expand,
       children: [
-        widget.content,
+        IgnorePointer(
+          child: FadeTransition(
+            opacity: _contentOpacity,
+            child: widget.content,
+          ),
+        ),
         IgnorePointer(
           child: FadeTransition(
             opacity: _placeholderOpacity,

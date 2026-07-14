@@ -16,9 +16,15 @@ import android.os.PowerManager
 import android.os.SystemClock
 import java.util.Calendar
 
+internal fun isPlaybackTimerAlarmAction(action: String?): Boolean {
+    return action == PlaybackTimerAlarmScheduler.actionTimerExpired ||
+        action == PlaybackTimerAlarmScheduler.actionAutoResume
+}
+
 class PlaybackTimerAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
         val action = intent?.action ?: return
+        if (!isPlaybackTimerAlarmAction(action)) return
         PlaybackTimerAlarmScheduler.logInfo(
             context,
             "receiver_on_receive action=$action"

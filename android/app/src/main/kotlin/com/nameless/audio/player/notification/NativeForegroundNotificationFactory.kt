@@ -114,8 +114,7 @@ internal class NativeForegroundNotificationFactory(
     }
 
     private fun buildControlIntent(command: NotificationCommand): PendingIntent {
-        val intent = Intent().apply {
-            setClassName(context, "${context.packageName}.UnifiedPlaybackActionReceiver")
+        val intent = Intent(context, UnifiedPlaybackActionReceiver::class.java).apply {
             action = command.actionName
             putExtra("sessionId", "") // Fallback for focused session
         }

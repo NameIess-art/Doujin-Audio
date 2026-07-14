@@ -210,9 +210,15 @@ class _DataSupportPageState extends State<DataSupportPage> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                if (dataOperationBusy) const LinearProgressIndicator(),
+                SizedBox(
+                  height: 4,
+                  child: dataOperationBusy
+                      ? const LinearProgressIndicator()
+                      : null,
+                ),
                 const SizedBox(height: 8),
                 _ActionCard(
+                  key: const ValueKey('data-support-export-backup'),
                   title: i18n.tr('export_backup'),
                   subtitle: i18n.tr('export_backup_subtitle'),
                   icon: Icons.archive_outlined,
@@ -220,6 +226,7 @@ class _DataSupportPageState extends State<DataSupportPage> {
                   onTap: dataOperationBusy ? null : _exportBackup,
                 ),
                 _ActionCard(
+                  key: const ValueKey('data-support-restore-backup'),
                   title: i18n.tr('restore_backup'),
                   subtitle: i18n.tr('restore_backup_subtitle'),
                   icon: Icons.restore_rounded,
@@ -227,6 +234,7 @@ class _DataSupportPageState extends State<DataSupportPage> {
                   onTap: dataOperationBusy ? null : _restoreBackup,
                 ),
                 _ActionCard(
+                  key: const ValueKey('data-support-export-diagnostics'),
                   title: i18n.tr('export_diagnostics'),
                   subtitle: i18n.tr('export_diagnostics_subtitle'),
                   icon: Icons.support_agent_rounded,
@@ -234,6 +242,7 @@ class _DataSupportPageState extends State<DataSupportPage> {
                   onTap: dataOperationBusy ? null : _exportDiagnostics,
                 ),
                 _ActionCard(
+                  key: const ValueKey('data-support-privacy-summary'),
                   title: i18n.tr('privacy_summary_title'),
                   subtitle: i18n.tr('privacy_summary_local_body'),
                   icon: Icons.privacy_tip_outlined,
@@ -252,6 +261,7 @@ class _DataSupportPageState extends State<DataSupportPage> {
 
 class _ActionCard extends StatelessWidget {
   const _ActionCard({
+    super.key,
     required this.title,
     required this.subtitle,
     required this.icon,

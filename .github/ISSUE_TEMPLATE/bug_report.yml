@@ -14,7 +14,7 @@ body:
     id: version
     attributes:
       label: Version
-      placeholder: "0.13.0+1300"
+      description: Copy the complete version shown in Settings, including the build number.
     validations:
       required: true
   - type: dropdown

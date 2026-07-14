@@ -1,6 +1,6 @@
-# Nameless Audio v0.13.0
+# Nameless Audio Release Notes
 
-> **升级前必读：**从 0.12.x 或更早版本升级到 0.13.0 及以上版本时，必须先卸载旧版本再重新安装。卸载会清除应用数据，建议先在“数据支持”中导出 `.nalbackup` 备份。
+> **升级前必读：**从不兼容的旧版本升级到本 Release 时，必须先卸载旧版本再重新安装。卸载会清除应用数据，建议先在“数据支持”中导出 `.nalbackup` 备份。具体兼容范围以本次发布说明为准。
 
 ## 播放与队列
 
@@ -25,16 +25,16 @@
 ## 发布资产
 
 ```text
-NamelessAudio-android-universal-v0.13.0.apk
-NamelessAudio-android-universal-v0.13.0.apk.sha256
-NamelessAudio-android-arm64-v0.13.0.apk
-NamelessAudio-android-arm64-v0.13.0.apk.sha256
-NamelessAudio-android-armv7-v0.13.0.apk
-NamelessAudio-android-armv7-v0.13.0.apk.sha256
-NamelessAudio-android-x64-v0.13.0.apk
-NamelessAudio-android-x64-v0.13.0.apk.sha256
-NamelessAudio-windows-x64-v0.13.0.zip
-NamelessAudio-windows-x64-v0.13.0.zip.sha256
+NamelessAudio-android-universal-<tag>.apk
+NamelessAudio-android-universal-<tag>.apk.sha256
+NamelessAudio-android-arm64-<tag>.apk
+NamelessAudio-android-arm64-<tag>.apk.sha256
+NamelessAudio-android-armv7-<tag>.apk
+NamelessAudio-android-armv7-<tag>.apk.sha256
+NamelessAudio-android-x64-<tag>.apk
+NamelessAudio-android-x64-<tag>.apk.sha256
+NamelessAudio-windows-x64-<tag>.zip
+NamelessAudio-windows-x64-<tag>.zip.sha256
 ```
 
 普通 Android 用户建议下载 universal APK。现代手机可选择 arm64，旧款 32 位 ARM 设备选择 armv7，x86_64 仅用于对应设备或模拟器。Windows ZIP 必须完整解压后运行。

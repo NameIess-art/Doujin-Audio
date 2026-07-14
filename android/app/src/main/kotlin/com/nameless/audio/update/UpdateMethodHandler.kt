@@ -49,7 +49,7 @@ internal class UpdateMethodHandler(
             packageInfo.versionCode.toLong()
         }
         return mapOf(
-            "versionName" to (packageInfo.versionName ?: "0.0.0"),
+            "versionName" to (packageInfo.versionName ?: "unknown"),
             "buildNumber" to buildNumber
         )
     }

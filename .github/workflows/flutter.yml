@@ -407,10 +407,11 @@ jobs:
             fi
             gh release delete "$tag" --yes
           fi
+          version="${tag#v}"
           gh release create "$tag" \
             --verify-tag \
             --draft \
-            --title "Nameless Audio 0.13.0" \
+            --title "Nameless Audio $version" \
             --notes-file release_notes.md
           gh release upload "$tag" release-assets/*
           gh release view "$tag" --json assets --jq '.assets[].name' | sort > published-assets.txt

@@ -2,23 +2,21 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
 
-当前版本：`0.13.0+1300`
-
-发布页：[v0.13.0](https://github.com/NameIess-art/nameless-audio/releases/tag/v0.13.0)
+当前版本：以 [`pubspec.yaml`](pubspec.yaml) 为唯一来源；发布页：[GitHub Latest Release](https://github.com/NameIess-art/nameless-audio/releases/latest)。
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
 ## 下载
 
-> **0.13.0 升级提示：**从 0.12.x 或更早版本升级到 0.13.0 及以上版本时，必须先卸载旧版本再重新安装。卸载会清除应用数据，建议先在“数据支持”中导出 `.nalbackup` 备份。
+> **升级提示：**从不兼容的旧版本升级时，必须先卸载旧版本再重新安装。卸载会清除应用数据，建议先在“数据支持”中导出 `.nalbackup` 备份。具体兼容要求以对应 Release 说明为准。
 
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android universal | `NamelessAudio-android-universal-v0.13.0.apk` | 推荐普通用户下载，兼容 arm64-v8a、armeabi-v7a 和 x86_64 |
-| Android arm64-v8a | `NamelessAudio-android-arm64-v0.13.0.apk` | 适用于大多数现代 64 位 Android 手机，安装包较小 |
-| Android armeabi-v7a | `NamelessAudio-android-armv7-v0.13.0.apk` | 适用于旧款 32 位 ARM Android 设备 |
-| Android x86_64 | `NamelessAudio-android-x64-v0.13.0.apk` | 适用于 x86_64 Android 设备或模拟器 |
-| Windows x64 | `NamelessAudio-windows-x64-v0.13.0.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
+| Android universal | `NamelessAudio-android-universal-<tag>.apk` | 推荐普通用户下载，兼容 arm64-v8a、armeabi-v7a 和 x86_64 |
+| Android arm64-v8a | `NamelessAudio-android-arm64-<tag>.apk` | 适用于大多数现代 64 位 Android 手机，安装包较小 |
+| Android armeabi-v7a | `NamelessAudio-android-armv7-<tag>.apk` | 适用于旧款 32 位 ARM Android 设备 |
+| Android x86_64 | `NamelessAudio-android-x64-<tag>.apk` | 适用于 x86_64 Android 设备或模拟器 |
+| Windows x64 | `NamelessAudio-windows-x64-<tag>.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
 
 本项目仅通过 GitHub Release 正式分发，不提供应用商店 AAB 或 iOS 安装包。
 
@@ -94,16 +92,16 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 每个更新资产必须同时发布同名 `.sha256` 校验文件：
 
 ```text
-NamelessAudio-android-universal-v0.13.0.apk
-NamelessAudio-android-universal-v0.13.0.apk.sha256
-NamelessAudio-android-arm64-v0.13.0.apk
-NamelessAudio-android-arm64-v0.13.0.apk.sha256
-NamelessAudio-android-armv7-v0.13.0.apk
-NamelessAudio-android-armv7-v0.13.0.apk.sha256
-NamelessAudio-android-x64-v0.13.0.apk
-NamelessAudio-android-x64-v0.13.0.apk.sha256
-NamelessAudio-windows-x64-v0.13.0.zip
-NamelessAudio-windows-x64-v0.13.0.zip.sha256
+NamelessAudio-android-universal-<tag>.apk
+NamelessAudio-android-universal-<tag>.apk.sha256
+NamelessAudio-android-arm64-<tag>.apk
+NamelessAudio-android-arm64-<tag>.apk.sha256
+NamelessAudio-android-armv7-<tag>.apk
+NamelessAudio-android-armv7-<tag>.apk.sha256
+NamelessAudio-android-x64-<tag>.apk
+NamelessAudio-android-x64-<tag>.apk.sha256
+NamelessAudio-windows-x64-<tag>.zip
+NamelessAudio-windows-x64-<tag>.zip.sha256
 ```
 
 Android 应用内自动更新始终下载 universal APK 并交给系统安装器；其他 ABI 拆分包供用户在 GitHub Release 手动选择。Windows 下载 ZIP 后启动独立更新器，更新器会验证 ZIP、等待应用退出、切换安装目录并重启新版本。
@@ -140,11 +138,12 @@ Android 应用内自动更新始终下载 universal APK 并交给系统安装器
 
 ## 开发与验证
 
-```bash
+```powershell
 flutter pub get
 flutter analyze
 flutter test
-dart run tool/verify_release.dart --tag v0.13.0
+$tag = dart tool/verify_release.dart --print-tag
+dart run tool/verify_release.dart --tag $tag
 ```
 
 ### Android Release
@@ -163,7 +162,8 @@ flutter build apk --release --split-per-abi --target-platform android-arm,androi
 ```powershell
 .\tool\patch_smtc_windows_cargokit.ps1
 flutter build windows --release
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\NamelessAudio-windows-x64-v0.13.0.zip -Force
+$tag = dart tool/verify_release.dart --print-tag
+Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "dist\NamelessAudio-windows-x64-$tag.zip" -Force
 ```
 
 ## 发布流程
@@ -177,9 +177,10 @@ Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath dist\
 5. 所有平台构建成功后创建草稿 Release，核对完整资产列表，再公开为 GitHub Latest。
 
 ```powershell
-dart run tool/verify_release.dart --tag v0.13.0
-git tag v0.13.0
-git push origin main v0.13.0
+$tag = dart tool/verify_release.dart --print-tag
+dart run tool/verify_release.dart --tag $tag
+git tag $tag
+git push origin main $tag
 ```
 
 完整变更见 [release_notes.md](release_notes.md)。

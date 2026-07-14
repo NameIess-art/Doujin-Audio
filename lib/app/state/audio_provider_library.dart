@@ -595,6 +595,7 @@ extension AudioProviderLibrary on AudioProvider {
     Set<String> scannedPaths,
   ) {
     final normalizedFolder = PathMatcher.normalize(folderPath);
+    final scannedPathIndex = PathMembershipIndex(scannedPaths);
     _removeTracksWhere((track) {
       if (!PathMatcher.isWithinOrEqualNormalized(
         track.path,
@@ -602,7 +603,7 @@ extension AudioProviderLibrary on AudioProvider {
       )) {
         return false;
       }
-      return !PathMatcher.containsEquivalent(scannedPaths, track.path);
+      return !scannedPathIndex.containsEquivalent(track.path);
     });
   }
 
@@ -1540,44 +1541,52 @@ extension AudioProviderLibrary on AudioProvider {
     if (targetTracks.isEmpty) return null;
 
     final tracksToUpdate = <MusicTrack>[];
-    AudioPlayer? player;
     var totalDuration = Duration.zero;
     var hasUnknownDuration = false;
-    try {
-      for (final track in targetTracks) {
-        var duration = track.duration;
-        if (duration <= Duration.zero) {
-          try {
-            duration = await durationReader?.call(track.path) ?? Duration.zero;
-            if (durationReader == null) {
-              duration =
-                  await AudioProvider._fileCacheGateway.resolveMediaDuration(
-                    track.path,
-                  ) ??
-                  await _readLocalMediaDuration(
-                    player ??= AudioPlayer(),
-                    track.path,
-                  ) ??
-                  Duration.zero;
-            }
-            if (duration > Duration.zero) {
-              tracksToUpdate.add(track.copyWith(duration: duration));
-            }
-          } catch (error, stackTrace) {
-            AppLogService.warning(
-              'library_duration_probe_failed path=${track.path}',
-              error: error,
-              stackTrace: stackTrace,
-            );
-            try {
-              await player?.dispose();
-            } catch (_) {}
-            player = null;
-            duration = Duration.zero;
-          }
+    final missingTracks = <MusicTrack>[];
+    for (final track in targetTracks) {
+      if (track.duration > Duration.zero) {
+        totalDuration += track.duration;
+      } else {
+        missingTracks.add(track);
+      }
+    }
+
+    Future<Duration?> resolveDuration(MusicTrack track) async {
+      try {
+        if (durationReader != null) return durationReader(track.path);
+        final nativeDuration = await AudioProvider._fileCacheGateway
+            .resolveMediaDuration(track.path);
+        if (nativeDuration != null && nativeDuration > Duration.zero) {
+          return nativeDuration;
         }
+        final player = AudioPlayer();
+        try {
+          return await _readLocalMediaDuration(player, track.path);
+        } finally {
+          await player.dispose();
+        }
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'library_duration_probe_failed path=${track.path}',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return null;
+      }
+    }
+
+    const concurrency = 2;
+    for (var start = 0; start < missingTracks.length; start += concurrency) {
+      final end = (start + concurrency).clamp(0, missingTracks.length);
+      final chunk = missingTracks.sublist(start, end);
+      final durations = await Future.wait(chunk.map(resolveDuration));
+      for (var index = 0; index < chunk.length; index++) {
+        final track = chunk[index];
+        final duration = durations[index] ?? Duration.zero;
         if (duration > Duration.zero) {
           totalDuration += duration;
+          tracksToUpdate.add(track.copyWith(duration: duration));
         } else {
           hasUnknownDuration = true;
           AppLogService.warning(
@@ -1585,14 +1594,12 @@ extension AudioProviderLibrary on AudioProvider {
           );
         }
       }
-    } finally {
-      await player?.dispose();
     }
 
     if (tracksToUpdate.isNotEmpty) {
       for (final track in tracksToUpdate) {
-        final index = _library.indexWhere((t) => t.path == track.path);
-        if (index >= 0) _library[index] = track;
+        final index = _libraryIndexByPath[track.path];
+        if (index != null) _library[index] = track;
         _libraryByPath[track.path] = track;
       }
       await _audioDatabaseRepository.upsertTracks(tracksToUpdate);

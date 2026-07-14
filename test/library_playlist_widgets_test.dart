@@ -1860,6 +1860,79 @@ void main() {
     },
   );
 
+  testWidgets('audio detail renders before automatic duration completes', (
+    WidgetTester tester,
+  ) async {
+    final notificationService = PlaybackNotificationService();
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+    addTearDown(audioProvider.dispose);
+    final target = AudioDetailTarget.libraryRootFolder('/library/Work');
+    await tester.runAsync(
+      () => audioProvider.saveAudioDetail(AudioDetail.empty(target)),
+    );
+    final durationCompleter = Completer<Duration?>();
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: AudioDetailSheet(
+          target: target,
+          durationCalculator: (_, _) => durationCompleter.future,
+        ),
+      ),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    for (
+      var i = 0;
+      i < 20 &&
+          find
+              .text(languageProvider.tr('asmr_detail_basic_info'))
+              .evaluate()
+              .isEmpty;
+      i++
+    ) {
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    expect(
+      find.text(languageProvider.tr('asmr_detail_basic_info')),
+      findsOneWidget,
+    );
+    expect(durationCompleter.isCompleted, isFalse);
+
+    durationCompleter.complete(const Duration(minutes: 3));
+    await tester.pump();
+  });
+
   testWidgets('audio detail fetch opens metadata scope page', (
     WidgetTester tester,
   ) async {

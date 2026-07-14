@@ -64,14 +64,52 @@ abstract final class PathMatcher {
     return context.equals(context.normalize(first), context.normalize(second));
   }
 
-  static bool containsEquivalent(Iterable<String> candidates, String value) {
-    final normalizedValue = normalize(value);
-    for (final candidate in candidates) {
-      if (equalsNormalized(candidate, normalizedValue)) {
-        return true;
-      }
+  static String equivalenceKey(String value) {
+    final normalized = normalize(value);
+    if (isRemoteUri(normalized)) return 'remote:$normalized';
+    if (isContentUri(normalized)) {
+      return 'content:${_documentPath(normalized) ?? normalized}';
     }
-    return false;
+    final canonical = normalized.replaceAll('\\', '/');
+    return _windowsAbsolutePath.hasMatch(normalized)
+        ? 'windows:${canonical.toLowerCase()}'
+        : 'file:$canonical';
+  }
+
+  static String parentEquivalenceKey(String value) {
+    final normalized = normalize(value);
+    if (isContentUri(normalized)) {
+      final documentPath = _documentPath(normalized);
+      if (documentPath != null) {
+        final separator = documentPath.lastIndexOf('/');
+        final parent = separator < 0
+            ? documentPath
+            : documentPath.substring(0, separator);
+        return 'content:$parent';
+      }
+      final uri = Uri.tryParse(normalized);
+      if (uri != null && uri.pathSegments.isNotEmpty) {
+        return 'content:${uri.replace(pathSegments: uri.pathSegments.sublist(0, uri.pathSegments.length - 1))}';
+      }
+      return equivalenceKey(normalized);
+    }
+    if (isRemoteUri(normalized)) {
+      final uri = Uri.tryParse(normalized);
+      if (uri == null || uri.pathSegments.isEmpty) {
+        return equivalenceKey(normalized);
+      }
+      return equivalenceKey(
+        uri
+            .replace(
+              pathSegments: uri.pathSegments.sublist(
+                0,
+                uri.pathSegments.length - 1,
+              ),
+            )
+            .toString(),
+      );
+    }
+    return equivalenceKey(_contextFor(normalized).dirname(normalized));
   }
 
   static bool isWithinOrEqual(String child, String parent) {
@@ -295,6 +333,37 @@ abstract final class PathMatcher {
     final relative = relativePath?.trimLeftSlash();
     if (relative == null || relative.isEmpty) return basePath;
     return '$basePath/$relative';
+  }
+}
+
+final class PathMembershipIndex {
+  PathMembershipIndex(Iterable<String> paths)
+    : _keys = paths.map(PathMatcher.equivalenceKey).toSet() {
+    _sortedKeys = _keys.toList(growable: false)..sort();
+  }
+
+  final Set<String> _keys;
+  late final List<String> _sortedKeys;
+
+  bool containsEquivalent(String value) {
+    return _keys.contains(PathMatcher.equivalenceKey(value));
+  }
+
+  bool containsDescendantOrEqual(String value) {
+    final key = PathMatcher.equivalenceKey(value);
+    if (_keys.contains(key)) return true;
+    final prefix = '$key/';
+    var low = 0;
+    var high = _sortedKeys.length;
+    while (low < high) {
+      final middle = low + ((high - low) >> 1);
+      if (_sortedKeys[middle].compareTo(prefix) < 0) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low < _sortedKeys.length && _sortedKeys[low].startsWith(prefix);
   }
 }
 

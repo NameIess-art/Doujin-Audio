@@ -397,6 +397,7 @@ class LibraryService {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final entries = libraryEntriesByLibrary[normalizedLibraryPath];
     if (entries == null || entries.isEmpty) return const <String>[];
+    final retainedPathIndex = PathMembershipIndex(retainedPaths);
 
     final removedPaths = <String>[];
     entries.removeWhere((entryPath, entry) {
@@ -407,10 +408,8 @@ class LibraryService {
         return false;
       }
       final retained = entry.isFolder
-          ? retainedPaths.any(
-              (path) => PathMatcher.isWithinOrEqualNormalized(path, entry.path),
-            )
-          : PathMatcher.containsEquivalent(retainedPaths, entry.path);
+          ? retainedPathIndex.containsDescendantOrEqual(entry.path)
+          : retainedPathIndex.containsEquivalent(entry.path);
       if (retained) return false;
       removedPaths.add(entry.path);
       return true;

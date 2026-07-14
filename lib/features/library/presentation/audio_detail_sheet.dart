@@ -33,9 +33,16 @@ Future<void> showAudioDetailSheet(
 }
 
 class AudioDetailSheet extends StatefulWidget {
-  const AudioDetailSheet({super.key, required this.target});
+  const AudioDetailSheet({
+    super.key,
+    required this.target,
+    this.durationCalculator,
+  });
 
   final AudioDetailTarget target;
+  @visibleForTesting
+  final Future<Duration?> Function(AudioProvider provider, String targetPath)?
+  durationCalculator;
 
   @override
   State<AudioDetailSheet> createState() => _AudioDetailSheetState();
@@ -48,6 +55,8 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
   Object? _loadError;
   bool _loading = true;
   bool _runningAction = false;
+  bool _calculatingDuration = false;
+  int _durationCalculationGeneration = 0;
   _AudioDetailField? _savingField;
 
   UiOperationScope get _operationScope => UiOperationScope.audioDetail(
@@ -67,7 +76,45 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
     if (detail.duration != null) {
       return Future<Duration?>.value();
     }
-    return provider.calculateMissingLibraryDuration(_target.targetPath);
+    return widget.durationCalculator?.call(provider, _target.targetPath) ??
+        provider.calculateMissingLibraryDuration(_target.targetPath);
+  }
+
+  void _startAutomaticDurationCalculation(
+    AudioProvider provider,
+    AudioDetail detail,
+  ) {
+    final generation = ++_durationCalculationGeneration;
+    final target = _target;
+    if (detail.duration != null) {
+      if (_calculatingDuration || _calculatedDuration != null) {
+        setState(() {
+          _calculatingDuration = false;
+          _calculatedDuration = null;
+        });
+      }
+      return;
+    }
+    if (!_calculatingDuration) {
+      setState(() {
+        _calculatingDuration = true;
+      });
+    }
+    unawaited(() async {
+      final calculatedDuration = await _calculateAutomaticDuration(
+        provider,
+        detail,
+      );
+      if (!mounted ||
+          generation != _durationCalculationGeneration ||
+          _target != target) {
+        return;
+      }
+      setState(() {
+        _calculatedDuration = calculatedDuration;
+        _calculatingDuration = false;
+      });
+    }());
   }
 
   Future<void> _load() async {
@@ -80,17 +127,12 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
             task: (_) => provider.loadAudioDetail(_target),
           );
 
-      final calculatedDuration = await _calculateAutomaticDuration(
-        provider,
-        result.detail,
-      );
-
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
-        _calculatedDuration = calculatedDuration;
         _loading = false;
       });
+      _startAutomaticDurationCalculation(provider, result.detail);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -220,15 +262,17 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
             labelKey: 'audio_detail_save_failed',
             task: (_) => provider.saveAudioDetail(nextDetail),
           );
-      final calculatedDuration = field == _AudioDetailField.duration
-          ? await _calculateAutomaticDuration(provider, result.detail)
-          : _calculatedDuration;
       if (!mounted) return;
       setState(() {
         _detail = result.detail;
-        _calculatedDuration = calculatedDuration;
+        if (field == _AudioDetailField.duration) {
+          _calculatedDuration = null;
+        }
         _savingField = null;
       });
+      if (field == _AudioDetailField.duration) {
+        _startAutomaticDurationCalculation(provider, result.detail);
+      }
       final i18n = context.read<AppLanguageProvider>();
       if (field == _AudioDetailField.rjCode &&
           !_looksLikeRjCode(result.detail.rjCode)) {
@@ -386,6 +430,12 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
       },
     );
     return confirmed == true;
+  }
+
+  @override
+  void dispose() {
+    _durationCalculationGeneration++;
+    super.dispose();
   }
 
   @override
@@ -579,7 +629,10 @@ class _AudioDetailSheetState extends State<AudioDetailSheet> {
                   label: field.label(i18n, detail),
                   values: field.readValues(detail, fallbackDuration: duration),
                   labelStyle: labelStyle,
-                  busy: _savingField == field,
+                  busy:
+                      _savingField == field ||
+                      (field == _AudioDetailField.duration &&
+                          _calculatingDuration),
                   onTap: () => _editField(field),
                   onCopy: (val) => _copyText(context, val),
                 ),

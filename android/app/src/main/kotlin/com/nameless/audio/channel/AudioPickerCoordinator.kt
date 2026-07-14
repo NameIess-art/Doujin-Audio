@@ -3,18 +3,24 @@ package com.nameless.audio.channel
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
 import io.flutter.plugin.common.MethodChannel
 
 internal class AudioPickerCoordinator(
-    private val activity: Activity
+    private val activity: Activity,
+    private val taskExecutor: FileCacheTaskExecutor
 ) {
     private val pickAudioSourceRequestCode = 7001
     private val pickAudioFilesRequestCode = 7002
     private val pickAudioFolderRequestCode = 7003
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var pendingRequest: PendingPickAudioRequest? = null
+    private var generation = 0L
+    private var disposed = false
 
     private val audioPickerMimeTypes = arrayOf(
         "audio/*",
@@ -52,6 +58,10 @@ internal class AudioPickerCoordinator(
     }
 
     fun launchPickAudioSource(result: MethodChannel.Result) {
+        if (disposed) {
+            result.error("picker_failed", "audio picker is unavailable", null)
+            return
+        }
         if (pendingRequest != null) {
             result.error("picker_busy", "Audio picker is already active", null)
             return
@@ -67,7 +77,8 @@ internal class AudioPickerCoordinator(
 
             pendingRequest = PendingPickAudioRequest(
                 result = result,
-                mode = PickAudioMode.any
+                mode = PickAudioMode.any,
+                generation = ++generation
             )
             activity.startActivityForResult(chooserIntent, pickAudioSourceRequestCode)
         } catch (e: Exception) {
@@ -100,12 +111,20 @@ internal class AudioPickerCoordinator(
         requestCode: Int,
         intentBuilder: () -> Intent
     ) {
+        if (disposed) {
+            result.error("picker_failed", "audio picker is unavailable", null)
+            return
+        }
         if (pendingRequest != null) {
             result.error("picker_busy", "Audio picker is already active", null)
             return
         }
         try {
-            pendingRequest = PendingPickAudioRequest(result = result, mode = mode)
+            pendingRequest = PendingPickAudioRequest(
+                result = result,
+                mode = mode,
+                generation = ++generation
+            )
             activity.startActivityForResult(intentBuilder(), requestCode)
         } catch (e: Exception) {
             pendingRequest = null
@@ -141,9 +160,9 @@ internal class AudioPickerCoordinator(
     ) {
         val pending = pendingRequest ?: return
         val callback = pending.result
-        pendingRequest = null
 
         if (resultCode != Activity.RESULT_OK || data == null) {
+            pendingRequest = null
             callback.success(null)
             return
         }
@@ -151,47 +170,87 @@ internal class AudioPickerCoordinator(
         val maybeTreeUri = data.data
         if (maybeTreeUri != null && DocumentsContract.isTreeUri(maybeTreeUri)) {
             if (pending.mode == PickAudioMode.files) {
+                pendingRequest = null
                 callback.success(null)
                 return
             }
-            persistReadPermission(maybeTreeUri, data.flags)
-            callback.success(
+            submitPickerTask(pending) {
+                persistReadPermission(maybeTreeUri, data.flags)
                 hashMapOf(
                     "kind" to "folder",
                     "path" to maybeTreeUri.toString(),
                     "label" to resolveTreeDisplayName(maybeTreeUri)
                 )
-            )
+            }
             return
         }
 
         if (pending.mode == PickAudioMode.folder || requestCode == pickAudioFolderRequestCode) {
+            pendingRequest = null
             callback.success(null)
             return
         }
 
-        val files = arrayListOf<HashMap<String, String>>()
+        val pickedUris = arrayListOf<Uri>()
         data.clipData?.let { clip ->
             for (i in 0 until clip.itemCount) {
                 val uri = clip.getItemAt(i)?.uri ?: continue
-                appendPickedFile(files, uri, data.flags)
+                pickedUris.add(uri)
             }
         }
         maybeTreeUri?.let { uri ->
-            appendPickedFile(files, uri, data.flags)
+            pickedUris.add(uri)
         }
 
-        if (files.isEmpty()) {
+        if (pickedUris.isEmpty()) {
+            pendingRequest = null
             callback.success(null)
             return
         }
 
-        callback.success(
-            hashMapOf(
+        submitPickerTask(pending) {
+            val files = arrayListOf<HashMap<String, String>>()
+            for (uri in pickedUris) {
+                appendPickedFile(files, uri, data.flags)
+            }
+            hashMapOf<String, Any>(
                 "kind" to "files",
                 "files" to files
             )
+        }
+    }
+
+    private fun submitPickerTask(
+        request: PendingPickAudioRequest,
+        block: () -> Any?
+    ) {
+        val accepted = taskExecutor.submit(
+            block = block,
+            completion = { taskResult ->
+                mainHandler.post {
+                    if (
+                        disposed ||
+                        pendingRequest?.generation != request.generation
+                    ) {
+                        return@post
+                    }
+                    pendingRequest = null
+                    when (taskResult) {
+                        is FileCacheTaskResult.Success ->
+                            request.result.success(taskResult.value)
+                        is FileCacheTaskResult.Failure -> request.result.error(
+                            "picker_failed",
+                            taskResult.exception.message ?: "audio picker failed",
+                            null
+                        )
+                    }
+                }
+            }
         )
+        if (!accepted) {
+            pendingRequest = null
+            request.result.error("picker_failed", "audio picker is unavailable", null)
+        }
     }
 
     private fun resolveTreeDisplayName(uri: Uri): String? {
@@ -256,9 +315,16 @@ internal class AudioPickerCoordinator(
         }
     }
 
+    fun dispose() {
+        disposed = true
+        generation++
+        pendingRequest = null
+    }
+
     private data class PendingPickAudioRequest(
         val result: MethodChannel.Result,
-        val mode: PickAudioMode
+        val mode: PickAudioMode,
+        val generation: Long
     )
 
     private enum class PickAudioMode {

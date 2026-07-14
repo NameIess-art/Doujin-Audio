@@ -27,9 +27,9 @@ class MainActivity : FlutterFragmentActivity() {
     private var fileCacheTaskExecutor: FileCacheTaskExecutor? = null
     private var fileExportCoordinator: FileExportCoordinator? = null
     private var fileCacheScanStreamHandler: FileCacheScanStreamHandler? = null
+    private var audioPickerCoordinator: AudioPickerCoordinator? = null
     private var pendingNotificationSessionId: String? = null
     private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
-    private val audioPickerCoordinator by lazy { AudioPickerCoordinator(this) }
 
     override fun getRenderMode(): RenderMode = RenderMode.surface
 
@@ -59,12 +59,18 @@ class MainActivity : FlutterFragmentActivity() {
         fileCacheMethodChannel?.setMethodCallHandler(null)
         fileCacheMethodHandler?.shutdown()
         fileExportCoordinator?.dispose()
+        audioPickerCoordinator?.dispose()
         fileCacheTaskExecutor?.shutdownNow()
         fileCacheScanStreamHandler?.shutdown()
 
         val fileCacheOperations = FileCacheOperations(applicationContext)
         val fileCacheTaskExecutor = FileCacheTaskExecutor()
         this.fileCacheTaskExecutor = fileCacheTaskExecutor
+        val audioPickerCoordinator = AudioPickerCoordinator(
+            this,
+            fileCacheTaskExecutor
+        )
+        this.audioPickerCoordinator = audioPickerCoordinator
         val fileExportCoordinator = FileExportCoordinator(
             this,
             fileCacheOperations.documentStorage,
@@ -94,7 +100,9 @@ class MainActivity : FlutterFragmentActivity() {
         if (fileExportCoordinator?.handleActivityResult(requestCode, resultCode, data) == true) {
             return
         }
-        if (audioPickerCoordinator.handleActivityResult(requestCode, resultCode, data)) return
+        if (
+            audioPickerCoordinator?.handleActivityResult(requestCode, resultCode, data) == true
+        ) return
         super.onActivityResult(requestCode, resultCode, data)
     }
 
@@ -112,6 +120,8 @@ class MainActivity : FlutterFragmentActivity() {
         fileCacheMethodHandler = null
         fileExportCoordinator?.dispose()
         fileExportCoordinator = null
+        audioPickerCoordinator?.dispose()
+        audioPickerCoordinator = null
         fileCacheTaskExecutor?.shutdownNow()
         fileCacheTaskExecutor = null
         fileCacheScanStreamHandler?.shutdown()

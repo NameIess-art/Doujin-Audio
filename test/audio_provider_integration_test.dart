@@ -110,10 +110,18 @@ void main() {
     provider.addTracks(tracks, notify: false, persist: false);
 
     final requestedPaths = <String>[];
+    var activeDurationReads = 0;
+    var peakDurationReads = 0;
     final duration = await provider.calculateMissingLibraryDuration(
       folder.path,
       durationReader: (trackPath) async {
         requestedPaths.add(trackPath);
+        activeDurationReads++;
+        if (activeDurationReads > peakDurationReads) {
+          peakDurationReads = activeDurationReads;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        activeDurationReads--;
         return trackPath == secondPath
             ? const Duration(minutes: 2)
             : const Duration(minutes: 3);
@@ -121,6 +129,7 @@ void main() {
     );
 
     expect(requestedPaths, <String>[secondPath, thirdPath]);
+    expect(peakDurationReads, 2);
     expect(duration, const Duration(minutes: 6));
     expect(
       provider.trackByPath(secondPath)?.duration,

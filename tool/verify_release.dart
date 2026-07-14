@@ -2,6 +2,7 @@ import 'dart:io';
 
 void main(List<String> args) {
   final explicitTag = _argumentValue(args, '--tag');
+  final printTag = args.contains('--print-tag');
   final tag =
       explicitTag ??
       (Platform.environment['GITHUB_REF_TYPE'] == 'tag'
@@ -25,28 +26,31 @@ void main(List<String> args) {
   final expectedTag = 'v$versionName';
   final expectedVersion = '$versionName+$buildNumber';
 
-  if (!readme.contains('`$expectedVersion`')) {
-    _fail('README.md does not contain current version `$expectedVersion`.');
-  }
-  if (!readme.contains('/releases/tag/$expectedTag')) {
-    _fail('README.md release link must match tag $expectedTag.');
+  if (!readme.contains('/releases/latest')) {
+    _fail('README.md must link to the GitHub Latest release.');
   }
   if (tag != null && tag.isNotEmpty && tag != expectedTag) {
     _fail('Git tag $tag does not match pubspec version $expectedTag.');
   }
 
   const androidVariants = <String>['universal', 'arm64', 'armv7', 'x64'];
+  const documentedTag = '<tag>';
   final documentedAssets = <String>[
     for (final variant in androidVariants)
-      'NamelessAudio-android-$variant-$expectedTag.apk',
-    'NamelessAudio-windows-x64-$expectedTag.zip',
+      'NamelessAudio-android-$variant-$documentedTag.apk',
+    'NamelessAudio-windows-x64-$documentedTag.zip',
   ];
   for (final asset in documentedAssets) {
-    if (!readme.contains(asset)) {
-      _fail('README.md is missing release asset: $asset');
-    }
-    if (!readme.contains('$asset.sha256')) {
-      _fail('README.md is missing checksum asset: $asset.sha256');
+    for (final document in <MapEntry<String, String>>[
+      MapEntry<String, String>('README.md', readme),
+      MapEntry<String, String>('release_notes.md', releaseNotes),
+    ]) {
+      if (!document.value.contains(asset)) {
+        _fail('${document.key} is missing release asset pattern: $asset');
+      }
+      if (!document.value.contains('$asset.sha256')) {
+        _fail('${document.key} is missing checksum pattern: $asset.sha256');
+      }
     }
   }
 
@@ -69,6 +73,8 @@ void main(List<String> args) {
     '--latest',
     'actions/upload-artifact@',
     'actions/download-artifact@',
+    'version="\${tag#v}"',
+    '--title "Nameless Audio \$version"',
   ]) {
     if (!workflow.contains(required)) {
       _fail(
@@ -89,11 +95,45 @@ void main(List<String> args) {
   ]) {
     if (!document.value.contains('必须先卸载旧版本再重新安装') ||
         !document.value.contains('.nalbackup')) {
-      _fail('${document.key} is missing the 0.13.0 reinstall/backup warning.');
+      _fail('${document.key} is missing the reinstall/backup warning.');
     }
     if (document.value.contains('\uFFFD')) {
       _fail('${document.key} contains invalid replacement characters.');
     }
+  }
+
+  final reusableMetadata = <MapEntry<String, String>>[
+    MapEntry<String, String>('README.md', readme),
+    MapEntry<String, String>('release_notes.md', releaseNotes),
+    MapEntry<String, String>('.github/workflows/flutter.yml', workflow),
+    MapEntry<String, String>(
+      '.github/ISSUE_TEMPLATE/bug_report.yml',
+      File('.github/ISSUE_TEMPLATE/bug_report.yml').readAsStringSync(),
+    ),
+    MapEntry<String, String>(
+      'windows/runner/Runner.rc',
+      File('windows/runner/Runner.rc').readAsStringSync(),
+    ),
+    MapEntry<String, String>(
+      'android UpdateMethodHandler.kt',
+      File(
+        'android/app/src/main/kotlin/com/nameless/audio/update/UpdateMethodHandler.kt',
+      ).readAsStringSync(),
+    ),
+  ];
+  for (final metadata in reusableMetadata) {
+    if (metadata.value.contains(expectedVersion) ||
+        metadata.value.contains(expectedTag)) {
+      _fail(
+        '${metadata.key} hard-codes the current application version; '
+        'derive it from pubspec.yaml, package metadata, or the release tag.',
+      );
+    }
+  }
+
+  if (printTag) {
+    stdout.writeln(expectedTag);
+    return;
   }
 
   stdout.writeln(

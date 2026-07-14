@@ -605,6 +605,7 @@ const Map<String, String> appLanguageJa = {
   'background_transparency': '背景透明度',
   'background_color': '背景色',
   'reset_to_default': 'デフォルトにリセット',
+  'restore_default': 'デフォルトに戻す',
   'turn_on_subtitle': '字幕を表示',
   'turn_off_subtitle': '字幕を非表示',
   'subtitle_global_display': '字幕グローバル表示',

@@ -229,6 +229,184 @@ void main() {
     );
   });
 
+  test(
+    'library duration backfill persists work and single details to database and JSON',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'library_duration_backfill_',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final workDir = await Directory(path.join(root.path, 'work')).create();
+      final singlesDir = await Directory(
+        path.join(root.path, 'singles'),
+      ).create();
+      final firstPath = path.join(workDir.path, '01.mp3');
+      final secondPath = path.join(workDir.path, '02.flac');
+      final singlePath = path.join(singlesDir.path, 'standalone.m4a');
+      provider.addWatchedFolder(workDir.path, notify: false);
+      provider.addTracks(
+        <MusicTrack>[
+          MusicTrack(
+            path: firstPath,
+            displayName: '01',
+            groupKey: workDir.path,
+            groupTitle: 'Work',
+            groupSubtitle: workDir.path,
+            isSingle: false,
+          ),
+          MusicTrack(
+            path: secondPath,
+            displayName: '02',
+            groupKey: workDir.path,
+            groupTitle: 'Work',
+            groupSubtitle: workDir.path,
+            isSingle: false,
+          ),
+          MusicTrack(
+            path: singlePath,
+            displayName: 'standalone',
+            groupKey: singlesDir.path,
+            groupTitle: 'standalone',
+            groupSubtitle: singlesDir.path,
+            isSingle: true,
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+
+      await provider.backfillMissingLibraryDurations(
+        durationReader: (trackPath) async => switch (trackPath) {
+          final value when value == firstPath => const Duration(minutes: 1),
+          final value when value == secondPath => const Duration(minutes: 2),
+          final value when value == singlePath => const Duration(seconds: 45),
+          _ => null,
+        },
+      );
+
+      final workTarget = AudioDetailTarget.libraryRootFolder(workDir.path);
+      final singleTarget = AudioDetailTarget.singleAudioFile(singlePath);
+      expect(
+        (await provider.loadAudioDetail(workTarget)).detail.duration,
+        const Duration(minutes: 3),
+      );
+      expect(
+        (await provider.loadAudioDetail(singleTarget)).detail.duration,
+        const Duration(seconds: 45),
+      );
+
+      final databaseRows = await db.query(
+        'audio_details',
+        columns: <String>['target_path', 'duration_ms'],
+      );
+      expect(
+        databaseRows,
+        contains(
+          isA<Map<String, Object?>>()
+              .having((row) => row['target_path'], 'target path', workDir.path)
+              .having(
+                (row) => row['duration_ms'],
+                'duration',
+                const Duration(minutes: 3).inMilliseconds,
+              ),
+        ),
+      );
+      expect(
+        databaseRows,
+        contains(
+          isA<Map<String, Object?>>()
+              .having((row) => row['target_path'], 'target path', singlePath)
+              .having(
+                (row) => row['duration_ms'],
+                'duration',
+                const Duration(seconds: 45).inMilliseconds,
+              ),
+        ),
+      );
+
+      final workBackup =
+          json.decode(
+                await File(
+                  path.join(workDir.path, AudioDetailRepository.backupFileName),
+                ).readAsString(),
+              )
+              as Map<String, dynamic>;
+      expect(
+        workBackup['durationMs'],
+        const Duration(minutes: 3).inMilliseconds,
+      );
+      final singleBackups =
+          json.decode(
+                await File(
+                  path.join(
+                    singlesDir.path,
+                    AudioDetailRepository.backupFileName,
+                  ),
+                ).readAsString(),
+              )
+              as List<dynamic>;
+      expect(singleBackups, hasLength(1));
+      expect(
+        (singleBackups.single as Map<String, dynamic>)['durationMs'],
+        const Duration(seconds: 45).inMilliseconds,
+      );
+    },
+  );
+
+  test(
+    'duration backfill fills track data without overwriting work duration',
+    () async {
+      final workDir = await Directory.systemTemp.createTemp(
+        'library_duration_existing_detail_',
+      );
+      addTearDown(() async {
+        if (await workDir.exists()) await workDir.delete(recursive: true);
+      });
+      final trackPath = path.join(workDir.path, '01.mp3');
+      provider.addWatchedFolder(workDir.path, notify: false);
+      provider.addTracks(
+        <MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: workDir.path,
+            groupTitle: 'Work',
+            groupSubtitle: workDir.path,
+            isSingle: false,
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+      final target = AudioDetailTarget.libraryRootFolder(workDir.path);
+      await provider.saveAudioDetail(
+        AudioDetail.empty(
+          target,
+        ).copyWith(duration: const Duration(minutes: 9)),
+      );
+
+      final requestedPaths = <String>[];
+      await provider.backfillMissingLibraryDurations(
+        durationReader: (path) async {
+          requestedPaths.add(path);
+          return const Duration(minutes: 2);
+        },
+      );
+
+      expect(requestedPaths, <String>[trackPath]);
+      expect(
+        provider.trackByPath(trackPath)?.duration,
+        const Duration(minutes: 2),
+      );
+      expect(
+        (await provider.loadAudioDetail(target)).detail.duration,
+        const Duration(minutes: 9),
+      );
+    },
+  );
+
   // ── multi-session playback stability ──────────────────────────
 
   group('multi-session playback stability', () {

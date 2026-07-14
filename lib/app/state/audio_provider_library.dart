@@ -1533,6 +1533,17 @@ extension AudioProviderLibrary on AudioProvider {
                         PathMatcher.isWithinOrEqual(track.path, targetPath)),
               )
               .toList(growable: false);
+    return _calculateLibraryDurationForTracks(
+      targetTracks,
+      durationReader: durationReader,
+    );
+  }
+
+  Future<Duration?> _calculateLibraryDurationForTracks(
+    List<MusicTrack> targetTracks, {
+    Future<Duration?> Function(String path)? durationReader,
+    bool notify = true,
+  }) async {
     if (targetTracks.isEmpty) return null;
 
     final tracksToUpdate = <MusicTrack>[];
@@ -1554,6 +1565,11 @@ extension AudioProviderLibrary on AudioProvider {
             .resolveMediaDuration(track.path);
         if (nativeDuration != null && nativeDuration > Duration.zero) {
           return nativeDuration;
+        }
+        if (!PathMatcher.isContentUri(track.path) &&
+            !PathMatcher.isRemoteUri(track.path) &&
+            !await File(track.path).exists()) {
+          return null;
         }
         final player = AudioPlayer();
         try {
@@ -1599,7 +1615,7 @@ extension AudioProviderLibrary on AudioProvider {
       }
       await _audioDatabaseRepository.upsertTracks(tracksToUpdate);
       _rebuildLibraryIndexes();
-      _notifyListeners();
+      if (notify) _notifyListeners();
     }
 
     return !hasUnknownDuration && totalDuration > Duration.zero

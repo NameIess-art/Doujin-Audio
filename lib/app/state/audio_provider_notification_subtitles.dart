@@ -156,8 +156,12 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
       );
     } on MissingPluginException {
       return null;
-    } catch (e) {
-      debugPrint('AudioProvider._loadContentSubtitleTrack error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'content_subtitle_load_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }
@@ -184,8 +188,12 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
             : metadata['subtitleTitle']?.toString().trim(),
         extension: subtitleExtension,
       );
-    } catch (e) {
-      debugPrint('AudioProvider._loadAsmrSubtitleTrack error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'asmr_subtitle_load_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     }
   }

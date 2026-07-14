@@ -5,7 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
-import '../../settings/application/ui_operation_service.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/operation_feedback.dart';

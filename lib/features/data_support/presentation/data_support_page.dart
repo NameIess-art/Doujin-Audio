@@ -6,7 +6,7 @@ import '../../../app/state/audio_provider.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../application/data_support_file_service.dart';
-import '../../settings/application/ui_operation_service.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';

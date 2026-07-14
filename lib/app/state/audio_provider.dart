@@ -52,8 +52,8 @@ import '../../features/player/application/playback_queue_resolver.dart';
 import '../../core/platform/power_platform_service.dart';
 import '../../features/library/application/cover_image_cache_policy.dart';
 import '../../features/player/application/timer_runtime_calculator.dart';
-import '../../features/player/application/ui_interaction_coordinator.dart';
-import '../../features/player/application/warmup_scheduler.dart';
+import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/ui/warmup_scheduler.dart';
 
 export '../../features/library/domain/library_node.dart';
 export '../../features/library/domain/library_entry.dart';

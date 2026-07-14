@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../../features/player/application/ui_interaction_coordinator.dart';
+import '../ui/ui_interaction_coordinator.dart';
 import '../../app/theme/app_design_tokens.dart';
 import 'app_feedback.dart';
 

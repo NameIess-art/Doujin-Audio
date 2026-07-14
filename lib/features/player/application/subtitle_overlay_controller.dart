@@ -2,31 +2,21 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+import '../../../core/errors/native_result.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/platform_channels.dart';
+import '../../../core/platform/platform_method_client.dart';
 
 class SubtitleOverlayController {
   static const _channel = MethodChannel(SubtitleOverlayChannel.name);
+  static const _client = PlatformMethodClient(_channel);
 
   static Future<bool> canDrawOverlays() async {
-    try {
-      return await _channel.invokeMethod<bool>(
-            SubtitleOverlayMethod.canDrawOverlays,
-          ) ??
-          false;
-    } on PlatformException catch (_) {
-      return false;
-    }
+    return _invokeBool(SubtitleOverlayMethod.canDrawOverlays);
   }
 
   static Future<bool> openOverlaySettings() async {
-    try {
-      return await _channel.invokeMethod<bool>(
-            SubtitleOverlayMethod.openOverlaySettings,
-          ) ??
-          false;
-    } on PlatformException catch (_) {
-      return false;
-    }
+    return _invokeBool(SubtitleOverlayMethod.openOverlaySettings);
   }
 
   static Timer? _stopTimer;
@@ -34,11 +24,7 @@ class SubtitleOverlayController {
   static Future<void> startOverlay() async {
     _stopTimer?.cancel();
     _stopTimer = null;
-    try {
-      await _channel.invokeMethod(SubtitleOverlayMethod.startOverlay);
-    } on PlatformException catch (_) {
-      // Overlay support is optional on platforms without the native channel.
-    }
+    await _invokeBestEffort(SubtitleOverlayMethod.startOverlay);
   }
 
   static Future<void> stopOverlay({bool immediate = false}) async {
@@ -56,21 +42,14 @@ class SubtitleOverlayController {
   static Future<void> _doStop() async {
     _stopTimer?.cancel();
     _stopTimer = null;
-    try {
-      await _channel.invokeMethod(SubtitleOverlayMethod.stopOverlay);
-    } on PlatformException catch (_) {
-      // Overlay support is optional on platforms without the native channel.
-    }
+    await _invokeBestEffort(SubtitleOverlayMethod.stopOverlay);
   }
 
   static Future<void> updateSubtitle(String text) async {
-    try {
-      await _channel.invokeMethod(SubtitleOverlayMethod.updateSubtitle, {
-        'text': text,
-      });
-    } on PlatformException catch (_) {
-      // Subtitle updates are best effort when the overlay is unavailable.
-    }
+    await _invokeBestEffort(
+      SubtitleOverlayMethod.updateSubtitle,
+      <String, Object?>{'text': text},
+    );
   }
 
   static Future<void> updatePlaybackState(bool isPlaying) async {
@@ -93,10 +72,40 @@ class SubtitleOverlayController {
       'fontFamily': fontFamily,
       'borderDepth': borderDepth,
     }..removeWhere((_, value) => value == null);
-    try {
-      await _channel.invokeMethod(SubtitleOverlayMethod.updateStyle, args);
-    } on PlatformException catch (_) {
-      // Style updates are best effort when the overlay is unavailable.
+    await _invokeBestEffort(SubtitleOverlayMethod.updateStyle, args);
+  }
+
+  static Future<bool> _invokeBool(String method) async {
+    final result = await _client.invoke<bool>(
+      method,
+      decode: (value) => value as bool,
+    );
+    _logFailure(method, result);
+    return result.valueOrNull ?? false;
+  }
+
+  static Future<void> _invokeBestEffort(
+    String method, [
+    Object? arguments,
+  ]) async {
+    final result = await _client.invoke<Object?>(
+      method,
+      arguments: arguments,
+      decode: (value) => value,
+    );
+    _logFailure(method, result);
+  }
+
+  static void _logFailure<T>(String method, NativeResult<T> result) {
+    if (result case NativeFailure<T>(
+      :final code,
+      :final message,
+      :final details,
+    )) {
+      AppLogService.warning(
+        'subtitle_overlay_method_failed method=$method code=$code',
+        error: <String, Object?>{'message': message, 'details': details},
+      );
     }
   }
 }

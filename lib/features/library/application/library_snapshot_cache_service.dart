@@ -10,7 +10,7 @@ import '../../../core/logging/app_log_service.dart';
 import 'audio_detail_cache_service.dart';
 import '../../player/application/audio_state_services.dart';
 import 'library_organizer.dart';
-import '../../player/application/ui_interaction_coordinator.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 
 @immutable
 class LibraryDerivedSnapshotPayload {

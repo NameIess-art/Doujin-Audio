@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../errors/native_result.dart';
+import '../logging/app_log_service.dart';
 import 'app_platform.dart';
 import 'platform_channels.dart';
+import 'platform_method_client.dart';
 
 class BackgroundRunDiagnostics {
   const BackgroundRunDiagnostics({
@@ -59,10 +62,12 @@ class PowerPlatformService {
   PowerPlatformService({
     MethodChannel? channel,
     @visibleForTesting bool? isAndroidOverride,
-  }) : _channel = channel ?? const MethodChannel(PowerChannel.name),
+  }) : _client = PlatformMethodClient(
+         channel ?? const MethodChannel(PowerChannel.name),
+       ),
        _isAndroidOverride = isAndroidOverride;
 
-  final MethodChannel _channel;
+  final PlatformMethodClient _client;
   final bool? _isAndroidOverride;
 
   bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
@@ -180,29 +185,27 @@ class PowerPlatformService {
 
   Future<Map<dynamic, dynamic>?> getNativeTimerRuntimeState() async {
     if (!_isAndroid) return null;
-    try {
-      return await _channel.invokeMapMethod<dynamic, dynamic>(
-        PowerMethod.getNativeTimerRuntimeState,
-      );
-    } on MissingPluginException {
-      return null;
-    } catch (_) {
-      return null;
-    }
+    final result = await _client.invoke<Map<dynamic, dynamic>?>(
+      PowerMethod.getNativeTimerRuntimeState,
+      decode: (value) =>
+          value == null ? null : Map<dynamic, dynamic>.from(value as Map),
+    );
+    _logFailure(PowerMethod.getNativeTimerRuntimeState, result);
+    return result.valueOrNull;
   }
 
   Future<BackgroundRunDiagnostics?> getBackgroundRunDiagnostics() async {
     if (!_isAndroid) return null;
-    try {
-      final map = await _channel.invokeMapMethod<dynamic, dynamic>(
-        PowerMethod.getBackgroundRunDiagnostics,
-      );
-      return map == null ? null : BackgroundRunDiagnostics.fromMap(map);
-    } on MissingPluginException {
-      return null;
-    } catch (_) {
-      return null;
-    }
+    final result = await _client.invoke<BackgroundRunDiagnostics?>(
+      PowerMethod.getBackgroundRunDiagnostics,
+      decode: (value) => value == null
+          ? null
+          : BackgroundRunDiagnostics.fromMap(
+              Map<dynamic, dynamic>.from(value as Map),
+            ),
+    );
+    _logFailure(PowerMethod.getBackgroundRunDiagnostics, result);
+    return result.valueOrNull;
   }
 
   Future<TimerExecutionResult> executeTimerExpiredNow(int generation) {
@@ -218,30 +221,27 @@ class PowerPlatformService {
     int generation,
   ) async {
     if (!_isAndroid) return TimerExecutionResult.failed;
-    try {
-      final result = await _channel.invokeMethod<String>(method, {
-        'generation': generation,
-      });
-      return TimerExecutionResult.values.firstWhere(
-        (value) => value.name == result,
+    final result = await _client.invoke<TimerExecutionResult>(
+      method,
+      arguments: <String, Object?>{'generation': generation},
+      decode: (value) => TimerExecutionResult.values.firstWhere(
+        (candidate) => candidate.name == value,
         orElse: () => TimerExecutionResult.failed,
-      );
-    } on MissingPluginException {
-      return TimerExecutionResult.failed;
-    } catch (_) {
-      return TimerExecutionResult.failed;
-    }
+      ),
+    );
+    _logFailure(method, result);
+    return result.valueOrNull ?? TimerExecutionResult.failed;
   }
 
   Future<T?> _invokeBestEffort<T>(String method, [Object? arguments]) async {
     if (!_isAndroid) return null;
-    try {
-      return await _channel.invokeMethod<T>(method, arguments);
-    } on MissingPluginException {
-      return null;
-    } catch (_) {
-      return null;
-    }
+    final result = await _client.invoke<T?>(
+      method,
+      arguments: arguments,
+      decode: (value) => value as T?,
+    );
+    _logFailure(method, result);
+    return result.valueOrNull;
   }
 
   Future<bool> _invokeBool(
@@ -249,12 +249,29 @@ class PowerPlatformService {
     required bool missingPluginDefault,
     required bool errorDefault,
   }) async {
-    try {
-      return await _channel.invokeMethod<bool>(method) ?? errorDefault;
-    } on MissingPluginException {
-      return missingPluginDefault;
-    } catch (_) {
-      return errorDefault;
+    final result = await _client.invoke<bool>(
+      method,
+      decode: (value) => value as bool,
+    );
+    if (result case NativeSuccess<bool>(:final value)) {
+      return value ?? errorDefault;
+    }
+    _logFailure(method, result);
+    return result.errorCodeOrNull == NativeErrorCode.serviceUnavailable
+        ? missingPluginDefault
+        : errorDefault;
+  }
+
+  void _logFailure<T>(String method, NativeResult<T> result) {
+    if (result case NativeFailure<T>(
+      :final code,
+      :final message,
+      :final details,
+    )) {
+      AppLogService.warning(
+        'power_platform_method_failed method=$method code=$code',
+        error: <String, Object?>{'message': message, 'details': details},
+      );
     }
   }
 }

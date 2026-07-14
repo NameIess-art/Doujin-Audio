@@ -111,6 +111,22 @@ class ChannelContractTest {
             .argumentReader()
             .requiredStringList("ids")
     }
+
+    @Test
+    fun `required string allows an explicitly present empty subtitle`() {
+        val text = MethodCall("updateSubtitle", mapOf("text" to ""))
+            .argumentReader()
+            .requiredString("text", allowBlank = true)
+
+        assertEquals("", text)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `required string rejects a missing subtitle even when blank is allowed`() {
+        MethodCall("updateSubtitle", emptyMap<String, Any?>())
+            .argumentReader()
+            .requiredString("text", allowBlank = true)
+    }
 }
 
 private class RecordingMethodResult : MethodChannel.Result {

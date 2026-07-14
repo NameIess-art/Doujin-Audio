@@ -10,12 +10,11 @@ import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../asmr/application/asmr_download_manager.dart';
 import '../application/app_cache_service.dart';
-import '../../../core/logging/app_log_service.dart';
 import '../application/app_update_service.dart';
 import '../../player/application/audio_state_services.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/platform/permission_action_controller.dart';
-import '../application/ui_operation_service.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../app/theme/theme_provider.dart';
@@ -30,6 +29,7 @@ import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../../data_support/presentation/data_support_page.dart';
 import 'permission_status_page.dart';
+import 'app_update_flow.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
 
 part 'settings_tab_actions.dart';
@@ -55,13 +55,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     2 * 1024 * 1024 * 1024,
   ];
 
-  bool _checkingUpdate = false;
-  bool _downloadingUpdate = false;
-  double? _downloadProgress;
   AppUpdateInfo? _lastUpdateInfo;
   late Future<AppVersionInfo> _appVersionFuture;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
+  late final AppUpdateFlow _updateFlow = AppUpdateFlow(
+    permissionController: _permissionActionController,
+  );
 
   final ScrollController _scrollController = ScrollController();
 
@@ -1331,15 +1331,15 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                                   UiOperationScope.settingsUpdate,
                                 ),
                               );
+                              final downloading =
+                                  updateOperation.isBusy &&
+                                  updateOperation.labelKey ==
+                                      'downloading_update';
                               return _UpdateSettingsTile(
                                 checking:
-                                    _checkingUpdate ||
-                                    (updateOperation.isBusy &&
-                                        !_downloadingUpdate),
-                                downloading: _downloadingUpdate,
-                                progress:
-                                    _downloadProgress ??
-                                    updateOperation.progress,
+                                    updateOperation.isBusy && !downloading,
+                                downloading: downloading,
+                                progress: updateOperation.progress,
                                 updateInfo: _lastUpdateInfo,
                                 currentVersion: _appVersionFuture,
                                 textStyle: descStyle,

@@ -7,7 +7,7 @@ import 'package:provider/provider.dart';
 import '../media/music_track.dart' show MusicTrack;
 import '../../app/state/audio_provider.dart' as ap;
 import '../../features/player/application/audio_state_services.dart';
-import '../../features/player/application/ui_interaction_coordinator.dart';
+import '../ui/ui_interaction_coordinator.dart';
 import 'scroll_activity_gate.dart';
 
 const Duration kCoverImageFadeDuration = Duration(milliseconds: 750);

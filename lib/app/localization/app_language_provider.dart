@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../../core/app_language.dart';
 import '../../features/settings/application/app_preferences.dart';
 
 import 'app_language_en.dart';
 import 'app_language_ja.dart';
 import 'app_language_zh.dart';
 
-enum AppLanguage { zh, ja, en }
+export '../../core/app_language.dart';
 
 class AppLanguageProvider with ChangeNotifier {
   static const _prefsKey = 'app_language';

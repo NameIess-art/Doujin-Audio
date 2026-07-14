@@ -50,10 +50,10 @@ channel constants. Keep `test/platform_channels_test.dart` and
 `android/app/src/test/.../PlatformChannelsTest.kt` aligned whenever the
 protocol changes.
 
-Playback envelopes and required-argument behavior also have focused coverage:
+Envelope decoding and required-argument behavior also have focused coverage:
 
 ```bash
-flutter test test/native_playback_bridge_test.dart test/platform_channels_test.dart
+flutter test test/native_playback_bridge_test.dart test/platform_method_client_test.dart test/platform_services_test.dart
 cd android && ./gradlew testDebugUnitTest --tests com.nameless.audio.ChannelContractTest
 ```
 

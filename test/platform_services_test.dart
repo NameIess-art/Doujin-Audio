@@ -50,7 +50,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
             calls.add(call);
-            return true;
+            return _success(null);
           });
       final service = PowerPlatformService(
         channel: channel,
@@ -115,7 +115,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
             expect(call.method, PowerMethod.getNativeTimerRuntimeState);
-            return <String, Object?>{'generation': 4};
+            return _success(<String, Object?>{'generation': 4});
           });
       final service = PowerPlatformService(
         channel: channel,
@@ -131,7 +131,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
             expect(call.method, PowerMethod.getBackgroundRunDiagnostics);
-            return <String, Object?>{
+            return _success(<String, Object?>{
               'manufacturer': 'vivo',
               'batteryOptimizationExempt': true,
               'vendorBackgroundSettingsAvailable': true,
@@ -139,7 +139,7 @@ void main() {
               'lastExitReason': 10,
               'lastExitDescription': 'single-cleaner',
               'lastExitTimestampMs': 123,
-            };
+            });
           });
       final service = PowerPlatformService(
         channel: channel,
@@ -192,7 +192,7 @@ void main() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
             calls.add(call);
-            return true;
+            return _success(null);
           });
       final service = NotificationsPlatformService(
         channel: channel,
@@ -217,13 +217,13 @@ void main() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, (call) async {
               calls.add(call);
-              return switch (call.method) {
+              return _success(switch (call.method) {
                 NotificationsMethod.areNotificationsEnabled => true,
                 NotificationsMethod.openNotificationSettings => true,
                 NotificationsMethod.consumePendingNotificationSessionId =>
                   'session-3',
                 _ => null,
-              };
+              });
             });
         final service = NotificationsPlatformService(
           channel: channel,
@@ -306,3 +306,8 @@ Future<void> _sendPlatformMethodCall(MethodChannel channel, MethodCall call) {
       );
   return completer.future;
 }
+
+Map<String, Object?> _success(Object? value) => <String, Object?>{
+  'ok': true,
+  'value': value,
+};

@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 export 'library_scan_data_source.dart' show scanFileSystemFolderPayloadForTest;
 
 import '../../../core/media/music_track.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../player/application/audio_state_services.dart';
 import 'library_catalog.dart';
 import '../../../core/media/path_matcher.dart';
@@ -820,9 +821,10 @@ class LibraryScannerService {
         failureCount: provider.scanFailureCount + 1,
         generation: generation,
       );
-      debugPrint(
-        '[library-import] native chunked scan failed for $sourceFolderPath '
-        'code=${result.errorCode} message=${result.errorMessage}',
+      AppLogService.warning(
+        'library_native_chunked_scan_failed '
+        'source=$sourceFolderPath code=${result.errorCode}',
+        error: result.errorMessage,
       );
       return _IncrementalNativeImport(added: 0, result: result);
     }
@@ -895,9 +897,10 @@ class LibraryScannerService {
         failureCount: provider.scanFailureCount + 1,
         generation: generation,
       );
-      debugPrint(
-        '[library-import] native scan failed for content uri: $libraryRoot '
-        'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
+      AppLogService.warning(
+        'library_native_scan_failed source=$libraryRoot '
+        'code=${nativeScan.errorCode}',
+        error: nativeScan.errorMessage,
       );
       return const _FolderImportOutcome(added: 0, complete: false);
     }
@@ -1124,9 +1127,10 @@ class LibraryScannerService {
             failureCount: provider.scanFailureCount + 1,
             generation: generation,
           );
-          debugPrint(
-            '[library-import] native scan failed for content uri: $folderPath '
-            'code=${nativeScan.errorCode} message=${nativeScan.errorMessage}',
+          AppLogService.warning(
+            'library_native_scan_failed source=$folderPath '
+            'code=${nativeScan.errorCode}',
+            error: nativeScan.errorMessage,
           );
         }
       }

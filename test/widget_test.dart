@@ -20,10 +20,10 @@ import 'package:nameless_audio/features/player/application/native_playback_repos
 import 'package:nameless_audio/features/player/application/playback_command_runner.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
-import 'package:nameless_audio/features/player/application/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
-import 'package:nameless_audio/core/widgets/active_session_carousel.dart';
+import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';

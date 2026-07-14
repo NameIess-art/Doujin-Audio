@@ -7,7 +7,7 @@ import '../../settings/application/app_cache_service.dart';
 import '../../../core/persistence/app_database.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../settings/application/app_update_service.dart';
-import '../../../core/platform/permission_status_service.dart';
+import '../../settings/application/permission_status_service.dart';
 import '../../../core/platform/power_platform_service.dart';
 
 class DiagnosticReportService {

@@ -9,7 +9,7 @@ import '../../../app/state/audio_provider.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_download_selection.dart';
 import '../application/asmr_library_controller.dart';
-import '../../settings/application/ui_operation_service.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';

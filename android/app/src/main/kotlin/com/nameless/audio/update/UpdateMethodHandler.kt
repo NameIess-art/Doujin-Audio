@@ -16,14 +16,27 @@ internal class UpdateMethodHandler(
     private val activity: Activity
 ) : MethodChannel.MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        when (call.method) {
-            UpdateMethods.GET_APP_VERSION -> result.success(currentAppVersion())
-            UpdateMethods.INSTALL_APK -> result.success(installDownloadedApk(call.argument("path")))
-            UpdateMethods.CAN_INSTALL_UNKNOWN_APPS -> result.success(canInstallUnknownApps())
-            UpdateMethods.OPEN_INSTALL_PERMISSION_SETTINGS ->
-                result.success(openInstallPermissionSettings())
-            UpdateMethods.OPEN_RELEASE_PAGE -> result.success(openReleasePage(call.argument("url")))
-            else -> result.notImplemented()
+        val envelope = ChannelEnvelopeResult(result)
+        try {
+            when (call.method) {
+                UpdateMethods.GET_APP_VERSION -> envelope.success(currentAppVersion())
+                UpdateMethods.INSTALL_APK -> envelope.success(
+                    installDownloadedApk(call.argumentReader().requiredString("path"))
+                )
+                UpdateMethods.CAN_INSTALL_UNKNOWN_APPS -> envelope.success(canInstallUnknownApps())
+                UpdateMethods.OPEN_INSTALL_PERMISSION_SETTINGS ->
+                    envelope.success(openInstallPermissionSettings())
+                UpdateMethods.OPEN_RELEASE_PAGE -> envelope.success(
+                    openReleasePage(call.argumentReader().requiredString("url"))
+                )
+                else -> result.notImplemented()
+            }
+        } catch (error: IllegalArgumentException) {
+            envelope.error(
+                ChannelErrorCodes.INVALID_ARGUMENT,
+                error.message ?: "Invalid arguments.",
+                mapOf("method" to call.method)
+            )
         }
     }
 
@@ -41,8 +54,7 @@ internal class UpdateMethodHandler(
         )
     }
 
-    private fun installDownloadedApk(apkPath: String?): Map<String, Any?> {
-        if (apkPath.isNullOrBlank()) return installResult(false, false, "APK path is empty.")
+    private fun installDownloadedApk(apkPath: String): Map<String, Any?> {
         if (!canInstallUnknownApps()) {
             openInstallPermissionSettings()
             return installResult(false, true, "Install permission is required.")
@@ -93,8 +105,10 @@ internal class UpdateMethodHandler(
         )
     }
 
-    private fun openReleasePage(url: String?): Boolean {
-        return !url.isNullOrBlank() && openIntent(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+    private fun openReleasePage(url: String): Boolean {
+        val uri = Uri.parse(url)
+        require(uri.scheme == "https" || uri.scheme == "http") { "Release URL must use HTTP(S)." }
+        return openIntent(Intent(Intent.ACTION_VIEW, uri))
     }
 
     private fun openIntent(intent: Intent): Boolean {

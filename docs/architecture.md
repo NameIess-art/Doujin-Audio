@@ -15,7 +15,7 @@ no separate Dart audio-service notification handler.
 
 Current platform responsibility boundaries include:
 
-- `LibraryScanCoordinator`: UI-facing refresh/import/cancel operation state.
+- `LibraryScanCoordinator`: refresh/import/cancel operation state expressed as typed `LibraryScanOutcome` values. Localized labels and feedback mapping stay in library presentation.
 - `LibraryScannerService`: scan generation, rollback, merge, and catalog writes. It reads and writes the catalog only through `LibraryCatalogReader` / `LibraryCatalogWriter` and returns typed outcomes instead of localized UI messages.
 - `LibraryScanDataSource`: permission requests, file/folder selection, local file-system enumeration, and native local/SAF scanning.
 - `LibraryScanRules`: pure duplicate, nested-directory, path-overlap, and standalone-folder promotion rules.
@@ -28,6 +28,8 @@ Current platform responsibility boundaries include:
 - `DataSupportFileService` and `DiagnosticReportExporter`: picker, temporary-file, backup, and diagnostic-export lifecycles kept outside presentation.
 - `VideoConversionInputService`: video source and output-directory selection kept outside the converter screen.
 - `FileCachePlatformGateway`: the only Dart owner of `file_cache` MethodChannel/EventChannel I/O, including scanning, document operations, cache operations, media helpers, backup, and subtitle resolution.
+- `PlatformMethodClient`: the shared strict decoder for envelope-based request/response channels. Best-effort services keep their public safe defaults but log preserved `NativeFailure` details.
+- `AppUpdateFlow`: the single presentation coordinator used by startup and settings update checks; it reuses `AppUpdateService`, operation progress, install permission handling, retry, and install feedback.
 - `FileCacheMediaScanOrchestrator`: media-scan strategy and fallback ordering.
 - `MediaNameMetadata`: display-name normalization and media-type rules.
 - `ApplicationCachePolicy`: application-cache preferences, accounting, and eviction.
@@ -36,6 +38,7 @@ Current platform responsibility boundaries include:
 - `NativeAudioFocusController`: Android AudioFocus request/abandon mechanics and focus-held state.
 - `NativePlaybackRecoveryController`: intended playback, retry/expiry scheduling, network and screen triggers, and stalled-session recovery through a testable host/environment boundary.
 - `NativePlaybackSessionRestorer`: persisted native-session reconstruction.
+- `NativeSessionAudioEffectsRuntime`: Equalizer, LoudnessEnhancer, DynamicsProcessing state mapping and release lifecycle for one native playback session.
 
 Screens, providers, repositories, and feature services must use
 `FileCachePlatformGateway` instead of creating direct `file_cache` channels.
@@ -50,7 +53,7 @@ extend the matching handler instead of growing `MainActivity`.
 Production Dart ownership is reflected directly by the directory tree:
 
 - `lib/app`: bootstrap-facing presentation, localization, theme, the compatibility `AudioProvider` facade, and Riverpod projections.
-- `lib/core`: errors, logging, media primitives, persistence, platform gateways, and shared widgets.
+- `lib/core`: errors, logging, media primitives, persistence, platform gateways, shared UI operation/interaction scheduling, and feature-neutral widgets.
 - `lib/features/<feature>/{domain,application,presentation}`: library, player, ASMR, settings, data support, and video conversion code.
 
 New core business rules should prefer a pure helper in the owning feature or
@@ -67,6 +70,8 @@ under the owning feature's `domain` directory. Tests for pure helpers live in
 corresponding application service.
 
 Large screen and provider files are split with same-library `part` files when the extracted code still depends on private state. This keeps public APIs unchanged while separating page state, UI widgets, notification helpers, playback helpers, and persistence helpers into smaller maintenance units.
+
+Player-only carousel and progress widgets live in player presentation instead of `core/widgets`. Playlist controls are grouped into transport, time-segment, audio-feature/equalizer, and speed-control parts. Audio-detail cover, field, and fetch-dialog widgets remain private same-library parts.
 
 `audio_state_services.dart` is the stable import entry point. Its state models,
 library service, playback/timer services, and notification/settings services

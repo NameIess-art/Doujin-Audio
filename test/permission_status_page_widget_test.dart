@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/features/settings/presentation/permission_status_page.dart';
-import 'package:nameless_audio/core/platform/permission_status_service.dart';
+import 'package:nameless_audio/features/settings/application/permission_status_service.dart';
 import 'package:nameless_audio/core/widgets/operation_feedback.dart';
 import 'package:provider/provider.dart';
 

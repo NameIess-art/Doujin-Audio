@@ -5,57 +5,31 @@ import 'dart:isolate';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 
-import '../../features/library/application/library_scan_models.dart';
+import 'library_scan_wire_models.dart';
 import '../logging/app_log_service.dart';
 import '../media/media_file_support.dart';
 import '../errors/native_result.dart';
 import '../media/path_display.dart';
 import 'platform_channels.dart';
+import 'platform_method_client.dart';
 
 class FileCachePlatformGateway {
   FileCachePlatformGateway({
     MethodChannel? channel,
     EventChannel? scanEvents,
     bool Function()? isAndroid,
-  }) : _channel = channel ?? const MethodChannel(FileCacheChannel.name),
+  }) : _client = PlatformMethodClient(
+         channel ?? const MethodChannel(FileCacheChannel.name),
+       ),
        _scanEvents =
            scanEvents ?? const EventChannel(FileCacheChannel.scanEvents),
        _isAndroid = isAndroid ?? (() => Platform.isAndroid);
 
   static final FileCachePlatformGateway instance = FileCachePlatformGateway();
 
-  final MethodChannel _channel;
+  final PlatformMethodClient _client;
   final EventChannel _scanEvents;
   final bool Function() _isAndroid;
-
-  Future<NativeResult<T>> _invoke<T>(
-    String method, {
-    Object? arguments,
-    required T Function(Object? value) decode,
-  }) async {
-    try {
-      final raw = await _channel.invokeMethod<Object?>(method, arguments);
-      return decodeNativeEnvelope<T>(raw, decode);
-    } on MissingPluginException catch (error) {
-      return NativeFailure<T>(
-        'Platform method is unavailable.',
-        code: NativeErrorCode.serviceUnavailable,
-        details: <String, Object?>{'method': method, 'error': error.toString()},
-      );
-    } on PlatformException catch (error) {
-      return NativeFailure<T>(
-        error.message ?? 'Platform channel invocation failed.',
-        code: error.code.isEmpty ? NativeErrorCode.platformError : error.code,
-        details: error.details,
-      );
-    } catch (error) {
-      return NativeFailure<T>(
-        'Platform channel invocation failed.',
-        code: NativeErrorCode.platformError,
-        details: <String, Object?>{'method': method, 'error': error.toString()},
-      );
-    }
-  }
 
   void _logOptionalFailure<T>(String method, NativeResult<T> result) {
     if (result case NativeFailure<T>(
@@ -103,7 +77,7 @@ class FileCachePlatformGateway {
 
   Future<List<String>?> listChildFolders(String folderPath) async {
     if (!_isAndroid()) return null;
-    final result = await _invoke<List<Object?>>(
+    final result = await _client.invoke<List<Object?>>(
       FileCacheMethod.listChildFolders,
       arguments: <String, Object?>{'folder': folderPath},
       decode: (value) => (value as List).cast<Object?>(),
@@ -119,7 +93,7 @@ class FileCachePlatformGateway {
   }
 
   Future<String?> pickAudioFolder() async {
-    final result = await _invoke<Map<String, Object?>?>(
+    final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.pickAudioFolder,
       decode: (value) =>
           value == null ? null : Map<String, Object?>.from(value as Map),
@@ -130,7 +104,7 @@ class FileCachePlatformGateway {
   }
 
   Future<List<PickedAudioFile>?> pickAudioFiles() async {
-    final result = await _invoke<Map<String, Object?>?>(
+    final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.pickAudioFiles,
       decode: (value) =>
           value == null ? null : Map<String, Object?>.from(value as Map),
@@ -167,7 +141,7 @@ class FileCachePlatformGateway {
     required String name,
     required int index,
   }) async {
-    final result = await _invoke<String?>(
+    final result = await _client.invoke<String?>(
       FileCacheMethod.cacheFromUri,
       arguments: <String, Object?>{'uri': uri, 'name': name, 'index': index},
       decode: (value) => value as String?,
@@ -176,7 +150,7 @@ class FileCachePlatformGateway {
   }
 
   Future<List<dynamic>?> scanFolderPayload(String folderPath) async {
-    final result = await _invoke<List<dynamic>?>(
+    final result = await _client.invoke<List<dynamic>?>(
       FileCacheMethod.scanFolder,
       arguments: <String, Object?>{'folder': folderPath},
       decode: (value) => value as List<dynamic>?,
@@ -188,7 +162,7 @@ class FileCachePlatformGateway {
     required String path,
     required String name,
   }) async {
-    final result = await _invoke<Map<String, Object?>?>(
+    final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.renameDocument,
       arguments: <String, Object?>{'path': path, 'name': name},
       decode: (value) =>
@@ -202,7 +176,7 @@ class FileCachePlatformGateway {
     String? groupKey,
     required String rootFolder,
   }) async {
-    final result = await _invoke<List<Object?>>(
+    final result = await _client.invoke<List<Object?>>(
       FileCacheMethod.discoverRootImages,
       arguments: <String, Object?>{
         'path': path,
@@ -227,7 +201,7 @@ class FileCachePlatformGateway {
     String? groupKey,
     String? rootFolder,
   }) async {
-    final result = await _invoke<String?>(
+    final result = await _client.invoke<String?>(
       FileCacheMethod.resolveTrackCover,
       arguments: <String, Object?>{
         'path': path,
@@ -246,7 +220,7 @@ class FileCachePlatformGateway {
     required String path,
     int? modifiedAtMs,
   }) async {
-    final result = await _invoke<String?>(
+    final result = await _client.invoke<String?>(
       FileCacheMethod.resolveVideoFrame,
       arguments: <String, Object?>{'path': path, 'modifiedAtMs': ?modifiedAtMs},
       decode: (value) => value as String?,
@@ -260,11 +234,13 @@ class FileCachePlatformGateway {
   Future<Duration?> resolveMediaDuration(String mediaPath) async {
     if (!_isAndroid()) return null;
     try {
-      final result = await _invoke<num?>(
-        FileCacheMethod.resolveMediaDuration,
-        arguments: <String, Object?>{'path': mediaPath},
-        decode: (value) => value as num?,
-      ).timeout(const Duration(seconds: 8));
+      final result = await _client
+          .invoke<num?>(
+            FileCacheMethod.resolveMediaDuration,
+            arguments: <String, Object?>{'path': mediaPath},
+            decode: (value) => value as num?,
+          )
+          .timeout(const Duration(seconds: 8));
       if (result is NativeFailure<num?>) {
         _logOptionalFailure(FileCacheMethod.resolveMediaDuration, result);
       }
@@ -280,7 +256,7 @@ class FileCachePlatformGateway {
     required String path,
     String? groupKey,
   }) async {
-    final result = await _invoke<Map<String, Object?>?>(
+    final result = await _client.invoke<Map<String, Object?>?>(
       FileCacheMethod.resolveTrackSubtitle,
       arguments: <String, Object?>{'path': path, 'groupKey': groupKey},
       decode: (value) =>
@@ -296,7 +272,7 @@ class FileCachePlatformGateway {
     required String folder,
     required String json,
   }) async {
-    final result = await _invoke<bool>(
+    final result = await _client.invoke<bool>(
       FileCacheMethod.writeAudioDetailBackup,
       arguments: <String, Object?>{'folder': folder, 'json': json},
       decode: (value) => value as bool,
@@ -305,7 +281,7 @@ class FileCachePlatformGateway {
   }
 
   Future<String?> readAudioDetailBackup(String folder) async {
-    final result = await _invoke<String?>(
+    final result = await _client.invoke<String?>(
       FileCacheMethod.readAudioDetailBackup,
       arguments: <String, Object?>{'folder': folder},
       decode: (value) => value as String?,
@@ -314,7 +290,7 @@ class FileCachePlatformGateway {
   }
 
   Future<String?> readSingleFileDetailBackup(String filePath) async {
-    final result = await _invoke<String?>(
+    final result = await _client.invoke<String?>(
       FileCacheMethod.readSingleFileDetailBackup,
       arguments: <String, Object?>{'filePath': filePath},
       decode: (value) => value as String?,
@@ -326,7 +302,7 @@ class FileCachePlatformGateway {
     required String filePath,
     required String json,
   }) async {
-    final result = await _invoke<bool>(
+    final result = await _client.invoke<bool>(
       FileCacheMethod.writeSingleFileDetailBackup,
       arguments: <String, Object?>{'filePath': filePath, 'json': json},
       decode: (value) => value as bool,
@@ -340,7 +316,7 @@ class FileCachePlatformGateway {
     required Uint8List bytes,
     String? mimeType,
   }) async {
-    final result = await _invoke<String?>(
+    final result = await _client.invoke<String?>(
       FileCacheMethod.writeFileBytesToFolder,
       arguments: <String, Object?>{
         'folder': folder,
@@ -354,7 +330,7 @@ class FileCachePlatformGateway {
   }
 
   Future<bool> documentPathExists(String path) async {
-    final result = await _invoke<bool>(
+    final result = await _client.invoke<bool>(
       FileCacheMethod.documentPathExists,
       arguments: <String, Object?>{'path': path},
       decode: (value) => value as bool,
@@ -367,7 +343,7 @@ class FileCachePlatformGateway {
     required String relativePath,
     required bool overwrite,
   }) async {
-    final result = await _invoke<bool>(
+    final result = await _client.invoke<bool>(
       FileCacheMethod.ensureFolderPath,
       arguments: <String, Object?>{
         'folder': folder,
@@ -385,7 +361,7 @@ class FileCachePlatformGateway {
     required String relativePath,
     required bool overwrite,
   }) async {
-    final result = await _invoke<bool>(
+    final result = await _client.invoke<bool>(
       FileCacheMethod.copyFileToFolder,
       arguments: <String, Object?>{
         'sourcePath': sourcePath,
@@ -404,7 +380,7 @@ class FileCachePlatformGateway {
     required String mimeType,
   }) async {
     if (!_isAndroid()) return Future<String?>.value();
-    final result = await _invoke<String?>(
+    final result = await _client.invoke<String?>(
       FileCacheMethod.exportFile,
       arguments: <String, Object?>{
         'sourcePath': sourcePath,
@@ -417,7 +393,7 @@ class FileCachePlatformGateway {
   }
 
   Future<bool> deleteDocumentPath(String path) async {
-    final result = await _invoke<bool>(
+    final result = await _client.invoke<bool>(
       FileCacheMethod.deleteDocumentPath,
       arguments: <String, Object?>{'path': path},
       decode: (value) => value as bool,
@@ -426,7 +402,7 @@ class FileCachePlatformGateway {
   }
 
   Future<void> setApplicationCacheLimit(int maxBytes) async {
-    await _invoke<Object?>(
+    await _client.invoke<Object?>(
       FileCacheMethod.setApplicationCacheLimit,
       arguments: <String, Object?>{'maxBytes': maxBytes},
       decode: (value) => value,
@@ -434,7 +410,7 @@ class FileCachePlatformGateway {
   }
 
   Future<int> clearApplicationCache() async {
-    final result = await _invoke<num>(
+    final result = await _client.invoke<num>(
       FileCacheMethod.clearApplicationCache,
       decode: (value) => value as num,
     );
@@ -442,7 +418,7 @@ class FileCachePlatformGateway {
   }
 
   Future<void> enforceApplicationCacheLimit(int maxBytes) async {
-    await _invoke<Object?>(
+    await _client.invoke<Object?>(
       FileCacheMethod.enforceApplicationCacheLimit,
       arguments: <String, Object?>{'maxBytes': maxBytes},
       decode: (value) => value,
@@ -525,7 +501,7 @@ class FileCachePlatformGateway {
               ),
             ),
           );
-      final startResult = await _invoke<bool>(
+      final startResult = await _client.invoke<bool>(
         FileCacheMethod.startFolderScan,
         arguments: <String, Object?>{
           'taskId': taskId,
@@ -692,7 +668,7 @@ class FileCachePlatformGateway {
               ),
             ),
           );
-      final startResult = await _invoke<bool>(
+      final startResult = await _client.invoke<bool>(
         FileCacheMethod.startFolderScan,
         arguments: <String, Object?>{
           'taskId': taskId,
@@ -735,7 +711,7 @@ class FileCachePlatformGateway {
   }
 
   Future<void> _cancelFolderScan(String taskId) async {
-    await _invoke<bool>(
+    await _client.invoke<bool>(
       FileCacheMethod.cancelFolderScan,
       arguments: <String, Object?>{'taskId': taskId},
       decode: (value) => value as bool,
@@ -744,7 +720,7 @@ class FileCachePlatformGateway {
 
   Future<NativeScanResult> _scanFolderLegacy(String folderPath) async {
     try {
-      final result = await _invoke<List<dynamic>?>(
+      final result = await _client.invoke<List<dynamic>?>(
         FileCacheMethod.scanFolder,
         arguments: <String, Object?>{'folder': folderPath},
         decode: (value) => value as List<dynamic>?,

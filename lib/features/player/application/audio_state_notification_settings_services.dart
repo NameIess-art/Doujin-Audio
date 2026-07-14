@@ -109,9 +109,7 @@ class NotificationCoordinatorService {
     notificationActionGuardTimeout = Timer(const Duration(seconds: 5), () {
       notificationActionGuardTimeout = null;
       if (notificationActionRefreshPending) {
-        debugPrint(
-          'AudioProvider: notification action guard timed out, force-clearing',
-        );
+        AppLogService.warning('notification_action_guard_timed_out');
         notificationActionRefreshPending = false;
         if (keepAliveSyncDeferred) {
           keepAliveSyncDeferred = false;

@@ -10,97 +10,15 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pub_semver/pub_semver.dart' as semver;
 
 import 'app_cache_service.dart';
+import '../../../core/errors/native_result.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/platform/platform_channels.dart';
+import '../../../core/platform/platform_method_client.dart';
 
-class AppVersionInfo {
-  const AppVersionInfo({required this.versionName, required this.buildNumber});
+export 'app_update_models.dart';
 
-  final String versionName;
-  final int buildNumber;
-}
-
-enum AppUpdateStatus {
-  updateAvailable,
-  upToDate,
-  noCompatibleRelease,
-  missingAsset,
-  missingChecksum,
-}
-
-class ReleaseChannelConfig {
-  const ReleaseChannelConfig({
-    required this.major,
-    required this.tagPrefix,
-    required this.androidAssetPrefix,
-    required this.windowsAssetPrefix,
-  });
-
-  final int major;
-  final String tagPrefix;
-  final String androidAssetPrefix;
-  final String windowsAssetPrefix;
-
-  String get platformAssetPrefix =>
-      Platform.isWindows ? windowsAssetPrefix : androidAssetPrefix;
-
-  static const ReleaseChannelConfig stable = ReleaseChannelConfig(
-    major: 0,
-    tagPrefix: '',
-    androidAssetPrefix: 'NamelessAudio-android-universal-',
-    windowsAssetPrefix: 'NamelessAudio-windows-x64-',
-  );
-}
-
-class AppUpdateInfo {
-  const AppUpdateInfo({
-    required this.currentVersion,
-    required this.latestVersionName,
-    required this.tagName,
-    required this.assetName,
-    required this.assetUrl,
-    required this.checksumAssetUrl,
-    required this.releaseUrl,
-    required this.isUpdateAvailable,
-    this.status = AppUpdateStatus.updateAvailable,
-    this.releaseName,
-    this.publishedAt,
-  });
-
-  final AppVersionInfo currentVersion;
-  final String latestVersionName;
-  final String tagName;
-  final String? releaseName;
-  final String? assetName;
-  final String? assetUrl;
-  final String? checksumAssetUrl;
-  final String releaseUrl;
-  final DateTime? publishedAt;
-  final bool isUpdateAvailable;
-  final AppUpdateStatus status;
-
-  bool get canDownload =>
-      isUpdateAvailable &&
-      assetName != null &&
-      assetName!.isNotEmpty &&
-      assetUrl != null &&
-      assetUrl!.isNotEmpty &&
-      checksumAssetUrl != null &&
-      checksumAssetUrl!.isNotEmpty;
-}
-
-class UpdateInstallResult {
-  const UpdateInstallResult({
-    required this.ok,
-    required this.needsPermission,
-    this.message,
-  });
-
-  final bool ok;
-  final bool needsPermission;
-  final String? message;
-}
+import 'app_update_models.dart';
 
 class AppUpdateService {
   AppUpdateService._();
@@ -115,6 +33,7 @@ class AppUpdateService {
       'https://github.com/$owner/$repo/releases/latest';
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
   static const MethodChannel _channel = MethodChannel(UpdateChannel.name);
+  static const PlatformMethodClient _client = PlatformMethodClient(_channel);
   static String? _activeDownloadIdentity;
   static Future<File>? _activeDownload;
   static final Set<void Function(double? progress)> _downloadListeners =
@@ -396,21 +315,19 @@ class AppUpdateService {
   }
 
   static Future<AppVersionInfo> currentAppVersion() async {
-    try {
-      final raw = await _channel.invokeMapMethod<String, Object?>(
-        UpdateMethod.getAppVersion,
-      );
-      final versionName = raw?['versionName'] as String? ?? 'unknown';
-      final buildNumber = (raw?['buildNumber'] as num?)?.toInt() ?? 0;
-      return AppVersionInfo(versionName: versionName, buildNumber: buildNumber);
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'app_version_channel_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return const AppVersionInfo(versionName: 'unknown', buildNumber: 0);
-    }
+    final result = await _client.invoke<AppVersionInfo>(
+      UpdateMethod.getAppVersion,
+      decode: (value) {
+        final map = Map<Object?, Object?>.from(value as Map);
+        return AppVersionInfo(
+          versionName: map['versionName'] as String,
+          buildNumber: (map['buildNumber'] as num).toInt(),
+        );
+      },
+    );
+    _logNativeFailure(UpdateMethod.getAppVersion, result);
+    return result.valueOrNull ??
+        const AppVersionInfo(versionName: 'unknown', buildNumber: 0);
   }
 
   static Future<File> downloadUpdate(
@@ -588,45 +505,34 @@ class AppUpdateService {
 
   static Future<bool> canInstallUnknownApps() async {
     if (!Platform.isAndroid) return true;
-    try {
-      return await _channel.invokeMethod<bool>(
-            UpdateMethod.canInstallUnknownApps,
-          ) ??
-          true;
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'unknown_app_install_permission_check_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return true;
-    }
+    final result = await _client.invoke<bool>(
+      UpdateMethod.canInstallUnknownApps,
+      decode: (value) => value as bool,
+    );
+    _logNativeFailure(UpdateMethod.canInstallUnknownApps, result);
+    return result.valueOrNull ?? true;
   }
 
   static Future<bool> openInstallPermissionSettings() async {
     if (!Platform.isAndroid) return false;
-    try {
-      return await _channel.invokeMethod<bool>(
-            UpdateMethod.openInstallPermissionSettings,
-          ) ??
-          false;
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'open_install_permission_settings_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return false;
-    }
+    final result = await _client.invoke<bool>(
+      UpdateMethod.openInstallPermissionSettings,
+      decode: (value) => value as bool,
+    );
+    _logNativeFailure(UpdateMethod.openInstallPermissionSettings, result);
+    return result.valueOrNull ?? false;
   }
 
   static Future<bool> openReleasePage(String url) async {
     try {
       if (Platform.isAndroid) {
-        return await _channel.invokeMethod<bool>(UpdateMethod.openReleasePage, {
-              'url': url,
-            }) ??
-            false;
+        final result = await _client.invoke<bool>(
+          UpdateMethod.openReleasePage,
+          arguments: <String, Object?>{'url': url},
+          decode: (value) => value as bool,
+        );
+        _logNativeFailure(UpdateMethod.openReleasePage, result);
+        return result.valueOrNull ?? false;
       }
       if (Platform.isWindows) {
         await Process.start('cmd', ['/c', 'start', '', url]);
@@ -660,15 +566,38 @@ class AppUpdateService {
 
   static Future<UpdateInstallResult> _installUpdateOnce(File file) async {
     if (Platform.isWindows) return _installWindowsZip(file);
-    final raw = await _channel.invokeMapMethod<String, Object?>(
+    final result = await _client.invoke<UpdateInstallResult>(
       UpdateMethod.installApk,
-      {'path': file.path},
+      arguments: <String, Object?>{'path': file.path},
+      decode: (value) {
+        final raw = Map<Object?, Object?>.from(value as Map);
+        return UpdateInstallResult(
+          ok: raw['ok'] == true,
+          needsPermission: raw['needsPermission'] == true,
+          message: raw['message'] as String?,
+        );
+      },
     );
-    return UpdateInstallResult(
-      ok: raw?['ok'] == true,
-      needsPermission: raw?['needsPermission'] == true,
-      message: raw?['message'] as String?,
-    );
+    _logNativeFailure(UpdateMethod.installApk, result);
+    return result.valueOrNull ??
+        UpdateInstallResult(
+          ok: false,
+          needsPermission: false,
+          message: result.errorOrNull,
+        );
+  }
+
+  static void _logNativeFailure<T>(String method, NativeResult<T> result) {
+    if (result case NativeFailure<T>(
+      :final code,
+      :final message,
+      :final details,
+    )) {
+      AppLogService.warning(
+        'update_platform_method_failed method=$method code=$code',
+        error: <String, Object?>{'message': message, 'details': details},
+      );
+    }
   }
 
   static String get windowsUpdateLogPath =>

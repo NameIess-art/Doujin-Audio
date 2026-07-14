@@ -1,0 +1,324 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../../app/localization/app_language_provider.dart';
+import '../../../core/logging/app_log_service.dart';
+import '../../../core/platform/permission_action_controller.dart';
+import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/widgets/app_feedback.dart';
+import '../application/app_update_service.dart';
+
+class AppUpdateFlow {
+  AppUpdateFlow({
+    required PermissionActionController permissionController,
+    Future<AppUpdateInfo> Function()? checkLatest,
+  }) : _permissionController = permissionController,
+       _checkLatest = checkLatest ?? AppUpdateService.checkLatest;
+
+  final PermissionActionController _permissionController;
+  final Future<AppUpdateInfo> Function() _checkLatest;
+
+  Future<void> checkAndPresent({
+    required BuildContext context,
+    required UiOperationService operations,
+    bool automatic = false,
+    ValueChanged<AppUpdateInfo>? onInfo,
+  }) async {
+    if (operations.isBusy(UiOperationScope.settingsUpdate)) return;
+    final i18n = context.read<AppLanguageProvider>();
+    AppUpdateInfo info;
+    try {
+      info = await operations.run<AppUpdateInfo>(
+        scope: UiOperationScope.settingsUpdate,
+        labelKey: 'loading_dot',
+        cancelPrevious: false,
+        task: (_) => _checkLatest(),
+      );
+      onInfo?.call(info);
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'update_check_failed automatic=$automatic',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!automatic && context.mounted) {
+        showAppSnackBar(
+          context,
+          i18n.tr('update_check_failed_next_step'),
+          tone: AppFeedbackTone.destructive,
+          title: i18n.tr('update_check_failed'),
+          icon: Icons.cloud_off_rounded,
+          actionLabel: i18n.tr('retry'),
+          onAction: () => unawaited(
+            checkAndPresent(
+              context: context,
+              operations: operations,
+              onInfo: onInfo,
+            ),
+          ),
+          duration: const Duration(seconds: 6),
+        );
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    if (!info.isUpdateAvailable) {
+      if (!automatic) _showNoUpdateFeedback(context, info, i18n);
+      return;
+    }
+    await _showUpdateDialog(context, operations, info);
+  }
+
+  void _showNoUpdateFeedback(
+    BuildContext context,
+    AppUpdateInfo info,
+    AppLanguageProvider i18n,
+  ) {
+    final messageKey = switch (info.status) {
+      AppUpdateStatus.noCompatibleRelease => 'update_no_compatible_release',
+      AppUpdateStatus.missingAsset => 'update_missing_asset',
+      AppUpdateStatus.missingChecksum => 'update_missing_checksum',
+      _ => 'no_updates_available',
+    };
+    showAppSnackBar(
+      context,
+      i18n.tr(messageKey),
+      tone: info.status == AppUpdateStatus.upToDate
+          ? AppFeedbackTone.success
+          : AppFeedbackTone.warning,
+      icon: info.status == AppUpdateStatus.upToDate
+          ? Icons.verified_rounded
+          : Icons.info_outline_rounded,
+    );
+  }
+
+  Future<void> _showUpdateDialog(
+    BuildContext context,
+    UiOperationService operations,
+    AppUpdateInfo info,
+  ) async {
+    final i18n = context.read<AppLanguageProvider>();
+    final shouldDownload = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: Text(i18n.tr('latest_version_available')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              i18n.tr('current_version_label', {
+                'version': info.currentVersion.versionName,
+              }),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              i18n.tr('latest_version_label', {
+                'version': info.latestVersionName,
+              }),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              info.assetName ?? '',
+              style: Theme.of(dialogContext).textTheme.bodySmall,
+            ),
+          ],
+        ),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(false),
+                  child: Text(i18n.tr('later')),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.of(dialogContext).pop(true),
+                  icon: const Icon(Icons.download_rounded),
+                  label: Text(i18n.tr('download_update')),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+    if (shouldDownload != true || !context.mounted || !info.canDownload) {
+      return;
+    }
+    if (Platform.isAndroid) {
+      await _ensureInstallPermission(
+        context,
+        () => _downloadAndInstall(context, operations, info),
+      );
+      return;
+    }
+    await _downloadAndInstall(context, operations, info);
+  }
+
+  Future<bool> _ensureInstallPermission(
+    BuildContext context,
+    Future<void> Function() onGranted,
+  ) {
+    final i18n = context.read<AppLanguageProvider>();
+    return _permissionController.ensureGrantedAndRun(
+      context: context,
+      title: i18n.tr('install_permission_title'),
+      message: i18n.tr('install_permission_message'),
+      confirmLabel: i18n.tr('go_settings'),
+      cancelLabel: i18n.tr('cancel'),
+      isGranted: AppUpdateService.canInstallUnknownApps,
+      openSettings: AppUpdateService.openInstallPermissionSettings,
+      onGranted: onGranted,
+    );
+  }
+
+  Future<void> _downloadAndInstall(
+    BuildContext context,
+    UiOperationService operations,
+    AppUpdateInfo info,
+  ) async {
+    final i18n = context.read<AppLanguageProvider>();
+    File updateFile;
+    try {
+      updateFile = await operations.run<File>(
+        scope: UiOperationScope.settingsUpdate,
+        labelKey: 'downloading_update',
+        task: (progress) => AppUpdateService.downloadUpdate(
+          info,
+          onProgress: (value) {
+            if (value != null) progress.report(value);
+          },
+        ),
+      );
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'update_download_or_verification_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (!context.mounted) return;
+      final retry = await _showDownloadFailureDialog(context, info, i18n);
+      if (retry == true && context.mounted) {
+        unawaited(_downloadAndInstall(context, operations, info));
+      }
+      return;
+    }
+
+    if (!context.mounted) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('update_install_preparing_message', {
+        'version': info.latestVersionName,
+        'path': updateFile.path,
+      }),
+      tone: AppFeedbackTone.warning,
+      title: i18n.tr('update_install_preparing_title'),
+      icon: Icons.system_update_alt_rounded,
+      duration: const Duration(seconds: 8),
+    );
+    await _install(context, operations, updateFile);
+  }
+
+  Future<bool?> _showDownloadFailureDialog(
+    BuildContext context,
+    AppUpdateInfo info,
+    AppLanguageProvider i18n,
+  ) {
+    return showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(i18n.tr('update_download_failed')),
+        content: Text(i18n.tr('update_download_failed_next_step')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(i18n.tr('close')),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.of(dialogContext).pop(false);
+              unawaited(AppUpdateService.openReleasePage(info.releaseUrl));
+            },
+            child: Text(i18n.tr('open_release_page')),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(i18n.tr('retry')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _install(
+    BuildContext context,
+    UiOperationService operations,
+    File updateFile,
+  ) async {
+    final i18n = context.read<AppLanguageProvider>();
+    try {
+      final result = await AppUpdateService.installUpdate(updateFile);
+      if (!context.mounted) return;
+      if (result.needsPermission) {
+        await _ensureInstallPermission(
+          context,
+          () => _install(context, operations, updateFile),
+        );
+        return;
+      }
+      if (!result.ok) {
+        _showInstallFailure(context, i18n, detail: result.message);
+        return;
+      }
+      showAppSnackBar(
+        context,
+        Platform.isWindows
+            ? i18n.tr('update_windows_ready_install')
+            : i18n.tr('update_ready_install'),
+        tone: AppFeedbackTone.success,
+        icon: Icons.install_mobile_rounded,
+      );
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'update_install_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (context.mounted) _showInstallFailure(context, i18n);
+    }
+  }
+
+  void _showInstallFailure(
+    BuildContext context,
+    AppLanguageProvider i18n, {
+    String? detail,
+  }) {
+    final normalizedDetail = detail?.trim();
+    showAppSnackBar(
+      context,
+      normalizedDetail != null && normalizedDetail.isNotEmpty
+          ? i18n.tr('update_install_failed_with_detail', {
+              'detail': normalizedDetail,
+            })
+          : i18n.tr('update_install_failed_next_step'),
+      tone: AppFeedbackTone.destructive,
+      title: i18n.tr('update_install_failed'),
+      icon: Icons.error_outline_rounded,
+      duration: const Duration(seconds: 8),
+      actionLabel: Platform.isWindows ? i18n.tr('open_update_log') : null,
+      onAction: Platform.isWindows
+          ? () => unawaited(AppUpdateService.openWindowsUpdateLog())
+          : null,
+    );
+  }
+}

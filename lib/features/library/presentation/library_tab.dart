@@ -20,8 +20,8 @@ import '../application/library_entry_editor_service.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../player/application/ui_interaction_coordinator.dart';
-import '../../settings/application/ui_operation_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../application/library_scanner_service.dart';
 import '../application/library_catalog.dart';
@@ -43,6 +43,7 @@ import '../../../core/widgets/glass_refresh_indicator.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 import 'audio_detail_sheet.dart';
 import 'dlsite_metadata_batch_page.dart';
+import 'library_scan_feedback.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../video_converter/presentation/video_converter_tab.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -240,9 +241,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       if (!silent) showAppSnackBar(context, i18n.tr('scanning_title'));
       return;
     }
-    await ref
+    final outcome = await ref
         .read(uiOperationServiceProvider)
-        .runWithFeedback<void>(
+        .runWithFeedback<LibraryScanOutcome?>(
           context: context,
           scope: UiOperationScope.libraryRefresh,
           labelKey: 'loading_dot',
@@ -254,32 +255,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ),
           task: (_) => _scanCoordinator.refresh(
             catalog: catalog,
-            i18n: i18n,
-            onMessage: (String msg) {
-              if (!mounted) return;
-              final isFailure =
-                  msg == i18n.tr('scan_failed_next_step') ||
-                  msg == i18n.tr('import_failed_next_step');
-              final isCancelled = msg == i18n.tr('scan_cancelled');
-              showAppSnackBar(
-                context,
-                msg,
-                tone: isFailure
-                    ? AppFeedbackTone.destructive
-                    : (isCancelled
-                          ? AppFeedbackTone.warning
-                          : AppFeedbackTone.success),
-                icon: isFailure
-                    ? Icons.error_outline_rounded
-                    : (isCancelled
-                          ? Icons.cancel_outlined
-                          : Icons.check_circle_outline_rounded),
-              );
-            },
-            silent: silent,
-            forceShowResult: forceShowResult,
+            labels: LibraryScanPresentationMapper.labels(i18n),
           ),
         );
+    if (!mounted || outcome == null) return;
+    if (!silent ||
+        forceShowResult ||
+        outcome.code == LibraryScanOutcomeCode.refreshAdded) {
+      _showLibraryScanFeedback(outcome, i18n);
+    }
   }
 
   Future<void> _runLibraryPullRefresh({bool showSnackbar = false}) async {
@@ -297,10 +281,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   Future<void> _runLibraryImportAction({
     required String logEvent,
-    required Future<void> Function({
+    required Future<LibraryScanOutcome?> Function({
       required LibraryCatalog catalog,
-      required AppLanguageProvider i18n,
-      required ValueChanged<String> onMessage,
+      required LibraryScanLabels labels,
     })
     action,
     required Future<void> Function() retry,
@@ -308,9 +291,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final i18n = context.read<AppLanguageProvider>();
     final provider = context.read<AudioProvider>();
     final catalog = AudioProviderLibraryCatalog(provider);
-    await ref
+    final outcome = await ref
         .read(uiOperationServiceProvider)
-        .runWithFeedback<void>(
+        .runWithFeedback<LibraryScanOutcome?>(
           context: context,
           scope: switch (logEvent) {
             'library_import_files_failed' =>
@@ -327,12 +310,26 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           },
           task: (_) => action(
             catalog: catalog,
-            i18n: i18n,
-            onMessage: (String msg) {
-              if (mounted) showAppSnackBar(context, msg);
-            },
+            labels: LibraryScanPresentationMapper.labels(i18n),
           ),
         );
+    if (mounted && outcome != null) {
+      _showLibraryScanFeedback(outcome, i18n);
+    }
+  }
+
+  void _showLibraryScanFeedback(
+    LibraryScanOutcome outcome,
+    AppLanguageProvider i18n,
+  ) {
+    final feedback = LibraryScanPresentationMapper.feedback(outcome, i18n);
+    if (feedback == null) return;
+    showAppSnackBar(
+      context,
+      feedback.message,
+      tone: feedback.tone,
+      icon: feedback.icon,
+    );
   }
 
   Future<void> _addFolder() {

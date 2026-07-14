@@ -6,8 +6,8 @@ import 'package:ffmpeg_kit_flutter_new_audio/ffmpeg_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_audio/ffprobe_kit.dart';
 import 'package:ffmpeg_kit_flutter_new_audio/return_code.dart';
 import 'package:ffmpeg_kit_flutter_new_audio/statistics.dart';
-import 'package:flutter/foundation.dart';
 
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/app_platform.dart';
 import 'video_conversion_plan.dart';
 import 'windows_ffmpeg_service.dart';
@@ -69,8 +69,12 @@ class VideoConversionRunner {
         if (result.exitCode == 0) {
           return parseVideoDurationMs(result.stdout.toString().trim());
         }
-      } catch (error) {
-        debugPrint('Windows ffprobe error: $error');
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'video_conversion_ffprobe_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
       }
       return 0;
     }

@@ -436,7 +436,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(session.audioEffects.panning, 0.0);
-    expect(tester.widget<OutlinedButton>(restoreButton).onPressed, isNull);
+    expect(tester.widget<FilledButton>(restoreButton).onPressed, isNull);
   });
 
   testWidgets('playlist cards freeze background updates while reordering', (

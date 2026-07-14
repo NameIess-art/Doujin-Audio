@@ -28,8 +28,12 @@ extension AudioProviderPersistenceTimer on AudioProvider {
       if (draftDurationMs != null && draftDurationMs > 0) {
         _timerDraftDuration = Duration(milliseconds: draftDurationMs);
       }
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'timer_settings_load_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -44,8 +48,12 @@ extension AudioProviderPersistenceTimer on AudioProvider {
         'timerDraftDurationMs': _timerDraftDuration.inMilliseconds,
       });
       await prefs.setString(_kTimerSettingsKey, encoded);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'timer_settings_save_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -202,8 +210,12 @@ extension AudioProviderPersistenceTimer on AudioProvider {
         syncNativeAfterRestore: false,
       );
       return true;
-    } catch (e) {
-      debugPrint('AudioProvider native timer runtime restore error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'native_timer_runtime_restore_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return false;
     }
   }
@@ -220,8 +232,12 @@ extension AudioProviderPersistenceTimer on AudioProvider {
         removeLegacyPrefsWhenEmpty: true,
         syncNativeAfterRestore: true,
       );
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'timer_runtime_load_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 
@@ -257,8 +273,12 @@ extension AudioProviderPersistenceTimer on AudioProvider {
         'generation': _timerGeneration,
       });
       await prefs.setString(_kTimerRuntimeKey, encoded);
-    } catch (e) {
-      debugPrint('AudioProvider persistence error: $e');
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'timer_runtime_save_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 }

@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/data_support/application/diagnostic_report_service.dart';
-import 'package:nameless_audio/core/platform/permission_status_service.dart';
+import 'package:nameless_audio/features/settings/application/permission_status_service.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/platform/power_platform_service.dart';
 

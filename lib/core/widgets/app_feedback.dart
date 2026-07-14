@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/theme/app_design_tokens.dart';
-import '../../features/settings/application/ui_operation_service.dart';
+import '../ui/ui_operation_service.dart';
 import '../logging/app_log_service.dart';
 import '../../app/localization/app_language_provider.dart';
 import 'package:provider/provider.dart';

@@ -8,8 +8,9 @@ import 'package:provider/provider.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../player/application/audio_state_services.dart';
-import '../../settings/application/ui_operation_service.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../application/video_conversion_plan.dart';
 import '../application/video_conversion_input_service.dart';
 import '../application/video_conversion_runner.dart';
@@ -171,13 +172,20 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
           });
           final errorMessage = result.errorMessage;
           if (errorMessage != null && errorMessage.isNotEmpty) {
-            debugPrint('FFMPEG Error: $errorMessage');
+            AppLogService.error(
+              'video_conversion_ffmpeg_failed',
+              error: errorMessage,
+            );
           }
           break;
       }
     } catch (error, stackTrace) {
       if (!mounted || generation != _conversionGeneration) return;
-      debugPrint('Video conversion failed: $error\n$stackTrace');
+      AppLogService.error(
+        'video_conversion_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       setState(() {
         _statusMessage = i18n.tr('conversion_failed');
       });
@@ -224,7 +232,11 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     try {
       await _conversionRunner.cancel();
     } catch (error, stackTrace) {
-      debugPrint('Video conversion cancellation failed: $error\n$stackTrace');
+      AppLogService.error(
+        'video_conversion_cancel_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       if (mounted && generation == _conversionGeneration && _isConverting) {
         setState(() {
           _statusMessage = i18n.tr('conversion_failed');

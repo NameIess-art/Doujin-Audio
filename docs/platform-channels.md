@@ -15,7 +15,8 @@ Flutter UI
   -> NativePlaybackService / Media3
 ```
 
-Native playback method results use an envelope:
+Native playback, file-cache, power, notifications, subtitle-overlay, and update
+method results use the same envelope:
 
 ```text
 success: { ok: true, value: ... }
@@ -26,19 +27,27 @@ Stable boundary codes currently include `invalid_argument`,
 `service_unavailable`, `player_error`, `platform_error`, and `unexpected`.
 Missing or wrongly typed required parameters must return `invalid_argument`;
 they must not silently become zero or an empty identifier. Dart preserves the
-code and optional details in `NativeFailure`.
+code and optional details in `NativeFailure` through `PlatformMethodClient`.
+Playback retains its specialized stream and batched-state bridge; ordinary
+request/response channels use the shared client.
 
 Wire names remain maintained on both Dart and Kotlin sides. Whenever a channel,
 method, or stable error code changes, update both
 `test/platform_channels_test.dart` and Android `PlatformChannelsTest` /
 `ChannelContractTest`.
 
-File-cache calls use the same success/failure envelope as playback. The Android
-handler wraps synchronous work and delayed picker/export activity results with
-`ChannelEnvelopeResult`; implemented methods never call Dart's `result.error`.
+Android handlers wrap supported calls with `ChannelEnvelopeResult`; implemented
+methods never expose a raw value or call Dart's `result.error`.
 Only unknown methods use `notImplemented`. `NativeResult<T>` is the single
 strict Dart decoder: missing `ok`, malformed values, or incomplete failure
 fields become `platform_error` rather than being interpreted as legacy data.
+
+`ChannelArgumentReader` is also used by power, notification, subtitle-overlay,
+and update handlers. Required update paths/URLs and notification payload fields
+must be present with their real types. Subtitle text may be an explicit empty
+string, but the `text` field itself is required. Optional subtitle style fields
+retain defaults only when absent; a present value with the wrong type returns
+`invalid_argument`.
 
 File-cache calls use `ChannelArgumentReader` in the Android handler for required
 strings, integers, floating-point values, booleans, byte arrays, lists, and
@@ -64,3 +73,6 @@ replaceable environment. `NativeAudioFocusController` owns requesting,
 abandoning, and tracking Android AudioFocus. A focus callback returns to the
 service so it can decide which intended sessions pause or resume. Playback state
 published to Flutter continues to come from the real Media3 player state.
+Each `NativePlaybackSession` delegates Android audio-effect creation, updates,
+capability reporting, and release to its own `NativeSessionAudioEffectsRuntime`;
+the session remains responsible for player commands and event publication.

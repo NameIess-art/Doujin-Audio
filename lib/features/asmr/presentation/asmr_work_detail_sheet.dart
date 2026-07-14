@@ -8,7 +8,7 @@ import '../domain/asmr_models.dart';
 import '../../../app/state/audio_provider.dart';
 import '../application/asmr_library_controller.dart';
 import '../../player/application/audio_state_services.dart';
-import '../../settings/application/ui_operation_service.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';

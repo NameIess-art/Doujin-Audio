@@ -7,7 +7,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
 import '../../player/application/audio_state_services.dart';
 import '../../../core/media/time_text_formatters.dart';
-import '../../settings/application/ui_operation_service.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/operation_feedback.dart';

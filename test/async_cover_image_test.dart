@@ -9,7 +9,7 @@ import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart' as ap;
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
-import 'package:nameless_audio/features/player/application/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 

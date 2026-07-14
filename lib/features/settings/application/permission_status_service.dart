@@ -1,9 +1,9 @@
-import 'app_platform.dart';
-import '../logging/app_log_service.dart';
-import '../../features/settings/application/app_update_service.dart';
-import 'notifications_platform_service.dart';
-import 'power_platform_service.dart';
-import '../../features/player/application/subtitle_overlay_controller.dart';
+import '../../../core/logging/app_log_service.dart';
+import '../../../core/platform/app_platform.dart';
+import '../../../core/platform/notifications_platform_service.dart';
+import '../../../core/platform/power_platform_service.dart';
+import '../../player/application/subtitle_overlay_controller.dart';
+import 'app_update_service.dart';
 
 class PermissionStatusSnapshot {
   const PermissionStatusSnapshot({

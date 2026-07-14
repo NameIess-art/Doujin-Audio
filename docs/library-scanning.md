@@ -15,10 +15,16 @@ LibraryTab
 `importFiles`, and `cancel`, and publishes idle/running/success/cancelled/failure
 operation state. UI feedback remains a presentation concern.
 
-The coordinator converts localized picker labels into `LibraryScanLabels` and
-translates the returned `LibraryScanOutcome`. The scanner reports stable codes,
-an operation source, and count details; it does not import localization or call
-snackbar callbacks.
+Library presentation converts localized picker labels into `LibraryScanLabels`
+and maps the returned `LibraryScanOutcome` to localized text, tone, and icon.
+The coordinator stores the typed outcome and a stable `AppFailure` when needed;
+it does not import localization, call snackbar callbacks, or expose
+`Exception.toString()` to the UI. The scanner reports stable codes, an operation
+source, and count details.
+
+Native scan wire DTOs and parsers live in `core/platform`; library labels and
+outcomes remain in library application. This lets `FileCachePlatformGateway`
+decode native payloads without depending back on a feature application layer.
 
 `LibraryScanDataSource` owns Android permission checks, picker fallbacks,
 temporary imports, native local/SAF calls, and the isolate-backed local scan.

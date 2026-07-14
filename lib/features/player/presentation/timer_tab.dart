@@ -15,7 +15,7 @@ import '../../../core/platform/notifications_platform_service.dart';
 import '../../../core/platform/power_platform_service.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../application/timer_runtime_calculator.dart';
-import '../../settings/application/ui_operation_service.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/target_countdown_builder.dart';

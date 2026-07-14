@@ -28,7 +28,7 @@ import 'features/player/application/native_playback_repository.dart';
 import 'features/player/application/playback_command_runner.dart';
 import 'features/player/application/playback_notification_service.dart';
 import 'core/logging/app_log_service.dart';
-import 'features/player/application/ui_interaction_coordinator.dart';
+import 'core/ui/ui_interaction_coordinator.dart';
 import 'app/theme/theme_provider.dart';
 import 'features/settings/application/app_preferences.dart';
 import 'core/persistence/app_database.dart';

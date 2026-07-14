@@ -9,35 +9,48 @@ internal class SubtitleOverlayMethodHandler(
     private val coordinator: SubtitleOverlayCoordinator
 ) : MethodChannel.MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        when (call.method) {
-            SubtitleOverlayMethods.CAN_DRAW_OVERLAYS -> result.success(coordinator.canDrawOverlays())
-            SubtitleOverlayMethods.OPEN_OVERLAY_SETTINGS ->
-                result.success(coordinator.openOverlaySettings())
-            SubtitleOverlayMethods.START_OVERLAY -> {
-                coordinator.start()
-                result.success(true)
-            }
-            SubtitleOverlayMethods.STOP_OVERLAY -> {
-                coordinator.stop()
-                result.success(true)
-            }
-            SubtitleOverlayMethods.UPDATE_SUBTITLE -> {
-                coordinator.updateSubtitle(call.argument<String>("text") ?: "")
-                result.success(true)
-            }
-            SubtitleOverlayMethods.UPDATE_STYLE -> {
-                coordinator.updateStyle(
-                    SubtitleOverlayStyle(
-                        fontSize = call.argument<Number>("fontSize")?.toFloat() ?: 18f,
-                        backgroundColor = call.argument<String>("backgroundColor") ?: "#80000000",
-                        textColor = call.argument<String>("textColor") ?: "#FFFFFF",
-                        fontFamily = call.argument<String>("fontFamily") ?: "",
-                        borderDepth = call.argument<Number>("borderDepth")?.toFloat() ?: 0.5f
+        val envelope = ChannelEnvelopeResult(result)
+        try {
+            when (call.method) {
+                SubtitleOverlayMethods.CAN_DRAW_OVERLAYS -> envelope.success(coordinator.canDrawOverlays())
+                SubtitleOverlayMethods.OPEN_OVERLAY_SETTINGS ->
+                    envelope.success(coordinator.openOverlaySettings())
+                SubtitleOverlayMethods.START_OVERLAY -> {
+                    coordinator.start()
+                    envelope.success(true)
+                }
+                SubtitleOverlayMethods.STOP_OVERLAY -> {
+                    coordinator.stop()
+                    envelope.success(true)
+                }
+                SubtitleOverlayMethods.UPDATE_SUBTITLE -> {
+                    coordinator.updateSubtitle(call.argumentReader().requiredString("text", allowBlank = true))
+                    envelope.success(true)
+                }
+                SubtitleOverlayMethods.UPDATE_STYLE -> {
+                    val arguments = call.argumentReader()
+                    coordinator.updateStyle(
+                        SubtitleOverlayStyle(
+                            fontSize = if (arguments.hasKey("fontSize")) arguments.requiredDouble("fontSize").toFloat() else 18f,
+                            backgroundColor = arguments.optionalString("backgroundColor") ?: "#80000000",
+                            textColor = arguments.optionalString("textColor") ?: "#FFFFFF",
+                            fontFamily = arguments.optionalString("fontFamily") ?: "",
+                            borderDepth = if (arguments.hasKey("borderDepth")) arguments.requiredDouble("borderDepth").toFloat() else 0.5f
+                        )
                     )
-                )
-                result.success(true)
+                    if (arguments.hasKey("backgroundOpacity")) {
+                        arguments.requiredDouble("backgroundOpacity")
+                    }
+                    envelope.success(true)
+                }
+                else -> result.notImplemented()
             }
-            else -> result.notImplemented()
+        } catch (error: IllegalArgumentException) {
+            envelope.error(
+                ChannelErrorCodes.INVALID_ARGUMENT,
+                error.message ?: "Invalid arguments.",
+                mapOf("method" to call.method)
+            )
         }
     }
 }

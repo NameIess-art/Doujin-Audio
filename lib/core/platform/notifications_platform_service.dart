@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../errors/native_result.dart';
 import 'app_platform.dart';
 import '../logging/app_log_service.dart';
 import 'platform_channels.dart';
+import 'platform_method_client.dart';
 
 typedef NotificationSessionHandler = void Function(String sessionId);
 
@@ -13,10 +17,14 @@ class NotificationsPlatformService {
     @visibleForTesting bool? isAndroidOverride,
     Duration timeout = const Duration(seconds: 5),
   }) : _channel = channel ?? const MethodChannel(NotificationsChannel.name),
+       _client = PlatformMethodClient(
+         channel ?? const MethodChannel(NotificationsChannel.name),
+       ),
        _isAndroidOverride = isAndroidOverride,
        _timeout = timeout;
 
   final MethodChannel _channel;
+  final PlatformMethodClient _client;
   final bool? _isAndroidOverride;
   final Duration _timeout;
 
@@ -24,59 +32,36 @@ class NotificationsPlatformService {
 
   Future<bool> areNotificationsEnabled() async {
     if (!_isAndroid) return true;
-    try {
-      return await _channel.invokeMethod<bool>(
-            NotificationsMethod.areNotificationsEnabled,
-          ) ??
-          true;
-    } on MissingPluginException {
-      return true;
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'notification_permission_check_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return true;
-    }
+    final result = await _client.invoke<bool>(
+      NotificationsMethod.areNotificationsEnabled,
+      decode: (value) => value as bool,
+    );
+    _logFailure(NotificationsMethod.areNotificationsEnabled, result);
+    return result.valueOrNull ?? true;
   }
 
   Future<bool> openNotificationSettings() async {
     if (!_isAndroid) return false;
-    try {
-      return await _channel.invokeMethod<bool>(
-            NotificationsMethod.openNotificationSettings,
-          ) ??
-          false;
-    } on MissingPluginException {
-      return false;
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'open_notification_settings_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return false;
-    }
+    final result = await _client.invoke<bool>(
+      NotificationsMethod.openNotificationSettings,
+      decode: (value) => value as bool,
+    );
+    _logFailure(NotificationsMethod.openNotificationSettings, result);
+    return result.valueOrNull ?? false;
   }
 
   Future<String?> consumePendingNotificationSessionId() async {
     if (!_isAndroid) return null;
-    try {
-      final sessionId = await _channel.invokeMethod<String>(
-        NotificationsMethod.consumePendingNotificationSessionId,
-      );
-      return sessionId == null || sessionId.isEmpty ? null : sessionId;
-    } on MissingPluginException {
-      return null;
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'consume_pending_notification_session_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return null;
-    }
+    final result = await _client.invoke<String?>(
+      NotificationsMethod.consumePendingNotificationSessionId,
+      decode: (value) => value as String?,
+    );
+    _logFailure(
+      NotificationsMethod.consumePendingNotificationSessionId,
+      result,
+    );
+    final sessionId = result.valueOrNull;
+    return sessionId == null || sessionId.isEmpty ? null : sessionId;
   }
 
   void setOpenSessionHandler(NotificationSessionHandler? handler) {
@@ -101,18 +86,20 @@ class NotificationsPlatformService {
   ) async {
     if (!_isAndroid) return;
     try {
-      await _channel
-          .invokeMethod<void>(
+      final result = await _client
+          .invoke<void>(
             NotificationsMethod.syncUnifiedPlaybackNotifications,
-            payload,
+            arguments: payload,
+            decode: (_) {},
           )
           .timeout(
             _timeout,
-            onTimeout: () =>
-                AppLogService.warning('notification_sync_timed_out'),
+            onTimeout: () {
+              AppLogService.warning('notification_sync_timed_out');
+              throw TimeoutException('Notification sync timed out.');
+            },
           );
-    } on MissingPluginException {
-      // Channel not available on this platform.
+      _logFailure(NotificationsMethod.syncUnifiedPlaybackNotifications, result);
     } catch (error, stackTrace) {
       AppLogService.error(
         'notification_sync_failed',
@@ -125,17 +112,22 @@ class NotificationsPlatformService {
   Future<void> clearUnifiedPlaybackNotifications() async {
     if (!_isAndroid) return;
     try {
-      await _channel
-          .invokeMethod<void>(
+      final result = await _client
+          .invoke<void>(
             NotificationsMethod.clearUnifiedPlaybackNotifications,
+            decode: (_) {},
           )
           .timeout(
             _timeout,
-            onTimeout: () =>
-                AppLogService.warning('notification_clear_timed_out'),
+            onTimeout: () {
+              AppLogService.warning('notification_clear_timed_out');
+              throw TimeoutException('Notification clear timed out.');
+            },
           );
-    } on MissingPluginException {
-      // Channel not available on this platform.
+      _logFailure(
+        NotificationsMethod.clearUnifiedPlaybackNotifications,
+        result,
+      );
     } catch (error, stackTrace) {
       AppLogService.error(
         'notification_clear_failed',
@@ -153,5 +145,18 @@ class NotificationsPlatformService {
       return arguments;
     }
     return null;
+  }
+
+  void _logFailure<T>(String method, NativeResult<T> result) {
+    if (result case NativeFailure<T>(
+      :final code,
+      :final message,
+      :final details,
+    )) {
+      AppLogService.warning(
+        'notifications_platform_method_failed method=$method code=$code',
+        error: <String, Object?>{'message': message, 'details': details},
+      );
+    }
   }
 }

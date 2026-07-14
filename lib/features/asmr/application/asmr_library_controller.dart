@@ -14,7 +14,7 @@ import 'asmr_playback_coordinator.dart';
 import 'asmr_preferences.dart';
 import 'asmr_remote_catalog_service.dart';
 import '../../../core/media/search_query_utils.dart';
-import '../../player/application/ui_interaction_coordinator.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 
 class AsmrLibraryGlobalViewState {
   const AsmrLibraryGlobalViewState({

@@ -8,17 +8,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart' hide Consumer;
 
-import '../../app/localization/app_language_provider.dart';
-import '../../app/state/audio_provider.dart';
-import '../../app/state/audio_provider_riverpod.dart';
-import '../../app/state/subtitle_settings_provider.dart';
-import '../../features/player/application/audio_state_services.dart';
-import '../media/subtitle_parser.dart';
-import '../../app/theme/app_design_tokens.dart';
-import '../../features/player/presentation/playlist_tab.dart';
-import 'app_feedback.dart';
-import 'async_cover_image.dart';
-import 'library_like_cards.dart';
+import '../../../app/localization/app_language_provider.dart';
+import '../../../app/state/audio_provider.dart';
+import '../../../app/state/audio_provider_riverpod.dart';
+import '../../../app/state/subtitle_settings_provider.dart';
+import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/media/subtitle_parser.dart';
+import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/library_like_cards.dart';
+import '../application/audio_state_services.dart';
+import 'playlist_tab.dart';
 import 'playback_position_ui_gate.dart';
 
 part 'active_session_carousel_widgets.dart';

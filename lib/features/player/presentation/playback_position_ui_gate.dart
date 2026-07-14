@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
-import '../../features/player/domain/playback_session.dart';
-import '../media/subtitle_parser.dart';
-import '../../features/player/application/ui_interaction_coordinator.dart';
+import '../../../core/media/subtitle_parser.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../domain/playback_session.dart';
 
 @immutable
 class PlaybackPositionUiSnapshot {

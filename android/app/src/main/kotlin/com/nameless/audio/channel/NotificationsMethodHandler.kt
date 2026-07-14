@@ -15,49 +15,74 @@ internal class NotificationsMethodHandler(
     private val consumePendingSessionId: () -> String?
 ) : MethodChannel.MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        when (call.method) {
-            NotificationsMethods.ARE_NOTIFICATIONS_ENABLED -> {
-                result.success(
+        val envelope = ChannelEnvelopeResult(result)
+        try {
+            when (call.method) {
+                NotificationsMethods.ARE_NOTIFICATIONS_ENABLED -> {
+                    envelope.success(
                     NotificationManagerCompat.from(activity).areNotificationsEnabled()
-                )
+                    )
+                }
+                NotificationsMethods.OPEN_NOTIFICATION_SETTINGS -> {
+                    envelope.success(openNotificationSettings())
+                }
+                NotificationsMethods.SYNC_UNIFIED_PLAYBACK_NOTIFICATIONS -> {
+                    syncUnifiedPlaybackNotifications(call)
+                    envelope.success(null)
+                }
+                NotificationsMethods.CLEAR_UNIFIED_PLAYBACK_NOTIFICATIONS -> {
+                    UnifiedPlaybackNotificationController.clear(activity)
+                    envelope.success(null)
+                }
+                NotificationsMethods.CONSUME_PENDING_NOTIFICATION_SESSION_ID -> {
+                    envelope.success(consumePendingSessionId())
+                }
+                else -> result.notImplemented()
             }
-            NotificationsMethods.OPEN_NOTIFICATION_SETTINGS -> {
-                result.success(openNotificationSettings())
-            }
-            NotificationsMethods.SYNC_UNIFIED_PLAYBACK_NOTIFICATIONS -> {
-                syncUnifiedPlaybackNotifications(call)
-                result.success(null)
-            }
-            NotificationsMethods.CLEAR_UNIFIED_PLAYBACK_NOTIFICATIONS -> {
-                UnifiedPlaybackNotificationController.clear(activity)
-                result.success(null)
-            }
-            NotificationsMethods.CONSUME_PENDING_NOTIFICATION_SESSION_ID -> {
-                result.success(consumePendingSessionId())
-            }
-            else -> result.notImplemented()
+        } catch (error: IllegalArgumentException) {
+            envelope.error(
+                ChannelErrorCodes.INVALID_ARGUMENT,
+                error.message ?: "Invalid arguments.",
+                mapOf("method" to call.method)
+            )
         }
     }
 
     private fun syncUnifiedPlaybackNotifications(call: MethodCall) {
-        val rawItems = call.argument<List<Map<String, Any?>>>("items") ?: emptyList()
-        val mode = call.argument<String>("mode") ?: "single"
-        val mainSessionId = call.argument<String>("mainSessionId")
-        val showSummary = call.argument<Boolean>("showSummary") ?: false
-        val summaryText = call.argument<String>("summaryText")
-        val summaryLines = call.argument<List<String>>("summaryLines") ?: emptyList()
-        val styleVariant = call.argument<String>("styleVariant")
-        val items = rawItems.mapNotNull { raw ->
-            val id = raw["id"] as? String ?: return@mapNotNull null
-            val title = raw["title"] as? String ?: return@mapNotNull null
+        val arguments = call.argumentReader()
+        val rawItems = arguments.requiredList("items")
+        val mode = arguments.requiredString("mode")
+        val mainSessionId = arguments.requiredNullableString("mainSessionId")
+        val showSummary = arguments.requiredBoolean("showSummary")
+        val summaryText = arguments.requiredNullableString("summaryText")
+        val summaryLines = arguments.requiredStringList("summaryLines", allowBlank = true)
+        val styleVariant = arguments.requiredString("styleVariant")
+        val items = rawItems.mapIndexed { index, item ->
+            require(item is Map<*, *>) { "Invalid notification item at items[$index]" }
+            val id = item["id"] as? String
+            val title = item["title"] as? String
+            require(!id.isNullOrBlank()) { "Missing item id at items[$index]" }
+            require(!title.isNullOrBlank()) { "Missing item title at items[$index]" }
+            val optionalStrings = listOf("subtitle", "artPath")
+            optionalStrings.forEach { key ->
+                require(item[key] == null || item[key] is String) {
+                    "Invalid item string at items[$index].$key"
+                }
+            }
+            val booleans = listOf("playing", "hasPrevious", "hasNext")
+            booleans.forEach { key ->
+                require(item[key] is Boolean) {
+                    "Missing or invalid item boolean at items[$index].$key"
+                }
+            }
             UnifiedPlaybackNotificationItem(
                 id = id,
                 title = title,
-                subtitle = raw["subtitle"] as? String,
-                artPath = raw["artPath"] as? String,
-                playing = raw["playing"] as? Boolean ?: false,
-                hasPrevious = raw["hasPrevious"] as? Boolean ?: false,
-                hasNext = raw["hasNext"] as? Boolean ?: false
+                subtitle = item["subtitle"] as? String,
+                artPath = item["artPath"] as? String,
+                playing = item["playing"] as Boolean,
+                hasPrevious = item["hasPrevious"] as Boolean,
+                hasNext = item["hasNext"] as Boolean
             )
         }
         UnifiedPlaybackNotificationController.sync(

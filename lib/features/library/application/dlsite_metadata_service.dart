@@ -5,7 +5,7 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as path;
 
-import '../../../app/localization/app_language_provider.dart';
+import '../../../core/app_language.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';

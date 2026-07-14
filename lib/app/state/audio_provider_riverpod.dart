@@ -4,7 +4,7 @@ import '../../core/persistence/audio_database_repository.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/native_playback_repository.dart';
 import '../../features/player/application/playback_command_runner.dart';
-import '../../features/settings/application/ui_operation_service.dart';
+import '../../core/ui/ui_operation_service.dart';
 import '../presentation/screen_view_models.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';

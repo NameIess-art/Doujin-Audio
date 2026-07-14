@@ -19,7 +19,7 @@ import 'package:nameless_audio/core/platform/notifications_platform_service.dart
 import 'package:nameless_audio/core/media/path_matcher.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
-import 'package:nameless_audio/features/player/application/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';

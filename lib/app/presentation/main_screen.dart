@@ -22,16 +22,17 @@ import '../../core/platform/notifications_platform_service.dart';
 import '../../core/platform/permission_action_controller.dart';
 import '../../core/platform/power_platform_service.dart';
 import '../../features/player/application/subtitle_overlay_controller.dart';
-import '../../features/player/application/ui_interaction_coordinator.dart';
-import '../../features/settings/application/ui_operation_service.dart';
+import '../../core/ui/ui_interaction_coordinator.dart';
+import '../../core/ui/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
 import '../theme/app_styles.dart';
 import '../../features/asmr/presentation/asmr_tab.dart';
 import '../../features/library/presentation/library_tab.dart';
 import '../../features/player/presentation/playlist_tab.dart';
 import '../../features/settings/presentation/settings_tab.dart';
+import '../../features/settings/presentation/app_update_flow.dart';
 import '../../features/player/presentation/timer_tab.dart';
-import '../../core/widgets/active_session_carousel.dart';
+import '../../features/player/presentation/active_session_carousel.dart';
 import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/confirm_action_dialog.dart';
@@ -80,10 +81,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _backgroundPlaybackPromptShownThisLaunch = false;
   bool _backgroundPlaybackPromptQueued = false;
   bool _autoUpdateCheckQueued = false;
-  bool _autoUpdateCheckRunning = false;
   bool _showScrollToTopButton = false;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
+  late final AppUpdateFlow _updateFlow = AppUpdateFlow(
+    permissionController: _permissionActionController,
+  );
   bool _timerOverlayPrimed = false;
 
   bool _bootstrapDone = false;
@@ -218,229 +221,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
   }
 
-  Future<bool> _ensureInstallPermissionThenRun(
-    BuildContext context,
-    Future<void> Function() onGranted,
-  ) {
-    final i18n = context.read<AppLanguageProvider>();
-    return _permissionActionController.ensureGrantedAndRun(
-      context: context,
-      title: i18n.tr('install_permission_title'),
-      message: i18n.tr('install_permission_message'),
-      confirmLabel: i18n.tr('go_settings'),
-      cancelLabel: i18n.tr('cancel'),
-      isGranted: AppUpdateService.canInstallUnknownApps,
-      openSettings: AppUpdateService.openInstallPermissionSettings,
-      onGranted: onGranted,
-    );
-  }
-
   Future<void> _checkForUpdatesOnLaunch() async {
-    if (_autoUpdateCheckRunning || !mounted) return;
-    _autoUpdateCheckRunning = true;
-    try {
-      final info = await AppUpdateService.checkLatest();
-      if (!mounted || !info.isUpdateAvailable) return;
-      await _showUpdateDialog(info);
-    } catch (_) {
-      // Automatic checks stay silent unless an update is actually available.
-    } finally {
-      _autoUpdateCheckRunning = false;
-    }
-  }
-
-  Future<void> _showUpdateDialog(AppUpdateInfo info) async {
     if (!mounted) return;
-    final i18n = context.read<AppLanguageProvider>();
-    final shouldDownload = await showDialog<bool>(
+    await _updateFlow.checkAndPresent(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          scrollable: true,
-          title: Text(i18n.tr('latest_version_available')),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                i18n.tr('current_version_label', {
-                  'version': info.currentVersion.versionName,
-                }),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                i18n.tr('latest_version_label', {
-                  'version': info.latestVersionName,
-                }),
-              ),
-              const SizedBox(height: 10),
-              Text(
-                info.assetName ?? '',
-                style: Theme.of(dialogContext).textTheme.bodySmall,
-              ),
-            ],
-          ),
-          actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                    child: Text(i18n.tr('later')),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: () => Navigator.of(dialogContext).pop(true),
-                    icon: const Icon(Icons.download_rounded),
-                    label: Text(i18n.tr('download_update')),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
+      operations: ref.read(uiOperationServiceProvider),
+      automatic: true,
     );
-    if (shouldDownload == true && mounted && info.canDownload) {
-      if (Platform.isAndroid) {
-        await _ensureInstallPermissionThenRun(
-          context,
-          () => _downloadAndInstallUpdate(info),
-        );
-      } else {
-        await _downloadAndInstallUpdate(info);
-      }
-    }
-  }
-
-  Future<void> _downloadAndInstallUpdate(AppUpdateInfo info) async {
-    final i18n = context.read<AppLanguageProvider>();
-    File updateFile;
-    try {
-      updateFile = await ref
-          .read(uiOperationServiceProvider)
-          .run<File>(
-            scope: UiOperationScope.settingsUpdate,
-            labelKey: 'downloading_update',
-            task: (operationProgress) => AppUpdateService.downloadUpdate(
-              info,
-              onProgress: (progress) {
-                if (progress != null) {
-                  operationProgress.report(progress);
-                }
-              },
-            ),
-          );
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'automatic_update_download_or_verification_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      if (!mounted) return;
-      final retry = await showDialog<bool>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(i18n.tr('update_download_failed')),
-          content: Text(i18n.tr('update_download_failed_next_step')),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: Text(i18n.tr('close')),
-            ),
-            TextButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop(false);
-                unawaited(AppUpdateService.openReleasePage(info.releaseUrl));
-              },
-              child: Text(i18n.tr('open_release_page')),
-            ),
-            FilledButton.icon(
-              onPressed: () => Navigator.of(dialogContext).pop(true),
-              icon: const Icon(Icons.refresh_rounded),
-              label: Text(i18n.tr('retry')),
-            ),
-          ],
-        ),
-      );
-      if (retry == true && mounted) {
-        unawaited(_downloadAndInstallUpdate(info));
-      }
-      return;
-    }
-
-    if (!mounted) return;
-    showAppSnackBar(
-      context,
-      i18n.tr('update_install_preparing_message', {
-        'version': info.latestVersionName,
-        'path': updateFile.path,
-      }),
-      tone: AppFeedbackTone.warning,
-      title: i18n.tr('update_install_preparing_title'),
-      icon: Icons.system_update_alt_rounded,
-      duration: const Duration(seconds: 8),
-    );
-
-    await _installDownloadedUpdate(updateFile);
-  }
-
-  Future<void> _installDownloadedUpdate(File updateFile) async {
-    if (!mounted) return;
-    final i18n = context.read<AppLanguageProvider>();
-    try {
-      final result = await AppUpdateService.installUpdate(updateFile);
-      if (!mounted) return;
-      if (result.needsPermission) {
-        await _ensureInstallPermissionThenRun(
-          context,
-          () => _installDownloadedUpdate(updateFile),
-        );
-        return;
-      }
-      if (!result.ok) {
-        final detail = result.message?.trim();
-        showAppSnackBar(
-          context,
-          detail != null && detail.isNotEmpty
-              ? i18n.tr('update_install_failed_with_detail', {'detail': detail})
-              : i18n.tr('update_install_failed_next_step'),
-          tone: AppFeedbackTone.destructive,
-          title: i18n.tr('update_install_failed'),
-          icon: Icons.error_outline_rounded,
-          duration: const Duration(seconds: 8),
-          actionLabel: Platform.isWindows ? i18n.tr('open_update_log') : null,
-          onAction: Platform.isWindows
-              ? () => unawaited(AppUpdateService.openWindowsUpdateLog())
-              : null,
-        );
-        return;
-      }
-      showAppSnackBar(
-        context,
-        Platform.isWindows
-            ? i18n.tr('update_windows_ready_install')
-            : i18n.tr('update_ready_install'),
-        tone: AppFeedbackTone.success,
-        icon: Icons.install_mobile_rounded,
-      );
-    } catch (_) {
-      if (!mounted) return;
-      showAppSnackBar(
-        context,
-        i18n.tr('update_install_failed_next_step'),
-        tone: AppFeedbackTone.destructive,
-        title: i18n.tr('update_install_failed'),
-        icon: Icons.error_outline_rounded,
-        duration: const Duration(seconds: 8),
-        actionLabel: Platform.isWindows ? i18n.tr('open_update_log') : null,
-        onAction: Platform.isWindows
-            ? () => unawaited(AppUpdateService.openWindowsUpdateLog())
-            : null,
-      );
-    }
   }
 
   @override

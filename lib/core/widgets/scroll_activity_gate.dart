@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
-import '../../features/player/application/ui_interaction_coordinator.dart';
+import '../ui/ui_interaction_coordinator.dart';
 
 class ScrollActivityGate extends StatefulWidget {
   const ScrollActivityGate({

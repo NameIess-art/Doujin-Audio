@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/player/application/warmup_scheduler.dart';
+import 'package:nameless_audio/core/ui/warmup_scheduler.dart';
 
 void main() {
   test('deduplicates queued work by key within a generation', () {

@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../app/localization/app_language_provider.dart';
 import '../../../core/errors/app_failure.dart';
+import '../../../core/logging/app_log_service.dart';
 import 'library_catalog.dart';
 import 'library_scanner_service.dart';
 
@@ -14,13 +14,13 @@ class LibraryScanState {
   const LibraryScanState({
     this.phase = LibraryScanPhase.idle,
     this.operation,
-    this.message,
+    this.outcome,
     this.failure,
   });
 
   final LibraryScanPhase phase;
   final LibraryScanOperation? operation;
-  final String? message;
+  final LibraryScanOutcome? outcome;
   final AppFailure? failure;
 }
 
@@ -33,57 +33,37 @@ class LibraryScanCoordinator extends ChangeNotifier {
 
   LibraryScanState get state => _state;
 
-  Future<void> refresh({
+  Future<LibraryScanOutcome?> refresh({
     required LibraryCatalog catalog,
-    required AppLanguageProvider i18n,
-    required ValueChanged<String> onMessage,
-    bool silent = false,
-    bool forceShowResult = false,
+    required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.refresh,
-    i18n: i18n,
-    onMessage: onMessage,
-    shouldReport: (outcome) =>
-        !silent ||
-        forceShowResult ||
-        outcome.code == LibraryScanOutcomeCode.refreshAdded,
-    task: () => _scanner.refreshWatchedFolders(
-      provider: catalog,
-      labels: _labels(i18n),
-    ),
+    task: () =>
+        _scanner.refreshWatchedFolders(provider: catalog, labels: labels),
   );
 
-  Future<void> importFolder({
+  Future<LibraryScanOutcome?> importFolder({
     required LibraryCatalog catalog,
-    required AppLanguageProvider i18n,
-    required ValueChanged<String> onMessage,
+    required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.importFolder,
-    i18n: i18n,
-    onMessage: onMessage,
-    task: () => _scanner.addFolder(provider: catalog, labels: _labels(i18n)),
+    task: () => _scanner.addFolder(provider: catalog, labels: labels),
   );
 
-  Future<void> importLibrary({
+  Future<LibraryScanOutcome?> importLibrary({
     required LibraryCatalog catalog,
-    required AppLanguageProvider i18n,
-    required ValueChanged<String> onMessage,
+    required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.importLibrary,
-    i18n: i18n,
-    onMessage: onMessage,
-    task: () => _scanner.addLibrary(provider: catalog, labels: _labels(i18n)),
+    task: () => _scanner.addLibrary(provider: catalog, labels: labels),
   );
 
-  Future<void> importFiles({
+  Future<LibraryScanOutcome?> importFiles({
     required LibraryCatalog catalog,
-    required AppLanguageProvider i18n,
-    required ValueChanged<String> onMessage,
+    required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.importFiles,
-    i18n: i18n,
-    onMessage: onMessage,
-    task: () => _scanner.addFiles(provider: catalog, labels: _labels(i18n)),
+    task: () => _scanner.addFiles(provider: catalog, labels: labels),
   );
 
   void cancel(LibraryCatalogWriter catalog) {
@@ -96,12 +76,9 @@ class LibraryScanCoordinator extends ChangeNotifier {
     );
   }
 
-  Future<void> _run({
+  Future<LibraryScanOutcome?> _run({
     required LibraryScanOperation operation,
-    required AppLanguageProvider i18n,
-    required ValueChanged<String> onMessage,
     required Future<LibraryScanOutcome?> Function() task,
-    bool Function(LibraryScanOutcome outcome)? shouldReport,
   }) async {
     _setState(
       LibraryScanState(phase: LibraryScanPhase.running, operation: operation),
@@ -110,15 +87,14 @@ class LibraryScanCoordinator extends ChangeNotifier {
       final outcome = await task();
       if (outcome == null) {
         _setState(const LibraryScanState());
-        return;
+        return null;
       }
-      final message = _messageFor(outcome, i18n);
       final phase = _phaseFor(outcome.code);
       final failure = phase == LibraryScanPhase.failure
           ? AppFailure(
               kind: AppFailureKind.scan,
               code: outcome.code.name,
-              message: message,
+              message: 'Library scan did not complete.',
               details: <String, Object?>{
                 'source': outcome.source,
                 ...outcome.details,
@@ -129,19 +105,23 @@ class LibraryScanCoordinator extends ChangeNotifier {
         LibraryScanState(
           phase: phase,
           operation: operation,
-          message: message,
+          outcome: outcome,
           failure: failure,
         ),
       );
-      if (message.isNotEmpty && (shouldReport?.call(outcome) ?? true)) {
-        onMessage(message);
-      }
-    } catch (error) {
+      return outcome;
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'library_scan_operation_failed operation=${operation.name}',
+        error: error,
+        stackTrace: stackTrace,
+      );
       final failure = AppFailure(
         kind: AppFailureKind.scan,
         code: 'scan_failed',
-        message: error.toString(),
+        message: 'Library scan failed.',
         cause: error,
+        details: <String, Object?>{'operation': operation.name},
       );
       _setState(
         LibraryScanState(
@@ -154,14 +134,6 @@ class LibraryScanCoordinator extends ChangeNotifier {
     }
   }
 
-  LibraryScanLabels _labels(AppLanguageProvider i18n) => LibraryScanLabels(
-    chooseMusicFolder: i18n.tr('choose_music_folder'),
-    chooseLibraryFolder: i18n.tr('choose_library_folder'),
-    chooseAudioFiles: i18n.tr('choose_audio_files'),
-    importedFiles: i18n.tr('imported_files'),
-    manuallySelectedFiles: i18n.tr('manually_selected_files'),
-  );
-
   LibraryScanPhase _phaseFor(LibraryScanOutcomeCode code) {
     if (code == LibraryScanOutcomeCode.cancelled) {
       return LibraryScanPhase.cancelled;
@@ -173,37 +145,6 @@ class LibraryScanCoordinator extends ChangeNotifier {
     }
     return LibraryScanPhase.success;
   }
-
-  String _messageFor(LibraryScanOutcome outcome, AppLanguageProvider i18n) =>
-      switch (outcome.code) {
-        LibraryScanOutcomeCode.noSources => '',
-        LibraryScanOutcomeCode.permissionDenied => i18n.tr(
-          'need_storage_permission_scan_folder',
-        ),
-        LibraryScanOutcomeCode.alreadyRunning => i18n.tr('scanning_title'),
-        LibraryScanOutcomeCode.folderExists => i18n.tr('library_folder_exists'),
-        LibraryScanOutcomeCode.libraryExists => i18n.tr('library_exists'),
-        LibraryScanOutcomeCode.fileExists => i18n.tr('library_file_exists'),
-        LibraryScanOutcomeCode.cancelled => i18n.tr('scan_cancelled'),
-        LibraryScanOutcomeCode.failed => i18n.tr('scan_failed_next_step'),
-        LibraryScanOutcomeCode.noAudio => i18n.tr('no_audio_found'),
-        LibraryScanOutcomeCode.refreshAdded => i18n.tr('refresh_done_added', {
-          'count': outcome.addedCount,
-        }),
-        LibraryScanOutcomeCode.refreshNoChanges => i18n.tr(
-          'refresh_done_no_new',
-        ),
-        LibraryScanOutcomeCode.importAdded => i18n.tr('import_done_added', {
-          'count': outcome.addedCount,
-        }),
-        LibraryScanOutcomeCode.libraryImported => i18n.tr(
-          'import_library_done',
-          <String, Object?>{
-            'count': outcome.addedCount,
-            'folderCount': outcome.folderCount,
-          },
-        ),
-      };
 
   void _setState(LibraryScanState value) {
     _state = value;

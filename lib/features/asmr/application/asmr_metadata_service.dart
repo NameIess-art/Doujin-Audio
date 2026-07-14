@@ -1,4 +1,4 @@
-import '../../../app/localization/app_language_provider.dart';
+import '../../../core/app_language.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';

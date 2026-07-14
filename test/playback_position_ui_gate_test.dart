@@ -4,8 +4,8 @@ import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/player/domain/playback_session.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
 import 'package:nameless_audio/core/media/subtitle_parser.dart';
-import 'package:nameless_audio/features/player/application/ui_interaction_coordinator.dart';
-import 'package:nameless_audio/core/widgets/playback_position_ui_gate.dart';
+import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/features/player/presentation/playback_position_ui_gate.dart';
 
 PlaybackSession _session(String id) {
   return PlaybackSession(

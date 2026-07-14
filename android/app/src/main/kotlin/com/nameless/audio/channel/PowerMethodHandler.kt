@@ -56,29 +56,37 @@ internal class PowerMethodHandler(
     private val activity: Activity
 ) : MethodChannel.MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        val envelope = ChannelEnvelopeResult(result)
         try {
             when (call.method) {
-            PowerMethods.SET_KEEP_CPU_AWAKE,
-            PowerMethods.STOP_PLAYBACK_KEEP_ALIVE -> result.success(null)
-            PowerMethods.CAN_MANAGE_ALL_FILES_ACCESS -> result.success(canManageAllFilesAccess())
+            PowerMethods.SET_KEEP_CPU_AWAKE -> {
+                val arguments = call.argumentReader()
+                arguments.requiredBoolean("enabled")
+                arguments.requiredBoolean("hasActivePlayback")
+                arguments.requiredBoolean("hasActiveTimer")
+                arguments.requiredBoolean("usesUnifiedPlaybackNotifications")
+                arguments.requiredBoolean("keepForegroundServiceAlive")
+                envelope.success(null)
+            }
+            PowerMethods.STOP_PLAYBACK_KEEP_ALIVE -> envelope.success(null)
+            PowerMethods.CAN_MANAGE_ALL_FILES_ACCESS -> envelope.success(canManageAllFilesAccess())
             PowerMethods.OPEN_MANAGE_ALL_FILES_ACCESS_SETTINGS ->
-                result.success(openManageAllFilesAccessSettings())
+                envelope.success(openManageAllFilesAccessSettings())
             PowerMethods.IS_IGNORING_BATTERY_OPTIMIZATIONS ->
-                result.success(isIgnoringBatteryOptimizations())
-            PowerMethods.OPEN_BATTERY_OPTIMIZATION_SETTINGS ->
-                result.success(openBatteryOptimizationSettings())
-            PowerMethods.OPEN_BACKGROUND_RUN_SETTINGS -> result.success(openBackgroundRunSettings())
-            PowerMethods.CAN_SCHEDULE_EXACT_ALARMS -> result.success(canScheduleExactAlarms())
-            PowerMethods.OPEN_EXACT_ALARM_SETTINGS -> result.success(openExactAlarmSettings())
-            PowerMethods.GET_NATIVE_TIMER_RUNTIME_STATE -> result.success(getNativeTimerRuntimeState())
+                envelope.success(isIgnoringBatteryOptimizations())
+            PowerMethods.OPEN_BATTERY_OPTIMIZATION_SETTINGS -> envelope.success(openBatteryOptimizationSettings())
+            PowerMethods.OPEN_BACKGROUND_RUN_SETTINGS -> envelope.success(openBackgroundRunSettings())
+            PowerMethods.CAN_SCHEDULE_EXACT_ALARMS -> envelope.success(canScheduleExactAlarms())
+            PowerMethods.OPEN_EXACT_ALARM_SETTINGS -> envelope.success(openExactAlarmSettings())
+            PowerMethods.GET_NATIVE_TIMER_RUNTIME_STATE -> envelope.success(getNativeTimerRuntimeState())
             PowerMethods.GET_BACKGROUND_RUN_DIAGNOSTICS ->
-                result.success(getBackgroundRunDiagnostics())
+                envelope.success(getBackgroundRunDiagnostics())
             PowerMethods.EXECUTE_TIMER_EXPIRED_NOW -> {
                 PlaybackTimerAlarmScheduler.executeNow(
                     activity.applicationContext,
                     PlaybackTimerAlarmScheduler.actionTimerExpired,
                     call.argumentReader().requiredIntInRange("generation", 0..Int.MAX_VALUE),
-                    onComplete = result::success
+                    onComplete = envelope::success
                 )
             }
             PowerMethods.EXECUTE_AUTO_RESUME_NOW -> {
@@ -86,7 +94,7 @@ internal class PowerMethodHandler(
                     activity.applicationContext,
                     PlaybackTimerAlarmScheduler.actionAutoResume,
                     call.argumentReader().requiredIntInRange("generation", 0..Int.MAX_VALUE),
-                    onComplete = result::success
+                    onComplete = envelope::success
                 )
             }
             PowerMethods.SYNC_PLAYBACK_TIMER_ALARMS -> {
@@ -104,12 +112,12 @@ internal class PowerMethodHandler(
                     pausedSessionIds = arguments.pausedSessionIds,
                     generation = arguments.generation
                 )
-                result.success(null)
+                envelope.success(null)
             }
             else -> result.notImplemented()
             }
         } catch (error: IllegalArgumentException) {
-            result.error(
+            envelope.error(
                 ChannelErrorCodes.INVALID_ARGUMENT,
                 error.message ?: "Invalid arguments.",
                 mapOf("method" to call.method)

@@ -312,6 +312,7 @@ class LibrarySnapshotCacheService {
     _categoryFuture = future;
     _categoryFutureStructureRevision = structureRevision;
     _categoryFutureDetailRevision = detailRevision;
+    var commitDeferred = false;
     unawaited(
       future
           .then((snapshot) {
@@ -331,19 +332,24 @@ class LibrarySnapshotCacheService {
               onCommitted();
             }
 
-            if (_interactionCoordinator.isInteracting &&
-                _categorySnapshot != null) {
+            if (_interactionCoordinator.isInteracting) {
+              commitDeferred = true;
               _interactionCoordinator.scheduleCommit(
                 key: 'library_category_snapshot',
                 priority: 10,
-                commit: commit,
+                commit: () {
+                  commit();
+                  if (identical(_categoryFuture, future)) {
+                    _categoryFuture = null;
+                  }
+                },
               );
             } else {
               commit();
             }
           })
           .whenComplete(() {
-            if (identical(_categoryFuture, future)) {
+            if (!commitDeferred && identical(_categoryFuture, future)) {
               _categoryFuture = null;
             }
           }),

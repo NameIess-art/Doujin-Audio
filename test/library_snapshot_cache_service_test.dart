@@ -5,6 +5,7 @@ import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/player/application/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/features/library/application/library_snapshot_cache_service.dart';
 
 void main() {
@@ -165,6 +166,40 @@ void main() {
       snapshot.entries.map((entry) => entry.detail.workTitle),
       containsAll(<String>['First backup', 'Second backup']),
     );
+  });
+
+  test('first category snapshot waits until active scrolling ends', () async {
+    final interactionCoordinator = UiInteractionCoordinator(
+      idleDelay: const Duration(days: 1),
+    );
+    addTearDown(interactionCoordinator.dispose);
+    final interactionSource = Object();
+    interactionCoordinator.beginInteraction(interactionSource);
+    final library = LibraryService()
+      ..watchedFolders.add('/library')
+      ..library.add(
+        _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
+      )
+      ..markStructureChanged();
+    final service = LibrarySnapshotCacheService(
+      libraryService: library,
+      detailCacheService: AudioDetailCacheService(
+        repository: _FakeAudioDetailRepository(),
+      ),
+      interactionCoordinator: interactionCoordinator,
+    );
+    var committed = false;
+
+    final first = service.categorySnapshot(onCommitted: () => committed = true);
+    await first;
+    expect(committed, isFalse);
+    final repeated = service.categorySnapshot(
+      onCommitted: () => committed = true,
+    );
+    expect(identical(first, repeated), isTrue);
+
+    interactionCoordinator.finishInteractionsForTest();
+    expect(committed, isTrue);
   });
 
   test('tree cache updates only after async snapshot commits', () async {

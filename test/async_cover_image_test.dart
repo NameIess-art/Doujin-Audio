@@ -9,6 +9,7 @@ import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart' as ap;
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
+import 'package:nameless_audio/features/player/application/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -17,6 +18,28 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
+    UiInteractionCoordinator.instance.resetForTest();
+  });
+
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
+
+  test('logical thumbnail width respects DPR and resolution limit', () {
+    expect(
+      coverCacheWidthForLogicalSize(
+        logicalWidth: 112,
+        devicePixelRatio: 3,
+        resolution: CoverImageResolution.balanced,
+      ),
+      336,
+    );
+    expect(
+      coverCacheWidthForLogicalSize(
+        logicalWidth: 400,
+        devicePixelRatio: 3,
+        resolution: CoverImageResolution.memorySaver,
+      ),
+      300,
+    );
   });
 
   test('standalone audio without stored cover hides playlist artwork', () {
@@ -296,6 +319,39 @@ void main() {
     refreshed.complete('cover.image');
     await tester.pump();
     expect(find.text('loaded:cover.image'), findsOneWidget);
+  });
+
+  testWidgets('AsyncCoverImage defers completed cover during interaction', (
+    tester,
+  ) async {
+    final completer = Completer<String?>();
+    final interactionSource = Object();
+    UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: AsyncCoverImage(
+            future: completer.future,
+            deferCommitDuringInteraction: true,
+            duration: Duration.zero,
+            imageBuilder: (_, path) => Text('loaded:$path'),
+            fallbackBuilder: (_) => const Text('fallback'),
+            loadingBuilder: (_) => const Text('loading'),
+          ),
+        ),
+      ),
+    );
+
+    completer.complete('cover.png');
+    await tester.pump();
+    expect(find.text('loading'), findsOneWidget);
+
+    UiInteractionCoordinator.instance.finishInteractionsForTest();
+    await tester.pump();
+    expect(find.text('loaded:cover.png'), findsOneWidget);
   });
 
   testWidgets('AsyncCoverImage clears image when request key changes', (

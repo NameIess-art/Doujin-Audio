@@ -46,6 +46,7 @@ void main() {
       }),
     );
     expect(closedSurface, isNotEmpty);
+    expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
   });
 
   testWidgets('Windows context menu prefers nested card under the pointer', (

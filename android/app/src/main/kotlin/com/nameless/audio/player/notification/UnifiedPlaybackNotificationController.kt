@@ -16,6 +16,11 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.media3.session.MediaStyleNotificationHelper
 
+internal fun notificationSessionIdFromIntent(action: String?, sessionId: String?): String? {
+    if (action != MainActivity.openSessionFromNotificationAction) return null
+    return sessionId?.takeIf { it.isNotBlank() }
+}
+
 internal enum class NotificationCommand(
     val actionName: String,
     val requestCodeOffset: Int
@@ -680,8 +685,7 @@ internal object UnifiedPlaybackNotificationController {
         sessionId: String,
         command: NotificationCommand
     ): PendingIntent {
-        val intent = Intent().apply {
-            setClassName(context, "${context.packageName}.UnifiedPlaybackActionReceiver")
+        val intent = Intent(context, UnifiedPlaybackActionReceiver::class.java).apply {
             action = command.actionName
             putExtra("sessionId", sessionId)
         }
@@ -697,8 +701,7 @@ internal object UnifiedPlaybackNotificationController {
     }
 
     private fun buildDismissIntent(context: Context, notificationId: Int): PendingIntent {
-        val intent = Intent().apply {
-            setClassName(context, "${context.packageName}.UnifiedPlaybackActionReceiver")
+        val intent = Intent(context, UnifiedPlaybackActionReceiver::class.java).apply {
             action = NotificationCommand.dismissAll.actionName
             putExtra(dismissNotificationIdExtra, notificationId)
         }

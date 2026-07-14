@@ -76,17 +76,31 @@ void main() {
 
     update(() => showPlaceholder = false);
     await tester.pump();
-    expect(
-      find.descendant(
-        of: find.byType(PlaceholderContentTransition),
-        matching: find.byType(FadeTransition),
-      ),
-      findsOneWidget,
+    final fadeFinder = find.descendant(
+      of: find.byType(PlaceholderContentTransition),
+      matching: find.byType(FadeTransition),
     );
+    expect(fadeFinder, findsNWidgets(2));
     expect(find.byKey(const ValueKey('placeholder')), findsOneWidget);
     expect(find.byKey(contentKey), findsOneWidget);
+    expect(
+      tester
+          .widgetList<FadeTransition>(fadeFinder)
+          .map((fade) => fade.opacity.value),
+      unorderedEquals(<double>[0, 1]),
+    );
 
-    await tester.pump(const Duration(milliseconds: 749));
+    await tester.pump(const Duration(milliseconds: 350));
+    final midpointOpacities = tester
+        .widgetList<FadeTransition>(fadeFinder)
+        .map((fade) => fade.opacity.value)
+        .toList(growable: false);
+    expect(midpointOpacities, hasLength(2));
+    expect(midpointOpacities[0], inInclusiveRange(0.3, 0.7));
+    expect(midpointOpacities[1], inInclusiveRange(0.3, 0.7));
+    expect(midpointOpacities[0] + midpointOpacities[1], closeTo(1, 0.001));
+
+    await tester.pump(const Duration(milliseconds: 350));
     expect(find.byKey(const ValueKey('placeholder')), findsOneWidget);
 
     await tester.pumpAndSettle();

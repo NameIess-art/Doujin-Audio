@@ -16,6 +16,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -31,6 +32,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.UUID
 
 internal fun shouldPublishProgressHeartbeat(
     isScreenOn: Boolean,
@@ -69,11 +71,14 @@ internal fun idlePlaybackSessionIdsToRelease(
         .toSet()
 }
 
+@Suppress("DEPRECATION")
+private fun Bundle.rawExtra(key: String): Any? = get(key)
+
 class NativePlaybackService : MediaSessionService() {
     companion object {
-        const val ACTION_START = "com.nameless.audio.native.START"
         private const val EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP =
             "require_foreground_bootstrap"
+        private const val EXTRA_INTERNAL_START_TOKEN = "internal_start_token"
         private const val PLAYBACK_CHANNEL_ID = "com.nameless.audio.channel.playback"
         private const val PLAYBACK_CHANNEL_NAME = "Playback"
         private const val PLAYBACK_CHANNEL_DESCRIPTION = "Playback notification controls"
@@ -92,6 +97,7 @@ class NativePlaybackService : MediaSessionService() {
         private const val PROGRESS_HEARTBEAT_INTERVAL_MS = 500L
         private const val SCREEN_OFF_PROGRESS_HEARTBEAT_INTERVAL_MS = 5000L
         private const val LOG_TAG = "NativePlaybackService"
+        private val internalStartToken = UUID.randomUUID().toString()
 
         @Volatile
         private var instance: NativePlaybackService? = null
@@ -110,7 +116,8 @@ class NativePlaybackService : MediaSessionService() {
         ): NativePlaybackService? {
             controller()?.let { return it }
             val intent = Intent(context.applicationContext, NativePlaybackService::class.java).apply {
-                action = ACTION_START
+                action = nativePlaybackStartAction
+                putExtra(EXTRA_INTERNAL_START_TOKEN, internalStartToken)
                 putExtra(EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP, requireForegroundBootstrap)
             }
             return try {
@@ -231,6 +238,13 @@ class NativePlaybackService : MediaSessionService() {
     }
     private var mediaSession: MediaSession? = null
     private var dummyPlayer: ExoPlayer? = null
+    private val mediaSessionCallback by lazy {
+        NativeMediaSessionCallback(
+            appPackageName = packageName,
+            appUid = applicationInfo.uid,
+            logSecurityEvent = ::logSecurityEvent
+        )
+    }
 
     fun currentMediaSession(): MediaSession? {
         return mediaSession
@@ -243,6 +257,7 @@ class NativePlaybackService : MediaSessionService() {
             dummyPlayer = player
             mediaSession = MediaSession.Builder(this, player)
                 .setId("Nameless Audio Bootstrap")
+                .setCallback(mediaSessionCallback)
                 .build()
         } catch (e: Exception) {
             logWarn("ensure_media_session_for_bootstrap_failed", error = e)
@@ -490,19 +505,66 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val startDecision = playbackStartDecision(intent)
+        if (!startDecision.accepted) {
+            logSecurityEvent(
+                "playback_service_start_rejected reason=${startDecision.rejectionReason}",
+                null
+            )
+            return rejectedStartResult(startId)
+        }
         super.onStartCommand(intent, flags, startId)
-        if (shouldAttemptStickyPlaybackRestore(sessions.isNotEmpty(), attemptedStickyPlaybackRestore)) {
+        if (startDecision.shouldAttemptRestore &&
+            shouldAttemptStickyPlaybackRestore(sessions.isNotEmpty(), attemptedStickyPlaybackRestore)
+        ) {
             attemptedStickyPlaybackRestore = true
             restorePersistedPlaybackAfterServiceRestart()
         }
-        if (intent?.action == ACTION_START &&
-            intent.getBooleanExtra(EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP, false) &&
+        if (startDecision.requireForegroundBootstrap &&
             !hasPlaybackToKeepAlive()
         ) {
             logInfo("on_start_command foreground_bootstrap_requested")
             foregroundCoordinator.startBootstrap()
         }
         return START_STICKY
+    }
+
+    private fun playbackStartDecision(intent: Intent?): NativePlaybackStartDecision {
+        if (intent == null) {
+            return evaluateNativePlaybackStart(
+                intentPresent = false,
+                action = null,
+                presentedToken = null,
+                expectedToken = internalStartToken,
+                bootstrapExtraPresent = false,
+                bootstrapExtra = null
+            )
+        }
+        return try {
+            val extras = intent.extras
+            evaluateNativePlaybackStart(
+                intentPresent = true,
+                action = intent.action,
+                presentedToken = extras?.rawExtra(EXTRA_INTERNAL_START_TOKEN) as? String,
+                expectedToken = internalStartToken,
+                bootstrapExtraPresent = extras?.containsKey(EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP) == true,
+                bootstrapExtra = extras?.rawExtra(EXTRA_REQUIRE_FOREGROUND_BOOTSTRAP)
+            )
+        } catch (_: RuntimeException) {
+            logSecurityEvent("playback_service_start_extras_unreadable", null)
+            NativePlaybackStartDecision(
+                source = NativePlaybackStartSource.REJECTED,
+                rejectionReason = "unreadable_extras"
+            )
+        }
+    }
+
+    private fun rejectedStartResult(startId: Int): Int {
+        if (sessions.isNotEmpty() || hasPlaybackToKeepAlive() || foregroundCoordinator.isStarted) {
+            return START_STICKY
+        }
+        stopSelfResult(startId)
+        return START_NOT_STICKY
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
@@ -1177,6 +1239,7 @@ class NativePlaybackService : MediaSessionService() {
         }
         val builder = MediaSession.Builder(this, player)
             .setId("Nameless Audio")
+            .setCallback(mediaSessionCallback)
         if (pendingIntent != null) {
             builder.setSessionActivity(pendingIntent)
         }
@@ -1453,6 +1516,14 @@ class NativePlaybackService : MediaSessionService() {
             "foregroundStarted=${foregroundCoordinator.isStarted} " +
             "activePlayback=${hasActivePlayback()} " +
             "keepAlivePlayback=${hasPlaybackToKeepAlive()}"
+    }
+
+    private fun logSecurityEvent(message: String, error: Throwable?) {
+        if (error == null) {
+            AppFileLogger.warn(applicationContext, LOG_TAG, message)
+        } else {
+            AppFileLogger.warn(applicationContext, LOG_TAG, message, error)
+        }
     }
 
     private fun ensurePlaybackChannel() {

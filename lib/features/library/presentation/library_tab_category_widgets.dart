@@ -154,9 +154,13 @@ extension _LibraryTabCategoryView on _LibraryTabState {
       builder: (context, snapshotState) {
         final snapshot = snapshotState.data;
         if (snapshot == null) {
-          return _LibraryLoadingSkeleton(
-            bottomInset: bottomPadding,
-            topInset: topPadding,
+          return PlaceholderContentTransition(
+            showPlaceholder: true,
+            placeholder: _LibraryLoadingSkeleton(
+              bottomInset: bottomPadding,
+              topInset: topPadding,
+            ),
+            content: const SizedBox.shrink(),
           );
         }
 
@@ -258,7 +262,14 @@ extension _LibraryTabCategoryView on _LibraryTabState {
             child: list,
           );
         }
-        return list;
+        return PlaceholderContentTransition(
+          showPlaceholder: false,
+          placeholder: _LibraryLoadingSkeleton(
+            bottomInset: bottomPadding,
+            topInset: topPadding,
+          ),
+          content: list,
+        );
       },
     );
   }

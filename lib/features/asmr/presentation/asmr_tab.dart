@@ -19,7 +19,6 @@ import '../../../core/media/search_query_utils.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
-import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -30,7 +29,6 @@ import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
-import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
@@ -611,7 +609,7 @@ class _AsmrTabState extends State<AsmrTab>
               for (int i = 0; i < 5; i++)
                 const Padding(
                   padding: EdgeInsets.only(bottom: 6),
-                  child: _AsmrWorkSkeletonCard(),
+                  child: LibraryLikeSkeletonCard(),
                 ),
             ],
           ),
@@ -638,59 +636,60 @@ class _AsmrTabState extends State<AsmrTab>
         Positioned.fill(
           child: ColoredBox(color: Theme.of(context).colorScheme.surface),
         ),
-        globalState.initialized
-            ? Stack(
-                fit: StackFit.expand,
-                clipBehavior: Clip.none,
-                children: [
-                  for (int i = 0; i < _categories.length; i++)
-                    (() {
-                      final category = _categories[i];
-                      final isActive = category == currentCategory;
-                      return IgnorePointer(
-                        ignoring: !isActive,
-                        child: AnimatedOpacity(
-                          key: ValueKey<String>('asmr_category_fade_$i'),
-                          opacity: isActive ? 1.0 : 0.0,
-                          duration: const Duration(milliseconds: 120),
-                          curve: Curves.easeOutCubic,
-                          child: TickerMode(
-                            enabled: isActive,
-                            child: ExcludeFocus(
-                              excluding: !isActive,
-                              child: ExcludeSemantics(
-                                excluding: !isActive,
-                                child: _AsmrCategoryList(
-                                  key: ValueKey(category),
-                                  category: category,
-                                  scrollController:
-                                      _scrollControllers[category]!,
-                                  searchQuery: _searchQuery,
-                                  topInset: headerContentHeight,
-                                  bottomInset: bottomInset,
-                                  onRefresh: () =>
-                                      _refreshCategoryWithFeedback(category),
-                                ),
-                              ),
+        PlaceholderContentTransition(
+          showPlaceholder: !globalState.initialized,
+          placeholder: ListView(
+            key: const ValueKey('asmr_initial_placeholder'),
+            physics: const NeverScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(16, headerContentHeight, 16, 0),
+            children: [
+              for (int i = 0; i < 5; i++)
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 6),
+                  child: LibraryLikeSkeletonCard(),
+                ),
+            ],
+          ),
+          content: Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
+            children: [
+              for (int i = 0; i < _categories.length; i++)
+                (() {
+                  final category = _categories[i];
+                  final isActive = category == currentCategory;
+                  return IgnorePointer(
+                    ignoring: !isActive,
+                    child: AnimatedOpacity(
+                      key: ValueKey<String>('asmr_category_fade_$i'),
+                      opacity: isActive ? 1.0 : 0.0,
+                      duration: const Duration(milliseconds: 120),
+                      curve: Curves.easeOutCubic,
+                      child: TickerMode(
+                        enabled: isActive,
+                        child: ExcludeFocus(
+                          excluding: !isActive,
+                          child: ExcludeSemantics(
+                            excluding: !isActive,
+                            child: _AsmrCategoryList(
+                              key: ValueKey(category),
+                              category: category,
+                              scrollController: _scrollControllers[category]!,
+                              searchQuery: _searchQuery,
+                              topInset: headerContentHeight,
+                              bottomInset: bottomInset,
+                              onRefresh: () =>
+                                  _refreshCategoryWithFeedback(category),
                             ),
                           ),
                         ),
-                      );
-                    })(),
-                ],
-              )
-            : ListView(
-                key: const ValueKey('asmr_initial_placeholder'),
-                physics: const NeverScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(16, headerContentHeight, 16, 0),
-                children: [
-                  for (int i = 0; i < 5; i++)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 6),
-                      child: _AsmrWorkSkeletonCard(),
+                      ),
                     ),
-                ],
-              ),
+                  );
+                })(),
+            ],
+          ),
+        ),
         Positioned(
           top: 0,
           left: 0,

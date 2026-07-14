@@ -6,8 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/features/library/presentation/library_tab.dart';
 import 'package:nameless_audio/features/library/application/library_scan_models.dart';
+import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/content_bound_reorder_area.dart';
+import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -157,6 +159,24 @@ void main() {
       expect(beforeThresholdHeight, collapsedHeight);
       expect(revealedHeight, greaterThan(collapsedHeight));
     }
+  });
+
+  testWidgets('unloaded library reuses ASMR-style skeleton cards', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AudioProviderWidgetTestFixture();
+    addTearDown(fixture.dispose);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+
+    final skeletonCards = find.byType(LibraryLikeSkeletonCard);
+    expect(skeletonCards, findsNWidgets(5));
+    expect(tester.getSize(skeletonCards.first).height, 158);
+    expect(find.byType(PlaceholderContentTransition), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 100));
   });
 
   testWidgets('library tab search submits asynchronously and removes misses', (

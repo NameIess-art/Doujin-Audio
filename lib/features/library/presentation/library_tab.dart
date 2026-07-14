@@ -40,7 +40,6 @@ import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
-import '../../../core/widgets/shimmer_loading.dart';
 import 'audio_detail_sheet.dart';
 import 'dlsite_metadata_batch_page.dart';
 import 'library_scan_feedback.dart';
@@ -862,126 +861,67 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 scrollController: _scrollController,
                 showScrollbar: isWindows,
                 scrollbarMainAxisMargin: isWindows ? 8 : 0,
-                child: !listStateIsInitialized
-                    ? ShimmerLoader(
-                        child: ListView.builder(
-                          physics: const NeverScrollableScrollPhysics(),
+                child: PlaceholderContentTransition(
+                  showPlaceholder:
+                      !listStateIsInitialized ||
+                      showSearchSkeleton ||
+                      showLibrarySkeleton,
+                  placeholder: _LibraryLoadingSkeleton(
+                    bottomInset: listBottomPadding,
+                    topInset: listTopPadding,
+                  ),
+                  content:
+                      _categoryType == AudioLibraryCategoryType.all &&
+                          tree.isEmpty
+                      ? refreshableEmptyBody()
+                      : _categoryType != AudioLibraryCategoryType.all
+                      ? _buildCategoryBody(
+                          provider: provider,
+                          i18n: i18n,
+                          topPadding: listTopPadding,
+                          bottomPadding: listBottomPadding,
+                          cacheExtent: listCacheExtent,
+                          canPullRefresh: canPullRefresh,
+                          structureRevision: listStateStructureRevision,
+                          detailRevision: detailRevision,
+                          coverGeneration: coverGeneration,
+                        )
+                      : _effectiveSearchQuery.isNotEmpty
+                      ? ListView.builder(
+                          key: const ValueKey('search_results_list'),
+                          controller: _scrollController,
                           padding: EdgeInsets.fromLTRB(
                             16.0,
                             listTopPadding,
                             16.0,
                             listBottomPadding,
                           ),
-                          itemCount: 15,
-                          itemBuilder: (context, index) {
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Row(
-                                children: [
-                                  const ShimmerContainer(width: 48, height: 48),
-                                  const SizedBox(width: AppSpacing.lg),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        const ShimmerContainer(
-                                          width: double.infinity,
-                                          height: 16,
-                                        ),
-                                        const SizedBox(height: 8),
-                                        ShimmerContainer(
-                                          width:
-                                              MediaQuery.sizeOf(context).width *
-                                              0.4,
-                                          height: 12,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      )
-                    : _categoryType == AudioLibraryCategoryType.all &&
-                          tree.isEmpty
-                    ? refreshableEmptyBody()
-                    : _categoryType != AudioLibraryCategoryType.all
-                    ? _buildCategoryBody(
-                        provider: provider,
-                        i18n: i18n,
-                        topPadding: listTopPadding,
-                        bottomPadding: listBottomPadding,
-                        cacheExtent: listCacheExtent,
-                        canPullRefresh: canPullRefresh,
-                        structureRevision: listStateStructureRevision,
-                        detailRevision: detailRevision,
-                        coverGeneration: coverGeneration,
-                      )
-                    : _effectiveSearchQuery.isNotEmpty
-                    ? ListView.builder(
-                        key: const ValueKey('search_results_list'),
-                        controller: _scrollController,
-                        padding: EdgeInsets.fromLTRB(
-                          16.0,
-                          listTopPadding,
-                          16.0,
-                          listBottomPadding,
-                        ),
-                        cacheExtent: listCacheExtent,
-                        clipBehavior: Clip.none,
-                        physics: const AlwaysScrollableScrollPhysics(
-                          parent: BouncingScrollPhysics(),
-                        ),
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
-                        itemCount: tree.length + 1,
-                        itemBuilder: buildLibraryItem,
-                      )
-                    : GlassRefreshIndicator(
-                        key: _refreshIndicatorKey,
-                        color: Theme.of(context).colorScheme.primary,
-                        backgroundColor: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest
-                            .withValues(alpha: 0.6),
-                        onRefresh: _runLibraryPullRefresh,
-                        edgeOffset: listTopPadding,
-                        displacement: 32,
-                        triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-                        child: cardPositionsLocked
-                            ? ListView.builder(
-                                key: const ValueKey('locked_library_list'),
-                                controller: _scrollController,
-                                clipBehavior: Clip.none,
-                                padding: EdgeInsets.fromLTRB(
-                                  16.0,
-                                  listTopPadding,
-                                  16.0,
-                                  listBottomPadding,
-                                ),
-                                cacheExtent: listCacheExtent,
-                                physics: canPullRefresh
-                                    ? const AlwaysScrollableScrollPhysics(
-                                        parent: BouncingScrollPhysics(),
-                                      )
-                                    : null,
-                                keyboardDismissBehavior:
-                                    ScrollViewKeyboardDismissBehavior.onDrag,
-                                itemCount: tree.length + 1,
-                                itemBuilder: buildTopLevelLibraryItem,
-                              )
-                            : ReorderAutoScroller(
-                                scrollController: _scrollController,
-                                isDragging: _isReordering,
-                                contentMarginTop: listTopPadding,
-                                contentMarginBottom: listBottomPadding,
-                                child: ReorderableListView.builder(
-                                  scrollController: _scrollController,
-                                  // Clip.none allows items to be visible when scrolled into the
-                                  // "empty" space above/below the restricted Positioned area.
+                          cacheExtent: listCacheExtent,
+                          clipBehavior: Clip.none,
+                          physics: const AlwaysScrollableScrollPhysics(
+                            parent: BouncingScrollPhysics(),
+                          ),
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          itemCount: tree.length + 1,
+                          itemBuilder: buildLibraryItem,
+                        )
+                      : GlassRefreshIndicator(
+                          key: _refreshIndicatorKey,
+                          color: Theme.of(context).colorScheme.primary,
+                          backgroundColor: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest
+                              .withValues(alpha: 0.6),
+                          onRefresh: _runLibraryPullRefresh,
+                          edgeOffset: listTopPadding,
+                          displacement: 32,
+                          triggerMode:
+                              GlassRefreshIndicatorTriggerMode.anywhere,
+                          child: cardPositionsLocked
+                              ? ListView.builder(
+                                  key: const ValueKey('locked_library_list'),
+                                  controller: _scrollController,
                                   clipBehavior: Clip.none,
                                   padding: EdgeInsets.fromLTRB(
                                     16.0,
@@ -995,41 +935,71 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                           parent: BouncingScrollPhysics(),
                                         )
                                       : null,
-                                  autoScrollerVelocityScalar: 0,
-                                  buildDefaultDragHandles: false,
                                   keyboardDismissBehavior:
                                       ScrollViewKeyboardDismissBehavior.onDrag,
-                                  onReorder: (oldIndex, newIndex) {
-                                    provider.reorderLibraryNodes(
-                                      oldIndex,
-                                      newIndex,
-                                    );
-                                    setState(() => _isReordering = false);
-                                  },
-                                  onReorderStart: (index) {
-                                    setState(() => _isReordering = true);
-                                    unawaited(
-                                      AppInteractionFeedback.trigger(
-                                        AppInteractionFeedbackType.destructive,
-                                      ),
-                                    );
-                                  },
-                                  onReorderEnd: (_) {
-                                    if (_isReordering) {
-                                      setState(() => _isReordering = false);
-                                    }
-                                  },
-                                  proxyDecorator: (child, index, animation) =>
-                                      _buildReorderProxy(
-                                        context,
-                                        child,
-                                        animation,
-                                      ),
                                   itemCount: tree.length + 1,
                                   itemBuilder: buildTopLevelLibraryItem,
+                                )
+                              : ReorderAutoScroller(
+                                  scrollController: _scrollController,
+                                  isDragging: _isReordering,
+                                  contentMarginTop: listTopPadding,
+                                  contentMarginBottom: listBottomPadding,
+                                  child: ReorderableListView.builder(
+                                    scrollController: _scrollController,
+                                    // Clip.none allows items to be visible when scrolled into the
+                                    // "empty" space above/below the restricted Positioned area.
+                                    clipBehavior: Clip.none,
+                                    padding: EdgeInsets.fromLTRB(
+                                      16.0,
+                                      listTopPadding,
+                                      16.0,
+                                      listBottomPadding,
+                                    ),
+                                    cacheExtent: listCacheExtent,
+                                    physics: canPullRefresh
+                                        ? const AlwaysScrollableScrollPhysics(
+                                            parent: BouncingScrollPhysics(),
+                                          )
+                                        : null,
+                                    autoScrollerVelocityScalar: 0,
+                                    buildDefaultDragHandles: false,
+                                    keyboardDismissBehavior:
+                                        ScrollViewKeyboardDismissBehavior
+                                            .onDrag,
+                                    onReorder: (oldIndex, newIndex) {
+                                      provider.reorderLibraryNodes(
+                                        oldIndex,
+                                        newIndex,
+                                      );
+                                      setState(() => _isReordering = false);
+                                    },
+                                    onReorderStart: (index) {
+                                      setState(() => _isReordering = true);
+                                      unawaited(
+                                        AppInteractionFeedback.trigger(
+                                          AppInteractionFeedbackType
+                                              .destructive,
+                                        ),
+                                      );
+                                    },
+                                    onReorderEnd: (_) {
+                                      if (_isReordering) {
+                                        setState(() => _isReordering = false);
+                                      }
+                                    },
+                                    proxyDecorator: (child, index, animation) =>
+                                        _buildReorderProxy(
+                                          context,
+                                          child,
+                                          animation,
+                                        ),
+                                    itemCount: tree.length + 1,
+                                    itemBuilder: buildTopLevelLibraryItem,
+                                  ),
                                 ),
-                              ),
-                      ),
+                        ),
+                ),
               ),
             ),
 
@@ -1234,37 +1204,15 @@ class _LibraryLoadingSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    Widget block({
-      required double height,
-      double radius = 14,
-      EdgeInsets margin = EdgeInsets.zero,
-    }) {
-      return Padding(
-        padding: margin,
-        child: PulsingPlaceholder(
-          borderRadius: BorderRadius.circular(radius),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(radius),
-            ),
-            child: SizedBox(height: height),
-          ),
-        ),
-      );
-    }
-
     return ListView(
       physics: const NeverScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(16.0, topInset, 16.0, bottomInset),
       children: [
-        block(height: 82, margin: const EdgeInsets.only(bottom: 6)),
-        block(height: 70, margin: const EdgeInsets.only(bottom: 6)),
-        block(height: 54, margin: const EdgeInsets.only(bottom: 6)),
-        block(height: 54, margin: const EdgeInsets.only(bottom: 6)),
-        block(height: 62, margin: const EdgeInsets.only(bottom: 6)),
+        for (int i = 0; i < 5; i++)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 6),
+            child: LibraryLikeSkeletonCard(),
+          ),
       ],
     );
   }

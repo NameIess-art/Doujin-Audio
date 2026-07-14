@@ -1,5 +1,90 @@
 import 'package:flutter/material.dart';
 
+const kPlaceholderContentTransitionDuration = Duration(milliseconds: 750);
+
+class PlaceholderContentTransition extends StatefulWidget {
+  const PlaceholderContentTransition({
+    super.key,
+    required this.showPlaceholder,
+    required this.placeholder,
+    required this.content,
+  });
+
+  final bool showPlaceholder;
+  final Widget placeholder;
+  final Widget content;
+
+  @override
+  State<PlaceholderContentTransition> createState() =>
+      _PlaceholderContentTransitionState();
+}
+
+class _PlaceholderContentTransitionState
+    extends State<PlaceholderContentTransition>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _placeholderOpacity;
+  bool _fadingPlaceholder = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: kPlaceholderContentTransitionDuration,
+    )..addStatusListener(_handleAnimationStatus);
+    _placeholderOpacity = Tween<double>(
+      begin: 1,
+      end: 0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInCubic));
+  }
+
+  void _handleAnimationStatus(AnimationStatus status) {
+    if (status != AnimationStatus.completed ||
+        !_fadingPlaceholder ||
+        !mounted) {
+      return;
+    }
+    setState(() => _fadingPlaceholder = false);
+  }
+
+  @override
+  void didUpdateWidget(covariant PlaceholderContentTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.showPlaceholder && !widget.showPlaceholder) {
+      _fadingPlaceholder = true;
+      _controller.forward(from: 0);
+    } else if (!oldWidget.showPlaceholder && widget.showPlaceholder) {
+      _fadingPlaceholder = false;
+      _controller.reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.showPlaceholder) return widget.placeholder;
+    if (!_fadingPlaceholder) return widget.content;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.content,
+        IgnorePointer(
+          child: FadeTransition(
+            opacity: _placeholderOpacity,
+            child: widget.placeholder,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class SecondaryOverlayConfig {
   const SecondaryOverlayConfig({
     this.backgroundOpacity = 0.80,

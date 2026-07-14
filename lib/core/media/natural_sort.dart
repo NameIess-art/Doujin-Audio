@@ -45,11 +45,15 @@ int _consumeDigits(String value, int start) {
   return index;
 }
 
-bool _isDigit(int codeUnit) => codeUnit >= 48 && codeUnit <= 57;
+bool _isDigit(int codeUnit) =>
+    (codeUnit >= 48 && codeUnit <= 57) ||
+    (codeUnit >= 0xff10 && codeUnit <= 0xff19);
 
 int _compareNumberRuns(String leftRun, String rightRun) {
-  final trimmedLeft = leftRun.replaceFirst(RegExp(r'^0+'), '');
-  final trimmedRight = rightRun.replaceFirst(RegExp(r'^0+'), '');
+  final normalizedLeftRun = _normalizeDigitRun(leftRun);
+  final normalizedRightRun = _normalizeDigitRun(rightRun);
+  final trimmedLeft = normalizedLeftRun.replaceFirst(RegExp(r'^0+'), '');
+  final trimmedRight = normalizedRightRun.replaceFirst(RegExp(r'^0+'), '');
   final normalizedLeft = trimmedLeft.isEmpty ? '0' : trimmedLeft;
   final normalizedRight = trimmedRight.isEmpty ? '0' : trimmedRight;
 
@@ -63,3 +67,9 @@ int _compareNumberRuns(String leftRun, String rightRun) {
 
   return leftRun.length.compareTo(rightRun.length);
 }
+
+String _normalizeDigitRun(String value) => String.fromCharCodes(
+  value.codeUnits.map(
+    (codeUnit) => codeUnit >= 0xff10 ? codeUnit - 0xfee0 : codeUnit,
+  ),
+);

@@ -1235,9 +1235,9 @@ class AsmrLibraryController extends ChangeNotifier
       token: _authSession?.token,
     );
     if (_isWorkRequestCurrent(key)) {
-      _storeTrackTree(work.id, tree);
+      final sortedTree = _storeTrackTree(work.id, tree);
       _bumpTrackRevision(work.id);
-      return tree;
+      return sortedTree;
     }
     return ensureTrackTree(work);
   }
@@ -1365,11 +1365,13 @@ class AsmrLibraryController extends ChangeNotifier
     return cached;
   }
 
-  void _storeTrackTree(int workId, List<AsmrTrackFile> tree) {
+  List<AsmrTrackFile> _storeTrackTree(int workId, List<AsmrTrackFile> tree) {
+    final sortedTree = sortAsmrTrackTreeNaturally(tree);
     _trackCache.remove(workId);
-    _trackCache[workId] = tree;
+    _trackCache[workId] = sortedTree;
     _visibleTrackCache.remove(workId);
     _trimTrackCache();
+    return sortedTree;
   }
 
   void _trimTrackCache() {

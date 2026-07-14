@@ -59,7 +59,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         autoPlay: autoPlay ?? _autoPlayAddedSessions,
       ),
     );
-    requestCarouselSnapTo(session.id);
+    _playbackFacade.publishSessionActivated(session.id);
   }
 
   Future<void> spawnSessionWithQueue(
@@ -85,7 +85,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         autoPlay: autoPlay ?? _autoPlayAddedSessions,
       ),
     );
-    requestCarouselSnapTo(session.id);
+    _playbackFacade.publishSessionActivated(session.id);
   }
 
   PlaybackSession _createSessionForTrack(

@@ -429,13 +429,15 @@ void main() {
             }
           });
 
-      final restoredProvider = AudioProvider(
+      final restoredProvider = AudioProvider.test(
         notificationService: notificationService,
         audioDatabaseRepository: restoredRepository,
         coverArtworkCacheService: _RecordingCoverArtworkCacheService(
           expectedRemoteCoverUrl: coverUrl,
           coverPath: coverFile.path,
         ),
+        skipPersistence: false,
+        startRuntime: true,
       );
 
       for (var i = 0; i < 100; i++) {

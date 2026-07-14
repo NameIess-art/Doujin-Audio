@@ -112,14 +112,6 @@ Widget buildAudioProviderTestApp({
   return ProviderScope(
     overrides: createAudioProviderOverrides(
       audioProvider: audioProvider,
-      audioDatabaseRepository: audioDatabaseRepository,
-      nativePlaybackRepository: nativePlaybackRepository,
-      playbackCommandRunner: playbackCommandRunner,
-      libraryService: libraryService,
-      playbackService: playbackService,
-      timerService: timerService,
-      notificationCoordinatorService: notificationCoordinatorService,
-      settingsRepository: settingsRepository,
       uiOperationService: uiOperationService,
     ),
     child: legacy_provider.MultiProvider(

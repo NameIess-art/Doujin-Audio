@@ -13,7 +13,6 @@ import 'app/localization/app_language_provider.dart';
 import 'core/platform/app_platform.dart';
 import 'core/platform/app_window_bootstrap.dart';
 import 'app/state/audio_provider.dart';
-import 'app/state/audio_provider_playback_launcher.dart';
 import 'app/state/audio_provider_riverpod.dart';
 import 'app/presentation/main_screen.dart';
 import 'app/presentation/onboarding_page.dart';
@@ -23,10 +22,14 @@ import 'features/asmr/application/asmr_playback_coordinator.dart';
 import 'features/asmr/application/asmr_preferences.dart';
 import 'core/persistence/audio_database_repository.dart';
 import 'features/player/application/audio_state_services.dart';
+import 'features/library/application/library_facade.dart';
 import 'features/library/application/cover_image_cache_policy.dart';
 import 'features/player/application/native_playback_repository.dart';
-import 'features/player/application/playback_command_runner.dart';
+import 'features/player/application/notification_facade.dart';
+import 'features/player/application/playback_facade.dart';
 import 'features/player/application/playback_notification_service.dart';
+import 'features/player/application/playback_session_launcher.dart';
+import 'features/player/application/timer_facade.dart';
 import 'core/logging/app_log_service.dart';
 import 'core/ui/ui_interaction_coordinator.dart';
 import 'app/theme/theme_provider.dart';
@@ -91,22 +94,32 @@ Future<void> _runAudioPlayerApp() async {
   final notificationService = PlaybackNotificationService();
   final audioDatabaseRepository = AudioDatabaseRepository();
   final nativePlaybackRepository = NativePlaybackRepository();
-  const playbackCommandRunner = PlaybackCommandRunner();
   final libraryService = LibraryService();
   final playbackService = PlaybackSessionService();
   final timerService = TimerService();
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
   final asmrDownloadManager = AsmrDownloadManager();
+  final libraryFacade = LibraryFacade.create(
+    databaseRepository: audioDatabaseRepository,
+    service: libraryService,
+  );
+  final playbackFacade = PlaybackFacade.create(
+    databaseRepository: audioDatabaseRepository,
+    nativeRepository: nativePlaybackRepository,
+    service: playbackService,
+  );
+  final timerFacade = TimerFacade.create(service: timerService);
+  final notificationFacade = NotificationFacade.create(
+    service: notificationService,
+    stateService: notificationCoordinatorService,
+  );
   final audioProvider = AudioProvider(
-    notificationService: notificationService,
-    audioDatabaseRepository: audioDatabaseRepository,
-    nativePlaybackRepository: nativePlaybackRepository,
-    libraryService: libraryService,
-    playbackService: playbackService,
-    timerService: timerService,
-    notificationStateService: notificationCoordinatorService,
-    settingsRepository: settingsRepository,
+    library: libraryFacade,
+    playback: playbackFacade,
+    timer: timerFacade,
+    notification: notificationFacade,
+    settings: settingsRepository,
     deferRuntimeStart: true,
   );
   final asmrLibraryController = AsmrLibraryController(
@@ -115,22 +128,12 @@ Future<void> _runAudioPlayerApp() async {
   );
   final asmrPlaybackCoordinator = AsmrPlaybackCoordinator(
     source: asmrLibraryController,
-    launcher: AudioProviderPlaybackLauncher(audioProvider),
+    launcher: PlaybackFacadeSessionLauncher(playbackFacade),
   );
 
   runApp(
     ProviderScope(
-      overrides: createAudioProviderOverrides(
-        audioProvider: audioProvider,
-        audioDatabaseRepository: audioDatabaseRepository,
-        nativePlaybackRepository: nativePlaybackRepository,
-        playbackCommandRunner: playbackCommandRunner,
-        libraryService: libraryService,
-        playbackService: playbackService,
-        timerService: timerService,
-        notificationCoordinatorService: notificationCoordinatorService,
-        settingsRepository: settingsRepository,
-      ),
+      overrides: createAudioProviderOverrides(audioProvider: audioProvider),
       child: MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (_) => ThemeProvider()),

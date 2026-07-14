@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
@@ -515,10 +517,38 @@ void main() {
         provider.addWatchedFolder(source.path, notify: false);
         provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
 
+        final prepareStarted = Completer<void>();
+        final releasePrepare = Completer<void>();
+
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
               switch (call.method) {
                 case NativePlaybackMethod.prepareSession:
+                  if (!prepareStarted.isCompleted) {
+                    prepareStarted.complete();
+                  }
+                  await releasePrepare.future;
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{
+                      'sessionId':
+                          (call.arguments as Map<Object?, Object?>)['sessionId']
+                              as String,
+                      'uri': Uri.file(trackFile.path).toString(),
+                      'path': trackFile.path,
+                      'title': '01',
+                      'subtitle': 'Old Folder',
+                      'playing': false,
+                      'playWhenReady': false,
+                      'processingState': 'ready',
+                      'positionMs': 0,
+                      'bufferedPositionMs': 0,
+                      'durationMs': 1000,
+                      'volume': 1.0,
+                      'boostGain': 1.0,
+                      'channelSwap': false,
+                    },
+                  };
                 case NativePlaybackMethod.setAudioEffects:
                   return <String, Object?>{
                     'ok': true,
@@ -548,7 +578,7 @@ void main() {
             });
 
         await provider.spawnSession(track, autoPlay: false);
-        await Future<void>.delayed(Duration.zero);
+        await prepareStarted.future;
         final session = provider.activeSessions.single;
 
         final result = await provider.renameAudioDetailTargetToName(
@@ -560,6 +590,12 @@ void main() {
         final newCoverPath = '$newFolderPath${Platform.pathSeparator}cover.jpg';
 
         expect(session.currentTrackPath, newTrackPath);
+
+        final preparationApplied = session.stateStream.firstWhere(
+          (state) => state.processingState == ProcessingState.ready,
+        );
+        releasePrepare.complete();
+        await preparationApplied;
 
         await provider.setSessionChannelSwap(session.id, true);
 
@@ -674,9 +710,11 @@ void main() {
               }
             });
 
-        final restoredProvider = AudioProvider(
+        final restoredProvider = AudioProvider.test(
           notificationService: notificationService,
           audioDatabaseRepository: restoredRepository,
+          skipPersistence: false,
+          startRuntime: true,
         );
         addTearDown(restoredProvider.dispose);
 

@@ -121,7 +121,7 @@ class CoverArtworkCacheService {
     if (cachedCoverPath != null) {
       return cachedCoverPath;
     }
-    final pathValue = track?.path ?? trackPath;
+    final pathValue = trackPath ?? track?.path;
     if (pathValue != null &&
         pathValue.isNotEmpty &&
         !PathMatcher.isRemoteUri(pathValue)) {
@@ -239,12 +239,17 @@ class CoverArtworkCacheService {
   }
 
   String? coverScopeFolderForTrack(MusicTrack? track, {String? trackPath}) {
-    final pathValue = track?.path ?? trackPath;
+    final pathValue = trackPath ?? track?.path;
     if (pathValue == null || pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) return null;
     if (_isStandaloneAudioTrack(track)) return null;
 
-    final groupKey = track?.groupKey.trim() ?? '';
+    final trackOwnPath = track?.path;
+    final pathOverridesTrack =
+        trackPath != null &&
+        trackOwnPath != null &&
+        !PathMatcher.equalsNormalized(trackPath, trackOwnPath);
+    final groupKey = pathOverridesTrack ? '' : track?.groupKey.trim() ?? '';
     final watchedFolder =
         _mostSpecificContainingRoot(
           _libraryService.watchedFolders,
@@ -291,7 +296,7 @@ class CoverArtworkCacheService {
     String? trackPath,
   }) {
     if (track == null) return null;
-    final pathValue = track.path;
+    final pathValue = trackPath ?? track.path;
     if (pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) return null;
     if (track.isVideo || _isStandaloneAudioTrack(track)) return null;
@@ -299,7 +304,7 @@ class CoverArtworkCacheService {
   }
 
   String? coverSearchKeyForTrack(MusicTrack? track, {String? trackPath}) {
-    final pathValue = track?.path ?? trackPath;
+    final pathValue = trackPath ?? track?.path;
     if (pathValue == null || pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) {
       final remoteCoverUrl = track?.remoteCoverUrl?.trim();

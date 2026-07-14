@@ -119,26 +119,28 @@ List<Widget> _buildSettingsAppearanceSection({
               color: cs.onSecondaryContainer,
             ),
           ),
-          trailing: UnifiedDropdownButton<CoverImageResolution>(
-            value: context.select<AudioProvider, CoverImageResolution>(
-              (provider) => provider.coverImageResolution,
-            ),
-            onChanged: (value) {
-              if (value != null) {
-                audioProvider.setCoverImageResolution(value);
-              }
+          trailing: Consumer(
+            builder: (context, ref, _) {
+              return UnifiedDropdownButton<CoverImageResolution>(
+                value: ref.watch(coverImageResolutionProvider),
+                onChanged: (value) {
+                  if (value != null) {
+                    audioProvider.setCoverImageResolution(value);
+                  }
+                },
+                items: CoverImageResolution.values
+                    .map(
+                      (value) => DropdownMenuItem<CoverImageResolution>(
+                        value: value,
+                        child: Text(
+                          coverResolutionLabels[value]!,
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              );
             },
-            items: CoverImageResolution.values
-                .map(
-                  (value) => DropdownMenuItem<CoverImageResolution>(
-                    value: value,
-                    child: Text(
-                      coverResolutionLabels[value]!,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                )
-                .toList(),
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           shape: const RoundedRectangleBorder(

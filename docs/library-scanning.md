@@ -6,8 +6,8 @@ LibraryTab
   -> LibraryScannerService
   -> LibraryScanDataSource
   -> FileCachePlatformGateway / file-system isolate
-  -> AudioProviderLibraryCatalog
-  -> AudioProvider facade
+  -> LibraryFacade.catalog
+  -> temporary compatibility command bridge
   -> LibraryService + database repository
 ```
 
@@ -33,8 +33,10 @@ temporary imports, native local/SAF calls, and the isolate-backed local scan.
 `LibraryScannerService` does not depend on the concrete `AudioProvider` type.
 It uses `LibraryCatalogReader` for immutable snapshots and
 `LibraryCatalogWriter` for scan generations, staged batches, and persistence
-commands. `AudioProviderLibraryCatalog` is only an adapter; it does not store a
-second writable library.
+commands. Presentation obtains that port from `LibraryFacade`; it never watches
+the complete `AudioProvider`. The temporary compatibility command bridge does
+not store a second writable library, and `LibraryService` remains the only
+mutable catalog owner.
 
 Every scan receives a generation. Chunk results are applied only while that
 generation remains active. Cancellation invalidates the generation, native

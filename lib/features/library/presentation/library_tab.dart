@@ -12,11 +12,11 @@ import 'package:lottie/lottie.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
-import '../../../app/state/audio_provider_library_catalog.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../player/application/audio_state_services.dart';
 import '../../settings/application/app_preferences.dart';
 import '../application/library_entry_editor_service.dart';
+import '../application/library_facade.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
@@ -227,8 +227,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     bool forceShowResult = false,
   }) async {
     final i18n = context.read<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
-    final catalog = AudioProviderLibraryCatalog(provider);
+    final catalog = ref.read(libraryFacadeProvider).catalog;
     final operations = ref.read(uiOperationServiceProvider);
     final importBusy = <UiOperationScope>[
       UiOperationScope.libraryRefresh,
@@ -236,7 +235,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       UiOperationScope.libraryImportLibrary,
       UiOperationScope.libraryImportFiles,
     ].any(operations.isBusy);
-    if (provider.isScanning || importBusy) {
+    if (catalog.isScanning || importBusy) {
       if (!silent) showAppSnackBar(context, i18n.tr('scanning_title'));
       return;
     }
@@ -288,8 +287,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     required Future<void> Function() retry,
   }) async {
     final i18n = context.read<AppLanguageProvider>();
-    final provider = context.read<AudioProvider>();
-    final catalog = AudioProviderLibraryCatalog(provider);
+    final catalog = ref.read(libraryFacadeProvider).catalog;
     final outcome = await ref
         .read(uiOperationServiceProvider)
         .runWithFeedback<LibraryScanOutcome?>(
@@ -366,14 +364,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         unawaited(_refreshAfterStartupIdle());
       }
     });
-    initTabState(
-      ref.read(audioProviderFacadeProvider).scrollToTopTabListenable,
-    );
+    initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
   }
 
   Future<void> _refreshAfterStartupIdle() async {
-    while (mounted &&
-        !ref.read(libraryServiceProvider).slice.state.isInitialized) {
+    while (mounted && !ref.read(libraryFacadeProvider).state.isInitialized) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
     if (!mounted) return;

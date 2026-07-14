@@ -9,6 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
+import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
@@ -150,10 +152,13 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
+    final playbackFacade = PlaybackFacade.create(
+      databaseRepository: AudioDatabaseRepository(),
+      service: playbackService,
+    );
+    addTearDown(playbackFacade.dispose);
     final container = ProviderContainer(
-      overrides: [
-        playbackSessionServiceProvider.overrideWithValue(playbackService),
-      ],
+      overrides: [playbackFacadeProvider.overrideWithValue(playbackFacade)],
     );
     addTearDown(container.dispose);
 

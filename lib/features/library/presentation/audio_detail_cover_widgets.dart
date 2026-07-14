@@ -1,16 +1,17 @@
 part of 'audio_detail_sheet.dart';
 
-class _SingleFileCoverPreview extends StatefulWidget {
+class _SingleFileCoverPreview extends ConsumerStatefulWidget {
   const _SingleFileCoverPreview({required this.filePath});
 
   final String filePath;
 
   @override
-  State<_SingleFileCoverPreview> createState() =>
+  ConsumerState<_SingleFileCoverPreview> createState() =>
       _SingleFileCoverPreviewState();
 }
 
-class _SingleFileCoverPreviewState extends State<_SingleFileCoverPreview> {
+class _SingleFileCoverPreviewState
+    extends ConsumerState<_SingleFileCoverPreview> {
   Future<String?>? _coverFuture;
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
@@ -32,20 +33,14 @@ class _SingleFileCoverPreviewState extends State<_SingleFileCoverPreview> {
   @override
   Widget build(BuildContext context) {
     final provider = context.read<AudioProvider>();
-    final track = context.select<AudioProvider, MusicTrack?>(
-      (provider) => provider.trackByPath(widget.filePath),
-    );
+    final track = ref.watch(libraryTrackProvider(widget.filePath));
     if (track == null) return const SizedBox.shrink();
 
-    final coverGeneration = context.select<AudioProvider, int>(
-      (provider) => provider.coverGeneration,
-    );
+    final coverGeneration = ref.watch(coverGenerationProvider);
     final initialPath = provider.resolvedCoverPathForTrack(track);
     final coverFuture = _futureFor(provider, track, coverGeneration);
     final coverCacheWidth = coverCacheWidthForResolution(
-      context.select<AudioProvider, CoverImageResolution>(
-        (provider) => provider.coverImageResolution,
-      ),
+      ref.watch(coverImageResolutionProvider),
     );
     final i18n = context.watch<AppLanguageProvider>();
     final labelStyle = Theme.of(
@@ -86,7 +81,7 @@ class _SingleFileCoverPreviewState extends State<_SingleFileCoverPreview> {
   }
 }
 
-class _FolderCoverSelector extends StatefulWidget {
+class _FolderCoverSelector extends ConsumerStatefulWidget {
   const _FolderCoverSelector({
     super.key,
     required this.folderPath,
@@ -99,10 +94,11 @@ class _FolderCoverSelector extends StatefulWidget {
   final ValueChanged<String>? onCoverSelected;
 
   @override
-  State<_FolderCoverSelector> createState() => _FolderCoverSelectorState();
+  ConsumerState<_FolderCoverSelector> createState() =>
+      _FolderCoverSelectorState();
 }
 
-class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
+class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
   PageController? _pageController;
   List<String> _images = const <String>[];
   String? _currentCoverPath;
@@ -267,9 +263,7 @@ class _FolderCoverSelectorState extends State<_FolderCoverSelector> {
       return const SizedBox.shrink();
     }
     final coverCacheWidth = coverCacheWidthForResolution(
-      context.select<AudioProvider, CoverImageResolution>(
-        (provider) => provider.coverImageResolution,
-      ),
+      ref.watch(coverImageResolutionProvider),
     );
 
     final content = Column(

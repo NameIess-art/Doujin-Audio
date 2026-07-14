@@ -1,10 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../core/persistence/audio_database_repository.dart';
+import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/audio_state_services.dart';
-import '../../features/player/application/native_playback_repository.dart';
-import '../../features/player/application/playback_command_runner.dart';
+import '../../features/player/application/notification_facade.dart';
+import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/timer_facade.dart';
 import '../../core/ui/ui_operation_service.dart';
+import '../presentation/audio_ui_controllers.dart';
 import '../presentation/screen_view_models.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
@@ -18,52 +20,43 @@ final audioProviderFacadeProvider = Provider<AudioProvider>((ref) {
   );
 });
 
-final audioDatabaseRepositoryProvider = Provider<AudioDatabaseRepository>((
-  ref,
-) {
+final libraryFacadeProvider = Provider<LibraryFacade>((ref) {
   throw UnimplementedError(
-    'audioDatabaseRepositoryProvider must be overridden in ProviderScope.',
+    'libraryFacadeProvider must be overridden in ProviderScope.',
   );
 });
 
-final nativePlaybackRepositoryProvider = Provider<NativePlaybackRepository>((
-  ref,
-) {
+final playbackFacadeProvider = Provider<PlaybackFacade>((ref) {
   throw UnimplementedError(
-    'nativePlaybackRepositoryProvider must be overridden in ProviderScope.',
+    'playbackFacadeProvider must be overridden in ProviderScope.',
   );
 });
 
-final playbackCommandRunnerProvider = Provider<PlaybackCommandRunner>((ref) {
+final timerFacadeProvider = Provider<TimerFacade>((ref) {
   throw UnimplementedError(
-    'playbackCommandRunnerProvider must be overridden in ProviderScope.',
+    'timerFacadeProvider must be overridden in ProviderScope.',
   );
 });
 
-final libraryServiceProvider = Provider<LibraryService>((ref) {
+final notificationFacadeProvider = Provider<NotificationFacade>((ref) {
   throw UnimplementedError(
-    'libraryServiceProvider must be overridden in ProviderScope.',
+    'notificationFacadeProvider must be overridden in ProviderScope.',
   );
 });
 
-final playbackSessionServiceProvider = Provider<PlaybackSessionService>((ref) {
-  throw UnimplementedError(
-    'playbackSessionServiceProvider must be overridden in ProviderScope.',
-  );
+final mainScreenControllerProvider = Provider<MainScreenController>((ref) {
+  final controller = MainScreenController();
+  ref.onDispose(controller.dispose);
+  return controller;
 });
 
-final timerServiceProvider = Provider<TimerService>((ref) {
-  throw UnimplementedError(
-    'timerServiceProvider must be overridden in ProviderScope.',
+final playlistUiControllerProvider = Provider<PlaylistUiController>((ref) {
+  final controller = PlaylistUiController(
+    ref.watch(playbackFacadeProvider).sessionActivations,
   );
+  ref.onDispose(controller.dispose);
+  return controller;
 });
-
-final notificationCoordinatorServiceProvider =
-    Provider<NotificationCoordinatorService>((ref) {
-      throw UnimplementedError(
-        'notificationCoordinatorServiceProvider must be overridden in ProviderScope.',
-      );
-    });
 
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
   throw UnimplementedError(
@@ -90,15 +83,15 @@ final uiOperationForScopeProvider =
     });
 
 final libraryStateProvider = StreamProvider<LibraryState>((ref) {
-  return ref.watch(libraryServiceProvider).slice.stream;
+  return ref.watch(libraryFacadeProvider).states;
 });
 
 final playbackStateProvider = StreamProvider<PlaybackStateSliceData>((ref) {
-  return ref.watch(playbackSessionServiceProvider).slice.stream;
+  return ref.watch(playbackFacadeProvider).states;
 });
 
 final timerStateProvider = StreamProvider<TimerStateSliceData>((ref) {
-  return ref.watch(timerServiceProvider).slice.stream;
+  return ref.watch(timerFacadeProvider).states;
 });
 
 final settingsStateProvider = StreamProvider<SettingsState>((ref) {
@@ -106,11 +99,11 @@ final settingsStateProvider = StreamProvider<SettingsState>((ref) {
 });
 
 final notificationStateProvider = StreamProvider<NotificationState>((ref) {
-  return ref.watch(notificationCoordinatorServiceProvider).slice.stream;
+  return ref.watch(notificationFacadeProvider).states;
 });
 
 final libraryHeaderUiProvider = Provider<LibraryHeaderState>((ref) {
-  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  final serviceState = ref.watch(libraryFacadeProvider).state;
   final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
   final refreshOperation = ref.watch(
     uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
@@ -130,7 +123,8 @@ final libraryHeaderUiProvider = Provider<LibraryHeaderState>((ref) {
 });
 
 final libraryListUiProvider = Provider<LibraryListState>((ref) {
-  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  final facade = ref.watch(libraryFacadeProvider);
+  final serviceState = facade.state;
   final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
   final refreshOperation = ref.watch(
     uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
@@ -149,11 +143,10 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
     contentRevision: state.contentRevision,
     isInitialized: state.isInitialized,
   );
-  final provider = ref.watch(audioProviderFacadeProvider);
   return LibraryListState(
-    rawTree: provider.libraryCards,
-    watchedFolders: provider.watchedFolders,
-    watchedLibraries: provider.watchedLibraries,
+    rawTree: facade.libraryCards,
+    watchedFolders: facade.watchedFolders,
+    watchedLibraries: facade.watchedLibraries,
     watchedFolderCount: libraryState.watchedFolderCount,
     watchedLibraryCount: libraryState.watchedLibraryCount,
     isScanning: libraryState.isScanning,
@@ -167,7 +160,7 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
 });
 
 final libraryScanUiProvider = Provider<LibraryScanUiState>((ref) {
-  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  final serviceState = ref.watch(libraryFacadeProvider).state;
   final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
   return LibraryScanUiState(
     isScanning: state.isScanning,
@@ -183,13 +176,13 @@ final libraryScanUiProvider = Provider<LibraryScanUiState>((ref) {
 });
 
 final libraryDetailRevisionProvider = Provider<int>((ref) {
-  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  final serviceState = ref.watch(libraryFacadeProvider).state;
   return ref.watch(libraryStateProvider).valueOrNull?.detailRevision ??
       serviceState.detailRevision;
 });
 
 final libraryCategoryRevisionProvider = Provider<int>((ref) {
-  final serviceState = ref.watch(libraryServiceProvider).slice.state;
+  final serviceState = ref.watch(libraryFacadeProvider).state;
   return ref
           .watch(libraryStateProvider)
           .valueOrNull
@@ -203,27 +196,27 @@ final libraryDetailForTargetProvider =
     Provider.family<LibraryDetailUiState, AudioDetailTarget>((ref, target) {
       ref.watch(libraryCategoryRevisionProvider);
       ref.watch(libraryDetailRevisionProvider);
-      final provider = ref.read(audioProviderFacadeProvider);
-      final snapshot = provider.audioLibraryCategorySnapshotSync;
+      final facade = ref.read(libraryFacadeProvider);
+      final snapshot = facade.categorySnapshot;
       final detail =
-          provider.resolvedAudioDetail(target) ?? snapshot?.detailFor(target);
+          facade.resolvedAudioDetail(target) ?? snapshot?.detailFor(target);
       return (detail: detail, isLoading: detail == null);
     });
 
 final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
-      ref.watch(playbackSessionServiceProvider).slice.state;
+      ref.watch(playbackFacadeProvider).state;
   final timerState =
       ref.watch(timerStateProvider).valueOrNull ??
-      ref.watch(timerServiceProvider).slice.state;
+      ref.watch(timerFacadeProvider).state;
   return playlistHeaderStateFromSlices(playbackState, timerState);
 });
 
 final playlistListUiProvider = Provider<PlaylistListState>((ref) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
-      ref.watch(playbackSessionServiceProvider).slice.state;
+      ref.watch(playbackFacadeProvider).state;
   return PlaylistListState(
     sessions: playbackState.activeSessions,
     cardStates: playlistSessionCardStatesFromPlaybackState(playbackState),
@@ -234,13 +227,30 @@ final playlistListUiProvider = Provider<PlaylistListState>((ref) {
 
 final coverGenerationProvider = Provider<int>((ref) {
   return ref.watch(playbackStateProvider).valueOrNull?.coverGeneration ??
-      ref.watch(playbackSessionServiceProvider).slice.state.coverGeneration;
+      ref.watch(playbackFacadeProvider).state.coverGeneration;
+});
+
+final coverImageResolutionProvider = Provider<CoverImageResolution>((ref) {
+  return ref.watch(settingsStateProvider).valueOrNull?.coverImageResolution ??
+      ref.watch(settingsRepositoryProvider).slice.state.coverImageResolution;
+});
+
+final libraryTrackProvider = Provider.family<MusicTrack?, String>((
+  ref,
+  trackPath,
+) {
+  ref.watch(
+    libraryStateProvider.select(
+      (state) => state.valueOrNull?.contentRevision ?? 0,
+    ),
+  );
+  return ref.read(libraryFacadeProvider).trackByPath(trackPath);
 });
 
 final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
-      ref.watch(playbackSessionServiceProvider).slice.state;
+      ref.watch(playbackFacadeProvider).state;
   return ActiveTrackPaths(
     playbackState.activeSessions
         .map((session) => session.currentTrackPath)
@@ -252,7 +262,7 @@ final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
 final isTrackActiveProvider = Provider.family<bool, String>((ref, trackPath) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
-      ref.watch(playbackSessionServiceProvider).slice.state;
+      ref.watch(playbackFacadeProvider).state;
   return playbackState.activeSessions.any(
     (session) => session.currentTrackPath == trackPath,
   );
@@ -261,7 +271,7 @@ final isTrackActiveProvider = Provider.family<bool, String>((ref, trackPath) {
 final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
-      ref.watch(playbackSessionServiceProvider).slice.state;
+      ref.watch(playbackFacadeProvider).state;
   final settingsState =
       ref.watch(settingsStateProvider).valueOrNull ??
       ref.watch(settingsRepositoryProvider).slice.state;
@@ -288,7 +298,7 @@ final sessionDetailUiProvider = Provider.family<SessionDetailUiState, String>((
 ) {
   final playbackState =
       ref.watch(playbackStateProvider).valueOrNull ??
-      ref.watch(playbackSessionServiceProvider).slice.state;
+      ref.watch(playbackFacadeProvider).state;
   return SessionDetailUiState(
     sessionOrder: sessionOrderStateFromPlaybackState(playbackState),
     detail: sessionDetailViewStateFromPlaybackState(playbackState, sessionId),
@@ -305,30 +315,19 @@ final sessionDetailTransportProvider =
 
 List<Override> createAudioProviderOverrides({
   required AudioProvider audioProvider,
-  required AudioDatabaseRepository audioDatabaseRepository,
-  required NativePlaybackRepository nativePlaybackRepository,
-  required PlaybackCommandRunner playbackCommandRunner,
-  required LibraryService libraryService,
-  required PlaybackSessionService playbackService,
-  required TimerService timerService,
-  required NotificationCoordinatorService notificationCoordinatorService,
-  required SettingsRepository settingsRepository,
   UiOperationService? uiOperationService,
 }) {
   return <Override>[
     audioProviderFacadeProvider.overrideWithValue(audioProvider),
-    audioDatabaseRepositoryProvider.overrideWithValue(audioDatabaseRepository),
-    nativePlaybackRepositoryProvider.overrideWithValue(
-      nativePlaybackRepository,
+    libraryFacadeProvider.overrideWithValue(audioProvider.libraryFacade),
+    playbackFacadeProvider.overrideWithValue(audioProvider.playbackFacade),
+    timerFacadeProvider.overrideWithValue(audioProvider.timerFacade),
+    notificationFacadeProvider.overrideWithValue(
+      audioProvider.notificationFacade,
     ),
-    playbackCommandRunnerProvider.overrideWithValue(playbackCommandRunner),
-    libraryServiceProvider.overrideWithValue(libraryService),
-    playbackSessionServiceProvider.overrideWithValue(playbackService),
-    timerServiceProvider.overrideWithValue(timerService),
-    notificationCoordinatorServiceProvider.overrideWithValue(
-      notificationCoordinatorService,
+    settingsRepositoryProvider.overrideWithValue(
+      audioProvider.settingsRepository,
     ),
-    settingsRepositoryProvider.overrideWithValue(settingsRepository),
     uiOperationServiceProvider.overrideWithValue(
       uiOperationService ?? UiOperationService.instance,
     ),

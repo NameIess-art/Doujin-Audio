@@ -125,7 +125,7 @@ extension AudioProviderQueues on AudioProvider {
       selectFirst: wasEmpty,
       persistSession: false,
     );
-    requestCarouselSnapTo(session.id);
+    _playbackFacade.publishSessionActivated(session.id);
   }
 
   Future<void> removePlaybackQueueEntry(

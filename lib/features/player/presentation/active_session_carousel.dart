@@ -72,9 +72,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       viewportFraction: initialStyle == BottomNavigationStyle.bar ? 1.0 : 0.90,
     );
     _pageController.addListener(_handlePageTick);
-    final AudioProvider provider =
-        widget.provider ?? ref.read(audioProviderFacadeProvider);
-    _carouselSnapListenable = provider.carouselSnapListenable;
+    _carouselSnapListenable = ref
+        .read(playlistUiControllerProvider)
+        .carouselSnap;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _carouselSnapListenable.addListener(_handleCarouselSnap);

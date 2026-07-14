@@ -80,14 +80,6 @@ Widget _buildTestApp({
   return ProviderScope(
     overrides: createAudioProviderOverrides(
       audioProvider: services.audioProvider,
-      audioDatabaseRepository: services.audioDatabaseRepository,
-      nativePlaybackRepository: services.nativePlaybackRepository,
-      playbackCommandRunner: services.playbackCommandRunner,
-      libraryService: services.libraryService,
-      playbackService: services.playbackService,
-      timerService: services.timerService,
-      notificationCoordinatorService: services.notificationCoordinatorService,
-      settingsRepository: services.settingsRepository,
     ),
     child: legacy_provider.MultiProvider(
       providers: [

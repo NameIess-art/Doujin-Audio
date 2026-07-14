@@ -92,9 +92,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _appVersionFuture = AppUpdateService.currentAppVersion();
-    initTabState(
-      ref.read(audioProviderFacadeProvider).scrollToTopTabListenable,
-    );
+    initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
   }
 
   @override

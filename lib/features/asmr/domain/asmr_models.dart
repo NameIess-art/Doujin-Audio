@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../core/media/music_track.dart';
+import '../../../core/media/natural_sort.dart';
 
 enum AsmrCategoryType {
   collected,
@@ -575,6 +576,33 @@ class AsmrTrackFile {
       relativePath: nextPath,
     );
   }
+}
+
+List<AsmrTrackFile> sortAsmrTrackTreeNaturally(Iterable<AsmrTrackFile> nodes) {
+  final sorted = nodes.map((node) {
+    if (node.children.isEmpty) return node;
+    return AsmrTrackFile(
+      hash: node.hash,
+      title: node.title,
+      type: node.type,
+      streamUrl: node.streamUrl,
+      downloadUrl: node.downloadUrl,
+      lowQualityUrl: node.lowQualityUrl,
+      duration: node.duration,
+      size: node.size,
+      children: sortAsmrTrackTreeNaturally(node.children),
+      workId: node.workId,
+      workTitle: node.workTitle,
+      sourceId: node.sourceId,
+      relativePath: node.relativePath,
+    );
+  }).toList();
+  sorted.sort((left, right) {
+    final titleResult = compareNatural(left.title, right.title);
+    if (titleResult != 0) return titleResult;
+    return compareNatural(left.relativePath, right.relativePath);
+  });
+  return List<AsmrTrackFile>.unmodifiable(sorted);
 }
 
 const Set<String> _asmrAudioExtensions = <String>{

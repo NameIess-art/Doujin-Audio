@@ -156,6 +156,76 @@ void registerAsmrControllerStateTests({
   });
 
   test(
+    'ASMR track tree and playable tracks use recursive natural order',
+    () async {
+      await resetPrefs();
+      const sortedTrackTitles = <String>[
+        'トラック１',
+        'トラック２',
+        'トラック３',
+        'トラック４',
+        'トラック５',
+        'トラック６',
+        'トラック７',
+        'トラック８',
+        'トラック９',
+        'トラック１０',
+        'トラック１１',
+      ];
+      final sourceTrackTitles = <String>[
+        sortedTrackTitles[0],
+        sortedTrackTitles[9],
+        sortedTrackTitles[10],
+        ...sortedTrackTitles.skip(1).take(8),
+      ];
+      final api = _FakeAsmrApiService(
+        trackTree: <AsmrTrackFile>[
+          _trackFolder(
+            '04',
+            '04',
+            children: <AsmrTrackFile>[_trackFile('audio.mp3', '04/audio.mp3')],
+          ),
+          _trackFolder(
+            '01',
+            '01',
+            children: sourceTrackTitles
+                .map((title) => _trackFile('$title.mp3', '01/$title.mp3'))
+                .toList(growable: false),
+          ),
+          _trackFolder(
+            '03',
+            '03',
+            children: <AsmrTrackFile>[_trackFile('audio.mp3', '03/audio.mp3')],
+          ),
+          _trackFolder(
+            '02',
+            '02',
+            children: <AsmrTrackFile>[_trackFile('audio.mp3', '02/audio.mp3')],
+          ),
+        ],
+      );
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        apiService: api,
+      );
+      final work = _work(id: 1, title: 'Work');
+
+      final tree = await controller.ensureTrackTree(work);
+      final tracks = await controller.loadPlayableTracks(work);
+
+      expect(tree.map((node) => node.title), <String>['01', '02', '03', '04']);
+      expect(
+        tree.first.children.map((node) => node.displayTitle),
+        sortedTrackTitles,
+      );
+      expect(
+        tracks.take(11).map((track) => track.displayName),
+        sortedTrackTitles,
+      );
+    },
+  );
+
+  test(
     'ASMR playback prefers signed API media endpoints over raw URLs',
     () async {
       await resetPrefs();

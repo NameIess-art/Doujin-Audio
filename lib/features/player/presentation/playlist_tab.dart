@@ -18,6 +18,7 @@ import '../../../app/state/subtitle_settings_provider.dart';
 import '../application/audio_state_services.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/media/natural_sort.dart';
 import '../../../core/platform/permission_action_controller.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../application/subtitle_overlay_controller.dart';
@@ -64,6 +65,31 @@ part 'playlist_tab_queue.dart';
 const double _sessionDetailCapsuleWidth = 52;
 const double _sessionDetailCapsuleHeight = 212;
 const double _sessionDetailCapsuleAnchorOffsetY = 26;
+
+List<MusicTrack> orderTracksForSessionSwitcher(
+  List<MusicTrack> tracks, {
+  required bool preserveQueueOrder,
+}) {
+  if (preserveQueueOrder ||
+      tracks.length < 2 ||
+      !tracks.every((track) => track.remoteMetadataKind == 'asmr.one')) {
+    return tracks;
+  }
+  final sorted = List<MusicTrack>.of(tracks);
+  sorted.sort((left, right) {
+    final leftPath = left.remoteMetadata?['trackRelativePath']?.toString();
+    final rightPath = right.remoteMetadata?['trackRelativePath']?.toString();
+    final pathResult = compareNatural(
+      leftPath?.trim().isNotEmpty == true ? leftPath!.trim() : left.displayName,
+      rightPath?.trim().isNotEmpty == true
+          ? rightPath!.trim()
+          : right.displayName,
+    );
+    if (pathResult != 0) return pathResult;
+    return compareNatural(left.path, right.path, caseSensitive: true);
+  });
+  return List<MusicTrack>.unmodifiable(sorted);
+}
 
 List<IconData> sessionFeatureBadgeIcons({
   required bool showSubtitles,

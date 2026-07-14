@@ -640,9 +640,12 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
 
   void _showTrackSwitcher(BuildContext context) {
     final i18n = context.read<AppLanguageProvider>();
-    final tracks = widget.session.isPlaybackQueue
-        ? widget.session.playbackQueue!.expandedTracks
-        : widget.provider.tracksForSessionSwitcher(widget.session.id);
+    final tracks = orderTracksForSessionSwitcher(
+      widget.session.isPlaybackQueue
+          ? widget.session.playbackQueue!.expandedTracks
+          : widget.provider.tracksForSessionSwitcher(widget.session.id),
+      preserveQueueOrder: widget.session.isPlaybackQueue,
+    );
     if (tracks.isEmpty) return;
     final workRoot = widget.provider.workRootForTrack(
       widget.session.currentTrackPath,

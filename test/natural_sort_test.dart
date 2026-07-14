@@ -25,4 +25,11 @@ void main() {
       'Track 11',
     ]);
   });
+
+  test('compareNatural sorts Japanese titles with full-width digits', () {
+    final values = <String>['トラック１０', 'トラック１１', 'トラック２', 'トラック１']
+      ..sort(compareNatural);
+
+    expect(values, <String>['トラック１', 'トラック２', 'トラック１０', 'トラック１１']);
+  });
 }

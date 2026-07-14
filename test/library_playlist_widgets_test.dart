@@ -243,6 +243,53 @@ void main() {
     expect(enabledIcons, contains(Icons.tune_rounded));
   });
 
+  test('ASMR session switcher displays tracks in natural path order', () {
+    MusicTrack asmrTrack(String title) {
+      final relativePath = '01/$title.mp3';
+      return MusicTrack(
+        path: 'https://example.test/$relativePath',
+        displayName: title,
+        groupKey: 'asmr-work-1',
+        groupTitle: 'Work',
+        groupSubtitle: 'RJ000001',
+        isSingle: false,
+        remoteMetadataKind: 'asmr.one',
+        remoteMetadata: <String, Object?>{'trackRelativePath': relativePath},
+      );
+    }
+
+    const sortedTitles = <String>[
+      'トラック１',
+      'トラック２',
+      'トラック３',
+      'トラック４',
+      'トラック５',
+      'トラック６',
+      'トラック７',
+      'トラック８',
+      'トラック９',
+      'トラック１０',
+      'トラック１１',
+    ];
+    final rotated = <MusicTrack>[
+      asmrTrack(sortedTitles[9]),
+      asmrTrack(sortedTitles[10]),
+      ...sortedTitles.skip(1).take(8).map(asmrTrack),
+      asmrTrack(sortedTitles[0]),
+    ];
+
+    final ordered = orderTracksForSessionSwitcher(
+      rotated,
+      preserveQueueOrder: false,
+    );
+
+    expect(ordered.map((track) => track.displayName), sortedTitles);
+    expect(
+      orderTracksForSessionSwitcher(rotated, preserveQueueOrder: true),
+      same(rotated),
+    );
+  });
+
   test('active track path provider exposes current session paths', () {
     final playbackService = PlaybackSessionService();
     addTearDown(playbackService.dispose);

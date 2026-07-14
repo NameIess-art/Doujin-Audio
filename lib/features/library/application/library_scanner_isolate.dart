@@ -180,6 +180,9 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
   if (payload.allowRemoval && sourceFolderPath != null) {
     final normalizedSourceFolder = PathMatcher.normalize(sourceFolderPath);
     if (payload.retainedTrackPaths.isNotEmpty) {
+      final retainedTrackIndex = PathMembershipIndex(
+        payload.retainedTrackPaths,
+      );
       for (final track in payload.library) {
         if (!PathMatcher.isWithinOrEqualNormalized(
           track.path,
@@ -187,10 +190,7 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
         )) {
           continue;
         }
-        if (!PathMatcher.containsEquivalent(
-          payload.retainedTrackPaths,
-          track.path,
-        )) {
+        if (!retainedTrackIndex.containsEquivalent(track.path)) {
           removedTrackPaths.add(track.path);
         }
       }
@@ -198,6 +198,9 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
 
     final snapshot = payload.entrySnapshot;
     if (snapshot != null && payload.retainedEntryPaths.isNotEmpty) {
+      final retainedEntryIndex = PathMembershipIndex(
+        payload.retainedEntryPaths,
+      );
       for (final entry in snapshot.entriesByPath.values) {
         if (!PathMatcher.isWithinOrEqualNormalized(
           entry.path,
@@ -206,14 +209,8 @@ ScanMergeIsolateResult processScannedTracksInIsolate(
           continue;
         }
         final retained = entry.isFolder
-            ? payload.retainedEntryPaths.any(
-                (path) =>
-                    PathMatcher.isWithinOrEqualNormalized(path, entry.path),
-              )
-            : PathMatcher.containsEquivalent(
-                payload.retainedEntryPaths,
-                entry.path,
-              );
+            ? retainedEntryIndex.containsDescendantOrEqual(entry.path)
+            : retainedEntryIndex.containsEquivalent(entry.path);
         if (!retained) {
           removedEntryPaths.add(entry.path);
         }

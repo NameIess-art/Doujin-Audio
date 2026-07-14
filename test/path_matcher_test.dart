@@ -57,13 +57,12 @@ void main() {
     expect(PathMatcher.relativeWithin(childDocument, childDocument), '');
   });
 
-  test('containsEquivalent matches normalized file-system paths', () {
-    expect(
-      PathMatcher.containsEquivalent(const <String>{
-        '/library/root/album/../track.mp3',
-      }, '/library/root/track.mp3'),
-      isTrue,
-    );
+  test('path membership index matches normalized file-system paths', () {
+    final index = PathMembershipIndex(const <String>{
+      '/library/root/album/../track.mp3',
+    });
+
+    expect(index.containsEquivalent('/library/root/track.mp3'), isTrue);
   });
 
   test('Windows paths keep their semantics on every host platform', () {
@@ -75,5 +74,24 @@ void main() {
     expect(PathMatcher.isWithinOrEqual(track, root), isTrue);
     expect(PathMatcher.relativeWithin(track, work), 'Disc 1/01.mp3');
     expect(PathMatcher.join(root, 'Work A'), work);
+    expect(
+      PathMatcher.equivalenceKey(track),
+      PathMatcher.equivalenceKey(track.toUpperCase()),
+    );
+  });
+
+  test('path membership index preserves SAF equivalence and folder bounds', () {
+    const root =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+    const albumDocument = '$root/document/primary%3AMusic%2FAlbum';
+    const trackSynthetic = '$root::Album/Disc/01.mp3';
+    final index = PathMembershipIndex(const <String>{trackSynthetic});
+
+    expect(index.containsDescendantOrEqual(albumDocument), isTrue);
+    expect(index.containsDescendantOrEqual('$root::Alb'), isFalse);
+    expect(
+      PathMatcher.parentEquivalenceKey(trackSynthetic),
+      PathMatcher.equivalenceKey('$root::Album/Disc'),
+    );
   });
 }

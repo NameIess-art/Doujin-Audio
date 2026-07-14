@@ -84,13 +84,14 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
 
   @override
   Widget build(BuildContext context) {
-    final treeState = context
-        .select<AsmrLibraryController, AsmrTrackTreeViewState>(
-          (controller) => controller.trackTreeViewState(widget.work.id),
-        );
-    final tree = treeState.tree;
-    final visibleTree = treeState.visibleTree;
-    final isTreeLoading = treeState.isLoading;
+    final treeState = _expanded
+        ? context.select<AsmrLibraryController, AsmrTrackTreeViewState>(
+            (controller) => controller.trackTreeViewState(widget.work.id),
+          )
+        : null;
+    final tree = treeState?.tree;
+    final visibleTree = treeState?.visibleTree;
+    final isTreeLoading = treeState?.isLoading ?? false;
     final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
@@ -138,6 +139,9 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             controller: _expansionController,
+            expansionAnimationStyle: const AnimationStyle(
+              reverseDuration: Duration.zero,
+            ),
             minTileHeight: _rootTileHeight,
             onExpansionChanged: (expanded) {
               if (_expanded == expanded) {
@@ -219,39 +223,37 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
                 );
               },
             ),
-            children: [
-              if (isTreeLoading && visibleTree == null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8, bottom: 12),
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.2,
-                      color: asmrBlue,
-                    ),
-                  ),
-                )
-              else if (visibleTree == null || visibleTree.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4, bottom: 12),
-                  child: Text(
-                    i18n.tr('asmr_empty_track_tree'),
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                )
-              else
-                for (final node in visibleTree)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 6),
-                    child: _AsmrTrackTreeNode(
-                      work: widget.work,
-                      node: node,
-                      searchQuery: widget.searchQuery,
-                    ),
-                  ),
-            ],
+            children: _expanded
+                ? [
+                    if (isTreeLoading && visibleTree == null)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 12),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (visibleTree == null || visibleTree.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4, bottom: 12),
+                        child: Text(
+                          i18n.tr('asmr_empty_track_tree'),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: cs.onSurfaceVariant,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                      )
+                    else
+                      for (final node in visibleTree)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: _AsmrTrackTreeNode(
+                            work: widget.work,
+                            node: node,
+                            searchQuery: widget.searchQuery,
+                          ),
+                        ),
+                  ]
+                : const <Widget>[],
           ),
         ),
       ),

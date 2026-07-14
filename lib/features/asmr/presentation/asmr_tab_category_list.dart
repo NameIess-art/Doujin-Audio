@@ -135,7 +135,7 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                               for (int i = 0; i < 5; i++)
                                 const Padding(
                                   padding: EdgeInsets.only(bottom: 6),
-                                  child: _AsmrWorkSkeletonCard(),
+                                  child: LibraryLikeSkeletonCard(),
                                 ),
                             ],
                           );

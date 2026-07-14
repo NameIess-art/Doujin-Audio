@@ -5,6 +5,7 @@ import 'package:nameless_audio/app/localization/app_language_zh.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/core/media/card_info_field.dart';
+import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
 
@@ -42,6 +43,64 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
 }
 
 void main() {
+  testWidgets('placeholder content fades over the shared 750ms duration', (
+    tester,
+  ) async {
+    var showPlaceholder = true;
+    late StateSetter update;
+    final contentKey = GlobalKey();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return PlaceholderContentTransition(
+              showPlaceholder: showPlaceholder,
+              placeholder: const SizedBox(
+                key: ValueKey('placeholder'),
+                width: 80,
+                height: 80,
+              ),
+              content: SizedBox(key: contentKey, width: 80, height: 80),
+            );
+          },
+        ),
+      ),
+    );
+
+    expect(
+      kPlaceholderContentTransitionDuration,
+      const Duration(milliseconds: 750),
+    );
+
+    update(() => showPlaceholder = false);
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byType(PlaceholderContentTransition),
+        matching: find.byType(FadeTransition),
+      ),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('placeholder')), findsOneWidget);
+    expect(find.byKey(contentKey), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 749));
+    expect(find.byKey(const ValueKey('placeholder')), findsOneWidget);
+
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('placeholder')), findsNothing);
+    expect(find.byKey(contentKey), findsOneWidget);
+
+    update(() => showPlaceholder = true);
+    await tester.pump();
+    update(() => showPlaceholder = false);
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await tester.pumpAndSettle();
+  });
+
   test('library-like info lines map AudioDetail metadata consistently', () {
     final detail =
         AudioDetail.empty(

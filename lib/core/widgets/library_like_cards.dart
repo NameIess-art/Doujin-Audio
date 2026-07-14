@@ -1,9 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import '../../app/theme/app_styles.dart';
 import '../media/card_info_field.dart';
 import 'app_feedback.dart';
 import 'marquee_text.dart';
+import 'shimmer_loading.dart';
 
 const _libraryLikeInfoLineHeight = 16.0;
 
@@ -29,6 +32,88 @@ class LibraryLikeCardMetrics {
         color: colorScheme.outlineVariant.withValues(alpha: borderAlpha),
       ),
       borderRadius: BorderRadius.circular(cardRadius),
+    );
+  }
+}
+
+class LibraryLikeSkeletonCard extends StatelessWidget {
+  const LibraryLikeSkeletonCard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
+    const coverWidth =
+        infoBlockHeight * LibraryLikeCardMetrics.coverAspectRatio;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(
+          color: colorScheme.outlineVariant.withValues(
+            alpha: isDark ? 0.26 : 0.42,
+          ),
+        ),
+        borderRadius: AppRadius.borderCard,
+      ),
+      color: colorScheme.surfaceContainerLow,
+      elevation: 0,
+      child: const SizedBox(
+        height: 158,
+        width: double.infinity,
+        child: ShimmerLoader(
+          child: Padding(
+            padding: EdgeInsets.all(AppSpacing.sm),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ShimmerContainer(
+                      width: coverWidth,
+                      height: infoBlockHeight,
+                      borderRadius: LibraryLikeCardMetrics.coverRadius,
+                    ),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          SizedBox(height: 4),
+                          ShimmerContainer(height: 12, borderRadius: 6),
+                          SizedBox(height: 8),
+                          ShimmerContainer(
+                            width: 140,
+                            height: 12,
+                            borderRadius: 6,
+                          ),
+                          SizedBox(height: 8),
+                          ShimmerContainer(
+                            width: 100,
+                            height: 12,
+                            borderRadius: 6,
+                          ),
+                          SizedBox(height: 8),
+                          ShimmerContainer(
+                            width: 160,
+                            height: 12,
+                            borderRadius: 6,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                Spacer(),
+                ShimmerContainer(width: 220, height: 16),
+                SizedBox(height: 4),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

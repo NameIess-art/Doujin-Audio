@@ -256,6 +256,7 @@ const Map<String, String> appLanguageZh = {
   'audio_detail_edit_title': '编辑{name}',
   'audio_detail_multi_hint': '多个词条请使用中文逗号“，”分隔',
   'audio_detail_backup_failed': '已保存到数据库，但本地备份失败。',
+  'audio_detail_cover_portability_skipped': '封面超过 8 MiB，仅保留本机路径，未写入便携备份。',
   'audio_detail_restored_from_backup': '已从本地备份恢复。',
   'audio_detail_rj_format_hint': 'RJ号格式建议为 RJ + 数字。',
   'audio_detail_save_failed': '保存失败，请重试。',

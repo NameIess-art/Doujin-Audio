@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
-import 'package:mime/mime.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -13,6 +13,7 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
+import 'cover_image_cache_policy.dart';
 
 class AudioDetailLoadResult {
   const AudioDetailLoadResult({
@@ -29,12 +30,14 @@ class AudioDetailSaveResult {
     required this.detail,
     required this.backupAttempted,
     required this.backupSaved,
+    this.coverPortabilitySkipped = false,
     this.backupError,
   });
 
   final AudioDetail detail;
   final bool backupAttempted;
   final bool backupSaved;
+  final bool coverPortabilitySkipped;
   final Object? backupError;
 
   bool get backupFailed => backupAttempted && !backupSaved;
@@ -56,7 +59,6 @@ class AudioDetailRepository {
   static const backupFileName = 'nameless-audio.json';
   static const _cardCoverRelativePathKey = 'cardCoverRelativePath';
   static const _cardCoverEmbeddedKey = 'cardCoverEmbedded';
-  static const _maxEmbeddedCoverBytes = 64 * 1024 * 1024;
   final AudioDatabaseRepository _databaseRepository;
   final FileCachePlatformGateway _fileCacheGateway;
   final DateTime Function() _now;
@@ -164,7 +166,9 @@ class AudioDetailRepository {
     var normalized = detail
         .copyWith(target: _normalizeTarget(detail.target))
         .normalizedForSave(_now());
-    normalized = await _persistDerivedCover(normalized);
+    final persistedCover = await _persistDerivedCover(normalized);
+    normalized = persistedCover.detail;
+    final coverPortabilitySkipped = persistedCover.portabilitySkipped;
     await _databaseRepository.upsertAudioDetail(normalized);
 
     if (!normalized.target.isLibraryRootFolder) {
@@ -177,12 +181,14 @@ class AudioDetailRepository {
           detail: normalized,
           backupAttempted: true,
           backupSaved: true,
+          coverPortabilitySkipped: coverPortabilitySkipped,
         );
       } catch (error) {
         return AudioDetailSaveResult(
           detail: normalized,
           backupAttempted: true,
           backupSaved: false,
+          coverPortabilitySkipped: coverPortabilitySkipped,
           backupError: error,
         );
       }
@@ -208,12 +214,14 @@ class AudioDetailRepository {
         detail: normalized,
         backupAttempted: true,
         backupSaved: true,
+        coverPortabilitySkipped: coverPortabilitySkipped,
       );
     } catch (error) {
       return AudioDetailSaveResult(
         detail: normalized,
         backupAttempted: true,
         backupSaved: false,
+        coverPortabilitySkipped: coverPortabilitySkipped,
         backupError: error,
       );
     }
@@ -602,18 +610,9 @@ class AudioDetailRepository {
     final coverFile = File(coverPath);
     if (!await coverFile.exists()) return backup;
     final byteLength = await coverFile.length();
-    if (byteLength <= 0 || byteLength > _maxEmbeddedCoverBytes) return backup;
-    final bytes = await coverFile.readAsBytes();
-    final mimeType = _imageMimeType(coverPath, bytes);
-    if (mimeType == null) return backup;
-    final digest = sha256.convert(bytes).toString();
-    backup[_cardCoverEmbeddedKey] = <String, Object>{
-      'encoding': 'base64',
-      'mimeType': mimeType,
-      'byteLength': bytes.length,
-      'sha256': digest,
-      'data': base64Encode(bytes),
-    };
+    if (byteLength <= 0 || byteLength > maxCoverFileBytes) return backup;
+    final embedded = await _encodeCoverBackupInIsolate(coverPath);
+    if (embedded != null) backup[_cardCoverEmbeddedKey] = embedded;
     return backup;
   }
 
@@ -704,9 +703,9 @@ class AudioDetailRepository {
         !RegExp(r'^[0-9a-f]{64}$').hasMatch(expectedDigest) ||
         expectedLength == null ||
         expectedLength <= 0 ||
-        expectedLength > _maxEmbeddedCoverBytes ||
+        expectedLength > maxCoverFileBytes ||
         encoded == null ||
-        encoded.length > ((_maxEmbeddedCoverBytes + 2) ~/ 3) * 4) {
+        encoded.length > ((maxCoverFileBytes + 2) ~/ 3) * 4) {
       return null;
     }
 
@@ -718,19 +717,21 @@ class AudioDetailRepository {
     }
     if (bytes.length != expectedLength ||
         sha256.convert(bytes).toString() != expectedDigest ||
-        _imageMimeType('', bytes) != mimeType.toLowerCase()) {
+        detectCoverMimeType('', bytes) != mimeType.toLowerCase()) {
       return null;
     }
 
     return _writePortableCover(bytes, mimeType, expectedDigest);
   }
 
-  Future<AudioDetail> _persistDerivedCover(AudioDetail detail) async {
+  Future<({AudioDetail detail, bool portabilitySkipped})> _persistDerivedCover(
+    AudioDetail detail,
+  ) async {
     final coverPath = detail.cardCoverPath;
     if (coverPath == null ||
         PathMatcher.isContentUri(coverPath) ||
         PathMatcher.isRemoteUri(coverPath)) {
-      return detail;
+      return (detail: detail, portabilitySkipped: false);
     }
     final portableBasePath = _portableBasePath(
       detail.target.targetType,
@@ -741,19 +742,32 @@ class AudioDetailRepository {
               PathMatcher.relativeWithin(coverPath, portableBasePath),
             ) !=
             null) {
-      return detail;
+      return (detail: detail, portabilitySkipped: false);
     }
 
     final source = File(coverPath);
-    if (!await source.exists()) return detail;
+    if (!await source.exists()) {
+      return (detail: detail, portabilitySkipped: false);
+    }
     final byteLength = await source.length();
-    if (byteLength <= 0 || byteLength > _maxEmbeddedCoverBytes) return detail;
-    final bytes = await source.readAsBytes();
-    final mimeType = _imageMimeType(coverPath, bytes);
-    if (mimeType == null) return detail;
-    final digest = sha256.convert(bytes).toString();
+    if (byteLength <= 0) {
+      return (detail: detail, portabilitySkipped: false);
+    }
+    if (byteLength > maxCoverFileBytes) {
+      return (detail: detail, portabilitySkipped: true);
+    }
+    final coverData = await _readCoverDataInIsolate(coverPath);
+    if (coverData == null) {
+      return (detail: detail, portabilitySkipped: false);
+    }
+    final bytes = coverData['bytes']! as Uint8List;
+    final mimeType = coverData['mimeType']! as String;
+    final digest = coverData['sha256']! as String;
     final storedPath = await _writePortableCover(bytes, mimeType, digest);
-    return detail.copyWith(cardCoverPath: storedPath);
+    return (
+      detail: detail.copyWith(cardCoverPath: storedPath),
+      portabilitySkipped: false,
+    );
   }
 
   Future<String> _writePortableCover(
@@ -763,12 +777,14 @@ class AudioDetailRepository {
   ) async {
     final directory = await _portableCoverDirectory();
     await directory.create(recursive: true);
-    final extension = _extensionForImageMimeType(mimeType);
+    final extension = extensionForCoverMimeType(mimeType);
     final output = File(path.join(directory.path, '$digest.$extension'));
     if (await output.exists()) {
-      final existingBytes = await output.readAsBytes();
-      if (existingBytes.length == bytes.length &&
-          sha256.convert(existingBytes).toString() == digest) {
+      final existingLength = await output.length();
+      final existingDigest = existingLength == bytes.length
+          ? await _hashFileInIsolate(output.path)
+          : null;
+      if (existingDigest == digest) {
         return output.path;
       }
     }
@@ -793,26 +809,6 @@ class AudioDetailRepository {
     }
     if (PathMatcher.isContentUri(targetPath)) return null;
     return path.dirname(targetPath);
-  }
-
-  String? _imageMimeType(String filePath, Uint8List bytes) {
-    final detected = lookupMimeType(filePath, headerBytes: bytes);
-    return detected?.toLowerCase().startsWith('image/') == true
-        ? detected!.toLowerCase()
-        : null;
-  }
-
-  String _extensionForImageMimeType(String mimeType) {
-    return switch (mimeType.toLowerCase()) {
-      'image/jpeg' => 'jpg',
-      'image/png' => 'png',
-      'image/webp' => 'webp',
-      'image/gif' => 'gif',
-      'image/bmp' => 'bmp',
-      'image/avif' => 'avif',
-      'image/heic' || 'image/heif' => 'heic',
-      _ => 'image',
-    };
   }
 
   String? _normalizeRelativeCoverPath(Object? value) {
@@ -986,4 +982,48 @@ String _singleFileCopyKeyValue(String fileName) {
       : fileName.substring(0, fileName.length - extension.length);
   final stableStem = stem.replaceFirst(RegExp(r'\s+\(\d+\)$'), '');
   return '${stableStem.toLowerCase()}${extension.toLowerCase()}';
+}
+
+Future<Map<String, Object>?> _encodeCoverBackupInIsolate(String filePath) {
+  return Isolate.run(() async {
+    final file = File(filePath);
+    if (!await file.exists()) return null;
+    final length = await file.length();
+    if (length <= 0 || length > maxCoverFileBytes) return null;
+    final bytes = await file.readAsBytes();
+    final mimeType = detectCoverMimeType(filePath, bytes);
+    if (mimeType == null) return null;
+    return <String, Object>{
+      'encoding': 'base64',
+      'mimeType': mimeType,
+      'byteLength': bytes.length,
+      'sha256': sha256.convert(bytes).toString(),
+      'data': base64Encode(bytes),
+    };
+  });
+}
+
+Future<Map<String, Object>?> _readCoverDataInIsolate(String filePath) {
+  return Isolate.run(() async {
+    final file = File(filePath);
+    if (!await file.exists()) return null;
+    final length = await file.length();
+    if (length <= 0 || length > maxCoverFileBytes) return null;
+    final bytes = await file.readAsBytes();
+    final mimeType = detectCoverMimeType(filePath, bytes);
+    if (mimeType == null) return null;
+    return <String, Object>{
+      'bytes': bytes,
+      'mimeType': mimeType,
+      'sha256': sha256.convert(bytes).toString(),
+    };
+  });
+}
+
+Future<String?> _hashFileInIsolate(String filePath) {
+  return Isolate.run(() async {
+    final file = File(filePath);
+    if (!await file.exists()) return null;
+    return sha256.convert(await file.readAsBytes()).toString();
+  });
 }

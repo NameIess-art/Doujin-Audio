@@ -6,6 +6,7 @@ import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
+import 'package:nameless_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -59,6 +60,7 @@ void main() {
     final result = await repository.save(detail);
 
     expect(result.backupSaved, isTrue);
+    expect(result.coverPortabilitySkipped, isFalse);
     expect(result.detail.rjCode, 'RJ123456');
     expect(result.detail.workTitle, 'Work');
     expect(result.detail.voiceActors, const <String>['A', 'B']);
@@ -83,6 +85,37 @@ void main() {
       databaseDetail?.cardCoverPath,
       '${tempDir.path}${Platform.pathSeparator}cover.jpg',
     );
+  });
+
+  test('oversized external cover keeps its path without embedding', () async {
+    final workDirectory = Directory(
+      '${tempDir.path}${Platform.pathSeparator}work',
+    );
+    await workDirectory.create();
+    final largeCover = File(
+      '${tempDir.path}${Platform.pathSeparator}large-cover.png',
+    );
+    final handle = await largeCover.open(mode: FileMode.write);
+    await handle.truncate(maxCoverFileBytes + 1);
+    await handle.close();
+    final target = AudioDetailTarget.libraryRootFolder(workDirectory.path);
+
+    final result = await repository.save(
+      AudioDetail.empty(target).copyWith(cardCoverPath: largeCover.path),
+    );
+
+    expect(result.backupSaved, isTrue);
+    expect(result.coverPortabilitySkipped, isTrue);
+    expect(result.detail.cardCoverPath, largeCover.path);
+    final backup =
+        jsonDecode(
+              await File(
+                '${workDirectory.path}${Platform.pathSeparator}'
+                '${AudioDetailRepository.backupFileName}',
+              ).readAsString(),
+            )
+            as Map<String, dynamic>;
+    expect(backup['cardCoverEmbedded'], isNull);
   });
 
   test('load prefers normalized database path before local backup', () async {

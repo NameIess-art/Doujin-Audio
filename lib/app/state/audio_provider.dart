@@ -839,6 +839,7 @@ class AudioProvider with ChangeNotifier {
     unawaited(_nativePlaybackSubscription?.cancel());
     unawaited(_nativePlaybackProgressSubscription?.cancel());
     unawaited(_nativePlaybackRepository.dispose());
+    _coverArtworkCacheService.dispose();
     unawaited(_libraryService.dispose());
     unawaited(_playbackService.dispose());
     unawaited(_timerService.dispose());

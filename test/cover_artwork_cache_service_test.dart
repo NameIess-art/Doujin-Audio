@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -10,6 +11,7 @@ import 'package:nameless_audio/features/library/application/audio_detail_reposit
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/settings/application/app_cache_service.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:nameless_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:nameless_audio/core/media/path_matcher.dart';
 
@@ -117,11 +119,13 @@ void main() {
     );
   });
 
-  test('remote cover miss is not cached so retry can download again', () async {
+  test('remote cover miss uses shared retry cooldown', () async {
     final cover = await _temporaryCoverFile('remote_retry');
     var downloads = 0;
+    var now = DateTime(2026);
     final cache = CoverArtworkCacheService(
       libraryService: LibraryService(),
+      now: () => now,
       remoteCoverDownloader: (_) async {
         downloads += 1;
         return downloads == 1 ? null : cover.path;
@@ -134,6 +138,13 @@ void main() {
     );
     expect(
       await cache.futureForRemoteCover('https://example.com/cover.jpg'),
+      isNull,
+    );
+    expect(downloads, 1);
+
+    now = now.add(const Duration(seconds: 10));
+    expect(
+      await cache.futureForRemoteCover('https://example.com/cover.jpg'),
       cover.path,
     );
     expect(downloads, 2);
@@ -143,11 +154,48 @@ void main() {
     );
   });
 
+  test('remote cover retry delay doubles and caps at five minutes', () async {
+    var downloads = 0;
+    var now = DateTime(2026);
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      now: () => now,
+      remoteCoverDownloader: (_) async {
+        downloads++;
+        return null;
+      },
+    );
+    const retryDelays = <Duration>[
+      Duration(seconds: 10),
+      Duration(seconds: 20),
+      Duration(seconds: 40),
+      Duration(seconds: 80),
+      Duration(seconds: 160),
+      Duration(seconds: 300),
+    ];
+
+    for (var attempt = 0; attempt < retryDelays.length; attempt++) {
+      expect(
+        await cache.futureForRemoteCover('https://example.com/missing.jpg'),
+        isNull,
+      );
+      expect(downloads, attempt + 1);
+      expect(
+        await cache.futureForRemoteCover('https://example.com/missing.jpg'),
+        isNull,
+      );
+      expect(downloads, attempt + 1);
+      now = now.add(retryDelays[attempt]);
+    }
+  });
+
   test('playback cover miss remains retryable', () async {
     final cover = await _temporaryCoverFile('playback_remote_retry');
     var downloads = 0;
+    var now = DateTime(2026);
     final cache = CoverArtworkCacheService(
       libraryService: LibraryService(),
+      now: () => now,
       remoteCoverDownloader: (_) async {
         downloads += 1;
         return downloads == 1 ? null : cover.path;
@@ -164,9 +212,98 @@ void main() {
     );
 
     expect(await cache.futureForPlaybackTrack(track), isNull);
+    expect(await cache.futureForPlaybackTrack(track), isNull);
+    expect(downloads, 1);
+    await Future<void>.delayed(Duration.zero);
+    now = now.add(const Duration(seconds: 10));
     expect(await cache.futureForPlaybackTrack(track), cover.path);
     expect(downloads, 2);
   });
+
+  test('remote cover downloads never exceed four concurrent tasks', () async {
+    final cover = await _temporaryCoverFile('remote_concurrency');
+    final release = Completer<void>();
+    var active = 0;
+    var peak = 0;
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      remoteCoverDownloader: (_) async {
+        active++;
+        if (active > peak) peak = active;
+        await release.future;
+        active--;
+        return cover.path;
+      },
+    );
+
+    final futures = <Future<String?>>[
+      for (var index = 0; index < 8; index++)
+        cache.futureForRemoteCover('https://example.com/$index.jpg'),
+    ];
+    await Future<void>.delayed(Duration.zero);
+
+    expect(active, 4);
+    expect(peak, 4);
+    release.complete();
+    expect(await Future.wait(futures), everyElement(cover.path));
+    expect(peak, 4);
+  });
+
+  test(
+    'remote cover download streams valid images and removes partials',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'remote_cover_stream_',
+      );
+      final pngBytes = base64Decode(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+        '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((request) async {
+        if (request.uri.path == '/valid') {
+          request.response.add(pngBytes);
+        } else if (request.uri.path == '/too-large') {
+          request.response.contentLength = maxCoverFileBytes + 1;
+          request.response.add(List<int>.filled(maxCoverFileBytes + 1, 0));
+        } else if (request.uri.path == '/chunked-too-large') {
+          request.response.headers.chunkedTransferEncoding = true;
+          request.response.add(List<int>.filled(maxCoverFileBytes + 1, 0));
+        } else {
+          request.response.add(utf8.encode('not an image'));
+        }
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await server.close(force: true);
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService(),
+        temporaryDirectory: () async => directory,
+      );
+      addTearDown(cache.dispose);
+      String url(String path) =>
+          'http://${server.address.address}:${server.port}/$path';
+
+      final validPath = await cache.futureForRemoteCover(url('valid'));
+      expect(validPath, isNotNull);
+      expect(await File(validPath!).readAsBytes(), pngBytes);
+      expect(await cache.futureForRemoteCover(url('too-large')), isNull);
+      expect(
+        await cache.futureForRemoteCover(url('chunked-too-large')),
+        isNull,
+      );
+      expect(await cache.futureForRemoteCover(url('invalid')), isNull);
+      expect(
+        directory
+            .listSync(recursive: true)
+            .whereType<File>()
+            .where((file) => file.path.endsWith('.part')),
+        isEmpty,
+      );
+    },
+  );
 
   test('evicted remote cover is downloaded again', () async {
     final firstCover = await _temporaryCoverFile('remote_evicted_first');

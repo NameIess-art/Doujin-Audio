@@ -650,6 +650,8 @@ class AsyncRemoteCoverImage extends StatelessWidget {
     this.useDefaultCacheWidth = true,
     this.filterQuality = FilterQuality.medium,
     this.duration = kCoverImageFadeDuration,
+    this.retryDelay = const Duration(seconds: 2),
+    this.maxRetryAttempts = 12,
   });
 
   final String url;
@@ -667,6 +669,8 @@ class AsyncRemoteCoverImage extends StatelessWidget {
   final bool useDefaultCacheWidth;
   final FilterQuality filterQuality;
   final Duration duration;
+  final Duration retryDelay;
+  final int maxRetryAttempts;
 
   @override
   Widget build(BuildContext context) {
@@ -679,6 +683,8 @@ class AsyncRemoteCoverImage extends StatelessWidget {
       requestKey: trimmedUrl,
       initialPath: initialPath,
       retryFutureBuilder: retryFutureBuilder,
+      retryDelay: retryDelay,
+      maxRetryAttempts: maxRetryAttempts,
       loadingBuilder: loadingBuilder,
       fallbackBuilder: fallbackBuilder,
       duration: duration,

@@ -248,6 +248,8 @@ class AudioProvider with ChangeNotifier {
   bool _warmupPausedForLifecycle = false;
   int _transportCommandSequence = 0;
   Future<void>? _postStartupLibraryMaintenance;
+  Future<void>? _missingLibraryDurationBackfill;
+  bool _missingLibraryDurationBackfillRequestedAgain = false;
 
   void requestCarouselSnapTo(String sessionId) {
     _carouselSnapNotifier.value = sessionId;

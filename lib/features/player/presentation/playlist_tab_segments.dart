@@ -1040,6 +1040,7 @@ class _VolumeBalancePage extends ConsumerWidget {
     final detail = ref.watch(sessionDetailTransportProvider(session.id));
     final panning =
         detail?.audioEffects.panning ?? session.audioEffects.panning;
+    final i18n = context.read<AppLanguageProvider>();
     final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
@@ -1108,6 +1109,24 @@ class _VolumeBalancePage extends ConsumerWidget {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            Center(
+              child: FilledButton.tonal(
+                key: const ValueKey<String>('restore_volume_balance'),
+                onPressed: panning.abs() < 0.001
+                    ? null
+                    : () {
+                        AppInteractionFeedback.trigger(
+                          AppInteractionFeedbackType.selection,
+                        );
+                        UiInteractionCoordinator.instance.cancelThrottledCommit(
+                          'session_panning:${session.id}',
+                        );
+                        unawaited(provider.setSessionPanning(session.id, 0.0));
+                      },
+                child: Text(i18n.tr('restore_default')),
+              ),
             ),
           ],
         ),

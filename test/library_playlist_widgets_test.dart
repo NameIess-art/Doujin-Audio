@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show ProviderContainer, ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
@@ -17,6 +18,7 @@ import 'package:nameless_audio/features/library/presentation/library_tab.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/features/settings/presentation/settings_tab.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
@@ -285,6 +287,109 @@ void main() {
     expect(paths.contains(''), isFalse);
     expect(container.read(isTrackActiveProvider('/tracks/active.mp3')), isTrue);
     expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isFalse);
+  });
+
+  testWidgets('volume balance can be restored to default', (
+    WidgetTester tester,
+  ) async {
+    const nativePlaybackChannel = MethodChannel(NativePlaybackChannel.name);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(
+          nativePlaybackChannel,
+          (_) async => <String, Object?>{'ok': true, 'value': null},
+        );
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, null);
+    });
+
+    final notificationService = PlaybackNotificationService();
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    const playbackCommandRunner = PlaybackCommandRunner();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final languageProvider = AppLanguageProvider();
+    final audioProvider = AudioProvider.test(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+    final track = _track(
+      name: 'Balance track',
+      path: '/library/balance/track.mp3',
+      groupKey: '/library/balance',
+      groupTitle: 'Balance',
+    );
+    final session = PlaybackSession(
+      id: 'balance-session',
+      currentTrackPath: track.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    )..audioEffects = AudioEffectsState.flat.copyWith(panning: 0.6);
+    addTearDown(audioProvider.dispose);
+    audioProvider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+    playbackService.registerSession(session);
+    playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(
+      _buildTestApp(
+        audioProvider: audioProvider,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        languageProvider: languageProvider,
+        child: const PlaylistTab(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    unawaited(
+      Navigator.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).push(buildSessionDetailRoute(sessionId: session.id)),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip(languageProvider.tr('audio_features')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(languageProvider.tr('volume_balance')));
+    await tester.pumpAndSettle();
+
+    final restoreButton = find.byKey(
+      const ValueKey<String>('restore_volume_balance'),
+    );
+    expect(restoreButton, findsOneWidget);
+    expect(find.text(languageProvider.tr('restore_default')), findsOneWidget);
+    await tester.tap(restoreButton);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(session.audioEffects.panning, 0.0);
+    expect(tester.widget<OutlinedButton>(restoreButton).onPressed, isNull);
   });
 
   testWidgets('playlist cards freeze background updates while reordering', (

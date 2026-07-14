@@ -672,6 +672,7 @@ const Map<String, String> appLanguageEn = {
   'background_transparency': 'Background Transparency',
   'background_color': 'Background Color',
   'reset_to_default': 'Reset to default',
+  'restore_default': 'Restore default',
   'turn_on_subtitle': 'Turn on subtitle',
   'turn_off_subtitle': 'Turn off subtitle',
   'subtitle_global_display': 'Subtitle global display',

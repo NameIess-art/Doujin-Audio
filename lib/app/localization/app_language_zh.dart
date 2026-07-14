@@ -590,6 +590,7 @@ const Map<String, String> appLanguageZh = {
   'background_transparency': '背景透明度',
   'background_color': '背景颜色',
   'reset_to_default': '重置为默认',
+  'restore_default': '恢复默认',
   'turn_on_subtitle': '打开字幕',
   'turn_off_subtitle': '关闭字幕',
   'subtitle_global_display': '字幕全局显示',

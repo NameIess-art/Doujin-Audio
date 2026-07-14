@@ -105,6 +105,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Timer? _searchDebounceTimer;
   Timer? _startupRefreshIdleTimer;
   bool _startupRefreshWaiting = false;
+  bool _startupLibraryRefreshCompleted = false;
   FilteredLibraryTreeResult? _visibleSearchResult;
   String _visibleSearchQuery = '';
   int? _visibleSearchRevision;
@@ -137,6 +138,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   int? _categorySnapshotRequestStructureRevision;
   int? _categorySnapshotRequestDetailRevision;
   String? _lastLibraryCoverWarmupSignature;
+  int? _durationBackfillStructureRevision;
+  late final String _durationBackfillCommitKey;
 
   @override
   int get tabIndex => 1;
@@ -359,6 +362,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   void initState() {
     super.initState();
+    _durationBackfillCommitKey =
+        'library_duration_backfill:${identityHashCode(this)}';
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
@@ -403,8 +408,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       UiInteractionCoordinator.instance.removeListener(
         _handleStartupRefreshInteractionChanged,
       );
-      unawaited(_scheduleWatchedFoldersRefresh(silent: true));
+      unawaited(_finishStartupLibraryRefresh());
     });
+  }
+
+  Future<void> _finishStartupLibraryRefresh() async {
+    try {
+      await _scheduleWatchedFoldersRefresh(silent: true);
+    } finally {
+      if (mounted) {
+        setState(() => _startupLibraryRefreshCompleted = true);
+      }
+    }
   }
 
   void _ensureCategorySnapshot({
@@ -441,6 +456,33 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               _categorySnapshotRequestStructureRevision = null;
               _categorySnapshotRequestDetailRevision = null;
             }),
+      );
+    });
+  }
+
+  void _ensureMissingDurationBackfill({
+    required AudioProvider provider,
+    required int structureRevision,
+    required bool canRun,
+  }) {
+    if (!canRun || _durationBackfillStructureRevision == structureRevision) {
+      return;
+    }
+    _durationBackfillStructureRevision = structureRevision;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _durationBackfillStructureRevision != structureRevision) {
+        return;
+      }
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _durationBackfillCommitKey,
+        priority: 90,
+        commit: () {
+          if (!mounted ||
+              _durationBackfillStructureRevision != structureRevision) {
+            return;
+          }
+          unawaited(provider.backfillMissingLibraryDurations());
+        },
       );
     });
   }
@@ -498,6 +540,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       _handleStartupRefreshInteractionChanged,
     );
     _startupRefreshIdleTimer?.cancel();
+    UiInteractionCoordinator.instance.cancelCommit(_durationBackfillCommitKey);
     disposeTabState();
     _searchDebounceTimer?.cancel();
     _scanCoordinator.dispose();
@@ -562,6 +605,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         );
     final libraryRefreshBusy =
         libraryRefreshOperationBusy || libraryImportBusy || listStateIsScanning;
+    _ensureMissingDurationBackfill(
+      provider: provider,
+      structureRevision: listStateStructureRevision,
+      canRun:
+          listStateIsInitialized &&
+          _startupLibraryRefreshCompleted &&
+          !listStateIsScanning &&
+          !listStateIsBackgroundScanning,
+    );
     _ensureCategorySnapshot(
       provider: provider,
       structureRevision: listStateStructureRevision,

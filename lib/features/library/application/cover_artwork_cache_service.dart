@@ -1005,9 +1005,16 @@ class CoverArtworkCacheService {
       );
     }
 
-    final embeddedCover = await EmbeddedCoverArtworkService.resolveForTrack(
-      track,
-    );
+    String? embeddedCover;
+    try {
+      embeddedCover = await EmbeddedCoverArtworkService.resolveForTrack(track);
+    } catch (e, stackTrace) {
+      AppLogService.warning(
+        'CoverArtworkCacheService._resolvePlatformCoverPathForTrack embedded cover error',
+        error: e,
+        stackTrace: stackTrace,
+      );
+    }
     if (embeddedCover != null) AppCacheService.scheduleEnforce();
     if (embeddedCover != null) return embeddedCover;
 

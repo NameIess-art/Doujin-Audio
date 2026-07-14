@@ -506,30 +506,10 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
 
-    fun prepareSession(args: Map<String, Any?>): Map<String, Any?> {
-        val sessionId = args["sessionId"] as? String ?: return errorResult("Missing sessionId.")
-        val uri = args["uri"] as? String ?: return errorResult("Missing uri.")
-        val path = args["path"] as? String ?: uri
-        val title = args["title"] as? String ?: "Audio"
-        val subtitle = args["subtitle"] as? String
-        val artUri = args["artUri"] as? String
-        val startPositionMs = (args["startPositionMs"] as? Number)?.toLong() ?: 0L
-        val autoPlay = args["autoPlay"] as? Boolean ?: false
-        val volume = (args["volume"] as? Number)?.toFloat() ?: 1f
-        val speed = (args["speed"] as? Number)?.toFloat() ?: 1f
-        val audioEffects = NativePlaybackCommandPayloads.parseAudioEffects(
-            args["audioEffects"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
-        )
-        val repeatOne = args["repeatOne"] as? Boolean ?: false
-        val queue = NativePlaybackCommandPayloads.parseQueue(args["queue"]).ifEmpty {
-            listOf(NativeMediaItemDescriptor(path, uri, title, subtitle, artUri))
-        }
-        val queueStartIndex = ((args["queueStartIndex"] as? Number)?.toInt() ?: 0)
-            .coerceIn(0, queue.lastIndex)
-        val repeatAll = args["repeatAll"] as? Boolean ?: false
-        val shuffle = args["shuffle"] as? Boolean ?: false
-        val deferPlayerCreation = args["deferPlayerCreation"] as? Boolean ?: false
-        if (autoPlay) {
+    internal fun prepareSession(args: NativePrepareSessionArguments): Map<String, Any?> {
+        val sessionId = args.sessionId
+        val queue = args.queue
+        if (args.autoPlay) {
             notificationsDismissed = false
             playbackSuspended = false
             markPlaybackIntended(sessionId)
@@ -542,21 +522,21 @@ class NativePlaybackService : MediaSessionService() {
         }
         pendingAudioFocusResumeSessionIds.remove(sessionId)
         return try {
-            nativeSession.applyAudioEffects(audioEffects)
+            nativeSession.applyAudioEffects(args.audioEffects)
             nativeSession.configure(
-                descriptor = queue[queueStartIndex],
+                descriptor = queue[args.queueStartIndex],
                 queue = queue,
-                queueStartIndex = queueStartIndex,
-                startPositionMs = startPositionMs,
-                volume = volume,
-                speed = speed,
-                repeatOne = repeatOne,
-                repeatAll = repeatAll,
-                shuffleModeEnabled = shuffle,
-                autoPlay = autoPlay,
-                deferPlayerCreation = deferPlayerCreation
+                queueStartIndex = args.queueStartIndex,
+                startPositionMs = args.startPositionMs,
+                volume = args.volume,
+                speed = args.speed,
+                repeatOne = args.repeatOne,
+                repeatAll = args.repeatAll,
+                shuffleModeEnabled = args.shuffle,
+                autoPlay = args.autoPlay,
+                deferPlayerCreation = args.deferPlayerCreation
             )
-            if (!deferPlayerCreation) {
+            if (!args.deferPlayerCreation) {
                 focusSession(sessionId)
                 ensureFocusedMediaSession()
             }
@@ -788,10 +768,10 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(session.snapshot())
     }
 
-    fun setAudioEffects(sessionId: String, effectsMap: Map<String, Any?>): Map<String, Any?> {
+    internal fun setAudioEffects(sessionId: String, effects: NativeAudioEffects): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         val previousChannelSwap = session.channelSwapEnabled
-        session.applyAudioEffects(NativePlaybackCommandPayloads.parseAudioEffects(effectsMap))
+        session.applyAudioEffects(effects)
         if (previousChannelSwap != session.channelSwapEnabled) {
             session.reprepareCurrentMediaItem()
         }
@@ -801,28 +781,24 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(session.snapshot())
     }
 
-    fun setRepeatOne(
-        sessionId: String,
-        repeatOne: Boolean,
-        args: Map<String, Any?> = emptyMap()
-    ): Map<String, Any?> {
+    internal fun setRepeatOne(args: NativeRepeatOneArguments): Map<String, Any?> {
+        val sessionId = args.sessionId
+        val repeatOne = args.repeatOne
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         session.lastUsedMs = System.currentTimeMillis()
         session.repeatOne = repeatOne
-        val queue = NativePlaybackCommandPayloads.parseQueue(args["queue"])
+        val queue = args.queue
         if (queue.isNotEmpty()) {
-            val queueStartIndex = ((args["queueStartIndex"] as? Number)?.toInt() ?: 0)
-                .coerceIn(0, queue.lastIndex)
             session.updateQueue(
                 queue = queue,
-                queueStartIndex = queueStartIndex,
+                queueStartIndex = args.queueStartIndex,
                 repeatOne = repeatOne,
-                repeatAll = args["repeatAll"] as? Boolean ?: false,
-                shuffleModeEnabled = args["shuffle"] as? Boolean ?: false
+                repeatAll = args.repeatAll,
+                shuffleModeEnabled = args.shuffle
             )
         } else {
-            session.repeatAll = args["repeatAll"] as? Boolean ?: session.repeatAll
-            session.shuffleModeEnabled = args["shuffle"] as? Boolean ?: session.shuffleModeEnabled
+            session.repeatAll = args.repeatAll
+            session.shuffleModeEnabled = args.shuffle
             session.playerOrNull()?.repeatMode = if (repeatOne) {
                 Player.REPEAT_MODE_ONE
             } else {

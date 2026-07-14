@@ -61,6 +61,8 @@ internal fun MethodCall.argumentsMap(): Map<String, Any?> {
 internal class ChannelArgumentReader(call: MethodCall) {
     private val arguments = call.argumentsMap()
 
+    fun hasKey(key: String): Boolean = arguments.containsKey(key)
+
     fun requiredString(key: String, allowBlank: Boolean = false): String {
         val value = arguments[key] as? String
         require(value != null && (allowBlank || value.isNotBlank())) {
@@ -70,6 +72,13 @@ internal class ChannelArgumentReader(call: MethodCall) {
     }
 
     fun optionalString(key: String): String? {
+        val value = arguments[key] ?: return null
+        require(value is String) { "Invalid string argument: $key" }
+        return value
+    }
+
+    fun requiredNullableString(key: String): String? {
+        require(arguments.containsKey(key)) { "Missing argument: $key" }
         val value = arguments[key] ?: return null
         require(value is String) { "Invalid string argument: $key" }
         return value
@@ -86,6 +95,31 @@ internal class ChannelArgumentReader(call: MethodCall) {
 
     fun requiredLong(key: String): Long = requiredIntegralNumber(key).toLong()
 
+    fun requiredIntInRange(key: String, range: IntRange): Int {
+        val value = requiredInt(key)
+        require(value in range) { "Numeric argument is outside the allowed range: $key" }
+        return value
+    }
+
+    fun requiredNullableInt(key: String, range: IntRange? = null): Int? {
+        require(arguments.containsKey(key)) { "Missing argument: $key" }
+        if (arguments[key] == null) return null
+        val value = requiredInt(key)
+        require(range == null || value in range) {
+            "Numeric argument is outside the allowed range: $key"
+        }
+        return value
+    }
+
+    fun requiredNullableLong(key: String, minimum: Long? = null): Long? {
+        require(arguments.containsKey(key)) { "Missing argument: $key" }
+        val value = optionalLong(key) ?: return null
+        require(minimum == null || value >= minimum) {
+            "Numeric argument is outside the allowed range: $key"
+        }
+        return value
+    }
+
     fun optionalLong(key: String): Long? {
         val value = arguments[key] ?: return null
         require(value is Number) { "Invalid numeric argument: $key" }
@@ -93,6 +127,9 @@ internal class ChannelArgumentReader(call: MethodCall) {
             val doubleValue = value.toDouble()
             require(doubleValue.isFinite() && doubleValue % 1.0 == 0.0) {
                 "Numeric argument must be an integer: $key"
+            }
+            require(doubleValue >= Long.MIN_VALUE.toDouble() && doubleValue < Long.MAX_VALUE.toDouble()) {
+                "Numeric argument is outside the long range: $key"
             }
         }
         return value.toLong()
@@ -128,6 +165,15 @@ internal class ChannelArgumentReader(call: MethodCall) {
         return value
     }
 
+    fun requiredStringList(key: String, allowBlank: Boolean = false): List<String> {
+        return requiredList(key).mapIndexed { index, value ->
+            require(value is String && (allowBlank || value.isNotBlank())) {
+                "Invalid string list item at $key[$index]"
+            }
+            if (allowBlank) value else value.trim()
+        }
+    }
+
     fun requiredMap(key: String): Map<*, *> {
         val value = arguments[key]
         require(value is Map<*, *>) { "Missing or invalid map argument: $key" }
@@ -147,6 +193,10 @@ internal class ChannelArgumentReader(call: MethodCall) {
             require(doubleValue.isFinite() && doubleValue % 1.0 == 0.0) {
                 "Numeric argument must be an integer: $key"
             }
+            require(
+                doubleValue >= Long.MIN_VALUE.toDouble() &&
+                    doubleValue < Long.MAX_VALUE.toDouble()
+            ) { "Numeric argument is outside the long range: $key" }
         }
         return value
     }

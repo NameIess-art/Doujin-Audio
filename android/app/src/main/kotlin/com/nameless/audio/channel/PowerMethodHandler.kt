@@ -16,11 +16,48 @@ import android.provider.Settings
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
+internal data class PlaybackTimerSyncArguments(
+    val timerModeIndex: Int?,
+    val durationMs: Long?,
+    val waitingForPlayback: Boolean,
+    val timerEndsAtWallClockMs: Long?,
+    val autoResumeEnabled: Boolean,
+    val autoResumeHour: Int,
+    val autoResumeMinute: Int,
+    val autoResumeAtMs: Long?,
+    val pausedSessionIds: List<String>,
+    val generation: Int
+)
+
+internal fun parsePlaybackTimerSyncArguments(call: MethodCall): PlaybackTimerSyncArguments {
+    val arguments = call.argumentReader()
+    val pausedSessionIds = arguments.requiredStringList("pausedSessionIds")
+    require(pausedSessionIds.distinct().size == pausedSessionIds.size) {
+        "pausedSessionIds contains duplicates."
+    }
+    return PlaybackTimerSyncArguments(
+        timerModeIndex = arguments.requiredNullableInt("timerMode", 0..1),
+        durationMs = arguments.requiredNullableLong("timerDurationMs", minimum = 1L),
+        waitingForPlayback = arguments.requiredBoolean("timerWaitingForPlayback"),
+        timerEndsAtWallClockMs = arguments.requiredNullableLong(
+            "timerEndsAtWallClockMs",
+            minimum = 0L
+        ),
+        autoResumeEnabled = arguments.requiredBoolean("autoResumeEnabled"),
+        autoResumeHour = arguments.requiredIntInRange("autoResumeHour", 0..23),
+        autoResumeMinute = arguments.requiredIntInRange("autoResumeMinute", 0..59),
+        autoResumeAtMs = arguments.requiredNullableLong("autoResumeAtMs", minimum = 0L),
+        pausedSessionIds = pausedSessionIds,
+        generation = arguments.requiredIntInRange("generation", 0..Int.MAX_VALUE)
+    )
+}
+
 internal class PowerMethodHandler(
     private val activity: Activity
 ) : MethodChannel.MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
-        when (call.method) {
+        try {
+            when (call.method) {
             PowerMethods.SET_KEEP_CPU_AWAKE,
             PowerMethods.STOP_PLAYBACK_KEEP_ALIVE -> result.success(null)
             PowerMethods.CAN_MANAGE_ALL_FILES_ACCESS -> result.success(canManageAllFilesAccess())
@@ -40,7 +77,7 @@ internal class PowerMethodHandler(
                 PlaybackTimerAlarmScheduler.executeNow(
                     activity.applicationContext,
                     PlaybackTimerAlarmScheduler.actionTimerExpired,
-                    call.argument<Int>("generation"),
+                    call.argumentReader().requiredIntInRange("generation", 0..Int.MAX_VALUE),
                     onComplete = result::success
                 )
             }
@@ -48,27 +85,35 @@ internal class PowerMethodHandler(
                 PlaybackTimerAlarmScheduler.executeNow(
                     activity.applicationContext,
                     PlaybackTimerAlarmScheduler.actionAutoResume,
-                    call.argument<Int>("generation"),
+                    call.argumentReader().requiredIntInRange("generation", 0..Int.MAX_VALUE),
                     onComplete = result::success
                 )
             }
             PowerMethods.SYNC_PLAYBACK_TIMER_ALARMS -> {
+                val arguments = parsePlaybackTimerSyncArguments(call)
                 PlaybackTimerAlarmScheduler.sync(
                     activity.applicationContext,
-                    timerModeIndex = call.argument<Int>("timerMode"),
-                    durationMs = call.argument<Number>("timerDurationMs")?.toLong(),
-                    waitingForPlayback = call.argument<Boolean>("timerWaitingForPlayback") ?: false,
-                    timerEndsAtWallClockMs = call.argument<Long>("timerEndsAtWallClockMs"),
-                    autoResumeEnabled = call.argument<Boolean>("autoResumeEnabled") ?: false,
-                    autoResumeHour = call.argument<Int>("autoResumeHour") ?: 7,
-                    autoResumeMinute = call.argument<Int>("autoResumeMinute") ?: 0,
-                    autoResumeAtMs = call.argument<Long>("autoResumeAtMs"),
-                    pausedSessionIds = call.argument<List<String>>("pausedSessionIds") ?: emptyList(),
-                    generation = call.argument<Int>("generation") ?: 0
+                    timerModeIndex = arguments.timerModeIndex,
+                    durationMs = arguments.durationMs,
+                    waitingForPlayback = arguments.waitingForPlayback,
+                    timerEndsAtWallClockMs = arguments.timerEndsAtWallClockMs,
+                    autoResumeEnabled = arguments.autoResumeEnabled,
+                    autoResumeHour = arguments.autoResumeHour,
+                    autoResumeMinute = arguments.autoResumeMinute,
+                    autoResumeAtMs = arguments.autoResumeAtMs,
+                    pausedSessionIds = arguments.pausedSessionIds,
+                    generation = arguments.generation
                 )
                 result.success(null)
             }
             else -> result.notImplemented()
+            }
+        } catch (error: IllegalArgumentException) {
+            result.error(
+                ChannelErrorCodes.INVALID_ARGUMENT,
+                error.message ?: "Invalid arguments.",
+                mapOf("method" to call.method)
+            )
         }
     }
 

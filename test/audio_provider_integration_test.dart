@@ -560,6 +560,308 @@ void main() {
       expect(provider.sessionById('nonexistent'), isNull);
     });
 
+    test(
+      'failed queue prepare restores the previous native track without committing target state',
+      () async {
+        const first = MusicTrack(
+          path: 'https://example.com/transaction-a.mp3',
+          displayName: 'A',
+          groupKey: 'transaction',
+          groupTitle: 'Transaction',
+          groupSubtitle: 'Transaction',
+          isSingle: false,
+          duration: Duration(minutes: 3),
+        );
+        const second = MusicTrack(
+          path: 'https://example.com/transaction-b.mp3',
+          displayName: 'B',
+          groupKey: 'transaction',
+          groupTitle: 'Transaction',
+          groupSubtitle: 'Transaction',
+          isSingle: false,
+          duration: Duration(minutes: 4),
+        );
+        final preparedPaths = <String>[];
+        var restoreCalls = 0;
+
+        Map<String, Object?> snapshot(
+          String pathValue, {
+          bool playing = false,
+        }) {
+          return <String, Object?>{
+            'sessionId': provider.activeSessions.single.id,
+            'uri': pathValue,
+            'path': pathValue,
+            'title': pathValue == first.path ? 'A' : 'B',
+            'playing': playing,
+            'playWhenReady': playing,
+            'processingState': 'ready',
+            'positionMs': pathValue == first.path
+                ? const Duration(seconds: 47).inMilliseconds
+                : 0,
+            'bufferedPositionMs': 0,
+            'durationMs': pathValue == first.path
+                ? first.duration.inMilliseconds
+                : second.duration.inMilliseconds,
+            'volume': 1.0,
+            'speed': 1.0,
+            'boostGain': 1.0,
+            'channelSwap': false,
+            'queueIndex': pathValue == first.path ? 0 : 1,
+          };
+        }
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              final args =
+                  (call.arguments as Map<Object?, Object?>?) ?? const {};
+              switch (call.method) {
+                case NativePlaybackMethod.prepareSession:
+                  final requestedPath = args['path'] as String;
+                  preparedPaths.add(requestedPath);
+                  if (requestedPath == second.path) {
+                    return <String, Object?>{
+                      'ok': false,
+                      'error': 'injected prepare failure',
+                    };
+                  }
+                  if (preparedPaths.length > 1) restoreCalls++;
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': snapshot(first.path),
+                  };
+                case NativePlaybackMethod.play:
+                  return <String, Object?>{
+                    'ok': true,
+                    'value': <String, Object?>{
+                      ...snapshot(first.path, playing: true),
+                      'transportCommandId': args['transportCommandId'],
+                    },
+                  };
+                default:
+                  return <String, Object?>{'ok': true, 'value': null};
+              }
+            });
+
+        provider.addTracks(
+          <MusicTrack>[first, second],
+          notify: false,
+          persist: false,
+        );
+        await provider.spawnSessionWithQueue(const <MusicTrack>[
+          first,
+          second,
+        ], autoPlay: false);
+        final session = provider.activeSessions.single;
+        for (var i = 0; i < 50 && session.loadedPath == null; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        session.applyNativeSnapshot(
+          NativePlaybackSnapshot.fromMap(snapshot(first.path, playing: true)),
+        );
+
+        await provider.switchSessionQueueTrack(session.id, 1);
+
+        expect(session.currentTrackPath, first.path);
+        expect(session.loadedPath, first.path);
+        expect(session.position, const Duration(seconds: 47));
+        expect(session.duration, first.duration);
+        expect(session.currentQueueIndex, 0);
+        expect(session.state.playing, isTrue);
+        expect(session.playbackError, isNotNull);
+        expect(restoreCalls, 1);
+        await Future<void>.delayed(const Duration(milliseconds: 900));
+        final persisted = (await AudioDatabaseRepository(
+          database: AppDatabase.test(db),
+        ).loadAllSessions()).single;
+        expect(persisted.trackPath, first.path);
+      },
+    );
+
+    test('timer fallback records only sessions that actually paused', () async {
+      const first = MusicTrack(
+        path: 'https://example.com/timer-a.mp3',
+        displayName: 'A',
+        groupKey: 'timer',
+        groupTitle: 'Timer',
+        groupSubtitle: 'Timer',
+        isSingle: false,
+      );
+      const second = MusicTrack(
+        path: 'https://example.com/timer-b.mp3',
+        displayName: 'B',
+        groupKey: 'timer',
+        groupTitle: 'Timer',
+        groupSubtitle: 'Timer',
+        isSingle: false,
+      );
+      String? failingSessionId;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            final args = (call.arguments as Map<Object?, Object?>?) ?? const {};
+            if (call.method == NativePlaybackMethod.pause &&
+                args['sessionId'] == failingSessionId) {
+              return <String, Object?>{
+                'ok': false,
+                'error': 'injected pause failure',
+              };
+            }
+            if (call.method == NativePlaybackMethod.pause) {
+              final sessionId = args['sessionId'] as String;
+              final session = provider.sessionById(sessionId)!;
+              return <String, Object?>{
+                'ok': true,
+                'value': <String, Object?>{
+                  'sessionId': sessionId,
+                  'path': session.currentTrackPath,
+                  'uri': session.currentTrackPath,
+                  'playing': false,
+                  'playWhenReady': false,
+                  'processingState': 'ready',
+                  'positionMs': 0,
+                  'bufferedPositionMs': 0,
+                  'volume': 1.0,
+                  'speed': 1.0,
+                  'boostGain': 1.0,
+                  'channelSwap': false,
+                  'transportCommandId': args['transportCommandId'],
+                },
+              };
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      provider.addTracks(
+        <MusicTrack>[first, second],
+        notify: false,
+        persist: false,
+      );
+      await provider.spawnSession(first, autoPlay: false);
+      await provider.spawnSession(second, autoPlay: false);
+      for (var i = 0; i < 50 && provider.activeSessions.length < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      final sessions = provider.activeSessions.toList(growable: false);
+      failingSessionId = sessions[1].id;
+      for (final session in sessions) {
+        session.state = PlayerState(true, ProcessingState.ready);
+      }
+      final future = DateTime.now().add(const Duration(minutes: 2));
+      provider.setAutoResume(true, future.hour, future.minute);
+      provider.configureTimer(
+        TimerMode.manual,
+        const Duration(milliseconds: 20),
+      );
+      provider.startCountdown();
+
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+
+      expect(sessions[0].state.playing, isFalse);
+      expect(sessions[1].state.playing, isTrue);
+      final prefs = await SharedPreferences.getInstance();
+      final runtime =
+          json.decode(prefs.getString('timer_runtime_v1')!)
+              as Map<String, dynamic>;
+      expect(runtime['pausedSessionIds'], <Object?>[sessions[0].id]);
+    });
+
+    test(
+      'overdue auto-resume retains only sessions that failed to restart',
+      () async {
+        const first = MusicTrack(
+          path: 'https://example.com/resume-a.mp3',
+          displayName: 'A',
+          groupKey: 'resume',
+          groupTitle: 'Resume',
+          groupSubtitle: 'Resume',
+          isSingle: false,
+        );
+        const second = MusicTrack(
+          path: 'https://example.com/resume-b.mp3',
+          displayName: 'B',
+          groupKey: 'resume',
+          groupTitle: 'Resume',
+          groupSubtitle: 'Resume',
+          isSingle: false,
+        );
+        String? failingSessionId;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              final args =
+                  (call.arguments as Map<Object?, Object?>?) ?? const {};
+              if (call.method == NativePlaybackMethod.play &&
+                  args['sessionId'] == failingSessionId) {
+                return <String, Object?>{
+                  'ok': false,
+                  'error': 'injected play failure',
+                };
+              }
+              if (call.method == NativePlaybackMethod.play) {
+                final sessionId = args['sessionId'] as String;
+                final session = provider.sessionById(sessionId)!;
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': sessionId,
+                    'path': session.currentTrackPath,
+                    'uri': session.currentTrackPath,
+                    'playing': true,
+                    'playWhenReady': true,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'volume': 1.0,
+                    'speed': 1.0,
+                    'boostGain': 1.0,
+                    'channelSwap': false,
+                    'transportCommandId': args['transportCommandId'],
+                  },
+                };
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        provider.addTracks(
+          <MusicTrack>[first, second],
+          notify: false,
+          persist: false,
+        );
+        await provider.spawnSession(first, autoPlay: false);
+        await provider.spawnSession(second, autoPlay: false);
+        final sessions = provider.activeSessions.toList(growable: false);
+        failingSessionId = sessions[1].id;
+        for (final session in sessions) {
+          session.state = PlayerState(false, ProcessingState.ready);
+        }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          'timer_runtime_v1',
+          json.encode(<String, Object?>{
+            'timerMode': TimerMode.manual.index,
+            'timerDurationMs': 1000,
+            'timerWaitingForPlayback': false,
+            'timerEndsAtWallClockMs': null,
+            'autoResumeEnabled': true,
+            'autoResumeHour': 7,
+            'autoResumeMinute': 0,
+            'autoResumeAtMs': DateTime.now()
+                .subtract(const Duration(minutes: 1))
+                .millisecondsSinceEpoch,
+            'pausedSessionIds': sessions.map((session) => session.id).toList(),
+            'generation': 9,
+          }),
+        );
+
+        await provider.loadTimerRuntimeFromSystem();
+
+        expect(sessions[0].state.playing, isTrue);
+        expect(sessions[1].state.playing, isFalse);
+        final runtime =
+            json.decode(prefs.getString('timer_runtime_v1')!)
+                as Map<String, dynamic>;
+        expect(runtime['pausedSessionIds'], <Object?>[sessions[1].id]);
+        expect(runtime['autoResumeAtMs'], isNotNull);
+      },
+    );
+
     test('trackByPath returns null for unknown path', () {
       expect(provider.trackByPath('/nonexistent/path.mp3'), isNull);
     });
@@ -846,6 +1148,41 @@ void main() {
       expect(session.audioEffects.eqPresetId, 'flat');
       expect(session.audioEffects.eqEnabled, isTrue);
       expect(session.audioEffects.eqBandLevels, isEmpty);
+    });
+
+    test('failed audio effect update restores state and persistence', () async {
+      const track = MusicTrack(
+        path: 'https://example.com/effects-rollback.mp3',
+        displayName: 'track',
+        groupKey: 'effects-rollback',
+        groupTitle: 'Effects',
+        groupSubtitle: 'Effects',
+        isSingle: false,
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.setAudioEffects) {
+              return <String, Object?>{
+                'ok': false,
+                'error': 'injected filter rejection',
+              };
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+      await provider.spawnSession(track, autoPlay: false);
+      final session = provider.activeSessions.single;
+      for (var i = 0; i < 50 && session.loadedPath == null; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+
+      await provider.setSessionNoiseReduction(session.id, true);
+
+      expect(session.audioEffects.noiseReductionEnabled, isFalse);
+      final persisted = (await AudioDatabaseRepository(
+        database: AppDatabase.test(db),
+      ).loadAllSessions()).single;
+      expect(persisted.audioEffects.noiseReductionEnabled, isFalse);
     });
 
     test('skip silence preparation preserves active playback intent', () async {
@@ -1156,7 +1493,7 @@ void main() {
     );
 
     test(
-      'paused console settings survive restart when native sync is unavailable',
+      'failed paused console updates roll back and stay rolled back after restart',
       () async {
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         const track = MusicTrack(
@@ -1229,8 +1566,8 @@ void main() {
         await provider.setSessionChannelSwap(session.id, true);
 
         final persisted = (await repository.loadAllSessions()).single;
-        expect(persisted.audioEffects.skipSilenceEnabled, isTrue);
-        expect(persisted.channelSwapEnabled, isTrue);
+        expect(persisted.audioEffects.skipSilenceEnabled, isFalse);
+        expect(persisted.channelSwapEnabled, isFalse);
 
         provider.dispose();
         notificationService = PlaybackNotificationService();
@@ -1244,8 +1581,8 @@ void main() {
 
         final restored = provider.activeSessions.single;
         expect(restored.state.playing, isFalse);
-        expect(restored.audioEffects.skipSilenceEnabled, isTrue);
-        expect(restored.channelSwapEnabled, isTrue);
+        expect(restored.audioEffects.skipSilenceEnabled, isFalse);
+        expect(restored.channelSwapEnabled, isFalse);
       },
     );
 
@@ -1572,12 +1909,19 @@ void main() {
           optimisticSession.currentTrackPath,
           track.path,
         ),
-        isTrue,
+        isFalse,
       );
       expect(prepareResult.isCompleted, isFalse);
 
       prepareResult.complete(<String, Object?>{'ok': true, 'value': null});
       await addFuture;
+      expect(
+        PathMatcher.equalsNormalized(
+          optimisticSession.currentTrackPath,
+          track.path,
+        ),
+        isTrue,
+      );
     });
 
     test(
@@ -1624,6 +1968,10 @@ void main() {
     );
 
     test('queue supports duplicate track entries and removal', () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            return <String, Object?>{'ok': true, 'value': null};
+          });
       const track = MusicTrack(
         path: '/library/work/01.mp3',
         displayName: '01',

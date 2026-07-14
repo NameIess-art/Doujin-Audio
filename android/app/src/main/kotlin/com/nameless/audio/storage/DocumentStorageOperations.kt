@@ -14,6 +14,56 @@ import java.io.FileOutputStream
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
+internal fun <T> replaceSafDocument(
+    targetName: String,
+    existing: T?,
+    staleBackup: T?,
+    createTemp: () -> T?,
+    writeTemp: (T) -> Boolean,
+    rename: (T, String) -> T?,
+    delete: (T) -> Boolean
+): Boolean {
+    val backupName = "$targetName.nameless.bak"
+    var current = existing
+    if (current == null && staleBackup != null) {
+        current = runCatching { rename(staleBackup, targetName) }.getOrNull()
+            ?: return false
+    } else if (current != null && staleBackup != null) {
+        return false
+    }
+
+    val temp = runCatching { createTemp() }.getOrNull() ?: return false
+    fun cleanupTemp() {
+        runCatching { delete(temp) }
+    }
+    if (runCatching { writeTemp(temp) }.getOrDefault(false).not()) {
+        cleanupTemp()
+        return false
+    }
+
+    val backup = if (current != null) {
+        runCatching { rename(current, backupName) }.getOrNull().also {
+            if (it == null) cleanupTemp()
+        } ?: return false
+    } else {
+        null
+    }
+
+    val committed = runCatching { rename(temp, targetName) }.getOrNull()
+    if (committed == null) {
+        if (backup != null) {
+            runCatching { rename(backup, targetName) }
+        }
+        cleanupTemp()
+        return false
+    }
+
+    if (backup != null) {
+        runCatching { delete(backup) }
+    }
+    return true
+}
+
 internal class DocumentStorageOperations(
     private val context: Context
 ) {
@@ -458,26 +508,50 @@ internal class DocumentStorageOperations(
             ) ?: return false
 
             val targetName = normalizedRelative.substringAfterLast('/')
-            var existing = targetFolder.listFiles().firstOrNull {
+            val documents = targetFolder.listFiles()
+            val existing = documents.firstOrNull {
                 it.isFile && normalizeDisplayName(it.name?.trim().orEmpty()) == targetName
             }
-            if (existing != null) {
-                if (!overwrite) return false
-                if (!existing.delete()) return false
-                existing = null
+            if (existing != null && !overwrite) return false
+
+            val backupName = "$targetName.nameless.bak"
+            val staleBackup = documents.firstOrNull {
+                it.isFile && normalizeDisplayName(it.name?.trim().orEmpty()) == backupName
+            }
+            val tempName = "$targetName.nameless.part"
+            val staleTemp = documents.firstOrNull {
+                it.isFile && normalizeDisplayName(it.name?.trim().orEmpty()) == tempName
+            }
+            if (staleTemp != null && !runCatching { staleTemp.delete() }.getOrDefault(false)) {
+                return false
             }
 
             val mimeType = MimeTypeMap.getSingleton()
                 .getMimeTypeFromExtension(targetName.substringAfterLast('.', "").lowercase(Locale.US))
                 ?: "application/octet-stream"
-            val target = existing ?: targetFolder.createFile(mimeType, targetName) ?: return false
-            java.io.FileInputStream(source).use { input ->
-                contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                    input.copyTo(output)
-                    output.flush()
-                } ?: return false
-            }
-            return true
+            return replaceSafDocument(
+                targetName = targetName,
+                existing = existing,
+                staleBackup = staleBackup,
+                createTemp = { targetFolder.createFile(mimeType, tempName) },
+                writeTemp = { temp ->
+                    java.io.FileInputStream(source).use { input ->
+                        contentResolver.openOutputStream(temp.uri, "w")?.use { output ->
+                            input.copyTo(output)
+                            output.flush()
+                        } ?: return@replaceSafDocument false
+                    }
+                    true
+                },
+                rename = { document, name -> renameDocumentFile(document, name) },
+                delete = { document -> document.delete() }
+            )
+        }
+
+        private fun renameDocumentFile(document: DocumentFile, name: String): DocumentFile? {
+            val renamedUri = DocumentsContract.renameDocument(contentResolver, document.uri, name)
+                ?: return null
+            return DocumentFile.fromSingleUri(context, renamedUri)
         }
 
         fun copyFileToUri(sourcePath: String, targetUri: String): Boolean {

@@ -2,6 +2,7 @@ part of 'audio_provider.dart';
 
 extension AudioProviderNativeBridge on AudioProvider {
   void _handleNativePlaybackProgress(NativePlaybackProgressUpdate progress) {
+    if (_sessions[progress.sessionId]?.pendingNativeTrackPath != null) return;
     _playbackService.applyNativeProgress(progress);
   }
 
@@ -89,12 +90,7 @@ extension AudioProviderNativeBridge on AudioProvider {
     final normalizedSnapshot = _normalizeNativePlaybackSnapshot(snapshot);
     final existingSession = _sessions[normalizedSnapshot.sessionId];
     final pendingPath = existingSession?.pendingNativeTrackPath;
-    final snapshotPath =
-        normalizedSnapshot.path ??
-        _nativeSnapshotPathFromUri(normalizedSnapshot.uri);
-    if (pendingPath != null &&
-        snapshotPath != null &&
-        !PathMatcher.equalsNormalized(pendingPath, snapshotPath)) {
+    if (pendingPath != null) {
       return;
     }
     final previousTrackPath = existingSession?.currentTrackPath;

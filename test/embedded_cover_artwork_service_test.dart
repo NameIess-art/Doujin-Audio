@@ -102,6 +102,22 @@ void main() {
     expect(coverPath, isNotNull);
     expect(await File(coverPath!).readAsBytes(), imageBytes);
   });
+
+  test('partial cleanup failures never replace the primary result', () async {
+    final partial = File('${tempDir.path}/cover.image.part');
+    await partial.writeAsBytes(<int>[1], flush: true);
+
+    await expectLater(
+      cleanupEmbeddedCoverPartial(
+        partial,
+        delete: () async {
+          throw const FileSystemException('injected cleanup failure');
+        },
+      ),
+      completes,
+    );
+    expect(await partial.exists(), isTrue);
+  });
 }
 
 Uint8List _flacWithPicture(Uint8List pictureBytes) {

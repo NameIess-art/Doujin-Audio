@@ -184,7 +184,6 @@ extension AudioProviderQueues on AudioProvider {
         session.playbackQueue?.expandedTracks ?? const <MusicTrack>[];
     final previousPath = session.currentTrackPath;
     final previousIndex = session.currentQueueIndex;
-    final previousPosition = session.position;
     final wasPlaying = session.state.playing;
     session.customQueueTracks = List<MusicTrack>.unmodifiable(tracks);
 
@@ -210,17 +209,11 @@ extension AudioProviderQueues on AudioProvider {
         );
         nextIndex = matchingIndex < 0 ? 0 : matchingIndex;
       }
-      session.currentQueueIndex = nextIndex;
-      session.currentTrackPath = tracks[nextIndex].path;
-      session.lastKnownPosition =
-          PathMatcher.equalsNormalized(session.currentTrackPath, previousPath)
-          ? previousPosition
-          : Duration.zero;
-      session.loadedPath = null;
       await _prepareAndPlay(
         session,
-        nextPath: session.currentTrackPath,
+        nextPath: tracks[nextIndex].path,
         autoPlay: wasPlaying,
+        targetQueueIndex: nextIndex,
       );
     }
     _markActiveSessionsDirty();

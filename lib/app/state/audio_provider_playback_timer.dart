@@ -7,7 +7,9 @@ extension AudioProviderPlaybackTimer on AudioProvider {
           ? _timerEndsAt?.millisecondsSinceEpoch
           : null;
       final autoResumeAtMs =
-          _autoResumeAt != null && _pausedByTimerSessionIds.isNotEmpty
+          _autoResumeAt != null &&
+              _pausedByTimerSessionIds.isNotEmpty &&
+              _autoResumeAt!.isAfter(DateTime.now())
           ? _autoResumeAt!.millisecondsSinceEpoch
           : null;
       await _powerPlatformService.syncPlaybackTimerAlarms(
@@ -117,7 +119,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       generation,
     );
     if (result == TimerExecutionResult.failed) {
-      _applyLocalTimerExpiryFallback();
+      await _applyLocalTimerExpiryFallback();
       return;
     }
     await syncTimerRuntimeFromNative();
@@ -127,17 +129,18 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     unawaited(_saveTimerRuntime());
   }
 
-  void _applyLocalTimerExpiryFallback() {
-    _pausedByTimerSessionIds
-      ..clear()
-      ..addAll(_sessions.values.where((s) => s.state.playing).map((s) => s.id));
-
-    for (final session in _sessions.values) {
-      unawaited(_nativePlaybackRepository.pause(session.id));
-      session.setOptimisticState(playing: false);
+  Future<void> _applyLocalTimerExpiryFallback() async {
+    final playingSessions = _sessions.values
+        .where((session) => session.effectivePlaying)
+        .toList(growable: false);
+    _pausedByTimerSessionIds.clear();
+    for (final session in playingSessions) {
+      if (await _pauseSessionPlayback(session)) {
+        _pausedByTimerSessionIds.add(session.id);
+      }
     }
 
-    if (_autoResumeEnabled) {
+    if (_autoResumeEnabled && _pausedByTimerSessionIds.isNotEmpty) {
       _scheduleAutoResumeTimer(
         _nextClockTime(_autoResumeHour, _autoResumeMinute),
       );
@@ -145,8 +148,8 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _maybeResetTimerAfterExpiry();
     _syncKeepCpuAwake();
     _notifyListeners();
-    unawaited(_saveTimerRuntime());
-    unawaited(_syncNativeTimerAlarms());
+    await _saveTimerRuntime();
+    await _syncNativeTimerAlarms();
   }
 
   /// Resets the timer configuration back to the pre-set state after expiry
@@ -228,11 +231,24 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     }
 
     for (final session in resumableSessions) {
-      await _startSessionPlayback(session, shouldStartTriggerCountdown: false);
+      final resumed = await _startSessionPlayback(
+        session,
+        shouldStartTriggerCountdown: false,
+      );
+      if (resumed) {
+        _pausedByTimerSessionIds.remove(session.id);
+      }
     }
-    _pausedByTimerSessionIds.clear();
-    _autoResumeAt = null;
-    _resetTimerAfterAutoResumeSuccess();
+    _pausedByTimerSessionIds.removeWhere(
+      (sessionId) => !_sessions.containsKey(sessionId),
+    );
+    if (_pausedByTimerSessionIds.isEmpty) {
+      _autoResumeAt = null;
+      _resetTimerAfterAutoResumeSuccess();
+    } else {
+      _autoResumeTimer?.cancel();
+      _autoResumeTimer = null;
+    }
     _syncKeepCpuAwake();
     _notifyListeners();
     await _saveTimerRuntime();

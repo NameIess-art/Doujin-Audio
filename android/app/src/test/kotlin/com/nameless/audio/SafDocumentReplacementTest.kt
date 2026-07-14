@@ -1,0 +1,101 @@
+package com.nameless.audio
+
+import com.nameless.audio.storage.replaceSafDocument
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class SafDocumentReplacementTest {
+    @Test
+    fun `create failure preserves existing target`() {
+        val files = linkedMapOf("track.mp3" to "old")
+
+        val result = replace(files, createFails = true)
+
+        assertFalse(result)
+        assertTrue(files["track.mp3"] == "old")
+    }
+
+    @Test
+    fun `write failure preserves existing target`() {
+        val files = linkedMapOf("track.mp3" to "old")
+
+        val result = replace(files, writeFails = true)
+
+        assertFalse(result)
+        assertTrue(files["track.mp3"] == "old")
+    }
+
+    @Test
+    fun `commit rename failure restores existing target`() {
+        val files = linkedMapOf("track.mp3" to "old")
+
+        val result = replace(files, commitRenameFails = true)
+
+        assertFalse(result)
+        assertTrue(files["track.mp3"] == "old")
+        assertFalse(files.containsKey("track.mp3.nameless.bak"))
+    }
+
+    @Test
+    fun `rollback failure leaves the only old copy under backup name`() {
+        val files = linkedMapOf("track.mp3" to "old")
+
+        val result = replace(
+            files,
+            commitRenameFails = true,
+            rollbackRenameFails = true
+        )
+
+        assertFalse(result)
+        assertTrue(files["track.mp3.nameless.bak"] == "old")
+    }
+
+    @Test
+    fun `successful replacement recovers stale backup and removes artifacts`() {
+        val files = linkedMapOf("track.mp3.nameless.bak" to "old")
+
+        val result = replace(files)
+
+        assertTrue(result)
+        assertTrue(files["track.mp3"] == "new")
+        assertFalse(files.containsKey("track.mp3.nameless.part"))
+        assertFalse(files.containsKey("track.mp3.nameless.bak"))
+    }
+
+    private fun replace(
+        files: LinkedHashMap<String, String>,
+        createFails: Boolean = false,
+        writeFails: Boolean = false,
+        commitRenameFails: Boolean = false,
+        rollbackRenameFails: Boolean = false
+    ): Boolean {
+        val targetName = "track.mp3"
+        val existing = files.keys.firstOrNull { it == targetName }
+        val backup = files.keys.firstOrNull { it == "$targetName.nameless.bak" }
+        return replaceSafDocument(
+            targetName = targetName,
+            existing = existing,
+            staleBackup = backup,
+            createTemp = {
+                if (createFails) null else "$targetName.nameless.part".also { files[it] = "" }
+            },
+            writeTemp = { temp ->
+                if (writeFails) false else true.also { files[temp] = "new" }
+            },
+            rename = { source, destination ->
+                val isCommit = source.endsWith(".nameless.part") && destination == targetName
+                val isRollback = source.endsWith(".nameless.bak") && destination == targetName
+                if (isCommit && commitRenameFails || isRollback && rollbackRenameFails) {
+                    null
+                } else {
+                    files.remove(source)?.let { value ->
+                        files[destination] = value
+                        destination
+                    }
+                }
+            },
+            delete = { file -> files.remove(file) != null }
+        )
+    }
+}

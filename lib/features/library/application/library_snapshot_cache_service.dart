@@ -53,26 +53,26 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
   final library = List<MusicTrack>.of(payload.tracks);
   final libraryByPath = <String, MusicTrack>{};
   final libraryIndexByPath = <String, int>{};
-  final tracksByGroup = <String, List<MusicTrack>>{};
   for (var index = 0; index < library.length; index++) {
     final track = library[index];
     libraryByPath[track.path] = track;
     libraryIndexByPath[track.path] = index;
-    tracksByGroup.putIfAbsent(track.groupKey, () => <MusicTrack>[]).add(track);
   }
-  for (final tracks in tracksByGroup.values) {
-    tracks.sort(organizer.compareTracks);
+  final sortedTracks = List<MusicTrack>.of(library)
+    ..sort(organizer.compareTracks);
+  final tracksByGroup = <String, List<MusicTrack>>{};
+  for (final track in sortedTracks) {
+    tracksByGroup.putIfAbsent(track.groupKey, () => <MusicTrack>[]).add(track);
   }
   final immutableTracksByGroup = tracksByGroup.map(
     (groupKey, tracks) =>
         MapEntry(groupKey, List<MusicTrack>.unmodifiable(tracks)),
   );
-  final sortedTracks = List<MusicTrack>.of(library)
-    ..sort(organizer.compareTracks);
   final cardSnapshot = organizer.buildCardTree(
-    tracks: library,
+    tracks: sortedTracks,
     watchedFolders: payload.watchedFolders,
     nodeOrder: payload.nodeOrder,
+    tracksAlreadySorted: true,
   );
   return LibraryDerivedSnapshot(
     library: library,

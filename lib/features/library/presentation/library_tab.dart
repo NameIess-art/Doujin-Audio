@@ -103,6 +103,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
   Timer? _searchDebounceTimer;
+  Timer? _startupRefreshIdleTimer;
+  bool _startupRefreshWaiting = false;
   FilteredLibraryTreeResult? _visibleSearchResult;
   String _visibleSearchQuery = '';
   int? _visibleSearchRevision;
@@ -373,11 +375,36 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         !ref.read(libraryServiceProvider).slice.state.isInitialized) {
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
-    while (mounted && UiInteractionCoordinator.instance.isInteracting) {
-      await Future<void>.delayed(const Duration(milliseconds: 160));
-    }
     if (!mounted) return;
-    await _scheduleWatchedFoldersRefresh(silent: true);
+    _startupRefreshWaiting = true;
+    UiInteractionCoordinator.instance.addListener(
+      _handleStartupRefreshInteractionChanged,
+    );
+    if (!UiInteractionCoordinator.instance.isInteracting) {
+      _scheduleStartupRefreshAfter(const Duration(seconds: 2));
+    }
+  }
+
+  void _handleStartupRefreshInteractionChanged() {
+    if (!_startupRefreshWaiting || !mounted) return;
+    _startupRefreshIdleTimer?.cancel();
+    _startupRefreshIdleTimer = null;
+    if (!UiInteractionCoordinator.instance.isInteracting) {
+      _scheduleStartupRefreshAfter(const Duration(milliseconds: 500));
+    }
+  }
+
+  void _scheduleStartupRefreshAfter(Duration quietWindow) {
+    _startupRefreshIdleTimer?.cancel();
+    _startupRefreshIdleTimer = Timer(quietWindow, () {
+      _startupRefreshIdleTimer = null;
+      if (!mounted || UiInteractionCoordinator.instance.isInteracting) return;
+      _startupRefreshWaiting = false;
+      UiInteractionCoordinator.instance.removeListener(
+        _handleStartupRefreshInteractionChanged,
+      );
+      unawaited(_scheduleWatchedFoldersRefresh(silent: true));
+    });
   }
 
   void _ensureCategorySnapshot({
@@ -467,6 +494,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   void dispose() {
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
+    UiInteractionCoordinator.instance.removeListener(
+      _handleStartupRefreshInteractionChanged,
+    );
+    _startupRefreshIdleTimer?.cancel();
     disposeTabState();
     _searchDebounceTimer?.cancel();
     _scanCoordinator.dispose();

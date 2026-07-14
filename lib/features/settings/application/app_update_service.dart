@@ -20,6 +20,8 @@ export 'app_update_models.dart';
 
 import 'app_update_models.dart';
 
+part 'app_update_github_models.dart';
+
 class AppUpdateService {
   AppUpdateService._();
 
@@ -75,8 +77,13 @@ class AppUpdateService {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const HttpException('GitHub release request failed.');
     }
-    final releases = (jsonDecode(body) as List<dynamic>)
-        .whereType<Map<String, dynamic>>()
+    final decoded = jsonDecode(body);
+    if (decoded is! List) {
+      throw const FormatException('GitHub releases response is not a list.');
+    }
+    final releases = decoded
+        .map(_GitHubRelease.fromJson)
+        .whereType<_GitHubRelease>()
         .toList(growable: false);
     final compatibleRelease = _selectCompatibleRelease(
       releases,
@@ -85,20 +92,13 @@ class AppUpdateService {
     if (compatibleRelease == null) {
       return _noCompatibleRelease(currentVersion);
     }
-    final assets = (compatibleRelease['assets'] as List<dynamic>? ?? const [])
-        .whereType<Map<String, dynamic>>()
-        .toList(growable: false);
     return _buildUpdateInfo(
       currentVersion: currentVersion,
-      tagName: (compatibleRelease['tag_name'] as String? ?? '').trim(),
-      releaseName: compatibleRelease['name'] as String?,
-      releaseUrl:
-          compatibleRelease['html_url'] as String? ??
-          'https://github.com/$owner/$repo/releases',
-      publishedAt: DateTime.tryParse(
-        compatibleRelease['published_at'] as String? ?? '',
-      ),
-      assets: assets,
+      tagName: compatibleRelease.tagName,
+      releaseName: compatibleRelease.name,
+      releaseUrl: compatibleRelease.htmlUrl,
+      publishedAt: compatibleRelease.publishedAt,
+      assets: compatibleRelease.assets,
     );
   }
 
@@ -115,7 +115,9 @@ class AppUpdateService {
       currentVersion: currentVersion,
       tagName: tagName,
       releaseName: 'Nameless Audio $tagName',
-      releaseUrl: 'https://github.com/$owner/$repo/releases/tag/$tagName',
+      releaseUrl: Uri.parse(
+        'https://github.com/$owner/$repo/releases/tag/$tagName',
+      ),
       assets: assets,
     );
   }
@@ -134,21 +136,21 @@ class AppUpdateService {
     );
   }
 
-  static Map<String, dynamic>? _selectCompatibleRelease(
-    List<Map<String, dynamic>> releases,
+  static _GitHubRelease? _selectCompatibleRelease(
+    List<_GitHubRelease> releases,
     AppVersionInfo currentVersion,
   ) {
     final candidates = releases
         .where((release) {
-          if (release['draft'] == true) return false;
-          final tagName = (release['tag_name'] as String? ?? '').trim();
+          if (release.isDraft) return false;
+          final tagName = release.tagName;
           if (!_isCompatibleTag(tagName, currentVersion)) return false;
           final version = _parseVersionFromTag(tagName);
           if (version == null) return false;
           final current = _parseVersion(currentVersion.versionName);
           final currentIsPrerelease = current?.isPreRelease == true;
           if (!currentIsPrerelease && version.isPreRelease) return false;
-          if (!currentIsPrerelease && release['prerelease'] == true) {
+          if (!currentIsPrerelease && release.isPrerelease) {
             return false;
           }
           return true;
@@ -156,8 +158,8 @@ class AppUpdateService {
         .toList(growable: false);
     if (candidates.isEmpty) return null;
     candidates.sort((left, right) {
-      final leftVersion = _parseVersionFromTag(left['tag_name'] as String?);
-      final rightVersion = _parseVersionFromTag(right['tag_name'] as String?);
+      final leftVersion = _parseVersionFromTag(left.tagName);
+      final rightVersion = _parseVersionFromTag(right.tagName);
       if (leftVersion == null && rightVersion == null) return 0;
       if (leftVersion == null) return 1;
       if (rightVersion == null) return -1;
@@ -171,7 +173,13 @@ class AppUpdateService {
     List<Map<String, dynamic>> releases,
     AppVersionInfo currentVersion,
   ) {
-    return _selectCompatibleRelease(releases, currentVersion);
+    return _selectCompatibleRelease(
+      releases
+          .map(_GitHubRelease.fromJson)
+          .whereType<_GitHubRelease>()
+          .toList(growable: false),
+      currentVersion,
+    )?.toJson();
   }
 
   @visibleForTesting
@@ -183,11 +191,18 @@ class AppUpdateService {
     String? releaseName,
     DateTime? publishedAt,
   }) {
+    final releaseUri = _parseGitHubWebUri(releaseUrl);
+    if (releaseUri == null) {
+      throw ArgumentError.value(releaseUrl, 'releaseUrl', 'Invalid web URL.');
+    }
     return _buildUpdateInfo(
       currentVersion: currentVersion,
       tagName: tagName,
-      releaseUrl: releaseUrl,
-      assets: assets,
+      releaseUrl: releaseUri,
+      assets: assets
+          .map(_GitHubAsset.fromJson)
+          .whereType<_GitHubAsset>()
+          .toList(growable: false),
       releaseName: releaseName,
       publishedAt: publishedAt,
     );
@@ -223,7 +238,7 @@ class AppUpdateService {
     throw const HttpException('GitHub latest release page request failed.');
   }
 
-  static Future<List<Map<String, dynamic>>> _fetchExpandedReleaseAssets(
+  static Future<List<_GitHubAsset>> _fetchExpandedReleaseAssets(
     HttpClient client,
     String tagName,
   ) async {
@@ -245,8 +260,8 @@ class AppUpdateService {
   static AppUpdateInfo _buildUpdateInfo({
     required AppVersionInfo currentVersion,
     required String tagName,
-    required String releaseUrl,
-    required List<Map<String, dynamic>> assets,
+    required Uri releaseUrl,
+    required List<_GitHubAsset> assets,
     String? releaseName,
     DateTime? publishedAt,
   }) {
@@ -261,33 +276,16 @@ class AppUpdateService {
         assetName: null,
         assetUrl: null,
         checksumAssetUrl: null,
-        releaseUrl: releaseUrl,
+        releaseUrl: releaseUrl.toString(),
         publishedAt: publishedAt,
         isUpdateAvailable: false,
         status: AppUpdateStatus.missingAsset,
       );
     }
-    final assetUrl = updateAsset['browser_download_url'] as String? ?? '';
-    if (assetUrl.isEmpty) {
-      return AppUpdateInfo(
-        currentVersion: currentVersion,
-        latestVersionName: latestVersionName,
-        tagName: tagName,
-        releaseName: releaseName,
-        assetName: null,
-        assetUrl: null,
-        checksumAssetUrl: null,
-        releaseUrl: releaseUrl,
-        publishedAt: publishedAt,
-        isUpdateAvailable: false,
-        status: AppUpdateStatus.missingAsset,
-      );
-    }
-    final assetName =
-        updateAsset['name'] as String? ??
-        'NamelessAudio-$tagName${Platform.isWindows ? '.zip' : '.apk'}';
-    final checksumAsset = assets.cast<Map<String, dynamic>?>().firstWhere(
-      (asset) => asset?['name'] == '$assetName.sha256',
+    final assetUrl = updateAsset.browserDownloadUrl.toString();
+    final assetName = updateAsset.name;
+    final checksumAsset = assets.cast<_GitHubAsset?>().firstWhere(
+      (asset) => asset?.name == '$assetName.sha256',
       orElse: () => null,
     );
     final newer = _isNewerVersion(
@@ -306,8 +304,8 @@ class AppUpdateService {
       releaseName: releaseName,
       assetName: assetName,
       assetUrl: assetUrl,
-      checksumAssetUrl: checksumAsset?['browser_download_url'] as String?,
-      releaseUrl: releaseUrl,
+      checksumAssetUrl: checksumAsset?.browserDownloadUrl.toString(),
+      releaseUrl: releaseUrl.toString(),
       publishedAt: publishedAt,
       isUpdateAvailable: status == AppUpdateStatus.updateAvailable,
       status: status,
@@ -620,18 +618,14 @@ class AppUpdateService {
     }
   }
 
-  static Map<String, dynamic>? _selectUpdateAsset(
-    List<Map<String, dynamic>> assets,
-  ) {
+  static _GitHubAsset? _selectUpdateAsset(List<_GitHubAsset> assets) {
     if (Platform.isWindows) return _selectWindowsZipAsset(assets);
     return _selectApkAsset(assets);
   }
 
-  static Map<String, dynamic>? _selectApkAsset(
-    List<Map<String, dynamic>> assets,
-  ) {
-    return assets.cast<Map<String, dynamic>?>().firstWhere((asset) {
-      final name = asset?['name'] as String? ?? '';
+  static _GitHubAsset? _selectApkAsset(List<_GitHubAsset> assets) {
+    return assets.cast<_GitHubAsset?>().firstWhere((asset) {
+      final name = asset?.name ?? '';
       return name.startsWith(releaseChannel.androidAssetPrefix) &&
           name.toLowerCase().endsWith('.apk');
     }, orElse: () => null);
@@ -640,27 +634,35 @@ class AppUpdateService {
   @visibleForTesting
   static Map<String, dynamic>? selectApkAssetForTesting(
     List<Map<String, dynamic>> assets,
-  ) => _selectApkAsset(assets);
+  ) => _selectApkAsset(
+    assets
+        .map(_GitHubAsset.fromJson)
+        .whereType<_GitHubAsset>()
+        .toList(growable: false),
+  )?.toJson();
 
   @visibleForTesting
   static Map<String, dynamic>? selectWindowsZipAssetForTesting(
     List<Map<String, dynamic>> assets,
-  ) => _selectWindowsZipAsset(assets);
+  ) => _selectWindowsZipAsset(
+    assets
+        .map(_GitHubAsset.fromJson)
+        .whereType<_GitHubAsset>()
+        .toList(growable: false),
+  )?.toJson();
 
-  static Map<String, dynamic>? _selectWindowsZipAsset(
-    List<Map<String, dynamic>> assets,
-  ) {
+  static _GitHubAsset? _selectWindowsZipAsset(List<_GitHubAsset> assets) {
     final zipAssets = assets
         .where((asset) {
-          final name = asset['name'] as String? ?? '';
+          final name = asset.name;
           return name.startsWith(releaseChannel.windowsAssetPrefix) &&
               name.toLowerCase().endsWith('.zip');
         })
         .toList(growable: false);
     if (zipAssets.isEmpty) return null;
     zipAssets.sort((left, right) {
-      int score(Map<String, dynamic> asset) {
-        final name = (asset['name'] as String? ?? '').toLowerCase();
+      int score(_GitHubAsset asset) {
+        final name = asset.name.toLowerCase();
         var score = 10;
         if (name.contains('windows')) score -= 6;
         if (name.contains('win')) score -= 4;
@@ -674,24 +676,41 @@ class AppUpdateService {
     return zipAssets.first;
   }
 
-  static List<Map<String, dynamic>> _parseExpandedReleaseAssets(String html) {
+  static List<_GitHubAsset> _parseExpandedReleaseAssets(String html) {
     final links = RegExp(
       r'href="([^"]*/releases/download/[^"]+)"',
     ).allMatches(html);
-    final assets = <Map<String, dynamic>>[];
+    final assets = <_GitHubAsset>[];
     final seen = <String>{};
     for (final link in links) {
       final rawHref = link.group(1)?.replaceAll('&amp;', '&') ?? '';
       if (rawHref.isEmpty || !seen.add(rawHref)) continue;
-      final uri = Uri.parse('https://github.com').resolve(rawHref);
-      final name = uri.pathSegments.isNotEmpty
-          ? Uri.decodeComponent(uri.pathSegments.last)
-          : '';
-      if (name.isEmpty) continue;
-      assets.add({'name': name, 'browser_download_url': uri.toString()});
+      try {
+        final uri = Uri.parse('https://github.com').resolve(rawHref);
+        final name = uri.pathSegments.isNotEmpty
+            ? Uri.decodeComponent(uri.pathSegments.last)
+            : '';
+        if (name.isEmpty) continue;
+        final asset = _GitHubAsset.fromJson(<String, dynamic>{
+          'name': name,
+          'browser_download_url': uri.toString(),
+        });
+        if (asset != null) assets.add(asset);
+      } on FormatException {
+        continue;
+      } on ArgumentError {
+        continue;
+      }
     }
     return assets;
   }
+
+  @visibleForTesting
+  static List<Map<String, dynamic>> parseExpandedReleaseAssetsForTesting(
+    String html,
+  ) => _parseExpandedReleaseAssets(
+    html,
+  ).map((asset) => asset.toJson()).toList(growable: false);
 
   static String? _tagNameFromReleaseHtml(String html) {
     final canonical = RegExp(

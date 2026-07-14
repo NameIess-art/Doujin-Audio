@@ -663,19 +663,22 @@ class _LibraryCoverThumbnailState
   @override
   Widget build(BuildContext context) {
     final coverGeneration = ref.watch(coverGenerationProvider);
-    final coverCacheWidth = coverCacheWidthForResolution(
-      ref.watch(
-        settingsStateProvider.select(
-          (s) =>
-              s.valueOrNull?.coverImageResolution ??
-              CoverImageResolution.balanced,
-        ),
+    final resolution = ref.watch(
+      settingsStateProvider.select(
+        (s) =>
+            s.valueOrNull?.coverImageResolution ??
+            CoverImageResolution.balanced,
       ),
     );
     final provider = ref.read(audioProviderFacadeProvider);
     final coverPathFuture = _coverFutureFor(provider, coverGeneration);
     final width = widget.width;
     final height = width * 0.8;
+    final coverCacheWidth = coverCacheWidthForLogicalSize(
+      logicalWidth: width,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: resolution,
+    );
     return SizedBox(
       width: width,
       height: height,
@@ -701,7 +704,8 @@ class _LibraryCoverThumbnailState
                       provider.coverPathFutureForFolder(widget.folderPath),
                   seed: widget.folderPath,
                   cacheWidth: coverCacheWidth,
-                  useDefaultCacheWidth: coverCacheWidth != null,
+                  useDefaultCacheWidth: false,
+                  deferCommitDuringInteraction: true,
                   fit: BoxFit.cover,
                   compact: true,
                   iconSize: 28,
@@ -756,13 +760,11 @@ class _LibraryTrackCoverThumbnailState
   @override
   Widget build(BuildContext context) {
     final coverGeneration = ref.watch(coverGenerationProvider);
-    final coverCacheWidth = coverCacheWidthForResolution(
-      ref.watch(
-        settingsStateProvider.select(
-          (s) =>
-              s.valueOrNull?.coverImageResolution ??
-              CoverImageResolution.balanced,
-        ),
+    final resolution = ref.watch(
+      settingsStateProvider.select(
+        (s) =>
+            s.valueOrNull?.coverImageResolution ??
+            CoverImageResolution.balanced,
       ),
     );
     final provider = ref.read(audioProviderFacadeProvider);
@@ -771,6 +773,11 @@ class _LibraryTrackCoverThumbnailState
 
     final width = widget.width;
     final height = width * 0.8;
+    final coverCacheWidth = coverCacheWidthForLogicalSize(
+      logicalWidth: width,
+      devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+      resolution: resolution,
+    );
     return Stack(
       children: [
         SizedBox(
@@ -791,7 +798,8 @@ class _LibraryTrackCoverThumbnailState
                     provider.coverPathFutureForTrack(track),
                 seed: track.displayName,
                 cacheWidth: coverCacheWidth,
-                useDefaultCacheWidth: coverCacheWidth != null,
+                useDefaultCacheWidth: false,
+                deferCommitDuringInteraction: true,
                 fit: BoxFit.cover,
                 compact: true,
                 iconSize: 28,
@@ -855,7 +863,7 @@ class _RootFolderCardContent extends StatelessWidget {
   }
 }
 
-class _AudioDetailWorkCardContent extends StatelessWidget {
+class _AudioDetailWorkCardContent extends ConsumerWidget {
   const _AudioDetailWorkCardContent({
     required this.title,
     required this.detail,
@@ -879,10 +887,12 @@ class _AudioDetailWorkCardContent extends StatelessWidget {
   final bool cardPositionsLocked;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
-    final fields = context.select<AudioProvider, List<CardInfoField>>(
-      (provider) => provider.cardInfoFields,
+    final fields = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
+      ),
     );
     return LibraryLikeMetadataWorkCardContent(
       title: title,
@@ -915,7 +925,7 @@ class _AudioDetailWorkCardContent extends StatelessWidget {
   }
 }
 
-class _SingleAudioFileCardContent extends StatelessWidget {
+class _SingleAudioFileCardContent extends ConsumerWidget {
   const _SingleAudioFileCardContent({
     required this.title,
     required this.detail,
@@ -927,10 +937,12 @@ class _SingleAudioFileCardContent extends StatelessWidget {
   final bool detailLoading;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
-    final fields = context.select<AudioProvider, List<CardInfoField>>(
-      (provider) => provider.cardInfoFields,
+    final fields = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
+      ),
     );
     return LibraryLikeSingleAudioCardContent(
       title: title,

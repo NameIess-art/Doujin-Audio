@@ -245,6 +245,7 @@ class AudioProvider with ChangeNotifier {
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
   bool _nativeRuntimeStarted = false;
+  bool _warmupPausedForLifecycle = false;
   int _transportCommandSequence = 0;
   Future<void>? _postStartupLibraryMaintenance;
 
@@ -744,6 +745,10 @@ class AudioProvider with ChangeNotifier {
           },
         );
     _initializeControllers();
+    UiInteractionCoordinator.instance.addListener(
+      _handleWarmupInteractionChanged,
+    );
+    _syncWarmupPauseState();
     if (startNativeRuntime) {
       _startNativeRuntime();
     }
@@ -812,6 +817,9 @@ class AudioProvider with ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    UiInteractionCoordinator.instance.removeListener(
+      _handleWarmupInteractionChanged,
+    );
     _countdownTimer?.cancel();
     _autoResumeTimer?.cancel();
     _saveSessionStateTimer?.cancel();

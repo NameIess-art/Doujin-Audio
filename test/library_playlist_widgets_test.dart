@@ -729,6 +729,7 @@ void main() {
       settingsRepository: settingsRepository,
     );
     final controller = ScrollController();
+    var additionalChildBuilds = 0;
 
     addTearDown(audioProvider.dispose);
     addTearDown(controller.dispose);
@@ -760,6 +761,12 @@ void main() {
               floatingReveal: true,
               floatingRevealDistance: 40,
               floatingRevealTriggerDistance: 40,
+              additionalChild: Builder(
+                builder: (context) {
+                  additionalChildBuilds++;
+                  return const SizedBox(height: 20);
+                },
+              ),
             ),
           ],
         ),
@@ -780,6 +787,8 @@ void main() {
     controller.jumpTo(40);
     await tester.pump();
     final revealedHeight = tester.getSize(find.byType(TopPageHeader)).height;
+
+    expect(additionalChildBuilds, 1);
 
     if (Platform.isWindows) {
       expect(beforeThresholdHeight, collapsedHeight);
@@ -859,7 +868,20 @@ void main() {
       audioProvider,
       waitForCategorySnapshot: true,
     );
+    libraryService.syncSlice(
+      isInitialized: true,
+      detailRevision: 0,
+      treeSnapshotRevision: audioProvider.libraryTreeSnapshotRevision,
+    );
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byType(ReorderableListView), findsNothing);
+    expect(find.byKey(const ValueKey('locked_library_list')), findsOneWidget);
+
+    await audioProvider.setCardPositionsLocked(false);
+    await tester.pump();
+    expect(find.byType(ReorderableListView), findsOneWidget);
 
     if (Platform.isWindows) {
       final reorderArea = tester.widget<ContentBoundReorderArea>(

@@ -77,6 +77,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _dragRejected = false;
   bool _contextMenuOpen = false;
   bool _snapClosed = false;
+  bool _actionPaneActive = false;
 
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
@@ -206,8 +207,10 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   @override
   void didUpdateWidget(covariant SwipeRevealCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.key != widget.key && _revealedWidth != 0) {
+    if (oldWidget.key != widget.key &&
+        (_revealedWidth != 0 || _actionPaneActive)) {
       _revealedWidth = 0;
+      _actionPaneActive = false;
     }
   }
 
@@ -289,6 +292,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     );
     if (nextWidth == _revealedWidth) return;
     setState(() {
+      _actionPaneActive = true;
       _revealedWidth = nextWidth;
     });
   }
@@ -361,6 +365,56 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         : _hasSecondaryAction
         ? widget.secondaryActionTooltip ?? widget.removeTooltip
         : widget.removeTooltip;
+    Widget buildClosedContent(BuildContext context) {
+      final content = DecoratedBox(
+        decoration: ShapeDecoration(
+          color: widget.closedColor ?? cs.surface,
+          shape: widget.shape,
+        ),
+        child: Stack(
+          children: [
+            IgnorePointer(ignoring: _isOpen, child: widget.child),
+            if (_contextMenuOpen)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: ShapeDecoration(
+                      color: cs.primaryContainer.withValues(
+                        alpha: isDark ? 0.18 : 0.22,
+                      ),
+                      shape: widget.shape,
+                      shadows: [
+                        BoxShadow(
+                          color: cs.primary.withValues(
+                            alpha: isDark ? 0.16 : 0.10,
+                          ),
+                          blurRadius: 18,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      );
+
+      if (widget.shape case final RoundedRectangleBorder roundedShape) {
+        return ClipRRect(
+          borderRadius: roundedShape.borderRadius.resolve(
+            Directionality.of(context),
+          ),
+          child: content,
+        );
+      }
+      return ClipPath(
+        clipBehavior: Clip.hardEdge,
+        clipper: ShapeBorderClipper(shape: widget.shape),
+        child: content,
+      );
+    }
+
+    final closedContent = Builder(builder: buildClosedContent);
     return RepaintBoundary(
       child: TapRegion(
         onTapOutside: (_) => _closePane(),
@@ -388,7 +442,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                 ? null
                 : () {
                     setState(() {
-                      _revealedWidth = _isOpen ? 0 : _actionWidth;
+                      final opening = !_isOpen;
+                      _actionPaneActive = opening || _actionPaneActive;
+                      _revealedWidth = opening ? _actionWidth : 0;
                     });
                   },
             onHorizontalDragCancel: AppPlatform.isWindows
@@ -399,7 +455,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                   },
             child: Stack(
               children: [
-                if (!AppPlatform.isWindows)
+                if (!AppPlatform.isWindows && _actionPaneActive)
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: ShapeDecoration(
@@ -721,79 +777,36 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                       ),
                     ),
                   ),
-                TweenAnimationBuilder<double>(
-                  tween: Tween<double>(begin: 0, end: _revealedWidth),
-                  duration: _snapClosed
-                      ? Duration.zero
-                      : const Duration(milliseconds: 220),
-                  curve: Curves.easeOutCubic,
-                  onEnd: () {
-                    if (!_snapClosed || !mounted) return;
-                    setState(() {
-                      _snapClosed = false;
-                    });
-                  },
-                  builder: (context, value, child) {
-                    return Transform.translate(
-                      offset: Offset(-value, 0),
-                      child: child,
-                    );
-                  },
-                  child: Builder(
-                    builder: (context) {
-                      final content = DecoratedBox(
-                        decoration: ShapeDecoration(
-                          color: widget.closedColor ?? cs.surface,
-                          shape: widget.shape,
-                        ),
-                        child: Stack(
-                          children: [
-                            IgnorePointer(
-                              ignoring: _isOpen,
-                              child: widget.child,
-                            ),
-                            if (_contextMenuOpen)
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: DecoratedBox(
-                                    decoration: ShapeDecoration(
-                                      color: cs.primaryContainer.withValues(
-                                        alpha: isDark ? 0.18 : 0.22,
-                                      ),
-                                      shape: widget.shape,
-                                      shadows: [
-                                        BoxShadow(
-                                          color: cs.primary.withValues(
-                                            alpha: isDark ? 0.16 : 0.10,
-                                          ),
-                                          blurRadius: 18,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                      );
-
-                      if (widget.shape is RoundedRectangleBorder) {
-                        return ClipRRect(
-                          borderRadius: (widget.shape as RoundedRectangleBorder)
-                              .borderRadius
-                              .resolve(Directionality.of(context)),
-                          child: content,
-                        );
+                if (!_actionPaneActive && _revealedWidth == 0)
+                  closedContent
+                else
+                  TweenAnimationBuilder<double>(
+                    tween: Tween<double>(begin: 0, end: _revealedWidth),
+                    duration: _snapClosed
+                        ? Duration.zero
+                        : const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    onEnd: () {
+                      if (!mounted) return;
+                      if (!_snapClosed &&
+                          (_revealedWidth != 0 || !_actionPaneActive)) {
+                        return;
                       }
-
-                      return ClipPath(
-                        clipBehavior: Clip.hardEdge,
-                        clipper: ShapeBorderClipper(shape: widget.shape),
-                        child: content,
+                      setState(() {
+                        _snapClosed = false;
+                        if (_revealedWidth == 0) {
+                          _actionPaneActive = false;
+                        }
+                      });
+                    },
+                    builder: (context, value, child) {
+                      return Transform.translate(
+                        offset: Offset(-value, 0),
+                        child: child,
                       );
                     },
+                    child: closedContent,
                   ),
-                ),
                 if (_isOpen)
                   Positioned.fill(
                     right: _actionWidth,

@@ -3319,7 +3319,7 @@ void main() {
     );
 
     test(
-      'initial card detail snapshot commits during app interaction',
+      'initial card detail snapshot commits after app interaction',
       () async {
         final interactionSource = Object();
         final coordinator = UiInteractionCoordinator.instance;
@@ -3356,7 +3356,10 @@ void main() {
 
         await provider.audioLibraryCategorySnapshot();
 
-        expect(provider.audioLibraryCategorySnapshotSync, isNotNull);
+        expect(provider.audioLibraryCategorySnapshotSync, isNull);
+
+        coordinator.cancelInteraction(interactionSource);
+        coordinator.flushPendingCommitsForTest();
         expect(
           provider.audioLibraryCategorySnapshotSync?.detailFor(target)?.rjCode,
           'RJ333333',
@@ -3539,6 +3542,39 @@ void main() {
       }
 
       expect(cache.requestedPaths, <String>[unresolved.path]);
+    });
+
+    test('library cover warmup pauses during UI interaction', () async {
+      provider.dispose();
+      final cache = _PlaybackCoverWarmupRecordingCacheService();
+      provider = AudioProvider.test(
+        notificationService: notificationService,
+        audioDatabaseRepository: AudioDatabaseRepository(
+          database: AppDatabase.test(db),
+        ),
+        coverArtworkCacheService: cache,
+      );
+      const track = MusicTrack(
+        path: '/library/paused.flac',
+        displayName: 'Paused',
+        groupKey: '/library',
+        groupTitle: 'Library',
+        groupSubtitle: 'Library',
+        isSingle: false,
+      );
+      final interactionSource = Object();
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.beginInteraction(interactionSource);
+
+      provider.warmupLibraryCoversForTracks(const <MusicTrack?>[track]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(cache.requestedPaths, isEmpty);
+
+      coordinator.cancelInteraction(interactionSource);
+      for (var i = 0; i < 10 && cache.requestedPaths.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(cache.requestedPaths, <String>[track.path]);
     });
   });
 
@@ -4229,6 +4265,21 @@ class _PlaybackCoverWarmupRecordingCacheService
 
   final Set<String> resolvedPaths;
   final List<String> requestedPaths = <String>[];
+
+  @override
+  String? resolvedForTrack(MusicTrack? track, {String? trackPath}) {
+    final path = track?.path ?? trackPath;
+    return path != null && resolvedPaths.contains(path)
+        ? '/resolved.image'
+        : null;
+  }
+
+  @override
+  Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) async {
+    final path = track?.path ?? trackPath;
+    if (path != null) requestedPaths.add(path);
+    return path == null ? null : '/cover.image';
+  }
 
   @override
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {

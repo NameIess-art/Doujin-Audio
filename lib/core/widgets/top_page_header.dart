@@ -74,7 +74,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
 }
 
 class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
-  double _floatingReveal = 0;
+  final ValueNotifier<double> _floatingReveal = ValueNotifier<double>(0);
   double _floatingRevealPendingDistance = 0;
   double? _lastOffset;
 
@@ -91,11 +91,11 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
       oldWidget.collapseController?.removeListener(_handleScrollChanged);
       widget.collapseController?.addListener(_handleScrollChanged);
       _lastOffset = null;
-      _floatingReveal = 0;
+      _floatingReveal.value = 0;
       _floatingRevealPendingDistance = 0;
     }
-    if (!widget.floatingReveal && _floatingReveal != 0) {
-      _floatingReveal = 0;
+    if (!widget.floatingReveal && _floatingReveal.value != 0) {
+      _floatingReveal.value = 0;
       _floatingRevealPendingDistance = 0;
       _lastOffset = null;
     }
@@ -104,6 +104,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
   @override
   void dispose() {
     widget.collapseController?.removeListener(_handleScrollChanged);
+    _floatingReveal.dispose();
     super.dispose();
   }
 
@@ -131,7 +132,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
     double nextReveal;
     if (delta < 0) {
       var revealDistance = -delta;
-      if (_floatingReveal == 0 &&
+      if (_floatingReveal.value == 0 &&
           _floatingRevealPendingDistance <
               widget.floatingRevealTriggerDistance) {
         final remainingTrigger =
@@ -145,19 +146,23 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         revealDistance -= remainingTrigger;
       }
       nextReveal =
-          (_floatingReveal + revealDistance / widget.floatingRevealDistance)
+          (_floatingReveal.value +
+                  revealDistance / widget.floatingRevealDistance)
               .clamp(0.0, 1.0);
     } else {
       _floatingRevealPendingDistance = 0;
-      nextReveal = (_floatingReveal - delta / widget.floatingRevealDistance)
-          .clamp(0.0, 1.0);
+      nextReveal =
+          (_floatingReveal.value - delta / widget.floatingRevealDistance).clamp(
+            0.0,
+            1.0,
+          );
       if (nextReveal == 0) {
         _floatingRevealPendingDistance = 0;
       }
     }
 
-    if (nextReveal == _floatingReveal) return;
-    setState(() => _floatingReveal = nextReveal);
+    if (nextReveal == _floatingReveal.value) return;
+    _floatingReveal.value = nextReveal;
   }
 
   @override
@@ -328,7 +333,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         0.0,
         1.0,
       );
-      return absoluteProgress * (1 - _floatingReveal);
+      return absoluteProgress * (1 - _floatingReveal.value);
     }
 
     Widget headerContainer = Container(
@@ -345,16 +350,17 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         ),
       ),
       child: AnimatedBuilder(
-        animation: widget.collapseController ?? kAlwaysDismissedAnimation,
-        builder: (context, _) {
+        animation: Listenable.merge(<Listenable>[
+          widget.collapseController ?? kAlwaysDismissedAnimation,
+          _floatingReveal,
+        ]),
+        child: widget.additionalChild,
+        builder: (context, additionalChild) {
           final collapseT = collapseProgress();
           return Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              buildHeaderContent(collapseT),
-              if (widget.additionalChild != null) widget.additionalChild!,
-            ],
+            children: [buildHeaderContent(collapseT), ?additionalChild],
           );
         },
       ),

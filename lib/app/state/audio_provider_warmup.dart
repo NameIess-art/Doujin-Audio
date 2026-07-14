@@ -4,6 +4,17 @@ extension AudioProviderWarmup on AudioProvider {
   static const int _mainTabIndexLibrary = 1;
   static const int _mainTabIndexPlayback = 2;
 
+  void _handleWarmupInteractionChanged() {
+    _syncWarmupPauseState();
+  }
+
+  void _syncWarmupPauseState() {
+    _warmupScheduler.setPaused(
+      _warmupPausedForLifecycle ||
+          UiInteractionCoordinator.instance.isInteracting,
+    );
+  }
+
   void scheduleUiWarmup({
     required int currentPageIndex,
     bool immediate = false,

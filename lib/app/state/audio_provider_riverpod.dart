@@ -16,6 +16,7 @@ import '../theme/theme_provider.dart';
 import '../localization/app_language_provider.dart';
 import '../../features/settings/application/app_update_service.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
+import '../../features/asmr/application/asmr_library_controller.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
 
@@ -66,6 +67,28 @@ final asmrDownloadManagerProvider = Provider<AsmrDownloadManager>((ref) {
     'asmrDownloadManagerProvider must be overridden in ProviderScope.',
   );
 });
+
+final asmrLibraryControllerProvider = Provider<AsmrLibraryController>((ref) {
+  throw UnimplementedError(
+    'asmrLibraryControllerProvider must be overridden in ProviderScope.',
+  );
+});
+
+final asmrLibraryGlobalStateProvider =
+    StreamProvider<AsmrLibraryGlobalViewState>((ref) {
+      final controller = ref.watch(asmrLibraryControllerProvider);
+      final states = StreamController<AsmrLibraryGlobalViewState>.broadcast(
+        sync: true,
+      );
+      void emit() => states.add(controller.globalViewState);
+      controller.addListener(emit);
+      emit();
+      ref.onDispose(() {
+        controller.removeListener(emit);
+        states.close();
+      });
+      return states.stream;
+    });
 
 final asmrDownloadStateProvider = StreamProvider<AsmrDownloadState>((ref) {
   final manager = ref.watch(asmrDownloadManagerProvider);

@@ -2,14 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_download_selection.dart';
-import '../application/asmr_library_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -49,8 +47,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             scope: UiOperationScope.asmrDownloadInit,
             labelKey: 'asmr_download_title',
             task: (_) async {
-              final libraryController = context.read<AsmrLibraryController>();
-              final downloadManager = context.read<AsmrDownloadManager>();
+              final libraryController = ref.read(asmrLibraryControllerProvider);
+              final downloadManager = ref.read(asmrDownloadManagerProvider);
               final settings = ref.read(settingsRepositoryProvider);
               final tree = await libraryController.ensureTrackTree(widget.work);
               await downloadManager.initialize();
@@ -84,7 +82,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
       return;
     }
     if (destinationMissing && mounted) {
-      final i18n = context.read<AppLanguageProvider>();
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
       final asmrBlue = AppDesignTokens.of(context).asmrAccent;
       showAppSnackBar(
         context,
@@ -97,9 +95,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   }
 
   Future<void> _chooseDestination() async {
-    final downloadManager = context.read<AsmrDownloadManager>();
+    final downloadManager = ref.read(asmrDownloadManagerProvider);
     final settings = ref.read(settingsRepositoryProvider);
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final folder = await downloadManager.pickDestinationFolder(
       dialogTitle: i18n.tr('asmr_download_choose_path'),
     );
@@ -124,9 +122,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     if (_starting) return;
 
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final downloadManager = context.read<AsmrDownloadManager>();
+    final downloadManager = ref.read(asmrDownloadManagerProvider);
     final settings = ref.read(settingsRepositoryProvider);
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final task = downloadManager.getTask(widget.work.id);
     if (task != null &&
         task.status != AsmrDownloadTaskStatus.completed &&
@@ -229,7 +227,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   @override
   Widget build(BuildContext context) {
     final selection = _selection;
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final selectedLeafCount = selection?.selectedLeafCount() ?? 0;
     final selectedTotalSizeBytes = selection?.selectedTotalSizeBytes() ?? 0;
     final tokens = AppDesignTokens.of(context);

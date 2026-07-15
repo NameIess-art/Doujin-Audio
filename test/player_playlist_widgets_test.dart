@@ -365,7 +365,7 @@ void main() {
         settingsRepository.syncSlice();
       },
     );
-    addTearDown(fixture.dispose);
+    addTearDown(fixture.disposeAfterWarmups);
     final audioProvider = fixture.audioProvider;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;

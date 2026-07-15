@@ -613,6 +613,7 @@ void main() {
           await provider.coverPathFutureForFolder(newFolderPath),
           newCoverPath,
         );
+        await provider.shutdownUiWarmupsForTesting();
       },
     );
 

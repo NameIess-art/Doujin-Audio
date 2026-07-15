@@ -539,29 +539,17 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   void _removeTracksWhere(bool Function(MusicTrack track) test) {
-    final mutation = _libraryService.removeTracksWhere(test);
-    final removedPaths = mutation.tracks
-        .map((track) => track.path)
-        .toList(growable: false);
+    final removedPaths = _libraryFacade.removeTracksMatching(test);
     if (removedPaths.isEmpty) return;
     final removedSet = removedPaths.toSet();
     final sessionsToRemove = _sessions.values
         .where((session) => removedSet.contains(session.currentTrackPath))
         .map((session) => session.id)
         .toList(growable: false);
-    if (!mutation.batched) {
-      _librarySnapshotCacheService.markStructureChanged();
-    }
     if (sessionsToRemove.isNotEmpty) {
       unawaited(
         _removeSessions(sessionsToRemove, persist: false, notify: false),
       );
-    }
-    if (!_skipDisposePersistence) {
-      unawaited(_audioDatabaseRepository.deleteTracks(removedPaths));
-    }
-    if (!mutation.batched) {
-      unawaited(_saveLibraryNodeOrder());
     }
   }
 
@@ -595,40 +583,18 @@ extension AudioProviderLibrary on AudioProvider {
     String folderPath,
     Set<String> retainedPaths,
   ) {
-    final removedPaths = _libraryService
-        .removeLibraryEntriesMissingFromFolderScan(
-          libraryPath,
-          folderPath,
-          retainedPaths,
-        );
-    if (removedPaths.isEmpty) return;
-    if (!_skipDisposePersistence) {
-      unawaited(
-        _audioDatabaseRepository.deleteLibraryEntries(
-          libraryPath,
-          removedPaths,
-        ),
-      );
-    }
+    _libraryFacade.removeLibraryEntriesDeletedFromFolder(
+      libraryPath,
+      folderPath,
+      retainedPaths,
+    );
   }
 
   void removeLibraryEntriesByPaths(
     String libraryPath,
     Iterable<String> entryPaths,
   ) {
-    final removedPaths = _libraryService.removeLibraryEntriesByPaths(
-      libraryPath,
-      entryPaths,
-    );
-    if (removedPaths.isEmpty) return;
-    if (!_skipDisposePersistence) {
-      unawaited(
-        _audioDatabaseRepository.deleteLibraryEntries(
-          libraryPath,
-          removedPaths,
-        ),
-      );
-    }
+    _libraryFacade.removeLibraryEntriesByPaths(libraryPath, entryPaths);
   }
 
   void beginLibraryBatch() {

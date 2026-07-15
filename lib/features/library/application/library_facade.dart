@@ -751,6 +751,77 @@ final class LibraryFacade implements LibraryCatalogReader {
     _syncStateSlice();
   }
 
+  List<String> removeTracksMatching(bool Function(MusicTrack track) test) {
+    final mutation = service.removeTracksWhere(test);
+    final removedPaths = mutation.tracks
+        .map((track) => track.path)
+        .toList(growable: false);
+    if (removedPaths.isEmpty) return const <String>[];
+    if (_persistenceEnabled) {
+      unawaited(databaseRepository.deleteTracks(removedPaths));
+    }
+    if (!mutation.batched) {
+      _markLibraryStructureChanged();
+      if (_persistenceEnabled) unawaited(_saveLibraryNodeOrder());
+    }
+    return removedPaths;
+  }
+
+  void removeTracksByPath(Iterable<String> trackPaths) {
+    final paths = trackPaths.toSet();
+    if (paths.isEmpty) return;
+    removeTracksMatching((track) => paths.contains(track.path));
+  }
+
+  void removeTracksDeletedFromFolder(
+    String folderPath,
+    Set<String> scannedPaths,
+  ) {
+    final normalizedFolder = PathMatcher.normalize(folderPath);
+    final scannedPathIndex = PathMembershipIndex(scannedPaths);
+    removeTracksMatching((track) {
+      if (!PathMatcher.isWithinOrEqualNormalized(
+        track.path,
+        normalizedFolder,
+      )) {
+        return false;
+      }
+      return !scannedPathIndex.containsEquivalent(track.path);
+    });
+  }
+
+  void removeLibraryEntriesDeletedFromFolder(
+    String libraryPath,
+    String folderPath,
+    Set<String> retainedPaths,
+  ) {
+    final removedPaths = service.removeLibraryEntriesMissingFromFolderScan(
+      libraryPath,
+      folderPath,
+      retainedPaths,
+    );
+    if (removedPaths.isNotEmpty && _persistenceEnabled) {
+      unawaited(
+        databaseRepository.deleteLibraryEntries(libraryPath, removedPaths),
+      );
+    }
+  }
+
+  void removeLibraryEntriesByPaths(
+    String libraryPath,
+    Iterable<String> entryPaths,
+  ) {
+    final removedPaths = service.removeLibraryEntriesByPaths(
+      libraryPath,
+      entryPaths,
+    );
+    if (removedPaths.isNotEmpty && _persistenceEnabled) {
+      unawaited(
+        databaseRepository.deleteLibraryEntries(libraryPath, removedPaths),
+      );
+    }
+  }
+
   Future<void> _saveGroupOrder() {
     return AppPreferences.setString(
       _groupOrderPreferenceKey,

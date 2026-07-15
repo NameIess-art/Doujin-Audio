@@ -3,11 +3,13 @@ import 'dart:async';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/persistence/audio_database_repository.dart';
+import '../../../core/platform/app_platform.dart';
 import '../../asmr/application/asmr_playback_cache_service.dart';
 import '../domain/playback_mode.dart';
 import 'playback_session.dart';
 import 'audio_state_services.dart';
 import 'native_playback_repository.dart';
+import 'native_playback_bridge.dart';
 import 'playback_command_runner.dart';
 import 'system_media_controls_service.dart';
 
@@ -60,12 +62,146 @@ final class PlaybackFacade {
   void Function(PlaybackSession session)? _onSessionRegistered;
   void Function()? _onSessionsReordered;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
+  int _transportCommandSequence = 0;
 
   Stream<String> get sessionActivations => _sessionActivations.stream;
   PlaybackStateSliceData get state => service.slice.state;
   Stream<PlaybackStateSliceData> get states => service.slice.stream;
   PlaybackSession? sessionById(String sessionId) =>
       service.sessionById(sessionId);
+
+  int nextTransportCommandId() => ++_transportCommandSequence;
+
+  void observeTransportCommandId(int? commandId) {
+    if (commandId != null && commandId > _transportCommandSequence) {
+      _transportCommandSequence = commandId;
+    }
+  }
+
+  void applyNativeProgress(NativePlaybackProgressUpdate progress) {
+    if (service.sessions[progress.sessionId]?.pendingNativeTrackPath != null) {
+      return;
+    }
+    service.applyNativeProgress(progress);
+  }
+
+  PlaybackNativeSnapshotApplication applyNativeSnapshot(
+    NativePlaybackSnapshot snapshot, {
+    required bool Function(String path) hasLibraryTrack,
+  }) {
+    observeTransportCommandId(snapshot.transportCommandId);
+    final normalized = _normalizeNativeSnapshot(
+      snapshot,
+      hasLibraryTrack: hasLibraryTrack,
+    );
+    final session = service.sessions[normalized.sessionId];
+    if (session == null || session.pendingNativeTrackPath != null) {
+      return PlaybackNativeSnapshotApplication.notApplied(normalized);
+    }
+    final previousTrackPath = session.currentTrackPath;
+    final previousState = session.state;
+    final previousIsPlaybackStarting = session.isPlaybackStarting;
+    final previousPendingPlayingIntent = session.pendingPlayingIntent;
+    if (!service.applyNativeSnapshot(normalized)) {
+      return PlaybackNativeSnapshotApplication.notApplied(normalized);
+    }
+    return PlaybackNativeSnapshotApplication(
+      snapshot: normalized,
+      session: session,
+      previousTrackPath: previousTrackPath,
+      trackChanged: session.currentTrackPath != previousTrackPath,
+      playbackIntentChanged:
+          session.state == previousState &&
+          (session.isPlaybackStarting != previousIsPlaybackStarting ||
+              session.pendingPlayingIntent != previousPendingPlayingIntent),
+    );
+  }
+
+  NativePlaybackSnapshot _normalizeNativeSnapshot(
+    NativePlaybackSnapshot snapshot, {
+    required bool Function(String path) hasLibraryTrack,
+  }) {
+    final rawPath = snapshot.path ?? _pathFromSnapshotUri(snapshot.uri);
+    if (rawPath == null || rawPath.isEmpty) return snapshot;
+    final resolvedPath = resolveRetargetedPath(rawPath);
+    final currentSession = service.sessions[snapshot.sessionId];
+    final currentSessionPath = currentSession?.currentTrackPath;
+    if (currentSession != null &&
+        currentSessionPath != null &&
+        currentSessionPath.isNotEmpty &&
+        PathMatcher.equalsNormalized(resolvedPath, rawPath)) {
+      final originalTrack = _sessionTrackForResolvedPath(
+        currentSession,
+        resolvedPath,
+      );
+      if (originalTrack != null &&
+          PathMatcher.equalsNormalized(
+            resolveRetargetedPath(originalTrack.path),
+            resolvedPath,
+          )) {
+        return snapshot.copyWith(
+          path: originalTrack.path,
+          uri: _snapshotUriForPath(originalTrack.path),
+        );
+      }
+    }
+    if (!PathMatcher.equalsNormalized(resolvedPath, rawPath)) {
+      return snapshot.copyWith(
+        path: resolvedPath,
+        uri: _snapshotUriForPath(resolvedPath),
+      );
+    }
+    if (currentSessionPath == null || currentSessionPath.isEmpty) {
+      return snapshot;
+    }
+    final resolvedSessionPath = resolveRetargetedPath(currentSessionPath);
+    if (PathMatcher.equalsNormalized(resolvedSessionPath, resolvedPath) ||
+        hasLibraryTrack(resolvedPath) ||
+        !hasLibraryTrack(resolvedSessionPath)) {
+      return snapshot;
+    }
+    return snapshot.copyWith(
+      path: resolvedSessionPath,
+      uri: _snapshotUriForPath(resolvedSessionPath),
+    );
+  }
+
+  MusicTrack? _sessionTrackForResolvedPath(
+    PlaybackSession session,
+    String resolvedPath,
+  ) {
+    for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
+      if (PathMatcher.equalsNormalized(
+        resolveRetargetedPath(track.path),
+        resolvedPath,
+      )) {
+        return track;
+      }
+    }
+    return null;
+  }
+
+  String _snapshotUriForPath(String value) {
+    if (PathMatcher.isContentUri(value) || PathMatcher.isRemoteUri(value)) {
+      return value;
+    }
+    return Uri.file(value).toString();
+  }
+
+  String? _pathFromSnapshotUri(String? value) {
+    if (value == null || value.isEmpty) return null;
+    final uri = Uri.tryParse(value);
+    if (uri == null) return value;
+    if (uri.scheme == 'file') {
+      return uri.toFilePath(windows: isWindowsDriveFileUri(uri));
+    }
+    if (uri.scheme == 'content' ||
+        uri.scheme == 'http' ||
+        uri.scheme == 'https') {
+      return value;
+    }
+    return null;
+  }
 
   void publishSessionActivated(String sessionId) {
     if (sessionId.isEmpty || _sessionActivations.isClosed) return;
@@ -201,4 +337,28 @@ final class PlaybackFacade {
     await service.dispose();
     await systemMediaControlsService.dispose();
   }
+}
+
+final class PlaybackNativeSnapshotApplication {
+  const PlaybackNativeSnapshotApplication({
+    required this.snapshot,
+    required this.session,
+    required this.previousTrackPath,
+    required this.trackChanged,
+    required this.playbackIntentChanged,
+  });
+
+  const PlaybackNativeSnapshotApplication.notApplied(this.snapshot)
+    : session = null,
+      previousTrackPath = null,
+      trackChanged = false,
+      playbackIntentChanged = false;
+
+  final NativePlaybackSnapshot snapshot;
+  final PlaybackSession? session;
+  final String? previousTrackPath;
+  final bool trackChanged;
+  final bool playbackIntentChanged;
+
+  bool get applied => session != null;
 }

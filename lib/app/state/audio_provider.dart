@@ -254,7 +254,6 @@ class AudioProvider with ChangeNotifier {
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
   bool _warmupPausedForLifecycle = false;
-  int _transportCommandSequence = 0;
   int _persistenceLoadEpoch = 0;
   Future<void>? _postStartupLibraryMaintenance;
 
@@ -701,7 +700,7 @@ class AudioProvider with ChangeNotifier {
       startListening: _nativePlaybackRepository.startListening,
       stopListening: _nativePlaybackRepository.stopListening,
       onSnapshot: _handleNativePlaybackSnapshot,
-      onProgress: _handleNativePlaybackProgress,
+      onProgress: _playbackFacade.applyNativeProgress,
       onStart: _loadData,
       onEnterBackground: syncKeepAliveBeforeBackground,
       onResumeForeground: () async {

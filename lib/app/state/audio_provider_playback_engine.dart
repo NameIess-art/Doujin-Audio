@@ -15,7 +15,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     required bool shouldStartTriggerCountdown,
   }) async {
     if (!_sessions.containsKey(session.id)) return false;
-    final generation = ++_transportCommandSequence;
+    final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
       generation: generation,
@@ -107,7 +107,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
 
   Future<bool> _pauseSessionPlayback(PlaybackSession session) async {
     if (!_sessions.containsKey(session.id)) return false;
-    final generation = ++_transportCommandSequence;
+    final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
       generation: generation,

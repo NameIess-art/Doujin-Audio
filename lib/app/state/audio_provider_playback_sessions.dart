@@ -739,21 +739,6 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     return null;
   }
 
-  MusicTrack? _sessionTrackForResolvedPath(
-    PlaybackSession session,
-    String resolvedPath,
-  ) {
-    for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
-      if (PathMatcher.equalsNormalized(
-        _playbackFacade.resolveRetargetedPath(track.path),
-        resolvedPath,
-      )) {
-        return track;
-      }
-    }
-    return null;
-  }
-
   MusicTrack? _sessionTrackForPath(PlaybackSession session, String trackPath) {
     final normalizedPath = PathMatcher.normalize(trackPath);
     final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);

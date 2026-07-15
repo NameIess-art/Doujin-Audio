@@ -44,7 +44,7 @@ extension AudioProviderNativeBridge on AudioProvider {
           }
           unawaited(_audioDatabaseRepository.upsertTracks([updatedTrack]));
         }
-        if (_replaceSessionTrackSnapshots(updatedTrack)) {
+        if (_playbackFacade.replaceSessionTrackSnapshots(updatedTrack)) {
           _playbackService.markActiveSessionsDirty();
           _playbackFacade.scheduleSessionStatePersistence(
             delay: const Duration(milliseconds: 800),

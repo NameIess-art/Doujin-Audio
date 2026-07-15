@@ -16,6 +16,7 @@ import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../application/audio_state_services.dart';
+import '../application/playback_facade.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/natural_sort.dart';

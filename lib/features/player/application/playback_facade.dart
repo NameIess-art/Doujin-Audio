@@ -6,6 +6,7 @@ import '../../../core/persistence/audio_database_repository.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../asmr/application/asmr_playback_cache_service.dart';
 import '../domain/playback_mode.dart';
+import '../domain/playback_queue.dart';
 import 'playback_session.dart';
 import 'audio_state_services.dart';
 import 'native_playback_repository.dart';
@@ -62,6 +63,7 @@ final class PlaybackFacade {
   Future<void> Function()? _persistSessionOrder;
   void Function(PlaybackSession session)? _onSessionRegistered;
   void Function()? _onSessionsReordered;
+  void Function()? _onSessionStateChanged;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   int _transportCommandSequence = 0;
 
@@ -70,6 +72,9 @@ final class PlaybackFacade {
   Stream<PlaybackStateSliceData> get states => service.slice.stream;
   PlaybackSession? sessionById(String sessionId) =>
       service.sessionById(sessionId);
+  List<PlaybackSession> get ordinarySessions => service.activeSessions
+      .where((session) => !session.isPlaybackQueue)
+      .toList(growable: false);
 
   int nextTransportCommandId() => ++_transportCommandSequence;
 
@@ -264,9 +269,11 @@ final class PlaybackFacade {
   void attachSessionRuntime({
     required void Function(PlaybackSession session) onSessionRegistered,
     required void Function() onSessionsReordered,
+    required void Function() onSessionStateChanged,
   }) {
     _onSessionRegistered ??= onSessionRegistered;
     _onSessionsReordered ??= onSessionsReordered;
+    _onSessionStateChanged ??= onSessionStateChanged;
   }
 
   void registerSession(PlaybackSession session) {
@@ -279,6 +286,93 @@ final class PlaybackFacade {
     service.reorderSessions(oldIndex, newIndex);
     if (service.sessionStateVersion == version) return;
     _onSessionsReordered?.call();
+  }
+
+  bool renamePlaybackQueue(String sessionId, String name) {
+    final session = service.sessions[sessionId];
+    final queue = session?.playbackQueue;
+    final trimmed = name.trim();
+    if (session == null || queue == null || trimmed.isEmpty) return false;
+    session.playbackQueue = queue.copyWith(name: trimmed);
+    service.markActiveSessionsDirty();
+    scheduleSessionStatePersistence();
+    _onSessionStateChanged?.call();
+    return true;
+  }
+
+  bool setPlaybackQueueColorValue(String sessionId, int? colorValue) {
+    final session = service.sessions[sessionId];
+    final queue = session?.playbackQueue;
+    if (session == null || queue == null) return false;
+    session.playbackQueue = queue.copyWith(
+      colorValue: colorValue,
+      clearColor: colorValue == null,
+    );
+    service.markActiveSessionsDirty();
+    scheduleSessionStatePersistence();
+    _onSessionStateChanged?.call();
+    return true;
+  }
+
+  bool replaceSessionTrackSnapshots(MusicTrack updatedTrack) {
+    var changed = false;
+    for (final session in service.sessions.values) {
+      final customQueueTracks = session.customQueueTracks;
+      if (customQueueTracks != null) {
+        var customQueueChanged = false;
+        final tracks = customQueueTracks
+            .map((track) {
+              if (!PathMatcher.equalsNormalized(
+                track.path,
+                updatedTrack.path,
+              )) {
+                return track;
+              }
+              customQueueChanged = true;
+              return updatedTrack;
+            })
+            .toList(growable: false);
+        if (customQueueChanged) {
+          session.customQueueTracks = List<MusicTrack>.unmodifiable(tracks);
+          changed = true;
+        }
+      }
+      final queue = session.playbackQueue;
+      if (queue == null) continue;
+      var queueChanged = false;
+      final entries = queue.entries
+          .map((entry) {
+            var entryChanged = false;
+            final tracks = entry.tracks
+                .map((track) {
+                  if (!PathMatcher.equalsNormalized(
+                    track.path,
+                    updatedTrack.path,
+                  )) {
+                    return track;
+                  }
+                  entryChanged = true;
+                  queueChanged = true;
+                  return updatedTrack;
+                })
+                .toList(growable: false);
+            if (!entryChanged) return entry;
+            return PlaybackQueueEntry(
+              id: entry.id,
+              kind: entry.kind,
+              title: entry.title,
+              tracks: List<MusicTrack>.unmodifiable(tracks),
+              workRootPath: entry.workRootPath,
+            );
+          })
+          .toList(growable: false);
+      if (!queueChanged) continue;
+      session.playbackQueue = queue.copyWith(
+        entries: List.unmodifiable(entries),
+      );
+      changed = true;
+    }
+    return changed;
   }
 
   void rememberRetargetedPath(String oldPath, String newPath) {

@@ -417,7 +417,8 @@ class PlaybackQueueEditPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(playbackStateProvider);
     final provider = ref.read(audioProviderFacadeProvider);
-    final session = provider.sessionById(sessionId);
+    final playback = ref.read(playbackFacadeProvider);
+    final session = playback.sessionById(sessionId);
     final queue = session?.playbackQueue;
     final i18n = context.watch<AppLanguageProvider>();
     if (queue == null) return const SizedBox.shrink();
@@ -490,7 +491,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                     context,
                     Icons.drive_file_rename_outline_rounded,
                     i18n.tr('edit_queue_name'),
-                    () => _editQueueName(context, provider, queue.name),
+                    () => _editQueueName(context, playback, queue.name),
                   ),
                   _queueEditTile(
                     context,
@@ -587,7 +588,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
 
   Future<void> _editQueueName(
     BuildContext context,
-    AudioProvider provider,
+    PlaybackFacade playback,
     String currentName,
   ) async {
     final controller = TextEditingController(text: currentName);
@@ -620,7 +621,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     );
     controller.dispose();
     if (name?.isNotEmpty == true) {
-      provider.renamePlaybackQueue(sessionId, name!);
+      playback.renamePlaybackQueue(sessionId, name!);
     }
   }
 
@@ -651,7 +652,8 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(playbackStateProvider);
     final provider = ref.read(audioProviderFacadeProvider);
-    final queue = provider.sessionById(sessionId)?.playbackQueue;
+    final playback = ref.read(playbackFacadeProvider);
+    final queue = playback.sessionById(sessionId)?.playbackQueue;
     final i18n = context.watch<AppLanguageProvider>();
     if (queue == null) return const SizedBox.shrink();
 
@@ -762,9 +764,9 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
               Expanded(
                 child: ListView.builder(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  itemCount: provider.ordinaryPlaybackSessions.length,
+                  itemCount: playback.ordinarySessions.length,
                   itemBuilder: (context, index) {
-                    final source = provider.ordinaryPlaybackSessions[index];
+                    final source = playback.ordinarySessions[index];
                     return _QueueSourceAudioTile(
                       queueSessionId: sessionId,
                       source: source,
@@ -953,8 +955,8 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(playbackStateProvider);
-    final provider = ref.read(audioProviderFacadeProvider);
-    final value = provider.sessionById(sessionId)?.playbackQueue?.colorValue;
+    final playback = ref.read(playbackFacadeProvider);
+    final value = playback.sessionById(sessionId)?.playbackQueue?.colorValue;
     final color = value == null
         ? Theme.of(context).colorScheme.primary
         : Color(value);
@@ -1040,9 +1042,9 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
                   final r = channel.$1 == 'R' ? next : (color.r * 255).round();
                   final g = channel.$1 == 'G' ? next : (color.g * 255).round();
                   final b = channel.$1 == 'B' ? next : (color.b * 255).round();
-                  provider.setPlaybackQueueColor(
+                  playback.setPlaybackQueueColorValue(
                     sessionId,
-                    Color.fromARGB(255, r, g, b),
+                    Color.fromARGB(255, r, g, b).toARGB32(),
                   );
                 },
               ),
@@ -1051,7 +1053,7 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
               alignment: Alignment.centerRight,
               child: TextButton.icon(
                 onPressed: () =>
-                    provider.setPlaybackQueueColor(sessionId, null),
+                    playback.setPlaybackQueueColorValue(sessionId, null),
                 icon: const Icon(Icons.restart_alt_rounded, size: 18),
                 label: Text(i18n.tr('reset_to_default')),
               ),

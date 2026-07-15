@@ -18,34 +18,6 @@ extension AudioProviderQueues on AudioProvider {
     return session;
   }
 
-  List<PlaybackSession> get ordinaryPlaybackSessions => activeSessions
-      .where((session) => !session.isPlaybackQueue)
-      .toList(growable: false);
-
-  void renamePlaybackQueue(String sessionId, String name) {
-    final session = _sessions[sessionId];
-    final queue = session?.playbackQueue;
-    final trimmed = name.trim();
-    if (session == null || queue == null || trimmed.isEmpty) return;
-    session.playbackQueue = queue.copyWith(name: trimmed);
-    _playbackService.markActiveSessionsDirty();
-    _notifyPlaybackChanged();
-    _scheduleSessionPersistence();
-  }
-
-  void setPlaybackQueueColor(String sessionId, Color? color) {
-    final session = _sessions[sessionId];
-    final queue = session?.playbackQueue;
-    if (session == null || queue == null) return;
-    session.playbackQueue = queue.copyWith(
-      colorValue: color?.toARGB32(),
-      clearColor: color == null,
-    );
-    _playbackService.markActiveSessionsDirty();
-    _notifyPlaybackChanged();
-    _scheduleSessionPersistence();
-  }
-
   Future<void> addTrackToPlaybackQueue(
     String sessionId,
     MusicTrack track,
@@ -221,68 +193,6 @@ extension AudioProviderQueues on AudioProvider {
     if (persistSession) {
       _scheduleSessionPersistence();
     }
-  }
-
-  bool _replaceSessionTrackSnapshots(MusicTrack updatedTrack) {
-    var changed = false;
-    for (final session in _sessions.values) {
-      final customQueueTracks = session.customQueueTracks;
-      if (customQueueTracks != null) {
-        var customQueueChanged = false;
-        final tracks = customQueueTracks
-            .map((track) {
-              if (!PathMatcher.equalsNormalized(
-                track.path,
-                updatedTrack.path,
-              )) {
-                return track;
-              }
-              customQueueChanged = true;
-              return updatedTrack;
-            })
-            .toList(growable: false);
-        if (customQueueChanged) {
-          session.customQueueTracks = List<MusicTrack>.unmodifiable(tracks);
-          changed = true;
-        }
-      }
-
-      final queue = session.playbackQueue;
-      if (queue == null) continue;
-      var queueChanged = false;
-      final entries = queue.entries
-          .map((entry) {
-            var entryChanged = false;
-            final tracks = entry.tracks
-                .map((track) {
-                  if (!PathMatcher.equalsNormalized(
-                    track.path,
-                    updatedTrack.path,
-                  )) {
-                    return track;
-                  }
-                  entryChanged = true;
-                  queueChanged = true;
-                  return updatedTrack;
-                })
-                .toList(growable: false);
-            if (!entryChanged) return entry;
-            return PlaybackQueueEntry(
-              id: entry.id,
-              kind: entry.kind,
-              title: entry.title,
-              tracks: List<MusicTrack>.unmodifiable(tracks),
-              workRootPath: entry.workRootPath,
-            );
-          })
-          .toList(growable: false);
-      if (!queueChanged) continue;
-      session.playbackQueue = queue.copyWith(
-        entries: List<PlaybackQueueEntry>.unmodifiable(entries),
-      );
-      changed = true;
-    }
-    return changed;
   }
 
   String _nextQueueEntryId() =>

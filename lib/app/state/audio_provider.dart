@@ -5,7 +5,6 @@ import 'dart:math';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
@@ -632,6 +631,7 @@ class AudioProvider with ChangeNotifier {
         _notifyPlaybackChanged();
         _playbackFacade.scheduleSessionOrderPersistence();
       },
+      onSessionStateChanged: _notifyPlaybackChanged,
     );
     _timerFacade.attachRuntime(
       hasPlayingSession: () => _hasPlayingSession,

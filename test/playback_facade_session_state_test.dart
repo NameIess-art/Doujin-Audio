@@ -1,11 +1,13 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/core/media/path_matcher.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
 import 'package:nameless_audio/features/player/application/playback_session.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
+import 'package:nameless_audio/features/player/domain/playback_queue.dart';
 
 void main() {
   test('PlaybackFacade owns session registration and reorder commands', () {
@@ -26,6 +28,7 @@ void main() {
     playback.attachSessionRuntime(
       onSessionRegistered: (session) => registered.add(session.id),
       onSessionsReordered: () => reorderCount++,
+      onSessionStateChanged: () {},
     );
 
     playback
@@ -138,6 +141,67 @@ void main() {
       expect(stateSaves, 2);
     },
   );
+
+  test('PlaybackFacade owns queue metadata and track snapshots', () {
+    final library = LibraryFacade.create();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+    );
+    const original = MusicTrack(
+      path: '/tracks/a.mp3',
+      displayName: 'Old',
+      groupKey: '/tracks',
+      groupTitle: 'Tracks',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    const updated = MusicTrack(
+      path: '/tracks/a.mp3',
+      displayName: 'Updated',
+      groupKey: '/tracks',
+      groupTitle: 'Tracks',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    final queueSession = _session('queue')
+      ..customQueueTracks = <MusicTrack>[original]
+      ..playbackQueue = const PlaybackQueueDefinition(
+        name: 'Before',
+        entries: <PlaybackQueueEntry>[
+          PlaybackQueueEntry(
+            id: 'entry',
+            kind: PlaybackQueueEntryKind.track,
+            title: 'Track',
+            tracks: <MusicTrack>[original],
+          ),
+        ],
+      );
+    addTearDown(() async {
+      queueSession.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+    var changeCount = 0;
+    playback.attachSessionRuntime(
+      onSessionRegistered: (_) {},
+      onSessionsReordered: () {},
+      onSessionStateChanged: () => changeCount++,
+    );
+    playback.registerSession(queueSession);
+
+    expect(playback.renamePlaybackQueue('queue', 'After'), isTrue);
+    expect(playback.setPlaybackQueueColorValue('queue', 0xff112233), isTrue);
+    expect(playback.replaceSessionTrackSnapshots(updated), isTrue);
+
+    expect(queueSession.playbackQueue?.name, 'After');
+    expect(queueSession.playbackQueue?.colorValue, 0xff112233);
+    expect(queueSession.customQueueTracks?.single.displayName, 'Updated');
+    expect(
+      queueSession.playbackQueue?.entries.single.tracks.single.displayName,
+      'Updated',
+    );
+    expect(changeCount, 2);
+  });
 }
 
 PlaybackSession _session(String id) {

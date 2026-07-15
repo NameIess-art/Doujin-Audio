@@ -42,6 +42,10 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
     }
     return SynchronousFuture<String?>(null);
   }
+
+  @override
+  Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) =>
+      SynchronousFuture<String?>(null);
 }
 
 void _expectFixedSessionResetButtonStyle(WidgetTester tester, Finder finder) {
@@ -360,12 +364,13 @@ void main() {
     WidgetTester tester,
   ) async {
     final fixture = AudioProviderWidgetTestFixture(
+      coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
       configureSettingsRepository: (settingsRepository) {
         settingsRepository.cardPositionsLocked = false;
         settingsRepository.syncSlice();
       },
     );
-    addTearDown(fixture.dispose);
+    addTearDown(fixture.disposeAfterWarmups);
     final audioProvider = fixture.audioProvider;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;

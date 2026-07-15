@@ -354,6 +354,7 @@ class _TimerOverlaySheet extends StatelessWidget {
 
 class _BootstrapOverlay extends StatefulWidget {
   const _BootstrapOverlay({
+    super.key,
     required this.visible,
     required this.onAnimationEnd,
   });

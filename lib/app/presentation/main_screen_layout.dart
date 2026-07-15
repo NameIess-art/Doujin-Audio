@@ -167,6 +167,7 @@ extension _MainScreenLayout on _MainScreenState {
 
       return Expanded(
         child: Semantics(
+          key: ValueKey<String>('main_destination_${item.labelKey}'),
           button: true,
           selected: selected,
           label: label,
@@ -547,7 +548,12 @@ extension _MainScreenLayout on _MainScreenState {
                             context,
                           ).asmrAccent;
                           return NavigationRailDestination(
-                            icon: Icon(item.icon),
+                            icon: Icon(
+                              item.icon,
+                              key: ValueKey<String>(
+                                'main_destination_${item.labelKey}',
+                              ),
+                            ),
                             selectedIcon: Icon(
                               item.selectedIcon,
                               color: isAsmr ? asmrBlue : null,

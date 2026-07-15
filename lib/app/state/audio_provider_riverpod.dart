@@ -13,6 +13,7 @@ import '../../core/ui/ui_operation_service.dart';
 import '../presentation/audio_ui_controllers.dart';
 import '../presentation/screen_view_models.dart';
 import '../theme/theme_provider.dart';
+import '../localization/app_language_provider.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
 
@@ -29,6 +30,27 @@ final themeProviderInstanceProvider = Provider<ThemeProvider>((ref) {
   throw UnimplementedError(
     'themeProviderInstanceProvider must be overridden in ProviderScope.',
   );
+});
+
+final appLanguageProviderInstanceProvider = Provider<AppLanguageProvider>((
+  ref,
+) {
+  throw UnimplementedError(
+    'appLanguageProviderInstanceProvider must be overridden in ProviderScope.',
+  );
+});
+
+final appLanguageStateProvider = StreamProvider<AppLanguageState>((ref) {
+  final controller = ref.watch(appLanguageProviderInstanceProvider);
+  final states = StreamController<AppLanguageState>.broadcast(sync: true);
+  void emit() => states.add(AppLanguageState.from(controller));
+  controller.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    controller.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
 });
 
 final themeStateProvider = StreamProvider<ThemeState>((ref) {

@@ -367,6 +367,9 @@ void main() {
         overrides: [
           ...createAudioProviderOverrides(audioProvider: audioProvider),
           themeProviderInstanceProvider.overrideWithValue(themeProvider),
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
         ],
         child: legacy_provider.MultiProvider(
           providers: [
@@ -698,8 +701,7 @@ final class _AppShellHarness {
   final AppLanguageProvider language;
 }
 
-final class _AppShellAudioDatabaseRepository
-    extends AudioDatabaseRepository {
+final class _AppShellAudioDatabaseRepository extends AudioDatabaseRepository {
   @override
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
     return const <TimeSegmentLabel>[];
@@ -779,6 +781,7 @@ Future<_AppShellHarness> _pumpAppShell(
       overrides: [
         ...createAudioProviderOverrides(audioProvider: audioProvider),
         themeProviderInstanceProvider.overrideWithValue(themeProvider),
+        appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
       ],
       child: legacy_provider.MultiProvider(
         providers: [

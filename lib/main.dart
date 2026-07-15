@@ -141,6 +141,9 @@ Future<void> _runAudioPlayerApp() async {
       overrides: [
         ...createAudioProviderOverrides(audioProvider: audioProvider),
         themeProviderInstanceProvider.overrideWithValue(themeProvider),
+        appLanguageProviderInstanceProvider.overrideWithValue(
+          appLanguageProvider,
+        ),
       ],
       child: legacy_provider.MultiProvider(
         providers: [
@@ -219,40 +222,38 @@ class MusicPlayerApp extends ConsumerWidget {
     final themeProvider =
         ref.watch(themeStateProvider).valueOrNull ??
         ThemeState.from(ref.read(themeProviderInstanceProvider));
-    return legacy_provider.Consumer<AppLanguageProvider>(
-      builder: (context, languageProvider, child) {
-        return MaterialApp(
-          title: languageProvider.tr('app_title'),
-          debugShowCheckedModeBanner: false,
-          navigatorObservers: [UiInteractionNavigatorObserver.instance],
-          color: const Color(0xFFC94D63),
-          locale: languageProvider.locale,
-          supportedLocales: AppLanguageProvider.supportedLocales,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-          ],
-          theme: themeProvider.lightTheme,
-          darkTheme: themeProvider.darkTheme,
-          themeMode: themeProvider.themeMode,
-          scrollBehavior: const _StretchOverscrollBehavior().copyWith(
-            scrollbars: AppPlatform.showsDesktopScrollbars,
-            physics: const ClampingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-          ),
-          builder: (context, child) {
-            return TooltipVisibility(
-              visible: false,
-              child: child ?? const SizedBox(),
-            );
-          },
-          home: const OnboardingGate(
-            child: GlobalShortcuts(child: MainScreen()),
-          ),
+    final languageProvider = ref.read(appLanguageProviderInstanceProvider);
+    final languageState =
+        ref.watch(appLanguageStateProvider).valueOrNull ??
+        AppLanguageState.from(languageProvider);
+    return MaterialApp(
+      title: languageProvider.tr('app_title'),
+      debugShowCheckedModeBanner: false,
+      navigatorObservers: [UiInteractionNavigatorObserver.instance],
+      color: const Color(0xFFC94D63),
+      locale: languageState.locale,
+      supportedLocales: AppLanguageProvider.supportedLocales,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ],
+      theme: themeProvider.lightTheme,
+      darkTheme: themeProvider.darkTheme,
+      themeMode: themeProvider.themeMode,
+      scrollBehavior: const _StretchOverscrollBehavior().copyWith(
+        scrollbars: AppPlatform.showsDesktopScrollbars,
+        physics: const ClampingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+      ),
+      builder: (context, child) {
+        return TooltipVisibility(
+          visible: false,
+          child: child ?? const SizedBox(),
         );
       },
+      home: const OnboardingGate(child: GlobalShortcuts(child: MainScreen())),
     );
   }
 }

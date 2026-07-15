@@ -1,9 +1,13 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderLibraryCovers on AudioProvider {
-  Future<List<String>> discoverCoverCandidatesInFolder(String folderPath) {
+  Future<List<String>> discoverCoverCandidatesInFolder(
+    String folderPath, {
+    String? selectedCoverPath,
+  }) {
     return _coverArtworkCacheService.discoverCoverCandidatesInFolder(
       folderPath,
+      selectedCoverPath: selectedCoverPath,
     );
   }
 

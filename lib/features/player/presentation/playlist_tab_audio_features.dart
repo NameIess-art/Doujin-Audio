@@ -214,6 +214,7 @@ class _VolumeBalancePage extends ConsumerWidget {
             Center(
               child: FilledButton.tonal(
                 key: const ValueKey<String>('restore_volume_balance'),
+                style: _sessionDetailResetButtonStyle,
                 onPressed: panning.abs() < 0.001
                     ? null
                     : () {
@@ -254,6 +255,9 @@ class _EqualizerPage extends ConsumerWidget {
       ...provider.customEqPresets,
     ];
     final selectedPresetId = effects.eqPresetId;
+    final hasAdjustedEqBands = effects.eqBandLevels.values.any(
+      (gainDb) => gainDb.abs() >= 0.001,
+    );
 
     return ListView(
       padding: const EdgeInsets.only(top: 2),
@@ -363,25 +367,37 @@ class _EqualizerPage extends ConsumerWidget {
         Row(
           children: [
             Expanded(
-              child: FilledButton.tonal(
-                onPressed: () {
-                  final flat = AudioProvider.builtInEqPresets.first;
-                  unawaited(provider.applySessionEqPreset(session.id, flat));
-                },
-                child: Text(i18n.tr('eq_reset')),
+              child: Center(
+                child: FilledButton.tonal(
+                  key: const ValueKey<String>('reset_equalizer'),
+                  style: _sessionDetailResetButtonStyle,
+                  onPressed: hasAdjustedEqBands
+                      ? () {
+                          final flat = AudioProvider.builtInEqPresets.first;
+                          unawaited(
+                            provider.applySessionEqPreset(session.id, flat),
+                          );
+                        }
+                      : null,
+                  child: Text(i18n.tr('eq_reset')),
+                ),
               ),
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: FilledButton.tonal(
-                onPressed: effects.eqBandLevels.isEmpty
-                    ? null
-                    : () => _showSavePresetDialog(
-                        context,
-                        provider: provider,
-                        session: session,
-                      ),
-                child: Text(i18n.tr('eq_save_preset')),
+              child: Center(
+                child: FilledButton.tonal(
+                  key: const ValueKey<String>('save_equalizer_preset'),
+                  style: _sessionDetailResetButtonStyle,
+                  onPressed: hasAdjustedEqBands
+                      ? () => _showSavePresetDialog(
+                          context,
+                          provider: provider,
+                          session: session,
+                        )
+                      : null,
+                  child: Text(i18n.tr('eq_save_preset')),
+                ),
               ),
             ),
           ],

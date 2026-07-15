@@ -129,15 +129,14 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
   Future<void> _load() async {
     try {
       final provider = context.read<AudioProvider>();
-      final discoveredImages = await provider.discoverCoverCandidatesInFolder(
+      final currentCover = await provider.coverPathFutureForFolder(
         widget.folderPath,
       );
-      final initialCoverPath = widget.initialCoverPath;
-      final images = <String>[
-        if (initialCoverPath != null && initialCoverPath.isNotEmpty)
-          initialCoverPath,
-        ...discoveredImages.where((path) => path != initialCoverPath),
-      ];
+      final discoveredImages = await provider.discoverCoverCandidatesInFolder(
+        widget.folderPath,
+        selectedCoverPath: currentCover ?? widget.initialCoverPath,
+      );
+      final images = discoveredImages;
       if (!mounted) return;
       if (images.isEmpty) {
         setState(() {
@@ -146,11 +145,6 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
         });
         return;
       }
-
-      final currentCover = await provider.coverPathFutureForFolder(
-        widget.folderPath,
-      );
-      if (!mounted) return;
       var initialIndex = 0;
       if (currentCover != null) {
         final foundIndex = images.indexOf(currentCover);

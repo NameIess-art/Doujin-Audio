@@ -61,7 +61,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         session.speed = speed;
         session.audioEffects = item.audioEffects;
         _sessions[session.id] = session;
-        _markActiveSessionsDirty();
+        _playbackService.markActiveSessionsDirty();
         _bindSessionListeners(session);
         restoredIds.add(session.id);
       }
@@ -75,7 +75,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       _sessionOrder
         ..clear()
         ..addAll(validOrdered);
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
 
       final firstSessionId = _sessionOrder.firstOrNull;
       _notificationFocusSessionId = firstSessionId;

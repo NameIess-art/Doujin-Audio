@@ -57,6 +57,8 @@ final class PlaybackFacade {
   })?
   _launchQueue;
   Future<void> Function()? _persistSessionState;
+  void Function(PlaybackSession session)? _onSessionRegistered;
+  void Function()? _onSessionsReordered;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
 
   Stream<String> get sessionActivations => _sessionActivations.stream;
@@ -83,6 +85,26 @@ final class PlaybackFacade {
 
   void attachSessionStatePersistence(Future<void> Function() persist) {
     _persistSessionState ??= persist;
+  }
+
+  void attachSessionRuntime({
+    required void Function(PlaybackSession session) onSessionRegistered,
+    required void Function() onSessionsReordered,
+  }) {
+    _onSessionRegistered ??= onSessionRegistered;
+    _onSessionsReordered ??= onSessionsReordered;
+  }
+
+  void registerSession(PlaybackSession session) {
+    service.registerSession(session);
+    _onSessionRegistered?.call(session);
+  }
+
+  void reorderSessions(int oldIndex, int newIndex) {
+    final version = service.sessionStateVersion;
+    service.reorderSessions(oldIndex, newIndex);
+    if (service.sessionStateVersion == version) return;
+    _onSessionsReordered?.call();
   }
 
   void rememberRetargetedPath(String oldPath, String newPath) {

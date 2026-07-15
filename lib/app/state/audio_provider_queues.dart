@@ -13,7 +13,7 @@ extension AudioProviderQueues on AudioProvider {
       customQueueTracks: const <MusicTrack>[],
       playbackQueue: PlaybackQueueDefinition(name: name, entries: const []),
     );
-    _registerSession(session);
+    _playbackFacade.registerSession(session);
     _scheduleSessionPersistence();
     return session;
   }
@@ -28,7 +28,7 @@ extension AudioProviderQueues on AudioProvider {
     final trimmed = name.trim();
     if (session == null || queue == null || trimmed.isEmpty) return;
     session.playbackQueue = queue.copyWith(name: trimmed);
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged();
     _scheduleSessionPersistence();
   }
@@ -41,7 +41,7 @@ extension AudioProviderQueues on AudioProvider {
       colorValue: color?.toARGB32(),
       clearColor: color == null,
     );
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged();
     _scheduleSessionPersistence();
   }
@@ -117,7 +117,7 @@ extension AudioProviderQueues on AudioProvider {
         entry,
       ]),
     );
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged();
     _scheduleSessionPersistence();
     await _syncPlaybackQueueSession(
@@ -216,7 +216,7 @@ extension AudioProviderQueues on AudioProvider {
         targetQueueIndex: nextIndex,
       );
     }
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged();
     if (persistSession) {
       _scheduleSessionPersistence();

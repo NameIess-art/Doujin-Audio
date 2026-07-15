@@ -52,7 +52,7 @@ extension AudioProviderPersistence on AudioProvider {
     final removedSessions = _sessions.values.toList(growable: false);
     _sessions.clear();
     _sessionOrder.clear();
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
       session.dispose();
@@ -219,7 +219,7 @@ extension AudioProviderPersistence on AudioProvider {
       _sessionOrder
         ..clear()
         ..addAll(list);
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }

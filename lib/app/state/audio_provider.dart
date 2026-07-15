@@ -664,12 +664,27 @@ class AudioProvider with ChangeNotifier {
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
     _libraryFacade.attachTrackRemovalHandler(_handleLibraryTracksRemoved);
     _libraryFacade.attachCoverChangeHandler(() {
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
       _syncNotificationState();
       _notifyLibraryAndPlaybackChanged();
     });
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
     _playbackFacade.attachSessionStatePersistence(_saveSessionState);
+    _playbackFacade.attachSessionRuntime(
+      onSessionRegistered: (session) {
+        _notificationsDismissedWhilePaused = false;
+        _notificationFocusSessionId = session.id;
+        _bindSessionListeners(session);
+        _syncKeepCpuAwake();
+        _syncNotificationState();
+        _notifyPlaybackChanged();
+      },
+      onSessionsReordered: () {
+        _syncNotificationState();
+        _notifyPlaybackChanged();
+        _scheduleSaveSessionOrder();
+      },
+    );
     _timerFacade.attachRuntime(
       hasPlayingSession: () => _hasPlayingSession,
       onStateChanged: () {

@@ -143,10 +143,6 @@ extension AudioProviderState on AudioProvider {
 }
 
 extension AudioProviderCoreState on AudioProvider {
-  void _markActiveSessionsDirty() {
-    _playbackService.markActiveSessionsDirty();
-  }
-
   void _markLibraryStructureDirty() {
     _libraryService.markStructureChanged();
     _librarySnapshotCacheService.markStructureChanged();

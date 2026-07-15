@@ -100,7 +100,7 @@ extension AudioProviderPlayback on AudioProvider {
     if (mode != SessionLoopMode.single) {
       session.nonSingleLoopMode = mode;
     }
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged();
     _syncNotificationState();
     unawaited(
@@ -131,14 +131,14 @@ extension AudioProviderPlayback on AudioProvider {
     }
     final previous = session.channelSwapEnabled;
     session.channelSwapEnabled = enabled;
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged(); // Optimistic update
 
     final response = await _syncSessionAudioEffects(session);
 
     if (response.isFailure) {
       session.channelSwapEnabled = previous;
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
       _notifyPlaybackChanged();
       AppLogService.warning(
         'AudioProvider.setSessionChannelSwap error: '
@@ -291,13 +291,13 @@ extension AudioProviderPlayback on AudioProvider {
     final previous = session.audioEffects;
     final next = update(previous);
     session.audioEffects = next;
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged();
 
     final response = await _syncSessionAudioEffects(session);
     if (response.isFailure) {
       session.audioEffects = previous;
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
       _notifyPlaybackChanged();
       AppLogService.warning(
         'AudioProvider.$errorLabel error: ${response.errorOrNull}',
@@ -337,7 +337,7 @@ extension AudioProviderPlayback on AudioProvider {
     if (snapshot.hasChannelSwapPayload) {
       session.channelSwapEnabled = snapshot.channelSwapEnabled;
     }
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged();
   }
 
@@ -458,7 +458,7 @@ extension AudioProviderPlayback on AudioProvider {
       _deferredVolumeReloadSessionIds.add(session.id);
     }
     if (notify) {
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
       _notifyPlaybackChanged();
     }
     await _nativePlaybackRepository.setVolume(
@@ -488,7 +488,7 @@ extension AudioProviderPlayback on AudioProvider {
     }
     final previous = session.speed;
     session.speed = nextSpeed;
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     if (notify) {
       _notifyPlaybackChanged();
       _syncNotificationState();
@@ -501,7 +501,7 @@ extension AudioProviderPlayback on AudioProvider {
 
     if (response.isFailure) {
       session.speed = previous;
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
       AppLogService.warning(
         'AudioProvider.setSessionSpeed error: ${response.errorOrNull}',
       );

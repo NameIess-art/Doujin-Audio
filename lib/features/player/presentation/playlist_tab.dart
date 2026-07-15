@@ -613,10 +613,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                           ScrollViewKeyboardDismissBehavior
                                               .onDrag,
                                       onReorder: (oldIndex, newIndex) {
-                                        provider.reorderSessions(
-                                          oldIndex,
-                                          newIndex,
-                                        );
+                                        ref
+                                            .read(playbackFacadeProvider)
+                                            .reorderSessions(
+                                              oldIndex,
+                                              newIndex,
+                                            );
                                         setState(() {
                                           _isReordering = false;
                                           _reorderSnapshot = null;

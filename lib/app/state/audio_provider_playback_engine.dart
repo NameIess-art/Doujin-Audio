@@ -217,18 +217,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     return sessions.first.id;
   }
 
-  void reorderSessions(int oldIndex, int newIndex) {
-    if (oldIndex < 0 || oldIndex >= _sessionOrder.length) return;
-    if (newIndex < 0 || newIndex > _sessionOrder.length) return;
-    if (newIndex > oldIndex) newIndex -= 1;
-    final moved = _sessionOrder.removeAt(oldIndex);
-    _sessionOrder.insert(newIndex, moved);
-    _markActiveSessionsDirty();
-    _syncNotificationState();
-    _notifyPlaybackChanged();
-    _scheduleSaveSessionOrder();
-  }
-
   bool hasSessionAdjacentTrack(String sessionId, {required bool forward}) {
     final session = _sessions[sessionId];
     if (session == null || session.isLoading) return false;

@@ -50,7 +50,7 @@ class _NativePreparationResult {
 extension AudioProviderPlaybackSessions on AudioProvider {
   Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
     final session = _createSessionForTrack(track);
-    _registerSession(session);
+    _playbackFacade.registerSession(session);
     _scheduleSessionPersistence();
     unawaited(
       _enqueueSessionPreparation(
@@ -76,7 +76,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       loopMode: loopMode,
       customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
     );
-    _registerSession(session);
+    _playbackFacade.registerSession(session);
     _scheduleSessionPersistence();
     unawaited(
       _enqueueSessionPreparation(
@@ -110,16 +110,6 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     session.channelSwapEnabled = false;
     session.audioEffects = AudioEffectsState.flat;
     return session;
-  }
-
-  void _registerSession(PlaybackSession session) {
-    _playbackService.registerSession(session);
-    _notificationsDismissedWhilePaused = false;
-    _notificationFocusSessionId = session.id;
-    _bindSessionListeners(session);
-    _syncKeepCpuAwake();
-    _syncNotificationState();
-    _notifyPlaybackChanged();
   }
 
   Future<void> _enqueueSessionPreparation(
@@ -446,7 +436,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     } else if (forceStartAtZero) {
       session.setOptimisticPosition(target.startPosition);
     }
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged();
   }
 

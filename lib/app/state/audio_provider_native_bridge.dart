@@ -113,7 +113,7 @@ extension AudioProviderNativeBridge on AudioProvider {
         position: session.position,
         syncNotification: false,
       );
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
       _syncNotificationState();
       _scheduleSaveSessionState(delay: const Duration(milliseconds: 800));
       _notifyPlaybackChanged();
@@ -135,7 +135,7 @@ extension AudioProviderNativeBridge on AudioProvider {
           unawaited(_audioDatabaseRepository.upsertTracks([updatedTrack]));
         }
         if (_replaceSessionTrackSnapshots(updatedTrack)) {
-          _markActiveSessionsDirty();
+          _playbackService.markActiveSessionsDirty();
           _scheduleSaveSessionState(delay: const Duration(milliseconds: 800));
         }
       }

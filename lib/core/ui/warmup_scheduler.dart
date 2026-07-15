@@ -10,32 +10,44 @@ class WarmupScheduler {
   final Set<String> _queuedKeys = <String>{};
   final Set<String> _activeKeys = <String>{};
   Timer? _cooldownTimer;
+  Completer<void>? _idleCompleter;
 
   int _currentGeneration = 0;
   bool _isCoolingDown = false;
   bool _isPaused = false;
+  bool _isShutDown = false;
 
   int get currentGeneration => _currentGeneration;
   int get pendingCount => _pending.length;
   int get activeCount => _activeKeys.length;
   bool get isPaused => _isPaused;
+  bool get isIdle => _pending.isEmpty && _activeKeys.isEmpty && !_isCoolingDown;
+
+  Future<void> get idle {
+    if (isIdle) return Future<void>.value();
+    return (_idleCompleter ??= Completer<void>()).future;
+  }
 
   void setPaused(bool value) {
+    if (_isShutDown) return;
     if (_isPaused == value) return;
     _isPaused = value;
     if (!value) _pump();
   }
 
   void beginGeneration(int generation, {Duration cooldown = Duration.zero}) {
+    if (_isShutDown) return;
     _currentGeneration = generation;
     _dropStalePending();
     _cooldownTimer?.cancel();
     _isCoolingDown = cooldown > Duration.zero;
     if (_isCoolingDown) {
+      _markBusy();
       _cooldownTimer = Timer(cooldown, () {
         _cooldownTimer = null;
         _isCoolingDown = false;
         _pump();
+        _completeIdleIfNeeded();
       });
     }
     _pump();
@@ -48,6 +60,7 @@ class WarmupScheduler {
     String? group,
     required Future<void> Function() task,
   }) {
+    if (_isShutDown) return false;
     if (generation != _currentGeneration) return false;
     if (_queuedKeys.contains(key) || _activeKeys.contains(key)) return false;
 
@@ -73,6 +86,7 @@ class WarmupScheduler {
     }
 
     _pending.add(queuedTask);
+    _markBusy();
     _pending.sort((left, right) => left.priority.compareTo(right.priority));
     _queuedKeys.add(key);
     _pump();
@@ -85,6 +99,13 @@ class WarmupScheduler {
     _isCoolingDown = false;
     _pending.clear();
     _queuedKeys.clear();
+    _completeIdleIfNeeded();
+  }
+
+  Future<void> shutdown() {
+    _isShutDown = true;
+    clear();
+    return idle;
   }
 
   void clearGroup(String group) {
@@ -106,7 +127,7 @@ class WarmupScheduler {
   }
 
   void _pump() {
-    if (_isCoolingDown || _isPaused) return;
+    if (_isShutDown || _isCoolingDown || _isPaused) return;
     while (_activeKeys.length < maxConcurrent && _pending.isNotEmpty) {
       final nextTask = _pending.removeAt(0);
       _queuedKeys.remove(nextTask.key);
@@ -126,6 +147,22 @@ class WarmupScheduler {
     } finally {
       _activeKeys.remove(task.key);
       _pump();
+      _completeIdleIfNeeded();
+    }
+  }
+
+  void _markBusy() {
+    if (_idleCompleter?.isCompleted ?? false) {
+      _idleCompleter = null;
+    }
+  }
+
+  void _completeIdleIfNeeded() {
+    if (!isIdle) return;
+    final completer = _idleCompleter;
+    _idleCompleter = null;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
     }
   }
 }

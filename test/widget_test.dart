@@ -695,6 +695,14 @@ final class _AppShellHarness {
   final AppLanguageProvider language;
 }
 
+final class _AppShellAudioDatabaseRepository
+    extends AudioDatabaseRepository {
+  @override
+  Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
+    return const <TimeSegmentLabel>[];
+  }
+}
+
 void _setLogicalTestViewSize(WidgetTester tester, Size size) {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -719,7 +727,7 @@ Future<_AppShellHarness> _pumpAppShell(
   final themeProvider = ThemeProvider();
   final languageProvider = AppLanguageProvider();
   final notificationService = PlaybackNotificationService();
-  final audioDatabaseRepository = AudioDatabaseRepository();
+  final audioDatabaseRepository = _AppShellAudioDatabaseRepository();
   final nativePlaybackRepository = NativePlaybackRepository();
   final libraryService = LibraryService();
   final playbackService = PlaybackSessionService();
@@ -777,7 +785,23 @@ Future<_AppShellHarness> _pumpAppShell(
     ),
   );
   await _pumpMainScreenAnimations(tester, startup: true);
+  await _waitForAppBootstrap(tester);
   return _AppShellHarness(language: languageProvider);
+}
+
+Future<void> _waitForAppBootstrap(WidgetTester tester) async {
+  final overlay = find.byKey(const ValueKey<String>('main_bootstrap_overlay'));
+  for (
+    var attempt = 0;
+    attempt < 20 && overlay.evaluate().isNotEmpty;
+    attempt++
+  ) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump(const Duration(milliseconds: 60));
+  }
+  expect(overlay, findsNothing, reason: 'App bootstrap did not complete.');
 }
 
 Future<void> _pumpMainScreenAnimations(
@@ -803,5 +827,40 @@ Future<void> _settleSessionDetailAsyncWork(WidgetTester tester) async {
 }
 
 Future<void> _tapSettingsDestination(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Icons.tune_outlined).last);
+  final navigationRail = find.byType(NavigationRail);
+  if (navigationRail.evaluate().isNotEmpty) {
+    tester
+        .widget<NavigationRail>(navigationRail)
+        .onDestinationSelected!
+        .call(3);
+  } else {
+    final destination = find.byKey(
+      const ValueKey<String>('main_destination_nav_settings'),
+    );
+    tester
+        .widget<InkResponse>(
+          find.descendant(of: destination, matching: find.byType(InkResponse)),
+        )
+        .onTap!
+        .call();
+  }
+  await _waitForMainPage(tester, 3);
+}
+
+Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {
+  final pageViewFinder = find.byKey(const ValueKey<String>('main_page_view'));
+  for (var frame = 0; frame < 30; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    final controller = tester.widget<PageView>(pageViewFinder).controller!;
+    if (controller.hasClients &&
+        ((controller.page ?? controller.initialPage) - targetPage).abs() <
+            0.001) {
+      return;
+    }
+  }
+  final controller = tester.widget<PageView>(pageViewFinder).controller!;
+  fail(
+    'Main PageController did not reach page $targetPage; '
+    'current page: ${controller.page}.',
+  );
 }

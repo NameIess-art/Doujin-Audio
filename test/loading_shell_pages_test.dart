@@ -77,19 +77,21 @@ Widget _buildTestApp({
   required AppLanguageProvider languageProvider,
   required Widget child,
 }) {
+  final themeProvider = ThemeProvider();
   return ProviderScope(
-    overrides: createAudioProviderOverrides(
-      audioProvider: services.audioProvider,
-    ),
+    overrides: [
+      ...createAudioProviderOverrides(
+        audioProvider: services.audioProvider,
+      ),
+      themeProviderInstanceProvider.overrideWithValue(themeProvider),
+    ],
     child: legacy_provider.MultiProvider(
       providers: [
         legacy_provider.ChangeNotifierProvider.value(value: languageProvider),
         legacy_provider.ChangeNotifierProvider.value(
           value: services.audioProvider,
         ),
-        legacy_provider.ChangeNotifierProvider<ThemeProvider>(
-          create: (_) => ThemeProvider(),
-        ),
+        legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
       ],
       child: MaterialApp(home: child),
     ),

@@ -6,8 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:provider/provider.dart' as legacy_provider;
 
 import 'app/localization/app_language_provider.dart';
 import 'core/platform/app_platform.dart';
@@ -134,18 +134,27 @@ Future<void> _runAudioPlayerApp() async {
     source: asmrLibraryController,
     launcher: PlaybackFacadeSessionLauncher(playbackFacade),
   );
+  final themeProvider = ThemeProvider();
 
   runApp(
     ProviderScope(
-      overrides: createAudioProviderOverrides(audioProvider: audioProvider),
-      child: MultiProvider(
+      overrides: [
+        ...createAudioProviderOverrides(audioProvider: audioProvider),
+        themeProviderInstanceProvider.overrideWithValue(themeProvider),
+      ],
+      child: legacy_provider.MultiProvider(
         providers: [
-          ChangeNotifierProvider(create: (_) => ThemeProvider()),
-          ChangeNotifierProvider.value(value: appLanguageProvider),
-          ChangeNotifierProvider.value(value: audioProvider),
-          ChangeNotifierProvider.value(value: asmrLibraryController),
-          ChangeNotifierProvider.value(value: asmrDownloadManager),
-          Provider.value(value: asmrPlaybackCoordinator),
+          legacy_provider.ChangeNotifierProvider.value(
+            value: appLanguageProvider,
+          ),
+          legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
+          legacy_provider.ChangeNotifierProvider.value(
+            value: asmrLibraryController,
+          ),
+          legacy_provider.ChangeNotifierProvider.value(
+            value: asmrDownloadManager,
+          ),
+          legacy_provider.Provider.value(value: asmrPlaybackCoordinator),
         ],
         child: const MusicPlayerApp(),
       ),
@@ -202,13 +211,16 @@ class _StretchOverscrollBehavior extends MaterialScrollBehavior {
   }
 }
 
-class MusicPlayerApp extends StatelessWidget {
+class MusicPlayerApp extends ConsumerWidget {
   const MusicPlayerApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer2<ThemeProvider, AppLanguageProvider>(
-      builder: (context, themeProvider, languageProvider, child) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeProvider =
+        ref.watch(themeStateProvider).valueOrNull ??
+        ThemeState.from(ref.read(themeProviderInstanceProvider));
+    return legacy_provider.Consumer<AppLanguageProvider>(
+      builder: (context, languageProvider, child) {
         return MaterialApp(
           title: languageProvider.tr('app_title'),
           debugShowCheckedModeBanner: false,

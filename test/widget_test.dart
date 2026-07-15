@@ -364,7 +364,10 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: createAudioProviderOverrides(audioProvider: audioProvider),
+        overrides: [
+          ...createAudioProviderOverrides(audioProvider: audioProvider),
+          themeProviderInstanceProvider.overrideWithValue(themeProvider),
+        ],
         child: legacy_provider.MultiProvider(
           providers: [
             legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
@@ -773,7 +776,10 @@ Future<_AppShellHarness> _pumpAppShell(
 
   await tester.pumpWidget(
     ProviderScope(
-      overrides: createAudioProviderOverrides(audioProvider: audioProvider),
+      overrides: [
+        ...createAudioProviderOverrides(audioProvider: audioProvider),
+        themeProviderInstanceProvider.overrideWithValue(themeProvider),
+      ],
       child: legacy_provider.MultiProvider(
         providers: [
           legacy_provider.ChangeNotifierProvider.value(value: themeProvider),

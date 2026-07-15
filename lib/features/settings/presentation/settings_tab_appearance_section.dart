@@ -22,9 +22,9 @@ List<Widget> _buildSettingsAppearanceSection({
       children: [
         Consumer(
           builder: (context, ref, _) {
-            final themeMode = context.select<ThemeProvider, ThemeMode>(
-              (provider) => provider.themeMode,
-            );
+            final themeMode =
+                ref.watch(themeStateProvider).valueOrNull?.themeMode ??
+                ref.read(themeProviderInstanceProvider).themeMode;
             final modeLabels = <ThemeMode, String>{
               ThemeMode.system: i18n.tr('theme_system'),
               ThemeMode.light: i18n.tr('theme_light'),
@@ -49,7 +49,7 @@ List<Widget> _buildSettingsAppearanceSection({
                 value: themeMode,
                 onChanged: (value) {
                   if (value != null) {
-                    context.read<ThemeProvider>().setThemeMode(value);
+                    ref.read(themeProviderInstanceProvider).setThemeMode(value);
                   }
                 },
                 items: ThemeMode.values
@@ -73,14 +73,17 @@ List<Widget> _buildSettingsAppearanceSection({
         ),
         Consumer(
           builder: (context, ref, _) {
-            final provider = context.watch<ThemeProvider>();
+            final themeState =
+                ref.watch(themeStateProvider).valueOrNull ??
+                ThemeState.from(ref.read(themeProviderInstanceProvider));
+            final provider = ref.read(themeProviderInstanceProvider);
             return SwitchListTile(
               title: Text(i18n.tr('differentiate_asmr_theme')),
               subtitle: Text(
                 i18n.tr('differentiate_asmr_theme_subtitle'),
                 style: descStyle,
               ),
-              value: provider.differentiateAsmrTheme,
+              value: themeState.differentiateAsmrTheme,
               onChanged: (val) => provider.setDifferentiateAsmrTheme(val),
               secondary: Container(
                 width: 38,

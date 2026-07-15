@@ -109,18 +109,20 @@ Widget buildAudioProviderTestApp({
   UiOperationService? uiOperationService,
   required Widget child,
 }) {
+  final themeProvider = ThemeProvider();
   return ProviderScope(
-    overrides: createAudioProviderOverrides(
-      audioProvider: audioProvider,
-      uiOperationService: uiOperationService,
-    ),
+    overrides: [
+      ...createAudioProviderOverrides(
+        audioProvider: audioProvider,
+        uiOperationService: uiOperationService,
+      ),
+      themeProviderInstanceProvider.overrideWithValue(themeProvider),
+    ],
     child: legacy_provider.MultiProvider(
       providers: [
         legacy_provider.ChangeNotifierProvider.value(value: languageProvider),
         legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
-        legacy_provider.ChangeNotifierProvider<ThemeProvider>(
-          create: (_) => ThemeProvider(),
-        ),
+        legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
       ],
       child: MaterialApp(home: Scaffold(body: child)),
     ),

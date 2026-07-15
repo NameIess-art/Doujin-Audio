@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/audio_path_coordinator.dart';
@@ -10,6 +12,7 @@ import '../../features/player/application/timer_facade.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../presentation/audio_ui_controllers.dart';
 import '../presentation/screen_view_models.dart';
+import '../theme/theme_provider.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
 
@@ -20,6 +23,25 @@ final audioProviderFacadeProvider = Provider<AudioProvider>((ref) {
   throw UnimplementedError(
     'audioProviderFacadeProvider must be overridden in ProviderScope.',
   );
+});
+
+final themeProviderInstanceProvider = Provider<ThemeProvider>((ref) {
+  throw UnimplementedError(
+    'themeProviderInstanceProvider must be overridden in ProviderScope.',
+  );
+});
+
+final themeStateProvider = StreamProvider<ThemeState>((ref) {
+  final controller = ref.watch(themeProviderInstanceProvider);
+  final states = StreamController<ThemeState>.broadcast(sync: true);
+  void emit() => states.add(ThemeState.from(controller));
+  controller.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    controller.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
 });
 
 final audioRuntimeCoordinatorProvider = Provider<AudioRuntimeCoordinator>((

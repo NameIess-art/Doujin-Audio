@@ -3,6 +3,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 
 import '../../../core/app_language.dart';
@@ -827,6 +828,99 @@ final class LibraryFacade implements LibraryCatalogReader {
       _groupOrderPreferenceKey,
       json.encode(service.groupOrder),
     );
+  }
+
+  void beginLibraryBatch() {
+    service.libraryBatchDepth++;
+  }
+
+  void beginStagedLibraryRefresh() {
+    beginLibraryBatch();
+  }
+
+  Future<void> finishStagedLibraryRefresh({bool waitForPersistence = false}) {
+    return endLibraryBatch(waitForPersistence: waitForPersistence);
+  }
+
+  Future<void> endLibraryBatch({
+    bool notify = true,
+    bool waitForPersistence = true,
+  }) async {
+    if (service.libraryBatchDepth <= 0) return;
+    service.libraryBatchDepth--;
+    if (service.libraryBatchDepth > 0) return;
+
+    final didChangeLibrary = service.libraryBatchChanged;
+    final entriesToPersist = List<LibraryEntry>.from(
+      service.libraryBatchPersistEntriesByKey.values,
+    );
+    if (!didChangeLibrary && entriesToPersist.isEmpty) return;
+    final tracksToPersist = List<MusicTrack>.from(
+      service.libraryBatchPersistTracks,
+    );
+    final didChangeGroupOrder = service.libraryBatchChangedGroupOrder;
+    service
+      ..libraryBatchChanged = false
+      ..libraryBatchChangedGroupOrder = false
+      ..libraryBatchPersistTracks.clear()
+      ..libraryBatchPersistEntriesByKey.clear();
+
+    if (didChangeLibrary) {
+      _coverArtworkCacheService?.invalidateAll();
+      service
+        ..syncGroupOrderFromLibrary()
+        ..syncLibraryNodeOrder(persist: false);
+      final derivedGeneration = ++service.libraryDerivedGeneration;
+      final derivedSnapshot = await AppLogService.measureAsync(
+        'library_derived_snapshot_build',
+        () => compute(
+          buildLibraryDerivedSnapshot,
+          LibraryDerivedSnapshotPayload(
+            tracks: List<MusicTrack>.unmodifiable(service.library),
+            watchedFolders: List<String>.unmodifiable(service.watchedFolders),
+            nodeOrder: List<String>.unmodifiable(service.libraryNodeOrder),
+          ),
+        ),
+        details: <String, Object?>{'tracks': service.library.length},
+      );
+      if (derivedGeneration == service.libraryDerivedGeneration) {
+        service
+          ..library = derivedSnapshot.library
+          ..libraryByPath = derivedSnapshot.libraryByPath
+          ..libraryIndexByPath = derivedSnapshot.libraryIndexByPath
+          ..tracksByGroup = derivedSnapshot.tracksByGroup
+          ..sortedLibraryTracks = derivedSnapshot.sortedLibraryTracks
+          ..sortedLibraryTrackPaths = derivedSnapshot.sortedLibraryTrackPaths
+          ..markStructureChanged();
+        snapshotCacheService
+          ..markStructureChanged()
+          ..adoptCardSnapshot(derivedSnapshot.cardSnapshot);
+        _syncStateSlice();
+      }
+    }
+
+    final persistenceTasks = <Future<void>>[];
+    if (_persistenceEnabled) {
+      if (tracksToPersist.isNotEmpty) {
+        persistenceTasks.add(databaseRepository.upsertTracks(tracksToPersist));
+      }
+      if (entriesToPersist.isNotEmpty) {
+        persistenceTasks.add(
+          databaseRepository.upsertLibraryEntries(entriesToPersist),
+        );
+      }
+      if (didChangeLibrary && didChangeGroupOrder) {
+        persistenceTasks.add(_saveGroupOrder());
+      }
+      if (didChangeLibrary) persistenceTasks.add(_saveLibraryNodeOrder());
+    }
+    if (waitForPersistence) {
+      await Future.wait(persistenceTasks);
+    } else {
+      for (final task in persistenceTasks) {
+        unawaited(task);
+      }
+    }
   }
 
   void _queueOrPersistLibraryEntries(

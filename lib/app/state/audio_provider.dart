@@ -324,23 +324,14 @@ class AudioProvider with ChangeNotifier {
   FolderScanStage get _scanStage => _libraryService.scanStage;
   int get _scanProcessed => _libraryService.scanProcessed;
   int? get _scanTotal => _libraryService.scanTotal;
-  int get _libraryBatchDepth => _libraryService.libraryBatchDepth;
   set _libraryBatchDepth(int value) =>
       _libraryService.libraryBatchDepth = value;
-  bool get _libraryBatchChanged => _libraryService.libraryBatchChanged;
   set _libraryBatchChanged(bool value) {
     _libraryService.libraryBatchChanged = value;
   }
 
-  bool get _libraryBatchChangedGroupOrder =>
-      _libraryService.libraryBatchChangedGroupOrder;
   set _libraryBatchChangedGroupOrder(bool value) {
     _libraryService.libraryBatchChangedGroupOrder = value;
-  }
-
-  int get _libraryDerivedGeneration => _libraryService.libraryDerivedGeneration;
-  set _libraryDerivedGeneration(int value) {
-    _libraryService.libraryDerivedGeneration = value;
   }
 
   List<MusicTrack> get _libraryBatchPersistTracks =>

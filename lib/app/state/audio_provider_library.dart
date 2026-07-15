@@ -598,11 +598,11 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   void beginLibraryBatch() {
-    _libraryBatchDepth++;
+    _libraryFacade.beginLibraryBatch();
   }
 
   void beginStagedLibraryRefresh() {
-    beginLibraryBatch();
+    _libraryFacade.beginStagedLibraryRefresh();
   }
 
   int applyStagedLibraryRefreshChunk({
@@ -674,86 +674,22 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   Future<void> finishStagedLibraryRefresh({bool waitForPersistence = false}) {
-    return endLibraryBatch(waitForPersistence: waitForPersistence);
+    return _libraryFacade.finishStagedLibraryRefresh(
+      waitForPersistence: waitForPersistence,
+    );
   }
 
   Future<void> endLibraryBatch({
     bool notify = true,
     bool waitForPersistence = true,
   }) async {
-    if (_libraryBatchDepth <= 0) return;
-    _libraryBatchDepth--;
-    if (_libraryBatchDepth > 0) return;
-
-    final didChangeLibrary = _libraryBatchChanged;
-    final entriesToPersist = List<LibraryEntry>.from(
-      _libraryBatchPersistEntriesByKey.values,
+    final previousRevision = _libraryService.structureRevision;
+    await _libraryFacade.endLibraryBatch(
+      notify: notify,
+      waitForPersistence: waitForPersistence,
     );
-    if (!didChangeLibrary && entriesToPersist.isEmpty) return;
-    final tracksToPersist = List<MusicTrack>.from(_libraryBatchPersistTracks);
-    final didChangeGroupOrder = _libraryBatchChangedGroupOrder;
-    _libraryBatchChanged = false;
-    _libraryBatchChangedGroupOrder = false;
-    _libraryBatchPersistTracks.clear();
-    _libraryBatchPersistEntriesByKey.clear();
-
-    if (didChangeLibrary) {
-      _clearResolvedCoverPaths();
-      _syncGroupOrderFromLibrary();
-      _syncLibraryNodeOrder(persist: false);
-      final derivedGeneration = ++_libraryDerivedGeneration;
-      final derivedSnapshot = await AppLogService.measureAsync(
-        'library_derived_snapshot_build',
-        () => compute(
-          buildLibraryDerivedSnapshot,
-          LibraryDerivedSnapshotPayload(
-            tracks: List<MusicTrack>.unmodifiable(_library),
-            watchedFolders: List<String>.unmodifiable(_watchedFolders),
-            nodeOrder: List<String>.unmodifiable(_libraryNodeOrder),
-          ),
-        ),
-        details: <String, Object?>{'tracks': _library.length},
-      );
-      if (derivedGeneration == _libraryDerivedGeneration) {
-        _libraryService
-          ..library = derivedSnapshot.library
-          ..libraryByPath = derivedSnapshot.libraryByPath
-          ..libraryIndexByPath = derivedSnapshot.libraryIndexByPath
-          ..tracksByGroup = derivedSnapshot.tracksByGroup
-          ..sortedLibraryTracks = derivedSnapshot.sortedLibraryTracks
-          ..sortedLibraryTrackPaths = derivedSnapshot.sortedLibraryTrackPaths;
-        _markLibraryStructureDirty();
-        _librarySnapshotCacheService.adoptCardSnapshot(
-          derivedSnapshot.cardSnapshot,
-        );
-        if (notify) {
-          _notifyLibraryAndPlaybackChanged();
-        }
-      }
-    }
-    final persistenceTasks = <Future<void>>[];
-    if (tracksToPersist.isNotEmpty && !_skipDisposePersistence) {
-      persistenceTasks.add(
-        _audioDatabaseRepository.upsertTracks(tracksToPersist),
-      );
-    }
-    if (entriesToPersist.isNotEmpty && !_skipDisposePersistence) {
-      persistenceTasks.add(
-        _audioDatabaseRepository.upsertLibraryEntries(entriesToPersist),
-      );
-    }
-    if (didChangeLibrary && didChangeGroupOrder) {
-      persistenceTasks.add(_saveGroupOrder());
-    }
-    if (didChangeLibrary) {
-      persistenceTasks.add(_saveLibraryNodeOrder());
-    }
-    if (waitForPersistence) {
-      await Future.wait(persistenceTasks);
-    } else {
-      for (final task in persistenceTasks) {
-        unawaited(task);
-      }
+    if (notify && _libraryService.structureRevision != previousRevision) {
+      _notifyLibraryAndPlaybackChanged();
     }
   }
 

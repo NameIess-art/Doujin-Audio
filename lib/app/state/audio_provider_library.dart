@@ -1,8 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderLibrary on AudioProvider {
-  static const LibraryOrganizer _libraryOrganizer = LibraryOrganizer();
-
   void _rememberRetargetedPath(String oldPath, String newPath) {
     final normalizedOldPath = PathMatcher.normalize(oldPath);
     final normalizedNewPath = PathMatcher.normalize(newPath);
@@ -1375,7 +1373,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   int getTrackComparator(MusicTrack a, MusicTrack b) {
-    return _libraryOrganizer.compareTracks(a, b);
+    return _libraryService.compareTracks(a, b);
   }
 
   MusicTrack? trackByPath(String trackPath) {

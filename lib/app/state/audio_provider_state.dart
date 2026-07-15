@@ -224,51 +224,12 @@ extension AudioProviderCoreState on AudioProvider {
   }
 
   void _rebuildLibraryIndexes() {
-    final tracksByGroup = <String, List<MusicTrack>>{};
-    _libraryByPath.clear();
-    _libraryIndexByPath.clear();
-    for (var i = 0; i < _library.length; i++) {
-      final track = _library[i];
-      _libraryByPath[track.path] = track;
-      _libraryIndexByPath[track.path] = i;
-      tracksByGroup
-          .putIfAbsent(track.groupKey, () => <MusicTrack>[])
-          .add(track);
-    }
-    for (final entry in tracksByGroup.entries) {
-      entry.value.sort(getTrackComparator);
-    }
-    _tracksByGroup
-      ..clear()
-      ..addAll(
-        tracksByGroup.map(
-          (groupKey, tracks) =>
-              MapEntry(groupKey, List<MusicTrack>.unmodifiable(tracks)),
-        ),
-      );
-    _sortedLibraryTracks = List<MusicTrack>.unmodifiable(
-      _library.toList()..sort(getTrackComparator),
-    );
-    _sortedLibraryTrackPaths = List<String>.unmodifiable(
-      _sortedLibraryTracks.map((track) => track.path),
-    );
-    _groupOrderSet
-      ..clear()
-      ..addAll(_groupOrder);
-    _markLibraryStructureDirty();
+    _libraryService.rebuildLibraryIndexes();
+    _librarySnapshotCacheService.markStructureChanged();
   }
 
   void _syncGroupOrderFromLibrary() {
-    final activeGroupKeys = _library.map((track) => track.groupKey).toSet();
-    _groupOrder.removeWhere((groupKey) => !activeGroupKeys.contains(groupKey));
-    for (final groupKey in activeGroupKeys) {
-      if (_groupOrderSet.add(groupKey)) {
-        _groupOrder.add(groupKey);
-      }
-    }
-    _groupOrderSet
-      ..clear()
-      ..addAll(_groupOrder);
+    _libraryService.syncGroupOrderFromLibrary();
   }
 
   Future<SharedPreferences> get _prefs async {

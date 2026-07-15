@@ -504,6 +504,56 @@ class LibraryService {
 
   MusicTrack? trackByPath(String trackPath) => libraryByPath[trackPath];
 
+  int compareTracks(MusicTrack first, MusicTrack second) {
+    return organizer.compareTracks(first, second);
+  }
+
+  void rebuildLibraryIndexes() {
+    final nextTracksByGroup = <String, List<MusicTrack>>{};
+    libraryByPath.clear();
+    libraryIndexByPath.clear();
+    for (var index = 0; index < library.length; index++) {
+      final track = library[index];
+      libraryByPath[track.path] = track;
+      libraryIndexByPath[track.path] = index;
+      nextTracksByGroup
+          .putIfAbsent(track.groupKey, () => <MusicTrack>[])
+          .add(track);
+    }
+    for (final entry in nextTracksByGroup.entries) {
+      entry.value.sort(compareTracks);
+    }
+    tracksByGroup
+      ..clear()
+      ..addAll(
+        nextTracksByGroup.map(
+          (groupKey, tracks) =>
+              MapEntry(groupKey, List<MusicTrack>.unmodifiable(tracks)),
+        ),
+      );
+    sortedLibraryTracks = List<MusicTrack>.unmodifiable(
+      library.toList()..sort(compareTracks),
+    );
+    sortedLibraryTrackPaths = List<String>.unmodifiable(
+      sortedLibraryTracks.map((track) => track.path),
+    );
+    groupOrderSet
+      ..clear()
+      ..addAll(groupOrder);
+    markStructureChanged();
+  }
+
+  void syncGroupOrderFromLibrary() {
+    final activeGroupKeys = library.map((track) => track.groupKey).toSet();
+    groupOrder.removeWhere((groupKey) => !activeGroupKeys.contains(groupKey));
+    for (final groupKey in activeGroupKeys) {
+      if (groupOrderSet.add(groupKey)) groupOrder.add(groupKey);
+    }
+    groupOrderSet
+      ..clear()
+      ..addAll(groupOrder);
+  }
+
   Future<void> removeLibrary(
     String libraryPath, {
     required Future<void> Function(String folderPath) removeFolder,

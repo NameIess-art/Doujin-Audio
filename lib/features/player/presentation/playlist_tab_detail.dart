@@ -237,7 +237,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.read<AudioProvider>();
+    final provider = ref.read(audioProviderFacadeProvider);
     final detailState = ref.watch(sessionDetailUiProvider(_currentSessionId));
     final sessionIds = detailState.sessionOrder.sessionIds;
 

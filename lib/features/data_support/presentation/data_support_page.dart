@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
+import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../asmr/application/asmr_library_controller.dart';
 import '../application/data_support_file_service.dart';
@@ -13,14 +15,14 @@ import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../app/presentation/onboarding_page.dart';
 
-class DataSupportPage extends StatefulWidget {
+class DataSupportPage extends ConsumerStatefulWidget {
   const DataSupportPage({super.key});
 
   @override
-  State<DataSupportPage> createState() => _DataSupportPageState();
+  ConsumerState<DataSupportPage> createState() => _DataSupportPageState();
 }
 
-class _DataSupportPageState extends State<DataSupportPage> {
+class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   final _operationService = UiOperationService.instance;
   final _fileService = DataSupportFileService();
 
@@ -47,7 +49,7 @@ class _DataSupportPageState extends State<DataSupportPage> {
 
   Future<void> _restoreBackup() async {
     final i18n = context.read<AppLanguageProvider>();
-    final audioProvider = context.read<AudioProvider>();
+    final audioProvider = ref.read(audioProviderFacadeProvider);
     final asmrController = context.read<AsmrLibraryController>();
     final confirmed = await showConfirmActionDialog(
       context: context,

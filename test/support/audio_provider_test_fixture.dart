@@ -220,6 +220,11 @@ final class AudioProviderWidgetTestFixture {
   );
 
   void dispose() => audioProvider.dispose();
+
+  Future<void> disposeAfterWarmups() async {
+    await audioProvider.shutdownUiWarmupsForTesting();
+    audioProvider.dispose();
+  }
 }
 
 final class AudioProviderTestFixture {
@@ -279,6 +284,7 @@ final class AudioProviderTestFixture {
     messenger.setMockMethodCallHandler(fileCacheChannel, null);
     messenger.setMockMethodCallHandler(nativePlaybackChannel, null);
     messenger.setMockMethodCallHandler(notificationsChannel, null);
+    await currentProvider.shutdownUiWarmupsForTesting();
     currentProvider.dispose();
     await database.close();
   }

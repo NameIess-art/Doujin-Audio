@@ -231,4 +231,55 @@ void main() {
     expect(ran, isTrue);
     expect(scheduler.pendingCount, 0);
   });
+
+  test('shutdown drops queued work and waits for active work', () async {
+    final scheduler = WarmupScheduler(maxQueueSize: 4);
+    scheduler.beginGeneration(10);
+    final activeStarted = Completer<void>();
+    final releaseActive = Completer<void>();
+    var queuedRan = false;
+
+    scheduler.schedule(
+      key: 'active',
+      priority: 0,
+      generation: 10,
+      task: () async {
+        activeStarted.complete();
+        await releaseActive.future;
+      },
+    );
+    scheduler.schedule(
+      key: 'queued',
+      priority: 1,
+      generation: 10,
+      task: () async {
+        queuedRan = true;
+      },
+    );
+
+    await activeStarted.future;
+    var shutdownCompleted = false;
+    final shutdown = scheduler.shutdown().then((_) {
+      shutdownCompleted = true;
+    });
+
+    await Future<void>.delayed(Duration.zero);
+    expect(shutdownCompleted, isFalse);
+    expect(scheduler.pendingCount, 0);
+    expect(
+      scheduler.schedule(
+        key: 'rejected',
+        priority: 0,
+        generation: 10,
+        task: () async {},
+      ),
+      isFalse,
+    );
+
+    releaseActive.complete();
+    await shutdown;
+
+    expect(queuedRan, isFalse);
+    expect(scheduler.isIdle, isTrue);
+  });
 }

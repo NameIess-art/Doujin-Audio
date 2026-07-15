@@ -40,6 +40,14 @@ extension AudioProviderWarmup on AudioProvider {
     });
   }
 
+  @visibleForTesting
+  Future<void> shutdownUiWarmupsForTesting() async {
+    _deferredWarmupTimer?.cancel();
+    _deferredWarmupTimer = null;
+    _warmupGeneration += 1;
+    await _warmupScheduler.shutdown();
+  }
+
   void _runUiWarmup({
     required int generation,
     required int currentPageIndex,

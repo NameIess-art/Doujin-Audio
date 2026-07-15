@@ -803,5 +803,8 @@ Future<void> _settleSessionDetailAsyncWork(WidgetTester tester) async {
 }
 
 Future<void> _tapSettingsDestination(WidgetTester tester) async {
-  await tester.tap(find.byIcon(Icons.tune_outlined).last);
+  await tester.tap(
+    find.byKey(const ValueKey<String>('main_destination_nav_settings')),
+  );
+  await tester.pumpAndSettle();
 }

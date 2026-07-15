@@ -747,6 +747,7 @@ class AudioProvider with ChangeNotifier {
     _saveSessionOrderTimer?.cancel();
     _scanProgressNotifyTimer?.cancel();
     _deferredWarmupTimer?.cancel();
+    unawaited(_warmupScheduler.shutdown());
     _notificationProgressRefreshTimer?.cancel();
     _unifiedNotificationSyncTimer?.cancel();
     _notificationActionRefreshTimer?.cancel();

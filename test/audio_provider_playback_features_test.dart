@@ -1020,7 +1020,7 @@ void main() {
         ..loadedPath = session.currentTrackPath
         ..setOptimisticState(playing: true);
 
-      await provider.dismissNotificationsAfterPauseAll();
+      await provider.notificationFacade.dismissAfterPauseAll();
 
       expect(session.state.playing, isTrue);
       expect(nativeCalls, contains(NativePlaybackMethod.dismissNotifications));

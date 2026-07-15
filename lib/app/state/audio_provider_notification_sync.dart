@@ -1,6 +1,43 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderNotificationSync on AudioProvider {
+  List<PlaybackSession> get _singleThreadNotificationSessions {
+    return _notificationStateService.singleThreadNotificationSessions(
+      activeSessions,
+    );
+  }
+
+  List<PlaybackSession> get _notificationQueueSessions {
+    return _notificationStateService.notificationQueueSessions(
+      activeSessions: activeSessions,
+      multiThreadPlaybackEnabled: _multiThreadPlaybackEnabled,
+    );
+  }
+
+  PlaybackSession? _focusedSessionFrom(Iterable<PlaybackSession> sessions) {
+    return _notificationStateService.focusedSessionFrom(sessions);
+  }
+
+  PlaybackSession? get _notificationFocusedSession {
+    return _focusedSessionFrom(_notificationQueueSessions);
+  }
+
+  PlaybackSession? get _notificationActionSession {
+    return _notificationStateService.notificationActionSession(
+      activeSessions: activeSessions,
+      queueSessions: _notificationQueueSessions,
+    );
+  }
+
+  PlaybackSession? _resolveNotificationSession([String? sessionId]) {
+    return _notificationStateService.resolveNotificationSession(
+      sessions: _sessions,
+      activeSessions: activeSessions,
+      queueSessions: _notificationQueueSessions,
+      sessionId: sessionId,
+    );
+  }
+
   static const String _interactionNotificationRefreshKey =
       'playback_notification_refresh_after_interaction';
 
@@ -88,9 +125,9 @@ extension AudioProviderNotificationSync on AudioProvider {
         duration: duration == Duration.zero ? null : duration,
       ),
       SystemMediaControlsCallbacks(
-        onToggle: toggleSessionPlaybackFromNotification,
-        onPrevious: skipNotificationSessionToPreviousById,
-        onNext: skipNotificationSessionToNextById,
+        onToggle: _notificationFacade.toggleSessionPlayback,
+        onPrevious: _notificationFacade.skipSessionToPrevious,
+        onNext: _notificationFacade.skipSessionToNext,
         onSeek: _playbackFacade.seekSession,
       ),
     );

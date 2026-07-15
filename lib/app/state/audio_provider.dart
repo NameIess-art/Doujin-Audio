@@ -75,7 +75,6 @@ import '../../features/player/application/timer_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../core/media/subtitle_parser.dart';
 
-part 'audio_provider_notifications.dart';
 part 'audio_provider_persistence.dart';
 part 'audio_provider_library.dart';
 part 'audio_provider_library_categories.dart';
@@ -707,6 +706,26 @@ class AudioProvider with ChangeNotifier {
         _syncNotificationState(immediateUnifiedSync: true);
         _notifyNotificationChanged();
       },
+    );
+    _notificationFacade.attachActions(
+      playback: _playbackFacade,
+      resolveSession: _resolveNotificationSession,
+      resolveActionSession: () => _notificationActionSession,
+      resumeSession: _resumeNotificationSession,
+      multiThreadPlaybackEnabled: () => _multiThreadPlaybackEnabled,
+      setFocusSessionId: (sessionId) {
+        _notificationFocusSessionId = sessionId;
+      },
+      notify: _notifyListeners,
+      syncKeepAlive: _syncKeepCpuAwake,
+      syncNotificationState: () {
+        _syncNotificationState(immediateUnifiedSync: true);
+      },
+      hasPlaybackToKeepAlive: () => _hasPlaybackToKeepAlive,
+      clearUnifiedNotifications: _clearUnifiedPlaybackNotificationsOnPlatform,
+      stopPlaybackKeepAlive: _stopPlaybackKeepAliveOnPlatform,
+      preferredSessionId: () => _preferredSingleSessionId,
+      notifyNotificationChanged: _notifyNotificationChanged,
     );
     _libraryFacade.attachCoverArtworkCacheService(
       () => CoverArtworkCacheService(

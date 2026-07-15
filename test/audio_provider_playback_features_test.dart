@@ -83,7 +83,7 @@ void main() {
           });
 
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
       final session = provider.activeSessions.single;
 
       await provider.playbackFacade.setSessionSpeed(session.id, 1.6);
@@ -153,7 +153,7 @@ void main() {
           });
 
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
       final session = provider.activeSessions.single;
       session.applyNativeSnapshot(
         NativePlaybackSnapshot(
@@ -235,7 +235,7 @@ void main() {
             return <String, Object?>{'ok': true, 'value': null};
           });
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
       final session = provider.activeSessions.single;
       for (var i = 0; i < 50 && session.loadedPath == null; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -268,7 +268,7 @@ void main() {
         isSingle: false,
       );
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
       await Future<void>.delayed(Duration.zero);
       final session = provider.activeSessions.single;
       session
@@ -325,7 +325,7 @@ void main() {
             });
 
         provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
         final session = provider.activeSessions.single;
 
         await provider.playbackFacade.setSessionSkipSilence(session.id, true);
@@ -482,7 +482,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
         final session = provider.activeSessions.single;
 
         await provider.playbackFacade.setSessionVolume(session.id, 1.25);
@@ -523,7 +523,10 @@ void main() {
         expect(persistedSession.audioEffects.panning, -0.4);
         expect(persistedSession.channelSwapEnabled, isTrue);
 
-        await provider.spawnSession(secondTrack, autoPlay: false);
+        await provider.playbackFacade.spawnSession(
+          secondTrack,
+          autoPlay: false,
+        );
         final secondSession = provider.activeSessions.singleWhere(
           (candidate) => candidate.currentTrackPath == secondTrack.path,
         );
@@ -562,7 +565,10 @@ void main() {
           notify: false,
           persist: false,
         );
-        await restartProvider.spawnSession(track, autoPlay: false);
+        await restartProvider.playbackFacade.spawnSession(
+          track,
+          autoPlay: false,
+        );
 
         final restoredSession = restartProvider.activeSessions.single;
         expect(restoredSession.volume, 1.0);
@@ -638,7 +644,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
         final session = provider.activeSessions.single;
         expect(session.state.playing, isFalse);
 
@@ -889,7 +895,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.spawnSession(oldTrack, autoPlay: false);
+        await provider.playbackFacade.spawnSession(oldTrack, autoPlay: false);
         await provider.setAutoPlayAddedSessions(false);
 
         final databaseRepository = AudioDatabaseRepository(
@@ -970,7 +976,7 @@ void main() {
         notify: false,
         persist: false,
       );
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
 
       for (var i = 0; i < 20 && prepareArguments == null; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -1004,7 +1010,7 @@ void main() {
             return null;
           });
 
-      await provider.spawnSession(
+      await provider.playbackFacade.spawnSession(
         const MusicTrack(
           path: '/music/keep-playing.mp3',
           displayName: 'Keep Playing',

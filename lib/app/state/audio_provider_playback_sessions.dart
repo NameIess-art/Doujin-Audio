@@ -48,54 +48,6 @@ class _NativePreparationResult {
 }
 
 extension AudioProviderPlaybackSessions on AudioProvider {
-  Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
-    final session = _playbackFacade.createTrackSession(track);
-    unawaited(
-      _enqueueSessionPreparation(
-        session,
-        nextPath: track.path,
-        autoPlay: autoPlay ?? _autoPlayAddedSessions,
-      ),
-    );
-    _playbackFacade.publishSessionActivated(session.id);
-  }
-
-  Future<void> spawnSessionWithQueue(
-    List<MusicTrack> tracks, {
-    int startIndex = 0,
-    bool? autoPlay,
-    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-  }) async {
-    if (tracks.isEmpty) return;
-    final clampedStartIndex = startIndex.clamp(0, tracks.length - 1);
-    final startTrack = tracks[clampedStartIndex];
-    final session = _playbackFacade.createTrackSession(
-      startTrack,
-      loopMode: loopMode,
-      customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
-    );
-    unawaited(
-      _enqueueSessionPreparation(
-        session,
-        nextPath: startTrack.path,
-        autoPlay: autoPlay ?? _autoPlayAddedSessions,
-      ),
-    );
-    _playbackFacade.publishSessionActivated(session.id);
-  }
-
-  Future<void> _enqueueSessionPreparation(
-    PlaybackSession session, {
-    required String nextPath,
-    required bool autoPlay,
-  }) {
-    _playbackService.enqueueSessionPreparation(() async {
-      if (!_sessions.containsKey(session.id)) return;
-      await _prepareAndPlay(session, nextPath: nextPath, autoPlay: autoPlay);
-    });
-    return _sessionPreparationQueue;
-  }
-
   void _bindSessionListeners(PlaybackSession session) {
     final stateSub = session.stateStream.listen((state) {
       if (!_sessions.containsKey(session.id)) return;

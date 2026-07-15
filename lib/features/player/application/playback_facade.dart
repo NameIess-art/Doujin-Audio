@@ -48,6 +48,8 @@ typedef PlaybackAdjacentResolver =
 typedef PlaybackLoopModeSynchronizer =
     Future<void> Function(PlaybackSession session, SessionLoopMode mode);
 
+bool _defaultAutoPlayAddedSessions() => true;
+
 /// Owns playback sessions and the platform playback runtime.
 final class PlaybackFacade {
   PlaybackFacade({
@@ -87,12 +89,6 @@ final class PlaybackFacade {
   final SystemMediaControlsService systemMediaControlsService;
   final StreamController<String> _sessionActivations =
       StreamController<String>.broadcast(sync: true);
-  Future<void> Function(
-    List<MusicTrack> tracks, {
-    bool? autoPlay,
-    required SessionLoopMode loopMode,
-  })?
-  _launchQueue;
   Future<void> Function()? _persistSessionState;
   Future<void> Function()? _persistSessionOrder;
   void Function(PlaybackSession session)? _onSessionRegistered;
@@ -110,6 +106,7 @@ final class PlaybackFacade {
   PlaybackAdvanceResolver? _resolveAdvance;
   PlaybackAdjacentResolver? _hasAdjacent;
   PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
+  bool Function() _autoPlayAddedSessions = _defaultAutoPlayAddedSessions;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Random _random = Random();
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
@@ -275,15 +272,8 @@ final class PlaybackFacade {
     _sessionActivations.add(sessionId);
   }
 
-  void attachSessionLauncher(
-    Future<void> Function(
-      List<MusicTrack> tracks, {
-      bool? autoPlay,
-      required SessionLoopMode loopMode,
-    })
-    launchQueue,
-  ) {
-    _launchQueue ??= launchQueue;
+  void attachSessionDefaults({required bool Function() autoPlayAddedSessions}) {
+    _autoPlayAddedSessions = autoPlayAddedSessions;
   }
 
   void attachSessionStatePersistence(Future<void> Function() persist) {
@@ -1263,11 +1253,63 @@ final class PlaybackFacade {
     bool? autoPlay,
     required SessionLoopMode loopMode,
   }) {
-    final launch = _launchQueue;
-    if (launch == null) {
-      throw StateError('PlaybackFacade session launcher is not attached.');
-    }
-    return launch(tracks, autoPlay: autoPlay, loopMode: loopMode);
+    return spawnSessionWithQueue(
+      tracks,
+      autoPlay: autoPlay,
+      loopMode: loopMode,
+    );
+  }
+
+  Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
+    final session = createTrackSession(track);
+    unawaited(
+      _enqueueSessionPreparation(
+        session,
+        nextPath: track.path,
+        autoPlay: autoPlay ?? _autoPlayAddedSessions(),
+      ),
+    );
+    publishSessionActivated(session.id);
+  }
+
+  Future<void> spawnSessionWithQueue(
+    List<MusicTrack> tracks, {
+    int startIndex = 0,
+    bool? autoPlay,
+    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
+  }) async {
+    if (tracks.isEmpty) return;
+    final clampedStartIndex = startIndex.clamp(0, tracks.length - 1);
+    final startTrack = tracks[clampedStartIndex];
+    final session = createTrackSession(
+      startTrack,
+      loopMode: loopMode,
+      customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
+    );
+    unawaited(
+      _enqueueSessionPreparation(
+        session,
+        nextPath: startTrack.path,
+        autoPlay: autoPlay ?? _autoPlayAddedSessions(),
+      ),
+    );
+    publishSessionActivated(session.id);
+  }
+
+  Future<void> _enqueueSessionPreparation(
+    PlaybackSession session, {
+    required String nextPath,
+    required bool autoPlay,
+  }) {
+    service.enqueueSessionPreparation(() async {
+      if (!service.sessions.containsKey(session.id)) return;
+      await _prepareSession?.call(
+        session,
+        nextPath: nextPath,
+        autoPlay: autoPlay,
+      );
+    });
+    return service.sessionPreparationQueue;
   }
 
   Future<void> dispose() async {

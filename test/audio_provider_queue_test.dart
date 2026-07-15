@@ -312,8 +312,8 @@ void main() {
           isSingle: false,
         );
 
-        await provider.spawnSession(loopTrack, autoPlay: false);
-        await provider.spawnSessionWithQueue(const <MusicTrack>[
+        await provider.playbackFacade.spawnSession(loopTrack, autoPlay: false);
+        await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
           otherTrack,
           otherNextTrack,
         ], autoPlay: false);
@@ -563,7 +563,7 @@ void main() {
             });
 
         await provider.setAsmrPlaybackCacheEnabled(true);
-        await provider.spawnSessionWithQueue(const <MusicTrack>[
+        await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
           firstTrack,
           secondTrack,
         ], autoPlay: false);

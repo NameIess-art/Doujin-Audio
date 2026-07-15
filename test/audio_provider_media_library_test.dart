@@ -894,7 +894,7 @@ void main() {
         ),
       ], notify: false);
 
-      await provider.spawnSession(
+      await provider.playbackFacade.spawnSession(
         provider.trackByPath(secondPath)!,
         autoPlay: false,
       );

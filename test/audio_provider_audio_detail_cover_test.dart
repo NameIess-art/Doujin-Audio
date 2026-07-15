@@ -584,7 +584,7 @@ void main() {
               }
             });
 
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
         await prepareStarted.future;
         final session = provider.activeSessions.single;
 

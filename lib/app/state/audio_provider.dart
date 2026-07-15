@@ -698,6 +698,13 @@ class AudioProvider with ChangeNotifier {
       onTimerExpired: _handleTimerExpiredOnPlatform,
       onAutoResume: _handleAutoResumeOnPlatform,
     );
+    _notificationFacade.attachRuntime(
+      undismissNotifications: _nativePlaybackRepository.undismissNotifications,
+      onNotificationsRestored: () {
+        _syncNotificationState(immediateUnifiedSync: true);
+        _notifyNotificationChanged();
+      },
+    );
     _libraryFacade.attachCoverArtworkCacheService(
       () => CoverArtworkCacheService(
         libraryService: _libraryService,
@@ -725,7 +732,7 @@ class AudioProvider with ChangeNotifier {
       onEnterBackground: syncKeepAliveBeforeBackground,
       onResumeForeground: () async {
         syncKeepAliveAfterForegroundResume();
-        resyncNotificationsAfterResume();
+        _notificationFacade.resyncAfterForegroundResume();
         await syncTimerRuntimeFromNative();
         _timerFacade.retryOverdueAutoResume();
       },

@@ -197,23 +197,6 @@ extension AudioProviderNotifications on AudioProvider {
     _notifyNotificationChanged();
   }
 
-  Future<void> restoreNotificationsAfterSystemClear() async {
-    _notificationsDismissedWhilePaused = false;
-    _unifiedNotificationSyncKey = null;
-    await _nativePlaybackRepository.undismissNotifications();
-    _syncNotificationState(immediateUnifiedSync: true);
-    _notifyNotificationChanged();
-  }
-
-  void resyncNotificationsAfterResume() {
-    if (!_notificationsDismissedWhilePaused) return;
-    _notificationsDismissedWhilePaused = false;
-    _unifiedNotificationSyncKey = null;
-    unawaited(_nativePlaybackRepository.undismissNotifications());
-    _syncNotificationState(immediateUnifiedSync: true);
-    _notifyNotificationChanged();
-  }
-
   List<PlaybackSession> get _singleThreadNotificationSessions {
     return _notificationStateService.singleThreadNotificationSessions(
       activeSessions,

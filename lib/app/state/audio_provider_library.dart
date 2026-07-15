@@ -690,103 +690,13 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   Future<void> removeTrackFromLibrary(String trackPath) async {
-    final removedTrack = _libraryByPath.remove(trackPath);
-    if (removedTrack == null) return;
-
-    _library.removeWhere((track) => track.path == trackPath);
-    _clearResolvedCoverPaths();
-
-    final sessionsToRemove = _sessions.values
-        .where((s) => s.currentTrackPath == trackPath)
-        .map((s) => s.id)
-        .toList();
-    if (sessionsToRemove.isNotEmpty) {
-      await _removeSessions(sessionsToRemove, persist: false, notify: false);
-    }
-
-    if (!_library.any((track) => track.groupKey == removedTrack.groupKey)) {
-      _groupOrder.remove(removedTrack.groupKey);
-      _groupOrderSet.remove(removedTrack.groupKey);
-    }
-
-    _rebuildLibraryIndexes();
-    _syncLibraryNodeOrder(persist: false);
+    await _libraryFacade.removeTrackFromLibrary(trackPath);
     _notifyLibraryAndPlaybackChanged();
-    if (!_skipDisposePersistence) {
-      unawaited(_audioDatabaseRepository.deleteTracks([trackPath]));
-    }
-    unawaited(_saveGroupOrder());
-    unawaited(_saveLibraryNodeOrder());
   }
 
   Future<void> removeFolderFromLibrary(String folderPath) async {
-    _clearResolvedCoverPaths();
-    unawaited(
-      _libraryFacade.deleteAudioDetail(
-        AudioDetailTarget.libraryRootFolder(folderPath),
-      ),
-    );
-    final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    final trackPaths = _library
-        .where(
-          (track) =>
-              PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
-              PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
-        )
-        .map((track) => track.path)
-        .toSet();
-    if (trackPaths.isEmpty &&
-        !_watchedFolders.any(
-          (watchedFolder) =>
-              PathMatcher.equalsNormalized(watchedFolder, normalizedFolderPath),
-        )) {
-      return;
-    }
-
-    final sessionsToRemove = _sessions.values
-        .where((s) => trackPaths.contains(s.currentTrackPath))
-        .map((s) => s.id)
-        .toList();
-    if (sessionsToRemove.isNotEmpty) {
-      await _removeSessions(sessionsToRemove, persist: false, notify: false);
-    }
-
-    _library.removeWhere(
-      (track) =>
-          PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
-          PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
-    );
-    for (final trackPath in trackPaths) {
-      _libraryByPath.remove(trackPath);
-    }
-    _groupOrder.removeWhere(
-      (key) => PathMatcher.isWithinOrEqual(key, normalizedFolderPath),
-    );
-    _groupOrderSet
-      ..clear()
-      ..addAll(_groupOrder);
-
-    final watchedFoldersBeforeRemoval = _watchedFolders.length;
-    _watchedFolders.removeWhere(
-      (watchedFolder) =>
-          PathMatcher.equalsNormalized(watchedFolder, normalizedFolderPath),
-    );
-    if (_watchedFolders.length != watchedFoldersBeforeRemoval) {
-      unawaited(_saveWatchedFolders());
-    }
-    _libraryService.libraryEntriesByLibrary.remove(normalizedFolderPath);
-
-    _rebuildLibraryIndexes();
-    _syncLibraryNodeOrder(persist: false);
+    await _libraryFacade.removeFolderFromLibrary(folderPath);
     _notifyLibraryAndPlaybackChanged();
-    if (!_skipDisposePersistence) {
-      unawaited(_audioDatabaseRepository.deleteTracks(trackPaths.toList()));
-      unawaited(
-        _audioDatabaseRepository.deleteLibraryEntriesForLibrary(folderPath),
-      );
-    }
-    unawaited(_saveGroupOrder());
-    unawaited(_saveLibraryNodeOrder());
   }
 
   int getTrackComparator(MusicTrack a, MusicTrack b) {

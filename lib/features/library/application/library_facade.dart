@@ -940,6 +940,50 @@ final class LibraryFacade implements LibraryCatalog {
     }
   }
 
+  Future<void> removeTrackFromLibrary(String trackPath) async {
+    final removedTrack = service.trackByPath(trackPath);
+    if (removedTrack == null) return;
+    final removedPaths = removeTracksMatching(
+      (track) => PathMatcher.equalsNormalized(track.path, trackPath),
+    );
+    if (removedPaths.isEmpty) return;
+    service.syncGroupOrderFromLibrary();
+    if (_persistenceEnabled) {
+      unawaited(_saveGroupOrder());
+    }
+  }
+
+  Future<void> removeFolderFromLibrary(String folderPath) async {
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    final wasWatched = service.watchedFolders.any(
+      (folder) => PathMatcher.equalsNormalized(folder, normalizedFolderPath),
+    );
+    final removedPaths = removeTracksMatching(
+      (track) =>
+          PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
+          PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
+    );
+    if (removedPaths.isEmpty && !wasWatched) return;
+
+    await deleteAudioDetail(
+      AudioDetailTarget.libraryRootFolder(normalizedFolderPath),
+    );
+    service
+      ..removeWatchedFolder(
+        normalizedFolderPath,
+        onPersist: () => unawaited(_saveWatchedFolders()),
+      )
+      ..libraryEntriesByLibrary.remove(normalizedFolderPath)
+      ..syncGroupOrderFromLibrary()
+      ..syncLibraryNodeOrder(persist: false);
+    _markLibraryStructureChanged();
+    if (_persistenceEnabled) {
+      await databaseRepository.deleteLibraryEntriesForLibrary(folderPath);
+      unawaited(_saveGroupOrder());
+      unawaited(_saveLibraryNodeOrder());
+    }
+  }
+
   Future<void> _saveLibraryExclusions() {
     Map<String, List<String>> encode(Map<String, Set<String>> source) {
       return source.map(

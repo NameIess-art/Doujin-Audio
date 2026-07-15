@@ -9,6 +9,7 @@ import 'package:nameless_audio/features/player/application/native_playback_bridg
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_session.dart';
 import 'package:nameless_audio/features/player/application/playback_queue_resolver.dart';
+import 'package:nameless_audio/features/player/domain/audio_effects.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/player/domain/playback_queue.dart';
 
@@ -282,6 +283,38 @@ void main() {
     ]);
   });
 
+  test('PlaybackFacade owns audio effect updates and rollback', () async {
+    final library = LibraryFacade.create();
+    final native = _RecordingNativePlaybackRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('effects')..loadedPath = '/tracks/effects.mp3';
+    addTearDown(() async {
+      session.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback
+      ..attachSessionRuntime(
+        onSessionRegistered: (_) {},
+        onSessionsReordered: () {},
+        onSessionStateChanged: () {},
+      )
+      ..registerSession(session);
+
+    await playback.setSessionSkipSilence(session.id, true);
+    expect(session.audioEffects.skipSilenceEnabled, isTrue);
+    expect(native.audioEffectsCalls, 1);
+
+    native.failAudioEffects = true;
+    await playback.setSessionPanning(session.id, 0.5);
+
+    expect(session.audioEffects.panning, 0.0);
+    expect(native.audioEffectsCalls, 2);
+  });
+
   test('PlaybackFacade owns track and playback queue session creation', () {
     final library = LibraryFacade.create();
     final playback = PlaybackFacade.create(
@@ -541,6 +574,8 @@ final class _RecordingNativePlaybackRepository
   final List<(double, bool)> volumeUpdates = <(double, bool)>[];
   final List<double> speedUpdates = <double>[];
   bool failSpeed = false;
+  int audioEffectsCalls = 0;
+  bool failAudioEffects = false;
 
   @override
   Future<NativeResult<void>> pauseAll() async {
@@ -587,6 +622,18 @@ final class _RecordingNativePlaybackRepository
     speedUpdates.add(speed);
     if (failSpeed) {
       return const NativeFailure<NativePlaybackSnapshot>('speed failed');
+    }
+    return const NativeSuccess<NativePlaybackSnapshot>();
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setAudioEffects(
+    String sessionId,
+    NativeAudioEffects effects,
+  ) async {
+    audioEffectsCalls++;
+    if (failAudioEffects) {
+      return const NativeFailure<NativePlaybackSnapshot>('effects failed');
     }
     return const NativeSuccess<NativePlaybackSnapshot>();
   }

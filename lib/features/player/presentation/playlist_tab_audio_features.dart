@@ -25,7 +25,9 @@ class _AudioFeaturesPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(provider.setSessionSkipSilence(session.id, value));
+            unawaited(
+              provider.playbackFacade.setSessionSkipSilence(session.id, value),
+            );
           },
         ),
         const SizedBox(height: 10),
@@ -38,7 +40,12 @@ class _AudioFeaturesPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(provider.setSessionNoiseReduction(session.id, value));
+            unawaited(
+              provider.playbackFacade.setSessionNoiseReduction(
+                session.id,
+                value,
+              ),
+            );
           },
         ),
         const SizedBox(height: 10),
@@ -52,7 +59,10 @@ class _AudioFeaturesPage extends ConsumerWidget {
               AppInteractionFeedbackType.selection,
             );
             unawaited(
-              provider.setSessionVolumeNormalization(session.id, value),
+              provider.playbackFacade.setSessionVolumeNormalization(
+                session.id,
+                value,
+              ),
             );
           },
         ),
@@ -66,7 +76,9 @@ class _AudioFeaturesPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(provider.setSessionChannelSwap(session.id, value));
+            unawaited(
+              provider.playbackFacade.setSessionChannelSwap(session.id, value),
+            );
           },
         ),
       ],
@@ -183,7 +195,10 @@ class _VolumeBalancePage extends ConsumerWidget {
                       UiInteractionCoordinator.instance.scheduleThrottledCommit(
                         key: 'session_panning:${session.id}',
                         commit: () => unawaited(
-                          provider.setSessionPanning(session.id, value),
+                          provider.playbackFacade.setSessionPanning(
+                            session.id,
+                            value,
+                          ),
                         ),
                       );
                     },
@@ -193,7 +208,7 @@ class _VolumeBalancePage extends ConsumerWidget {
                         'session_panning:${session.id}',
                       );
                       unawaited(
-                        provider.setSessionPanning(
+                        provider.playbackFacade.setSessionPanning(
                           session.id,
                           value.abs() < 0.1 ? 0.0 : value,
                         ),
@@ -224,7 +239,12 @@ class _VolumeBalancePage extends ConsumerWidget {
                         UiInteractionCoordinator.instance.cancelThrottledCommit(
                           'session_panning:${session.id}',
                         );
-                        unawaited(provider.setSessionPanning(session.id, 0.0));
+                        unawaited(
+                          provider.playbackFacade.setSessionPanning(
+                            session.id,
+                            0.0,
+                          ),
+                        );
                       },
                 child: Text(i18n.tr('restore_default')),
               ),
@@ -278,7 +298,9 @@ class _EqualizerPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(provider.setSessionEqEnabled(session.id, value));
+            unawaited(
+              provider.playbackFacade.setSessionEqEnabled(session.id, value),
+            );
           },
         ),
         UnifiedDropdownButtonFormField<String>(
@@ -308,7 +330,9 @@ class _EqualizerPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(provider.applySessionEqPreset(session.id, preset));
+            unawaited(
+              provider.playbackFacade.applySessionEqPreset(session.id, preset),
+            );
           },
         ),
         const SizedBox(height: 12),
@@ -339,7 +363,7 @@ class _EqualizerPage extends ConsumerWidget {
                       UiInteractionCoordinator.instance.scheduleThrottledCommit(
                         key: 'session_eq:${session.id}:${band.frequencyHz}',
                         commit: () => unawaited(
-                          provider.setSessionEqBandLevel(
+                          provider.playbackFacade.setSessionEqBandLevel(
                             session.id,
                             band.frequencyHz,
                             nextValue,
@@ -354,7 +378,7 @@ class _EqualizerPage extends ConsumerWidget {
                   'session_eq:${session.id}:${band.frequencyHz}',
                 );
                 unawaited(
-                  provider.setSessionEqBandLevel(
+                  provider.playbackFacade.setSessionEqBandLevel(
                     session.id,
                     band.frequencyHz,
                     value,
@@ -375,7 +399,10 @@ class _EqualizerPage extends ConsumerWidget {
                       ? () {
                           final flat = AudioProvider.builtInEqPresets.first;
                           unawaited(
-                            provider.applySessionEqPreset(session.id, flat),
+                            provider.playbackFacade.applySessionEqPreset(
+                              session.id,
+                              flat,
+                            ),
                           );
                         }
                       : null,

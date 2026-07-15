@@ -312,7 +312,7 @@ void main() {
     );
 
     unawaited(
-      audioProvider.applySessionEqPreset(
+      audioProvider.playbackFacade.applySessionEqPreset(
         session.id,
         AudioProvider.builtInEqPresets[1],
       ),

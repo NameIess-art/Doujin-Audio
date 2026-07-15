@@ -783,7 +783,7 @@ void main() {
             channelSwapEnabled: false,
           ),
         );
-        await provider.setSessionChannelSwap(session.id, true);
+        await provider.playbackFacade.setSessionChannelSwap(session.id, true);
 
         expect(setAudioEffectsCalls, 1);
         expect(lastChannelSwapEnabled, isTrue);

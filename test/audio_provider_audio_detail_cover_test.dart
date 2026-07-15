@@ -603,7 +603,7 @@ void main() {
         releasePrepare.complete();
         await preparationApplied;
 
-        await provider.setSessionChannelSwap(session.id, true);
+        await provider.playbackFacade.setSessionChannelSwap(session.id, true);
 
         expect(session.currentTrackPath, newTrackPath);
         final resolvedTrack = provider.trackByPath(trackFile.path);

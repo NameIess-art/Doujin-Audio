@@ -36,6 +36,7 @@ final class LibraryFacade implements LibraryCatalogReader {
   static const _watchedFoldersPreferenceKey = 'watched_folders_v1';
   static const _watchedLibrariesPreferenceKey = 'watched_libraries_v1';
   static const _libraryNodeOrderPreferenceKey = 'library_node_order_v1';
+  static const _groupOrderPreferenceKey = 'group_order_v1';
   LibraryFacade({
     required this.databaseRepository,
     required this.detailCacheService,
@@ -704,6 +705,57 @@ final class LibraryFacade implements LibraryCatalogReader {
     if (entries.isEmpty) return;
     service.replaceLibraryEntries(entries);
     _queueOrPersistLibraryEntries(entries, persist: persist);
+  }
+
+  void addTracks(
+    List<MusicTrack> tracks, {
+    bool notify = true,
+    bool persist = true,
+  }) {
+    if (tracks.isEmpty) return;
+    final mutation = service.addTracks(tracks, persist: persist);
+    if (mutation.tracks.isEmpty) return;
+    recordEntriesForTracks(mutation.tracks, persist: persist);
+    if (mutation.batched) return;
+    _markLibraryStructureChanged();
+    if (persist && _persistenceEnabled) {
+      unawaited(databaseRepository.upsertTracks(mutation.tracks));
+      if (mutation.didChangeGroupOrder) unawaited(_saveGroupOrder());
+      unawaited(_saveLibraryNodeOrder());
+    }
+  }
+
+  void addOrReplaceTracks(
+    List<MusicTrack> tracks, {
+    bool notify = true,
+    bool persist = true,
+  }) {
+    if (tracks.isEmpty) return;
+    final mutation = service.addOrReplaceTracks(tracks, persist: persist);
+    if (mutation.tracks.isEmpty) return;
+    recordEntriesForTracks(mutation.tracks, persist: persist);
+    if (mutation.batched) return;
+    _markLibraryStructureChanged();
+    if (persist && _persistenceEnabled) {
+      unawaited(databaseRepository.upsertTracks(mutation.tracks));
+      if (mutation.didChangeGroupOrder || mutation.didReplaceGroup) {
+        unawaited(_saveGroupOrder());
+      }
+      unawaited(_saveLibraryNodeOrder());
+    }
+  }
+
+  void _markLibraryStructureChanged() {
+    _coverArtworkCacheService?.invalidateAll();
+    snapshotCacheService.markStructureChanged();
+    _syncStateSlice();
+  }
+
+  Future<void> _saveGroupOrder() {
+    return AppPreferences.setString(
+      _groupOrderPreferenceKey,
+      json.encode(service.groupOrder),
+    );
   }
 
   void _queueOrPersistLibraryEntries(

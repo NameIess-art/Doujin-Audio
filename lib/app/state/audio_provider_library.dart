@@ -796,25 +796,10 @@ extension AudioProviderLibrary on AudioProvider {
     bool notify = true,
     bool persist = true,
   }) {
-    if (newTracks.isEmpty) return;
-    final mutation = _libraryService.addTracks(newTracks, persist: persist);
-    final addedTracks = mutation.tracks;
-    if (addedTracks.isEmpty) return;
-    _libraryFacade.recordEntriesForTracks(addedTracks, persist: persist);
-    if (mutation.batched) return;
-    _clearResolvedCoverPaths();
-    _librarySnapshotCacheService.markStructureChanged();
-    if (!notify) {
-      unawaited(_ensureLibraryCardSnapshot(notifyOnCommit: false));
-    } else {
+    final previousRevision = _libraryService.structureRevision;
+    _libraryFacade.addTracks(newTracks, notify: notify, persist: persist);
+    if (notify && _libraryService.structureRevision != previousRevision) {
       _notifyLibraryAndPlaybackChanged();
-    }
-    if (persist && !_skipDisposePersistence) {
-      unawaited(_audioDatabaseRepository.upsertTracks(addedTracks));
-    }
-    if (persist) {
-      if (mutation.didChangeGroupOrder) _saveGroupOrder();
-      _saveLibraryNodeOrder();
     }
   }
 
@@ -823,30 +808,10 @@ extension AudioProviderLibrary on AudioProvider {
     bool notify = true,
     bool persist = true,
   }) {
-    if (tracks.isEmpty) return;
-    final mutation = _libraryService.addOrReplaceTracks(
-      tracks,
-      persist: persist,
-    );
-    final tracksToPersist = mutation.tracks;
-    if (tracksToPersist.isEmpty) return;
-    _libraryFacade.recordEntriesForTracks(tracksToPersist, persist: persist);
-    if (mutation.batched) return;
-    _clearResolvedCoverPaths();
-    _librarySnapshotCacheService.markStructureChanged();
-    if (!notify) {
-      unawaited(_ensureLibraryCardSnapshot(notifyOnCommit: false));
-    } else {
+    final previousRevision = _libraryService.structureRevision;
+    _libraryFacade.addOrReplaceTracks(tracks, notify: notify, persist: persist);
+    if (notify && _libraryService.structureRevision != previousRevision) {
       _notifyLibraryAndPlaybackChanged();
-    }
-    if (persist && !_skipDisposePersistence) {
-      unawaited(_audioDatabaseRepository.upsertTracks(tracksToPersist));
-    }
-    if (persist) {
-      if (mutation.didChangeGroupOrder || mutation.didReplaceGroup) {
-        _saveGroupOrder();
-      }
-      _saveLibraryNodeOrder();
     }
   }
 

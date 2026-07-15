@@ -49,13 +49,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   void reorderLibraryNodes(int oldIndex, int newIndex) {
-    _libraryService.reorderLibraryNodes(
-      oldIndex,
-      newIndex,
-      currentTree: libraryCards,
-      onPersist: () => unawaited(_saveLibraryNodeOrder()),
-    );
-    _librarySnapshotCacheService.applyCurrentTopLevelOrder();
+    _libraryFacade.reorderLibraryNodes(oldIndex, newIndex);
     _notifyLibraryChanged();
   }
 

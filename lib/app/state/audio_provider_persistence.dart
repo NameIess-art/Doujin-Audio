@@ -870,10 +870,8 @@ extension AudioProviderPersistence on AudioProvider {
   }
 
   Future<void> setCardPositionsLocked(bool locked) async {
-    if (_settingsRepository.cardPositionsLocked == locked) return;
-    _settingsRepository.cardPositionsLocked = locked;
+    await _settingsRepository.setCardPositionsLocked(locked);
     _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
   }
 
   Future<void> saveCustomEqPreset(String name, PlaybackSession session) async {

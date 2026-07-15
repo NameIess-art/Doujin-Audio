@@ -33,6 +33,7 @@ import '../domain/library_entry.dart';
 final class LibraryFacade implements LibraryCatalogReader {
   static const _watchedFoldersPreferenceKey = 'watched_folders_v1';
   static const _watchedLibrariesPreferenceKey = 'watched_libraries_v1';
+  static const _libraryNodeOrderPreferenceKey = 'library_node_order_v1';
   LibraryFacade({
     required this.databaseRepository,
     required this.detailCacheService,
@@ -502,6 +503,24 @@ final class LibraryFacade implements LibraryCatalogReader {
     await AppPreferences.setString(
       _watchedLibrariesPreferenceKey,
       json.encode(service.watchedLibraries),
+    );
+  }
+
+  void reorderLibraryNodes(int oldIndex, int newIndex) {
+    service.reorderLibraryNodes(
+      oldIndex,
+      newIndex,
+      currentTree: libraryCards,
+      onPersist: () => unawaited(_saveLibraryNodeOrder()),
+    );
+    snapshotCacheService.applyCurrentTopLevelOrder();
+    _syncStateSlice();
+  }
+
+  Future<void> _saveLibraryNodeOrder() {
+    return AppPreferences.setString(
+      _libraryNodeOrderPreferenceKey,
+      json.encode(service.libraryNodeOrder),
     );
   }
 

@@ -965,7 +965,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                         ScrollViewKeyboardDismissBehavior
                                             .onDrag,
                                     onReorder: (oldIndex, newIndex) {
-                                      provider.reorderLibraryNodes(
+                                      libraryFacade.reorderLibraryNodes(
                                         oldIndex,
                                         newIndex,
                                       );
@@ -1125,9 +1125,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               break;
                             case _LibraryMoreAction.toggleCardPositionsLocked:
                               unawaited(
-                                provider.setCardPositionsLocked(
-                                  !cardPositionsLocked,
-                                ),
+                                ref
+                                    .read(settingsRepositoryProvider)
+                                    .setCardPositionsLocked(
+                                      !cardPositionsLocked,
+                                    ),
                               );
                               break;
                           }

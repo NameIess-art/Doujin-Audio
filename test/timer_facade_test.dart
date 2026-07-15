@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/player/application/timer_facade.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
+import 'package:nameless_audio/core/platform/power_platform_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -18,14 +19,16 @@ void main() {
       final fadeMultipliers = <double>[];
       timer.attachRuntime(
         hasPlayingSession: () => false,
+        sessions: () => const [],
+        pauseSession: (_) async => false,
+        activateAudioSession: () async => false,
+        resumeSession: (_) async => false,
         onStateChanged: () {
           stateChanges++;
           timer.service.syncSlice(isInitialized: true);
         },
         onRuntimeRestored: () {},
         applyFadeMultiplier: fadeMultipliers.add,
-        onTimerExpired: (_) async {},
-        onAutoResume: (_) async {},
       );
 
       timer.configureTimer(TimerMode.trigger, const Duration(minutes: 10));
@@ -57,13 +60,15 @@ void main() {
       addTearDown(timer.dispose);
       timer.attachRuntime(
         hasPlayingSession: () => true,
+        sessions: () => const [],
+        pauseSession: (_) async => false,
+        activateAudioSession: () async => false,
+        resumeSession: (_) async => false,
         onStateChanged: () {
           timer.service.syncSlice(isInitialized: true);
         },
         onRuntimeRestored: () {},
         applyFadeMultiplier: (_) {},
-        onTimerExpired: (_) async {},
-        onAutoResume: (_) async {},
       );
 
       timer.configureTimer(TimerMode.trigger, const Duration(minutes: 5));
@@ -73,31 +78,37 @@ void main() {
       expect(timer.service.timerEndsAt, isNotNull);
     });
 
-    test(
-      'dispatches an overdue auto-resume through the attached runtime',
-      () async {
-        final timer = TimerFacade.create();
-        addTearDown(timer.dispose);
-        final generations = <int>[];
-        timer.attachRuntime(
-          hasPlayingSession: () => false,
-          onStateChanged: () {},
-          onRuntimeRestored: () {},
-          applyFadeMultiplier: (_) {},
-          onTimerExpired: (_) async {},
-          onAutoResume: (generation) async => generations.add(generation),
-        );
-        timer.service
-          ..timerGeneration = 7
-          ..autoResumeAt = DateTime.now().subtract(const Duration(seconds: 1))
-          ..pausedByTimerSessionIds.add('session-a');
+    test('retains overdue sessions when playback activation fails', () async {
+      final timer = TimerFacade.create(
+        powerPlatformService: PowerPlatformService(isAndroidOverride: false),
+      );
+      addTearDown(timer.dispose);
+      var activationCount = 0;
+      timer.attachRuntime(
+        hasPlayingSession: () => false,
+        sessions: () => const [],
+        pauseSession: (_) async => false,
+        activateAudioSession: () async {
+          activationCount++;
+          return false;
+        },
+        resumeSession: (_) async => false,
+        onStateChanged: () {},
+        onRuntimeRestored: () {},
+        applyFadeMultiplier: (_) {},
+      );
+      timer.service
+        ..timerGeneration = 7
+        ..autoResumeAt = DateTime.now().subtract(const Duration(seconds: 1))
+        ..pausedByTimerSessionIds.add('session-a');
 
-        timer.retryOverdueAutoResume();
-        await Future<void>.delayed(Duration.zero);
+      timer.retryOverdueAutoResume();
+      await Future<void>.delayed(Duration.zero);
 
-        expect(generations, <int>[7]);
-      },
-    );
+      expect(activationCount, 1);
+      expect(timer.service.pausedByTimerSessionIds, <String>['session-a']);
+      expect(timer.service.autoResumeAt, isNotNull);
+    });
 
     test('loads persisted settings and a pending trigger runtime', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
@@ -124,11 +135,13 @@ void main() {
       var restoreCount = 0;
       timer.attachRuntime(
         hasPlayingSession: () => false,
+        sessions: () => const [],
+        pauseSession: (_) async => false,
+        activateAudioSession: () async => false,
+        resumeSession: (_) async => false,
         onStateChanged: () {},
         onRuntimeRestored: () => restoreCount++,
         applyFadeMultiplier: (_) {},
-        onTimerExpired: (_) async {},
-        onAutoResume: (_) async {},
       );
 
       await timer.loadSettings();

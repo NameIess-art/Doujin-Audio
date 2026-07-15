@@ -7,6 +7,7 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/power_platform_service.dart';
 import '../domain/playback_mode.dart';
 import 'audio_state_services.dart';
+import 'playback_session.dart';
 import 'timer_runtime_calculator.dart';
 
 /// Owns timer state and timer-related platform power coordination.
@@ -39,11 +40,13 @@ final class TimerFacade {
       TimerRuntimeCalculator();
 
   bool Function() _hasPlayingSession = () => false;
+  Iterable<PlaybackSession> Function() _sessions = _emptySessions;
+  Future<bool> Function(PlaybackSession session) _pauseSession = _falseSession;
+  Future<bool> Function() _activateAudioSession = _falseAsync;
+  Future<bool> Function(PlaybackSession session) _resumeSession = _falseSession;
   void Function() _onStateChanged = _noop;
   void Function() _onRuntimeRestored = _noop;
   void Function(double multiplier) _applyFadeMultiplier = _noopFade;
-  Future<void> Function(int generation) _onTimerExpired = _noopGeneration;
-  Future<void> Function(int generation) _onAutoResume = _noopGeneration;
 
   TimerStateSliceData get state => service.slice.state;
   Stream<TimerStateSliceData> get states => service.slice.stream;
@@ -60,18 +63,22 @@ final class TimerFacade {
 
   void attachRuntime({
     required bool Function() hasPlayingSession,
+    required Iterable<PlaybackSession> Function() sessions,
+    required Future<bool> Function(PlaybackSession session) pauseSession,
+    required Future<bool> Function() activateAudioSession,
+    required Future<bool> Function(PlaybackSession session) resumeSession,
     required void Function() onStateChanged,
     required void Function() onRuntimeRestored,
     required void Function(double multiplier) applyFadeMultiplier,
-    required Future<void> Function(int generation) onTimerExpired,
-    required Future<void> Function(int generation) onAutoResume,
   }) {
     _hasPlayingSession = hasPlayingSession;
+    _sessions = sessions;
+    _pauseSession = pauseSession;
+    _activateAudioSession = activateAudioSession;
+    _resumeSession = resumeSession;
     _onStateChanged = onStateChanged;
     _onRuntimeRestored = onRuntimeRestored;
     _applyFadeMultiplier = applyFadeMultiplier;
-    _onTimerExpired = onTimerExpired;
-    _onAutoResume = onAutoResume;
   }
 
   void configureTimer(TimerMode mode, Duration duration) {
@@ -171,7 +178,7 @@ final class TimerFacade {
     }
     service.autoResumeTimer?.cancel();
     service.autoResumeTimer = null;
-    unawaited(_onAutoResume(service.timerGeneration));
+    unawaited(_handleAutoResumeOnPlatform(service.timerGeneration));
   }
 
   void maybeStartTriggerCountdown() {
@@ -220,12 +227,12 @@ final class TimerFacade {
     final delay = target.difference(DateTime.now());
     if (delay <= Duration.zero) {
       service.autoResumeTimer = null;
-      unawaited(_onAutoResume(service.timerGeneration));
+      unawaited(_handleAutoResumeOnPlatform(service.timerGeneration));
       return;
     }
     service.autoResumeTimer = Timer(delay, () {
       service.autoResumeTimer = null;
-      unawaited(_onAutoResume(service.timerGeneration));
+      unawaited(_handleAutoResumeOnPlatform(service.timerGeneration));
     });
   }
 
@@ -238,6 +245,128 @@ final class TimerFacade {
       if (generation != service.timerGeneration) return;
       _tickCountdown();
     });
+  }
+
+  Future<void> _handleTimerExpiredOnPlatform(int generation) async {
+    final result = await _executeTimerAction(
+      powerPlatformService.executeTimerExpiredNow,
+      generation,
+    );
+    if (result == TimerExecutionResult.failed) {
+      await _applyLocalTimerExpiryFallback();
+      return;
+    }
+    await syncRuntimeFromNative();
+    _maybeResetTimerAfterExpiry();
+    _changed();
+    unawaited(saveRuntime());
+  }
+
+  Future<void> _applyLocalTimerExpiryFallback() async {
+    final playingSessions = _sessions()
+        .where((session) => session.effectivePlaying)
+        .toList(growable: false);
+    service.pausedByTimerSessionIds.clear();
+    for (final session in playingSessions) {
+      if (await _pauseSession(session)) {
+        service.pausedByTimerSessionIds.add(session.id);
+      }
+    }
+    if (service.autoResumeEnabled &&
+        service.pausedByTimerSessionIds.isNotEmpty) {
+      scheduleAutoResumeTimer(
+        _runtimeCalculator.nextClockTime(
+          now: DateTime.now(),
+          hour: service.autoResumeHour,
+          minute: service.autoResumeMinute,
+        ),
+      );
+    }
+    _maybeResetTimerAfterExpiry();
+    _changed();
+    await saveRuntime();
+    await syncNativeAlarms();
+  }
+
+  void _maybeResetTimerAfterExpiry() {
+    if (service.autoResumeAt != null ||
+        service.pausedByTimerSessionIds.isNotEmpty &&
+            service.autoResumeEnabled) {
+      return;
+    }
+    resetRuntimeState();
+  }
+
+  Future<void> _handleAutoResumeOnPlatform(int generation) async {
+    final result = await _executeTimerAction(
+      powerPlatformService.executeAutoResumeNow,
+      generation,
+    );
+    if (result == TimerExecutionResult.failed) {
+      await _resumeTimerPausedSessions();
+      return;
+    }
+    await syncRuntimeFromNative();
+    resetRuntimeState();
+    _changed();
+    unawaited(saveRuntime());
+  }
+
+  Future<TimerExecutionResult> _executeTimerAction(
+    Future<TimerExecutionResult> Function(int generation) action,
+    int generation,
+  ) async {
+    try {
+      return await action(generation);
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'execute_timer_action_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return TimerExecutionResult.failed;
+    }
+  }
+
+  Future<void> _resumeTimerPausedSessions() async {
+    if (!await _activateAudioSession()) {
+      _changed();
+      await saveRuntime();
+      await syncNativeAlarms();
+      return;
+    }
+    final sessions = _sessions().toList(growable: false);
+    final resumableSessions = sessions
+        .where(
+          (session) => service.pausedByTimerSessionIds.contains(session.id),
+        )
+        .toList(growable: false);
+    if (resumableSessions.isEmpty) {
+      service.pausedByTimerSessionIds.clear();
+      _changed();
+      await saveRuntime();
+      await syncNativeAlarms();
+      return;
+    }
+    for (final session in resumableSessions) {
+      if (await _resumeSession(session)) {
+        service.pausedByTimerSessionIds.remove(session.id);
+      }
+    }
+    final sessionIds = sessions.map((session) => session.id).toSet();
+    service.pausedByTimerSessionIds.removeWhere(
+      (sessionId) => !sessionIds.contains(sessionId),
+    );
+    if (service.pausedByTimerSessionIds.isEmpty) {
+      service.autoResumeAt = null;
+      resetRuntimeState(clearPausedSessions: false);
+    } else {
+      service.autoResumeTimer?.cancel();
+      service.autoResumeTimer = null;
+    }
+    _changed();
+    await saveRuntime();
+    await syncNativeAlarms();
   }
 
   Future<void> loadSettings() async {
@@ -497,7 +626,7 @@ final class TimerFacade {
           service.pausedByTimerSessionIds.isNotEmpty) {
         scheduleAutoResumeTimer(autoResumeAt);
       } else if (service.pausedByTimerSessionIds.isNotEmpty) {
-        await _onAutoResume(service.timerGeneration);
+        await _handleAutoResumeOnPlatform(service.timerGeneration);
         return;
       } else {
         service.autoResumeAt = null;
@@ -572,7 +701,7 @@ final class TimerFacade {
     service.autoResumeTimer?.cancel();
     service.autoResumeTimer = null;
     _changed();
-    unawaited(_onTimerExpired(generation));
+    unawaited(_handleTimerExpiredOnPlatform(generation));
   }
 
   void _changed() => _onStateChanged();
@@ -591,4 +720,6 @@ final class TimerFacade {
 
 void _noop() {}
 void _noopFade(double _) {}
-Future<void> _noopGeneration(int _) async {}
+Iterable<PlaybackSession> _emptySessions() => const <PlaybackSession>[];
+Future<bool> _falseSession(PlaybackSession _) async => false;
+Future<bool> _falseAsync() async => false;

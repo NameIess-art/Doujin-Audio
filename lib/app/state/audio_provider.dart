@@ -84,7 +84,6 @@ part 'audio_provider_library.dart';
 part 'audio_provider_library_categories.dart';
 part 'audio_provider_playback.dart';
 part 'audio_provider_playback_sessions.dart';
-part 'audio_provider_playback_timer.dart';
 part 'audio_provider_playback_keepalive.dart';
 part 'audio_provider_playback_engine.dart';
 part 'audio_provider_notification_covers.dart';
@@ -499,16 +498,6 @@ class AudioProvider with ChangeNotifier {
     _timerFacade.keepAliveKeepsForegroundService = value;
   }
 
-  List<String> get _pausedByTimerSessionIds =>
-      _timerService.pausedByTimerSessionIds;
-  bool get _autoResumeEnabled => _timerService.autoResumeEnabled;
-  int get _autoResumeHour => _timerService.autoResumeHour;
-  int get _autoResumeMinute => _timerService.autoResumeMinute;
-  Timer? get _autoResumeTimer => _timerService.autoResumeTimer;
-  set _autoResumeTimer(Timer? value) => _timerService.autoResumeTimer = value;
-  DateTime? get _autoResumeAt => _timerService.autoResumeAt;
-  set _autoResumeAt(DateTime? value) => _timerService.autoResumeAt = value;
-
   factory AudioProvider({
     required LibraryFacade library,
     required PlaybackFacade playback,
@@ -656,6 +645,11 @@ class AudioProvider with ChangeNotifier {
     );
     _timerFacade.attachRuntime(
       hasPlayingSession: () => _hasPlayingSession,
+      sessions: () => _sessions.values,
+      pauseSession: _pauseSessionPlayback,
+      activateAudioSession: _activateAudioSessionForPlayback,
+      resumeSession: (session) =>
+          _startSessionPlayback(session, shouldStartTriggerCountdown: false),
       onStateChanged: () {
         _syncKeepCpuAwake();
         _notifyListeners();
@@ -665,9 +659,18 @@ class AudioProvider with ChangeNotifier {
         _syncKeepCpuAwake();
         _notifyListeners();
       },
-      applyFadeMultiplier: _applyFadeMultiplierToAllPlaying,
-      onTimerExpired: _handleTimerExpiredOnPlatform,
-      onAutoResume: _handleAutoResumeOnPlatform,
+      applyFadeMultiplier: (multiplier) {
+        for (final session in _sessions.values) {
+          if (session.state.playing) {
+            unawaited(
+              _nativePlaybackRepository.setFadeMultiplier(
+                session.id,
+                multiplier,
+              ),
+            );
+          }
+        }
+      },
     );
     _notificationFacade.attachRuntime(
       undismissNotifications: _nativePlaybackRepository.undismissNotifications,

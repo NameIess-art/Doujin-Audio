@@ -519,8 +519,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _appInForeground = false;
-      final provider = ref.read(audioProviderFacadeProvider);
-      provider.syncKeepAliveBeforeBackground();
+      unawaited(ref.read(audioRuntimeCoordinatorProvider).enterBackground());
       unawaited(_syncGlobalSubtitleOverlay());
       return;
     }
@@ -534,13 +533,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
       unawaited(_stopGlobalSubtitleOverlay(immediate: true));
     }
     unawaited(_consumePendingNotificationSession());
-    final provider = ref.read(audioProviderFacadeProvider);
-    provider.syncKeepAliveAfterForegroundResume();
     unawaited(_permissionActionController.handleAppResumed());
-    provider.resyncNotificationsAfterResume();
     unawaited(
-      provider.syncTimerRuntimeFromNative().then((_) {
-        provider.retryOverdueAutoResume();
+      ref.read(audioRuntimeCoordinatorProvider).resumeForeground().then((_) {
+        if (!mounted) return;
+        final provider = ref.read(audioProviderFacadeProvider);
         provider.scheduleUiWarmup(
           currentPageIndex: _currentIndex,
           immediate: true,

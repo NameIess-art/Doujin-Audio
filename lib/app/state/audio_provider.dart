@@ -12,6 +12,7 @@ import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/widgets/app_feedback.dart';
+import '../application/audio_runtime_coordinator.dart';
 
 import '../../core/app_language.dart';
 import '../../features/asmr/domain/asmr_download.dart';
@@ -125,6 +126,7 @@ class AudioProvider with ChangeNotifier {
   final TimerFacade _timerFacade;
   final NotificationFacade _notificationFacade;
   final SettingsRepository _settingsRepository;
+  late final AudioRuntimeCoordinator _runtimeCoordinator;
   final AppLanguage Function() _pageLanguageResolver;
   final bool _skipDisposePersistence;
   SharedPreferences? _cachedPrefs;
@@ -134,6 +136,7 @@ class AudioProvider with ChangeNotifier {
   TimerFacade get timerFacade => _timerFacade;
   NotificationFacade get notificationFacade => _notificationFacade;
   SettingsRepository get settingsRepository => _settingsRepository;
+  AudioRuntimeCoordinator get runtimeCoordinator => _runtimeCoordinator;
 
   PlaybackNotificationService get _notificationService =>
       _notificationFacade.service;
@@ -254,17 +257,12 @@ class AudioProvider with ChangeNotifier {
   final Set<String> _timeSegmentLoopSeekPendingSessionIds = <String>{};
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
-  bool _nativeRuntimeStarted = false;
   bool _warmupPausedForLifecycle = false;
   int _transportCommandSequence = 0;
   int _persistenceLoadEpoch = 0;
   Future<void>? _postStartupLibraryMaintenance;
 
   final Random _random = Random();
-
-  StreamSubscription<NativePlaybackSnapshot>? _nativePlaybackSubscription;
-  StreamSubscription<NativePlaybackProgressUpdate>?
-  _nativePlaybackProgressSubscription;
 
   List<MusicTrack> get _library => _libraryService.library;
   Map<String, MusicTrack> get _libraryByPath => _libraryService.libraryByPath;
@@ -689,26 +687,28 @@ class AudioProvider with ChangeNotifier {
       _handleWarmupInteractionChanged,
     );
     _syncWarmupPauseState();
+    _runtimeCoordinator = AudioRuntimeCoordinator(
+      snapshots: _nativePlaybackRepository.snapshots,
+      progressUpdates: _nativePlaybackRepository.progressUpdates,
+      startListening: _nativePlaybackRepository.startListening,
+      stopListening: _nativePlaybackRepository.stopListening,
+      onSnapshot: _handleNativePlaybackSnapshot,
+      onProgress: _handleNativePlaybackProgress,
+      onStart: _loadData,
+      onEnterBackground: syncKeepAliveBeforeBackground,
+      onResumeForeground: () async {
+        syncKeepAliveAfterForegroundResume();
+        resyncNotificationsAfterResume();
+        await syncTimerRuntimeFromNative();
+        retryOverdueAutoResume();
+      },
+      onDispose: _disposeOwnedServices,
+    );
     if (startNativeRuntime) {
-      _startNativeRuntime();
+      unawaited(_runtimeCoordinator.start());
     }
     _syncAllStateSlices();
   }
-
-  void _startNativeRuntime() {
-    if (_nativeRuntimeStarted || _isDisposed) return;
-    _nativeRuntimeStarted = true;
-    _nativePlaybackRepository.startListening();
-    _nativePlaybackSubscription = _nativePlaybackRepository.snapshots.listen(
-      _handleNativePlaybackSnapshot,
-    );
-    _nativePlaybackProgressSubscription = _nativePlaybackRepository
-        .progressUpdates
-        .listen(_handleNativePlaybackProgress);
-    _loadData();
-  }
-
-  void startRuntime() => _startNativeRuntime();
 
   @override
   void dispose() {
@@ -738,13 +738,11 @@ class AudioProvider with ChangeNotifier {
       ),
     );
     unawaited(_deactivateAudioSession());
-    unawaited(_nativePlaybackSubscription?.cancel());
-    unawaited(_nativePlaybackProgressSubscription?.cancel());
-    unawaited(_libraryFacade.dispose());
-    unawaited(_playbackFacade.dispose());
-    unawaited(_timerFacade.dispose());
-    unawaited(_notificationFacade.dispose());
-    unawaited(_settingsRepository.dispose());
+    unawaited(_runtimeCoordinator.dispose());
+    super.dispose();
+  }
+
+  Future<void> _disposeOwnedServices() async {
     for (final session in _sessions.values) {
       session.dispose();
     }
@@ -752,7 +750,11 @@ class AudioProvider with ChangeNotifier {
     _timeSegmentLoopsBySessionId.clear();
     _timeSegmentLoopBoundSessionIds.clear();
     _timeSegmentLoopSeekPendingSessionIds.clear();
-    super.dispose();
+    await _libraryFacade.dispose();
+    await _playbackFacade.dispose();
+    await _timerFacade.dispose();
+    await _notificationFacade.dispose();
+    await _settingsRepository.dispose();
   }
 
   void _notifyListeners() {

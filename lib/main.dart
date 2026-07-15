@@ -125,6 +125,7 @@ Future<void> _runAudioPlayerApp() async {
     pageLanguageResolver: () => appLanguageProvider.language,
     deferRuntimeStart: true,
   );
+  final audioRuntimeCoordinator = audioProvider.runtimeCoordinator;
   final asmrLibraryController = AsmrLibraryController(
     audioDatabaseRepository: audioDatabaseRepository,
     preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
@@ -152,7 +153,7 @@ Future<void> _runAudioPlayerApp() async {
   );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    audioProvider.startRuntime();
+    unawaited(audioRuntimeCoordinator.start());
     unawaited(
       asmrLibraryController.initialize(
         defaultLanguage: AsmrContentLanguage.fromAppLanguageName(

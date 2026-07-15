@@ -1,7 +1,11 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:just_audio/just_audio.dart';
+
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/persistence/audio_database_repository.dart';
@@ -18,6 +22,7 @@ import 'dlsite_metadata_service.dart';
 import 'library_snapshot_cache_service.dart';
 import 'library_catalog.dart';
 import 'library_scan_models.dart';
+import 'library_organizer.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../domain/library_entry.dart';
@@ -81,6 +86,9 @@ final class LibraryFacade implements LibraryCatalogReader {
   final LibrarySnapshotCacheService snapshotCacheService;
   CoverArtworkCacheService? _coverArtworkCacheService;
   LibraryCatalog? _catalog;
+  Future<void>? _missingDurationBackfill;
+  bool _missingDurationBackfillRequestedAgain = false;
+  bool _disposed = false;
 
   LibraryState get state => service.slice.state;
   Stream<LibraryState> get states => service.slice.stream;
@@ -160,6 +168,206 @@ final class LibraryFacade implements LibraryCatalogReader {
     snapshotCacheService.markDetailChanged(result.detail);
     _syncStateSlice();
     return result;
+  }
+
+  AudioDetailTarget audioDetailTargetForTrack(MusicTrack track) {
+    if (track.isSingle) {
+      return AudioDetailTarget.singleAudioFile(track.path);
+    }
+    final watchedRoots = List<String>.of(service.watchedFolders)
+      ..sort((a, b) => b.length.compareTo(a.length));
+    return AudioDetailTarget.libraryRootFolder(
+      const LibraryOrganizer().rootPathForTrack(track, watchedRoots),
+    );
+  }
+
+  Future<void> backfillMissingLibraryDurations({
+    Future<Duration?> Function(String path)? durationReader,
+  }) {
+    final inFlight = _missingDurationBackfill;
+    if (inFlight != null) {
+      _missingDurationBackfillRequestedAgain = true;
+      return inFlight;
+    }
+
+    final task = () async {
+      do {
+        _missingDurationBackfillRequestedAgain = false;
+        await _backfillMissingLibraryDurations(durationReader: durationReader);
+      } while (_missingDurationBackfillRequestedAgain && !_disposed);
+    }();
+    _missingDurationBackfill = task;
+    unawaited(
+      task.then<void>(
+        (_) => _clearMissingDurationBackfill(task),
+        onError: (Object error, StackTrace stackTrace) {
+          _clearMissingDurationBackfill(task);
+        },
+      ),
+    );
+    return task;
+  }
+
+  void _clearMissingDurationBackfill(Future<void> task) {
+    if (identical(_missingDurationBackfill, task)) {
+      _missingDurationBackfill = null;
+    }
+  }
+
+  Future<void> _backfillMissingLibraryDurations({
+    Future<Duration?> Function(String path)? durationReader,
+  }) async {
+    final targetsByKey = <String, AudioDetailTarget>{};
+    final tracksByTargetKey = <String, List<MusicTrack>>{};
+    for (final track in List<MusicTrack>.of(service.library)) {
+      final target = audioDetailTargetForTrack(track);
+      final key = <String>[
+        target.targetType.dbValue,
+        PathMatcher.equivalenceKey(target.targetPath),
+      ].join('|');
+      targetsByKey.putIfAbsent(key, () => target);
+      tracksByTargetKey.putIfAbsent(key, () => <MusicTrack>[]).add(track);
+    }
+    if (targetsByKey.isEmpty) return;
+
+    final targets = targetsByKey.values.toList(growable: false);
+    final loadResults = await detailCacheService.loadMany(targets);
+    for (var index = 0; index < targets.length; index++) {
+      if (_disposed) return;
+      final detail = loadResults[index].detail;
+      final key = <String>[
+        detail.target.targetType.dbValue,
+        PathMatcher.equivalenceKey(detail.target.targetPath),
+      ].join('|');
+      final targetTracks = tracksByTargetKey[key];
+      if (targetTracks == null || targetTracks.isEmpty) continue;
+      final hasMissingTrack = targetTracks.any(
+        (track) => track.duration <= Duration.zero,
+      );
+      if (detail.duration != null && !hasMissingTrack) continue;
+
+      final duration = await _calculateDurationForTracks(
+        targetTracks,
+        durationReader: durationReader,
+      );
+      if (duration == null || _disposed || detail.duration != null) continue;
+      final latestDetail =
+          detailCacheService.resolvedDetail(detail.target) ?? detail;
+      if (latestDetail.duration == null) {
+        await saveAudioDetail(latestDetail.copyWith(duration: duration));
+      }
+    }
+  }
+
+  Future<Duration?> calculateMissingLibraryDuration(
+    String targetPath, {
+    Future<Duration?> Function(String path)? durationReader,
+  }) {
+    final singleTracks = service.library
+        .where(
+          (track) =>
+              track.isSingle &&
+              PathMatcher.equalsNormalized(track.path, targetPath),
+        )
+        .toList(growable: false);
+    final targetTracks = singleTracks.isNotEmpty
+        ? singleTracks
+        : service.library
+              .where(
+                (track) =>
+                    !track.isSingle &&
+                    (PathMatcher.isWithinOrEqual(track.groupKey, targetPath) ||
+                        PathMatcher.isWithinOrEqual(track.path, targetPath)),
+              )
+              .toList(growable: false);
+    return _calculateDurationForTracks(
+      targetTracks,
+      durationReader: durationReader,
+    );
+  }
+
+  Future<Duration?> _calculateDurationForTracks(
+    List<MusicTrack> targetTracks, {
+    Future<Duration?> Function(String path)? durationReader,
+  }) async {
+    if (targetTracks.isEmpty) return null;
+
+    final tracksToUpdate = <MusicTrack>[];
+    var totalDuration = Duration.zero;
+    var hasUnknownDuration = false;
+    final missingTracks = <MusicTrack>[];
+    for (final track in targetTracks) {
+      if (track.duration > Duration.zero) {
+        totalDuration += track.duration;
+      } else {
+        missingTracks.add(track);
+      }
+    }
+
+    Future<Duration?> resolveDuration(MusicTrack track) async {
+      try {
+        if (durationReader != null) return durationReader(track.path);
+        final nativeDuration = await FileCachePlatformGateway.instance
+            .resolveMediaDuration(track.path);
+        if (nativeDuration != null && nativeDuration > Duration.zero) {
+          return nativeDuration;
+        }
+        if (!PathMatcher.isContentUri(track.path) &&
+            !PathMatcher.isRemoteUri(track.path) &&
+            !await File(track.path).exists()) {
+          return null;
+        }
+        final player = AudioPlayer();
+        try {
+          return await _readLocalMediaDuration(player, track.path);
+        } finally {
+          await player.dispose();
+        }
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'library_duration_probe_failed path=${track.path}',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        return null;
+      }
+    }
+
+    const concurrency = 2;
+    for (var start = 0; start < missingTracks.length; start += concurrency) {
+      final end = (start + concurrency).clamp(0, missingTracks.length);
+      final chunk = missingTracks.sublist(start, end);
+      final durations = await Future.wait(chunk.map(resolveDuration));
+      for (var index = 0; index < chunk.length; index++) {
+        final track = chunk[index];
+        final duration = durations[index] ?? Duration.zero;
+        if (duration > Duration.zero) {
+          totalDuration += duration;
+          tracksToUpdate.add(track.copyWith(duration: duration));
+        } else {
+          hasUnknownDuration = true;
+          AppLogService.warning(
+            'library_duration_unresolved path=${track.path} video=${track.isVideo}',
+          );
+        }
+      }
+    }
+
+    if (tracksToUpdate.isNotEmpty) {
+      for (final track in tracksToUpdate) {
+        final index = service.libraryIndexByPath[track.path];
+        if (index != null) service.library[index] = track;
+        service.libraryByPath[track.path] = track;
+      }
+      await databaseRepository.upsertTracks(tracksToUpdate);
+      service.rebuildLibraryIndexes();
+      snapshotCacheService.markStructureChanged();
+      _syncStateSlice();
+    }
+
+    return !hasUnknownDuration && totalDuration > Duration.zero
+        ? totalDuration
+        : null;
   }
 
   DlsiteMetadataQuery buildDlsiteMetadataQuery(AudioDetail detail) =>
@@ -445,9 +653,22 @@ final class LibraryFacade implements LibraryCatalogReader {
   }
 
   Future<void> dispose() async {
+    _disposed = true;
     service.scanProgressNotifyTimer?.cancel();
     service.scanProgressNotifyTimer = null;
     _coverArtworkCacheService?.dispose();
     await service.dispose();
   }
+}
+
+Future<Duration?> _readLocalMediaDuration(
+  AudioPlayer player,
+  String mediaPath,
+) {
+  if (PathMatcher.isContentUri(mediaPath)) {
+    return player
+        .setAudioSource(AudioSource.uri(Uri.parse(mediaPath)))
+        .timeout(const Duration(seconds: 8));
+  }
+  return player.setFilePath(mediaPath).timeout(const Duration(seconds: 8));
 }

@@ -452,7 +452,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _ensureMissingDurationBackfill({
-    required AudioProvider provider,
+    required LibraryFacade libraryFacade,
     required int structureRevision,
     required bool canRun,
   }) {
@@ -472,7 +472,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               _durationBackfillStructureRevision != structureRevision) {
             return;
           }
-          unawaited(provider.backfillMissingLibraryDurations());
+          unawaited(libraryFacade.backfillMissingLibraryDurations());
         },
       );
     });
@@ -598,7 +598,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final libraryRefreshBusy =
         libraryRefreshOperationBusy || libraryImportBusy || listStateIsScanning;
     _ensureMissingDurationBackfill(
-      provider: provider,
+      libraryFacade: libraryFacade,
       structureRevision: listStateStructureRevision,
       canRun:
           listStateIsInitialized &&

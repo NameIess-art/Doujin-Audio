@@ -273,8 +273,6 @@ class AudioProvider with ChangeNotifier {
   int _transportCommandSequence = 0;
   int _persistenceLoadEpoch = 0;
   Future<void>? _postStartupLibraryMaintenance;
-  Future<void>? _missingLibraryDurationBackfill;
-  bool _missingLibraryDurationBackfillRequestedAgain = false;
 
   final Random _random = Random();
 

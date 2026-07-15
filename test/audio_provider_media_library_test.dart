@@ -81,21 +81,22 @@ void main() {
     final requestedPaths = <String>[];
     var activeDurationReads = 0;
     var peakDurationReads = 0;
-    final duration = await provider.calculateMissingLibraryDuration(
-      folder.path,
-      durationReader: (trackPath) async {
-        requestedPaths.add(trackPath);
-        activeDurationReads++;
-        if (activeDurationReads > peakDurationReads) {
-          peakDurationReads = activeDurationReads;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        activeDurationReads--;
-        return trackPath == secondPath
-            ? const Duration(minutes: 2)
-            : const Duration(minutes: 3);
-      },
-    );
+    final duration = await provider.libraryFacade
+        .calculateMissingLibraryDuration(
+          folder.path,
+          durationReader: (trackPath) async {
+            requestedPaths.add(trackPath);
+            activeDurationReads++;
+            if (activeDurationReads > peakDurationReads) {
+              peakDurationReads = activeDurationReads;
+            }
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+            activeDurationReads--;
+            return trackPath == secondPath
+                ? const Duration(minutes: 2)
+                : const Duration(minutes: 3);
+          },
+        );
 
     expect(requestedPaths, <String>[secondPath, thirdPath]);
     expect(peakDurationReads, 2);
@@ -125,13 +126,14 @@ void main() {
       persist: false,
     );
     final retryPaths = <String>[];
-    final incompleteDuration = await provider.calculateMissingLibraryDuration(
-      folder.path,
-      durationReader: (trackPath) async {
-        retryPaths.add(trackPath);
-        return null;
-      },
-    );
+    final incompleteDuration = await provider.libraryFacade
+        .calculateMissingLibraryDuration(
+          folder.path,
+          durationReader: (trackPath) async {
+            retryPaths.add(trackPath);
+            return null;
+          },
+        );
     expect(retryPaths, <String>[unreadablePath]);
     expect(incompleteDuration, isNull);
 
@@ -155,11 +157,12 @@ void main() {
       notify: false,
       persist: false,
     );
-    final contentDuration = await provider.calculateMissingLibraryDuration(
-      contentRoot,
-      durationReader: (trackPath) async =>
-          trackPath == contentTrackPath ? const Duration(minutes: 5) : null,
-    );
+    final contentDuration = await provider.libraryFacade
+        .calculateMissingLibraryDuration(
+          contentRoot,
+          durationReader: (trackPath) async =>
+              trackPath == contentTrackPath ? const Duration(minutes: 5) : null,
+        );
     expect(contentDuration, const Duration(minutes: 5));
   });
 
@@ -182,13 +185,14 @@ void main() {
     );
 
     final requestedPaths = <String>[];
-    final duration = await provider.calculateMissingLibraryDuration(
-      videoPath.toUpperCase(),
-      durationReader: (trackPath) async {
-        requestedPaths.add(trackPath);
-        return const Duration(minutes: 7, seconds: 12);
-      },
-    );
+    final duration = await provider.libraryFacade
+        .calculateMissingLibraryDuration(
+          videoPath.toUpperCase(),
+          durationReader: (trackPath) async {
+            requestedPaths.add(trackPath);
+            return const Duration(minutes: 7, seconds: 12);
+          },
+        );
 
     expect(requestedPaths, const <String>[videoPath]);
     expect(duration, const Duration(minutes: 7, seconds: 12));
@@ -246,7 +250,7 @@ void main() {
         persist: false,
       );
 
-      await provider.backfillMissingLibraryDurations(
+      await provider.libraryFacade.backfillMissingLibraryDurations(
         durationReader: (trackPath) async => switch (trackPath) {
           final value when value == firstPath => const Duration(minutes: 1),
           final value when value == secondPath => const Duration(minutes: 2),
@@ -357,7 +361,7 @@ void main() {
       );
 
       final requestedPaths = <String>[];
-      await provider.backfillMissingLibraryDurations(
+      await provider.libraryFacade.backfillMissingLibraryDurations(
         durationReader: (path) async {
           requestedPaths.add(path);
           return const Duration(minutes: 2);

@@ -5,9 +5,8 @@ extension AudioProviderLibraryCategories on AudioProvider {
       _librarySnapshotCacheService.categorySnapshotSync;
 
   Future<AudioLibraryCategorySnapshot> audioLibraryCategorySnapshot() {
-    return _librarySnapshotCacheService.categorySnapshot(
+    return _libraryFacade.audioLibraryCategorySnapshot(
       onCommitted: () {
-        _syncLibraryStateSlice();
         _notifyPresentationListeners();
       },
     );

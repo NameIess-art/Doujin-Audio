@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
-import 'package:nameless_audio/features/player/domain/playback_session.dart';
+import 'package:nameless_audio/features/player/application/playback_session.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
 import 'package:nameless_audio/core/media/subtitle_parser.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';

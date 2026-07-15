@@ -6,7 +6,6 @@ import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
-import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../application/asmr_library_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -66,7 +65,7 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
         final coverCacheWidth = coverCacheWidthForResolution(
           ref.watch(coverImageResolutionProvider),
         );
-        final provider = context.read<AudioProvider>();
+        final library = ref.read(libraryFacadeProvider);
         final coverUrl = effectiveWork.preferredCoverUrl;
 
         return ConstrainedBox(
@@ -129,12 +128,12 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
                     aspectRatio: 1.45,
                     child: AsyncRemoteCoverImage(
                       url: coverUrl,
-                      future: provider.coverPathFutureForRemoteCover(coverUrl),
-                      initialPath: provider.resolvedCoverPathForRemoteCover(
+                      future: library.coverPathFutureForRemoteCover(coverUrl),
+                      initialPath: library.resolvedCoverPathForRemoteCover(
                         coverUrl,
                       ),
                       retryFutureBuilder: () =>
-                          provider.coverPathFutureForRemoteCover(coverUrl),
+                          library.coverPathFutureForRemoteCover(coverUrl),
                       fit: BoxFit.cover,
                       cacheWidth: coverCacheWidth,
                       useDefaultCacheWidth: coverCacheWidth != null,

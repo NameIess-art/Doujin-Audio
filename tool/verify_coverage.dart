@@ -33,35 +33,45 @@ void main(List<String> args) {
     baseline,
     'minimumTotalLineCoveragePercent',
   );
-  final criticalMinimum = _readPercent(
+  final moduleMinimums = _readModuleMinimums(
     baseline,
-    'criticalModuleMinimumLineCoveragePercent',
+    'moduleMinimumLineCoveragePercent',
   );
-  final criticalPrefixes = _readStringList(baseline['criticalPathPrefixes']);
   final records = _parseLcov(lcovFile.readAsLinesSync());
 
   final totalFound = records.fold<int>(0, (sum, record) => sum + record.found);
   final totalHit = records.fold<int>(0, (sum, record) => sum + record.hit);
   final totalPercent = _coveragePercent(totalHit, totalFound);
-  final flooredTotal = totalPercent.floor();
-
   stdout.writeln(
     'Total line coverage: ${totalPercent.toStringAsFixed(2)}% '
     '($totalHit/$totalFound), required >= ${minimumTotal.toStringAsFixed(0)}%',
   );
 
-  var failed = flooredTotal < minimumTotal;
-  for (final record in records) {
-    if (!criticalPrefixes.any(record.path.startsWith)) {
+  var failed = totalPercent < minimumTotal;
+  for (final entry in moduleMinimums.entries) {
+    final matchingRecords = records
+        .where((record) => record.path.startsWith(entry.key))
+        .toList(growable: false);
+    if (matchingRecords.isEmpty) {
+      stderr.writeln(
+        'Coverage check failed: configured module prefix has no records: '
+        '${entry.key}',
+      );
+      failed = true;
       continue;
     }
-    final percent = _coveragePercent(record.hit, record.found);
-    stdout.writeln(
-      'Critical module ${record.path}: ${percent.toStringAsFixed(2)}% '
-      '(${record.hit}/${record.found}), required >= '
-      '${criticalMinimum.toStringAsFixed(0)}%',
+    final found = matchingRecords.fold<int>(
+      0,
+      (sum, record) => sum + record.found,
     );
-    if (percent < criticalMinimum) {
+    final hit = matchingRecords.fold<int>(0, (sum, record) => sum + record.hit);
+    final percent = _coveragePercent(hit, found);
+    stdout.writeln(
+      'Module ${entry.key}: ${percent.toStringAsFixed(2)}% '
+      '($hit/$found across ${matchingRecords.length} files), required >= '
+      '${entry.value.toStringAsFixed(0)}%',
+    );
+    if (percent < entry.value) {
       failed = true;
     }
   }
@@ -74,18 +84,24 @@ void main(List<String> args) {
 
 num _readPercent(Map<String, dynamic> json, String key) {
   final value = json[key];
-  if (value is num) return value;
-  throw FormatException('Coverage baseline `$key` must be numeric.');
+  if (value is num && value >= 0 && value <= 100) return value;
+  throw FormatException(
+    'Coverage baseline `$key` must be numeric and between 0 and 100.',
+  );
 }
 
-List<String> _readStringList(Object? value) {
-  if (value == null) return const <String>[];
-  if (value is List) {
-    return value.whereType<String>().toList(growable: false);
+Map<String, num> _readModuleMinimums(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value is! Map<String, dynamic> || value.isEmpty) {
+    throw FormatException(
+      'Coverage baseline `$key` must be a non-empty object.',
+    );
   }
-  throw const FormatException(
-    'Coverage baseline `criticalPathPrefixes` must be a string array.',
-  );
+  return <String, num>{
+    for (final entry in value.entries)
+      if (entry.key.trim().isNotEmpty)
+        entry.key.replaceAll(r'\', '/'): _readPercent(value, entry.key),
+  };
 }
 
 List<_CoverageRecord> _parseLcov(List<String> lines) {
@@ -95,7 +111,7 @@ List<_CoverageRecord> _parseLcov(List<String> lines) {
   var hit = 0;
   for (final line in lines) {
     if (line.startsWith('SF:')) {
-      path = line.substring(3).replaceAll(r'\', '/');
+      path = _normalizeCoveragePath(line.substring(3));
       found = 0;
       hit = 0;
     } else if (line.startsWith('LF:')) {
@@ -111,6 +127,13 @@ List<_CoverageRecord> _parseLcov(List<String> lines) {
     throw const FormatException('Coverage report contains no records.');
   }
   return records;
+}
+
+String _normalizeCoveragePath(String value) {
+  final normalized = value.replaceAll(r'\', '/');
+  if (normalized.startsWith('lib/')) return normalized;
+  final libIndex = normalized.lastIndexOf('/lib/');
+  return libIndex == -1 ? normalized : normalized.substring(libIndex + 1);
 }
 
 double _coveragePercent(int hit, int found) {

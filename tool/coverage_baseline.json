@@ -1,5 +1,13 @@
 {
-  "minimumTotalLineCoveragePercent": 52,
-  "criticalModuleMinimumLineCoveragePercent": 80,
-  "criticalPathPrefixes": []
+  "minimumTotalLineCoveragePercent": 61,
+  "moduleMinimumLineCoveragePercent": {
+    "lib/app/state/": 70,
+    "lib/features/player/application/": 74,
+    "lib/features/library/application/": 71,
+    "lib/features/asmr/application/": 76,
+    "lib/features/settings/application/": 69,
+    "lib/features/data_support/application/": 82,
+    "lib/core/platform/": 52,
+    "lib/core/persistence/": 90
+  }
 }

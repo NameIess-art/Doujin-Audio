@@ -5,7 +5,7 @@ import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/features/library/domain/library_entry.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
-import 'package:nameless_audio/features/player/domain/playback_session.dart';
+import 'package:nameless_audio/features/player/application/playback_session.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 
 void main() {
@@ -130,6 +130,25 @@ void main() {
         repository.slice.state.asmrDownloadConflictPolicy,
         AsmrDownloadConflictPolicy.overwrite,
       );
+    });
+
+    test('ASMR download destination publishes and persists once', () async {
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+      var persistCount = 0;
+      repository.attachPersistence(() async {
+        persistCount++;
+      });
+
+      await repository.setAsmrDownloadDestinationRoot('  /downloads/asmr  ');
+      await repository.setAsmrDownloadDestinationRoot('/downloads/asmr');
+
+      expect(repository.asmrDownloadDestinationRoot, '/downloads/asmr');
+      expect(
+        repository.slice.state.asmrDownloadDestinationRoot,
+        '/downloads/asmr',
+      );
+      expect(persistCount, 1);
     });
 
     test('ASMR.ONE playback cache defaults to disabled', () {

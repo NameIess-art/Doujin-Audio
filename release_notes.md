@@ -22,6 +22,13 @@
 - 加强数据库维护锁、备份恢复回滚、SQLite 大批量删除和 ASMR outbox 原子保存。
 - 修复封面作用域、Windows 回到顶部、视频转换取消和多处生命周期资源清理问题。
 
+## 架构与质量
+
+- 播放会话运行时已移出 domain，domain 不再依赖 Flutter、播放器 SDK 或上层模块。
+- 更新安装与字幕悬浮窗平台调用统一进入可注入的 `core/platform` 网关，保持原有 Channel 协议不变。
+- 覆盖率校验改为按目录聚合，并在配置路径无覆盖数据、LCOV 为空或低于门槛时失败。
+- 新增架构边界和平台畸形 envelope 回归测试；升级 `audio_session`、`just_audio` 与 `path_provider` 的兼容 patch 版本。
+
 ## 发布资产
 
 ```text

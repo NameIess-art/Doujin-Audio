@@ -83,6 +83,27 @@ void main() {
     expect(launcher.loopMode, SessionLoopMode.single);
   });
 
+  test('prebuilt folder tracks use the same history and launch path', () async {
+    final source = _FakeAsmrPlaybackSource();
+    final launcher = _RecordingPlaybackSessionLauncher();
+    final coordinator = AsmrPlaybackCoordinator(
+      source: source,
+      launcher: launcher,
+    );
+
+    await coordinator.playTracks(work, <MusicTrack>[
+      _track('folder-one'),
+      _track('folder-two'),
+    ]);
+
+    expect(source.recordedWorks, <AsmrWork>[work]);
+    expect(launcher.tracks.map((track) => track.path), <String>[
+      'folder-one',
+      'folder-two',
+    ]);
+    expect(launcher.loopMode, SessionLoopMode.folderSequential);
+  });
+
   test(
     'empty playable result does not update history or launch playback',
     () async {

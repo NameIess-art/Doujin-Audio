@@ -414,11 +414,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _ensureCategorySnapshot({
-    required AudioProvider provider,
+    required LibraryFacade libraryFacade,
     required int structureRevision,
     required int detailRevision,
   }) {
-    final snapshot = provider.audioLibraryCategorySnapshotSync;
+    final snapshot = libraryFacade.categorySnapshot;
     if (snapshot != null &&
         snapshot.structureRevision == structureRevision &&
         snapshot.detailRevision == detailRevision) {
@@ -435,7 +435,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       if (!mounted) return;
       unawaited(
         ref
-            .read(audioProviderFacadeProvider)
+            .read(libraryFacadeProvider)
             .audioLibraryCategorySnapshot()
             .whenComplete(() {
               if (!mounted ||
@@ -545,6 +545,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
     final provider = ref.read(audioProviderFacadeProvider);
+    final libraryFacade = ref.read(libraryFacadeProvider);
     final libraryHeaderAudioCount = _readOrWatch(
       libraryHeaderUiProvider.select((s) => s.audioCount),
     );
@@ -606,7 +607,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           !listStateIsBackgroundScanning,
     );
     _ensureCategorySnapshot(
-      provider: provider,
+      libraryFacade: libraryFacade,
       structureRevision: listStateStructureRevision,
       detailRevision: detailRevision,
     );
@@ -872,6 +873,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       : _categoryType != AudioLibraryCategoryType.all
                       ? _buildCategoryBody(
                           provider: provider,
+                          libraryFacade: libraryFacade,
                           i18n: i18n,
                           topPadding: listTopPadding,
                           bottomPadding: listBottomPadding,

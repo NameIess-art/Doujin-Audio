@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
-import '../domain/playback_session.dart';
+import '../application/playback_session.dart';
 
 @immutable
 class PlaybackPositionUiSnapshot {

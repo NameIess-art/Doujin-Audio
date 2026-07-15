@@ -331,11 +331,16 @@ class NativePlaybackService : MediaSessionService() {
 
                 override fun onActiveSync() {
                     acquireWakeLock()
-                    requestAudioFocusIfNeeded()
-                    if (resumePendingAudioFocusSessionsIfPossible("foreground_sync_focus_available")) {
-                        schedulePersistSessionState()
+                    if (!shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
+                            transientAudioFocusLossActive
+                        )
+                    ) {
+                        requestAudioFocusIfNeeded()
+                        if (resumePendingAudioFocusSessionsIfPossible("foreground_sync_focus_available")) {
+                            schedulePersistSessionState()
+                        }
+                        playbackRecovery.trigger("foreground_sync")
                     }
-                    playbackRecovery.trigger("foreground_sync")
                     ensureStatePersistenceTicker()
                 }
 
@@ -353,7 +358,12 @@ class NativePlaybackService : MediaSessionService() {
 
                 override fun onWatchdog() {
                     playbackWakeLock.refresh()
-                    playbackRecovery.trigger("foreground_watchdog")
+                    if (!shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
+                            transientAudioFocusLossActive
+                        )
+                    ) {
+                        playbackRecovery.trigger("foreground_watchdog")
+                    }
                 }
 
                 override fun startPlaybackForeground() {
@@ -447,12 +457,15 @@ class NativePlaybackService : MediaSessionService() {
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 if (shouldPauseForAudioFocusChange(change)) {
                     transientAudioFocusLossActive = true
-                    sessions.values.forEach { session ->
+                    val sessionsToPause = sessions.values.filter { session ->
                         val player = session.playerOrNull()
-                        if (player != null && (player.isPlaying || player.playWhenReady)) {
-                            pendingAudioFocusResumeSessionIds.add(session.sessionId)
-                            player.pause()
-                        }
+                        player != null && (player.isPlaying || player.playWhenReady)
+                    }
+                    pendingAudioFocusResumeSessionIds.addAll(
+                        sessionsToPause.map(NativePlaybackSession::sessionId)
+                    )
+                    sessionsToPause.forEach { session ->
+                        session.playerOrNull()?.pause()
                     }
                 } else {
                     // The focus request explicitly opts into ducking instead
@@ -1435,6 +1448,12 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun requestAudioFocusIfNeeded(): Boolean {
+        if (shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
+                transientAudioFocusLossActive
+            )
+        ) {
+            return false
+        }
         return audioFocusController.requestIfNeeded()
     }
 
@@ -1618,6 +1637,10 @@ internal fun shouldTrackTransientAudioFocusPause(
 internal fun shouldPauseForAudioFocusChange(change: Int): Boolean {
     return change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT
 }
+
+internal fun shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
+    transientAudioFocusLossActive: Boolean
+): Boolean = transientAudioFocusLossActive
 
 internal fun shouldPreservePendingAudioFocusResume(
     playWhenReady: Boolean,

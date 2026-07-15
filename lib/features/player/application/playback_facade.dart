@@ -4,7 +4,7 @@ import '../../../core/media/music_track.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../asmr/application/asmr_playback_cache_service.dart';
 import '../domain/playback_mode.dart';
-import '../domain/playback_session.dart';
+import 'playback_session.dart';
 import 'audio_state_services.dart';
 import 'native_playback_repository.dart';
 import 'playback_command_runner.dart';

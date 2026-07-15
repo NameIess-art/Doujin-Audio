@@ -428,7 +428,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
 
   Future<void> _playFolder(BuildContext context) async {
     final controller = context.read<AsmrLibraryController>();
-    final provider = context.read<AudioProvider>();
+    final playbackCoordinator = context.read<AsmrPlaybackCoordinator>();
     final tracks = controller.buildPlayableTracksFromNode(
       widget.work,
       widget.node,
@@ -439,15 +439,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
     await UiOperationService.instance.run<void>(
       scope: _trackPlayScope(widget.work, widget.node),
       labelKey: 'loading_dot',
-      task: (_) async {
-        await controller.recordHistory(widget.work);
-        await provider.spawnSessionWithQueue(
-          tracks,
-          loopMode: tracks.length > 1
-              ? SessionLoopMode.folderSequential
-              : SessionLoopMode.single,
-        );
-      },
+      task: (_) => playbackCoordinator.playTracks(widget.work, tracks),
     );
     if (!context.mounted) {
       return;

@@ -1,39 +1,5 @@
 part of 'audio_provider.dart';
 
-class DlsiteMetadataQuery {
-  const DlsiteMetadataQuery({
-    this.rjCode,
-    this.searchTitles = const <String>[],
-  });
-
-  factory DlsiteMetadataQuery.fromDetail(AudioDetail detail) {
-    final rjCode = AudioDetail.findRjCodeInText(detail.rjCode);
-    if (rjCode != null) {
-      return DlsiteMetadataQuery(rjCode: rjCode);
-    }
-    final seen = <String>{};
-    final searchTitles =
-        <String>[
-              detail.target.isLibraryRootFolder
-                  ? PathDisplay.folderName(detail.target.targetPath)
-                  : PathDisplay.fileName(
-                      detail.target.targetPath,
-                      withoutExtension: true,
-                    ),
-              detail.workTitle,
-            ]
-            .map((value) => value.trim())
-            .where((value) => value.isNotEmpty && seen.add(value))
-            .toList(growable: false);
-    return DlsiteMetadataQuery(searchTitles: searchTitles);
-  }
-
-  final String? rjCode;
-  final List<String> searchTitles;
-
-  bool get hasQuery => rjCode != null || searchTitles.isNotEmpty;
-}
-
 extension AudioProviderAudioDetails on AudioProvider {
   static const LibraryOrganizer _detailLibraryOrganizer = LibraryOrganizer();
 
@@ -59,7 +25,7 @@ extension AudioProviderAudioDetails on AudioProvider {
   }
 
   Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) {
-    return _audioDetailCacheService.load(target);
+    return _libraryFacade.loadAudioDetail(target);
   }
 
   AudioDetail? resolvedAudioDetail(AudioDetailTarget target) {
@@ -74,8 +40,7 @@ extension AudioProviderAudioDetails on AudioProvider {
     AudioDetail detail, {
     bool notify = true,
   }) async {
-    final result = await _audioDetailCacheService.save(detail);
-    _librarySnapshotCacheService.markDetailChanged(result.detail);
+    final result = await _libraryFacade.saveAudioDetail(detail);
     if (notify) _notifyListeners();
     return result;
   }
@@ -335,7 +300,7 @@ extension AudioProviderAudioDetails on AudioProvider {
   }
 
   DlsiteMetadataQuery buildDlsiteMetadataQuery(AudioDetail detail) {
-    return DlsiteMetadataQuery.fromDetail(detail);
+    return _libraryFacade.buildDlsiteMetadataQuery(detail);
   }
 
   Future<DlsiteMetadataApplyResult> applyDlsiteMetadata(

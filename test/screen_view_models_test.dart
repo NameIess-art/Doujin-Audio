@@ -5,7 +5,7 @@ import 'package:nameless_audio/features/library/domain/library_node.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/player/domain/playback_queue.dart';
-import 'package:nameless_audio/features/player/domain/playback_session.dart';
+import 'package:nameless_audio/features/player/application/playback_session.dart';
 import 'package:nameless_audio/app/presentation/screen_view_models.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 

@@ -13,7 +13,7 @@ import '../../library/domain/library_node.dart';
 import '../../library/domain/library_entry.dart';
 import '../../../core/media/music_track.dart';
 import '../domain/playback_mode.dart';
-import '../domain/playback_session.dart';
+import 'playback_session.dart';
 import '../../library/application/library_organizer.dart';
 import '../../library/application/library_scan_models.dart';
 import 'native_playback_bridge.dart';

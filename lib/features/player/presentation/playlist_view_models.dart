@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
-import '../domain/playback_session.dart';
+import '../application/playback_session.dart';
 import '../application/audio_state_services.dart';
 
 @immutable

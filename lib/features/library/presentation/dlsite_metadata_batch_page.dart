@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/audio_provider.dart';
+import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../application/dlsite_metadata_query.dart';
+import '../domain/audio_library_category.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/operation_feedback.dart';
@@ -13,18 +16,19 @@ import '../../../core/widgets/top_page_header.dart';
 
 enum _BatchMetadataScope { anyMissing, noMetadata, hasRjCode, all, specific }
 
-class DlsiteMetadataBatchPage extends StatefulWidget {
+class DlsiteMetadataBatchPage extends ConsumerStatefulWidget {
   const DlsiteMetadataBatchPage({super.key, @visibleForTesting this.entries});
 
   @visibleForTesting
   final List<AudioLibraryCategoryEntry>? entries;
 
   @override
-  State<DlsiteMetadataBatchPage> createState() =>
+  ConsumerState<DlsiteMetadataBatchPage> createState() =>
       _DlsiteMetadataBatchPageState();
 }
 
-class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
+class _DlsiteMetadataBatchPageState
+    extends ConsumerState<DlsiteMetadataBatchPage> {
   List<AudioLibraryCategoryEntry> _entries =
       const <AudioLibraryCategoryEntry>[];
   List<AudioLibraryCategoryEntry> _specificEntries =
@@ -98,7 +102,7 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
             scope: UiOperationScope.metadataBatch,
             labelKey: 'batch_metadata',
             task: (_) =>
-                context.read<AudioProvider>().audioLibraryCategorySnapshot(),
+                ref.read(libraryFacadeProvider).audioLibraryCategorySnapshot(),
           );
       if (!mounted) return;
       setState(() {
@@ -133,8 +137,7 @@ class _DlsiteMetadataBatchPageState extends State<DlsiteMetadataBatchPage> {
         _currentIndex = index + 1;
       });
       final entry = queue[index];
-      final provider = context.read<AudioProvider>();
-      final query = provider.buildDlsiteMetadataQuery(entry.detail);
+      final query = DlsiteMetadataQuery.fromDetail(entry.detail);
       if (!query.hasQuery) {
         skipped++;
         continue;

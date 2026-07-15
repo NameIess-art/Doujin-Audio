@@ -101,7 +101,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
   }
 }
 
-class _SessionCoverThumbnail extends StatefulWidget {
+class _SessionCoverThumbnail extends ConsumerStatefulWidget {
   const _SessionCoverThumbnail({
     required this.sessionId,
     required this.track,
@@ -124,29 +124,34 @@ class _SessionCoverThumbnail extends StatefulWidget {
   final Duration? detailDuration;
 
   @override
-  State<_SessionCoverThumbnail> createState() => _SessionCoverThumbnailState();
+  ConsumerState<_SessionCoverThumbnail> createState() =>
+      _SessionCoverThumbnailState();
 }
 
-class _SessionCoverThumbnailState extends State<_SessionCoverThumbnail> {
+class _SessionCoverThumbnailState
+    extends ConsumerState<_SessionCoverThumbnail> {
   Future<String?>? _coverFuture;
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
 
-  Future<String?> _futureFor(AudioProvider provider) {
+  Future<String?> _futureFor(LibraryFacade library) {
     final trackPath = widget.track?.path;
     if (_coverFuture == null ||
         _lastTrackPath != trackPath ||
         _lastCoverGeneration != widget.coverGeneration) {
       _lastTrackPath = trackPath;
       _lastCoverGeneration = widget.coverGeneration;
-      _coverFuture = _coverFutureForTrack(provider, widget.track);
+      _coverFuture = library.playbackCoverPathFutureForTrack(widget.track);
     }
     return _coverFuture!;
   }
 
   @override
   Widget build(BuildContext context) {
-    final session = context.read<AudioProvider>().sessionById(widget.sessionId);
+    final session = ref
+        .read(playbackFacadeProvider)
+        .sessionById(widget.sessionId);
+    final library = ref.read(libraryFacadeProvider);
     return Stack(
       children: [
         SizedBox(
@@ -159,12 +164,10 @@ class _SessionCoverThumbnailState extends State<_SessionCoverThumbnail> {
             ),
             clipBehavior: Clip.antiAlias,
             child: AsyncLocalCoverImage(
-              future: _futureFor(context.read<AudioProvider>()),
+              future: _futureFor(library),
               initialPath: widget.coverPath,
-              retryFutureBuilder: () => _coverFutureForTrack(
-                context.read<AudioProvider>(),
-                widget.track,
-              ),
+              retryFutureBuilder: () =>
+                  library.playbackCoverPathFutureForTrack(widget.track),
               seed:
                   widget.track?.displayName ??
                   widget.track?.path ??

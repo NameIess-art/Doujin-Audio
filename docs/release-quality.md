@@ -7,9 +7,11 @@ Pull requests and pushes to `main` must pass:
 ```bash
 flutter pub get
 flutter analyze
-flutter test
+flutter test --coverage --concurrency=1
+dart run tool/verify_coverage.dart
 cd android && ./gradlew testDebugUnitTest && cd ..
 flutter build apk --debug
+flutter build windows --release
 dart run tool/verify_release.dart
 ```
 
@@ -18,6 +20,16 @@ Run the device integration smoke test on an Android release candidate:
 ```bash
 flutter test integration_test/app_smoke_test.dart -d <device-id>
 ```
+
+Use [`release-candidate-template.md`](release-candidate-template.md) for the
+required device and performance evidence. A blank template is not evidence and
+does not satisfy release acceptance.
+
+Repository administrators must configure the `main` branch protection rule so
+the Ubuntu coverage job, Windows full-test job, Android JVM/debug-APK job, and
+Windows release-build job are required before merge. This is GitHub state and
+must be verified in repository settings; the workflow file alone cannot enforce
+the rule.
 
 Tag workflows must verify the generated APK/ZIP names and their SHA-256 files
 before uploading them. Android assets must also pass `apksigner verify` and

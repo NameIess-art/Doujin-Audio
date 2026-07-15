@@ -5,9 +5,12 @@ Run these checks before merging app changes:
 ```bash
 flutter pub get
 flutter analyze
-flutter test
+flutter test --coverage --concurrency=1
+dart run tool/verify_coverage.dart
 cd android && ./gradlew testDebugUnitTest && cd ..
 flutter build apk --debug
+flutter build windows --release
+dart run tool/verify_release.dart
 ```
 
 `flutter analyze` is expected to report zero issues. CI runs the same baseline checks on pushes to `main` and on pull requests. The Gradle unit test task is configured to run app and in-repository Android tests while skipping external Flutter plugin test tasks from the Pub cache.
@@ -39,6 +42,20 @@ CI also proves that release signing validation fails when `key.properties` is
 absent, preventing accidental debug-signed release artifacts.
 The app refuses to install downloaded updates unless the matching checksum
 asset is present and valid.
+
+Coverage is aggregated by configured directory prefix rather than by an
+arbitrary first matching file. The verifier fails when LCOV is empty, a
+configured prefix matches no source record, or any threshold regresses. The
+current anti-regression floors are total 61%, app state 70%, player application
+74%, library application 71%, ASMR application 76%, settings application 69%,
+data-support application 82%, core platform 52%, and core persistence 90%.
+Raise them after tests land; never lower or bypass them to merge a change.
+
+Architecture checks are part of the normal Flutter suite. They enforce pure
+feature domain imports, confine ordinary channel construction to
+`core/platform` (with the native playback bridge as the documented high-rate
+exception), and prevent presentation from creating channels or importing the
+database.
 
 Notification behavior is covered through Dart platform-service tests and
 Android notification-routing tests. Keep these tests aligned with the native
@@ -128,6 +145,8 @@ asset/checksum pairing cases there without exposing the private typed models.
 Run the Android device integration smoke test and use the release-candidate
 matrix and performance baseline process in
 [`docs/release-quality.md`](release-quality.md) before publishing a tag.
+Copy [`release-candidate-template.md`](release-candidate-template.md) into the
+release issue or release notes and fill it with real device results.
 
 For Android playback changes, also perform a device smoke test:
 

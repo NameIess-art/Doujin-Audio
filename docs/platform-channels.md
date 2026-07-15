@@ -32,6 +32,13 @@ code and optional details in `NativeFailure` through `PlatformMethodClient`.
 Playback retains its specialized stream and batched-state bridge; ordinary
 request/response channels use the shared client.
 
+Ordinary channel construction is restricted to `lib/core/platform`.
+`UpdatePlatformService` and `SubtitleOverlayPlatformService` accept injectable
+`MethodChannel` instances for contract tests while preserving the existing
+channel names, methods, arguments, and envelopes. The high-frequency
+`NativePlaybackBridge` MethodChannel/EventChannel pair remains the sole explicit
+application-layer exception.
+
 `AudioProvider` does not create a `MethodChannel`. `PlaybackFacade` owns the
 native repository lifecycle, while UI code receives only facade/state
 providers. Existing channel names, payloads, and Android playback semantics are

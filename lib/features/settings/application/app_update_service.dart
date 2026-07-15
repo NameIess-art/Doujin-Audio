@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:pub_semver/pub_semver.dart' as semver;
@@ -13,8 +12,7 @@ import 'app_cache_service.dart';
 import '../../../core/errors/native_result.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_display.dart';
-import '../../../core/platform/platform_channels.dart';
-import '../../../core/platform/platform_method_client.dart';
+import '../../../core/platform/update_platform_service.dart';
 
 export 'app_update_models.dart';
 
@@ -34,8 +32,7 @@ class AppUpdateService {
   static const String latestReleasePage =
       'https://github.com/$owner/$repo/releases/latest';
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
-  static const MethodChannel _channel = MethodChannel(UpdateChannel.name);
-  static const PlatformMethodClient _client = PlatformMethodClient(_channel);
+  static final UpdatePlatformService _platform = UpdatePlatformService();
   static String? _activeDownloadIdentity;
   static Future<File>? _activeDownload;
   static final Set<void Function(double? progress)> _downloadListeners =
@@ -313,19 +310,15 @@ class AppUpdateService {
   }
 
   static Future<AppVersionInfo> currentAppVersion() async {
-    final result = await _client.invoke<AppVersionInfo>(
-      UpdateMethod.getAppVersion,
-      decode: (value) {
-        final map = Map<Object?, Object?>.from(value as Map);
-        return AppVersionInfo(
-          versionName: map['versionName'] as String,
-          buildNumber: (map['buildNumber'] as num).toInt(),
-        );
-      },
-    );
-    _logNativeFailure(UpdateMethod.getAppVersion, result);
-    return result.valueOrNull ??
-        const AppVersionInfo(versionName: 'unknown', buildNumber: 0);
+    final result = await _platform.getAppVersion();
+    _logNativeFailure('getAppVersion', result);
+    final version = result.valueOrNull;
+    return version == null
+        ? const AppVersionInfo(versionName: 'unknown', buildNumber: 0)
+        : AppVersionInfo(
+            versionName: version.versionName,
+            buildNumber: version.buildNumber,
+          );
   }
 
   static Future<File> downloadUpdate(
@@ -503,33 +496,23 @@ class AppUpdateService {
 
   static Future<bool> canInstallUnknownApps() async {
     if (!Platform.isAndroid) return true;
-    final result = await _client.invoke<bool>(
-      UpdateMethod.canInstallUnknownApps,
-      decode: (value) => value as bool,
-    );
-    _logNativeFailure(UpdateMethod.canInstallUnknownApps, result);
+    final result = await _platform.canInstallUnknownApps();
+    _logNativeFailure('canInstallUnknownApps', result);
     return result.valueOrNull ?? true;
   }
 
   static Future<bool> openInstallPermissionSettings() async {
     if (!Platform.isAndroid) return false;
-    final result = await _client.invoke<bool>(
-      UpdateMethod.openInstallPermissionSettings,
-      decode: (value) => value as bool,
-    );
-    _logNativeFailure(UpdateMethod.openInstallPermissionSettings, result);
+    final result = await _platform.openInstallPermissionSettings();
+    _logNativeFailure('openInstallPermissionSettings', result);
     return result.valueOrNull ?? false;
   }
 
   static Future<bool> openReleasePage(String url) async {
     try {
       if (Platform.isAndroid) {
-        final result = await _client.invoke<bool>(
-          UpdateMethod.openReleasePage,
-          arguments: <String, Object?>{'url': url},
-          decode: (value) => value as bool,
-        );
-        _logNativeFailure(UpdateMethod.openReleasePage, result);
+        final result = await _platform.openReleasePage(url);
+        _logNativeFailure('openReleasePage', result);
         return result.valueOrNull ?? false;
       }
       if (Platform.isWindows) {
@@ -564,25 +547,20 @@ class AppUpdateService {
 
   static Future<UpdateInstallResult> _installUpdateOnce(File file) async {
     if (Platform.isWindows) return _installWindowsZip(file);
-    final result = await _client.invoke<UpdateInstallResult>(
-      UpdateMethod.installApk,
-      arguments: <String, Object?>{'path': file.path},
-      decode: (value) {
-        final raw = Map<Object?, Object?>.from(value as Map);
-        return UpdateInstallResult(
-          ok: raw['ok'] == true,
-          needsPermission: raw['needsPermission'] == true,
-          message: raw['message'] as String?,
-        );
-      },
-    );
-    _logNativeFailure(UpdateMethod.installApk, result);
-    return result.valueOrNull ??
-        UpdateInstallResult(
-          ok: false,
-          needsPermission: false,
-          message: result.errorOrNull,
-        );
+    final result = await _platform.installApk(file.path);
+    _logNativeFailure('installApk', result);
+    final installResult = result.valueOrNull;
+    return installResult == null
+        ? UpdateInstallResult(
+            ok: false,
+            needsPermission: false,
+            message: result.errorOrNull,
+          )
+        : UpdateInstallResult(
+            ok: installResult.ok,
+            needsPermission: installResult.needsPermission,
+            message: installResult.message,
+          );
   }
 
   static void _logNativeFailure<T>(String method, NativeResult<T> result) {

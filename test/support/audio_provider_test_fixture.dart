@@ -237,6 +237,7 @@ final class AudioProviderTestFixture {
   final Database database;
   final PlaybackNotificationService notificationService;
   final AudioProvider provider;
+  bool _disposed = false;
 
   static void initialize() {
     TestWidgetsFlutterBinding.ensureInitialized();
@@ -279,13 +280,16 @@ final class AudioProviderTestFixture {
   }
 
   Future<void> dispose({required AudioProvider currentProvider}) async {
+    if (_disposed) return;
+    _disposed = true;
+    await currentProvider.shutdownUiWarmupsForTesting();
+    currentProvider.dispose();
+    await Future<void>.delayed(Duration.zero);
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
     messenger.setMockMethodCallHandler(fileCacheChannel, null);
     messenger.setMockMethodCallHandler(nativePlaybackChannel, null);
     messenger.setMockMethodCallHandler(notificationsChannel, null);
-    await currentProvider.shutdownUiWarmupsForTesting();
-    currentProvider.dispose();
     await database.close();
   }
 }

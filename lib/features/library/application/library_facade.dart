@@ -38,6 +38,7 @@ final class LibraryFacade implements LibraryCatalogReader {
   static const _watchedLibrariesPreferenceKey = 'watched_libraries_v1';
   static const _libraryNodeOrderPreferenceKey = 'library_node_order_v1';
   static const _groupOrderPreferenceKey = 'group_order_v1';
+  static const _libraryExclusionsPreferenceKey = 'library_exclusions_v1';
   LibraryFacade({
     required this.databaseRepository,
     required this.detailCacheService,
@@ -821,6 +822,67 @@ final class LibraryFacade implements LibraryCatalogReader {
         databaseRepository.deleteLibraryEntries(libraryPath, removedPaths),
       );
     }
+  }
+
+  void clearLibraryExclusions(String libraryPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final removedFolders = service.excludedLibraryFolders.remove(
+      normalizedLibraryPath,
+    );
+    final removedTracks = service.excludedLibraryTracks.remove(
+      normalizedLibraryPath,
+    );
+    if ((removedFolders == null || removedFolders.isEmpty) &&
+        (removedTracks == null || removedTracks.isEmpty)) {
+      return;
+    }
+
+    final restoredEntryPaths = service.setLibraryEntriesSubtreeState(
+      normalizedLibraryPath,
+      normalizedLibraryPath,
+      LibraryEntryState.active,
+    );
+    final restoredTracks = service
+        .libraryEntriesForLibrary(normalizedLibraryPath)
+        .where(
+          (entry) =>
+              entry.isTrack && !service.libraryByPath.containsKey(entry.path),
+        )
+        .map((entry) => entry.toTrack())
+        .toList(growable: false);
+    if (restoredTracks.isNotEmpty) {
+      addOrReplaceTracks(restoredTracks, notify: false);
+    } else {
+      _syncStateSlice();
+    }
+    if (_persistenceEnabled) {
+      if (restoredEntryPaths.isNotEmpty) {
+        unawaited(
+          databaseRepository.setLibraryEntriesState(
+            normalizedLibraryPath,
+            restoredEntryPaths,
+            LibraryEntryState.active,
+          ),
+        );
+      }
+      unawaited(_saveLibraryExclusions());
+    }
+  }
+
+  Future<void> _saveLibraryExclusions() {
+    Map<String, List<String>> encode(Map<String, Set<String>> source) {
+      return source.map(
+        (key, value) => MapEntry(key, value.toList(growable: false)..sort()),
+      );
+    }
+
+    return AppPreferences.setString(
+      _libraryExclusionsPreferenceKey,
+      json.encode(<String, Object?>{
+        'folders': encode(service.excludedLibraryFolders),
+        'tracks': encode(service.excludedLibraryTracks),
+      }),
+    );
   }
 
   Future<void> _saveGroupOrder() {

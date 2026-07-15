@@ -167,41 +167,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   void clearLibraryExclusions(String libraryPath) {
-    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final removedFolders = _excludedLibraryFolders.remove(
-      normalizedLibraryPath,
-    );
-    final removedTracks = _excludedLibraryTracks.remove(normalizedLibraryPath);
-    if ((removedFolders == null || removedFolders.isEmpty) &&
-        (removedTracks == null || removedTracks.isEmpty)) {
-      return;
-    }
-
-    final restoredEntryPaths = _libraryService.setLibraryEntriesSubtreeState(
-      normalizedLibraryPath,
-      normalizedLibraryPath,
-      LibraryEntryState.active,
-    );
-    final restoredTracks = _libraryService
-        .libraryEntriesForLibrary(normalizedLibraryPath)
-        .where(
-          (entry) => entry.isTrack && !_libraryByPath.containsKey(entry.path),
-        )
-        .map((entry) => entry.toTrack())
-        .toList(growable: false);
-    if (restoredTracks.isNotEmpty) {
-      addOrReplaceTracks(restoredTracks, notify: false);
-    }
-    if (restoredEntryPaths.isNotEmpty && !_skipDisposePersistence) {
-      unawaited(
-        _audioDatabaseRepository.setLibraryEntriesState(
-          normalizedLibraryPath,
-          restoredEntryPaths,
-          LibraryEntryState.active,
-        ),
-      );
-    }
-    unawaited(_saveLibraryExclusions());
+    _libraryFacade.clearLibraryExclusions(libraryPath);
     _notifyLibraryChanged();
   }
 

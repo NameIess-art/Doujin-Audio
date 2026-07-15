@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
-import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -27,7 +26,9 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   final _fileService = DataSupportFileService();
 
   Future<void> _exportBackup() async {
-    final dialogTitle = context.read<AppLanguageProvider>().tr('export_backup');
+    final dialogTitle = ref
+        .read(appLanguageProviderInstanceProvider)
+        .tr('export_backup');
     await _run(
       scope: UiOperationScope.dataSupportBackupExport,
       labelKey: 'export_backup',
@@ -48,7 +49,7 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   }
 
   Future<void> _restoreBackup() async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final audioProvider = ref.read(audioProviderFacadeProvider);
     final asmrController = context.read<AsmrLibraryController>();
     final confirmed = await showConfirmActionDialog(
@@ -97,9 +98,9 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   }
 
   Future<void> _exportDiagnostics() async {
-    final dialogTitle = context.read<AppLanguageProvider>().tr(
-      'export_diagnostics',
-    );
+    final dialogTitle = ref
+        .read(appLanguageProviderInstanceProvider)
+        .tr('export_diagnostics');
     await _run(
       scope: UiOperationScope.dataSupportDiagnosticsExport,
       labelKey: 'export_diagnostics',
@@ -141,15 +142,17 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
       if (!mounted) return;
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr(
-          'operation_failed_diagnostics_hint',
-        ),
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('operation_failed_diagnostics_hint'),
         tone: AppFeedbackTone.destructive,
-        title: context.read<AppLanguageProvider>().tr('operation_failed'),
+        title: ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('operation_failed'),
         icon: Icons.error_outline_rounded,
-        actionLabel: context.read<AppLanguageProvider>().tr(
-          'export_diagnostics',
-        ),
+        actionLabel: ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('export_diagnostics'),
         onAction: _exportDiagnostics,
         duration: const Duration(seconds: 6),
       );
@@ -162,7 +165,7 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
     String? detail,
     Duration? duration,
   }) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     showAppSnackBar(
       context,
       detail == null ? i18n.tr(key) : i18n.tr(key, {'path': detail}),
@@ -175,7 +178,8 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     return SizedBox(
       height: MediaQuery.sizeOf(context).height * 0.75,
       child: Scaffold(

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
@@ -43,7 +42,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
       VideoConversionInputService();
 
   Future<void> _pickVideoFile() async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final selectedPath = await UiOperationService.instance.run<String?>(
       scope: UiOperationScope.videoConverterPick,
       labelKey: 'source_video_file',
@@ -98,7 +97,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
 
   Future<void> _startConversion(AudioProvider provider) async {
     if (_isConverting) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     if (_selectedVideoPath == null || _outputDirectoryPath == null) {
       showAppSnackBar(
         context,
@@ -223,7 +222,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
 
   Future<void> _cancelConversion() async {
     if (!_isConverting || _isCanceling) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final generation = _conversionGeneration;
     setState(() {
       _isCanceling = true;
@@ -256,7 +255,8 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final provider = ref.read(audioProviderFacadeProvider);
     final settingsState =
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();

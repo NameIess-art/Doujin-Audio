@@ -1,11 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
+import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/data_support/presentation/data_support_page.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -35,10 +37,19 @@ void main() {
   testWidgets(
     'busy progress keeps every data-support card and Ink response in place',
     (tester) async {
+      final languageProvider = AppLanguageProvider();
       await tester.pumpWidget(
-        ChangeNotifierProvider<AppLanguageProvider>(
-          create: (_) => AppLanguageProvider(),
-          child: const MaterialApp(home: DataSupportPage()),
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(
+              languageProvider,
+            ),
+          ],
+          child:
+              legacy_provider.ChangeNotifierProvider<AppLanguageProvider>.value(
+                value: languageProvider,
+                child: const MaterialApp(home: DataSupportPage()),
+              ),
         ),
       );
       await tester.pump();

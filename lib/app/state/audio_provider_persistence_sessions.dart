@@ -122,7 +122,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               currentPath: session.currentTrackPath,
             ),
             repeatAll: session.loopMode != SessionLoopMode.single,
-            shuffle: _isShuffleMode(session.loopMode),
+            shuffle: session.loopMode.isShuffle,
             candidateUris: _candidatePlaybackUrisForTrack(track),
             deferPlayerCreation: !shouldPrepareNow,
           );

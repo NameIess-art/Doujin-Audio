@@ -657,6 +657,22 @@ class AudioProvider with ChangeNotifier {
       hasAdjacent: (session, {required forward}) =>
           _hasAdjacentPathFor(session, forward: forward),
     );
+    _playbackFacade.attachLoopModeSynchronizer((session, mode) {
+      return _nativePlaybackRepository.setRepeatOne(
+        session.id,
+        mode == SessionLoopMode.single,
+        queue: _nativePlaybackQueueFor(
+          session,
+          currentPath: session.currentTrackPath,
+        ),
+        queueStartIndex: _nativePlaybackQueueStartIndexFor(
+          session,
+          currentPath: session.currentTrackPath,
+        ),
+        repeatAll: mode != SessionLoopMode.single,
+        shuffle: mode.isShuffle,
+      );
+    });
     _timerFacade.attachRuntime(
       hasPlayingSession: () => _hasPlayingSession,
       sessions: () => _sessions.values,

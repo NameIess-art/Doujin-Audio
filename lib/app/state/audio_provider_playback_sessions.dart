@@ -463,7 +463,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
               currentPath: target.resolvedPath,
             ),
         repeatAll: session.loopMode != SessionLoopMode.single,
-        shuffle: _isShuffleMode(session.loopMode),
+        shuffle: session.loopMode.isShuffle,
         candidateUris: target.candidateUris,
       );
       if (!_isSessionLoadCurrent(session, generation)) {
@@ -659,7 +659,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     final scopeTrack = queueTracks?.isNotEmpty == true
         ? sessionTrack
         : currentTrack;
-    final crossFolderTrackPaths = _isCrossFolderMode(session.loopMode)
+    final crossFolderTrackPaths = session.loopMode.isCrossFolder
         ? _crossFolderTrackPathsFor(currentTrack)
         : _sortedLibraryTrackPaths;
     return _playbackQueueResolver.resolveScope(

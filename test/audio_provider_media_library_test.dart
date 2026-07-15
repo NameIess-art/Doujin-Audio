@@ -902,7 +902,7 @@ void main() {
       for (var i = 0; i < 50 && session.isLoading; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
-      await provider.setSessionLoopMode(
+      await provider.playbackFacade.setSessionLoopMode(
         session.id,
         SessionLoopMode.crossSequential,
       );

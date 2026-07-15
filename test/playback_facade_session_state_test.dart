@@ -232,6 +232,56 @@ void main() {
     expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
   });
 
+  test('PlaybackFacade owns loop mode state and synchronization', () async {
+    final library = LibraryFacade.create();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+    )..configurePersistence(enabled: false);
+    final session = _session('loop');
+    final synchronizedModes = <SessionLoopMode>[];
+    var settingsChanges = 0;
+    addTearDown(() async {
+      session.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback
+      ..attachSessionRuntime(
+        onSessionRegistered: (_) {},
+        onSessionsReordered: () {},
+        onSessionStateChanged: () {},
+        onSessionSettingsChanged: () => settingsChanges++,
+      )
+      ..attachLoopModeSynchronizer((session, mode) async {
+        synchronizedModes.add(mode);
+      })
+      ..registerSession(session);
+
+    await playback.setSessionLoopMode(
+      session.id,
+      SessionLoopMode.crossSequential,
+    );
+    await playback.toggleSessionShuffle(session.id);
+    await playback.toggleSessionCrossFolder(session.id);
+    await playback.toggleSessionShuffle(session.id);
+    await playback.toggleSessionSingleLoop(session.id);
+    await playback.toggleSessionShuffle(session.id);
+    await playback.toggleSessionSingleLoop(session.id);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.loopMode, SessionLoopMode.folderSequential);
+    expect(session.nonSingleLoopMode, SessionLoopMode.folderSequential);
+    expect(settingsChanges, 6);
+    expect(synchronizedModes, <SessionLoopMode>[
+      SessionLoopMode.crossSequential,
+      SessionLoopMode.crossRandom,
+      SessionLoopMode.folderRandom,
+      SessionLoopMode.folderSequential,
+      SessionLoopMode.single,
+      SessionLoopMode.folderSequential,
+    ]);
+  });
+
   test('PlaybackFacade owns track and playback queue session creation', () {
     final library = LibraryFacade.create();
     final playback = PlaybackFacade.create(

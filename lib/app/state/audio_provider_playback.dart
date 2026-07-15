@@ -15,38 +15,6 @@ String _folderKeyForTrack(MusicTrack track) {
 }
 
 extension AudioProviderPlayback on AudioProvider {
-  Future<void> setSessionLoopMode(
-    String sessionId,
-    SessionLoopMode mode,
-  ) async {
-    final session = _sessions[sessionId];
-    if (session == null) return;
-    session.loopMode = mode;
-    if (mode != SessionLoopMode.single) {
-      session.nonSingleLoopMode = mode;
-    }
-    _playbackService.markActiveSessionsDirty();
-    _notifyPlaybackChanged();
-    _syncNotificationState();
-    unawaited(
-      _nativePlaybackRepository.setRepeatOne(
-        session.id,
-        mode == SessionLoopMode.single,
-        queue: _nativePlaybackQueueFor(
-          session,
-          currentPath: session.currentTrackPath,
-        ),
-        queueStartIndex: _nativePlaybackQueueStartIndexFor(
-          session,
-          currentPath: session.currentTrackPath,
-        ),
-        repeatAll: mode != SessionLoopMode.single,
-        shuffle: _isShuffleMode(mode),
-      ),
-    );
-    _playbackFacade.scheduleSessionStatePersistence();
-  }
-
   Future<void> setSessionChannelSwap(String sessionId, bool enabled) async {
     final session = _sessions[sessionId];
     if (session == null) return;
@@ -294,61 +262,10 @@ extension AudioProviderPlayback on AudioProvider {
     return gainDb.clamp(capabilities.minGainDb, capabilities.maxGainDb);
   }
 
-  bool _isShuffleMode(SessionLoopMode mode) {
-    return mode == SessionLoopMode.crossRandom ||
-        mode == SessionLoopMode.folderRandom;
-  }
-
-  bool _isCrossFolderMode(SessionLoopMode mode) {
-    return mode == SessionLoopMode.crossRandom ||
-        mode == SessionLoopMode.crossSequential;
-  }
-
   List<String> _crossFolderTrackPathsFor(MusicTrack? currentTrack) {
     if (currentTrack == null) return const <String>[];
     return tracksInSameWork(currentTrack.path)
         .map((track) => _playbackFacade.resolveRetargetedPath(track.path))
         .toList(growable: false);
-  }
-
-  Future<void> toggleSessionSingleLoop(String sessionId) async {
-    final session = _sessions[sessionId];
-    if (session == null) return;
-    if (session.loopMode == SessionLoopMode.single) {
-      await setSessionLoopMode(sessionId, session.nonSingleLoopMode);
-      return;
-    }
-    session.nonSingleLoopMode = session.loopMode;
-    await setSessionLoopMode(sessionId, SessionLoopMode.single);
-  }
-
-  Future<void> toggleSessionShuffle(String sessionId) async {
-    final session = _sessions[sessionId];
-    if (session == null || session.loopMode == SessionLoopMode.single) return;
-    final isCrossFolder = _isCrossFolderMode(session.loopMode);
-    final isShuffle = _isShuffleMode(session.loopMode);
-    final nextMode = isShuffle
-        ? (isCrossFolder
-              ? SessionLoopMode.crossSequential
-              : SessionLoopMode.folderSequential)
-        : (isCrossFolder
-              ? SessionLoopMode.crossRandom
-              : SessionLoopMode.folderRandom);
-    await setSessionLoopMode(sessionId, nextMode);
-  }
-
-  Future<void> toggleSessionCrossFolder(String sessionId) async {
-    final session = _sessions[sessionId];
-    if (session == null || session.loopMode == SessionLoopMode.single) return;
-    final isCrossFolder = _isCrossFolderMode(session.loopMode);
-    final isShuffle = _isShuffleMode(session.loopMode);
-    final nextMode = isCrossFolder
-        ? (isShuffle
-              ? SessionLoopMode.folderRandom
-              : SessionLoopMode.folderSequential)
-        : (isShuffle
-              ? SessionLoopMode.crossRandom
-              : SessionLoopMode.crossSequential);
-    await setSessionLoopMode(sessionId, nextMode);
   }
 }

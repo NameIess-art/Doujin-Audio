@@ -44,6 +44,8 @@ typedef PlaybackAdvanceResolver =
     });
 typedef PlaybackAdjacentResolver =
     bool Function(PlaybackSession session, {required bool forward});
+typedef PlaybackLoopModeSynchronizer =
+    Future<void> Function(PlaybackSession session, SessionLoopMode mode);
 
 /// Owns playback sessions and the platform playback runtime.
 final class PlaybackFacade {
@@ -106,6 +108,7 @@ final class PlaybackFacade {
   PlaybackSessionStarter? _startSession;
   PlaybackAdvanceResolver? _resolveAdvance;
   PlaybackAdjacentResolver? _hasAdjacent;
+  PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Random _random = Random();
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
@@ -367,6 +370,10 @@ final class PlaybackFacade {
     _hasAdjacent ??= hasAdjacent;
   }
 
+  void attachLoopModeSynchronizer(PlaybackLoopModeSynchronizer synchronize) {
+    _synchronizeLoopMode ??= synchronize;
+  }
+
   void registerSession(PlaybackSession session) {
     service.registerSession(session);
     _onSessionRegistered?.call(session);
@@ -595,6 +602,62 @@ final class PlaybackFacade {
     return session != null &&
         !session.isLoading &&
         (_hasAdjacent?.call(session, forward: forward) ?? false);
+  }
+
+  Future<void> setSessionLoopMode(
+    String sessionId,
+    SessionLoopMode mode,
+  ) async {
+    final session = service.sessions[sessionId];
+    if (session == null) return;
+    session.loopMode = mode;
+    if (mode != SessionLoopMode.single) {
+      session.nonSingleLoopMode = mode;
+    }
+    service.markActiveSessionsDirty();
+    _onSessionSettingsChanged?.call();
+    final synchronize = _synchronizeLoopMode;
+    if (synchronize != null) {
+      unawaited(synchronize(session, mode));
+    }
+    scheduleSessionStatePersistence();
+  }
+
+  Future<void> toggleSessionSingleLoop(String sessionId) async {
+    final session = service.sessions[sessionId];
+    if (session == null) return;
+    if (session.loopMode == SessionLoopMode.single) {
+      await setSessionLoopMode(sessionId, session.nonSingleLoopMode);
+      return;
+    }
+    session.nonSingleLoopMode = session.loopMode;
+    await setSessionLoopMode(sessionId, SessionLoopMode.single);
+  }
+
+  Future<void> toggleSessionShuffle(String sessionId) async {
+    final session = service.sessions[sessionId];
+    if (session == null || session.loopMode == SessionLoopMode.single) return;
+    final nextMode = session.loopMode.isShuffle
+        ? (session.loopMode.isCrossFolder
+              ? SessionLoopMode.crossSequential
+              : SessionLoopMode.folderSequential)
+        : (session.loopMode.isCrossFolder
+              ? SessionLoopMode.crossRandom
+              : SessionLoopMode.folderRandom);
+    await setSessionLoopMode(sessionId, nextMode);
+  }
+
+  Future<void> toggleSessionCrossFolder(String sessionId) async {
+    final session = service.sessions[sessionId];
+    if (session == null || session.loopMode == SessionLoopMode.single) return;
+    final nextMode = session.loopMode.isCrossFolder
+        ? (session.loopMode.isShuffle
+              ? SessionLoopMode.folderRandom
+              : SessionLoopMode.folderSequential)
+        : (session.loopMode.isShuffle
+              ? SessionLoopMode.crossRandom
+              : SessionLoopMode.crossSequential);
+    await setSessionLoopMode(sessionId, nextMode);
   }
 
   Future<void> setSessionVolume(

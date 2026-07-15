@@ -59,6 +59,7 @@ final class PlaybackFacade {
   })?
   _launchQueue;
   Future<void> Function()? _persistSessionState;
+  Future<void> Function()? _persistSessionOrder;
   void Function(PlaybackSession session)? _onSessionRegistered;
   void Function()? _onSessionsReordered;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
@@ -223,6 +224,43 @@ final class PlaybackFacade {
     _persistSessionState ??= persist;
   }
 
+  void attachSessionOrderPersistence(Future<void> Function() persist) {
+    _persistSessionOrder ??= persist;
+  }
+
+  void scheduleSessionStatePersistence({
+    Duration delay = const Duration(milliseconds: 220),
+  }) {
+    service.saveSessionStateTimer?.cancel();
+    service.saveSessionStateTimer = Timer(delay, () {
+      service.saveSessionStateTimer = null;
+      unawaited(_persistSessionState?.call());
+    });
+  }
+
+  void scheduleSessionOrderPersistence({
+    Duration delay = const Duration(milliseconds: 180),
+  }) {
+    service.saveSessionOrderTimer?.cancel();
+    service.saveSessionOrderTimer = Timer(delay, () {
+      service.saveSessionOrderTimer = null;
+      unawaited(_persistSessionOrder?.call());
+    });
+  }
+
+  Future<void> flushSessionStatePersistence() async {
+    service.saveSessionStateTimer?.cancel();
+    service.saveSessionStateTimer = null;
+    await _persistSessionState?.call();
+  }
+
+  void cancelScheduledPersistence() {
+    service.saveSessionStateTimer?.cancel();
+    service.saveSessionStateTimer = null;
+    service.saveSessionOrderTimer?.cancel();
+    service.saveSessionOrderTimer = null;
+  }
+
   void attachSessionRuntime({
     required void Function(PlaybackSession session) onSessionRegistered,
     required void Function() onSessionsReordered,
@@ -332,6 +370,7 @@ final class PlaybackFacade {
   }
 
   Future<void> dispose() async {
+    cancelScheduledPersistence();
     await _sessionActivations.close();
     await nativeRepository.dispose();
     await service.dispose();

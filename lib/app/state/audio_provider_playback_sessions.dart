@@ -164,7 +164,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
       if (previousPlaying != state.playing ||
           previousProcessing != state.processingState) {
-        _scheduleSaveSessionState();
+        _playbackFacade.scheduleSessionStatePersistence();
       }
 
       if (isNewCompletion && shouldAutoAdvanceAfterCompletion) {
@@ -179,7 +179,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       final positionBucket = position.inSeconds ~/ 5;
       if (positionBucket != session.lastPersistedPositionBucket) {
         session.lastPersistedPositionBucket = positionBucket;
-        _scheduleSaveSessionState(delay: const Duration(milliseconds: 800));
+        _playbackFacade.scheduleSessionStatePersistence(
+          delay: const Duration(milliseconds: 800),
+        );
       }
       if (!_isNotificationFocusedSessionId(session.id)) return;
       final changed = _refreshNotificationSubtitleForSession(
@@ -195,7 +197,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
     final durationSub = session.durationStream.listen((_) {
       if (!_sessions.containsKey(session.id)) return;
-      _scheduleSaveSessionState(delay: const Duration(milliseconds: 1500));
+      _playbackFacade.scheduleSessionStatePersistence(
+        delay: const Duration(milliseconds: 1500),
+      );
     });
     session.subscriptions.add(durationSub);
   }
@@ -337,7 +341,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         _syncKeepCpuAwake();
         _syncNotificationState();
         if (prepared || preparationFailed) {
-          _scheduleSaveSessionState();
+          _playbackFacade.scheduleSessionStatePersistence();
         }
         if (showLoading || wasLoading) {
           _notifyPlaybackChanged();

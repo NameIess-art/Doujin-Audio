@@ -27,10 +27,7 @@ extension AudioProviderPersistence on AudioProvider {
     _playbackInitialized = false;
     _cachedPrefs = null;
 
-    _saveSessionStateTimer?.cancel();
-    _saveSessionStateTimer = null;
-    _saveSessionOrderTimer?.cancel();
-    _saveSessionOrderTimer = null;
+    _playbackFacade.cancelScheduledPersistence();
     _scanProgressNotifyTimer?.cancel();
     _scanProgressNotifyTimer = null;
     _deferredWarmupTimer?.cancel();
@@ -225,16 +222,6 @@ extension AudioProviderPersistence on AudioProvider {
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }
-  }
-
-  void _scheduleSaveSessionOrder({
-    Duration delay = const Duration(milliseconds: 180),
-  }) {
-    _saveSessionOrderTimer?.cancel();
-    _saveSessionOrderTimer = Timer(delay, () {
-      _saveSessionOrderTimer = null;
-      unawaited(_saveSessionOrder());
-    });
   }
 
   Future<void> _loadData() async {

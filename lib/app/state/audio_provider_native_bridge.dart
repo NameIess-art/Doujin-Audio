@@ -23,7 +23,9 @@ extension AudioProviderNativeBridge on AudioProvider {
       );
       _playbackService.markActiveSessionsDirty();
       _syncNotificationState();
-      _scheduleSaveSessionState(delay: const Duration(milliseconds: 800));
+      _playbackFacade.scheduleSessionStatePersistence(
+        delay: const Duration(milliseconds: 800),
+      );
       _notifyPlaybackChanged();
     }
     final trackPath = session?.currentTrackPath;
@@ -44,7 +46,9 @@ extension AudioProviderNativeBridge on AudioProvider {
         }
         if (_replaceSessionTrackSnapshots(updatedTrack)) {
           _playbackService.markActiveSessionsDirty();
-          _scheduleSaveSessionState(delay: const Duration(milliseconds: 800));
+          _playbackFacade.scheduleSessionStatePersistence(
+            delay: const Duration(milliseconds: 800),
+          );
         }
       }
     }

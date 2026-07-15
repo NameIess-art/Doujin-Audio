@@ -85,8 +85,8 @@ extension AudioProviderPlayback on AudioProvider {
     _syncKeepCpuAwake();
     _syncNotificationState();
     if (persist) {
-      _scheduleSaveSessionState();
-      _scheduleSaveSessionOrder();
+      _playbackFacade.scheduleSessionStatePersistence();
+      _playbackFacade.scheduleSessionOrderPersistence();
     }
   }
 
@@ -119,7 +119,7 @@ extension AudioProviderPlayback on AudioProvider {
         shuffle: _isShuffleMode(mode),
       ),
     );
-    _scheduleSaveSessionState();
+    _playbackFacade.scheduleSessionStatePersistence();
   }
 
   Future<void> setSessionChannelSwap(String sessionId, bool enabled) async {
@@ -310,9 +310,7 @@ extension AudioProviderPlayback on AudioProvider {
   }
 
   Future<void> _persistSessionConsoleSettings(PlaybackSession session) async {
-    _saveSessionStateTimer?.cancel();
-    _saveSessionStateTimer = null;
-    await _saveSessionState();
+    await _playbackFacade.flushSessionStatePersistence();
   }
 
   void _applyAudioEffectsSnapshot(
@@ -540,7 +538,7 @@ extension AudioProviderPlayback on AudioProvider {
       forceStartAtZero: true,
       showLoading: false,
     );
-    _scheduleSaveSessionState();
+    _playbackFacade.scheduleSessionStatePersistence();
   }
 
   Future<void> switchSessionQueueTrack(String sessionId, int queueIndex) async {
@@ -560,7 +558,7 @@ extension AudioProviderPlayback on AudioProvider {
       showLoading: false,
       targetQueueIndex: index,
     );
-    _scheduleSaveSessionState();
+    _playbackFacade.scheduleSessionStatePersistence();
   }
 
   Future<void> seekSessionToNext(String sessionId) async {
@@ -614,7 +612,7 @@ extension AudioProviderPlayback on AudioProvider {
     _syncKeepCpuAwake();
     _notifyPlaybackChanged();
     await _nativePlaybackRepository.pauseAll();
-    _scheduleSaveSessionState();
+    _playbackFacade.scheduleSessionStatePersistence();
   }
 
   Future<void> clearAllSessions() async {
@@ -639,7 +637,7 @@ extension AudioProviderPlayback on AudioProvider {
 
     _syncKeepCpuAwake();
     _syncNotificationState();
-    _scheduleSaveSessionState();
-    _scheduleSaveSessionOrder();
+    _playbackFacade.scheduleSessionStatePersistence();
+    _playbackFacade.scheduleSessionOrderPersistence();
   }
 }

@@ -100,6 +100,44 @@ void main() {
     expect(session.state.playing, isTrue);
     expect(playback.nextTransportCommandId(), 10);
   });
+
+  test(
+    'PlaybackFacade owns debounced session persistence scheduling',
+    () async {
+      final library = LibraryFacade.create();
+      final playback = PlaybackFacade.create(
+        databaseRepository: library.databaseRepository,
+      );
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
+      var stateSaves = 0;
+      var orderSaves = 0;
+      playback
+        ..attachSessionStatePersistence(() async => stateSaves++)
+        ..attachSessionOrderPersistence(() async => orderSaves++)
+        ..scheduleSessionStatePersistence(
+          delay: const Duration(milliseconds: 5),
+        )
+        ..scheduleSessionStatePersistence(
+          delay: const Duration(milliseconds: 5),
+        )
+        ..scheduleSessionOrderPersistence(
+          delay: const Duration(milliseconds: 5),
+        );
+
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(stateSaves, 1);
+      expect(orderSaves, 1);
+
+      playback.scheduleSessionStatePersistence(
+        delay: const Duration(minutes: 1),
+      );
+      await playback.flushSessionStatePersistence();
+      expect(stateSaves, 2);
+    },
+  );
 }
 
 PlaybackSession _session(String id) {

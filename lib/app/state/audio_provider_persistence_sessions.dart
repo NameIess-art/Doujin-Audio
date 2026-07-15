@@ -254,19 +254,9 @@ extension AudioProviderPersistenceSessions on AudioProvider {
     }
   }
 
-  void _scheduleSaveSessionState({
-    Duration delay = const Duration(milliseconds: 220),
-  }) {
-    _saveSessionStateTimer?.cancel();
-    _saveSessionStateTimer = Timer(delay, () {
-      _saveSessionStateTimer = null;
-      unawaited(_saveSessionState());
-    });
-  }
-
   void _scheduleSessionPersistence() {
     if (_skipDisposePersistence) return;
-    _scheduleSaveSessionState();
-    _scheduleSaveSessionOrder();
+    _playbackFacade.scheduleSessionStatePersistence();
+    _playbackFacade.scheduleSessionOrderPersistence();
   }
 }

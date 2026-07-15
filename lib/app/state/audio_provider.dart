@@ -331,16 +331,6 @@ class AudioProvider with ChangeNotifier {
   Future<void> get _sessionPreparationQueue =>
       _playbackService.sessionPreparationQueue;
 
-  Timer? get _saveSessionStateTimer => _playbackService.saveSessionStateTimer;
-  set _saveSessionStateTimer(Timer? value) {
-    _playbackService.saveSessionStateTimer = value;
-  }
-
-  Timer? get _saveSessionOrderTimer => _playbackService.saveSessionOrderTimer;
-  set _saveSessionOrderTimer(Timer? value) {
-    _playbackService.saveSessionOrderTimer = value;
-  }
-
   Map<String, Future<SubtitleTrack?>> get _subtitleTrackFutures =>
       _notificationStateService.subtitleTrackFutures;
   Map<String, SubtitleTrack?> get _subtitleTracks =>
@@ -627,6 +617,7 @@ class AudioProvider with ChangeNotifier {
     });
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
     _playbackFacade.attachSessionStatePersistence(_saveSessionState);
+    _playbackFacade.attachSessionOrderPersistence(_saveSessionOrder);
     _playbackFacade.attachSessionRuntime(
       onSessionRegistered: (session) {
         _notificationsDismissedWhilePaused = false;
@@ -639,7 +630,7 @@ class AudioProvider with ChangeNotifier {
       onSessionsReordered: () {
         _syncNotificationState();
         _notifyPlaybackChanged();
-        _scheduleSaveSessionOrder();
+        _playbackFacade.scheduleSessionOrderPersistence();
       },
     );
     _timerFacade.attachRuntime(
@@ -726,8 +717,7 @@ class AudioProvider with ChangeNotifier {
     );
     _timerService.countdownTimer?.cancel();
     _timerService.autoResumeTimer?.cancel();
-    _saveSessionStateTimer?.cancel();
-    _saveSessionOrderTimer?.cancel();
+    _playbackFacade.cancelScheduledPersistence();
     _scanProgressNotifyTimer?.cancel();
     _deferredWarmupTimer?.cancel();
     unawaited(_warmupScheduler.shutdown());

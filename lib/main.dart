@@ -35,6 +35,7 @@ import 'core/logging/app_log_service.dart';
 import 'core/ui/ui_interaction_coordinator.dart';
 import 'app/theme/theme_provider.dart';
 import 'features/settings/application/app_preferences.dart';
+import 'features/settings/application/app_update_service.dart';
 import 'core/persistence/app_database.dart';
 import 'core/widgets/global_shortcuts.dart';
 import 'core/widgets/app_error_view.dart';
@@ -102,6 +103,7 @@ Future<void> _runAudioPlayerApp() async {
   final settingsRepository = SettingsRepository();
   final asmrDownloadManager = AsmrDownloadManager();
   final appLanguageProvider = AppLanguageProvider();
+  final appUpdateService = AppUpdateService();
   final libraryFacade = LibraryFacade.create(
     databaseRepository: audioDatabaseRepository,
     service: libraryService,
@@ -144,6 +146,7 @@ Future<void> _runAudioPlayerApp() async {
         appLanguageProviderInstanceProvider.overrideWithValue(
           appLanguageProvider,
         ),
+        appUpdateServiceProvider.overrideWithValue(appUpdateService),
       ],
       child: legacy_provider.MultiProvider(
         providers: [

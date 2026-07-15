@@ -14,7 +14,6 @@ import '../localization/app_language_provider.dart';
 import '../state/audio_provider.dart';
 import '../state/audio_provider_riverpod.dart';
 import '../state/subtitle_settings_provider.dart';
-import '../../features/settings/application/app_update_service.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../features/player/application/audio_state_services.dart';
@@ -139,6 +138,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _updateFlow = AppUpdateFlow(
       permissionController: _permissionActionController,
       languageProvider: ref.read(appLanguageProviderInstanceProvider),
+      updateService: ref.read(appUpdateServiceProvider),
     );
     _pageController = PageController(initialPage: _currentIndex);
     _activePageIndex = ValueNotifier<int>(_currentIndex);

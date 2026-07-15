@@ -7,6 +7,7 @@ import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
 import 'package:nameless_audio/features/settings/presentation/permission_status_page.dart';
 import 'package:nameless_audio/features/settings/application/permission_status_service.dart';
+import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/widgets/operation_feedback.dart';
 import 'package:provider/provider.dart' as legacy_provider;
 
@@ -21,6 +22,7 @@ void main() {
         child: ProviderScope(
           overrides: [
             appLanguageProviderInstanceProvider.overrideWithValue(language),
+            appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
           ],
           child: MaterialApp(
             home: PermissionStatusPage(
@@ -70,6 +72,7 @@ void main() {
         child: ProviderScope(
           overrides: [
             appLanguageProviderInstanceProvider.overrideWithValue(language),
+            appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
           ],
           child: MaterialApp(
             home: PermissionStatusPage(

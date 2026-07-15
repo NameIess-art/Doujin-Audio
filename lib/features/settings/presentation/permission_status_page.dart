@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
-import '../application/app_update_service.dart';
 import '../../../core/platform/notifications_platform_service.dart';
 import '../application/permission_status_service.dart';
 import '../../../core/platform/power_platform_service.dart';
@@ -258,7 +257,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
                         description: i18n.tr(
                           'permission_update_install_description',
                         ),
-                        action: AppUpdateService.openInstallPermissionSettings,
+                        action: ref
+                            .read(appUpdateServiceProvider)
+                            .openInstallPermissionSettings,
                       ),
                     ),
                   ],

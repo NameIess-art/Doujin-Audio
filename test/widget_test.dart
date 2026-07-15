@@ -14,6 +14,7 @@ import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
 import 'package:nameless_audio/app/presentation/main_screen.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
+import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
@@ -782,6 +783,7 @@ Future<_AppShellHarness> _pumpAppShell(
         ...createAudioProviderOverrides(audioProvider: audioProvider),
         themeProviderInstanceProvider.overrideWithValue(themeProvider),
         appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
+        appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
       ],
       child: legacy_provider.MultiProvider(
         providers: [

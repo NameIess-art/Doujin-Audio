@@ -91,8 +91,11 @@ class _GlobalUpdateOperationBanner extends ConsumerWidget {
                     ? IconButton(
                         tooltip: i18n.tr('open_update_log'),
                         color: cs.error,
-                        onPressed: () =>
-                            unawaited(AppUpdateService.openWindowsUpdateLog()),
+                        onPressed: () => unawaited(
+                          ref
+                              .read(appUpdateServiceProvider)
+                              .openWindowsUpdateLog(),
+                        ),
                         icon: const Icon(Icons.article_outlined),
                       )
                     : SizedBox(

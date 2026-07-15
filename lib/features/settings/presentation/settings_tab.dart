@@ -60,6 +60,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   late final AppUpdateFlow _updateFlow = AppUpdateFlow(
     permissionController: _permissionActionController,
     languageProvider: ref.read(appLanguageProviderInstanceProvider),
+    updateService: ref.read(appUpdateServiceProvider),
   );
 
   final ScrollController _scrollController = ScrollController();
@@ -92,7 +93,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _appVersionFuture = AppUpdateService.currentAppVersion();
+    _appVersionFuture = ref.read(appUpdateServiceProvider).currentAppVersion();
     initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
   }
 

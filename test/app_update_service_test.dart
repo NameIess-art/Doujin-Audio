@@ -18,6 +18,7 @@ void main() {
   late Directory tempDir;
   late HttpServer server;
   late List<int> payload;
+  late AppUpdateService service;
   const assetName = 'NamelessAudio-android-arm64-test.apk';
 
   setUp(() async {
@@ -28,6 +29,7 @@ void main() {
           return null;
         });
     payload = utf8.encode('verified update payload');
+    service = AppUpdateService();
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
   });
 
@@ -96,7 +98,7 @@ void main() {
       await request.response.close();
     });
 
-    final file = await AppUpdateService.downloadUpdate(
+    final file = await service.downloadUpdate(
       info(checksumPath: 'checksum'),
       onProgress: (_) {},
     );
@@ -118,11 +120,11 @@ void main() {
       await request.response.close();
     });
 
-    final first = AppUpdateService.downloadUpdate(
+    final first = service.downloadUpdate(
       info(checksumPath: 'checksum'),
       onProgress: (_) {},
     );
-    final second = AppUpdateService.downloadUpdate(
+    final second = service.downloadUpdate(
       info(checksumPath: 'checksum'),
       onProgress: (_) {},
     );
@@ -135,7 +137,7 @@ void main() {
 
   test('refuses update without checksum asset', () async {
     await expectLater(
-      AppUpdateService.downloadUpdate(info(), onProgress: (_) {}),
+      service.downloadUpdate(info(), onProgress: (_) {}),
       throwsFormatException,
     );
     final updatesDir = Directory(
@@ -160,7 +162,7 @@ void main() {
     });
 
     await expectLater(
-      AppUpdateService.downloadUpdate(
+      service.downloadUpdate(
         info(checksumPath: 'checksum'),
         onProgress: (_) {},
       ),
@@ -347,7 +349,7 @@ void main() {
       await request.response.close();
     });
 
-    final result = await AppUpdateService.checkLatest();
+    final result = await service.checkLatest();
 
     expect(result.status, AppUpdateStatus.updateAvailable);
     expect(result.latestVersionName, '0.13.0');

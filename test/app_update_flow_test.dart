@@ -21,6 +21,7 @@ void main() {
     final flow = AppUpdateFlow(
       permissionController: permissionController,
       languageProvider: AppLanguageProvider(),
+      updateService: AppUpdateService(),
       checkLatest: () async {
         checks++;
         return const AppUpdateInfo(

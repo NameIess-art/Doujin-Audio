@@ -14,6 +14,7 @@ import '../presentation/audio_ui_controllers.dart';
 import '../presentation/screen_view_models.dart';
 import '../theme/theme_provider.dart';
 import '../localization/app_language_provider.dart';
+import '../../features/settings/application/app_update_service.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
 
@@ -51,6 +52,12 @@ final appLanguageStateProvider = StreamProvider<AppLanguageState>((ref) {
     states.close();
   });
   return states.stream;
+});
+
+final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
+  throw UnimplementedError(
+    'appUpdateServiceProvider must be overridden in ProviderScope.',
+  );
 });
 
 final themeStateProvider = StreamProvider<ThemeState>((ref) {

@@ -23,7 +23,15 @@ class DataSupportPage extends ConsumerStatefulWidget {
 
 class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   final _operationService = UiOperationService.instance;
-  final _fileService = DataSupportFileService();
+  late final DataSupportFileService _fileService;
+
+  @override
+  void initState() {
+    super.initState();
+    _fileService = DataSupportFileService(
+      appUpdateService: ref.read(appUpdateServiceProvider),
+    );
+  }
 
   Future<void> _exportBackup() async {
     final dialogTitle = ref

@@ -1,6 +1,6 @@
 part of 'timer_tab.dart';
 
-class _CountdownCard extends StatelessWidget {
+class _CountdownCard extends ConsumerWidget {
   const _CountdownCard({
     required this.timerState,
     required this.timerExpired,
@@ -20,8 +20,9 @@ class _CountdownCard extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final remaining = timerState.remaining ?? Duration.zero;
 
     final showAutoResumeCountdown = timerExpired && autoResumeAt != null;
@@ -170,7 +171,7 @@ class _CountdownCard extends StatelessWidget {
   }
 }
 
-class _DurationPicker extends StatelessWidget {
+class _DurationPicker extends ConsumerWidget {
   const _DurationPicker({
     required this.hours,
     required this.minutes,
@@ -186,8 +187,9 @@ class _DurationPicker extends StatelessWidget {
   final bool showLabels;
 
   @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {

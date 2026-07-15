@@ -1,12 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
+import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
 import 'package:nameless_audio/features/settings/presentation/permission_status_page.dart';
 import 'package:nameless_audio/features/settings/application/permission_status_service.dart';
 import 'package:nameless_audio/core/widgets/operation_feedback.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' as legacy_provider;
 
 void main() {
   testWidgets('permission center groups optional capabilities by purpose', (
@@ -14,18 +16,23 @@ void main() {
   ) async {
     final language = AppLanguageProvider();
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
+      legacy_provider.ChangeNotifierProvider.value(
         value: language,
-        child: MaterialApp(
-          home: PermissionStatusPage(
-            statusService: _FakePermissionStatusService(
-              const PermissionStatusSnapshot(
-                notificationsEnabled: false,
-                backgroundRunAllowed: false,
-                exactAlarmsAllowed: true,
-                manageFilesAllowed: false,
-                overlayAllowed: true,
-                updateInstallsAllowed: false,
+        child: ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: PermissionStatusPage(
+              statusService: _FakePermissionStatusService(
+                const PermissionStatusSnapshot(
+                  notificationsEnabled: false,
+                  backgroundRunAllowed: false,
+                  exactAlarmsAllowed: true,
+                  manageFilesAllowed: false,
+                  overlayAllowed: true,
+                  updateInstallsAllowed: false,
+                ),
               ),
             ),
           ),
@@ -58,11 +65,16 @@ void main() {
     final language = AppLanguageProvider();
     final completer = Completer<PermissionStatusSnapshot>();
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
+      legacy_provider.ChangeNotifierProvider.value(
         value: language,
-        child: MaterialApp(
-          home: PermissionStatusPage(
-            statusService: _DelayedPermissionStatusService(completer.future),
+        child: ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: PermissionStatusPage(
+              statusService: _DelayedPermissionStatusService(completer.future),
+            ),
           ),
         ),
       ),

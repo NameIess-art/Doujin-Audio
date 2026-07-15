@@ -1,9 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
+import '../../../app/state/audio_provider_riverpod.dart';
 import '../application/app_update_service.dart';
 import '../../../core/platform/notifications_platform_service.dart';
 import '../application/permission_status_service.dart';
@@ -14,16 +15,17 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/operation_feedback.dart';
 
-class PermissionStatusPage extends StatefulWidget {
+class PermissionStatusPage extends ConsumerStatefulWidget {
   const PermissionStatusPage({super.key, this.statusService});
 
   final PermissionStatusService? statusService;
 
   @override
-  State<PermissionStatusPage> createState() => _PermissionStatusPageState();
+  ConsumerState<PermissionStatusPage> createState() =>
+      _PermissionStatusPageState();
 }
 
-class _PermissionStatusPageState extends State<PermissionStatusPage>
+class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
     with WidgetsBindingObserver {
   final _powerService = PowerPlatformService();
   final _notificationsService = NotificationsPlatformService();
@@ -83,7 +85,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
     required String description,
     required Future<bool> Function() action,
   }) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final confirmed = await showConfirmActionDialog(
       context: context,
       title: title,
@@ -106,7 +108,9 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
       _recentlyOpenedSettings = false;
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr('system_settings_open_failed'),
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('system_settings_open_failed'),
         tone: AppFeedbackTone.warning,
         icon: Icons.settings_applications_rounded,
       );
@@ -116,7 +120,8 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     return SizedBox(
       height: MediaQuery.sizeOf(context).height * 0.75,
       child: Scaffold(
@@ -162,6 +167,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                       icon: Icons.notifications_rounded,
                       enabled: status.notificationsEnabled,
                       disabledState: _PermissionUiState.restricted,
+                      i18n: i18n,
                       onTap: () => _open(
                         title: i18n.tr('notification_permission_status'),
                         description: i18n.tr(
@@ -176,6 +182,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                       icon: Icons.battery_saver_rounded,
                       enabled: status.backgroundRunAllowed,
                       disabledState: _PermissionUiState.recommended,
+                      i18n: i18n,
                       onTap: () => _open(
                         title: i18n.tr('allow_background_run'),
                         description: i18n.tr(
@@ -195,6 +202,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                       icon: Icons.alarm_on_rounded,
                       enabled: status.exactAlarmsAllowed,
                       disabledState: _PermissionUiState.recommended,
+                      i18n: i18n,
                       onTap: () => _open(
                         title: i18n.tr('exact_alarm_permission_status'),
                         description: i18n.tr(
@@ -214,6 +222,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                       icon: Icons.folder_open_rounded,
                       enabled: status.manageFilesAllowed,
                       disabledState: _PermissionUiState.unauthorized,
+                      i18n: i18n,
                       onTap: () => _open(
                         title: i18n.tr('manage_files_permission_title'),
                         description: i18n.tr(
@@ -228,6 +237,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                       icon: Icons.subtitles_rounded,
                       enabled: status.overlayAllowed,
                       disabledState: _PermissionUiState.unauthorized,
+                      i18n: i18n,
                       onTap: () => _open(
                         title: i18n.tr('overlay_permission_title'),
                         description: i18n.tr('permission_overlay_description'),
@@ -242,6 +252,7 @@ class _PermissionStatusPageState extends State<PermissionStatusPage>
                       icon: Icons.install_mobile_rounded,
                       enabled: status.updateInstallsAllowed,
                       disabledState: _PermissionUiState.unauthorized,
+                      i18n: i18n,
                       onTap: () => _open(
                         title: i18n.tr('install_permission_title'),
                         description: i18n.tr(
@@ -294,6 +305,7 @@ class _PermissionTile extends StatelessWidget {
     required this.icon,
     required this.enabled,
     required this.disabledState,
+    required this.i18n,
     required this.onTap,
   });
 
@@ -302,11 +314,11 @@ class _PermissionTile extends StatelessWidget {
   final IconData icon;
   final bool enabled;
   final _PermissionUiState disabledState;
+  final AppLanguageProvider i18n;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
     final cs = Theme.of(context).colorScheme;
     final state = enabled ? _PermissionUiState.authorized : disabledState;
     final statusColor = _permissionStateColor(cs, state);

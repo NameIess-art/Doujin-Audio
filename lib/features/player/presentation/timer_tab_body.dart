@@ -2,7 +2,8 @@ part of 'timer_tab.dart';
 
 extension _TimerTabBody on _TimerTabState {
   Widget _buildTimerTab(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final timer = ref.read(timerFacadeProvider);
     final timerSlice =
         ref.watch(timerStateProvider).valueOrNull ??

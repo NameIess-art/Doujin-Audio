@@ -5,7 +5,6 @@ import 'dart:ui';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
@@ -212,7 +211,7 @@ class _TimerTabState extends ConsumerState<TimerTab>
     if (!promptForCapability) return;
     final canScheduleExactAlarms = await _canScheduleExactAlarms();
     if (canScheduleExactAlarms || !mounted) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final openSettings = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('exact_alarm_permission_title'),

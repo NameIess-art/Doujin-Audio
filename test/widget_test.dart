@@ -695,6 +695,14 @@ final class _AppShellHarness {
   final AppLanguageProvider language;
 }
 
+final class _AppShellAudioDatabaseRepository
+    extends AudioDatabaseRepository {
+  @override
+  Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
+    return const <TimeSegmentLabel>[];
+  }
+}
+
 void _setLogicalTestViewSize(WidgetTester tester, Size size) {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -719,7 +727,7 @@ Future<_AppShellHarness> _pumpAppShell(
   final themeProvider = ThemeProvider();
   final languageProvider = AppLanguageProvider();
   final notificationService = PlaybackNotificationService();
-  final audioDatabaseRepository = AudioDatabaseRepository();
+  final audioDatabaseRepository = _AppShellAudioDatabaseRepository();
   final nativePlaybackRepository = NativePlaybackRepository();
   final libraryService = LibraryService();
   final playbackService = PlaybackSessionService();

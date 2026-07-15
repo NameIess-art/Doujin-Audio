@@ -118,18 +118,18 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     });
   }
 
-  String? _findParentLibraryPath(AudioProvider provider) {
-    return provider.libraryRootForPath(widget.folder.path);
+  String? _findParentLibraryPath(LibraryFacade library) {
+    return library.libraryRootForPath(widget.folder.path);
   }
 
   Future<void> _removeFolder(
     BuildContext context,
-    AudioProvider provider,
+    LibraryFacade library,
   ) async {
     final i18n = context.read<AppLanguageProvider>();
-    final libraryPath = _findParentLibraryPath(provider);
+    final libraryPath = _findParentLibraryPath(library);
     if (libraryPath != null) {
-      provider.setLibraryFolderExcluded(libraryPath, widget.folder.path, true);
+      library.excludeLibraryFolder(libraryPath, widget.folder.path);
       if (context.mounted) {
         showAppSnackBar(
           context,
@@ -139,7 +139,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         );
       }
     } else {
-      await provider.removeFolderFromLibrary(widget.folder.path);
+      await library.removeFolderFromLibrary(widget.folder.path);
       if (context.mounted) {
         showAppSnackBar(
           context,
@@ -151,7 +151,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     }
   }
 
-  void _playFolder(BuildContext context, AudioProvider provider) {
+  void _playFolder(BuildContext context, PlaybackFacade playback) {
     final i18n = context.read<AppLanguageProvider>();
     final firstTrack = widget.folder.firstTrack;
     if (firstTrack == null) return;
@@ -159,7 +159,11 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
       AppInteractionFeedbackType.tap,
       context: context,
     );
-    unawaited(provider.spawnSession(firstTrack));
+    unawaited(
+      playback.launchQueue(<MusicTrack>[
+        firstTrack,
+      ], loopMode: SessionLoopMode.folderSequential),
+    );
     _showSessionCreatedSnack(
       context,
       i18n.tr('session_created', {'name': firstTrack.displayName}),
@@ -169,7 +173,8 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = ref.read(audioProviderFacadeProvider);
+    final library = ref.read(libraryFacadeProvider);
+    final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final folder = _loadedFolder ?? widget.folder;
@@ -233,7 +238,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 detailLoading: isRootDetailLoading,
                 expanded: _expanded,
                 hasChildren: hasChildren,
-                onPlay: () => _playFolder(context, provider),
+                onPlay: () => _playFolder(context, playback),
                 index: widget.index,
                 cardPositionsLocked: widget.cardPositionsLocked,
               )
@@ -282,7 +287,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     IconButton(
-                      onPressed: () => _playFolder(context, provider),
+                      onPressed: () => _playFolder(context, playback),
                       visualDensity: VisualDensity.compact,
                       tooltip: i18n.tr('play'),
                       style: IconButton.styleFrom(
@@ -358,7 +363,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
           AudioDetailTarget.libraryRootFolder(widget.folder.path),
         ),
       ),
-      onRemove: () => _removeFolder(context, provider),
+      onRemove: () => _removeFolder(context, library),
       onWillReveal: _expansionController.collapse,
       child: Card(
         margin: EdgeInsets.zero,
@@ -386,13 +391,13 @@ class _TrackNodeWidget extends ConsumerWidget {
 
   Future<void> _removeTrack(
     BuildContext context,
-    AudioProvider provider,
+    LibraryFacade library,
     MusicTrack track,
   ) async {
     final i18n = context.read<AppLanguageProvider>();
-    final parentLibraryPath = provider.libraryRootForPath(track.path);
+    final parentLibraryPath = library.libraryRootForPath(track.path);
     if (parentLibraryPath != null) {
-      provider.setLibraryTrackExcluded(parentLibraryPath, track.path, true);
+      library.excludeLibraryTrack(parentLibraryPath, track.path);
       if (context.mounted) {
         showAppSnackBar(
           context,
@@ -402,7 +407,7 @@ class _TrackNodeWidget extends ConsumerWidget {
         );
       }
     } else {
-      await provider.removeTrackFromLibrary(track.path);
+      await library.removeTrackFromLibrary(track.path);
       if (context.mounted) {
         showAppSnackBar(
           context,
@@ -417,7 +422,8 @@ class _TrackNodeWidget extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = ref.read(audioProviderFacadeProvider);
+    final library = ref.read(libraryFacadeProvider);
+    final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final track = trackNode.track;
@@ -441,7 +447,7 @@ class _TrackNodeWidget extends ConsumerWidget {
           );
     final singleDetail = singleDetailState?.detail;
     final isSingleDetailLoading = singleDetailState?.isLoading ?? false;
-    final resolvedCoverPath = provider.resolvedCoverPathForTrack(track);
+    final resolvedCoverPath = library.resolvedCoverPathForTrack(track);
     final useFeaturedSingleCard =
         track.isVideo || hasDisplayableCoverArtwork(track, resolvedCoverPath);
 
@@ -451,9 +457,11 @@ class _TrackNodeWidget extends ConsumerWidget {
         context: context,
       );
       unawaited(
-        track.isVideo
-            ? provider.spawnSession(track, autoPlay: true)
-            : provider.spawnSession(track),
+        playback.launchQueue(
+          <MusicTrack>[track],
+          autoPlay: track.isVideo ? true : null,
+          loopMode: SessionLoopMode.folderSequential,
+        ),
       );
       _showSessionCreatedSnack(
         context,
@@ -476,7 +484,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             AudioDetailTarget.singleAudioFile(track.path),
           ),
         ),
-        onRemove: () => _removeTrack(context, provider, track),
+        onRemove: () => _removeTrack(context, library, track),
         child: Card(
           margin: EdgeInsets.zero,
           clipBehavior: Clip.antiAlias,
@@ -555,7 +563,7 @@ class _TrackNodeWidget extends ConsumerWidget {
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
-      onRemove: () => _removeTrack(context, provider, track),
+      onRemove: () => _removeTrack(context, library, track),
       child: ColoredBox(
         color: cs.surfaceContainerLow,
         child: SizedBox(
@@ -590,7 +598,11 @@ class _TrackNodeWidget extends ConsumerWidget {
                       AppInteractionFeedbackType.tap,
                       context: context,
                     );
-                    unawaited(provider.spawnSession(track));
+                    unawaited(
+                      playback.launchQueue(<MusicTrack>[
+                        track,
+                      ], loopMode: SessionLoopMode.folderSequential),
+                    );
                     _showSessionCreatedSnack(
                       context,
                       i18n.tr('session_created', {'name': track.displayName}),

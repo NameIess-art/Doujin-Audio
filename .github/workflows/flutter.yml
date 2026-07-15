@@ -40,6 +40,26 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
+      - name: Stress Ubuntu regression tests
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          for iteration in {1..10}; do
+            echo "Dynamic navigation iteration ${iteration}/10"
+            flutter test test/widget_test.dart --plain-name "app shell handles keyboard and dynamic portrait sizes"
+            echo "Playlist reorder iteration ${iteration}/10"
+            flutter test test/player_playlist_widgets_test.dart --plain-name "playlist cards freeze background updates while reordering"
+          done
+
+      - name: Stress Windows rename regression test
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          for ($iteration = 1; $iteration -le 10; $iteration++) {
+            Write-Output "Windows rename iteration $iteration/10"
+            flutter test test/audio_provider_audio_detail_cover_test.dart --plain-name "renaming an active folder keeps playlist track lookups after stale native paths"
+          }
+
       - name: Test
         if: matrix.os != 'ubuntu-latest'
         run: flutter test --concurrency=1

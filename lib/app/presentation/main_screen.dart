@@ -178,12 +178,14 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _openTimerFromPlaylist() {
     if (!mounted) return;
-    final provider = ref.read(audioProviderFacadeProvider);
+    final timer =
+        ref.read(timerStateProvider).valueOrNull ??
+        ref.read(timerFacadeProvider).state;
     final timerState = _TimerPresentation(
-      duration: provider.timerDuration,
-      remaining: provider.timerRemaining,
-      active: provider.timerActive,
-      mode: provider.timerMode,
+      duration: timer.duration,
+      remaining: timer.remaining,
+      active: timer.active,
+      mode: timer.mode,
     );
     _openTimerSettingsPage(context, timerState);
   }

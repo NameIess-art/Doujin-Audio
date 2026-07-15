@@ -560,12 +560,12 @@ void main() {
         session.state = PlayerState(true, ProcessingState.ready);
       }
       final future = DateTime.now().add(const Duration(minutes: 2));
-      provider.setAutoResume(true, future.hour, future.minute);
-      provider.configureTimer(
+      provider.timerFacade.setAutoResume(true, future.hour, future.minute);
+      provider.timerFacade.configureTimer(
         TimerMode.manual,
         const Duration(milliseconds: 20),
       );
-      provider.startCountdown();
+      provider.timerFacade.startCountdown();
 
       await Future<void>.delayed(const Duration(milliseconds: 1200));
 

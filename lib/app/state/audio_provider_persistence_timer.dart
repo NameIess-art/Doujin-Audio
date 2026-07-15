@@ -57,19 +57,6 @@ extension AudioProviderPersistenceTimer on AudioProvider {
     }
   }
 
-  void setTimerDraft(TimerMode mode, Duration duration) {
-    final normalizedDuration = duration > Duration.zero
-        ? duration
-        : const Duration(minutes: 30);
-    if (_timerDraftMode == mode && _timerDraftDuration == normalizedDuration) {
-      return;
-    }
-    _timerDraftMode = mode;
-    _timerDraftDuration = normalizedDuration;
-    _notifyListeners();
-    unawaited(_saveTimerSettings());
-  }
-
   Future<void> _restoreTimerRuntimeFromMap(
     Map<dynamic, dynamic> map, {
     required bool removeLegacyPrefsWhenEmpty,
@@ -156,7 +143,6 @@ extension AudioProviderPersistenceTimer on AudioProvider {
     if (timerEndsAtMs != null && _timerDuration != null) {
       final restoredEndsAt = DateTime.fromMillisecondsSinceEpoch(timerEndsAtMs);
       if (restoredEndsAt.isAfter(now)) {
-        final activeGeneration = _timerGeneration;
         _timerEndsAt = restoredEndsAt;
         _timerActive = true;
         _timerWaitingForPlayback = false;
@@ -164,10 +150,7 @@ extension AudioProviderPersistenceTimer on AudioProvider {
         _timerRemaining = Duration(
           seconds: (remaining.inMilliseconds + 999) ~/ 1000,
         );
-        _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-          if (activeGeneration != _timerGeneration) return;
-          _tickCountdown();
-        });
+        _timerFacade.restoreCountdownTimer();
       } else {
         _timerRemaining = Duration.zero;
       }
@@ -178,7 +161,7 @@ extension AudioProviderPersistenceTimer on AudioProvider {
         : DateTime.fromMillisecondsSinceEpoch(autoResumeAtMs);
     if (_autoResumeAt != null) {
       if (_autoResumeAt!.isAfter(now) && _pausedByTimerSessionIds.isNotEmpty) {
-        _scheduleAutoResumeTimer(_autoResumeAt!);
+        _timerFacade.scheduleAutoResumeTimer(_autoResumeAt!);
       } else if (_pausedByTimerSessionIds.isNotEmpty) {
         await _handleAutoResumeOnPlatform(_timerGeneration);
         return;
@@ -254,7 +237,7 @@ extension AudioProviderPersistenceTimer on AudioProvider {
   Future<void> _saveTimerRuntime() async {
     try {
       final prefs = await _prefs;
-      final hasRuntime = _hasArmedTimerRuntime;
+      final hasRuntime = _timerFacade.hasArmedRuntime;
       if (!hasRuntime) {
         await prefs.remove(_kTimerRuntimeKey);
         return;

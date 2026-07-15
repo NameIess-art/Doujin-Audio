@@ -8,9 +8,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../application/audio_state_services.dart';
+import '../application/timer_facade.dart';
+import '../domain/playback_mode.dart';
 import '../../../core/platform/notifications_platform_service.dart';
 import '../../../core/platform/power_platform_service.dart';
 import '../../../core/media/time_text_formatters.dart';
@@ -99,12 +100,9 @@ class _TimerTabState extends ConsumerState<TimerTab>
   String _draftKey(TimerMode mode, Duration duration) =>
       '${mode.index}:${duration.inSeconds}';
 
-  void _syncDraftFromProvider(AudioProvider provider) {
-    final duration =
-        provider.timerDuration ??
-        provider.timerRemaining ??
-        provider.timerDraftDuration;
-    final mode = provider.timerMode ?? provider.timerDraftMode;
+  void _syncDraftFromState(TimerStateSliceData state) {
+    final duration = state.duration ?? state.remaining ?? state.draftDuration;
+    final mode = state.mode ?? state.draftMode;
     final key = _draftKey(mode, duration);
     if (_draftInitialized && _lastSyncedDraftKey == key) {
       return;
@@ -135,11 +133,11 @@ class _TimerTabState extends ConsumerState<TimerTab>
 
   String _fmtDuration(Duration d) => formatDurationHms(d);
 
-  void _onConfirm(AudioProvider provider) {
+  void _onConfirm(TimerFacade timer) {
     if (_durationIsZero) return;
-    provider.configureTimer(_selectedMode, _pickedDuration);
+    timer.configureTimer(_selectedMode, _pickedDuration);
     if (_selectedMode == TimerMode.manual) {
-      provider.startCountdown();
+      timer.startCountdown();
     }
     if (widget.compactOnly && mounted) {
       setState(() => _showCompactDetail = true);
@@ -204,13 +202,13 @@ class _TimerTabState extends ConsumerState<TimerTab>
   }
 
   Future<void> _setAutoResumeWithCapabilityCheck(
-    AudioProvider provider, {
+    TimerFacade timer, {
     required bool enabled,
     required int hour,
     required int minute,
     required bool promptForCapability,
   }) async {
-    provider.setAutoResume(enabled, hour, minute);
+    timer.setAutoResume(enabled, hour, minute);
     if (!promptForCapability) return;
     final canScheduleExactAlarms = await _canScheduleExactAlarms();
     if (canScheduleExactAlarms || !mounted) return;

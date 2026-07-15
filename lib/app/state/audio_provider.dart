@@ -508,7 +508,6 @@ class AudioProvider with ChangeNotifier {
   set _timerDuration(Duration? value) => _timerService.timerDuration = value;
   bool get _timerActive => _timerService.timerActive;
   set _timerActive(bool value) => _timerService.timerActive = value;
-  Duration? get _timerRemaining => _timerService.timerRemaining;
   set _timerRemaining(Duration? value) => _timerService.timerRemaining = value;
   DateTime? get _timerEndsAt => _timerService.timerEndsAt;
   set _timerEndsAt(DateTime? value) => _timerService.timerEndsAt = value;
@@ -671,6 +670,19 @@ class AudioProvider with ChangeNotifier {
     });
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
     _playbackFacade.attachSessionStatePersistence(_saveSessionState);
+    _timerFacade.attachRuntime(
+      hasPlayingSession: () => _hasPlayingSession,
+      onStateChanged: () {
+        _syncKeepCpuAwake();
+        _notifyListeners();
+      },
+      applyFadeMultiplier: _applyFadeMultiplierToAllPlaying,
+      saveSettings: _saveTimerSettings,
+      saveRuntime: _saveTimerRuntime,
+      syncNativeAlarms: _syncNativeTimerAlarms,
+      onTimerExpired: _handleTimerExpiredOnPlatform,
+      onAutoResume: _handleAutoResumeOnPlatform,
+    );
     _libraryFacade.attachCoverArtworkCacheService(
       () => CoverArtworkCacheService(
         libraryService: _libraryService,
@@ -700,7 +712,7 @@ class AudioProvider with ChangeNotifier {
         syncKeepAliveAfterForegroundResume();
         resyncNotificationsAfterResume();
         await syncTimerRuntimeFromNative();
-        retryOverdueAutoResume();
+        _timerFacade.retryOverdueAutoResume();
       },
       onDispose: _disposeOwnedServices,
     );

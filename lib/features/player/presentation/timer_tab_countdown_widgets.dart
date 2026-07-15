@@ -2,7 +2,7 @@ part of 'timer_tab.dart';
 
 class _CountdownCard extends StatelessWidget {
   const _CountdownCard({
-    required this.provider,
+    required this.timerState,
     required this.timerExpired,
     required this.waitingTrigger,
     required this.fmtDuration,
@@ -11,7 +11,7 @@ class _CountdownCard extends StatelessWidget {
     this.compact = false,
   });
 
-  final AudioProvider provider;
+  final TimerStateSliceData timerState;
   final bool timerExpired;
   final bool waitingTrigger;
   final String Function(Duration) fmtDuration;
@@ -22,7 +22,7 @@ class _CountdownCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final i18n = context.watch<AppLanguageProvider>();
-    final remaining = provider.timerRemaining ?? Duration.zero;
+    final remaining = timerState.remaining ?? Duration.zero;
 
     final showAutoResumeCountdown = timerExpired && autoResumeAt != null;
 
@@ -125,11 +125,11 @@ class _CountdownCard extends StatelessWidget {
               Builder(
                 builder: (context) {
                   final chips = <Widget>[
-                    if (provider.pausedByTimerSessionIds.isNotEmpty)
+                    if (timerState.pausedByTimerSessionIds.isNotEmpty)
                       _TimerSummaryChip(
                         icon: Icons.pause_circle_outline_rounded,
                         text: i18n.tr('paused_audio_count', {
-                          'count': provider.pausedByTimerSessionIds.length,
+                          'count': timerState.pausedByTimerSessionIds.length,
                         }),
                         foregroundColor: cs.onErrorContainer,
                         backgroundColor: cs.errorContainer,

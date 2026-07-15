@@ -100,7 +100,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     }
     _syncKeepCpuAwake();
     if (shouldStartTriggerCountdown) {
-      _maybeStartTriggerCountdown();
+      _timerFacade.maybeStartTriggerCountdown();
     }
     return true;
   }

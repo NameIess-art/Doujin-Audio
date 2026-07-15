@@ -97,7 +97,7 @@ extension AudioProviderPersistence on AudioProvider {
     _libraryBatchPersistEntriesByKey.clear();
     _markLibraryStructureDirty();
 
-    _resetTimerRuntimeState();
+    _timerFacade.resetRuntimeState();
     _timerDraftMode = TimerMode.manual;
     _timerDraftDuration = const Duration(minutes: 30);
     _autoResumeEnabled = false;

@@ -33,86 +33,6 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     }
   }
 
-  void configureTimer(TimerMode mode, Duration duration) {
-    _timerDraftMode = mode;
-    _timerDraftDuration = duration > Duration.zero
-        ? duration
-        : const Duration(minutes: 30);
-    _cancelTimerInternal();
-    _timerMode = mode;
-    _timerDuration = duration;
-    _timerRemaining = duration;
-    _timerEndsAt = null;
-    _timerActive = false;
-    _timerWaitingForPlayback = mode == TimerMode.trigger;
-    if (mode == TimerMode.trigger && _hasPlayingSession) {
-      startCountdown();
-      return;
-    }
-    _syncKeepCpuAwake();
-    _notifyListeners();
-    unawaited(_saveTimerSettings());
-    unawaited(_saveTimerRuntime());
-    unawaited(_syncNativeTimerAlarms());
-  }
-
-  void startCountdown() {
-    if (_timerDuration == null || _timerActive) return;
-    _countdownTimer?.cancel();
-    final generation = ++_timerGeneration;
-    _timerActive = true;
-    _timerWaitingForPlayback = false;
-    _timerRemaining = _timerDuration;
-    _timerEndsAt = DateTime.now().add(_timerDuration!);
-    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (generation != _timerGeneration) return;
-      _tickCountdown();
-    });
-    _syncKeepCpuAwake();
-    _notifyListeners();
-    unawaited(_saveTimerRuntime());
-    unawaited(_syncNativeTimerAlarms());
-  }
-
-  void cancelTimer() {
-    _resetTimerRuntimeState();
-    _syncKeepCpuAwake();
-    _notifyListeners();
-    unawaited(_saveTimerRuntime());
-    unawaited(_syncNativeTimerAlarms());
-  }
-
-  void _cancelTimerInternal() {
-    _timerGeneration++;
-    _countdownTimer?.cancel();
-    _countdownTimer = null;
-    _timerEndsAt = null;
-    _autoResumeTimer?.cancel();
-    _autoResumeTimer = null;
-    _autoResumeAt = null;
-    _timerActive = false;
-    _timerWaitingForPlayback = false;
-    _syncKeepCpuAwake();
-    unawaited(_saveTimerRuntime());
-    unawaited(_syncNativeTimerAlarms());
-  }
-
-  void _onTimerExpired() {
-    final generation = _timerGeneration;
-    _timerActive = false;
-    _countdownTimer?.cancel();
-    _countdownTimer = null;
-    _timerEndsAt = null;
-    _timerWaitingForPlayback = false;
-    _timerRemaining = Duration.zero;
-    _autoResumeTimer?.cancel();
-    _autoResumeTimer = null;
-
-    _syncKeepCpuAwake();
-    _notifyListeners();
-    unawaited(_handleTimerExpiredOnPlatform(generation));
-  }
-
   Future<void> _handleTimerExpiredOnPlatform(int generation) async {
     final result = await _executeTimerActionOnPlatform(
       _powerPlatformService.executeTimerExpiredNow,
@@ -141,7 +61,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     }
 
     if (_autoResumeEnabled && _pausedByTimerSessionIds.isNotEmpty) {
-      _scheduleAutoResumeTimer(
+      _timerFacade.scheduleAutoResumeTimer(
         _nextClockTime(_autoResumeHour, _autoResumeMinute),
       );
     }
@@ -162,12 +82,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       return;
     }
     // No auto-resume: reset the timer to its original (unconfigured) state.
-    _resetTimerRuntimeState();
-  }
-
-  void _onAutoResume() {
-    _autoResumeTimer = null;
-    unawaited(_handleAutoResumeOnPlatform(_timerGeneration));
+    _timerFacade.resetRuntimeState();
   }
 
   Future<void> _handleAutoResumeOnPlatform(int generation) async {
@@ -181,7 +96,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     }
     await syncTimerRuntimeFromNative();
     // After auto-resume the timer is fully done — reset to original state.
-    _resetTimerRuntimeState();
+    _timerFacade.resetRuntimeState();
     _syncKeepCpuAwake();
     _notifyListeners();
     unawaited(_saveTimerRuntime());
@@ -204,7 +119,7 @@ extension AudioProviderPlaybackTimer on AudioProvider {
   }
 
   void _resetTimerAfterAutoResumeSuccess() {
-    _resetTimerRuntimeState(clearPausedSessions: false);
+    _timerFacade.resetRuntimeState(clearPausedSessions: false);
   }
 
   Future<void> _resumeTimerPausedSessions() async {
@@ -255,95 +170,12 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     await _syncNativeTimerAlarms();
   }
 
-  void retryOverdueAutoResume() {
-    final autoResumeAt = _autoResumeAt;
-    if (autoResumeAt == null || _pausedByTimerSessionIds.isEmpty) return;
-    if (autoResumeAt.isAfter(DateTime.now())) {
-      _scheduleAutoResumeTimer(autoResumeAt);
-      _syncKeepCpuAwake();
-      unawaited(_saveTimerRuntime());
-      unawaited(_syncNativeTimerAlarms());
-      return;
-    }
-    _autoResumeTimer?.cancel();
-    _autoResumeTimer = null;
-    unawaited(_handleAutoResumeOnPlatform(_timerGeneration));
-  }
-
-  void setAutoResume(bool enabled, int hour, int minute) {
-    _autoResumeEnabled = enabled;
-    _autoResumeHour = hour;
-    _autoResumeMinute = minute;
-    if (!enabled) {
-      _autoResumeTimer?.cancel();
-      _autoResumeTimer = null;
-      _autoResumeAt = null;
-    } else if (_pausedByTimerSessionIds.isNotEmpty) {
-      _scheduleAutoResumeTimer(_nextClockTime(hour, minute));
-    }
-    _syncKeepCpuAwake();
-    _notifyListeners();
-    unawaited(_saveTimerSettings());
-    unawaited(_saveTimerRuntime());
-    unawaited(_syncNativeTimerAlarms());
-  }
-
   DateTime _nextClockTime(int hour, int minute) {
     return _timerRuntimeCalculator.nextClockTime(
       now: DateTime.now(),
       hour: hour,
       minute: minute,
     );
-  }
-
-  void _scheduleAutoResumeTimer(DateTime target) {
-    _autoResumeTimer?.cancel();
-    _autoResumeAt = target;
-    final delay = target.difference(DateTime.now());
-    if (delay <= Duration.zero) {
-      _onAutoResume();
-      return;
-    }
-    _autoResumeTimer = Timer(delay, _onAutoResume);
-  }
-
-  void _maybeStartTriggerCountdown() {
-    if (_timerMode != TimerMode.trigger ||
-        _timerDuration == null ||
-        _timerActive ||
-        !_timerWaitingForPlayback) {
-      return;
-    }
-    startCountdown();
-  }
-
-  void _tickCountdown() {
-    final tick = _timerRuntimeCalculator.countdownTick(
-      active: _timerActive,
-      endsAt: _timerEndsAt,
-      now: DateTime.now(),
-      currentRemaining: _timerRemaining,
-    );
-    if (tick.expired) {
-      _timerRemaining = tick.remaining;
-      _applyFadeMultiplierToAllPlaying(1.0);
-      _notifyListeners();
-      _onTimerExpired();
-      return;
-    }
-    if (!tick.changed) return;
-    _timerRemaining = tick.remaining;
-
-    final duration = _timerDuration;
-    if (duration != null && duration.inMinutes >= 2) {
-      final remainingMs = _timerRemaining!.inMilliseconds;
-      if (remainingMs <= 120000) {
-        final multiplier = (remainingMs / 120000.0).clamp(0.0, 1.0);
-        _applyFadeMultiplierToAllPlaying(multiplier);
-      }
-    }
-
-    _notifyListeners();
   }
 
   void _applyFadeMultiplierToAllPlaying(double multiplier) {

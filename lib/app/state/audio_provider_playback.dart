@@ -25,38 +25,6 @@ String _folderKeyForTrack(MusicTrack track) {
 }
 
 extension AudioProviderPlayback on AudioProvider {
-  bool get _hasArmedTimerRuntime {
-    return _timerRuntimeCalculator.hasArmedRuntime(
-      mode: _timerMode,
-      duration: _timerDuration,
-      waitingForPlayback: _timerWaitingForPlayback,
-      active: _timerActive,
-      endsAt: _timerEndsAt,
-      autoResumeAt: _autoResumeAt,
-      hasPausedByTimerSessionIds: _pausedByTimerSessionIds.isNotEmpty,
-    );
-  }
-
-  void _resetTimerRuntimeState({bool clearPausedSessions = true}) {
-    _timerGeneration++;
-    _countdownTimer?.cancel();
-    _countdownTimer = null;
-    _timerMode = null;
-    _timerDuration = null;
-    _timerActive = false;
-    _timerRemaining = null;
-    _timerEndsAt = null;
-    _timerWaitingForPlayback = false;
-    _autoResumeTimer?.cancel();
-    _autoResumeTimer = null;
-    _autoResumeAt = null;
-    if (clearPausedSessions) {
-      _pausedByTimerSessionIds.clear();
-    }
-    _applyFadeMultiplierToAllPlaying(1.0);
-    unawaited(_syncNativeTimerAlarms());
-  }
-
   Future<void> toggleSessionPlayPause(String sessionId) async {
     final session = _playbackService.sessionById(sessionId);
     if (session == null) return;

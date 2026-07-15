@@ -813,52 +813,24 @@ extension AudioProviderLibrary on AudioProvider {
     bool persist = true,
   }) {
     if (newTracks.isEmpty) return;
-
-    final toAdd = <MusicTrack>[];
-    var didChangeGroupOrder = false;
-    for (final track in newTracks) {
-      if (_libraryByPath.containsKey(track.path)) {
-        continue;
-      }
-      _library.add(track);
-      _libraryByPath[track.path] = track;
-      toAdd.add(track);
-      if (_groupOrderSet.add(track.groupKey)) {
-        _groupOrder.add(track.groupKey);
-        didChangeGroupOrder = true;
-      }
+    final mutation = _libraryService.addTracks(newTracks, persist: persist);
+    final addedTracks = mutation.tracks;
+    if (addedTracks.isEmpty) return;
+    _recordLibraryEntriesForTracks(addedTracks, persist: persist);
+    if (mutation.batched) return;
+    _clearResolvedCoverPaths();
+    _librarySnapshotCacheService.markStructureChanged();
+    if (!notify) {
+      unawaited(_ensureLibraryCardSnapshot(notifyOnCommit: false));
+    } else {
+      _notifyLibraryAndPlaybackChanged();
     }
-
-    if (toAdd.isNotEmpty) {
-      _recordLibraryEntriesForTracks(toAdd, persist: persist);
-      if (_libraryBatchDepth > 0) {
-        _libraryBatchChanged = true;
-        if (persist) {
-          _libraryBatchPersistTracks.addAll(toAdd);
-        }
-        if (didChangeGroupOrder) {
-          _libraryBatchChangedGroupOrder = true;
-        }
-        return;
-      }
-      _clearResolvedCoverPaths();
-      _rebuildLibraryIndexes();
-      _syncLibraryNodeOrder(persist: false);
-      if (!notify) {
-        unawaited(_ensureLibraryCardSnapshot(notifyOnCommit: false));
-      }
-      if (notify) {
-        _notifyLibraryAndPlaybackChanged();
-      }
-      if (persist && !_skipDisposePersistence) {
-        unawaited(_audioDatabaseRepository.upsertTracks(toAdd));
-      }
-      if (persist) {
-        if (didChangeGroupOrder) {
-          _saveGroupOrder();
-        }
-        _saveLibraryNodeOrder();
-      }
+    if (persist && !_skipDisposePersistence) {
+      unawaited(_audioDatabaseRepository.upsertTracks(addedTracks));
+    }
+    if (persist) {
+      if (mutation.didChangeGroupOrder) _saveGroupOrder();
+      _saveLibraryNodeOrder();
     }
   }
 
@@ -868,81 +840,26 @@ extension AudioProviderLibrary on AudioProvider {
     bool persist = true,
   }) {
     if (tracks.isEmpty) return;
-
-    var changed = false;
-    var didChangeGroupOrder = false;
-    var didReplaceGroup = false;
-    final tracksToPersist = <MusicTrack>[];
-
-    for (final track in tracks) {
-      final existing = _libraryByPath[track.path];
-      final nextTrack = existing == null
-          ? track
-          : _mergeExistingTrackState(existing, track);
-      if (existing != null && !_mergedTrackHasChanges(existing, track)) {
-        continue;
-      }
-      if (existing != null && existing.groupKey != nextTrack.groupKey) {
-        didReplaceGroup = true;
-      }
-      if (existing == null) {
-        _library.add(nextTrack);
-      } else {
-        // Use the O(1) path index instead of an O(n) indexWhere scan.
-        final index = _libraryIndexByPath[nextTrack.path];
-        if (index != null &&
-            index < _library.length &&
-            _library[index].path == nextTrack.path) {
-          _library[index] = nextTrack;
-        } else {
-          // Index is stale 鈥?fall back to a linear scan and repair the index.
-          final fallbackIndex = _library.indexWhere(
-            (item) => item.path == nextTrack.path,
-          );
-          if (fallbackIndex >= 0) {
-            _library[fallbackIndex] = nextTrack;
-          } else {
-            _library.add(nextTrack);
-          }
-        }
-      }
-      _libraryByPath[nextTrack.path] = nextTrack;
-      tracksToPersist.add(nextTrack);
-      changed = true;
-      if (_groupOrderSet.add(nextTrack.groupKey)) {
-        _groupOrder.add(nextTrack.groupKey);
-        didChangeGroupOrder = true;
-      }
-    }
-
-    if (!changed) return;
+    final mutation = _libraryService.addOrReplaceTracks(
+      tracks,
+      persist: persist,
+    );
+    final tracksToPersist = mutation.tracks;
+    if (tracksToPersist.isEmpty) return;
     _recordLibraryEntriesForTracks(tracksToPersist, persist: persist);
-    if (_libraryBatchDepth > 0) {
-      _libraryBatchChanged = true;
-      if (persist) {
-        _libraryBatchPersistTracks.addAll(tracksToPersist);
-      }
-      if (didChangeGroupOrder || didReplaceGroup) {
-        _libraryBatchChangedGroupOrder = true;
-      }
-      return;
-    }
-
+    if (mutation.batched) return;
     _clearResolvedCoverPaths();
-    _rebuildLibraryIndexes();
-    _syncGroupOrderFromLibrary();
-    _syncLibraryNodeOrder(persist: false);
+    _librarySnapshotCacheService.markStructureChanged();
     if (!notify) {
       unawaited(_ensureLibraryCardSnapshot(notifyOnCommit: false));
-    }
-    if (notify) {
+    } else {
       _notifyLibraryAndPlaybackChanged();
     }
     if (persist && !_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.upsertTracks(tracksToPersist));
     }
     if (persist) {
-      if (didChangeGroupOrder || didReplaceGroup) {
+      if (mutation.didChangeGroupOrder || mutation.didReplaceGroup) {
         _saveGroupOrder();
       }
       _saveLibraryNodeOrder();
@@ -950,60 +867,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   bool libraryTrackNeedsRefresh(MusicTrack nextTrack) {
-    final existing = _libraryByPath[nextTrack.path];
-    return existing == null || _mergedTrackHasChanges(existing, nextTrack);
-  }
-
-  bool _mergedTrackHasChanges(MusicTrack existing, MusicTrack scanned) {
-    return existing.displayName != scanned.displayName ||
-        existing.groupKey != scanned.groupKey ||
-        existing.groupTitle != scanned.groupTitle ||
-        existing.groupSubtitle != scanned.groupSubtitle ||
-        existing.isSingle != scanned.isSingle ||
-        existing.isVideo != scanned.isVideo ||
-        existing.fileSizeBytes != scanned.fileSizeBytes ||
-        !_sameScanTimestamp(existing.modifiedAt, scanned.modifiedAt) ||
-        existing.coverCachePath == null && scanned.coverCachePath != null ||
-        existing.lyricsPath == null && scanned.lyricsPath != null ||
-        existing.manualCoverPath == null && scanned.manualCoverPath != null ||
-        existing.remoteCoverUrl == null && scanned.remoteCoverUrl != null ||
-        existing.remoteMetadataKind == null &&
-            scanned.remoteMetadataKind != null ||
-        existing.remoteMetadata == null && scanned.remoteMetadata != null ||
-        existing.duration == Duration.zero && scanned.duration != Duration.zero;
-  }
-
-  bool _sameScanTimestamp(DateTime? first, DateTime? second) {
-    return first?.millisecondsSinceEpoch == second?.millisecondsSinceEpoch;
-  }
-
-  MusicTrack _mergeExistingTrackState(MusicTrack existing, MusicTrack scanned) {
-    return MusicTrack(
-      path: scanned.path,
-      displayName: scanned.displayName,
-      groupKey: scanned.groupKey,
-      groupTitle: scanned.groupTitle,
-      groupSubtitle: scanned.groupSubtitle,
-      isSingle: scanned.isSingle,
-      isVideo: scanned.isVideo,
-      scannedAt: scanned.scannedAt,
-      fileSizeBytes: scanned.fileSizeBytes,
-      modifiedAt: scanned.modifiedAt,
-      lastPlayedPosition: existing.lastPlayedPosition,
-      lastPlayedAt: existing.lastPlayedAt,
-      isFavorite: existing.isFavorite,
-      tags: existing.tags,
-      coverCachePath: existing.coverCachePath ?? scanned.coverCachePath,
-      lyricsPath: existing.lyricsPath ?? scanned.lyricsPath,
-      manualCoverPath: existing.manualCoverPath ?? scanned.manualCoverPath,
-      remoteCoverUrl: existing.remoteCoverUrl ?? scanned.remoteCoverUrl,
-      remoteMetadataKind:
-          existing.remoteMetadataKind ?? scanned.remoteMetadataKind,
-      remoteMetadata: existing.remoteMetadata ?? scanned.remoteMetadata,
-      duration: existing.duration == Duration.zero
-          ? scanned.duration
-          : existing.duration,
-    );
+    return _libraryService.trackNeedsRefresh(nextTrack);
   }
 
   void recordLibraryEntriesForTracks(

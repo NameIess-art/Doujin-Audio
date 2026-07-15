@@ -5,8 +5,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
+import '../../../core/media/audio_detail.dart';
+import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -196,16 +197,25 @@ class _DlsiteMetadataReviewPageState
     );
 
     try {
+      final language = ref
+          .read(settingsRepositoryProvider)
+          .slice
+          .state
+          .dlsiteMetadataLanguage
+          .resolve(context.read<AppLanguageProvider>().language);
       final result = await UiOperationService.instance
           .run<DlsiteMetadataApplyResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_save_failed',
-            task: (_) => context.read<AudioProvider>().applyDlsiteMetadata(
-              widget.detail,
-              edited,
-              saveCover: _saveCover,
-              missingOnly: widget.missingOnly,
-            ),
+            task: (_) => ref
+                .read(libraryFacadeProvider)
+                .applyDlsiteMetadata(
+                  widget.detail,
+                  edited,
+                  saveCover: _saveCover,
+                  language: language,
+                  missingOnly: widget.missingOnly,
+                ),
           );
       if (!mounted) return;
       if (result.coverFailed) {

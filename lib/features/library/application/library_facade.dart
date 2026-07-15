@@ -106,6 +106,7 @@ final class LibraryFacade implements LibraryCatalog {
   bool _persistenceEnabled = true;
   bool _disposed = false;
   void Function(List<String> removedPaths)? _trackRemovalHandler;
+  void Function()? _coverChangeHandler;
   final WarmupScheduler _coverWarmupScheduler = WarmupScheduler();
 
   LibraryState get state => service.slice.state;
@@ -576,6 +577,83 @@ final class LibraryFacade implements LibraryCatalog {
     selectedCoverPath: selectedCoverPath,
   );
 
+  Future<String?> setFolderManualCover(
+    String folderPath,
+    String imagePath, {
+    bool newlySaved = false,
+  }) async {
+    final storedCoverPath = await coverArtworkCacheService
+        .setFolderCoverSelection(folderPath, imagePath, newlySaved: newlySaved);
+    _coverChangeHandler?.call();
+    return storedCoverPath;
+  }
+
+  Future<DlsiteMetadataApplyResult> applyDlsiteMetadata(
+    AudioDetail detail,
+    DlsiteMetadata metadata, {
+    required bool saveCover,
+    required AppLanguage language,
+    bool missingOnly = false,
+  }) async {
+    String metadataStringValue(String current, String fetched) {
+      return missingOnly && current.trim().isNotEmpty ? current : fetched;
+    }
+
+    List<String> metadataListValue(List<String> current, List<String> fetched) {
+      return missingOnly && current.isNotEmpty ? current : fetched;
+    }
+
+    final nextDetail = detail.copyWith(
+      rjCode: metadataStringValue(detail.rjCode, metadata.rjCode),
+      workTitle: metadataStringValue(detail.workTitle, metadata.workTitle),
+      circleName: metadataStringValue(detail.circleName, metadata.circleName),
+      voiceActors: metadataListValue(detail.voiceActors, metadata.voiceActors),
+      tags: metadataListValue(detail.tags, metadata.tags),
+      releaseDate: missingOnly && detail.releaseDate != null
+          ? detail.releaseDate
+          : metadata.releaseDate,
+      duration: missingOnly && detail.duration != null
+          ? detail.duration
+          : metadata.duration,
+      salesCount: missingOnly && detail.salesCount != null
+          ? detail.salesCount
+          : metadata.salesCount,
+      rating: missingOnly && detail.rating != null
+          ? detail.rating
+          : metadata.rating,
+    );
+    final saveResult = await saveAudioDetail(nextDetail);
+
+    String? coverPath;
+    Object? coverError;
+    final coverUrl = metadata.coverUrl;
+    if (saveCover &&
+        nextDetail.target.isLibraryRootFolder &&
+        coverUrl != null) {
+      try {
+        coverPath = await metadataService.downloadCover(
+          coverUrl: coverUrl,
+          folderPath: nextDetail.target.targetPath,
+          rjCode: metadata.rjCode,
+          language: language,
+        );
+        await setFolderManualCover(
+          nextDetail.target.targetPath,
+          coverPath,
+          newlySaved: true,
+        );
+      } catch (error) {
+        coverError = error;
+      }
+    }
+
+    return DlsiteMetadataApplyResult(
+      detail: saveResult.detail,
+      coverPath: coverPath,
+      coverError: coverError,
+    );
+  }
+
   void warmupCoversForTracks(Iterable<MusicTrack?> tracks) {
     final generation = _coverWarmupScheduler.currentGeneration;
     final scheduledKeys = <String>{};
@@ -731,6 +809,10 @@ final class LibraryFacade implements LibraryCatalog {
     void Function(List<String> removedPaths) handler,
   ) {
     _trackRemovalHandler ??= handler;
+  }
+
+  void attachCoverChangeHandler(void Function() handler) {
+    _coverChangeHandler ??= handler;
   }
 
   @override

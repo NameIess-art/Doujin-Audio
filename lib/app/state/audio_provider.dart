@@ -148,8 +148,6 @@ class AudioProvider with ChangeNotifier {
       _libraryFacade.databaseRepository;
   AudioDetailCacheService get _audioDetailCacheService =>
       _libraryFacade.detailCacheService;
-  DlsiteMetadataService get _dlsiteMetadataService =>
-      _libraryFacade.metadataService;
   AsmrPlaybackCacheService get _asmrPlaybackCacheService =>
       _playbackFacade.playbackCacheService;
   NativePlaybackRepository get _nativePlaybackRepository =>
@@ -676,6 +674,11 @@ class AudioProvider with ChangeNotifier {
     _settingsRepository.attachPersistence(_savePlaybackSettings);
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
     _libraryFacade.attachTrackRemovalHandler(_handleLibraryTracksRemoved);
+    _libraryFacade.attachCoverChangeHandler(() {
+      _markActiveSessionsDirty();
+      _syncNotificationState();
+      _notifyLibraryAndPlaybackChanged();
+    });
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
     _libraryFacade.attachCoverArtworkCacheService(
       () => CoverArtworkCacheService(

@@ -54,93 +54,13 @@ extension AudioProviderAudioDetails on AudioProvider {
     DlsiteMetadata metadata, {
     required bool saveCover,
     bool missingOnly = false,
-  }) async {
-    final nextDetail = detail.copyWith(
-      rjCode: _metadataStringValue(
-        current: detail.rjCode,
-        fetched: metadata.rjCode,
-        missingOnly: missingOnly,
-      ),
-      workTitle: _metadataStringValue(
-        current: detail.workTitle,
-        fetched: metadata.workTitle,
-        missingOnly: missingOnly,
-      ),
-      circleName: _metadataStringValue(
-        current: detail.circleName,
-        fetched: metadata.circleName,
-        missingOnly: missingOnly,
-      ),
-      voiceActors: _metadataListValue(
-        current: detail.voiceActors,
-        fetched: metadata.voiceActors,
-        missingOnly: missingOnly,
-      ),
-      tags: _metadataListValue(
-        current: detail.tags,
-        fetched: metadata.tags,
-        missingOnly: missingOnly,
-      ),
-      releaseDate: missingOnly && detail.releaseDate != null
-          ? detail.releaseDate
-          : metadata.releaseDate,
-      duration: missingOnly && detail.duration != null
-          ? detail.duration
-          : metadata.duration,
-      salesCount: missingOnly && detail.salesCount != null
-          ? detail.salesCount
-          : metadata.salesCount,
-      rating: missingOnly && detail.rating != null
-          ? detail.rating
-          : metadata.rating,
-    );
-    final saveResult = await saveAudioDetail(nextDetail);
-
-    String? coverPath;
-    Object? coverError;
-    final coverUrl = metadata.coverUrl;
-    if (saveCover &&
-        nextDetail.target.isLibraryRootFolder &&
-        coverUrl != null) {
-      try {
-        coverPath = await _dlsiteMetadataService.downloadCover(
-          coverUrl: coverUrl,
-          folderPath: nextDetail.target.targetPath,
-          rjCode: metadata.rjCode,
-          language: _dlsiteMetadataLanguage,
-        );
-        await setFolderManualCover(
-          nextDetail.target.targetPath,
-          coverPath,
-          newlySaved: true,
-        );
-      } catch (error) {
-        coverError = error;
-      }
-    }
-
-    return DlsiteMetadataApplyResult(
-      detail: saveResult.detail,
-      coverPath: coverPath,
-      coverError: coverError,
-    );
-  }
-
-  String _metadataStringValue({
-    required String current,
-    required String fetched,
-    required bool missingOnly,
-  }) {
-    return missingOnly && current.trim().isNotEmpty ? current : fetched;
-  }
-
-  List<String> _metadataListValue({
-    required List<String> current,
-    required List<String> fetched,
-    required bool missingOnly,
-  }) {
-    return missingOnly && current.isNotEmpty ? current : fetched;
-  }
+  }) => _libraryFacade.applyDlsiteMetadata(
+    detail,
+    metadata,
+    saveCover: saveCover,
+    language: _dlsiteMetadataLanguage,
+    missingOnly: missingOnly,
+  );
 
   Future<AudioDetailRenameResult> renameAudioDetailTarget(
     AudioDetail detail,

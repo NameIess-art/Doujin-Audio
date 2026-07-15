@@ -80,6 +80,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   double? _lastHeaderMeasureWidth;
   double? _lastHeaderMeasureTopPadding;
   double? _lastHeaderMeasureTextScale;
+  AppLanguage? _pendingPageLanguageSync;
 
   @override
   bool get wantKeepAlive => true;
@@ -401,18 +402,18 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   Future<void> _showLanguageDialog() async {
     final controller = context.read<AsmrLibraryController>();
     final i18n = context.read<AppLanguageProvider>();
-    final result = await _showAsmrPanel<AsmrContentLanguage>(
+    final result = await _showAsmrPanel<ContentLanguagePreference>(
       builder: (context) => _AsmrPanelCard(
         icon: Icons.language_rounded,
         title: i18n.tr('asmr_language_title'),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            for (final language in AsmrContentLanguage.values)
+            for (final preference in ContentLanguagePreference.values)
               _AsmrSelectionTile(
-                label: i18n.tr(_asmrLanguageLabelKey(language)),
-                selected: controller.contentLanguage == language,
-                onTap: () => Navigator.of(context).pop(language),
+                label: i18n.tr(_asmrLanguageLabelKey(preference)),
+                selected: controller.contentLanguagePreference == preference,
+                onTap: () => Navigator.of(context).pop(preference),
               ),
           ],
         ),
@@ -424,7 +425,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     await _runAsmrOperation<void>(
       scope: const UiOperationScope('asmr:language'),
       labelKey: 'loading_dot',
-      task: () => controller.setContentLanguage(result),
+      task: () => controller.setContentLanguagePreference(result),
     );
     if (!mounted) {
       return;
@@ -481,6 +482,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           controller?.totalCountFor(AsmrCategoryType.collected) ?? 0,
     );
     final i18n = context.watch<AppLanguageProvider>();
+    _schedulePageLanguageSync(i18n.language);
     final collectedSubtitle =
         currentCategoryState == null ||
             (currentCategoryState.works.isEmpty &&
@@ -740,5 +742,24 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         ),
       ],
     );
+  }
+
+  void _schedulePageLanguageSync(AppLanguage language) {
+    final controller = context.read<AsmrLibraryController?>();
+    if (controller == null ||
+        !controller.initialized ||
+        controller.pageLanguage == language ||
+        _pendingPageLanguageSync == language) {
+      return;
+    }
+    _pendingPageLanguageSync = language;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted || _pendingPageLanguageSync != language) return;
+      _pendingPageLanguageSync = null;
+      final changed = controller.setPageLanguage(language);
+      if (changed && mounted) {
+        await _refreshCurrentCategory();
+      }
+    });
   }
 }

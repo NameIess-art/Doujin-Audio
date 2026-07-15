@@ -190,7 +190,8 @@ class SettingsRepository {
   bool showPlaybackCard = true;
   bool autoPlayAddedSessions = true;
   bool autoCheckUpdates = false;
-  AppLanguage dlsiteMetadataLanguage = AppLanguage.ja;
+  ContentLanguagePreference dlsiteMetadataLanguage =
+      ContentLanguagePreference.followPage;
   List<CardInfoField> cardInfoFields = CardInfoField.defaults;
   bool cardPositionsLocked = true;
   List<EqPreset> customEqPresets = const <EqPreset>[];

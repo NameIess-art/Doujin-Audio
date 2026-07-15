@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+import '../../../core/app_language.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
 
@@ -43,6 +44,12 @@ enum AsmrContentLanguage {
 
   final String locale;
 
+  AppLanguage get appLanguage => switch (this) {
+    AsmrContentLanguage.zh => AppLanguage.zh,
+    AsmrContentLanguage.ja => AppLanguage.ja,
+    AsmrContentLanguage.en => AppLanguage.en,
+  };
+
   static AsmrContentLanguage fromName(String? name) {
     return AsmrContentLanguage.values.firstWhere(
       (language) => language.name == name || language.locale == name,
@@ -57,6 +64,13 @@ enum AsmrContentLanguage {
       _ => AsmrContentLanguage.zh,
     };
   }
+
+  static AsmrContentLanguage fromAppLanguage(AppLanguage language) =>
+      switch (language) {
+        AppLanguage.zh => AsmrContentLanguage.zh,
+        AppLanguage.ja => AsmrContentLanguage.ja,
+        AppLanguage.en => AsmrContentLanguage.en,
+      };
 }
 
 enum AsmrSyncOperationType {

@@ -157,6 +157,7 @@ final class AudioProviderWidgetTestFixture {
       coverArtworkCacheService: coverArtworkCacheService,
       dlsiteMetadataService: dlsiteMetadataService,
       asmrMetadataService: asmrMetadataService,
+      pageLanguageResolver: () => languageProvider.language,
     );
   }
 

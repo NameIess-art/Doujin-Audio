@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
@@ -52,6 +53,21 @@ void main() {
 
     final i18n = harness.languageProvider;
     expect(find.text(i18n.tr('dlsite_metadata_language')), findsOneWidget);
+    expect(find.text(i18n.tr('follow_page_language')), findsOneWidget);
+    expect(
+      harness.audioProvider.dlsiteMetadataLanguage,
+      ContentLanguagePreference.followPage,
+    );
+    expect(
+      harness.audioProvider.effectiveDlsiteMetadataLanguage,
+      AppLanguage.zh,
+    );
+    await i18n.setLanguage(AppLanguage.en);
+    await tester.pumpAndSettle();
+    expect(
+      harness.audioProvider.effectiveDlsiteMetadataLanguage,
+      AppLanguage.en,
+    );
     expect(find.text(i18n.tr('startup_page')), findsOneWidget);
     final scrollableFinder = find
         .descendant(

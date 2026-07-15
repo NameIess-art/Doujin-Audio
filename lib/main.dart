@@ -20,6 +20,7 @@ import 'features/asmr/application/asmr_library_controller.dart';
 import 'features/asmr/application/asmr_download_manager.dart';
 import 'features/asmr/application/asmr_playback_coordinator.dart';
 import 'features/asmr/application/asmr_preferences.dart';
+import 'features/asmr/domain/asmr_models.dart';
 import 'core/persistence/audio_database_repository.dart';
 import 'features/player/application/audio_state_services.dart';
 import 'features/library/application/library_facade.dart';
@@ -100,6 +101,7 @@ Future<void> _runAudioPlayerApp() async {
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
   final asmrDownloadManager = AsmrDownloadManager();
+  final appLanguageProvider = AppLanguageProvider();
   final libraryFacade = LibraryFacade.create(
     databaseRepository: audioDatabaseRepository,
     service: libraryService,
@@ -120,6 +122,7 @@ Future<void> _runAudioPlayerApp() async {
     timer: timerFacade,
     notification: notificationFacade,
     settings: settingsRepository,
+    pageLanguageResolver: () => appLanguageProvider.language,
     deferRuntimeStart: true,
   );
   final asmrLibraryController = AsmrLibraryController(
@@ -137,7 +140,7 @@ Future<void> _runAudioPlayerApp() async {
       child: MultiProvider(
         providers: [
           ChangeNotifierProvider(create: (_) => ThemeProvider()),
-          ChangeNotifierProvider(create: (_) => AppLanguageProvider()),
+          ChangeNotifierProvider.value(value: appLanguageProvider),
           ChangeNotifierProvider.value(value: audioProvider),
           ChangeNotifierProvider.value(value: asmrLibraryController),
           ChangeNotifierProvider.value(value: asmrDownloadManager),
@@ -150,7 +153,13 @@ Future<void> _runAudioPlayerApp() async {
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
     audioProvider.startRuntime();
-    unawaited(asmrLibraryController.initialize());
+    unawaited(
+      asmrLibraryController.initialize(
+        defaultLanguage: AsmrContentLanguage.fromAppLanguageName(
+          appLanguageProvider.language.name,
+        ),
+      ),
+    );
     unawaited(asmrDownloadManager.initialize());
   });
 }

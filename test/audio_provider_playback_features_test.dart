@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'package:nameless_audio/core/app_language.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
@@ -1022,6 +1023,25 @@ void main() {
           json.decode(prefs.getString('playback_settings_v1')!)
               as Map<String, dynamic>;
       expect(settings['startupPage'], StartupPage.playlist.name);
+    });
+
+    test('DLsite language preference persists follow page selection', () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+
+      await provider.setDlsiteMetadataLanguage(ContentLanguagePreference.en);
+      await provider.setDlsiteMetadataLanguage(
+        ContentLanguagePreference.followPage,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      final prefs = await SharedPreferences.getInstance();
+      final settings =
+          json.decode(prefs.getString('playback_settings_v1')!)
+              as Map<String, dynamic>;
+      expect(
+        settings['dlsiteMetadataLanguage'],
+        ContentLanguagePreference.followPage.name,
+      );
     });
   });
 }

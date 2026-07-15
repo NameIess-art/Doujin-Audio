@@ -1,4 +1,5 @@
 import 'dart:io';
+import '../../../core/app_language.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/persistence/app_database.dart';
 
@@ -44,18 +45,15 @@ class AsmrPreferencesStore {
     );
   }
 
-  Future<AsmrContentLanguage> loadContentLanguage(
-    AsmrContentLanguage defaultLanguage,
-  ) async {
+  Future<ContentLanguagePreference> loadContentLanguagePreference() async {
     final raw = await _database.loadAppSetting(_contentLanguageKey);
-    if (raw == null || raw.isEmpty) {
-      return defaultLanguage;
-    }
-    return AsmrContentLanguage.fromName(raw);
+    return ContentLanguagePreference.fromName(raw);
   }
 
-  Future<void> saveContentLanguage(AsmrContentLanguage language) async {
-    await _database.saveAppSetting(_contentLanguageKey, language.name);
+  Future<void> saveContentLanguagePreference(
+    ContentLanguagePreference preference,
+  ) async {
+    await _database.saveAppSetting(_contentLanguageKey, preference.name);
   }
 
   Future<List<AsmrWork>> loadFavoriteWorks() async {

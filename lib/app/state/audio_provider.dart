@@ -14,7 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/widgets/app_feedback.dart';
 
-import '../localization/app_language_provider.dart';
+import '../../core/app_language.dart';
 import '../../core/media/audio_detail.dart';
 import '../../features/asmr/domain/asmr_download.dart';
 import '../../features/library/domain/audio_library_category.dart';
@@ -133,6 +133,7 @@ class AudioProvider with ChangeNotifier {
   final TimerFacade _timerFacade;
   final NotificationFacade _notificationFacade;
   final SettingsRepository _settingsRepository;
+  final AppLanguage Function() _pageLanguageResolver;
   final bool _skipDisposePersistence;
   SharedPreferences? _cachedPrefs;
 
@@ -498,11 +499,14 @@ class AudioProvider with ChangeNotifier {
     _settingsRepository.autoCheckUpdates = value;
   }
 
-  AppLanguage get _dlsiteMetadataLanguage =>
+  ContentLanguagePreference get _dlsiteMetadataLanguagePreference =>
       _settingsRepository.dlsiteMetadataLanguage;
-  set _dlsiteMetadataLanguage(AppLanguage value) {
+  set _dlsiteMetadataLanguagePreference(ContentLanguagePreference value) {
     _settingsRepository.dlsiteMetadataLanguage = value;
   }
+
+  AppLanguage get _dlsiteMetadataLanguage =>
+      _dlsiteMetadataLanguagePreference.resolve(_pageLanguageResolver());
 
   int get _maxCacheBytes => _settingsRepository.maxCacheBytes;
   set _maxCacheBytes(int value) {
@@ -575,6 +579,7 @@ class AudioProvider with ChangeNotifier {
     required TimerFacade timer,
     required NotificationFacade notification,
     required SettingsRepository settings,
+    AppLanguage Function()? pageLanguageResolver,
     bool deferRuntimeStart = false,
   }) => AudioProvider._(
     library: library,
@@ -582,6 +587,7 @@ class AudioProvider with ChangeNotifier {
     timer: timer,
     notification: notification,
     settings: settings,
+    pageLanguageResolver: pageLanguageResolver,
     skipDisposePersistence: false,
     startNativeRuntime: !deferRuntimeStart,
   );
@@ -614,6 +620,7 @@ class AudioProvider with ChangeNotifier {
     SystemMediaControlsService? systemMediaControlsService,
     bool skipPersistence = true,
     bool startRuntime = false,
+    AppLanguage Function()? pageLanguageResolver,
   }) {
     final resolvedAudioDatabaseRepository =
         audioDatabaseRepository ?? AudioDatabaseRepository();
@@ -664,6 +671,7 @@ class AudioProvider with ChangeNotifier {
             stateService: notificationStateService,
           ),
       settings: settings ?? settingsRepository ?? SettingsRepository(),
+      pageLanguageResolver: pageLanguageResolver,
       skipDisposePersistence: skipPersistence,
       startNativeRuntime: startRuntime,
     );
@@ -675,6 +683,7 @@ class AudioProvider with ChangeNotifier {
     required TimerFacade timer,
     required NotificationFacade notification,
     required SettingsRepository settings,
+    AppLanguage Function()? pageLanguageResolver,
     required bool skipDisposePersistence,
     required bool startNativeRuntime,
   }) : _libraryFacade = library,
@@ -682,6 +691,7 @@ class AudioProvider with ChangeNotifier {
        _timerFacade = timer,
        _notificationFacade = notification,
        _settingsRepository = settings,
+       _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh),
        _skipDisposePersistence = skipDisposePersistence {
     _libraryFacade.attachCatalog(AudioProviderCompatibilityCatalog(this));
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);

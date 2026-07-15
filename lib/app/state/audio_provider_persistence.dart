@@ -641,7 +641,9 @@ extension AudioProviderPersistence on AudioProvider {
             )
             .toList(growable: false);
         if (tracks.isEmpty) continue;
-        entriesToPersist.addAll(_buildLibraryEntries(libraryPath, tracks));
+        entriesToPersist.addAll(
+          _libraryService.buildLibraryEntries(libraryPath, tracks),
+        );
       }
       if (entriesToPersist.isEmpty) return;
       _libraryService.replaceLibraryEntries(entriesToPersist);

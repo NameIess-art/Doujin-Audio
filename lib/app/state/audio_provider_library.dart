@@ -211,7 +211,7 @@ extension AudioProviderLibrary on AudioProvider {
     bool excluded,
   ) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final normalizedFolderPath = _canonicalLibraryFolderPath(
+    final normalizedFolderPath = _libraryService.canonicalLibraryFolderPath(
       normalizedLibraryPath,
       folderPath,
     );
@@ -863,7 +863,7 @@ extension AudioProviderLibrary on AudioProvider {
     LibraryEntrySnapshot? entrySnapshot,
   }) {
     final entries = _filterFreshLibraryEntries(
-      _buildLibraryEntries(
+      _libraryService.buildLibraryEntries(
         libraryPath,
         tracks,
         folderPaths: folderPaths,
@@ -894,12 +894,14 @@ extension AudioProviderLibrary on AudioProvider {
     final entries = <LibraryEntry>[];
     final tracksByLibrary = <String, List<MusicTrack>>{};
     for (final track in tracks) {
-      final libraryPath = _libraryPathForTrack(track);
+      final libraryPath = _libraryService.libraryPathForTrack(track);
       if (libraryPath == null || libraryPath.isEmpty) continue;
       tracksByLibrary.putIfAbsent(libraryPath, () => <MusicTrack>[]).add(track);
     }
     for (final entry in tracksByLibrary.entries) {
-      entries.addAll(_buildLibraryEntries(entry.key, entry.value));
+      entries.addAll(
+        _libraryService.buildLibraryEntries(entry.key, entry.value),
+      );
     }
     if (entries.isEmpty) return;
     _libraryService.replaceLibraryEntries(entries);
@@ -926,168 +928,6 @@ extension AudioProviderLibrary on AudioProvider {
       PathMatcher.normalize(entry.path),
       entry.kind.dbValue,
     ].join('\x1F');
-  }
-
-  List<LibraryEntry> _buildLibraryEntries(
-    String libraryPath,
-    List<MusicTrack> tracks, {
-    Iterable<String> folderPaths = const <String>[],
-    LibraryExclusionMatcher? exclusionMatcher,
-  }) {
-    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final matcher =
-        exclusionMatcher ??
-        _libraryService.libraryExclusionMatcherForLibrary(
-          normalizedLibraryPath,
-        );
-    final entriesByKey = <String, LibraryEntry>{};
-
-    void putEntry(LibraryEntry entry) {
-      entriesByKey['${entry.kind.dbValue}:${entry.path}'] = entry;
-    }
-
-    void ensureFolder(String folderPath) {
-      final normalizedFolderPath = _canonicalLibraryFolderPath(
-        normalizedLibraryPath,
-        folderPath,
-      );
-      if (PathMatcher.equalsNormalized(
-            normalizedFolderPath,
-            normalizedLibraryPath,
-          ) ||
-          !PathMatcher.isWithinOrEqual(
-            normalizedFolderPath,
-            normalizedLibraryPath,
-          )) {
-        return;
-      }
-      final parentPath = _parentLibraryFolderPath(
-        normalizedFolderPath,
-        normalizedLibraryPath,
-      );
-      if (parentPath != null) {
-        ensureFolder(parentPath);
-      }
-      putEntry(
-        LibraryEntry.folder(
-          libraryPath: normalizedLibraryPath,
-          path: normalizedFolderPath,
-          parentPath: parentPath,
-          state: matcher.isExcluded(normalizedFolderPath)
-              ? LibraryEntryState.excluded
-              : LibraryEntryState.active,
-          displayName: PathDisplay.folderName(normalizedFolderPath),
-        ),
-      );
-    }
-
-    for (final folderPath in folderPaths) {
-      ensureFolder(folderPath);
-    }
-
-    for (final track in tracks) {
-      if (!PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath)) {
-        continue;
-      }
-      final parentPath = _folderPathForLibraryTrack(
-        normalizedLibraryPath,
-        track,
-      );
-      if (parentPath != null) {
-        ensureFolder(parentPath);
-      }
-      putEntry(
-        LibraryEntry.track(
-          libraryPath: normalizedLibraryPath,
-          track: track,
-          parentPath: parentPath,
-          state: matcher.isExcluded(track.path)
-              ? LibraryEntryState.excluded
-              : LibraryEntryState.active,
-        ),
-      );
-    }
-
-    return entriesByKey.values.toList(growable: false);
-  }
-
-  String? _libraryPathForTrack(MusicTrack track) {
-    for (final libraryPath in _watchedLibraries) {
-      if (PathMatcher.isWithinOrEqual(track.path, libraryPath) ||
-          PathMatcher.isWithinOrEqual(track.groupKey, libraryPath)) {
-        return libraryPath;
-      }
-    }
-    for (final folderPath in _watchedFolders) {
-      if (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
-          PathMatcher.isWithinOrEqual(track.groupKey, folderPath)) {
-        return folderPath;
-      }
-    }
-    return null;
-  }
-
-  String? _folderPathForLibraryTrack(String libraryPath, MusicTrack track) {
-    if (!track.isSingle &&
-        track.groupKey.isNotEmpty &&
-        track.groupKey != '__single_files__' &&
-        PathMatcher.isWithinOrEqual(track.groupKey, libraryPath) &&
-        !PathMatcher.equalsNormalized(track.groupKey, libraryPath)) {
-      return _canonicalLibraryFolderPath(libraryPath, track.groupKey);
-    }
-    final relative = PathMatcher.relativeWithin(track.path, libraryPath);
-    if (relative == null || relative.isEmpty) return null;
-    final normalizedRelative = relative.replaceAll('\\', '/');
-    final relativeFolder = path.posix.dirname(normalizedRelative);
-    if (relativeFolder == '.' || relativeFolder.isEmpty) return null;
-    if (PathMatcher.isContentUri(libraryPath)) {
-      return '$libraryPath::$relativeFolder';
-    }
-    return path.normalize(path.join(libraryPath, relativeFolder));
-  }
-
-  String _canonicalLibraryFolderPath(String libraryPath, String folderPath) {
-    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    if (!PathMatcher.isContentUri(normalizedLibraryPath) ||
-        normalizedFolderPath.contains('::')) {
-      return normalizedFolderPath;
-    }
-    final relativeFolderPath = PathMatcher.relativeWithin(
-      normalizedFolderPath,
-      normalizedLibraryPath,
-    );
-    if (relativeFolderPath == null || relativeFolderPath.isEmpty) {
-      return normalizedFolderPath;
-    }
-    return '$normalizedLibraryPath::${relativeFolderPath.replaceAll('\\', '/')}';
-  }
-
-  String? _parentLibraryFolderPath(String folderPath, String rootPath) {
-    final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    if (PathMatcher.equalsNormalized(normalizedFolderPath, rootPath)) {
-      return null;
-    }
-    if (PathMatcher.isContentUri(normalizedFolderPath)) {
-      final markerIndex = normalizedFolderPath.indexOf('::');
-      if (markerIndex >= 0) {
-        final base = normalizedFolderPath.substring(0, markerIndex);
-        final relative = normalizedFolderPath
-            .substring(markerIndex + 2)
-            .replaceAll('\\', '/')
-            .replaceFirst(RegExp(r'^/+'), '')
-            .replaceFirst(RegExp(r'/+$'), '');
-        final parentRelative = path.posix.dirname(relative);
-        if (parentRelative == '.' || parentRelative.isEmpty) {
-          return base;
-        }
-        return '$base::$parentRelative';
-      }
-    }
-    final parentPath = path.dirname(normalizedFolderPath);
-    return PathMatcher.equalsNormalized(parentPath, rootPath)
-        ? rootPath
-        : parentPath;
   }
 
   Future<void> removeTrackFromLibrary(String trackPath) async {

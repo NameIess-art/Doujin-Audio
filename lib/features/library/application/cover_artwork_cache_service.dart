@@ -316,11 +316,50 @@ class CoverArtworkCacheService {
   }
 
   Future<List<String>> discoverCoverCandidatesInFolder(
-    String folderPath,
-  ) async {
+    String folderPath, {
+    String? selectedCoverPath,
+  }) async {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     if (normalizedFolder.isEmpty) return const <String>[];
-    return _resolveFolderCoverCandidates(normalizedFolder);
+    final candidates = await _resolveFolderCoverCandidates(normalizedFolder);
+    final selectedCover = selectedCoverPath?.trim();
+    if (selectedCover == null || selectedCover.isEmpty) return candidates;
+    return _candidatesWithSelectedCover(selectedCover, candidates);
+  }
+
+  Future<List<String>> _candidatesWithSelectedCover(
+    String selectedCover,
+    List<String> candidates,
+  ) async {
+    final selectedPathKey = PathMatcher.equivalenceKey(selectedCover);
+    final selectedContentKey = await _localCoverContentKey(selectedCover);
+    final distinct = <String>[selectedCover];
+    for (final candidate in candidates) {
+      if (PathMatcher.equivalenceKey(candidate) == selectedPathKey) continue;
+      if (selectedContentKey != null &&
+          await _localCoverContentKey(candidate) == selectedContentKey) {
+        continue;
+      }
+      distinct.add(candidate);
+    }
+    return List<String>.unmodifiable(distinct);
+  }
+
+  Future<String?> _localCoverContentKey(String coverPath) async {
+    if (PathMatcher.isContentUri(coverPath) ||
+        PathMatcher.isRemoteUri(coverPath)) {
+      return null;
+    }
+    try {
+      final file = File(coverPath);
+      if (!await file.exists()) return null;
+      final length = await file.length();
+      if (length <= 0 || length > maxCoverFileBytes) return null;
+      final digest = await sha256.bind(file.openRead()).first;
+      return '$length:$digest';
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<String?> setFolderCoverSelection(

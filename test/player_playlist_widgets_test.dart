@@ -44,6 +44,42 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
   }
 }
 
+void _expectFixedSessionResetButtonStyle(WidgetTester tester, Finder finder) {
+  expect(finder, findsOneWidget);
+  final button = tester.widget<FilledButton>(finder);
+  final style = button.style!;
+  const enabled = <WidgetState>{};
+  const disabled = <WidgetState>{WidgetState.disabled};
+
+  expect(style.minimumSize!.resolve(enabled), const Size(96, 40));
+  expect(
+    style.padding!.resolve(enabled),
+    const EdgeInsets.symmetric(horizontal: 20),
+  );
+  expect(style.shape!.resolve(enabled), isA<StadiumBorder>());
+  expect(style.tapTargetSize, MaterialTapTargetSize.padded);
+  expect(style.visualDensity, VisualDensity.standard);
+  expect(style.elevation!.resolve(enabled), 0);
+  expect(style.backgroundColor!.resolve(enabled), const Color(0xFFF08599));
+  expect(style.foregroundColor!.resolve(enabled), const Color(0xFF301017));
+  expect(
+    style.overlayColor!.resolve(const <WidgetState>{WidgetState.pressed}),
+    Colors.white.withValues(alpha: 0.14),
+  );
+  expect(
+    style.backgroundColor!.resolve(disabled),
+    Colors.white.withValues(alpha: 0.12),
+  );
+  expect(
+    style.foregroundColor!.resolve(disabled),
+    Colors.white.withValues(alpha: 0.50),
+  );
+  final textStyle = style.textStyle!.resolve(enabled)!;
+  expect(textStyle.fontSize, 14);
+  expect(textStyle.fontWeight, FontWeight.w600);
+  expect(textStyle.height, 1);
+}
+
 void main() {
   AudioProviderTestFixture.initialize();
   late Database testDatabase;
@@ -170,7 +206,7 @@ void main() {
     expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isFalse);
   });
 
-  testWidgets('volume balance can be restored to default', (
+  testWidgets('session reset actions share style and disable at defaults', (
     WidgetTester tester,
   ) async {
     const nativePlaybackChannel = MethodChannel(NativePlaybackChannel.name);
@@ -248,13 +284,67 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip(languageProvider.tr('audio_features')));
     await tester.pumpAndSettle();
+
+    final speedRestoreButton = find.byKey(
+      const ValueKey<String>('restore_playback_speed'),
+    );
+    _expectFixedSessionResetButtonStyle(tester, speedRestoreButton);
+    expect(tester.widget<FilledButton>(speedRestoreButton).onPressed, isNull);
+
+    await tester.tap(find.text(languageProvider.tr('equalizer')));
+    await tester.pumpAndSettle();
+    final equalizerResetButton = find.byKey(
+      const ValueKey<String>('reset_equalizer'),
+    );
+    final saveEqualizerPresetButton = find.byKey(
+      const ValueKey<String>('save_equalizer_preset'),
+    );
+    _expectFixedSessionResetButtonStyle(tester, equalizerResetButton);
+    _expectFixedSessionResetButtonStyle(tester, saveEqualizerPresetButton);
+    expect(tester.widget<FilledButton>(equalizerResetButton).onPressed, isNull);
+    expect(
+      tester.widget<FilledButton>(saveEqualizerPresetButton).onPressed,
+      isNull,
+    );
+
+    unawaited(
+      audioProvider.applySessionEqPreset(
+        session.id,
+        AudioProvider.builtInEqPresets[1],
+      ),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<FilledButton>(equalizerResetButton).onPressed,
+      isNotNull,
+    );
+    expect(
+      tester.widget<FilledButton>(saveEqualizerPresetButton).onPressed,
+      isNotNull,
+    );
+
+    await tester.tap(equalizerResetButton);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.widget<FilledButton>(equalizerResetButton).onPressed, isNull);
+    expect(
+      tester.widget<FilledButton>(saveEqualizerPresetButton).onPressed,
+      isNull,
+    );
+
     await tester.tap(find.text(languageProvider.tr('volume_balance')));
     await tester.pumpAndSettle();
 
     final restoreButton = find.byKey(
       const ValueKey<String>('restore_volume_balance'),
     );
-    expect(restoreButton, findsOneWidget);
+    _expectFixedSessionResetButtonStyle(tester, restoreButton);
+    expect(tester.widget<FilledButton>(restoreButton).onPressed, isNotNull);
     expect(find.text(languageProvider.tr('restore_default')), findsOneWidget);
     await tester.tap(restoreButton);
     await tester.runAsync(

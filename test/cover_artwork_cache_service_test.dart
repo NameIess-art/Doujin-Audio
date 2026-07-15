@@ -949,6 +949,45 @@ void main() {
     },
   );
 
+  test(
+    'folder detail candidates keep the selected cover without repeating its content',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_selected_candidate_',
+      );
+      final portableDirectory = await Directory.systemTemp.createTemp(
+        'cover_cache_selected_portable_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+        if (await portableDirectory.exists()) {
+          await portableDirectory.delete(recursive: true);
+        }
+      });
+      final discoveredCover = File(
+        '${directory.path}${Platform.pathSeparator}embedded.jpg',
+      );
+      final selectedCover = File(
+        '${portableDirectory.path}${Platform.pathSeparator}persisted.png',
+      );
+      await discoveredCover.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+      await selectedCover.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+      final cache = CoverArtworkCacheService(libraryService: LibraryService());
+
+      expect(
+        await cache.discoverCoverCandidatesInFolder(directory.path),
+        <String>[discoveredCover.path],
+      );
+      expect(
+        await cache.discoverCoverCandidatesInFolder(
+          directory.path,
+          selectedCoverPath: selectedCover.path,
+        ),
+        <String>[selectedCover.path],
+      );
+    },
+  );
+
   test('stored cover cache path is used before platform lookup', () async {
     final directory = await Directory.systemTemp.createTemp(
       'cover_cache_stored_track_cover_',

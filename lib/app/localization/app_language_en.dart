@@ -146,6 +146,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_account_pending_count': '{count} changes pending sync',
   'asmr_categories_title': 'Categories',
   'asmr_language_title': 'Language',
+  'follow_page_language': 'Follow page language',
   'asmr_language_zh': 'Chinese',
   'asmr_language_ja': 'Japanese',
   'asmr_language_en': 'English',
@@ -580,7 +581,8 @@ const Map<String, String> appLanguageEn = {
   'haptic_feedback_enabled_subtitle':
       'Provide haptic feedback for interactions.',
   'dlsite_metadata_language': 'DLsite metadata language',
-  'dlsite_metadata_language_subtitle': 'Language for fetching DLsite metadata.',
+  'dlsite_metadata_language_subtitle':
+      'Language for fetching DLsite metadata. Follows the page language by default.',
   'timer_title': 'Timer',
   'set_countdown': 'Set countdown',
   'start_mode': 'Start mode',

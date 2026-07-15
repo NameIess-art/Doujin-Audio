@@ -41,7 +41,9 @@ extension AudioProviderState on AudioProvider {
       _settingsRepository.asmrDownloadConflictPolicy;
   bool get autoPlayAddedSessions => _autoPlayAddedSessions;
   bool get recordPlaybackProgress => _settingsRepository.recordPlaybackProgress;
-  AppLanguage get dlsiteMetadataLanguage => _dlsiteMetadataLanguage;
+  ContentLanguagePreference get dlsiteMetadataLanguage =>
+      _dlsiteMetadataLanguagePreference;
+  AppLanguage get effectiveDlsiteMetadataLanguage => _dlsiteMetadataLanguage;
   List<CardInfoField> get cardInfoFields =>
       List<CardInfoField>.unmodifiable(_settingsRepository.cardInfoFields);
   bool get cardPositionsLocked => _settingsRepository.cardPositionsLocked;

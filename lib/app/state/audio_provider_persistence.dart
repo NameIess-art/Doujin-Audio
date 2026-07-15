@@ -122,7 +122,7 @@ extension AudioProviderPersistence on AudioProvider {
     _settingsRepository.asmrDownloadDestinationRoot = null;
     _settingsRepository.asmrDownloadConflictPolicy =
         AsmrDownloadConflictPolicy.overwrite;
-    _dlsiteMetadataLanguage = AppLanguage.ja;
+    _dlsiteMetadataLanguagePreference = ContentLanguagePreference.followPage;
     _settingsRepository.cardInfoFields = CardInfoField.defaults;
     _settingsRepository.cardPositionsLocked = true;
     _settingsRepository.customEqPresets = const <EqPreset>[];
@@ -424,7 +424,7 @@ extension AudioProviderPersistence on AudioProvider {
           _decodeOptionalTrimmedString(map['asmrDownloadDestinationRoot']);
       _settingsRepository.asmrDownloadConflictPolicy =
           _decodeAsmrDownloadConflictPolicy(map['asmrDownloadConflictPolicy']);
-      _dlsiteMetadataLanguage = _decodeDlsiteMetadataLanguage(
+      _dlsiteMetadataLanguagePreference = _decodeDlsiteMetadataLanguage(
         map['dlsiteMetadataLanguage'],
       );
       _settingsRepository.cardInfoFields = CardInfoField.decode(
@@ -467,7 +467,7 @@ extension AudioProviderPersistence on AudioProvider {
             _settingsRepository.asmrDownloadDestinationRoot,
         'asmrDownloadConflictPolicy':
             _settingsRepository.asmrDownloadConflictPolicy.name,
-        'dlsiteMetadataLanguage': _dlsiteMetadataLanguage.name,
+        'dlsiteMetadataLanguage': _dlsiteMetadataLanguagePreference.name,
         'cardInfoFields': _settingsRepository.cardInfoFields
             .map((field) => field.name)
             .toList(growable: false),
@@ -483,13 +483,8 @@ extension AudioProviderPersistence on AudioProvider {
     }
   }
 
-  AppLanguage _decodeDlsiteMetadataLanguage(Object? value) {
-    if (value is! String) return AppLanguage.ja;
-    for (final language in AppLanguage.values) {
-      if (language.name == value) return language;
-    }
-    return AppLanguage.ja;
-  }
+  ContentLanguagePreference _decodeDlsiteMetadataLanguage(Object? value) =>
+      ContentLanguagePreference.fromName(value);
 
   CoverImageResolution _decodeCoverImageResolution(Object? value) {
     if (value is! String) return CoverImageResolution.balanced;
@@ -861,9 +856,11 @@ extension AudioProviderPersistence on AudioProvider {
     unawaited(_savePlaybackSettings());
   }
 
-  Future<void> setDlsiteMetadataLanguage(AppLanguage language) async {
-    if (_dlsiteMetadataLanguage == language) return;
-    _dlsiteMetadataLanguage = language;
+  Future<void> setDlsiteMetadataLanguage(
+    ContentLanguagePreference language,
+  ) async {
+    if (_dlsiteMetadataLanguagePreference == language) return;
+    _dlsiteMetadataLanguagePreference = language;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

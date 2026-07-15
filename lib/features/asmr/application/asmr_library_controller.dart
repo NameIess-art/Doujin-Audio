@@ -13,6 +13,7 @@ import 'asmr_auth_service.dart';
 import 'asmr_playback_coordinator.dart';
 import 'asmr_preferences.dart';
 import 'asmr_remote_catalog_service.dart';
+import '../../../core/app_language.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 
@@ -289,6 +290,9 @@ class AsmrLibraryController extends ChangeNotifier
   _filteredWorksCache = LinkedHashMap();
 
   List<AsmrCategoryType> _visibleCategories = kDefaultVisibleAsmrCategories;
+  ContentLanguagePreference _contentLanguagePreference =
+      ContentLanguagePreference.followPage;
+  AppLanguage _pageLanguage = AppLanguage.zh;
   AsmrContentLanguage _contentLanguage = AsmrContentLanguage.zh;
   List<AsmrWork> _favoriteWorks = const <AsmrWork>[];
   Set<int> _favoriteIds = const <int>{};
@@ -358,6 +362,9 @@ class AsmrLibraryController extends ChangeNotifier
   Object? get lastError => _lastError;
 
   List<AsmrCategoryType> get visibleCategories => _visibleCategories;
+  ContentLanguagePreference get contentLanguagePreference =>
+      _contentLanguagePreference;
+  AppLanguage get pageLanguage => _pageLanguage;
   AsmrContentLanguage get contentLanguage => _contentLanguage;
   bool get isAsmrAccountLoggedIn {
     final session = _authSession;
@@ -512,9 +519,12 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrContentLanguage? defaultLanguage,
   }) async {
     _visibleCategories = await _preferencesStore.loadVisibleCategories();
-    _contentLanguage = await _preferencesStore.loadContentLanguage(
-      defaultLanguage ?? AsmrContentLanguage.zh,
-    );
+    if (defaultLanguage != null) {
+      _pageLanguage = defaultLanguage.appLanguage;
+    }
+    _contentLanguagePreference = await _preferencesStore
+        .loadContentLanguagePreference();
+    _contentLanguage = _resolveContentLanguage();
     _applyAccountSnapshot(await _accountSyncService.initialize());
     _updateLocalCategoryCounts();
     _initialized = true;
@@ -696,10 +706,49 @@ class AsmrLibraryController extends ChangeNotifier
     notifyListeners();
   }
 
-  Future<void> setContentLanguage(AsmrContentLanguage language) async {
-    if (_contentLanguage == language) {
+  bool setPageLanguage(AppLanguage language) {
+    if (_pageLanguage == language) return false;
+    _pageLanguage = language;
+    if (!_initialized ||
+        _contentLanguagePreference != ContentLanguagePreference.followPage) {
+      return false;
+    }
+    final nextLanguage = _resolveContentLanguage();
+    if (_contentLanguage == nextLanguage) return false;
+    _applyContentLanguage(nextLanguage);
+    return true;
+  }
+
+  Future<void> setContentLanguage(AsmrContentLanguage language) {
+    return setContentLanguagePreference(
+      ContentLanguagePreference.fromAppLanguage(language.appLanguage),
+    );
+  }
+
+  Future<void> setContentLanguagePreference(
+    ContentLanguagePreference preference,
+  ) async {
+    if (_contentLanguagePreference == preference) {
       return;
     }
+    _contentLanguagePreference = preference;
+    await _preferencesStore.saveContentLanguagePreference(preference);
+    final nextLanguage = _resolveContentLanguage();
+    if (_contentLanguage == nextLanguage) {
+      _bumpGlobalRevision();
+      notifyListeners();
+      return;
+    }
+    _applyContentLanguage(nextLanguage);
+  }
+
+  AsmrContentLanguage _resolveContentLanguage() {
+    return AsmrContentLanguage.fromAppLanguage(
+      _contentLanguagePreference.resolve(_pageLanguage),
+    );
+  }
+
+  void _applyContentLanguage(AsmrContentLanguage language) {
     _contentLanguage = language;
     _contentEpoch++;
     for (final category in AsmrCategoryType.values) {
@@ -711,7 +760,6 @@ class AsmrLibraryController extends ChangeNotifier
     _refreshTasks.clear();
     _refreshTaskQueries.clear();
     _refreshTaskContentEpochs.clear();
-    await _preferencesStore.saveContentLanguage(language);
     _worksByCategory.clear();
     _detailCache.clear();
     _trackCache.clear();

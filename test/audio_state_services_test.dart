@@ -43,7 +43,7 @@ void main() {
         ..bottomNavigationStyle = BottomNavigationStyle.bar
         ..autoPlayAddedSessions = false
         ..autoCheckUpdates = true
-        ..dlsiteMetadataLanguage = AppLanguage.en
+        ..dlsiteMetadataLanguage = ContentLanguagePreference.en
         ..cardPositionsLocked = true
         ..asmrPlaybackCacheEnabled = true
         ..asmrDownloadDestinationRoot = '/downloads/asmr'
@@ -90,7 +90,7 @@ void main() {
             .having(
               (state) => state.dlsiteMetadataLanguage,
               'dlsite language',
-              AppLanguage.en,
+              ContentLanguagePreference.en,
             )
             .having((state) => state.cardPositionsLocked, 'fixed cards', isTrue)
             .having(

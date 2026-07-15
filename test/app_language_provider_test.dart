@@ -27,4 +27,23 @@ void main() {
       expect(provider.tr('exact_alarm_permission_title'), 'Allow exact alarms');
     },
   );
+
+  test('content language preference follows or overrides page language', () {
+    expect(
+      ContentLanguagePreference.followPage.resolve(AppLanguage.ja),
+      AppLanguage.ja,
+    );
+    expect(
+      ContentLanguagePreference.en.resolve(AppLanguage.ja),
+      AppLanguage.en,
+    );
+    expect(
+      ContentLanguagePreference.fromName('ja'),
+      ContentLanguagePreference.ja,
+    );
+    expect(
+      ContentLanguagePreference.fromName(null),
+      ContentLanguagePreference.followPage,
+    );
+  });
 }

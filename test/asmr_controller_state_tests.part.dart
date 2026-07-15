@@ -51,20 +51,43 @@ void registerAsmrControllerStateTests({
   });
 
   test(
-    'ASMR content language defaults from app language and persists',
+    'ASMR content language follows page language unless explicitly set',
     () async {
       await resetPrefs();
 
       expect(
-        await preferences.loadContentLanguage(AsmrContentLanguage.en),
-        AsmrContentLanguage.en,
+        await preferences.loadContentLanguagePreference(),
+        ContentLanguagePreference.followPage,
       );
 
-      await preferences.saveContentLanguage(AsmrContentLanguage.ja);
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        apiService: _FakeAsmrApiService(),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
 
       expect(
-        await preferences.loadContentLanguage(AsmrContentLanguage.en),
-        AsmrContentLanguage.ja,
+        controller.contentLanguagePreference,
+        ContentLanguagePreference.followPage,
+      );
+      expect(controller.contentLanguage, AsmrContentLanguage.en);
+      expect(controller.setPageLanguage(AppLanguage.ja), isTrue);
+      expect(controller.contentLanguage, AsmrContentLanguage.ja);
+
+      await controller.setContentLanguage(AsmrContentLanguage.en);
+      expect(
+        controller.contentLanguagePreference,
+        ContentLanguagePreference.en,
+      );
+      expect(controller.setPageLanguage(AppLanguage.zh), isFalse);
+      expect(controller.contentLanguage, AsmrContentLanguage.en);
+
+      expect(
+        await preferences.loadContentLanguagePreference(),
+        ContentLanguagePreference.en,
       );
     },
   );

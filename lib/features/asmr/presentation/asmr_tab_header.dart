@@ -295,10 +295,11 @@ String _asmrCategoryLabelKey(AsmrCategoryType category) {
   };
 }
 
-String _asmrLanguageLabelKey(AsmrContentLanguage language) {
-  return switch (language) {
-    AsmrContentLanguage.zh => 'asmr_language_zh',
-    AsmrContentLanguage.ja => 'asmr_language_ja',
-    AsmrContentLanguage.en => 'asmr_language_en',
+String _asmrLanguageLabelKey(ContentLanguagePreference preference) {
+  return switch (preference) {
+    ContentLanguagePreference.followPage => 'follow_page_language',
+    ContentLanguagePreference.zh => 'asmr_language_zh',
+    ContentLanguagePreference.ja => 'asmr_language_ja',
+    ContentLanguagePreference.en => 'asmr_language_en',
   };
 }

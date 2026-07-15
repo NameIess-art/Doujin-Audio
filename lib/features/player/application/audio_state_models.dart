@@ -371,7 +371,7 @@ class SettingsState {
     this.showPlaybackCard = true,
     this.autoPlayAddedSessions = true,
     this.autoCheckUpdates = false,
-    this.dlsiteMetadataLanguage = AppLanguage.ja,
+    this.dlsiteMetadataLanguage = ContentLanguagePreference.followPage,
     this.cardInfoFields = CardInfoField.defaults,
     this.cardPositionsLocked = true,
     this.customEqPresets = const <EqPreset>[],
@@ -396,7 +396,7 @@ class SettingsState {
   final bool showPlaybackCard;
   final bool autoPlayAddedSessions;
   final bool autoCheckUpdates;
-  final AppLanguage dlsiteMetadataLanguage;
+  final ContentLanguagePreference dlsiteMetadataLanguage;
   final List<CardInfoField> cardInfoFields;
   final bool cardPositionsLocked;
   final List<EqPreset> customEqPresets;

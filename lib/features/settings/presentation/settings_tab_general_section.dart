@@ -111,7 +111,9 @@ List<Widget> _buildSettingsGeneralSection({
           builder: (context, ref, _) {
             final dlsiteLanguage = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.dlsiteMetadataLanguage ?? AppLanguage.ja,
+                (s) =>
+                    s.valueOrNull?.dlsiteMetadataLanguage ??
+                    ContentLanguagePreference.followPage,
               ),
             );
             return ListTile(
@@ -129,24 +131,25 @@ List<Widget> _buildSettingsGeneralSection({
                 ),
                 child: Icon(Icons.public_rounded, color: cs.onPrimaryContainer),
               ),
-              trailing: UnifiedDropdownButton<AppLanguage>(
+              trailing: UnifiedDropdownButton<ContentLanguagePreference>(
                 value: dlsiteLanguage,
                 onChanged: (value) {
                   if (value != null) {
                     audioProvider.setDlsiteMetadataLanguage(value);
                   }
                 },
-                items: AppLanguage.values
-                    .map(
-                      (lang) => DropdownMenuItem<AppLanguage>(
-                        value: lang,
-                        child: Text(
-                          i18n.languageName(lang),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    )
-                    .toList(),
+                items: ContentLanguagePreference.values.map((preference) {
+                  final language = preference.explicitLanguage;
+                  return DropdownMenuItem<ContentLanguagePreference>(
+                    value: preference,
+                    child: Text(
+                      language == null
+                          ? i18n.tr('follow_page_language')
+                          : i18n.languageName(language),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  );
+                }).toList(),
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 8,

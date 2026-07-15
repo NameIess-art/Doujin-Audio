@@ -226,9 +226,11 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
             children: _expanded
                 ? [
                     if (isTreeLoading && visibleTree == null)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Center(child: CircularProgressIndicator()),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        child: Center(
+                          child: CircularProgressIndicator(color: asmrBlue),
+                        ),
                       )
                     else if (visibleTree == null || visibleTree.isEmpty)
                       Padding(

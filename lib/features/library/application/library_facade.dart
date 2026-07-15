@@ -5,6 +5,7 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
 import '../../player/application/audio_state_services.dart';
 import 'audio_detail_cache_service.dart';
@@ -14,6 +15,7 @@ import 'dlsite_metadata_query.dart';
 import 'dlsite_metadata_service.dart';
 import 'library_snapshot_cache_service.dart';
 import 'library_catalog.dart';
+import 'library_scan_models.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../domain/library_entry.dart';
@@ -244,6 +246,115 @@ final class LibraryFacade implements LibraryCatalogReader {
       generation != 0 &&
       generation == service.scanGeneration;
 
+  int tryBeginScan({required String source, bool background = false}) {
+    if (service.isScanning) return 0;
+    service.scanGenerationSeed++;
+    final generation = service.scanGenerationSeed;
+    _setScanning(true, background: background);
+    service
+      ..scanGeneration = generation
+      ..scanCurrentFolder = source
+      ..scanStage = FolderScanStage.preparing
+      ..scanProcessed = 0
+      ..scanTotal = null;
+    _syncStateSlice();
+    return generation;
+  }
+
+  void cancelScan() {
+    if (!service.isScanning) return;
+    _setScanning(false);
+    unawaited(FileCachePlatformGateway.instance.cancelActiveFolderScan());
+  }
+
+  void finishScan(int generation) {
+    if (!isScanGenerationActive(generation)) return;
+    _setScanning(false);
+  }
+
+  void setScanProgress({
+    String? currentFolder,
+    int? foundCount,
+    int? duplicateCount,
+    int? failureCount,
+    int? generation,
+    FolderScanStage? stage,
+    int? processed,
+    int? total,
+  }) {
+    if (generation != null && generation != service.scanGeneration) return;
+    final nextFolder = currentFolder ?? service.scanCurrentFolder;
+    final nextFoundCount = foundCount ?? service.scanFoundCount;
+    final nextDuplicateCount = duplicateCount ?? service.scanDuplicateCount;
+    final nextFailureCount = failureCount ?? service.scanFailureCount;
+    final nextStage = stage ?? service.scanStage;
+    final nextProcessed = processed ?? service.scanProcessed;
+    final nextTotal = total ?? service.scanTotal;
+    final changed =
+        nextFolder != service.scanCurrentFolder ||
+        nextFoundCount != service.scanFoundCount ||
+        nextDuplicateCount != service.scanDuplicateCount ||
+        nextFailureCount != service.scanFailureCount ||
+        nextStage != service.scanStage ||
+        nextProcessed != service.scanProcessed ||
+        nextTotal != service.scanTotal;
+    if (!changed) return;
+    if (currentFolder != null) service.scanCurrentFolder = currentFolder;
+    if (foundCount != null) service.scanFoundCount = foundCount;
+    if (duplicateCount != null) {
+      service.scanDuplicateCount = duplicateCount;
+    }
+    if (failureCount != null) service.scanFailureCount = failureCount;
+    if (stage != null) service.scanStage = stage;
+    if (processed != null) service.scanProcessed = processed;
+    if (total != null) service.scanTotal = total;
+    if (service.isBackgroundScanning) return;
+    _scheduleScanProgressSync();
+  }
+
+  void _setScanning(bool scanning, {bool background = false}) {
+    if (service.isScanning == scanning &&
+        service.isBackgroundScanning == background) {
+      return;
+    }
+    service
+      ..isScanning = scanning
+      ..isBackgroundScanning = scanning && background;
+    service.scanProgressNotifyTimer?.cancel();
+    service.scanProgressNotifyTimer = null;
+    if (scanning) {
+      service
+        ..scanCurrentFolder = ''
+        ..scanFoundCount = 0
+        ..scanDuplicateCount = 0
+        ..scanFailureCount = 0
+        ..scanStage = FolderScanStage.preparing
+        ..scanProcessed = 0
+        ..scanTotal = null;
+    } else {
+      service
+        ..scanGeneration = 0
+        ..scanStage = FolderScanStage.idle
+        ..scanTotal = null;
+    }
+    _syncStateSlice();
+  }
+
+  void _scheduleScanProgressSync() {
+    if (!service.isScanning) {
+      _syncStateSlice();
+      return;
+    }
+    if (service.scanProgressNotifyTimer != null) return;
+    service.scanProgressNotifyTimer = Timer(
+      const Duration(milliseconds: 160),
+      () {
+        service.scanProgressNotifyTimer = null;
+        if (service.isScanning) _syncStateSlice();
+      },
+    );
+  }
+
   LibraryCatalog get catalog {
     final catalog = _catalog;
     if (catalog == null) {
@@ -283,6 +394,8 @@ final class LibraryFacade implements LibraryCatalogReader {
   }
 
   Future<void> dispose() async {
+    service.scanProgressNotifyTimer?.cancel();
+    service.scanProgressNotifyTimer = null;
     _coverArtworkCacheService?.dispose();
     await service.dispose();
   }

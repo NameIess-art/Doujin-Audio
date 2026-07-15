@@ -634,7 +634,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
 
   void _showAudioDetailForSession(
     BuildContext context,
-    AudioProvider provider,
     PlaybackSession session,
     MusicTrack? track,
   ) {
@@ -649,10 +648,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
       return;
     }
 
-    final target = provider.audioDetailTargetForSession(session.id);
-    if (target != null) {
-      unawaited(showAudioDetailSheet(context, target));
-    }
+    final target = ref
+        .read(libraryFacadeProvider)
+        .audioDetailTargetForPath(session.currentTrackPath);
+    unawaited(showAudioDetailSheet(context, target));
   }
 
   @override
@@ -1022,7 +1021,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 onShowAudioDetail: () =>
                                     _showAudioDetailForSession(
                                       context,
-                                      provider,
                                       session,
                                       track,
                                     ),

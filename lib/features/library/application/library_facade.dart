@@ -229,6 +229,13 @@ final class LibraryFacade implements LibraryCatalog {
     );
   }
 
+  AudioDetailTarget audioDetailTargetForPath(String trackPath) {
+    final track = trackByPath(trackPath);
+    return track == null
+        ? AudioDetailTarget.singleAudioFile(trackPath)
+        : audioDetailTargetForTrack(track);
+  }
+
   Future<void> backfillMissingLibraryDurations({
     Future<Duration?> Function(String path)? durationReader,
   }) {
@@ -1427,6 +1434,450 @@ final class LibraryFacade implements LibraryCatalog {
     }
   }
 
+  Future<AudioDetailRenameResult> renameAudioDetailTarget(
+    AudioDetail detail,
+  ) async {
+    return renameAudioDetailTargetToName(detail, detail.workTitle);
+  }
+
+  Future<AudioDetailRenameResult> renameAudioDetailTargetToName(
+    AudioDetail detail,
+    String targetName,
+  ) async {
+    final name = targetName.trim();
+    if (name.isEmpty) {
+      throw const AudioDetailRenameException('missingTitle');
+    }
+    final oldTarget = detail.target;
+
+    final safeName = _safeFileName(name);
+    if (safeName.isEmpty) {
+      throw const AudioDetailRenameException('invalidTitle');
+    }
+
+    final oldPath = PathMatcher.normalize(oldTarget.targetPath);
+    final newPath = PathMatcher.isContentUri(oldPath)
+        ? await _renameContentAudioDetailTarget(oldTarget, safeName)
+        : await _renameFileSystemAudioDetailTarget(
+            oldTarget,
+            oldPath,
+            safeName,
+          );
+    if (PathMatcher.equalsNormalized(oldPath, newPath)) {
+      return AudioDetailRenameResult(detail: detail, renamed: false);
+    }
+
+    final newTarget = AudioDetailTarget(
+      targetType: oldTarget.targetType,
+      targetPath: newPath,
+    );
+    if (oldTarget.isLibraryRootFolder) {
+      await _retargetLibraryFolder(oldPath, newPath, safeName);
+    } else {
+      await _retargetSingleTrack(oldPath, newPath, safeName);
+    }
+
+    final renamedDetail = detail.copyWith(
+      target: newTarget,
+      cardCoverPath: _retargetNullablePath(
+        detail.cardCoverPath,
+        oldPath,
+        newPath,
+      ),
+    );
+    final saveResult = await saveAudioDetail(renamedDetail);
+    await deleteAudioDetail(oldTarget);
+    return AudioDetailRenameResult(
+      detail: saveResult.detail,
+      renamed: true,
+      backupFailed: saveResult.backupFailed,
+    );
+  }
+
+  Future<String> _renameFileSystemAudioDetailTarget(
+    AudioDetailTarget oldTarget,
+    String oldPath,
+    String safeName,
+  ) async {
+    final newPath = oldTarget.isLibraryRootFolder
+        ? path.join(path.dirname(oldPath), safeName)
+        : path.join(
+            path.dirname(oldPath),
+            '$safeName${path.extension(oldPath)}',
+          );
+    if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
+    if (oldTarget.isLibraryRootFolder) {
+      await _retryWindowsRename(() async {
+        await Directory(oldPath).rename(newPath);
+      });
+    } else {
+      await _retryWindowsRename(() async {
+        await File(oldPath).rename(newPath);
+      });
+    }
+    return newPath;
+  }
+
+  Future<void> _retryWindowsRename(Future<void> Function() operation) async {
+    const retryDelays = <Duration>[
+      Duration(milliseconds: 40),
+      Duration(milliseconds: 80),
+    ];
+    for (var attempt = 0; ; attempt++) {
+      try {
+        await operation();
+        return;
+      } on PathAccessException {
+        if (!Platform.isWindows || attempt >= retryDelays.length) rethrow;
+        await Future<void>.delayed(retryDelays[attempt]);
+      }
+    }
+  }
+
+  Future<String> _renameContentAudioDetailTarget(
+    AudioDetailTarget oldTarget,
+    String safeName,
+  ) async {
+    final name = oldTarget.isLibraryRootFolder
+        ? safeName
+        : '$safeName${_contentFileExtension(oldTarget.targetPath)}';
+    // If the document already has this name, skip the rename to avoid
+    // provider errors on some Android versions when the name is unchanged.
+    final currentName = PathMatcher.lastContentPathSegment(
+      oldTarget.targetPath,
+    );
+    if (currentName != null) {
+      final decodedCurrent = PathMatcher.safeDecodeComponent(currentName);
+      if (decodedCurrent == name) return oldTarget.targetPath;
+    }
+    final raw = await FileCachePlatformGateway.instance.renameDocument(
+      path: oldTarget.targetPath,
+      name: name,
+    );
+    final renamedPath = raw?['path'] as String?;
+    if (renamedPath == null || renamedPath.isEmpty) {
+      throw const AudioDetailRenameException('renameFailed');
+    }
+    return renamedPath;
+  }
+
+  String _contentFileExtension(String targetPath) {
+    final segment = PathMatcher.lastContentPathSegment(targetPath);
+    final decoded = segment == null
+        ? targetPath
+        : PathMatcher.safeDecodeComponent(segment).replaceAll('\\', '/');
+    return path.extension(decoded);
+  }
+
+  Future<void> _retargetLibraryFolder(
+    String oldFolderPath,
+    String newFolderPath,
+    String folderName,
+  ) async {
+    await coverArtworkCacheService.retargetFolderCoverSelection(
+      oldFolderPath,
+      newFolderPath,
+    );
+    await databaseRepository.retargetTimeSegmentLabelsWithinPath(
+      oldRoot: oldFolderPath,
+      newRoot: newFolderPath,
+    );
+    final retargetedTracks = <String, MusicTrack>{};
+    for (var i = 0; i < service.library.length; i++) {
+      final track = service.library[i];
+      if (!PathMatcher.isWithinOrEqual(track.path, oldFolderPath)) continue;
+
+      final nextTrackPath = _replacePathPrefix(
+        track.path,
+        oldFolderPath,
+        newFolderPath,
+      );
+      final nextGroupKey =
+          PathMatcher.isWithinOrEqual(track.groupKey, oldFolderPath)
+          ? _replacePathPrefix(track.groupKey, oldFolderPath, newFolderPath)
+          : track.groupKey;
+      final updatedTrack = _copyTrack(
+        track,
+        path: nextTrackPath,
+        groupKey: nextGroupKey,
+        groupTitle: PathMatcher.equalsNormalized(nextGroupKey, newFolderPath)
+            ? folderName
+            : PathDisplay.folderName(nextGroupKey),
+        groupSubtitle: PathDisplay.displayPathFor(nextGroupKey),
+        coverCachePath: _retargetNullablePath(
+          track.coverCachePath,
+          oldFolderPath,
+          newFolderPath,
+        ),
+        lyricsPath: _retargetNullablePath(
+          track.lyricsPath,
+          oldFolderPath,
+          newFolderPath,
+        ),
+        manualCoverPath: _retargetNullablePath(
+          track.manualCoverPath,
+          oldFolderPath,
+          newFolderPath,
+        ),
+      );
+      service.library[i] = updatedTrack;
+      retargetedTracks[track.path] = updatedTrack;
+    }
+
+    for (var i = 0; i < service.watchedFolders.length; i++) {
+      if (PathMatcher.equalsNormalized(
+        service.watchedFolders[i],
+        oldFolderPath,
+      )) {
+        service.watchedFolders[i] = newFolderPath;
+      }
+    }
+    for (var i = 0; i < service.watchedLibraries.length; i++) {
+      if (PathMatcher.equalsNormalized(
+        service.watchedLibraries[i],
+        oldFolderPath,
+      )) {
+        service.watchedLibraries[i] = newFolderPath;
+      }
+    }
+
+    for (var i = 0; i < service.libraryNodeOrder.length; i++) {
+      if (PathMatcher.equalsNormalized(
+        service.libraryNodeOrder[i],
+        oldFolderPath,
+      )) {
+        service.libraryNodeOrder[i] = newFolderPath;
+      }
+    }
+
+    for (var i = 0; i < service.groupOrder.length; i++) {
+      if (PathMatcher.isWithinOrEqual(service.groupOrder[i], oldFolderPath)) {
+        service.groupOrder[i] = _replacePathPrefix(
+          service.groupOrder[i],
+          oldFolderPath,
+          newFolderPath,
+        );
+      }
+    }
+
+    _retargetLibraryExclusions(oldFolderPath, newFolderPath);
+    final retargetedEntries = _retargetLibraryEntries(
+      oldFolderPath,
+      newFolderPath,
+      folderName,
+    );
+    coverArtworkCacheService.invalidateFolders([oldFolderPath, newFolderPath]);
+    service.syncGroupOrderFromLibrary();
+    service.rebuildLibraryIndexes();
+    snapshotCacheService.markStructureChanged();
+    _syncStateSlice();
+    await databaseRepository.replaceTrackPaths(retargetedTracks);
+    await databaseRepository.deleteLibraryEntriesForLibrary(oldFolderPath);
+    if (retargetedEntries.isNotEmpty) {
+      await databaseRepository.upsertLibraryEntries(retargetedEntries);
+    }
+    await _saveWatchedFolders();
+    await _saveWatchedLibraries();
+    await _saveLibraryExclusions();
+    await _saveGroupOrder();
+    await _saveLibraryNodeOrder();
+  }
+
+  void _retargetLibraryExclusions(String oldRoot, String newRoot) {
+    if (service.excludedLibraryFolders.isEmpty &&
+        service.excludedLibraryTracks.isEmpty) {
+      return;
+    }
+
+    Map<String, Set<String>> retarget(Map<String, Set<String>> source) {
+      final result = <String, Set<String>>{};
+      for (final entry in source.entries) {
+        final nextKey = PathMatcher.equalsNormalized(entry.key, oldRoot)
+            ? newRoot
+            : entry.key;
+        final nextValues = entry.value
+            .map(
+              (value) => PathMatcher.isWithinOrEqual(value, oldRoot)
+                  ? _replacePathPrefix(value, oldRoot, newRoot)
+                  : value,
+            )
+            .toSet();
+        result.putIfAbsent(nextKey, () => <String>{}).addAll(nextValues);
+      }
+      return result;
+    }
+
+    final nextFolderExclusions = retarget(service.excludedLibraryFolders);
+    final nextTrackExclusions = retarget(service.excludedLibraryTracks);
+    service.excludedLibraryFolders
+      ..clear()
+      ..addAll(nextFolderExclusions);
+    service.excludedLibraryTracks
+      ..clear()
+      ..addAll(nextTrackExclusions);
+  }
+
+  List<LibraryEntry> _retargetLibraryEntries(
+    String oldRoot,
+    String newRoot,
+    String folderName,
+  ) {
+    final existingEntries = service.libraryEntriesByLibrary.remove(oldRoot);
+    if (existingEntries == null || existingEntries.isEmpty) {
+      return const <LibraryEntry>[];
+    }
+
+    final retargetedEntries = existingEntries.values
+        .map(
+          (entry) => _retargetLibraryEntry(
+            entry,
+            oldRoot: oldRoot,
+            newRoot: newRoot,
+            folderName: folderName,
+          ),
+        )
+        .toList(growable: false);
+    service.libraryEntriesByLibrary[newRoot] = {
+      for (final entry in retargetedEntries) entry.path: entry,
+    };
+    service.markStructureChanged();
+    snapshotCacheService.markStructureChanged();
+    return retargetedEntries;
+  }
+
+  LibraryEntry _retargetLibraryEntry(
+    LibraryEntry entry, {
+    required String oldRoot,
+    required String newRoot,
+    required String folderName,
+  }) {
+    final nextPath = PathMatcher.isWithinOrEqual(entry.path, oldRoot)
+        ? _replacePathPrefix(entry.path, oldRoot, newRoot)
+        : entry.path;
+    final nextParentPath =
+        entry.parentPath != null &&
+            PathMatcher.isWithinOrEqual(entry.parentPath!, oldRoot)
+        ? _replacePathPrefix(entry.parentPath!, oldRoot, newRoot)
+        : entry.parentPath;
+    if (entry.isFolder) {
+      return LibraryEntry.folder(
+        libraryPath: newRoot,
+        path: nextPath,
+        parentPath: nextParentPath,
+        state: entry.state,
+        displayName: entry.displayName,
+      );
+    }
+
+    final nextGroupKey = PathMatcher.isWithinOrEqual(entry.groupKey, oldRoot)
+        ? _replacePathPrefix(entry.groupKey, oldRoot, newRoot)
+        : entry.groupKey;
+    final nextGroupTitle = PathMatcher.equalsNormalized(nextGroupKey, newRoot)
+        ? folderName
+        : PathDisplay.folderName(nextGroupKey);
+    return LibraryEntry(
+      libraryPath: newRoot,
+      path: nextPath,
+      kind: entry.kind,
+      state: entry.state,
+      parentPath: nextParentPath,
+      displayName: entry.displayName,
+      groupKey: nextGroupKey,
+      groupTitle: nextGroupTitle,
+      groupSubtitle: PathDisplay.displayPathFor(nextGroupKey),
+      isSingle: entry.isSingle,
+      isVideo: entry.isVideo,
+      scannedAt: entry.scannedAt,
+      fileSizeBytes: entry.fileSizeBytes,
+      modifiedAt: entry.modifiedAt,
+    );
+  }
+
+  Future<void> _retargetSingleTrack(
+    String oldTrackPath,
+    String newTrackPath,
+    String displayName,
+  ) async {
+    await databaseRepository.retargetTimeSegmentLabels(
+      oldTrackKey: PathMatcher.normalize(oldTrackPath),
+      newTrackKey: PathMatcher.normalize(newTrackPath),
+    );
+    final track = service.libraryByPath[oldTrackPath];
+    if (track != null) {
+      final updatedTrack = _copyTrack(
+        track,
+        path: newTrackPath,
+        displayName: displayName,
+      );
+      final index = service.library.indexWhere(
+        (item) => item.path == oldTrackPath,
+      );
+      if (index >= 0) service.library[index] = updatedTrack;
+      for (var i = 0; i < service.libraryNodeOrder.length; i++) {
+        if (PathMatcher.equalsNormalized(
+          service.libraryNodeOrder[i],
+          oldTrackPath,
+        )) {
+          service.libraryNodeOrder[i] = newTrackPath;
+        }
+      }
+      coverArtworkCacheService.invalidateAll();
+      service.rebuildLibraryIndexes();
+      snapshotCacheService.markStructureChanged();
+      _syncStateSlice();
+      await databaseRepository.deleteTracks([oldTrackPath]);
+      await databaseRepository.upsertTracks([updatedTrack]);
+    }
+  }
+
+  String? _retargetNullablePath(String? value, String oldRoot, String newRoot) {
+    if (value == null || !PathMatcher.isWithinOrEqual(value, oldRoot)) {
+      return value;
+    }
+    return _replacePathPrefix(value, oldRoot, newRoot);
+  }
+
+  String _replacePathPrefix(String value, String oldRoot, String newRoot) {
+    return PathMatcher.replaceWithinOrEqual(value, oldRoot, newRoot);
+  }
+
+  String _safeFileName(String value) {
+    return PathDisplay.safeFileName(value);
+  }
+
+  MusicTrack _copyTrack(
+    MusicTrack track, {
+    String? path,
+    String? displayName,
+    String? groupKey,
+    String? groupTitle,
+    String? groupSubtitle,
+    String? coverCachePath,
+    String? lyricsPath,
+    String? manualCoverPath,
+  }) {
+    return MusicTrack(
+      path: path ?? track.path,
+      displayName: displayName ?? track.displayName,
+      groupKey: groupKey ?? track.groupKey,
+      groupTitle: groupTitle ?? track.groupTitle,
+      groupSubtitle: groupSubtitle ?? track.groupSubtitle,
+      isSingle: track.isSingle,
+      isVideo: track.isVideo,
+      scannedAt: track.scannedAt,
+      fileSizeBytes: track.fileSizeBytes,
+      modifiedAt: track.modifiedAt,
+      lastPlayedPosition: track.lastPlayedPosition,
+      lastPlayedAt: track.lastPlayedAt,
+      isFavorite: track.isFavorite,
+      tags: track.tags,
+      coverCachePath: coverCachePath ?? track.coverCachePath,
+      lyricsPath: lyricsPath ?? track.lyricsPath,
+      manualCoverPath: manualCoverPath ?? track.manualCoverPath,
+      duration: track.duration,
+    );
+  }
+
   Future<void> _saveLibraryExclusions() {
     Map<String, List<String>> encode(Map<String, Set<String>> source) {
       return source.map(
@@ -1753,6 +2204,24 @@ final class LibraryFacade implements LibraryCatalog {
     _coverArtworkCacheService?.dispose();
     await service.dispose();
   }
+}
+
+class AudioDetailRenameResult {
+  const AudioDetailRenameResult({
+    required this.detail,
+    required this.renamed,
+    this.backupFailed = false,
+  });
+
+  final AudioDetail detail;
+  final bool renamed;
+  final bool backupFailed;
+}
+
+class AudioDetailRenameException implements Exception {
+  const AudioDetailRenameException(this.reason);
+
+  final String reason;
 }
 
 Future<Duration?> _readLocalMediaDuration(

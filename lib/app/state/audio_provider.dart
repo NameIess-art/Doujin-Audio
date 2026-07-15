@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:audio_session/audio_session.dart';
@@ -15,12 +14,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/widgets/app_feedback.dart';
 
 import '../../core/app_language.dart';
-import '../../core/media/audio_detail.dart';
 import '../../features/asmr/domain/asmr_download.dart';
 import '../../features/library/domain/audio_library_category.dart';
 import '../../features/player/domain/audio_effects.dart';
 import '../../core/media/card_info_field.dart';
-import '../../core/media/dlsite_metadata.dart';
 import '../../features/library/domain/library_entry.dart';
 import '../../features/library/domain/library_node.dart';
 import '../../core/media/music_track.dart';
@@ -41,12 +38,10 @@ import '../../features/asmr/application/asmr_api_service.dart';
 import '../../features/asmr/application/asmr_metadata_service.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/dlsite_metadata_service.dart';
-import '../../features/library/application/dlsite_metadata_query.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/library/application/library_snapshot_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/library/application/library_scan_models.dart';
-import '../../features/library/application/library_organizer.dart';
 import '../../core/errors/native_result.dart';
 import '../../features/player/application/native_playback_repository.dart';
 import '../../features/player/application/playback_queue_resolver.dart';
@@ -85,7 +80,6 @@ import '../../core/media/subtitle_parser.dart';
 part 'audio_provider_notifications.dart';
 part 'audio_provider_persistence.dart';
 part 'audio_provider_library.dart';
-part 'audio_provider_audio_details.dart';
 part 'audio_provider_library_categories.dart';
 part 'audio_provider_playback.dart';
 part 'audio_provider_playback_sessions.dart';
@@ -99,7 +93,6 @@ part 'audio_provider_persistence_sessions.dart';
 part 'audio_provider_persistence_timer.dart';
 part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
-part 'audio_provider_library_covers.dart';
 part 'audio_provider_warmup.dart';
 part 'audio_provider_time_segments.dart';
 part 'audio_provider_queues.dart';
@@ -255,7 +248,6 @@ class AudioProvider with ChangeNotifier {
   bool _libraryInitialized = false;
   bool _playbackInitialized = false;
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
-  final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Map<String, _TimeSegmentLoopRuntime> _timeSegmentLoopsBySessionId =
       <String, _TimeSegmentLoopRuntime>{};
   final Set<String> _timeSegmentLoopBoundSessionIds = <String>{};
@@ -680,6 +672,7 @@ class AudioProvider with ChangeNotifier {
       _notifyLibraryAndPlaybackChanged();
     });
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
+    _playbackFacade.attachSessionStatePersistence(_saveSessionState);
     _libraryFacade.attachCoverArtworkCacheService(
       () => CoverArtworkCacheService(
         libraryService: _libraryService,
@@ -881,9 +874,5 @@ class AudioProvider with ChangeNotifier {
 
   void _clearResolvedCoverPaths() {
     _coverArtworkCacheService.invalidateAll();
-  }
-
-  void _invalidateResolvedCoverScopes(Iterable<String?> scopes) {
-    _coverArtworkCacheService.invalidateFolders(scopes);
   }
 }

@@ -262,11 +262,15 @@ void main() {
       final workTarget = AudioDetailTarget.libraryRootFolder(workDir.path);
       final singleTarget = AudioDetailTarget.singleAudioFile(singlePath);
       expect(
-        (await provider.loadAudioDetail(workTarget)).detail.duration,
+        (await provider.libraryFacade.loadAudioDetail(
+          workTarget,
+        )).detail.duration,
         const Duration(minutes: 3),
       );
       expect(
-        (await provider.loadAudioDetail(singleTarget)).detail.duration,
+        (await provider.libraryFacade.loadAudioDetail(
+          singleTarget,
+        )).detail.duration,
         const Duration(seconds: 45),
       );
 
@@ -354,7 +358,7 @@ void main() {
         persist: false,
       );
       final target = AudioDetailTarget.libraryRootFolder(workDir.path);
-      await provider.saveAudioDetail(
+      await provider.libraryFacade.saveAudioDetail(
         AudioDetail.empty(
           target,
         ).copyWith(duration: const Duration(minutes: 9)),
@@ -374,7 +378,7 @@ void main() {
         const Duration(minutes: 2),
       );
       expect(
-        (await provider.loadAudioDetail(target)).detail.duration,
+        (await provider.libraryFacade.loadAudioDetail(target)).detail.duration,
         const Duration(minutes: 9),
       );
     },

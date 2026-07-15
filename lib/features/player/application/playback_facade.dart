@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import '../../../core/media/music_track.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../asmr/application/asmr_playback_cache_service.dart';
 import '../domain/playback_mode.dart';
@@ -55,6 +56,8 @@ final class PlaybackFacade {
     required SessionLoopMode loopMode,
   })?
   _launchQueue;
+  Future<void> Function()? _persistSessionState;
+  final Map<String, String> _retargetedPathAliases = <String, String>{};
 
   Stream<String> get sessionActivations => _sessionActivations.stream;
   PlaybackStateSliceData get state => service.slice.state;
@@ -76,6 +79,86 @@ final class PlaybackFacade {
     launchQueue,
   ) {
     _launchQueue ??= launchQueue;
+  }
+
+  void attachSessionStatePersistence(Future<void> Function() persist) {
+    _persistSessionState ??= persist;
+  }
+
+  void rememberRetargetedPath(String oldPath, String newPath) {
+    final normalizedOldPath = PathMatcher.normalize(oldPath);
+    final normalizedNewPath = PathMatcher.normalize(newPath);
+    if (PathMatcher.equalsNormalized(normalizedOldPath, normalizedNewPath)) {
+      return;
+    }
+    _retargetedPathAliases[normalizedOldPath] = normalizedNewPath;
+  }
+
+  String resolveRetargetedPath(String value) {
+    if (value.isEmpty || _retargetedPathAliases.isEmpty) {
+      return PathMatcher.normalize(value);
+    }
+    var current = PathMatcher.normalize(value);
+    final seen = <String>{current};
+    while (true) {
+      String? bestMatch;
+      String? nextValue;
+      for (final entry in _retargetedPathAliases.entries) {
+        if (!PathMatcher.isWithinOrEqual(current, entry.key)) continue;
+        if (bestMatch == null || entry.key.length > bestMatch.length) {
+          bestMatch = entry.key;
+          nextValue = entry.value;
+        }
+      }
+      if (bestMatch == null || nextValue == null) return current;
+      final resolved = PathMatcher.normalize(
+        PathMatcher.replaceWithinOrEqual(current, bestMatch, nextValue),
+      );
+      if (PathMatcher.equalsNormalized(resolved, current) ||
+          !seen.add(resolved)) {
+        return resolved;
+      }
+      current = resolved;
+    }
+  }
+
+  void clearRetargetedPaths() => _retargetedPathAliases.clear();
+
+  Future<void> retargetPath(String oldPath, String newPath) async {
+    rememberRetargetedPath(oldPath, newPath);
+    var changed = false;
+    for (final session in service.sessions.values) {
+      if (PathMatcher.isWithinOrEqual(session.currentTrackPath, oldPath)) {
+        session.currentTrackPath = PathMatcher.replaceWithinOrEqual(
+          session.currentTrackPath,
+          oldPath,
+          newPath,
+        );
+        changed = true;
+      }
+      final loadedPath = session.loadedPath;
+      if (loadedPath != null &&
+          PathMatcher.isWithinOrEqual(loadedPath, oldPath)) {
+        session.loadedPath = PathMatcher.replaceWithinOrEqual(
+          loadedPath,
+          oldPath,
+          newPath,
+        );
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    service.markActiveSessionsDirty();
+    final current = service.slice.state;
+    service.syncSlice(
+      activeSessions: service.activeSessions,
+      playingSessionCount: service.playingSessionCount,
+      focusedSessionId: current.focusedSessionId,
+      multiThreadPlaybackEnabled: current.multiThreadPlaybackEnabled,
+      coverGeneration: current.coverGeneration,
+      isInitialized: current.isInitialized,
+    );
+    await _persistSessionState?.call();
   }
 
   Future<void> launchQueue(

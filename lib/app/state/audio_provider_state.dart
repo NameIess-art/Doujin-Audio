@@ -177,11 +177,6 @@ extension AudioProviderCoreState on AudioProvider {
     _librarySnapshotCacheService.markStructureChanged();
   }
 
-  void _rebuildLibraryIndexes() {
-    _libraryService.rebuildLibraryIndexes();
-    _librarySnapshotCacheService.markStructureChanged();
-  }
-
   void _syncGroupOrderFromLibrary() {
     _libraryService.syncGroupOrderFromLibrary();
   }

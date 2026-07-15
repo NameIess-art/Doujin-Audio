@@ -2,44 +2,11 @@ part of 'audio_provider.dart';
 
 extension AudioProviderLibrary on AudioProvider {
   void _rememberRetargetedPath(String oldPath, String newPath) {
-    final normalizedOldPath = PathMatcher.normalize(oldPath);
-    final normalizedNewPath = PathMatcher.normalize(newPath);
-    if (PathMatcher.equalsNormalized(normalizedOldPath, normalizedNewPath)) {
-      return;
-    }
-    _retargetedPathAliases[normalizedOldPath] = normalizedNewPath;
+    _playbackFacade.rememberRetargetedPath(oldPath, newPath);
   }
 
-  String _resolveRetargetedPath(String value) {
-    if (value.isEmpty || _retargetedPathAliases.isEmpty) {
-      return PathMatcher.normalize(value);
-    }
-
-    var current = PathMatcher.normalize(value);
-    final seen = <String>{current};
-    while (true) {
-      String? bestMatch;
-      String? nextValue;
-      for (final entry in _retargetedPathAliases.entries) {
-        if (!PathMatcher.isWithinOrEqual(current, entry.key)) continue;
-        if (bestMatch == null || entry.key.length > bestMatch.length) {
-          bestMatch = entry.key;
-          nextValue = entry.value;
-        }
-      }
-      if (bestMatch == null || nextValue == null) {
-        return current;
-      }
-      final resolved = PathMatcher.normalize(
-        PathMatcher.replaceWithinOrEqual(current, bestMatch, nextValue),
-      );
-      if (PathMatcher.equalsNormalized(resolved, current) ||
-          !seen.add(resolved)) {
-        return resolved;
-      }
-      current = resolved;
-    }
-  }
+  String _resolveRetargetedPath(String value) =>
+      _playbackFacade.resolveRetargetedPath(value);
 
   void _syncLibraryNodeOrder({bool persist = true}) {
     _libraryService.syncLibraryNodeOrder(

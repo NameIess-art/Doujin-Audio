@@ -8,8 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart' hide Consumer;
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
+import '../../../core/media/audio_detail.dart';
+import '../../../core/media/music_track.dart';
 import '../application/audio_detail_repository.dart';
 import '../application/library_facade.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -220,8 +221,8 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
           .run<AudioDetailRenameResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_rename_folder_from_title',
-            task: (_) => context
-                .read<AudioProvider>()
+            task: (_) => ref
+                .read(audioPathCoordinatorProvider)
                 .renameAudioDetailTargetToName(detail, targetName),
           );
       if (!mounted) return;
@@ -377,8 +378,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
           .run<AudioDetailRenameResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_rename_folder_from_title',
-            task: (_) =>
-                context.read<AudioProvider>().renameAudioDetailTarget(detail),
+            task: (_) => ref
+                .read(audioPathCoordinatorProvider)
+                .renameAudioDetailTarget(detail),
           );
       if (!mounted) return;
       setState(() {

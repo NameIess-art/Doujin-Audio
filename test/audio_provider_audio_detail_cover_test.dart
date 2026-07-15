@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/core/app_language.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
@@ -25,12 +26,17 @@ void main() {
 
   late AudioProviderTestFixture fixture;
   late AudioProvider provider;
+  late AudioPathCoordinator pathCoordinator;
   late PlaybackNotificationService notificationService;
   late Database db;
 
   setUp(() async {
     fixture = await AudioProviderTestFixture.create();
     provider = fixture.provider;
+    pathCoordinator = AudioPathCoordinator(
+      library: provider.libraryFacade,
+      playback: provider.playbackFacade,
+    );
     notificationService = fixture.notificationService;
     db = fixture.database;
   });
@@ -391,7 +397,7 @@ void main() {
           AudioDetailTarget.singleAudioFile(source.path),
         );
 
-        final result = await provider.renameAudioDetailTargetToName(
+        final result = await pathCoordinator.renameAudioDetailTargetToName(
           detail,
           'New Title',
         );
@@ -420,7 +426,7 @@ void main() {
         AudioDetailTarget.libraryRootFolder(source.path),
       );
 
-      final result = await provider.renameAudioDetailTargetToName(
+      final result = await pathCoordinator.renameAudioDetailTargetToName(
         detail,
         'New Folder',
       );
@@ -462,7 +468,7 @@ void main() {
         ], notify: false);
         provider.setLibraryTrackExcluded(source.path, trackFile.path, true);
 
-        final result = await provider.renameAudioDetailTargetToName(
+        final result = await pathCoordinator.renameAudioDetailTargetToName(
           AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
           'New Folder',
         );
@@ -582,7 +588,7 @@ void main() {
         await prepareStarted.future;
         final session = provider.activeSessions.single;
 
-        final result = await provider.renameAudioDetailTargetToName(
+        final result = await pathCoordinator.renameAudioDetailTargetToName(
           AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
           'New Folder',
         );
@@ -770,7 +776,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(firstPath),
           ).copyWith(rjCode: 'RJ111111'),
@@ -783,7 +789,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(secondPath),
           ).copyWith(rjCode: 'RJ222222'),
@@ -833,7 +839,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(target).copyWith(rjCode: 'RJ333333'),
         );
 
@@ -879,7 +885,7 @@ void main() {
           persist: false,
         );
 
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(source.path),
           ).copyWith(rjCode: 'RJ111111'),
@@ -892,7 +898,7 @@ void main() {
           'RJ111111',
         );
 
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(source.path),
           ).copyWith(rjCode: 'RJ222222'),

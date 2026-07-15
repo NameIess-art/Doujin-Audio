@@ -64,7 +64,7 @@ extension AudioProviderPersistence on AudioProvider {
     }
 
     _deferredVolumeReloadSessionIds.clear();
-    _retargetedPathAliases.clear();
+    _playbackFacade.clearRetargetedPaths();
     _timeSegmentLoopsBySessionId.clear();
     _timeSegmentLoopBoundSessionIds.clear();
     _timeSegmentLoopSeekPendingSessionIds.clear();
@@ -179,15 +179,6 @@ extension AudioProviderPersistence on AudioProvider {
       _groupOrderSet
         ..clear()
         ..addAll(list);
-    } catch (error, stackTrace) {
-      _logAudioProviderPersistenceFailure(error, stackTrace);
-    }
-  }
-
-  Future<void> _saveGroupOrder() async {
-    try {
-      final prefs = await _prefs;
-      await prefs.setString(_kGroupOrderKey, json.encode(_groupOrder));
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }
@@ -546,15 +537,6 @@ extension AudioProviderPersistence on AudioProvider {
     }
   }
 
-  Future<void> _saveWatchedFolders() async {
-    try {
-      final prefs = await _prefs;
-      await prefs.setString(_kWatchedFoldersKey, json.encode(_watchedFolders));
-    } catch (error, stackTrace) {
-      _logAudioProviderPersistenceFailure(error, stackTrace);
-    }
-  }
-
   Future<void> _loadWatchedLibraries() async {
     try {
       final prefs = await _prefs;
@@ -569,18 +551,6 @@ extension AudioProviderPersistence on AudioProvider {
     }
   }
 
-  Future<void> _saveWatchedLibraries() async {
-    try {
-      final prefs = await _prefs;
-      await prefs.setString(
-        _kWatchedLibrariesKey,
-        json.encode(_watchedLibraries),
-      );
-    } catch (error, stackTrace) {
-      _logAudioProviderPersistenceFailure(error, stackTrace);
-    }
-  }
-
   Future<void> _loadLibraryExclusions() async {
     try {
       final prefs = await _prefs;
@@ -589,19 +559,6 @@ extension AudioProviderPersistence on AudioProvider {
       final data = json.decode(raw) as Map<String, dynamic>;
       _decodeExclusionMap(data['folders'], _excludedLibraryFolders);
       _decodeExclusionMap(data['tracks'], _excludedLibraryTracks);
-    } catch (error, stackTrace) {
-      _logAudioProviderPersistenceFailure(error, stackTrace);
-    }
-  }
-
-  Future<void> _saveLibraryExclusions() async {
-    try {
-      final prefs = await _prefs;
-      final encoded = json.encode({
-        'folders': _encodeExclusionMap(_excludedLibraryFolders),
-        'tracks': _encodeExclusionMap(_excludedLibraryTracks),
-      });
-      await prefs.setString(_kLibraryExclusionsKey, encoded);
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }
@@ -665,13 +622,6 @@ extension AudioProviderPersistence on AudioProvider {
           .where((value) => value.isNotEmpty)
           .toSet();
     }
-  }
-
-  Map<String, List<String>> _encodeExclusionMap(Map<String, Set<String>> map) {
-    return map.map(
-      (libraryPath, values) =>
-          MapEntry(libraryPath, values.toList(growable: false)..sort()),
-    );
   }
 
   Future<void> _loadConverterSettings() async {

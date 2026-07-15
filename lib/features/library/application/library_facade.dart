@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
@@ -8,6 +9,7 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
 import '../../player/application/audio_state_services.dart';
+import '../../settings/application/app_preferences.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_detail_repository.dart';
 import 'cover_artwork_cache_service.dart';
@@ -24,6 +26,8 @@ import '../domain/library_entry.dart';
 ///
 /// Mutable library state remains owned exclusively by [LibraryService].
 final class LibraryFacade implements LibraryCatalogReader {
+  static const _watchedFoldersPreferenceKey = 'watched_folders_v1';
+  static const _watchedLibrariesPreferenceKey = 'watched_libraries_v1';
   LibraryFacade({
     required this.databaseRepository,
     required this.detailCacheService,
@@ -245,6 +249,52 @@ final class LibraryFacade implements LibraryCatalogReader {
       service.isScanning &&
       generation != 0 &&
       generation == service.scanGeneration;
+
+  void addWatchedFolder(String folderPath, {bool notify = true}) {
+    final changed = service.addWatchedFolder(
+      folderPath,
+      onPersist: () => unawaited(_saveWatchedFolders()),
+    );
+    if (changed && notify) _syncStateSlice();
+  }
+
+  void addWatchedLibrary(String folderPath, {bool notify = true}) {
+    final changed = service.addWatchedLibrary(
+      folderPath,
+      onPersist: () => unawaited(_saveWatchedLibraries()),
+    );
+    if (changed && notify) _syncStateSlice();
+  }
+
+  void removeWatchedFolder(String folderPath, {bool notify = true}) {
+    final changed = service.removeWatchedFolder(
+      folderPath,
+      onPersist: () => unawaited(_saveWatchedFolders()),
+    );
+    if (changed && notify) _syncStateSlice();
+  }
+
+  void removeWatchedLibrary(String folderPath, {bool notify = true}) {
+    final changed = service.removeWatchedLibrary(
+      folderPath,
+      onPersist: () => unawaited(_saveWatchedLibraries()),
+    );
+    if (changed && notify) _syncStateSlice();
+  }
+
+  Future<void> _saveWatchedFolders() async {
+    await AppPreferences.setString(
+      _watchedFoldersPreferenceKey,
+      json.encode(service.watchedFolders),
+    );
+  }
+
+  Future<void> _saveWatchedLibraries() async {
+    await AppPreferences.setString(
+      _watchedLibrariesPreferenceKey,
+      json.encode(service.watchedLibraries),
+    );
+  }
 
   int tryBeginScan({required String source, bool background = false}) {
     if (service.isScanning) return 0;

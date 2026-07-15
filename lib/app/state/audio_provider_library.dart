@@ -60,35 +60,35 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   void addWatchedFolder(String folderPath, {bool notify = true}) {
-    final changed = _libraryService.addWatchedFolder(
-      folderPath,
-      onPersist: () => unawaited(_saveWatchedFolders()),
-    );
-    if (changed && notify) _notifyLibraryChanged();
+    final previousCount = _watchedFolders.length;
+    _libraryFacade.addWatchedFolder(folderPath, notify: false);
+    if (notify && _watchedFolders.length != previousCount) {
+      _notifyLibraryChanged();
+    }
   }
 
   void addWatchedLibrary(String folderPath, {bool notify = true}) {
-    final changed = _libraryService.addWatchedLibrary(
-      folderPath,
-      onPersist: () => unawaited(_saveWatchedLibraries()),
-    );
-    if (changed && notify) _notifyLibraryChanged();
+    final previousCount = _watchedLibraries.length;
+    _libraryFacade.addWatchedLibrary(folderPath, notify: false);
+    if (notify && _watchedLibraries.length != previousCount) {
+      _notifyLibraryChanged();
+    }
   }
 
   void removeWatchedFolder(String folderPath, {bool notify = true}) {
-    final changed = _libraryService.removeWatchedFolder(
-      folderPath,
-      onPersist: () => unawaited(_saveWatchedFolders()),
-    );
-    if (changed && notify) _notifyLibraryChanged();
+    final previousCount = _watchedFolders.length;
+    _libraryFacade.removeWatchedFolder(folderPath, notify: false);
+    if (notify && _watchedFolders.length != previousCount) {
+      _notifyLibraryChanged();
+    }
   }
 
   void removeWatchedLibrary(String folderPath, {bool notify = true}) {
-    final changed = _libraryService.removeWatchedLibrary(
-      folderPath,
-      onPersist: () => unawaited(_saveWatchedLibraries()),
-    );
-    if (changed && notify) _notifyLibraryChanged();
+    final previousCount = _watchedLibraries.length;
+    _libraryFacade.removeWatchedLibrary(folderPath, notify: false);
+    if (notify && _watchedLibraries.length != previousCount) {
+      _notifyLibraryChanged();
+    }
   }
 
   Future<void> removeLibrary(String libraryPath) async {

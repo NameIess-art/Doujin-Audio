@@ -416,7 +416,7 @@ extension AudioProviderPlayback on AudioProvider {
   List<String> _crossFolderTrackPathsFor(MusicTrack? currentTrack) {
     if (currentTrack == null) return const <String>[];
     return tracksInSameWork(currentTrack.path)
-        .map((track) => _resolveRetargetedPath(track.path))
+        .map((track) => _playbackFacade.resolveRetargetedPath(track.path))
         .toList(growable: false);
   }
 

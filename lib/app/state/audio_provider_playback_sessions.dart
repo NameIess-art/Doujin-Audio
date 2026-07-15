@@ -382,7 +382,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     Duration? startPositionOverride,
   }) {
     final logicalPath = PathMatcher.normalize(nextPath);
-    final resolvedPath = _resolveRetargetedPath(nextPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(nextPath);
     final uri =
         PathMatcher.isContentUri(resolvedPath) ||
             PathMatcher.isRemoteUri(resolvedPath)
@@ -622,7 +622,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       playedPath: playedPath,
     );
     if (cachedPath == null || cachedPath.isEmpty) return;
-    _rememberRetargetedPath(track.path, cachedPath);
+    _playbackFacade.rememberRetargetedPath(track.path, cachedPath);
   }
 
   List<Map<String, Object?>> _nativePlaybackQueueFor(
@@ -658,7 +658,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     PlaybackSession session, {
     required String currentPath,
   }) {
-    final resolvedCurrentPath = _resolveRetargetedPath(currentPath);
+    final resolvedCurrentPath = _playbackFacade.resolveRetargetedPath(
+      currentPath,
+    );
     final scope = _playbackQueueScopeFor(
       session,
       currentPath: resolvedCurrentPath,
@@ -672,7 +674,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
   }) {
     return _playbackQueueScopeFor(
       session,
-      currentPath: _resolveRetargetedPath(currentPath),
+      currentPath: _playbackFacade.resolveRetargetedPath(currentPath),
     ).paths;
   }
 
@@ -680,7 +682,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     PlaybackSession session, {
     required String currentPath,
   }) {
-    final resolvedCurrentPath = _resolveRetargetedPath(currentPath);
+    final resolvedCurrentPath = _playbackFacade.resolveRetargetedPath(
+      currentPath,
+    );
     final currentTrack = trackByPath(resolvedCurrentPath);
     final sessionTrack = _sessionTrackForPath(session, resolvedCurrentPath);
     final queueTracks = session.isPlaybackQueue
@@ -701,13 +705,13 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       customQueueTracks: queueTracks,
       isPlaybackQueue: session.isPlaybackQueue,
       currentQueueIndex: session.currentQueueIndex,
-      trackPath: (track) => _resolveRetargetedPath(track.path),
+      trackPath: (track) => _playbackFacade.resolveRetargetedPath(track.path),
       folderKeyForTrack: _folderKeyForTrack,
     );
   }
 
   Map<String, Object?> _nativePlaybackQueueItemForPath(String trackPath) {
-    final resolvedTrackPath = _resolveRetargetedPath(trackPath);
+    final resolvedTrackPath = _playbackFacade.resolveRetargetedPath(trackPath);
     final track = _trackForAnyPath(resolvedTrackPath);
     final subtitle = track?.groupTitle;
     final coverPath = resolvedPlaybackCoverPathForTrack(track);
@@ -731,7 +735,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
   }
 
   MusicTrack? _trackForAnyPath(String trackPath) {
-    final resolvedPath = _resolveRetargetedPath(trackPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
     final libraryTrack = trackByPath(resolvedPath);
     if (libraryTrack != null) {
       return libraryTrack;
@@ -751,7 +755,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
   ) {
     for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
       if (PathMatcher.equalsNormalized(
-        _resolveRetargetedPath(track.path),
+        _playbackFacade.resolveRetargetedPath(track.path),
         resolvedPath,
       )) {
         return track;
@@ -762,11 +766,11 @@ extension AudioProviderPlaybackSessions on AudioProvider {
 
   MusicTrack? _sessionTrackForPath(PlaybackSession session, String trackPath) {
     final normalizedPath = PathMatcher.normalize(trackPath);
-    final resolvedPath = _resolveRetargetedPath(trackPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
     for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
       if (PathMatcher.equalsNormalized(track.path, normalizedPath) ||
           PathMatcher.equalsNormalized(
-            _resolveRetargetedPath(track.path),
+            _playbackFacade.resolveRetargetedPath(track.path),
             resolvedPath,
           )) {
         return track;

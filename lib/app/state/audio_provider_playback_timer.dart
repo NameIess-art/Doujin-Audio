@@ -1,38 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderPlaybackTimer on AudioProvider {
-  Future<void> _syncNativeTimerAlarms() async {
-    try {
-      final timerEndsAtWallClockMs = _timerActive
-          ? _timerEndsAt?.millisecondsSinceEpoch
-          : null;
-      final autoResumeAtMs =
-          _autoResumeAt != null &&
-              _pausedByTimerSessionIds.isNotEmpty &&
-              _autoResumeAt!.isAfter(DateTime.now())
-          ? _autoResumeAt!.millisecondsSinceEpoch
-          : null;
-      await _powerPlatformService.syncPlaybackTimerAlarms(
-        timerMode: _timerMode?.index,
-        timerDurationMs: _timerDuration?.inMilliseconds,
-        timerWaitingForPlayback: _timerWaitingForPlayback,
-        timerEndsAtWallClockMs: timerEndsAtWallClockMs,
-        autoResumeEnabled: _autoResumeEnabled,
-        autoResumeHour: _autoResumeHour,
-        autoResumeMinute: _autoResumeMinute,
-        autoResumeAtMs: autoResumeAtMs,
-        pausedSessionIds: _pausedByTimerSessionIds,
-        generation: _timerGeneration,
-      );
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'sync_native_timer_alarms_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-  }
-
   Future<void> _handleTimerExpiredOnPlatform(int generation) async {
     final result = await _executeTimerActionOnPlatform(
       _powerPlatformService.executeTimerExpiredNow,
@@ -42,11 +10,11 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       await _applyLocalTimerExpiryFallback();
       return;
     }
-    await syncTimerRuntimeFromNative();
+    await _timerFacade.syncRuntimeFromNative();
     _maybeResetTimerAfterExpiry();
     _syncKeepCpuAwake();
     _notifyListeners();
-    unawaited(_saveTimerRuntime());
+    unawaited(_timerFacade.saveRuntime());
   }
 
   Future<void> _applyLocalTimerExpiryFallback() async {
@@ -68,8 +36,8 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     _maybeResetTimerAfterExpiry();
     _syncKeepCpuAwake();
     _notifyListeners();
-    await _saveTimerRuntime();
-    await _syncNativeTimerAlarms();
+    await _timerFacade.saveRuntime();
+    await _timerFacade.syncNativeAlarms();
   }
 
   /// Resets the timer configuration back to the pre-set state after expiry
@@ -94,12 +62,12 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       await _resumeTimerPausedSessions();
       return;
     }
-    await syncTimerRuntimeFromNative();
+    await _timerFacade.syncRuntimeFromNative();
     // After auto-resume the timer is fully done — reset to original state.
     _timerFacade.resetRuntimeState();
     _syncKeepCpuAwake();
     _notifyListeners();
-    unawaited(_saveTimerRuntime());
+    unawaited(_timerFacade.saveRuntime());
   }
 
   Future<TimerExecutionResult> _executeTimerActionOnPlatform(
@@ -127,8 +95,8 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     if (!activated) {
       _syncKeepCpuAwake();
       _notifyListeners();
-      await _saveTimerRuntime();
-      await _syncNativeTimerAlarms();
+      await _timerFacade.saveRuntime();
+      await _timerFacade.syncNativeAlarms();
       return;
     }
 
@@ -140,8 +108,8 @@ extension AudioProviderPlaybackTimer on AudioProvider {
       _pausedByTimerSessionIds.clear();
       _syncKeepCpuAwake();
       _notifyListeners();
-      await _saveTimerRuntime();
-      await _syncNativeTimerAlarms();
+      await _timerFacade.saveRuntime();
+      await _timerFacade.syncNativeAlarms();
       return;
     }
 
@@ -166,8 +134,8 @@ extension AudioProviderPlaybackTimer on AudioProvider {
     }
     _syncKeepCpuAwake();
     _notifyListeners();
-    await _saveTimerRuntime();
-    await _syncNativeTimerAlarms();
+    await _timerFacade.saveRuntime();
+    await _timerFacade.syncNativeAlarms();
   }
 
   DateTime _nextClockTime(int hour, int minute) {

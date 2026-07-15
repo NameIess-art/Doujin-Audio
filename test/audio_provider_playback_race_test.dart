@@ -664,7 +664,7 @@ void main() {
           }),
         );
 
-        await provider.loadTimerRuntimeFromSystem();
+        await provider.timerFacade.loadRuntimeFromSystem();
 
         expect(sessions[0].state.playing, isTrue);
         expect(sessions[1].state.playing, isFalse);

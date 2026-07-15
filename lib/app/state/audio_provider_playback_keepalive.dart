@@ -20,14 +20,17 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
 
   bool get _hasPendingAutoResume =>
       _timerRuntimeCalculator.hasPendingAutoResume(
-        autoResumeAt: _autoResumeAt,
-        hasPausedByTimerSessionIds: _pausedByTimerSessionIds.isNotEmpty,
+        autoResumeAt: _timerService.autoResumeAt,
+        hasPausedByTimerSessionIds:
+            _timerService.pausedByTimerSessionIds.isNotEmpty,
       );
 
   void _syncKeepCpuAwake() {
     final hasPlayback = _hasPlaybackToKeepAlive;
     final hasTimer =
-        _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
+        _timerService.timerActive ||
+        _timerService.timerWaitingForPlayback ||
+        _hasPendingAutoResume;
     final usesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
     // Keep the CPU awake whenever there is active playback OR a timer is
@@ -82,7 +85,9 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
     }
     _keepAliveHasPlayback = _hasPlaybackToKeepAlive;
     _keepAliveHasTimer =
-        _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
+        _timerService.timerActive ||
+        _timerService.timerWaitingForPlayback ||
+        _hasPendingAutoResume;
     _keepAliveUsesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
     // Keep awake for both playback and timer (same logic as _syncKeepCpuAwake).

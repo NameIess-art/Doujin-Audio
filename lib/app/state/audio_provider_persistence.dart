@@ -44,11 +44,6 @@ extension AudioProviderPersistence on AudioProvider {
     _notificationActionGuardTimeout?.cancel();
     _notificationStateService.notificationActionGuardTimeout = null;
 
-    _countdownTimer?.cancel();
-    _countdownTimer = null;
-    _autoResumeTimer?.cancel();
-    _autoResumeTimer = null;
-
     final removedSessions = _sessions.values.toList(growable: false);
     _sessions.clear();
     _sessionOrder.clear();
@@ -97,12 +92,7 @@ extension AudioProviderPersistence on AudioProvider {
     _libraryBatchPersistEntriesByKey.clear();
     _markLibraryStructureDirty();
 
-    _timerFacade.resetRuntimeState();
-    _timerDraftMode = TimerMode.manual;
-    _timerDraftDuration = const Duration(minutes: 30);
-    _autoResumeEnabled = false;
-    _autoResumeHour = 7;
-    _autoResumeMinute = 0;
+    _timerFacade.resetForPersistenceReload();
 
     _converterFormat = 'mp3';
     _converterBitrate = '320k';
@@ -264,7 +254,7 @@ extension AudioProviderPersistence on AudioProvider {
         _loadLibraryExclusions(),
         _loadLibraryNodeOrder(),
         _loadSessionOrder(),
-        _loadTimerSettings(),
+        _timerFacade.loadSettings(),
       ]);
 
       await startupSettingsFuture;
@@ -315,7 +305,7 @@ extension AudioProviderPersistence on AudioProvider {
       }
       await AppLogService.measureAsync(
         'audio_provider_load_timer_runtime',
-        loadTimerRuntimeFromSystem,
+        _timerFacade.loadRuntimeFromSystem,
       );
       if (!isCurrentLoad()) return;
       _syncNotificationState(immediateUnifiedSync: true);

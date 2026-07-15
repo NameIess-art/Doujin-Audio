@@ -91,7 +91,6 @@ part 'audio_provider_notification_covers.dart';
 part 'audio_provider_notification_sync.dart';
 part 'audio_provider_notification_subtitles.dart';
 part 'audio_provider_persistence_sessions.dart';
-part 'audio_provider_persistence_timer.dart';
 part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
 part 'audio_provider_warmup.dart';
@@ -104,8 +103,6 @@ const _kSessionOrderKey = 'session_order_v1';
 const _kWatchedFoldersKey = 'watched_folders_v1';
 const _kWatchedLibrariesKey = 'watched_libraries_v1';
 const _kLibraryExclusionsKey = 'library_exclusions_v1';
-const _kTimerSettingsKey = 'timer_settings_v1';
-const _kTimerRuntimeKey = 'timer_runtime_v1';
 const _kConverterSettingsKey = 'converter_settings_v1';
 const _kPlaybackSettingsKey = 'playback_settings_v1';
 
@@ -502,39 +499,11 @@ class AudioProvider with ChangeNotifier {
     _timerFacade.keepAliveKeepsForegroundService = value;
   }
 
-  TimerMode? get _timerMode => _timerService.timerMode;
-  set _timerMode(TimerMode? value) => _timerService.timerMode = value;
-  Duration? get _timerDuration => _timerService.timerDuration;
-  set _timerDuration(Duration? value) => _timerService.timerDuration = value;
-  bool get _timerActive => _timerService.timerActive;
-  set _timerActive(bool value) => _timerService.timerActive = value;
-  set _timerRemaining(Duration? value) => _timerService.timerRemaining = value;
-  DateTime? get _timerEndsAt => _timerService.timerEndsAt;
-  set _timerEndsAt(DateTime? value) => _timerService.timerEndsAt = value;
-  Timer? get _countdownTimer => _timerService.countdownTimer;
-  set _countdownTimer(Timer? value) => _timerService.countdownTimer = value;
-  bool get _timerWaitingForPlayback => _timerService.timerWaitingForPlayback;
-  set _timerWaitingForPlayback(bool value) {
-    _timerService.timerWaitingForPlayback = value;
-  }
-
-  TimerMode get _timerDraftMode => _timerService.timerDraftMode;
-  set _timerDraftMode(TimerMode value) => _timerService.timerDraftMode = value;
-  Duration get _timerDraftDuration => _timerService.timerDraftDuration;
-  set _timerDraftDuration(Duration value) {
-    _timerService.timerDraftDuration = value;
-  }
-
-  int get _timerGeneration => _timerService.timerGeneration;
-  set _timerGeneration(int value) => _timerService.timerGeneration = value;
   List<String> get _pausedByTimerSessionIds =>
       _timerService.pausedByTimerSessionIds;
   bool get _autoResumeEnabled => _timerService.autoResumeEnabled;
-  set _autoResumeEnabled(bool value) => _timerService.autoResumeEnabled = value;
   int get _autoResumeHour => _timerService.autoResumeHour;
-  set _autoResumeHour(int value) => _timerService.autoResumeHour = value;
   int get _autoResumeMinute => _timerService.autoResumeMinute;
-  set _autoResumeMinute(int value) => _timerService.autoResumeMinute = value;
   Timer? get _autoResumeTimer => _timerService.autoResumeTimer;
   set _autoResumeTimer(Timer? value) => _timerService.autoResumeTimer = value;
   DateTime? get _autoResumeAt => _timerService.autoResumeAt;
@@ -691,10 +660,12 @@ class AudioProvider with ChangeNotifier {
         _syncKeepCpuAwake();
         _notifyListeners();
       },
+      onRuntimeRestored: () {
+        _syncNotificationState();
+        _syncKeepCpuAwake();
+        _notifyListeners();
+      },
       applyFadeMultiplier: _applyFadeMultiplierToAllPlaying,
-      saveSettings: _saveTimerSettings,
-      saveRuntime: _saveTimerRuntime,
-      syncNativeAlarms: _syncNativeTimerAlarms,
       onTimerExpired: _handleTimerExpiredOnPlatform,
       onAutoResume: _handleAutoResumeOnPlatform,
     );
@@ -733,7 +704,7 @@ class AudioProvider with ChangeNotifier {
       onResumeForeground: () async {
         syncKeepAliveAfterForegroundResume();
         _notificationFacade.resyncAfterForegroundResume();
-        await syncTimerRuntimeFromNative();
+        await _timerFacade.syncRuntimeFromNative();
         _timerFacade.retryOverdueAutoResume();
       },
       onDispose: _disposeOwnedServices,
@@ -751,8 +722,8 @@ class AudioProvider with ChangeNotifier {
     UiInteractionCoordinator.instance.removeListener(
       _handleWarmupInteractionChanged,
     );
-    _countdownTimer?.cancel();
-    _autoResumeTimer?.cancel();
+    _timerService.countdownTimer?.cancel();
+    _timerService.autoResumeTimer?.cancel();
     _saveSessionStateTimer?.cancel();
     _saveSessionOrderTimer?.cancel();
     _scanProgressNotifyTimer?.cancel();

@@ -613,7 +613,7 @@ void main() {
           await provider.coverPathFutureForFolder(newFolderPath),
           newCoverPath,
         );
-        await provider.shutdownUiWarmupsForTesting();
+        await fixture.dispose(currentProvider: provider);
       },
     );
 

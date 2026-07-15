@@ -559,12 +559,12 @@ void main() {
       singleTrack.path,
     );
     await tester.runAsync(() async {
-      await audioProvider.saveAudioDetail(
+      await audioProvider.libraryFacade.saveAudioDetail(
         AudioDetail.empty(
           workDetailTarget,
         ).copyWith(duration: const Duration(minutes: 3, seconds: 40)),
       );
-      await audioProvider.saveAudioDetail(
+      await audioProvider.libraryFacade.saveAudioDetail(
         AudioDetail.empty(
           singleDetailTarget,
         ).copyWith(duration: const Duration(minutes: 4, seconds: 50)),
@@ -581,11 +581,15 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      audioProvider.resolvedAudioDetail(workDetailTarget)?.duration,
+      audioProvider.libraryFacade
+          .resolvedAudioDetail(workDetailTarget)
+          ?.duration,
       const Duration(minutes: 3, seconds: 40),
     );
     expect(
-      audioProvider.resolvedAudioDetail(singleDetailTarget)?.duration,
+      audioProvider.libraryFacade
+          .resolvedAudioDetail(singleDetailTarget)
+          ?.duration,
       const Duration(minutes: 4, seconds: 50),
     );
     final shownDurations = tester

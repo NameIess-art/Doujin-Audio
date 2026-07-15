@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../application/audio_path_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/notification_facade.dart';
@@ -29,6 +30,13 @@ final libraryFacadeProvider = Provider<LibraryFacade>((ref) {
 final playbackFacadeProvider = Provider<PlaybackFacade>((ref) {
   throw UnimplementedError(
     'playbackFacadeProvider must be overridden in ProviderScope.',
+  );
+});
+
+final audioPathCoordinatorProvider = Provider<AudioPathCoordinator>((ref) {
+  return AudioPathCoordinator(
+    library: ref.watch(libraryFacadeProvider),
+    playback: ref.watch(playbackFacadeProvider),
   );
 });
 

@@ -91,33 +91,6 @@ extension AudioProviderWarmup on AudioProvider {
     }
   }
 
-  void warmupLibraryCoversForTracks(Iterable<MusicTrack?> tracks) {
-    final generation = _warmupScheduler.currentGeneration;
-    final scheduledKeys = <String>{};
-    var priority = 34;
-    for (final track in tracks) {
-      if (track == null || track.isVideo) continue;
-      if (resolvedCoverPathForTrack(track) != null) continue;
-      final coverSearchKey = _coverArtworkCacheService.coverSearchKeyForTrack(
-        track,
-      );
-      if (coverSearchKey == null || !scheduledKeys.add(coverSearchKey)) {
-        continue;
-      }
-      _warmupScheduler.schedule(
-        key: 'library_track_cover:$coverSearchKey:$coverGeneration',
-        priority: priority++,
-        generation: generation,
-        group: 'library_cover',
-        task: () async {
-          if (resolvedCoverPathForTrack(track) == null) {
-            await coverPathFutureForTrack(track);
-          }
-        },
-      );
-    }
-  }
-
   void _scheduleLibraryWarmup({required int generation}) {
     if (_isScanning) return;
     final folders = libraryCards.whereType<FolderNode>().take(4).toList();

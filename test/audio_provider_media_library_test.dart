@@ -81,21 +81,22 @@ void main() {
     final requestedPaths = <String>[];
     var activeDurationReads = 0;
     var peakDurationReads = 0;
-    final duration = await provider.calculateMissingLibraryDuration(
-      folder.path,
-      durationReader: (trackPath) async {
-        requestedPaths.add(trackPath);
-        activeDurationReads++;
-        if (activeDurationReads > peakDurationReads) {
-          peakDurationReads = activeDurationReads;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        activeDurationReads--;
-        return trackPath == secondPath
-            ? const Duration(minutes: 2)
-            : const Duration(minutes: 3);
-      },
-    );
+    final duration = await provider.libraryFacade
+        .calculateMissingLibraryDuration(
+          folder.path,
+          durationReader: (trackPath) async {
+            requestedPaths.add(trackPath);
+            activeDurationReads++;
+            if (activeDurationReads > peakDurationReads) {
+              peakDurationReads = activeDurationReads;
+            }
+            await Future<void>.delayed(const Duration(milliseconds: 10));
+            activeDurationReads--;
+            return trackPath == secondPath
+                ? const Duration(minutes: 2)
+                : const Duration(minutes: 3);
+          },
+        );
 
     expect(requestedPaths, <String>[secondPath, thirdPath]);
     expect(peakDurationReads, 2);
@@ -125,13 +126,14 @@ void main() {
       persist: false,
     );
     final retryPaths = <String>[];
-    final incompleteDuration = await provider.calculateMissingLibraryDuration(
-      folder.path,
-      durationReader: (trackPath) async {
-        retryPaths.add(trackPath);
-        return null;
-      },
-    );
+    final incompleteDuration = await provider.libraryFacade
+        .calculateMissingLibraryDuration(
+          folder.path,
+          durationReader: (trackPath) async {
+            retryPaths.add(trackPath);
+            return null;
+          },
+        );
     expect(retryPaths, <String>[unreadablePath]);
     expect(incompleteDuration, isNull);
 
@@ -155,11 +157,12 @@ void main() {
       notify: false,
       persist: false,
     );
-    final contentDuration = await provider.calculateMissingLibraryDuration(
-      contentRoot,
-      durationReader: (trackPath) async =>
-          trackPath == contentTrackPath ? const Duration(minutes: 5) : null,
-    );
+    final contentDuration = await provider.libraryFacade
+        .calculateMissingLibraryDuration(
+          contentRoot,
+          durationReader: (trackPath) async =>
+              trackPath == contentTrackPath ? const Duration(minutes: 5) : null,
+        );
     expect(contentDuration, const Duration(minutes: 5));
   });
 
@@ -182,13 +185,14 @@ void main() {
     );
 
     final requestedPaths = <String>[];
-    final duration = await provider.calculateMissingLibraryDuration(
-      videoPath.toUpperCase(),
-      durationReader: (trackPath) async {
-        requestedPaths.add(trackPath);
-        return const Duration(minutes: 7, seconds: 12);
-      },
-    );
+    final duration = await provider.libraryFacade
+        .calculateMissingLibraryDuration(
+          videoPath.toUpperCase(),
+          durationReader: (trackPath) async {
+            requestedPaths.add(trackPath);
+            return const Duration(minutes: 7, seconds: 12);
+          },
+        );
 
     expect(requestedPaths, const <String>[videoPath]);
     expect(duration, const Duration(minutes: 7, seconds: 12));
@@ -246,7 +250,7 @@ void main() {
         persist: false,
       );
 
-      await provider.backfillMissingLibraryDurations(
+      await provider.libraryFacade.backfillMissingLibraryDurations(
         durationReader: (trackPath) async => switch (trackPath) {
           final value when value == firstPath => const Duration(minutes: 1),
           final value when value == secondPath => const Duration(minutes: 2),
@@ -258,11 +262,15 @@ void main() {
       final workTarget = AudioDetailTarget.libraryRootFolder(workDir.path);
       final singleTarget = AudioDetailTarget.singleAudioFile(singlePath);
       expect(
-        (await provider.loadAudioDetail(workTarget)).detail.duration,
+        (await provider.libraryFacade.loadAudioDetail(
+          workTarget,
+        )).detail.duration,
         const Duration(minutes: 3),
       );
       expect(
-        (await provider.loadAudioDetail(singleTarget)).detail.duration,
+        (await provider.libraryFacade.loadAudioDetail(
+          singleTarget,
+        )).detail.duration,
         const Duration(seconds: 45),
       );
 
@@ -350,14 +358,14 @@ void main() {
         persist: false,
       );
       final target = AudioDetailTarget.libraryRootFolder(workDir.path);
-      await provider.saveAudioDetail(
+      await provider.libraryFacade.saveAudioDetail(
         AudioDetail.empty(
           target,
         ).copyWith(duration: const Duration(minutes: 9)),
       );
 
       final requestedPaths = <String>[];
-      await provider.backfillMissingLibraryDurations(
+      await provider.libraryFacade.backfillMissingLibraryDurations(
         durationReader: (path) async {
           requestedPaths.add(path);
           return const Duration(minutes: 2);
@@ -370,7 +378,7 @@ void main() {
         const Duration(minutes: 2),
       );
       expect(
-        (await provider.loadAudioDetail(target)).detail.duration,
+        (await provider.libraryFacade.loadAudioDetail(target)).detail.duration,
         const Duration(minutes: 9),
       );
     },
@@ -404,35 +412,45 @@ void main() {
     test(
       'background scan progress does not notify visible library UI',
       () async {
-        var notificationCount = 0;
-        provider.addListener(() {
-          notificationCount++;
-        });
+        final facade = provider.libraryFacade;
+        var stateCount = 0;
+        final subscription = facade.states.listen((_) => stateCount++);
+        addTearDown(subscription.cancel);
 
-        provider.setScanning(true, background: true, notify: false);
+        final backgroundGeneration = facade.tryBeginScan(
+          source: 'background-folder',
+          background: true,
+        );
+        await Future<void>.delayed(Duration.zero);
+        final afterBackgroundStart = stateCount;
 
-        provider.setScanProgress(
+        facade.setScanProgress(
+          generation: backgroundGeneration,
           currentFolder: 'background-folder',
           foundCount: 1,
           duplicateCount: 2,
         );
         await Future<void>.delayed(const Duration(milliseconds: 180));
 
-        expect(notificationCount, 0);
+        expect(stateCount, afterBackgroundStart);
 
-        provider.setScanning(false, notify: false);
-        provider.setScanning(true);
-        final afterForegroundStart = notificationCount;
+        facade.finishScan(backgroundGeneration);
+        final foregroundGeneration = facade.tryBeginScan(
+          source: 'foreground-folder',
+        );
+        await Future<void>.delayed(Duration.zero);
+        final afterForegroundStart = stateCount;
 
-        provider.setScanProgress(
+        facade.setScanProgress(
+          generation: foregroundGeneration,
           currentFolder: 'foreground-folder',
           foundCount: 3,
         );
         await Future<void>.delayed(const Duration(milliseconds: 180));
 
-        expect(notificationCount, greaterThan(afterForegroundStart));
+        expect(stateCount, greaterThan(afterForegroundStart));
 
-        provider.setScanning(false);
+        facade.finishScan(foregroundGeneration);
       },
     );
 
@@ -444,7 +462,10 @@ void main() {
           notificationCount++;
         });
 
-        provider.setScanning(true, background: true, notify: false);
+        final generation = provider.libraryFacade.tryBeginScan(
+          source: 'background-folder',
+          background: true,
+        );
         provider.beginLibraryBatch();
         provider.addOrReplaceTracks(
           <MusicTrack>[
@@ -467,7 +488,7 @@ void main() {
 
         await provider.endLibraryBatch();
         await Future<void>.delayed(Duration.zero);
-        provider.setScanning(false, notify: false);
+        provider.libraryFacade.finishScan(generation);
 
         expect(notificationCount, 1);
       },
@@ -575,7 +596,7 @@ void main() {
 
         final scanner = LibraryScannerService();
         await scanner.refreshWatchedFolders(
-          provider: provider.libraryFacade.catalog,
+          provider: provider.libraryFacade,
           labels: const LibraryScanLabels(
             chooseMusicFolder: 'Choose music folder',
             chooseLibraryFolder: 'Choose library folder',

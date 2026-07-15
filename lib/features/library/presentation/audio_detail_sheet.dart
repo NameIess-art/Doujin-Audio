@@ -8,8 +8,9 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart' hide Consumer;
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
+import '../../../core/media/audio_detail.dart';
+import '../../../core/media/music_track.dart';
 import '../application/audio_detail_repository.dart';
 import '../application/library_facade.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -47,7 +48,7 @@ class AudioDetailSheet extends ConsumerStatefulWidget {
 
   final AudioDetailTarget target;
   @visibleForTesting
-  final Future<Duration?> Function(AudioProvider provider, String targetPath)?
+  final Future<Duration?> Function(LibraryFacade facade, String targetPath)?
   durationCalculator;
 
   @override
@@ -76,18 +77,18 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   }
 
   Future<Duration?> _calculateAutomaticDuration(
-    AudioProvider provider,
+    LibraryFacade libraryFacade,
     AudioDetail detail,
   ) {
     if (detail.duration != null) {
       return Future<Duration?>.value();
     }
-    return widget.durationCalculator?.call(provider, _target.targetPath) ??
-        provider.calculateMissingLibraryDuration(_target.targetPath);
+    return widget.durationCalculator?.call(libraryFacade, _target.targetPath) ??
+        libraryFacade.calculateMissingLibraryDuration(_target.targetPath);
   }
 
   void _startAutomaticDurationCalculation(
-    AudioProvider provider,
+    LibraryFacade libraryFacade,
     AudioDetail detail,
   ) {
     final generation = ++_durationCalculationGeneration;
@@ -108,7 +109,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     }
     unawaited(() async {
       final calculatedDuration = await _calculateAutomaticDuration(
-        provider,
+        libraryFacade,
         detail,
       );
       if (!mounted ||
@@ -125,7 +126,6 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
 
   Future<void> _load() async {
     try {
-      final provider = context.read<AudioProvider>();
       final libraryFacade = ref.read(libraryFacadeProvider);
       final result = await UiOperationService.instance
           .run<AudioDetailLoadResult>(
@@ -139,7 +139,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
         _detail = result.detail;
         _loading = false;
       });
-      _startAutomaticDurationCalculation(provider, result.detail);
+      _startAutomaticDurationCalculation(libraryFacade, result.detail);
     } catch (error) {
       if (!mounted) return;
       setState(() {
@@ -221,8 +221,8 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
           .run<AudioDetailRenameResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_rename_folder_from_title',
-            task: (_) => context
-                .read<AudioProvider>()
+            task: (_) => ref
+                .read(audioPathCoordinatorProvider)
                 .renameAudioDetailTargetToName(detail, targetName),
           );
       if (!mounted) return;
@@ -262,7 +262,6 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       _savingField = field;
     });
     try {
-      final provider = context.read<AudioProvider>();
       final libraryFacade = ref.read(libraryFacadeProvider);
       final result = await UiOperationService.instance
           .run<AudioDetailSaveResult>(
@@ -279,7 +278,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
         _savingField = null;
       });
       if (field == _AudioDetailField.duration) {
-        _startAutomaticDurationCalculation(provider, result.detail);
+        _startAutomaticDurationCalculation(libraryFacade, result.detail);
       }
       final i18n = context.read<AppLanguageProvider>();
       if (field == _AudioDetailField.rjCode &&
@@ -379,8 +378,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
           .run<AudioDetailRenameResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_rename_folder_from_title',
-            task: (_) =>
-                context.read<AudioProvider>().renameAudioDetailTarget(detail),
+            task: (_) => ref
+                .read(audioPathCoordinatorProvider)
+                .renameAudioDetailTarget(detail),
           );
       if (!mounted) return;
       setState(() {

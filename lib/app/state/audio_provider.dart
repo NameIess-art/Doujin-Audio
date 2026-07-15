@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 
 import 'package:audio_session/audio_session.dart';
@@ -15,12 +14,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/widgets/app_feedback.dart';
 
 import '../../core/app_language.dart';
-import '../../core/media/audio_detail.dart';
 import '../../features/asmr/domain/asmr_download.dart';
 import '../../features/library/domain/audio_library_category.dart';
 import '../../features/player/domain/audio_effects.dart';
 import '../../core/media/card_info_field.dart';
-import '../../core/media/dlsite_metadata.dart';
 import '../../features/library/domain/library_entry.dart';
 import '../../features/library/domain/library_node.dart';
 import '../../core/media/music_track.dart';
@@ -41,14 +38,10 @@ import '../../features/asmr/application/asmr_api_service.dart';
 import '../../features/asmr/application/asmr_metadata_service.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/dlsite_metadata_service.dart';
-import '../../features/library/application/dlsite_metadata_query.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/library/application/library_snapshot_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
-import 'library_catalog_compatibility.dart';
 import '../../features/library/application/library_scan_models.dart';
-import '../../features/library/application/library_organizer.dart';
-import '../../core/media/media_file_support.dart';
 import '../../core/errors/native_result.dart';
 import '../../features/player/application/native_playback_repository.dart';
 import '../../features/player/application/playback_queue_resolver.dart';
@@ -87,7 +80,6 @@ import '../../core/media/subtitle_parser.dart';
 part 'audio_provider_notifications.dart';
 part 'audio_provider_persistence.dart';
 part 'audio_provider_library.dart';
-part 'audio_provider_audio_details.dart';
 part 'audio_provider_library_categories.dart';
 part 'audio_provider_playback.dart';
 part 'audio_provider_playback_sessions.dart';
@@ -101,7 +93,6 @@ part 'audio_provider_persistence_sessions.dart';
 part 'audio_provider_persistence_timer.dart';
 part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
-part 'audio_provider_library_covers.dart';
 part 'audio_provider_warmup.dart';
 part 'audio_provider_time_segments.dart';
 part 'audio_provider_queues.dart';
@@ -150,10 +141,6 @@ class AudioProvider with ChangeNotifier {
       _libraryFacade.databaseRepository;
   AudioDetailCacheService get _audioDetailCacheService =>
       _libraryFacade.detailCacheService;
-  DlsiteMetadataService get _dlsiteMetadataService =>
-      _libraryFacade.metadataService;
-  AsmrMetadataService get _asmrMetadataService =>
-      _libraryFacade.asmrMetadataService;
   AsmrPlaybackCacheService get _asmrPlaybackCacheService =>
       _playbackFacade.playbackCacheService;
   NativePlaybackRepository get _nativePlaybackRepository =>
@@ -261,7 +248,6 @@ class AudioProvider with ChangeNotifier {
   bool _libraryInitialized = false;
   bool _playbackInitialized = false;
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
-  final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Map<String, _TimeSegmentLoopRuntime> _timeSegmentLoopsBySessionId =
       <String, _TimeSegmentLoopRuntime>{};
   final Set<String> _timeSegmentLoopBoundSessionIds = <String>{};
@@ -273,8 +259,6 @@ class AudioProvider with ChangeNotifier {
   int _transportCommandSequence = 0;
   int _persistenceLoadEpoch = 0;
   Future<void>? _postStartupLibraryMaintenance;
-  Future<void>? _missingLibraryDurationBackfill;
-  bool _missingLibraryDurationBackfillRequestedAgain = false;
 
   final Random _random = Random();
 
@@ -288,8 +272,6 @@ class AudioProvider with ChangeNotifier {
       _libraryService.libraryIndexByPath;
   Map<String, List<MusicTrack>> get _tracksByGroup =>
       _libraryService.tracksByGroup;
-  List<MusicTrack> get _sortedLibraryTracks =>
-      _libraryService.sortedLibraryTracks;
   set _sortedLibraryTracks(List<MusicTrack> value) {
     _libraryService.sortedLibraryTracks = value;
   }
@@ -327,30 +309,17 @@ class AudioProvider with ChangeNotifier {
   int get _scanFailureCount => _libraryService.scanFailureCount;
   set _scanFailureCount(int value) => _libraryService.scanFailureCount = value;
   int get _scanGeneration => _libraryService.scanGeneration;
-  set _scanGeneration(int value) => _libraryService.scanGeneration = value;
   FolderScanStage get _scanStage => _libraryService.scanStage;
-  set _scanStage(FolderScanStage value) => _libraryService.scanStage = value;
   int get _scanProcessed => _libraryService.scanProcessed;
-  set _scanProcessed(int value) => _libraryService.scanProcessed = value;
   int? get _scanTotal => _libraryService.scanTotal;
-  set _scanTotal(int? value) => _libraryService.scanTotal = value;
-  int get _libraryBatchDepth => _libraryService.libraryBatchDepth;
   set _libraryBatchDepth(int value) =>
       _libraryService.libraryBatchDepth = value;
-  bool get _libraryBatchChanged => _libraryService.libraryBatchChanged;
   set _libraryBatchChanged(bool value) {
     _libraryService.libraryBatchChanged = value;
   }
 
-  bool get _libraryBatchChangedGroupOrder =>
-      _libraryService.libraryBatchChangedGroupOrder;
   set _libraryBatchChangedGroupOrder(bool value) {
     _libraryService.libraryBatchChangedGroupOrder = value;
-  }
-
-  int get _libraryDerivedGeneration => _libraryService.libraryDerivedGeneration;
-  set _libraryDerivedGeneration(int value) {
-    _libraryService.libraryDerivedGeneration = value;
   }
 
   List<MusicTrack> get _libraryBatchPersistTracks =>
@@ -695,8 +664,15 @@ class AudioProvider with ChangeNotifier {
        _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh),
        _skipDisposePersistence = skipDisposePersistence {
     _settingsRepository.attachPersistence(_savePlaybackSettings);
-    _libraryFacade.attachCatalog(AudioProviderCompatibilityCatalog(this));
+    _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
+    _libraryFacade.attachTrackRemovalHandler(_handleLibraryTracksRemoved);
+    _libraryFacade.attachCoverChangeHandler(() {
+      _markActiveSessionsDirty();
+      _syncNotificationState();
+      _notifyLibraryAndPlaybackChanged();
+    });
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
+    _playbackFacade.attachSessionStatePersistence(_saveSessionState);
     _libraryFacade.attachCoverArtworkCacheService(
       () => CoverArtworkCacheService(
         libraryService: _libraryService,
@@ -898,9 +874,5 @@ class AudioProvider with ChangeNotifier {
 
   void _clearResolvedCoverPaths() {
     _coverArtworkCacheService.invalidateAll();
-  }
-
-  void _invalidateResolvedCoverScopes(Iterable<String?> scopes) {
-    _coverArtworkCacheService.invalidateFolders(scopes);
   }
 }

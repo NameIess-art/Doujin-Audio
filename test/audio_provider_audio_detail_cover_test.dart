@@ -5,7 +5,9 @@ import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'package:nameless_audio/core/app_language.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
@@ -24,12 +26,17 @@ void main() {
 
   late AudioProviderTestFixture fixture;
   late AudioProvider provider;
+  late AudioPathCoordinator pathCoordinator;
   late PlaybackNotificationService notificationService;
   late Database db;
 
   setUp(() async {
     fixture = await AudioProviderTestFixture.create();
     provider = fixture.provider;
+    pathCoordinator = AudioPathCoordinator(
+      library: provider.libraryFacade,
+      playback: provider.playbackFacade,
+    );
     notificationService = fixture.notificationService;
     db = fixture.database;
   });
@@ -320,7 +327,10 @@ void main() {
           persist: false,
         );
 
-        await provider.setFolderManualCover(workDir.path, coverPath);
+        await provider.libraryFacade.setFolderManualCover(
+          workDir.path,
+          coverPath,
+        );
 
         final backupFile = File(
           '${workDir.path}${Platform.pathSeparator}'
@@ -344,7 +354,10 @@ void main() {
         );
         expect(provider.coverPathForTrack(updatedTrack), coverPath);
 
-        await provider.setFolderManualCover(workDir.path, replacementCoverPath);
+        await provider.libraryFacade.setFolderManualCover(
+          workDir.path,
+          replacementCoverPath,
+        );
 
         final replacementCoverBackup =
             json.decode(await backupFile.readAsString())
@@ -384,7 +397,7 @@ void main() {
           AudioDetailTarget.singleAudioFile(source.path),
         );
 
-        final result = await provider.renameAudioDetailTargetToName(
+        final result = await pathCoordinator.renameAudioDetailTargetToName(
           detail,
           'New Title',
         );
@@ -413,7 +426,7 @@ void main() {
         AudioDetailTarget.libraryRootFolder(source.path),
       );
 
-      final result = await provider.renameAudioDetailTargetToName(
+      final result = await pathCoordinator.renameAudioDetailTargetToName(
         detail,
         'New Folder',
       );
@@ -455,7 +468,7 @@ void main() {
         ], notify: false);
         provider.setLibraryTrackExcluded(source.path, trackFile.path, true);
 
-        final result = await provider.renameAudioDetailTargetToName(
+        final result = await pathCoordinator.renameAudioDetailTargetToName(
           AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
           'New Folder',
         );
@@ -575,7 +588,7 @@ void main() {
         await prepareStarted.future;
         final session = provider.activeSessions.single;
 
-        final result = await provider.renameAudioDetailTargetToName(
+        final result = await pathCoordinator.renameAudioDetailTargetToName(
           AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
           'New Folder',
         );
@@ -763,7 +776,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(firstPath),
           ).copyWith(rjCode: 'RJ111111'),
@@ -776,7 +789,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(secondPath),
           ).copyWith(rjCode: 'RJ222222'),
@@ -826,7 +839,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(target).copyWith(rjCode: 'RJ333333'),
         );
 
@@ -872,7 +885,7 @@ void main() {
           persist: false,
         );
 
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(source.path),
           ).copyWith(rjCode: 'RJ111111'),
@@ -885,7 +898,7 @@ void main() {
           'RJ111111',
         );
 
-        await provider.saveAudioDetail(
+        await provider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(source.path),
           ).copyWith(rjCode: 'RJ222222'),
@@ -924,7 +937,7 @@ void main() {
           duration: const Duration(minutes: 30),
         );
 
-        final result = await provider.applyDlsiteMetadata(
+        final result = await provider.libraryFacade.applyDlsiteMetadata(
           detail,
           DlsiteMetadata(
             rjCode: 'RJ222222',
@@ -938,6 +951,7 @@ void main() {
             rating: 4.5,
           ),
           saveCover: false,
+          language: AppLanguage.zh,
           missingOnly: true,
         );
 
@@ -1042,7 +1056,7 @@ void main() {
       final coordinator = UiInteractionCoordinator.instance;
       coordinator.beginInteraction(interactionSource);
 
-      provider.warmupLibraryCoversForTracks(const <MusicTrack?>[track]);
+      provider.libraryFacade.warmupCoversForTracks(const <MusicTrack?>[track]);
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(cache.requestedPaths, isEmpty);
 

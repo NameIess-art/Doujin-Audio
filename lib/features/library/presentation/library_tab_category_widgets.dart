@@ -241,7 +241,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
               key: ValueKey('category_${entry.target.targetPath}'),
               child: _AudioLibraryCategoryEntryCard(
                 entry: entry,
-                folder: _folderForCategoryEntry(provider, entry),
+                folder: _folderForCategoryEntry(libraryFacade, entry),
                 secondaryIcon: _categoryIcon(),
                 secondaryText: _entrySecondaryText(i18n, entry),
               ),
@@ -276,11 +276,11 @@ extension _LibraryTabCategoryView on _LibraryTabState {
   }
 
   FolderNode? _folderForCategoryEntry(
-    AudioProvider provider,
+    LibraryFacade libraryFacade,
     AudioLibraryCategoryEntry entry,
   ) {
     if (!entry.isFolder) return null;
-    for (final folder in provider.libraryCards.whereType<FolderNode>()) {
+    for (final folder in libraryFacade.libraryCards.whereType<FolderNode>()) {
       if (PathMatcher.equalsNormalized(folder.path, entry.path)) return folder;
     }
     return null;

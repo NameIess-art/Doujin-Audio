@@ -157,7 +157,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   void _ensureFilteredSearchSnapshot({
-    required AudioProvider provider,
+    required LibraryFacade libraryFacade,
     required String query,
     required int structureRevision,
   }) {
@@ -169,7 +169,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
     final requestKey = '$structureRevision|$query';
     _pendingSearchKey = requestKey;
-    final searchFuture = provider.loadLibraryTree().then((tree) {
+    final searchFuture = libraryFacade.loadLibraryTree().then((tree) {
       final request = LibrarySearchSnapshotRequest(
         tree: tree,
         query: query,
@@ -613,7 +613,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     final searchQuery = _effectiveSearchQuery;
     _ensureFilteredSearchSnapshot(
-      provider: provider,
+      libraryFacade: libraryFacade,
       query: searchQuery,
       structureRevision: listStateStructureRevision,
     );

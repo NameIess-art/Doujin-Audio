@@ -105,7 +105,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final requestedPath = widget.folder.path;
     setState(() => _isLoadingChildren = true);
     final folder = await ref
-        .read(audioProviderFacadeProvider)
+        .read(libraryFacadeProvider)
         .loadLibraryFolderTree(requestedPath);
     if (!mounted ||
         !identical(widget.folder, requestedCard) ||
@@ -650,12 +650,17 @@ class _LibraryCoverThumbnailState
   String? _lastFolderPath;
   int _lastCoverGeneration = -1;
 
-  Future<String?> _coverFutureFor(AudioProvider provider, int coverGeneration) {
+  Future<String?> _coverFutureFor(
+    LibraryFacade libraryFacade,
+    int coverGeneration,
+  ) {
     if (_lastFolderPath != widget.folderPath ||
         _lastCoverGeneration != coverGeneration) {
       _lastFolderPath = widget.folderPath;
       _lastCoverGeneration = coverGeneration;
-      _coverPathFuture = provider.coverPathFutureForFolder(widget.folderPath);
+      _coverPathFuture = libraryFacade.coverPathFutureForFolder(
+        widget.folderPath,
+      );
     }
     return _coverPathFuture!;
   }
@@ -670,8 +675,8 @@ class _LibraryCoverThumbnailState
             CoverImageResolution.balanced,
       ),
     );
-    final provider = ref.read(audioProviderFacadeProvider);
-    final coverPathFuture = _coverFutureFor(provider, coverGeneration);
+    final libraryFacade = ref.read(libraryFacadeProvider);
+    final coverPathFuture = _coverFutureFor(libraryFacade, coverGeneration);
     final width = widget.width;
     final height = width * 0.8;
     final coverCacheWidth = coverCacheWidthForLogicalSize(
@@ -697,11 +702,11 @@ class _LibraryCoverThumbnailState
                 child: AsyncLocalCoverImage(
                   future: coverPathFuture,
                   requestKey: widget.folderPath,
-                  initialPath: provider.resolvedCoverPathForFolder(
+                  initialPath: libraryFacade.resolvedCoverPathForFolder(
                     widget.folderPath,
                   ),
                   retryFutureBuilder: () =>
-                      provider.coverPathFutureForFolder(widget.folderPath),
+                      libraryFacade.coverPathFutureForFolder(widget.folderPath),
                   seed: widget.folderPath,
                   cacheWidth: coverCacheWidth,
                   useDefaultCacheWidth: false,
@@ -747,12 +752,15 @@ class _LibraryTrackCoverThumbnailState
   String? _lastTrackPath;
   int _lastCoverGeneration = -1;
 
-  Future<String?> _coverFutureFor(AudioProvider provider, int coverGeneration) {
+  Future<String?> _coverFutureFor(
+    LibraryFacade libraryFacade,
+    int coverGeneration,
+  ) {
     if (_lastTrackPath != widget.track.path ||
         _lastCoverGeneration != coverGeneration) {
       _lastTrackPath = widget.track.path;
       _lastCoverGeneration = coverGeneration;
-      _coverPathFuture = provider.coverPathFutureForTrack(widget.track);
+      _coverPathFuture = libraryFacade.coverPathFutureForTrack(widget.track);
     }
     return _coverPathFuture!;
   }
@@ -767,8 +775,8 @@ class _LibraryTrackCoverThumbnailState
             CoverImageResolution.balanced,
       ),
     );
-    final provider = ref.read(audioProviderFacadeProvider);
-    final coverPathFuture = _coverFutureFor(provider, coverGeneration);
+    final libraryFacade = ref.read(libraryFacadeProvider);
+    final coverPathFuture = _coverFutureFor(libraryFacade, coverGeneration);
     final track = widget.track;
 
     final width = widget.width;
@@ -793,9 +801,9 @@ class _LibraryTrackCoverThumbnailState
               child: AsyncLocalCoverImage(
                 future: coverPathFuture,
                 requestKey: track.path,
-                initialPath: provider.resolvedCoverPathForTrack(track),
+                initialPath: libraryFacade.resolvedCoverPathForTrack(track),
                 retryFutureBuilder: () =>
-                    provider.coverPathFutureForTrack(track),
+                    libraryFacade.coverPathFutureForTrack(track),
                 seed: track.displayName,
                 cacheWidth: coverCacheWidth,
                 useDefaultCacheWidth: false,

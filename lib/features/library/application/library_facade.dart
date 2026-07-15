@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:collection';
 
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/persistence/audio_database_repository.dart';
+import '../../../core/media/path_matcher.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
 import '../../player/application/audio_state_services.dart';
 import 'audio_detail_cache_service.dart';
@@ -19,7 +21,7 @@ import '../domain/library_entry.dart';
 /// Owns the library-side services used by the compatibility audio facade.
 ///
 /// Mutable library state remains owned exclusively by [LibraryService].
-final class LibraryFacade {
+final class LibraryFacade implements LibraryCatalogReader {
   LibraryFacade({
     required this.databaseRepository,
     required this.detailCacheService,
@@ -77,14 +79,62 @@ final class LibraryFacade {
   LibraryState get state => service.slice.state;
   Stream<LibraryState> get states => service.slice.stream;
   List<LibraryNode> get libraryCards => snapshotCacheService.cards;
+  @override
   List<MusicTrack> get library =>
       UnmodifiableListView<MusicTrack>(service.library);
+  @override
   List<String> get watchedFolders =>
       UnmodifiableListView<String>(service.watchedFolders);
+  @override
   List<String> get watchedLibraries =>
       UnmodifiableListView<String>(service.watchedLibraries);
+  @override
+  bool get isScanning => service.isScanning;
+  @override
+  int get scanFoundCount => service.scanFoundCount;
+  @override
+  int get scanDuplicateCount => service.scanDuplicateCount;
+  @override
+  int get scanFailureCount => service.scanFailureCount;
   AudioLibraryCategorySnapshot? get categorySnapshot =>
       snapshotCacheService.categorySnapshotSync;
+
+  List<LibraryNode> get libraryTree {
+    if (snapshotCacheService.treeSnapshotRevision !=
+        service.structureRevision) {
+      unawaited(loadLibraryTree());
+    }
+    return snapshotCacheService.tree;
+  }
+
+  Future<List<LibraryNode>> loadLibraryTree() async {
+    final snapshot = await snapshotCacheService.treeSnapshot(
+      onCommitted: _syncStateSlice,
+    );
+    return snapshot.tree;
+  }
+
+  Future<FolderNode?> loadLibraryFolderTree(String folderPath) async {
+    final tree = await loadLibraryTree();
+    for (final node in tree.whereType<FolderNode>()) {
+      if (PathMatcher.equalsNormalized(node.path, folderPath)) return node;
+    }
+    return null;
+  }
+
+  String? libraryRootForPath(String entityPath) {
+    for (final libraryPath in service.watchedLibraries) {
+      if (PathMatcher.isWithinOrEqual(entityPath, libraryPath)) {
+        return libraryPath;
+      }
+    }
+    for (final folderPath in service.watchedFolders) {
+      if (PathMatcher.isWithinOrEqual(entityPath, folderPath)) {
+        return folderPath;
+      }
+    }
+    return null;
+  }
 
   Future<AudioLibraryCategorySnapshot> audioLibraryCategorySnapshot({
     void Function()? onCommitted,
@@ -110,6 +160,7 @@ final class LibraryFacade {
 
   AudioDetail? resolvedAudioDetail(AudioDetailTarget target) =>
       detailCacheService.resolvedDetail(target);
+  @override
   MusicTrack? trackByPath(String trackPath) => service.trackByPath(trackPath);
   String? resolvedCoverPathForTrack(MusicTrack? track, {String? trackPath}) =>
       coverArtworkCacheService.resolvedForTrack(track, trackPath: trackPath);
@@ -156,18 +207,42 @@ final class LibraryFacade {
       service.excludedFoldersForLibrary(libraryPath);
   List<String> childFoldersForLibrary(String libraryPath) =>
       service.childFoldersForLibrary(libraryPath);
+  @override
   List<LibraryEntry> libraryEntriesForLibrary(String libraryPath) =>
       service.libraryEntriesForLibrary(libraryPath);
+  @override
+  LibraryEntrySnapshot libraryEntrySnapshotForLibrary(String libraryPath) =>
+      service.libraryEntrySnapshotForLibrary(libraryPath);
+  @override
+  LibraryExclusionMatcher libraryExclusionMatcherForLibrary(
+    String libraryPath,
+  ) => service.libraryExclusionMatcherForLibrary(libraryPath);
+  @override
+  bool hasLibraryExclusions(String libraryPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    return (service.excludedLibraryFolders[normalizedLibraryPath]?.isNotEmpty ??
+            false) ||
+        (service.excludedLibraryTracks[normalizedLibraryPath]?.isNotEmpty ??
+            false);
+  }
+
   bool isLibraryTrackExplicitlyExcluded(String libraryPath, String trackPath) =>
       service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath);
   bool isLibraryFolderExplicitlyExcluded(
     String libraryPath,
     String folderPath,
   ) => service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath);
+  @override
   bool isLibraryPathExcluded(String libraryPath, String entityPath) =>
       service.isLibraryPathExcluded(libraryPath, entityPath);
   bool isLibraryPathInheritedExcluded(String libraryPath, String entityPath) =>
       service.isLibraryPathInheritedExcluded(libraryPath, entityPath);
+
+  @override
+  bool isScanGenerationActive(int generation) =>
+      service.isScanning &&
+      generation != 0 &&
+      generation == service.scanGeneration;
 
   LibraryCatalog get catalog {
     final catalog = _catalog;

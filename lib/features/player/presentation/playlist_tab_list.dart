@@ -222,7 +222,7 @@ class _SessionListCard extends ConsumerWidget {
   final VoidCallback onOpen;
 
   void _confirmRemoveSession(BuildContext context) {
-    provider.removeSession(sessionId);
+    provider.playbackFacade.removeSession(sessionId);
     ProviderScope.containerOf(
       context,
     ).read(subtitleSettingsProvider.notifier).resetForSession(sessionId);

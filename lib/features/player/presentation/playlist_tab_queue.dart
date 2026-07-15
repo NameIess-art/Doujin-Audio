@@ -639,7 +639,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
       icon: Icons.delete_outline_rounded,
     );
     if (!confirmed || !context.mounted) return;
-    await provider.removeSession(sessionId);
+    await provider.playbackFacade.removeSession(sessionId);
     if (context.mounted) Navigator.of(context).pop();
   }
 }

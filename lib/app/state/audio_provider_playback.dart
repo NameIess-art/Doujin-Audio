@@ -50,45 +50,6 @@ extension AudioProviderPlayback on AudioProvider {
     }
   }
 
-  Future<void> removeSession(String sessionId) async {
-    await _removeSessions([sessionId]);
-  }
-
-  Future<void> _removeSessions(
-    Iterable<String> sessionIds, {
-    bool persist = true,
-    bool notify = true,
-  }) async {
-    final removedSessions = _playbackService.removeSessions(sessionIds);
-    if (removedSessions.isEmpty) return;
-
-    for (final session in removedSessions) {
-      session.isPlaybackStarting = false;
-      _deferredVolumeReloadSessionIds.remove(session.id);
-      _forgetTimeSegmentLoopSession(session.id);
-      _clearNotificationSubtitleForSession(session.id);
-      if (_notificationFocusSessionId == session.id) {
-        _notificationFocusSessionId = null;
-      }
-    }
-    if (notify) {
-      _notifyPlaybackChanged();
-    }
-
-    await Future.wait(
-      removedSessions.map((session) async {
-        await _nativePlaybackRepository.removeSession(session.id);
-        session.dispose();
-      }),
-    );
-    _syncKeepCpuAwake();
-    _syncNotificationState();
-    if (persist) {
-      _playbackFacade.scheduleSessionStatePersistence();
-      _playbackFacade.scheduleSessionOrderPersistence();
-    }
-  }
-
   Future<void> setSessionLoopMode(
     String sessionId,
     SessionLoopMode mode,
@@ -600,43 +561,5 @@ extension AudioProviderPlayback on AudioProvider {
         targetQueueIndex: previousTarget.queueIndex,
       );
     }
-  }
-
-  Future<void> pauseAllSessions() async {
-    for (final session in _sessions.values) {
-      session.setOptimisticState(playing: false);
-      session.isLoading = false;
-      session.isPlaybackStarting = false;
-    }
-    _syncKeepCpuAwake();
-    _notifyPlaybackChanged();
-    await _nativePlaybackRepository.pauseAll();
-    _playbackFacade.scheduleSessionStatePersistence();
-  }
-
-  Future<void> clearAllSessions() async {
-    final sessionIds = _sessions.keys.toList();
-    if (sessionIds.isEmpty) return;
-
-    final removedSessions = _playbackService.removeSessions(sessionIds);
-    for (final session in removedSessions) {
-      session.isPlaybackStarting = false;
-      _deferredVolumeReloadSessionIds.remove(session.id);
-      _forgetTimeSegmentLoopSession(session.id);
-      _clearNotificationSubtitleForSession(session.id);
-    }
-    _notificationFocusSessionId = null;
-
-    _notifyPlaybackChanged();
-
-    await _nativePlaybackRepository.clearAll();
-    for (final session in removedSessions) {
-      session.dispose();
-    }
-
-    _syncKeepCpuAwake();
-    _syncNotificationState();
-    _playbackFacade.scheduleSessionStatePersistence();
-    _playbackFacade.scheduleSessionOrderPersistence();
   }
 }

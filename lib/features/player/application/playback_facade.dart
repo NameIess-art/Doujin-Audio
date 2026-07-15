@@ -65,8 +65,10 @@ final class PlaybackFacade {
   Future<void> Function()? _persistSessionState;
   Future<void> Function()? _persistSessionOrder;
   void Function(PlaybackSession session)? _onSessionRegistered;
+  void Function(List<PlaybackSession> sessions)? _onSessionsRemoved;
   void Function()? _onSessionsReordered;
   void Function()? _onSessionStateChanged;
+  void Function()? _onRuntimeStateChanged;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   int _transportCommandSequence = 0;
   int _sessionSeed = 0;
@@ -282,12 +284,16 @@ final class PlaybackFacade {
 
   void attachSessionRuntime({
     required void Function(PlaybackSession session) onSessionRegistered,
+    void Function(List<PlaybackSession> sessions)? onSessionsRemoved,
     required void Function() onSessionsReordered,
     required void Function() onSessionStateChanged,
+    void Function()? onRuntimeStateChanged,
   }) {
     _onSessionRegistered ??= onSessionRegistered;
+    _onSessionsRemoved ??= onSessionsRemoved;
     _onSessionsReordered ??= onSessionsReordered;
     _onSessionStateChanged ??= onSessionStateChanged;
+    _onRuntimeStateChanged ??= onRuntimeStateChanged;
   }
 
   void registerSession(PlaybackSession session) {
@@ -354,6 +360,62 @@ final class PlaybackFacade {
     service.reorderSessions(oldIndex, newIndex);
     if (service.sessionStateVersion == version) return;
     _onSessionsReordered?.call();
+  }
+
+  Future<void> pauseAllSessions() async {
+    for (final session in service.sessions.values) {
+      session.setOptimisticState(playing: false);
+      session.isLoading = false;
+      session.isPlaybackStarting = false;
+    }
+    _onRuntimeStateChanged?.call();
+    _onSessionStateChanged?.call();
+    await nativeRepository.pauseAll();
+    scheduleSessionStatePersistence();
+  }
+
+  Future<void> removeSession(String sessionId) {
+    return removeSessions(<String>[sessionId]);
+  }
+
+  Future<void> removeSessions(
+    Iterable<String> sessionIds, {
+    bool persist = true,
+    bool notify = true,
+  }) async {
+    final removedSessions = service.removeSessions(sessionIds);
+    if (removedSessions.isEmpty) return;
+    for (final session in removedSessions) {
+      session.isPlaybackStarting = false;
+    }
+    _onSessionsRemoved?.call(removedSessions);
+    if (notify) _onSessionStateChanged?.call();
+    await Future.wait(
+      removedSessions.map((session) async {
+        await nativeRepository.removeSession(session.id);
+        session.dispose();
+      }),
+    );
+    _onRuntimeStateChanged?.call();
+    if (persist) _scheduleNewSessionPersistence();
+  }
+
+  Future<void> clearAllSessions() async {
+    final removedSessions = service.removeSessions(
+      service.sessions.keys.toList(growable: false),
+    );
+    if (removedSessions.isEmpty) return;
+    for (final session in removedSessions) {
+      session.isPlaybackStarting = false;
+    }
+    _onSessionsRemoved?.call(removedSessions);
+    _onSessionStateChanged?.call();
+    await nativeRepository.clearAll();
+    for (final session in removedSessions) {
+      session.dispose();
+    }
+    _onRuntimeStateChanged?.call();
+    _scheduleNewSessionPersistence();
   }
 
   bool renamePlaybackQueue(String sessionId, String name) {

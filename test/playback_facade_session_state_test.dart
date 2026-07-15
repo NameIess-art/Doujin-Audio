@@ -1,10 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/core/errors/native_result.dart';
 import 'package:nameless_audio/core/media/path_matcher.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
+import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_session.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/player/domain/playback_queue.dart';
@@ -50,6 +52,65 @@ void main() {
 
     playback.reorderSessions(-1, 0);
     expect(reorderCount, 1);
+  });
+
+  test('PlaybackFacade owns pause and session removal lifecycle', () async {
+    final library = LibraryFacade.create();
+    final native = _RecordingNativePlaybackRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+    final first = _session('first')
+      ..setOptimisticState(playing: true)
+      ..isLoading = true
+      ..isPlaybackStarting = true;
+    final second = _session('second')..setOptimisticState(playing: true);
+    final removed = <String>[];
+    var stateChanges = 0;
+    var runtimeChanges = 0;
+    playback.attachSessionRuntime(
+      onSessionRegistered: (_) {},
+      onSessionsRemoved: (sessions) {
+        removed.addAll(sessions.map((session) => session.id));
+      },
+      onSessionsReordered: () {},
+      onSessionStateChanged: () => stateChanges++,
+      onRuntimeStateChanged: () => runtimeChanges++,
+    );
+    playback
+      ..registerSession(first)
+      ..registerSession(second);
+
+    await playback.pauseAllSessions();
+
+    expect(first.state.playing, isFalse);
+    expect(first.isLoading, isFalse);
+    expect(first.isPlaybackStarting, isFalse);
+    expect(second.state.playing, isFalse);
+    expect(native.pauseAllCount, 1);
+    expect(stateChanges, 1);
+    expect(runtimeChanges, 1);
+
+    await playback.removeSession(first.id);
+
+    expect(playback.sessionById(first.id), isNull);
+    expect(native.removedSessionIds, <String>[first.id]);
+    expect(removed, <String>[first.id]);
+    expect(stateChanges, 2);
+    expect(runtimeChanges, 2);
+
+    await playback.clearAllSessions();
+
+    expect(playback.service.sessions, isEmpty);
+    expect(native.clearAllCount, 1);
+    expect(removed, <String>[first.id, second.id]);
+    expect(stateChanges, 3);
+    expect(runtimeChanges, 3);
   });
 
   test('PlaybackFacade owns track and playback queue session creation', () {
@@ -286,4 +347,32 @@ PlaybackSession _session(String id) {
     createdAt: DateTime(2026),
     state: PlayerState(false, ProcessingState.idle),
   );
+}
+
+final class _RecordingNativePlaybackRepository
+    extends NativePlaybackRepository {
+  int pauseAllCount = 0;
+  int clearAllCount = 0;
+  final List<String> removedSessionIds = <String>[];
+
+  @override
+  Future<NativeResult<void>> pauseAll() async {
+    pauseAllCount++;
+    return const NativeSuccess<void>();
+  }
+
+  @override
+  Future<NativeResult<void>> clearAll() async {
+    clearAllCount++;
+    return const NativeSuccess<void>();
+  }
+
+  @override
+  Future<NativeResult<void>> removeSession(String sessionId) async {
+    removedSessionIds.add(sessionId);
+    return const NativeSuccess<void>();
+  }
+
+  @override
+  Future<void> dispose() async {}
 }

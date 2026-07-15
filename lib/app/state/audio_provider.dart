@@ -626,12 +626,26 @@ class AudioProvider with ChangeNotifier {
         _syncNotificationState();
         _notifyPlaybackChanged();
       },
+      onSessionsRemoved: (sessions) {
+        for (final session in sessions) {
+          _deferredVolumeReloadSessionIds.remove(session.id);
+          _forgetTimeSegmentLoopSession(session.id);
+          _clearNotificationSubtitleForSession(session.id);
+          if (_notificationFocusSessionId == session.id) {
+            _notificationFocusSessionId = null;
+          }
+        }
+      },
       onSessionsReordered: () {
         _syncNotificationState();
         _notifyPlaybackChanged();
         _playbackFacade.scheduleSessionOrderPersistence();
       },
       onSessionStateChanged: _notifyPlaybackChanged,
+      onRuntimeStateChanged: () {
+        _syncKeepCpuAwake();
+        _syncNotificationState();
+      },
     );
     _timerFacade.attachRuntime(
       hasPlayingSession: () => _hasPlayingSession,

@@ -400,7 +400,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   Future<void> _confirmClearAll(
     BuildContext context,
-    AudioProvider provider,
+    PlaybackFacade playbackFacade,
   ) async {
     final i18n = context.read<AppLanguageProvider>();
     final confirmed = await showConfirmActionDialog(
@@ -412,7 +412,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       icon: Icons.delete_sweep_rounded,
     );
     if (!confirmed || !mounted) return;
-    await provider.clearAllSessions();
+    await playbackFacade.clearAllSessions();
     if (!mounted || !context.mounted) return;
     showAppSnackBar(
       context,
@@ -751,7 +751,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                     }),
                                   );
                             } else if (value == 'pause_all') {
-                              provider.pauseAllSessions();
+                              ref
+                                  .read(playbackFacadeProvider)
+                                  .pauseAllSessions();
                               showAppSnackBar(
                                 context,
                                 i18n.tr('all_paused'),
@@ -759,7 +761,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 icon: Icons.pause_circle_outline_rounded,
                               );
                             } else if (value == 'clear_all') {
-                              _confirmClearAll(context, provider);
+                              _confirmClearAll(
+                                context,
+                                ref.read(playbackFacadeProvider),
+                              );
                             } else if (value ==
                                 'toggle_card_positions_locked') {
                               unawaited(

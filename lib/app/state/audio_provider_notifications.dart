@@ -190,7 +190,7 @@ extension AudioProviderNotifications on AudioProvider {
     // service to use STOP_FOREGROUND_REMOVE instead of DETACH.
     await _clearUnifiedPlaybackNotificationsOnPlatform();
     await _stopPlaybackKeepAliveOnPlatform();
-    await pauseAllSessions();
+    await _playbackFacade.pauseAllSessions();
     // Unified notification buttons are handled natively.
     _notificationFocusSessionId = _preferredSingleSessionId;
     _syncKeepCpuAwake();

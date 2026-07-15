@@ -180,7 +180,11 @@ extension AudioProviderLibrary on AudioProvider {
         .toList(growable: false);
     if (sessionsToRemove.isNotEmpty) {
       unawaited(
-        _removeSessions(sessionsToRemove, persist: false, notify: false),
+        _playbackFacade.removeSessions(
+          sessionsToRemove,
+          persist: false,
+          notify: false,
+        ),
       );
     }
   }

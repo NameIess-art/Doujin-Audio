@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -803,8 +804,37 @@ Future<void> _settleSessionDetailAsyncWork(WidgetTester tester) async {
 }
 
 Future<void> _tapSettingsDestination(WidgetTester tester) async {
-  await tester.tap(
-    find.byKey(const ValueKey<String>('main_destination_nav_settings')),
+  final semanticsHandle = tester.ensureSemantics();
+  try {
+    final destination = find.byKey(
+      const ValueKey<String>('main_destination_nav_settings'),
+    );
+    final semanticsNode = tester.semantics.find(destination);
+    expect(
+      semanticsNode.getSemanticsData().hasAction(SemanticsAction.tap),
+      isTrue,
+    );
+    semanticsNode.owner!.performAction(semanticsNode.id, SemanticsAction.tap);
+    await _waitForMainPage(tester, 3);
+  } finally {
+    semanticsHandle.dispose();
+  }
+}
+
+Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {
+  final pageViewFinder = find.byKey(const ValueKey<String>('main_page_view'));
+  for (var frame = 0; frame < 30; frame++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    final controller = tester.widget<PageView>(pageViewFinder).controller!;
+    if (controller.hasClients &&
+        ((controller.page ?? controller.initialPage) - targetPage).abs() <
+            0.001) {
+      return;
+    }
+  }
+  final controller = tester.widget<PageView>(pageViewFinder).controller!;
+  fail(
+    'Main PageController did not reach page $targetPage; '
+    'current page: ${controller.page}.',
   );
-  await tester.pumpAndSettle();
 }

@@ -137,7 +137,6 @@ extension _LibraryTabCategoryView on _LibraryTabState {
   }
 
   Widget _buildCategoryBody({
-    required AudioProvider provider,
     required LibraryFacade libraryFacade,
     required AppLanguageProvider i18n,
     required double topPadding,
@@ -168,7 +167,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
         final terms = _termsForCategory(snapshot);
         final entries = _filterCategoryEntries(snapshot);
         _scheduleLibraryCoverWarmup(
-          provider: provider,
+          libraryFacade: libraryFacade,
           tracks: entries.map((entry) => entry.firstTrack),
           structureRevision: structureRevision,
           detailRevision: detailRevision,
@@ -241,7 +240,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
               key: ValueKey('category_${entry.target.targetPath}'),
               child: _AudioLibraryCategoryEntryCard(
                 entry: entry,
-                folder: _folderForCategoryEntry(provider, entry),
+                folder: _folderForCategoryEntry(libraryFacade, entry),
                 secondaryIcon: _categoryIcon(),
                 secondaryText: _entrySecondaryText(i18n, entry),
               ),
@@ -276,11 +275,11 @@ extension _LibraryTabCategoryView on _LibraryTabState {
   }
 
   FolderNode? _folderForCategoryEntry(
-    AudioProvider provider,
+    LibraryFacade libraryFacade,
     AudioLibraryCategoryEntry entry,
   ) {
     if (!entry.isFolder) return null;
-    for (final folder in provider.libraryCards.whereType<FolderNode>()) {
+    for (final folder in libraryFacade.libraryCards.whereType<FolderNode>()) {
       if (PathMatcher.equalsNormalized(folder.path, entry.path)) return folder;
     }
     return null;
@@ -652,16 +651,16 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   final IconData secondaryIcon;
   final String secondaryText;
 
-  String? _findParentLibraryPath(AudioProvider provider) {
-    return provider.libraryRootForPath(entry.path);
+  String? _findParentLibraryPath(LibraryFacade library) {
+    return library.libraryRootForPath(entry.path);
   }
 
-  Future<void> _remove(BuildContext context, AudioProvider provider) async {
+  Future<void> _remove(BuildContext context, LibraryFacade library) async {
     final i18n = context.read<AppLanguageProvider>();
-    final libraryPath = _findParentLibraryPath(provider);
+    final libraryPath = _findParentLibraryPath(library);
     if (entry.isFolder) {
       if (libraryPath != null) {
-        provider.setLibraryFolderExcluded(libraryPath, entry.path, true);
+        library.excludeLibraryFolder(libraryPath, entry.path);
         if (context.mounted) {
           showAppSnackBar(
             context,
@@ -671,7 +670,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           );
         }
       } else {
-        await provider.removeFolderFromLibrary(entry.path);
+        await library.removeFolderFromLibrary(entry.path);
         if (context.mounted) {
           showAppSnackBar(
             context,
@@ -685,7 +684,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     }
 
     if (libraryPath != null) {
-      provider.setLibraryTrackExcluded(libraryPath, entry.path, true);
+      library.excludeLibraryTrack(libraryPath, entry.path);
       if (context.mounted) {
         showAppSnackBar(
           context,
@@ -695,7 +694,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         );
       }
     } else {
-      await provider.removeTrackFromLibrary(entry.path);
+      await library.removeTrackFromLibrary(entry.path);
       if (context.mounted) {
         showAppSnackBar(
           context,
@@ -707,7 +706,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     }
   }
 
-  void _play(BuildContext context, AudioProvider provider) {
+  void _play(BuildContext context, PlaybackFacade playback) {
     final track = entry.firstTrack;
     if (track == null) return;
     final i18n = context.read<AppLanguageProvider>();
@@ -715,7 +714,13 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
       AppInteractionFeedbackType.tap,
       context: context,
     );
-    unawaited(provider.spawnSession(track, autoPlay: true));
+    unawaited(
+      playback.launchQueue(
+        <MusicTrack>[track],
+        autoPlay: true,
+        loopMode: SessionLoopMode.folderSequential,
+      ),
+    );
     _showSessionCreatedSnack(
       context,
       i18n.tr('session_created', {'name': track.displayName}),
@@ -725,7 +730,8 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = ref.read(audioProviderFacadeProvider);
+    final library = ref.read(libraryFacadeProvider);
+    final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final firstTrack = entry.firstTrack;
     final isAlreadyPlaying = firstTrack == null
@@ -760,7 +766,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         verticalActions: useFeaturedCard,
         onSecondaryAction: () =>
             unawaited(showAudioDetailSheet(context, entry.target)),
-        onRemove: () => _remove(context, provider),
+        onRemove: () => _remove(context, library),
         child: Card(
           margin: EdgeInsets.zero,
           clipBehavior: Clip.antiAlias,
@@ -773,7 +779,8 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
               : cs.surfaceContainerLow,
           child: _buildEntryContent(
             context,
-            provider,
+            library,
+            playback,
             firstTrack,
             cardHeight,
             useFeaturedCardOverride: useFeaturedCard,
@@ -783,7 +790,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     }
 
     if (!entry.isFolder && firstTrack != null) {
-      final resolvedCoverPath = provider.resolvedCoverPathForTrack(firstTrack);
+      final resolvedCoverPath = library.resolvedCoverPathForTrack(firstTrack);
       final useFeaturedCard =
           firstTrack.isVideo ||
           hasDisplayableCoverArtwork(firstTrack, resolvedCoverPath);
@@ -795,7 +802,8 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
   Widget _buildEntryContent(
     BuildContext context,
-    AudioProvider provider,
+    LibraryFacade library,
+    PlaybackFacade playback,
     MusicTrack? firstTrack,
     double cardHeight, {
     bool? useFeaturedCardOverride,
@@ -813,7 +821,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             detailLoading: false,
             expanded: false,
             hasChildren: false,
-            onPlay: firstTrack == null ? () {} : () => _play(context, provider),
+            onPlay: firstTrack == null ? () {} : () => _play(context, playback),
           ),
         ),
       );
@@ -829,7 +837,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             title: entry.title,
             detail: entry.detail,
             detailLoading: false,
-            onPlay: () => _play(context, provider),
+            onPlay: () => _play(context, playback),
           ),
         );
       }
@@ -848,7 +856,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             IconButton(
               onPressed: firstTrack == null
                   ? null
-                  : () => _play(context, provider),
+                  : () => _play(context, playback),
               style: IconButton.styleFrom(
                 foregroundColor: Theme.of(context).colorScheme.primary,
                 minimumSize: const Size(40, 44),
@@ -864,7 +872,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     }
 
     if (firstTrack == null) return buildSingleFileContent(false);
-    final resolvedCoverPath = provider.resolvedCoverPathForTrack(firstTrack);
+    final resolvedCoverPath = library.resolvedCoverPathForTrack(firstTrack);
     final useFeaturedCard =
         useFeaturedCardOverride ??
         (firstTrack.isVideo ||

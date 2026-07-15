@@ -226,6 +226,13 @@ class SettingsRepository {
     await _persist?.call();
   }
 
+  Future<void> setCardPositionsLocked(bool locked) async {
+    if (cardPositionsLocked == locked) return;
+    cardPositionsLocked = locked;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await _persist?.call();
+  }
+
   void syncSlice({bool isInitialized = false}) {
     slice.update(
       SettingsState(

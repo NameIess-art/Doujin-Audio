@@ -269,7 +269,9 @@ class _SessionListCard extends ConsumerWidget {
         ? null
         : ref.watch(
             libraryDetailForTargetProvider(
-              provider.audioDetailTargetForTrack(currentTrack),
+              ref
+                  .read(libraryFacadeProvider)
+                  .audioDetailTargetForTrack(currentTrack),
             ).select((state) => state.detail?.duration),
           );
     final tokens = AppDesignTokens.of(context);

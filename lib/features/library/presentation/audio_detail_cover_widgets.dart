@@ -184,8 +184,8 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
       _saving = true;
     });
     try {
-      final storedCoverPath = await context
-          .read<AudioProvider>()
+      final storedCoverPath = await ref
+          .read(libraryFacadeProvider)
           .setFolderManualCover(widget.folderPath, _images[index]);
       if (!mounted) return;
       setState(() {

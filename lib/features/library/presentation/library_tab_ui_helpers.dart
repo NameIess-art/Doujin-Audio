@@ -156,7 +156,6 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
 
   Widget _buildScanProgressCard(
     AppLanguageProvider i18n,
-    AudioProvider provider,
     LibraryScanUiState scanState,
   ) {
     final cs = Theme.of(context).colorScheme;
@@ -215,7 +214,7 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                   ),
                   TextButton.icon(
                     onPressed: () => _scanCoordinator.cancel(
-                      ref.read(libraryFacadeProvider).catalog,
+                      ref.read(libraryFacadeProvider),
                     ),
                     icon: Icon(Icons.close_rounded, size: 16, color: cs.error),
                     label: Text(

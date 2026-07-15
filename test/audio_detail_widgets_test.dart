@@ -277,9 +277,11 @@ void main() {
       addTearDown(fixture.dispose);
       final audioProvider = fixture.audioProvider;
 
-      final metadata = (await audioProvider.searchPreferredMetadataByTitles(
-        const <String>['Work'],
-      )).single;
+      final metadata =
+          (await audioProvider.libraryFacade.searchPreferredMetadataByTitles(
+            const <String>['Work'],
+            language: AppLanguage.zh,
+          )).single;
 
       expect(metadata.workTitle, 'ASMR fetched title');
       expect(metadata.circleName, 'Circle');
@@ -342,7 +344,7 @@ void main() {
         persist: false,
       );
       await tester.runAsync(
-        () => audioProvider.saveAudioDetail(
+        () => audioProvider.libraryFacade.saveAudioDetail(
           AudioDetail.empty(
             target,
           ).copyWith(duration: const Duration(minutes: 9)),
@@ -403,7 +405,7 @@ void main() {
       }
 
       final saved = await tester.runAsync(
-        () => audioProvider.loadAudioDetail(target),
+        () => audioProvider.libraryFacade.loadAudioDetail(target),
       );
       expect(saved?.detail.duration, isNull);
       expect(
@@ -437,7 +439,9 @@ void main() {
     final languageProvider = fixture.languageProvider;
     final target = AudioDetailTarget.libraryRootFolder('/library/Work');
     await tester.runAsync(
-      () => audioProvider.saveAudioDetail(AudioDetail.empty(target)),
+      () => audioProvider.libraryFacade.saveAudioDetail(
+        AudioDetail.empty(target),
+      ),
     );
     final durationCompleter = Completer<Duration?>();
 
@@ -507,7 +511,9 @@ void main() {
       targetPath: '/library/Work',
     );
     await tester.runAsync(
-      () => audioProvider.saveAudioDetail(AudioDetail.empty(target)),
+      () => audioProvider.libraryFacade.saveAudioDetail(
+        AudioDetail.empty(target),
+      ),
     );
 
     await tester.pumpWidget(

@@ -504,6 +504,407 @@ class LibraryService {
 
   MusicTrack? trackByPath(String trackPath) => libraryByPath[trackPath];
 
+  int compareTracks(MusicTrack first, MusicTrack second) {
+    return organizer.compareTracks(first, second);
+  }
+
+  void rebuildLibraryIndexes() {
+    final nextTracksByGroup = <String, List<MusicTrack>>{};
+    libraryByPath.clear();
+    libraryIndexByPath.clear();
+    for (var index = 0; index < library.length; index++) {
+      final track = library[index];
+      libraryByPath[track.path] = track;
+      libraryIndexByPath[track.path] = index;
+      nextTracksByGroup
+          .putIfAbsent(track.groupKey, () => <MusicTrack>[])
+          .add(track);
+    }
+    for (final entry in nextTracksByGroup.entries) {
+      entry.value.sort(compareTracks);
+    }
+    tracksByGroup
+      ..clear()
+      ..addAll(
+        nextTracksByGroup.map(
+          (groupKey, tracks) =>
+              MapEntry(groupKey, List<MusicTrack>.unmodifiable(tracks)),
+        ),
+      );
+    sortedLibraryTracks = List<MusicTrack>.unmodifiable(
+      library.toList()..sort(compareTracks),
+    );
+    sortedLibraryTrackPaths = List<String>.unmodifiable(
+      sortedLibraryTracks.map((track) => track.path),
+    );
+    groupOrderSet
+      ..clear()
+      ..addAll(groupOrder);
+    markStructureChanged();
+  }
+
+  void syncGroupOrderFromLibrary() {
+    final activeGroupKeys = library.map((track) => track.groupKey).toSet();
+    groupOrder.removeWhere((groupKey) => !activeGroupKeys.contains(groupKey));
+    for (final groupKey in activeGroupKeys) {
+      if (groupOrderSet.add(groupKey)) groupOrder.add(groupKey);
+    }
+    groupOrderSet
+      ..clear()
+      ..addAll(groupOrder);
+  }
+
+  ({List<MusicTrack> tracks, bool didChangeGroupOrder, bool batched}) addTracks(
+    List<MusicTrack> newTracks, {
+    required bool persist,
+  }) {
+    final addedTracks = <MusicTrack>[];
+    var didChangeGroupOrder = false;
+    for (final track in newTracks) {
+      if (libraryByPath.containsKey(track.path)) continue;
+      library.add(track);
+      libraryByPath[track.path] = track;
+      addedTracks.add(track);
+      if (groupOrderSet.add(track.groupKey)) {
+        groupOrder.add(track.groupKey);
+        didChangeGroupOrder = true;
+      }
+    }
+    if (addedTracks.isEmpty) {
+      return (
+        tracks: const <MusicTrack>[],
+        didChangeGroupOrder: false,
+        batched: false,
+      );
+    }
+    if (libraryBatchDepth > 0) {
+      libraryBatchChanged = true;
+      if (persist) libraryBatchPersistTracks.addAll(addedTracks);
+      if (didChangeGroupOrder) libraryBatchChangedGroupOrder = true;
+      return (
+        tracks: addedTracks,
+        didChangeGroupOrder: didChangeGroupOrder,
+        batched: true,
+      );
+    }
+    rebuildLibraryIndexes();
+    syncLibraryNodeOrder(persist: false);
+    return (
+      tracks: addedTracks,
+      didChangeGroupOrder: didChangeGroupOrder,
+      batched: false,
+    );
+  }
+
+  ({
+    List<MusicTrack> tracks,
+    bool didChangeGroupOrder,
+    bool didReplaceGroup,
+    bool batched,
+  })
+  addOrReplaceTracks(List<MusicTrack> tracks, {required bool persist}) {
+    var didChangeGroupOrder = false;
+    var didReplaceGroup = false;
+    final changedTracks = <MusicTrack>[];
+
+    for (final track in tracks) {
+      final existing = libraryByPath[track.path];
+      final nextTrack = existing == null
+          ? track
+          : _mergeExistingTrackState(existing, track);
+      if (existing != null && !_mergedTrackHasChanges(existing, track)) {
+        continue;
+      }
+      if (existing != null && existing.groupKey != nextTrack.groupKey) {
+        didReplaceGroup = true;
+      }
+      if (existing == null) {
+        library.add(nextTrack);
+      } else {
+        final index = libraryIndexByPath[nextTrack.path];
+        if (index != null &&
+            index < library.length &&
+            library[index].path == nextTrack.path) {
+          library[index] = nextTrack;
+        } else {
+          final fallbackIndex = library.indexWhere(
+            (item) => item.path == nextTrack.path,
+          );
+          if (fallbackIndex >= 0) {
+            library[fallbackIndex] = nextTrack;
+          } else {
+            library.add(nextTrack);
+          }
+        }
+      }
+      libraryByPath[nextTrack.path] = nextTrack;
+      changedTracks.add(nextTrack);
+      if (groupOrderSet.add(nextTrack.groupKey)) {
+        groupOrder.add(nextTrack.groupKey);
+        didChangeGroupOrder = true;
+      }
+    }
+
+    if (changedTracks.isEmpty) {
+      return (
+        tracks: const <MusicTrack>[],
+        didChangeGroupOrder: false,
+        didReplaceGroup: false,
+        batched: false,
+      );
+    }
+    if (libraryBatchDepth > 0) {
+      libraryBatchChanged = true;
+      if (persist) libraryBatchPersistTracks.addAll(changedTracks);
+      if (didChangeGroupOrder || didReplaceGroup) {
+        libraryBatchChangedGroupOrder = true;
+      }
+      return (
+        tracks: changedTracks,
+        didChangeGroupOrder: didChangeGroupOrder,
+        didReplaceGroup: didReplaceGroup,
+        batched: true,
+      );
+    }
+    rebuildLibraryIndexes();
+    syncGroupOrderFromLibrary();
+    syncLibraryNodeOrder(persist: false);
+    return (
+      tracks: changedTracks,
+      didChangeGroupOrder: didChangeGroupOrder,
+      didReplaceGroup: didReplaceGroup,
+      batched: false,
+    );
+  }
+
+  ({List<MusicTrack> tracks, bool batched}) removeTracksWhere(
+    bool Function(MusicTrack track) test,
+  ) {
+    final removedTracks = library.where(test).toList(growable: false);
+    if (removedTracks.isEmpty) {
+      return (tracks: const <MusicTrack>[], batched: false);
+    }
+    final removedPaths = removedTracks.map((track) => track.path).toSet();
+    library.removeWhere((track) => removedPaths.contains(track.path));
+    for (final trackPath in removedPaths) {
+      libraryByPath.remove(trackPath);
+      libraryIndexByPath.remove(trackPath);
+    }
+    if (libraryBatchDepth > 0) {
+      libraryBatchChanged = true;
+      return (tracks: removedTracks, batched: true);
+    }
+    rebuildLibraryIndexes();
+    syncLibraryNodeOrder(persist: false);
+    return (tracks: removedTracks, batched: false);
+  }
+
+  List<LibraryEntry> buildLibraryEntries(
+    String libraryPath,
+    List<MusicTrack> tracks, {
+    Iterable<String> folderPaths = const <String>[],
+    LibraryExclusionMatcher? exclusionMatcher,
+  }) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final matcher =
+        exclusionMatcher ??
+        libraryExclusionMatcherForLibrary(normalizedLibraryPath);
+    final entriesByKey = <String, LibraryEntry>{};
+
+    void putEntry(LibraryEntry entry) {
+      entriesByKey['${entry.kind.dbValue}:${entry.path}'] = entry;
+    }
+
+    void ensureFolder(String folderPath) {
+      final normalizedFolderPath = canonicalLibraryFolderPath(
+        normalizedLibraryPath,
+        folderPath,
+      );
+      if (PathMatcher.equalsNormalized(
+            normalizedFolderPath,
+            normalizedLibraryPath,
+          ) ||
+          !PathMatcher.isWithinOrEqual(
+            normalizedFolderPath,
+            normalizedLibraryPath,
+          )) {
+        return;
+      }
+      final parentPath = parentLibraryFolderPath(
+        normalizedFolderPath,
+        normalizedLibraryPath,
+      );
+      if (parentPath != null) ensureFolder(parentPath);
+      putEntry(
+        LibraryEntry.folder(
+          libraryPath: normalizedLibraryPath,
+          path: normalizedFolderPath,
+          parentPath: parentPath,
+          state: matcher.isExcluded(normalizedFolderPath)
+              ? LibraryEntryState.excluded
+              : LibraryEntryState.active,
+          displayName: PathDisplay.folderName(normalizedFolderPath),
+        ),
+      );
+    }
+
+    for (final folderPath in folderPaths) {
+      ensureFolder(folderPath);
+    }
+    for (final track in tracks) {
+      if (!PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath)) {
+        continue;
+      }
+      final parentPath = folderPathForLibraryTrack(
+        normalizedLibraryPath,
+        track,
+      );
+      if (parentPath != null) ensureFolder(parentPath);
+      putEntry(
+        LibraryEntry.track(
+          libraryPath: normalizedLibraryPath,
+          track: track,
+          parentPath: parentPath,
+          state: matcher.isExcluded(track.path)
+              ? LibraryEntryState.excluded
+              : LibraryEntryState.active,
+        ),
+      );
+    }
+    return entriesByKey.values.toList(growable: false);
+  }
+
+  String? libraryPathForTrack(MusicTrack track) {
+    for (final libraryPath in watchedLibraries) {
+      if (PathMatcher.isWithinOrEqual(track.path, libraryPath) ||
+          PathMatcher.isWithinOrEqual(track.groupKey, libraryPath)) {
+        return libraryPath;
+      }
+    }
+    for (final folderPath in watchedFolders) {
+      if (PathMatcher.isWithinOrEqual(track.path, folderPath) ||
+          PathMatcher.isWithinOrEqual(track.groupKey, folderPath)) {
+        return folderPath;
+      }
+    }
+    return null;
+  }
+
+  String? folderPathForLibraryTrack(String libraryPath, MusicTrack track) {
+    if (!track.isSingle &&
+        track.groupKey.isNotEmpty &&
+        track.groupKey != '__single_files__' &&
+        PathMatcher.isWithinOrEqual(track.groupKey, libraryPath) &&
+        !PathMatcher.equalsNormalized(track.groupKey, libraryPath)) {
+      return canonicalLibraryFolderPath(libraryPath, track.groupKey);
+    }
+    final relative = PathMatcher.relativeWithin(track.path, libraryPath);
+    if (relative == null || relative.isEmpty) return null;
+    final normalizedRelative = relative.replaceAll('\\', '/');
+    final relativeFolder = path.posix.dirname(normalizedRelative);
+    if (relativeFolder == '.' || relativeFolder.isEmpty) return null;
+    if (PathMatcher.isContentUri(libraryPath)) {
+      return '$libraryPath::$relativeFolder';
+    }
+    return path.normalize(path.join(libraryPath, relativeFolder));
+  }
+
+  String canonicalLibraryFolderPath(String libraryPath, String folderPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    if (!PathMatcher.isContentUri(normalizedLibraryPath) ||
+        normalizedFolderPath.contains('::')) {
+      return normalizedFolderPath;
+    }
+    final relativeFolderPath = PathMatcher.relativeWithin(
+      normalizedFolderPath,
+      normalizedLibraryPath,
+    );
+    if (relativeFolderPath == null || relativeFolderPath.isEmpty) {
+      return normalizedFolderPath;
+    }
+    return '$normalizedLibraryPath::${relativeFolderPath.replaceAll('\\', '/')}';
+  }
+
+  String? parentLibraryFolderPath(String folderPath, String rootPath) {
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    if (PathMatcher.equalsNormalized(normalizedFolderPath, rootPath)) {
+      return null;
+    }
+    if (PathMatcher.isContentUri(normalizedFolderPath)) {
+      final markerIndex = normalizedFolderPath.indexOf('::');
+      if (markerIndex >= 0) {
+        final base = normalizedFolderPath.substring(0, markerIndex);
+        final relative = normalizedFolderPath
+            .substring(markerIndex + 2)
+            .replaceAll('\\', '/')
+            .replaceFirst(RegExp(r'^/+'), '')
+            .replaceFirst(RegExp(r'/+$'), '');
+        final parentRelative = path.posix.dirname(relative);
+        if (parentRelative == '.' || parentRelative.isEmpty) return base;
+        return '$base::$parentRelative';
+      }
+    }
+    final parentPath = path.dirname(normalizedFolderPath);
+    return PathMatcher.equalsNormalized(parentPath, rootPath)
+        ? rootPath
+        : parentPath;
+  }
+
+  bool trackNeedsRefresh(MusicTrack nextTrack) {
+    final existing = libraryByPath[nextTrack.path];
+    return existing == null || _mergedTrackHasChanges(existing, nextTrack);
+  }
+
+  bool _mergedTrackHasChanges(MusicTrack existing, MusicTrack scanned) {
+    return existing.displayName != scanned.displayName ||
+        existing.groupKey != scanned.groupKey ||
+        existing.groupTitle != scanned.groupTitle ||
+        existing.groupSubtitle != scanned.groupSubtitle ||
+        existing.isSingle != scanned.isSingle ||
+        existing.isVideo != scanned.isVideo ||
+        existing.fileSizeBytes != scanned.fileSizeBytes ||
+        existing.modifiedAt?.millisecondsSinceEpoch !=
+            scanned.modifiedAt?.millisecondsSinceEpoch ||
+        existing.coverCachePath == null && scanned.coverCachePath != null ||
+        existing.lyricsPath == null && scanned.lyricsPath != null ||
+        existing.manualCoverPath == null && scanned.manualCoverPath != null ||
+        existing.remoteCoverUrl == null && scanned.remoteCoverUrl != null ||
+        existing.remoteMetadataKind == null &&
+            scanned.remoteMetadataKind != null ||
+        existing.remoteMetadata == null && scanned.remoteMetadata != null ||
+        existing.duration == Duration.zero && scanned.duration != Duration.zero;
+  }
+
+  MusicTrack _mergeExistingTrackState(MusicTrack existing, MusicTrack scanned) {
+    return MusicTrack(
+      path: scanned.path,
+      displayName: scanned.displayName,
+      groupKey: scanned.groupKey,
+      groupTitle: scanned.groupTitle,
+      groupSubtitle: scanned.groupSubtitle,
+      isSingle: scanned.isSingle,
+      isVideo: scanned.isVideo,
+      scannedAt: scanned.scannedAt,
+      fileSizeBytes: scanned.fileSizeBytes,
+      modifiedAt: scanned.modifiedAt,
+      lastPlayedPosition: existing.lastPlayedPosition,
+      lastPlayedAt: existing.lastPlayedAt,
+      isFavorite: existing.isFavorite,
+      tags: existing.tags,
+      coverCachePath: existing.coverCachePath ?? scanned.coverCachePath,
+      lyricsPath: existing.lyricsPath ?? scanned.lyricsPath,
+      manualCoverPath: existing.manualCoverPath ?? scanned.manualCoverPath,
+      remoteCoverUrl: existing.remoteCoverUrl ?? scanned.remoteCoverUrl,
+      remoteMetadataKind:
+          existing.remoteMetadataKind ?? scanned.remoteMetadataKind,
+      remoteMetadata: existing.remoteMetadata ?? scanned.remoteMetadata,
+      duration: existing.duration == Duration.zero
+          ? scanned.duration
+          : existing.duration,
+    );
+  }
+
   Future<void> removeLibrary(
     String libraryPath, {
     required Future<void> Function(String folderPath) removeFolder,

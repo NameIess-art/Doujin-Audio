@@ -14,6 +14,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../player/application/audio_state_services.dart';
+import '../../player/application/playback_facade.dart';
 import '../../settings/application/app_preferences.dart';
 import '../application/library_entry_editor_service.dart';
 import '../application/library_facade.dart';
@@ -157,7 +158,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   void _setLocalState(VoidCallback fn) => setState(fn);
 
   void _ensureFilteredSearchSnapshot({
-    required AudioProvider provider,
+    required LibraryFacade libraryFacade,
     required String query,
     required int structureRevision,
   }) {
@@ -169,7 +170,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
     final requestKey = '$structureRevision|$query';
     _pendingSearchKey = requestKey;
-    final searchFuture = provider.loadLibraryTree().then((tree) {
+    final searchFuture = libraryFacade.loadLibraryTree().then((tree) {
       final request = LibrarySearchSnapshotRequest(
         tree: tree,
         query: query,
@@ -227,7 +228,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     bool forceShowResult = false,
   }) async {
     final i18n = context.read<AppLanguageProvider>();
-    final catalog = ref.read(libraryFacadeProvider).catalog;
+    final catalog = ref.read(libraryFacadeProvider);
     final operations = ref.read(uiOperationServiceProvider);
     final importBusy = <UiOperationScope>[
       UiOperationScope.libraryRefresh,
@@ -287,7 +288,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     required Future<void> Function() retry,
   }) async {
     final i18n = context.read<AppLanguageProvider>();
-    final catalog = ref.read(libraryFacadeProvider).catalog;
+    final catalog = ref.read(libraryFacadeProvider);
     final outcome = await ref
         .read(uiOperationServiceProvider)
         .runWithFeedback<LibraryScanOutcome?>(
@@ -452,7 +453,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _ensureMissingDurationBackfill({
-    required AudioProvider provider,
+    required LibraryFacade libraryFacade,
     required int structureRevision,
     required bool canRun,
   }) {
@@ -472,14 +473,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               _durationBackfillStructureRevision != structureRevision) {
             return;
           }
-          unawaited(provider.backfillMissingLibraryDurations());
+          unawaited(libraryFacade.backfillMissingLibraryDurations());
         },
       );
     });
   }
 
   void _scheduleLibraryCoverWarmup({
-    required AudioProvider provider,
+    required LibraryFacade libraryFacade,
     required Iterable<MusicTrack?> tracks,
     required int structureRevision,
     required int detailRevision,
@@ -508,7 +509,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           _lastLibraryCoverWarmupSignature != signature) {
         return;
       }
-      provider.warmupLibraryCoversForTracks(warmupTracks);
+      libraryFacade.warmupCoversForTracks(warmupTracks);
     });
   }
 
@@ -544,7 +545,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Widget build(BuildContext context) {
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = ref.read(audioProviderFacadeProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
     final libraryHeaderAudioCount = _readOrWatch(
       libraryHeaderUiProvider.select((s) => s.audioCount),
@@ -598,7 +598,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final libraryRefreshBusy =
         libraryRefreshOperationBusy || libraryImportBusy || listStateIsScanning;
     _ensureMissingDurationBackfill(
-      provider: provider,
+      libraryFacade: libraryFacade,
       structureRevision: listStateStructureRevision,
       canRun:
           listStateIsInitialized &&
@@ -613,7 +613,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
     final searchQuery = _effectiveSearchQuery;
     _ensureFilteredSearchSnapshot(
-      provider: provider,
+      libraryFacade: libraryFacade,
       query: searchQuery,
       structureRevision: listStateStructureRevision,
     );
@@ -661,7 +661,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         _effectiveSearchQuery.isEmpty &&
         listStateIsInitialized) {
       _scheduleLibraryCoverWarmup(
-        provider: provider,
+        libraryFacade: libraryFacade,
         tracks: _libraryCoverWarmupTracksForTree(tree),
         structureRevision: listStateStructureRevision,
         detailRevision: detailRevision,
@@ -872,7 +872,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       ? refreshableEmptyBody()
                       : _categoryType != AudioLibraryCategoryType.all
                       ? _buildCategoryBody(
-                          provider: provider,
                           libraryFacade: libraryFacade,
                           i18n: i18n,
                           topPadding: listTopPadding,
@@ -965,7 +964,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                         ScrollViewKeyboardDismissBehavior
                                             .onDrag,
                                     onReorder: (oldIndex, newIndex) {
-                                      provider.reorderLibraryNodes(
+                                      libraryFacade.reorderLibraryNodes(
                                         oldIndex,
                                         newIndex,
                                       );
@@ -1011,7 +1010,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     final scanState = _isActive
                         ? ref.watch(libraryScanUiProvider)
                         : ref.read(libraryScanUiProvider);
-                    return _buildScanProgressCard(i18n, provider, scanState);
+                    return _buildScanProgressCard(i18n, scanState);
                   },
                 ),
               ),
@@ -1125,9 +1124,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               break;
                             case _LibraryMoreAction.toggleCardPositionsLocked:
                               unawaited(
-                                provider.setCardPositionsLocked(
-                                  !cardPositionsLocked,
-                                ),
+                                ref
+                                    .read(settingsRepositoryProvider)
+                                    .setCardPositionsLocked(
+                                      !cardPositionsLocked,
+                                    ),
                               );
                               break;
                           }

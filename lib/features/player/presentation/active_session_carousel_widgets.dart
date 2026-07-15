@@ -50,7 +50,8 @@ class _ActiveSessionCard extends ConsumerWidget {
       }),
     );
     final isPlaying = view.playing;
-    final i18n = context.read<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final currentTrack = provider.trackByPath(view.trackPath);
     final displayName =
         currentTrack?.displayName ??
@@ -132,6 +133,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                         view,
                         currentTrack,
                         displayName,
+                        i18n: i18n,
                         showCover: false,
                       ))
               : _buildCardContent(
@@ -141,6 +143,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   view,
                   currentTrack,
                   displayName,
+                  i18n: i18n,
                   showCover: showCover,
                 ),
         ),
@@ -184,6 +187,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     view,
     MusicTrack? currentTrack,
     String displayName, {
+    required AppLanguageProvider i18n,
     required bool showCover,
   }) {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -249,7 +253,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                       isLoading: view.loading,
                       enabled: view.trackPath.isNotEmpty && !view.loading,
                       activeColor: activeColor,
-                      semanticLabel: context.read<AppLanguageProvider>().tr(
+                      semanticLabel: i18n.tr(
                         view.loading
                             ? 'playback_loading'
                             : (isPlaying ? 'pause' : 'play'),
@@ -353,7 +357,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   }
 }
 
-class _ActiveSessionTitleSubtitle extends StatefulWidget {
+class _ActiveSessionTitleSubtitle extends ConsumerStatefulWidget {
   const _ActiveSessionTitleSubtitle({
     super.key,
     required this.session,
@@ -370,12 +374,12 @@ class _ActiveSessionTitleSubtitle extends StatefulWidget {
   final bool useAsmrOneErrorText;
 
   @override
-  State<_ActiveSessionTitleSubtitle> createState() =>
+  ConsumerState<_ActiveSessionTitleSubtitle> createState() =>
       _ActiveSessionTitleSubtitleState();
 }
 
 class _ActiveSessionTitleSubtitleState
-    extends State<_ActiveSessionTitleSubtitle> {
+    extends ConsumerState<_ActiveSessionTitleSubtitle> {
   late final PlaybackPositionUiGate _positionGate;
   final SubtitleTextCache _subtitleTextCache = SubtitleTextCache();
   SubtitleTrack? _subtitleTrack;
@@ -455,7 +459,8 @@ class _ActiveSessionTitleSubtitleState
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final secondaryText = widget.playbackError == null
         ? _subtitleText
         : widget.useAsmrOneErrorText

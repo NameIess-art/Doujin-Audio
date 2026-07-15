@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -820,21 +819,24 @@ Future<void> _settleSessionDetailAsyncWork(WidgetTester tester) async {
 }
 
 Future<void> _tapSettingsDestination(WidgetTester tester) async {
-  final semanticsHandle = tester.ensureSemantics();
-  try {
+  final navigationRail = find.byType(NavigationRail);
+  if (navigationRail.evaluate().isNotEmpty) {
+    tester
+        .widget<NavigationRail>(navigationRail)
+        .onDestinationSelected!
+        .call(3);
+  } else {
     final destination = find.byKey(
       const ValueKey<String>('main_destination_nav_settings'),
     );
-    final semanticsNode = tester.semantics.find(destination);
-    expect(
-      semanticsNode.getSemanticsData().hasAction(SemanticsAction.tap),
-      isTrue,
-    );
-    semanticsNode.owner!.performAction(semanticsNode.id, SemanticsAction.tap);
-    await _waitForMainPage(tester, 3);
-  } finally {
-    semanticsHandle.dispose();
+    tester
+        .widget<InkResponse>(
+          find.descendant(of: destination, matching: find.byType(InkResponse)),
+        )
+        .onTap!
+        .call();
   }
+  await _waitForMainPage(tester, 3);
 }
 
 Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {

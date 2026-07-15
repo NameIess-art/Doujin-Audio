@@ -45,27 +45,6 @@ extension AudioProviderAudioDetails on AudioProvider {
     return result;
   }
 
-  Future<void> deleteAudioDetail(AudioDetailTarget target) async {
-    await _audioDetailCacheService.delete(target);
-    _librarySnapshotCacheService.markDetailChanged();
-    _notifyListeners();
-  }
-
-  Future<AudioDetailSaveResult?> prefillAudioDetailRjCodeFromText(
-    AudioDetailTarget target,
-    String text,
-  ) async {
-    final result = await _audioDetailCacheService.prefillRjCodeFromText(
-      target,
-      text,
-    );
-    if (result != null) {
-      _librarySnapshotCacheService.markDetailChanged(result.detail);
-      _notifyListeners();
-    }
-    return result;
-  }
-
   DlsiteMetadataQuery buildDlsiteMetadataQuery(AudioDetail detail) {
     return _libraryFacade.buildDlsiteMetadataQuery(detail);
   }
@@ -215,7 +194,7 @@ extension AudioProviderAudioDetails on AudioProvider {
       ),
     );
     final saveResult = await saveAudioDetail(renamedDetail);
-    await deleteAudioDetail(oldTarget);
+    await _libraryFacade.deleteAudioDetail(oldTarget);
     _notifyListeners();
     return AudioDetailRenameResult(
       detail: saveResult.detail,

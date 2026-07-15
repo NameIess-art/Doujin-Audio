@@ -173,6 +173,24 @@ final class LibraryFacade implements LibraryCatalogReader {
     return result;
   }
 
+  Future<void> deleteAudioDetail(AudioDetailTarget target) async {
+    await detailCacheService.delete(target);
+    snapshotCacheService.markDetailChanged();
+    _syncStateSlice();
+  }
+
+  Future<AudioDetailSaveResult?> prefillAudioDetailRjCodeFromText(
+    AudioDetailTarget target,
+    String text,
+  ) async {
+    final result = await detailCacheService.prefillRjCodeFromText(target, text);
+    if (result != null) {
+      snapshotCacheService.markDetailChanged(result.detail);
+      _syncStateSlice();
+    }
+    return result;
+  }
+
   AudioDetailTarget audioDetailTargetForTrack(MusicTrack track) {
     if (track.isSingle) {
       return AudioDetailTarget.singleAudioFile(track.path);

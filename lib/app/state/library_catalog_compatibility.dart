@@ -181,8 +181,10 @@ final class AudioProviderCompatibilityCatalog implements LibraryCatalog {
   Future<void> prefillAudioDetailRjCodeFromText(
     String folderPath,
     String displayName,
-  ) => _provider.prefillAudioDetailRjCodeFromText(
-    AudioDetailTarget.libraryRootFolder(folderPath),
-    displayName,
-  );
+  ) async {
+    await _provider.libraryFacade.prefillAudioDetailRjCodeFromText(
+      AudioDetailTarget.libraryRootFolder(folderPath),
+      displayName,
+    );
+  }
 }

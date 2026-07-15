@@ -1133,7 +1133,9 @@ extension AudioProviderLibrary on AudioProvider {
   Future<void> removeFolderFromLibrary(String folderPath) async {
     _clearResolvedCoverPaths();
     unawaited(
-      deleteAudioDetail(AudioDetailTarget.libraryRootFolder(folderPath)),
+      _libraryFacade.deleteAudioDetail(
+        AudioDetailTarget.libraryRootFolder(folderPath),
+      ),
     );
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final trackPaths = _library

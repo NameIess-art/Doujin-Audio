@@ -59,6 +59,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       PermissionActionController();
   late final AppUpdateFlow _updateFlow = AppUpdateFlow(
     permissionController: _permissionActionController,
+    languageProvider: ref.read(appLanguageProviderInstanceProvider),
   );
 
   final ScrollController _scrollController = ScrollController();

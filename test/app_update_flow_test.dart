@@ -20,6 +20,7 @@ void main() {
     var checks = 0;
     final flow = AppUpdateFlow(
       permissionController: permissionController,
+      languageProvider: AppLanguageProvider(),
       checkLatest: () async {
         checks++;
         return const AppUpdateInfo(

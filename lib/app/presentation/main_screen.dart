@@ -84,9 +84,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _showScrollToTopButton = false;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
-  late final AppUpdateFlow _updateFlow = AppUpdateFlow(
-    permissionController: _permissionActionController,
-  );
+  late final AppUpdateFlow _updateFlow;
   bool _timerOverlayPrimed = false;
 
   bool _bootstrapDone = false;
@@ -138,6 +136,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void initState() {
     super.initState();
+    _updateFlow = AppUpdateFlow(
+      permissionController: _permissionActionController,
+      languageProvider: ref.read(appLanguageProviderInstanceProvider),
+    );
     _pageController = PageController(initialPage: _currentIndex);
     _activePageIndex = ValueNotifier<int>(_currentIndex);
     _pages = [

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -14,11 +13,14 @@ import '../application/app_update_service.dart';
 class AppUpdateFlow {
   AppUpdateFlow({
     required PermissionActionController permissionController,
+    required AppLanguageProvider languageProvider,
     Future<AppUpdateInfo> Function()? checkLatest,
   }) : _permissionController = permissionController,
+       _languageProvider = languageProvider,
        _checkLatest = checkLatest ?? AppUpdateService.checkLatest;
 
   final PermissionActionController _permissionController;
+  final AppLanguageProvider _languageProvider;
   final Future<AppUpdateInfo> Function() _checkLatest;
 
   Future<void> checkAndPresent({
@@ -28,7 +30,7 @@ class AppUpdateFlow {
     ValueChanged<AppUpdateInfo>? onInfo,
   }) async {
     if (operations.isBusy(UiOperationScope.settingsUpdate)) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     AppUpdateInfo info;
     try {
       info = await operations.run<AppUpdateInfo>(
@@ -101,7 +103,7 @@ class AppUpdateFlow {
     UiOperationService operations,
     AppUpdateInfo info,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     final shouldDownload = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -168,7 +170,7 @@ class AppUpdateFlow {
     BuildContext context,
     Future<void> Function() onGranted,
   ) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     return _permissionController.ensureGrantedAndRun(
       context: context,
       title: i18n.tr('install_permission_title'),
@@ -186,7 +188,7 @@ class AppUpdateFlow {
     UiOperationService operations,
     AppUpdateInfo info,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     File updateFile;
     try {
       updateFile = await operations.run<File>(
@@ -265,7 +267,7 @@ class AppUpdateFlow {
     UiOperationService operations,
     File updateFile,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     try {
       final result = await AppUpdateService.installUpdate(updateFile);
       if (!context.mounted) return;

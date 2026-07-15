@@ -86,19 +86,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   Future<void> removeLibrary(String libraryPath) async {
-    if (_libraryFacade.isScanning) _libraryFacade.cancelScan();
-    await _libraryService.removeLibrary(
-      libraryPath,
-      removeFolder: removeFolderFromLibrary,
-      onSaveWatchedLibraries: () => unawaited(_saveWatchedLibraries()),
-      onSaveLibraryExclusions: () => unawaited(_saveLibraryExclusions()),
-    );
-    await removeFolderFromLibrary(libraryPath);
-    if (!_skipDisposePersistence) {
-      unawaited(
-        _audioDatabaseRepository.deleteLibraryEntriesForLibrary(libraryPath),
-      );
-    }
+    await _libraryFacade.removeLibrary(libraryPath);
     _notifyLibraryAndPlaybackChanged();
   }
 

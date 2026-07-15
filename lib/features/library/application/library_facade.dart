@@ -984,6 +984,25 @@ final class LibraryFacade implements LibraryCatalog {
     }
   }
 
+  Future<void> removeLibrary(String libraryPath) async {
+    if (isScanning) cancelScan();
+    await service.removeLibrary(
+      libraryPath,
+      removeFolder: removeFolderFromLibrary,
+      onSaveWatchedLibraries: () {
+        if (_persistenceEnabled) unawaited(_saveWatchedLibraries());
+      },
+      onSaveLibraryExclusions: () {
+        if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
+      },
+    );
+    await removeFolderFromLibrary(libraryPath);
+    if (_persistenceEnabled) {
+      unawaited(databaseRepository.deleteLibraryEntriesForLibrary(libraryPath));
+    }
+    _syncStateSlice();
+  }
+
   void excludeLibraryFolder(String libraryPath, String folderPath) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final normalizedFolderPath = service.canonicalLibraryFolderPath(

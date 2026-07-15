@@ -193,7 +193,7 @@ Future<bool> _confirmRemoveWatchedLibrary(
     icon: Icons.library_music_rounded,
   );
   if (!confirmed || !context.mounted) return false;
-  await ref.read(audioProviderFacadeProvider).removeLibrary(libraryPath);
+  await ref.read(libraryFacadeProvider).removeLibrary(libraryPath);
   if (!context.mounted) return true;
   showAppSnackBar(
     context,
@@ -272,9 +272,9 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
       ...snapshot.audioFilePaths,
       ...liveFolderPaths,
     };
-    final provider = ref.read(audioProviderFacadeProvider);
-    provider.removeTracksDeletedFromFolder(widget.libraryPath, audioFilePaths);
-    provider.removeLibraryEntriesDeletedFromFolder(
+    final library = ref.read(libraryFacadeProvider);
+    library.removeTracksDeletedFromFolder(widget.libraryPath, audioFilePaths);
+    library.removeLibraryEntriesDeletedFromFolder(
       widget.libraryPath,
       widget.libraryPath,
       retainedPaths,

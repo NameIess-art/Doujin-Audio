@@ -14,6 +14,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../player/application/audio_state_services.dart';
+import '../../player/application/playback_facade.dart';
 import '../../settings/application/app_preferences.dart';
 import '../application/library_entry_editor_service.dart';
 import '../application/library_facade.dart';
@@ -544,7 +545,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Widget build(BuildContext context) {
     super.build(context);
     final i18n = context.watch<AppLanguageProvider>();
-    final provider = ref.read(audioProviderFacadeProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
     final libraryHeaderAudioCount = _readOrWatch(
       libraryHeaderUiProvider.select((s) => s.audioCount),
@@ -872,7 +872,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       ? refreshableEmptyBody()
                       : _categoryType != AudioLibraryCategoryType.all
                       ? _buildCategoryBody(
-                          provider: provider,
                           libraryFacade: libraryFacade,
                           i18n: i18n,
                           topPadding: listTopPadding,
@@ -1011,7 +1010,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     final scanState = _isActive
                         ? ref.watch(libraryScanUiProvider)
                         : ref.read(libraryScanUiProvider);
-                    return _buildScanProgressCard(i18n, provider, scanState);
+                    return _buildScanProgressCard(i18n, scanState);
                   },
                 ),
               ),

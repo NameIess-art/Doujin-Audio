@@ -156,7 +156,6 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
 
   Widget _buildScanProgressCard(
     AppLanguageProvider i18n,
-    AudioProvider provider,
     LibraryScanUiState scanState,
   ) {
     final cs = Theme.of(context).colorScheme;

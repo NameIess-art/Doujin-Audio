@@ -984,6 +984,77 @@ final class LibraryFacade implements LibraryCatalog {
     }
   }
 
+  void excludeLibraryFolder(String libraryPath, String folderPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedFolderPath = service.canonicalLibraryFolderPath(
+      normalizedLibraryPath,
+      folderPath,
+    );
+    final changed = service.setLibraryFolderExcluded(
+      normalizedLibraryPath,
+      normalizedFolderPath,
+      true,
+      onPersist: () {
+        if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
+      },
+    );
+    if (!changed) return;
+    final affectedEntryPaths = service
+        .libraryEntriesForLibrary(normalizedLibraryPath)
+        .where(
+          (entry) =>
+              PathMatcher.isWithinOrEqual(entry.path, normalizedFolderPath),
+        )
+        .map((entry) => entry.path)
+        .toList(growable: false);
+    if (affectedEntryPaths.isNotEmpty && _persistenceEnabled) {
+      unawaited(
+        databaseRepository.setLibraryEntriesState(
+          normalizedLibraryPath,
+          affectedEntryPaths,
+          LibraryEntryState.excluded,
+        ),
+      );
+    }
+    removeTracksMatching(
+      (track) =>
+          PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
+          PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
+    );
+    _syncStateSlice();
+  }
+
+  void excludeLibraryTrack(String libraryPath, String trackPath) {
+    final normalizedTrackPath = PathMatcher.normalize(trackPath);
+    final changed = service.setLibraryTrackExcluded(
+      libraryPath,
+      normalizedTrackPath,
+      true,
+      onPersist: () {
+        if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
+      },
+    );
+    if (!changed) return;
+    if (service
+        .libraryEntriesForLibrary(libraryPath)
+        .any(
+          (entry) =>
+              PathMatcher.equalsNormalized(entry.path, normalizedTrackPath),
+        )) {
+      if (_persistenceEnabled) {
+        unawaited(
+          databaseRepository.setLibraryEntriesState(libraryPath, <String>[
+            normalizedTrackPath,
+          ], LibraryEntryState.excluded),
+        );
+      }
+    }
+    removeTracksMatching(
+      (track) => PathMatcher.equalsNormalized(track.path, normalizedTrackPath),
+    );
+    _syncStateSlice();
+  }
+
   Future<void> _saveLibraryExclusions() {
     Map<String, List<String>> encode(Map<String, Set<String>> source) {
       return source.map(

@@ -327,7 +327,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _recoverAfterMetricsChange() {
     if (!mounted) return;
-    if (_isKeyboardVisible) return;
+    if (_isKeyboardVisible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _restoreActivePageAfterMetricsChange();
+      });
+      return;
+    }
 
     if (!_hasRecoverableViewMetricChange()) {
       return;

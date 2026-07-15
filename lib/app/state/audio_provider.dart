@@ -45,7 +45,6 @@ import '../../features/library/application/dlsite_metadata_query.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/library/application/library_snapshot_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
-import 'library_catalog_compatibility.dart';
 import '../../features/library/application/library_scan_models.dart';
 import '../../features/library/application/library_organizer.dart';
 import '../../core/media/media_file_support.dart';
@@ -677,7 +676,7 @@ class AudioProvider with ChangeNotifier {
        _skipDisposePersistence = skipDisposePersistence {
     _settingsRepository.attachPersistence(_savePlaybackSettings);
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
-    _libraryFacade.attachCatalog(AudioProviderCompatibilityCatalog(this));
+    _libraryFacade.attachTrackRemovalHandler(_handleLibraryTracksRemoved);
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
     _libraryFacade.attachCoverArtworkCacheService(
       () => CoverArtworkCacheService(

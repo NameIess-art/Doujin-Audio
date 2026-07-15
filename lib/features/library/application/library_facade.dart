@@ -33,7 +33,7 @@ import '../domain/library_entry.dart';
 /// Owns the library-side services used by the compatibility audio facade.
 ///
 /// Mutable library state remains owned exclusively by [LibraryService].
-final class LibraryFacade implements LibraryCatalogReader {
+final class LibraryFacade implements LibraryCatalog {
   static const _watchedFoldersPreferenceKey = 'watched_folders_v1';
   static const _watchedLibrariesPreferenceKey = 'watched_libraries_v1';
   static const _libraryNodeOrderPreferenceKey = 'library_node_order_v1';
@@ -91,11 +91,11 @@ final class LibraryFacade implements LibraryCatalogReader {
   final LibraryService service;
   final LibrarySnapshotCacheService snapshotCacheService;
   CoverArtworkCacheService? _coverArtworkCacheService;
-  LibraryCatalog? _catalog;
   Future<void>? _missingDurationBackfill;
   bool _missingDurationBackfillRequestedAgain = false;
   bool _persistenceEnabled = true;
   bool _disposed = false;
+  void Function(List<String> removedPaths)? _trackRemovalHandler;
 
   LibraryState get state => service.slice.state;
   Stream<LibraryState> get states => service.slice.stream;
@@ -183,7 +183,7 @@ final class LibraryFacade implements LibraryCatalogReader {
     _syncStateSlice();
   }
 
-  Future<AudioDetailSaveResult?> prefillAudioDetailRjCodeFromText(
+  Future<AudioDetailSaveResult?> prefillAudioDetailRjCode(
     AudioDetailTarget target,
     String text,
   ) async {
@@ -193,6 +193,17 @@ final class LibraryFacade implements LibraryCatalogReader {
       _syncStateSlice();
     }
     return result;
+  }
+
+  @override
+  Future<void> prefillAudioDetailRjCodeFromText(
+    String folderPath,
+    String displayName,
+  ) async {
+    await prefillAudioDetailRjCode(
+      AudioDetailTarget.libraryRootFolder(folderPath),
+      displayName,
+    );
   }
 
   AudioDetailTarget audioDetailTargetForTrack(MusicTrack track) {
@@ -600,6 +611,7 @@ final class LibraryFacade implements LibraryCatalogReader {
       generation != 0 &&
       generation == service.scanGeneration;
 
+  @override
   void addWatchedFolder(String folderPath, {bool notify = true}) {
     final changed = service.addWatchedFolder(
       folderPath,
@@ -608,6 +620,7 @@ final class LibraryFacade implements LibraryCatalogReader {
     if (changed && notify) _syncStateSlice();
   }
 
+  @override
   void addWatchedLibrary(String folderPath, {bool notify = true}) {
     final changed = service.addWatchedLibrary(
       folderPath,
@@ -616,6 +629,7 @@ final class LibraryFacade implements LibraryCatalogReader {
     if (changed && notify) _syncStateSlice();
   }
 
+  @override
   void removeWatchedFolder(String folderPath, {bool notify = true}) {
     final changed = service.removeWatchedFolder(
       folderPath,
@@ -668,6 +682,13 @@ final class LibraryFacade implements LibraryCatalogReader {
     _persistenceEnabled = enabled;
   }
 
+  void attachTrackRemovalHandler(
+    void Function(List<String> removedPaths) handler,
+  ) {
+    _trackRemovalHandler ??= handler;
+  }
+
+  @override
   void recordLibraryEntriesForTracks(
     String libraryPath,
     List<MusicTrack> tracks, {
@@ -709,6 +730,7 @@ final class LibraryFacade implements LibraryCatalogReader {
     _queueOrPersistLibraryEntries(entries, persist: persist);
   }
 
+  @override
   void addTracks(
     List<MusicTrack> tracks, {
     bool notify = true,
@@ -727,6 +749,7 @@ final class LibraryFacade implements LibraryCatalogReader {
     }
   }
 
+  @override
   void addOrReplaceTracks(
     List<MusicTrack> tracks, {
     bool notify = true,
@@ -759,6 +782,7 @@ final class LibraryFacade implements LibraryCatalogReader {
         .map((track) => track.path)
         .toList(growable: false);
     if (removedPaths.isEmpty) return const <String>[];
+    _trackRemovalHandler?.call(removedPaths);
     if (_persistenceEnabled) {
       unawaited(databaseRepository.deleteTracks(removedPaths));
     }
@@ -769,12 +793,14 @@ final class LibraryFacade implements LibraryCatalogReader {
     return removedPaths;
   }
 
+  @override
   void removeTracksByPath(Iterable<String> trackPaths) {
     final paths = trackPaths.toSet();
     if (paths.isEmpty) return;
     removeTracksMatching((track) => paths.contains(track.path));
   }
 
+  @override
   void removeTracksDeletedFromFolder(
     String folderPath,
     Set<String> scannedPaths,
@@ -792,6 +818,7 @@ final class LibraryFacade implements LibraryCatalogReader {
     });
   }
 
+  @override
   void removeLibraryEntriesDeletedFromFolder(
     String libraryPath,
     String folderPath,
@@ -809,6 +836,7 @@ final class LibraryFacade implements LibraryCatalogReader {
     }
   }
 
+  @override
   void removeLibraryEntriesByPaths(
     String libraryPath,
     Iterable<String> entryPaths,
@@ -824,6 +852,7 @@ final class LibraryFacade implements LibraryCatalogReader {
     }
   }
 
+  @override
   void clearLibraryExclusions(String libraryPath) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final removedFolders = service.excludedLibraryFolders.remove(
@@ -892,18 +921,61 @@ final class LibraryFacade implements LibraryCatalogReader {
     );
   }
 
+  @override
   void beginLibraryBatch() {
     service.libraryBatchDepth++;
   }
 
+  @override
   void beginStagedLibraryRefresh() {
     beginLibraryBatch();
   }
 
+  @override
+  int applyStagedLibraryRefreshChunk({
+    required String sourceFolderPath,
+    required String libraryRoot,
+    List<MusicTrack> tracks = const <MusicTrack>[],
+    Iterable<String> folderPaths = const <String>[],
+    Iterable<String> removeWatchedFolders = const <String>[],
+    Iterable<String> addWatchedFolders = const <String>[],
+    Iterable<String> removeTrackPaths = const <String>[],
+    Iterable<String> removeEntryPaths = const <String>[],
+    bool persist = true,
+  }) {
+    for (final folderPath in removeWatchedFolders) {
+      removeWatchedFolder(folderPath, notify: false);
+    }
+    if (tracks.isNotEmpty || folderPaths.isNotEmpty) {
+      recordLibraryEntriesForTracks(
+        libraryRoot,
+        tracks,
+        folderPaths: folderPaths,
+        persist: persist,
+      );
+    }
+    for (final folderPath in addWatchedFolders) {
+      addWatchedFolder(folderPath, notify: false);
+    }
+    final beforeCount = service.library.length;
+    if (tracks.isNotEmpty) {
+      addOrReplaceTracks(tracks, notify: false, persist: persist);
+    }
+    final tracksToRemove = removeTrackPaths.toList(growable: false);
+    if (tracksToRemove.isNotEmpty) removeTracksByPath(tracksToRemove);
+    final entriesToRemove = removeEntryPaths.toList(growable: false);
+    if (entriesToRemove.isNotEmpty) {
+      removeLibraryEntriesByPaths(libraryRoot, entriesToRemove);
+    }
+    return service.library.length - beforeCount;
+  }
+
+  @override
   Future<void> finishStagedLibraryRefresh({bool waitForPersistence = false}) {
     return endLibraryBatch(waitForPersistence: waitForPersistence);
   }
 
+  @override
   Future<void> endLibraryBatch({
     bool notify = true,
     bool waitForPersistence = true,
@@ -1004,6 +1076,7 @@ final class LibraryFacade implements LibraryCatalogReader {
     unawaited(databaseRepository.upsertLibraryEntries(entries));
   }
 
+  @override
   int tryBeginScan({required String source, bool background = false}) {
     if (service.isScanning) return 0;
     service.scanGenerationSeed++;
@@ -1019,17 +1092,20 @@ final class LibraryFacade implements LibraryCatalogReader {
     return generation;
   }
 
+  @override
   void cancelScan() {
     if (!service.isScanning) return;
     _setScanning(false);
     unawaited(FileCachePlatformGateway.instance.cancelActiveFolderScan());
   }
 
+  @override
   void finishScan(int generation) {
     if (!isScanGenerationActive(generation)) return;
     _setScanning(false);
   }
 
+  @override
   void setScanProgress({
     String? currentFolder,
     int? foundCount,
@@ -1111,20 +1187,6 @@ final class LibraryFacade implements LibraryCatalogReader {
         if (service.isScanning) _syncStateSlice();
       },
     );
-  }
-
-  LibraryCatalog get catalog {
-    final catalog = _catalog;
-    if (catalog == null) {
-      throw StateError(
-        'LibraryFacade catalog commands have not been attached.',
-      );
-    }
-    return catalog;
-  }
-
-  void attachCatalog(LibraryCatalog catalog) {
-    _catalog ??= catalog;
   }
 
   CoverArtworkCacheService get coverArtworkCacheService {

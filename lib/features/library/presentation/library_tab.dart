@@ -227,7 +227,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     bool forceShowResult = false,
   }) async {
     final i18n = context.read<AppLanguageProvider>();
-    final catalog = ref.read(libraryFacadeProvider).catalog;
+    final catalog = ref.read(libraryFacadeProvider);
     final operations = ref.read(uiOperationServiceProvider);
     final importBusy = <UiOperationScope>[
       UiOperationScope.libraryRefresh,
@@ -287,7 +287,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     required Future<void> Function() retry,
   }) async {
     final i18n = context.read<AppLanguageProvider>();
-    final catalog = ref.read(libraryFacadeProvider).catalog;
+    final catalog = ref.read(libraryFacadeProvider);
     final outcome = await ref
         .read(uiOperationServiceProvider)
         .runWithFeedback<LibraryScanOutcome?>(

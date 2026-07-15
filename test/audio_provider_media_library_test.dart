@@ -592,7 +592,7 @@ void main() {
 
         final scanner = LibraryScannerService();
         await scanner.refreshWatchedFolders(
-          provider: provider.libraryFacade.catalog,
+          provider: provider.libraryFacade,
           labels: const LibraryScanLabels(
             chooseMusicFolder: 'Choose music folder',
             chooseLibraryFolder: 'Choose library folder',

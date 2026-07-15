@@ -505,8 +505,10 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   void _removeTracksWhere(bool Function(MusicTrack track) test) {
-    final removedPaths = _libraryFacade.removeTracksMatching(test);
-    if (removedPaths.isEmpty) return;
+    _libraryFacade.removeTracksMatching(test);
+  }
+
+  void _handleLibraryTracksRemoved(List<String> removedPaths) {
     final removedSet = removedPaths.toSet();
     final sessionsToRemove = _sessions.values
         .where((session) => removedSet.contains(session.currentTrackPath))
@@ -581,35 +583,17 @@ extension AudioProviderLibrary on AudioProvider {
     Iterable<String> removeTrackPaths = const <String>[],
     Iterable<String> removeEntryPaths = const <String>[],
     bool persist = true,
-  }) {
-    for (final folderPath in removeWatchedFolders) {
-      removeWatchedFolder(folderPath, notify: false);
-    }
-    if (tracks.isNotEmpty || folderPaths.isNotEmpty) {
-      recordLibraryEntriesForTracks(
-        libraryRoot,
-        tracks,
-        folderPaths: folderPaths,
-        persist: persist,
-      );
-    }
-    for (final folderPath in addWatchedFolders) {
-      addWatchedFolder(folderPath, notify: false);
-    }
-    final beforeCount = _library.length;
-    if (tracks.isNotEmpty) {
-      addOrReplaceTracks(tracks, notify: false, persist: persist);
-    }
-    final trackPathsToRemove = removeTrackPaths.toList(growable: false);
-    if (trackPathsToRemove.isNotEmpty) {
-      removeTracksByPath(trackPathsToRemove);
-    }
-    final entryPathsToRemove = removeEntryPaths.toList(growable: false);
-    if (entryPathsToRemove.isNotEmpty) {
-      removeLibraryEntriesByPaths(libraryRoot, entryPathsToRemove);
-    }
-    return _library.length - beforeCount;
-  }
+  }) => _libraryFacade.applyStagedLibraryRefreshChunk(
+    sourceFolderPath: sourceFolderPath,
+    libraryRoot: libraryRoot,
+    tracks: tracks,
+    folderPaths: folderPaths,
+    removeWatchedFolders: removeWatchedFolders,
+    addWatchedFolders: addWatchedFolders,
+    removeTrackPaths: removeTrackPaths,
+    removeEntryPaths: removeEntryPaths,
+    persist: persist,
+  );
 
   Future<bool> flushStagedLibraryRefreshChunk({
     bool waitForPersistence = false,

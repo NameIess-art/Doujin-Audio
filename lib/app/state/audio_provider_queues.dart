@@ -1,23 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderQueues on AudioProvider {
-  PlaybackSession createPlaybackQueue(String name) {
-    final session = PlaybackSession(
-      id: _nextSessionId(),
-      currentTrackPath: '',
-      loopMode: SessionLoopMode.folderSequential,
-      nonSingleLoopMode: SessionLoopMode.folderSequential,
-      volume: 1,
-      createdAt: DateTime.now(),
-      state: PlayerState(false, ProcessingState.idle),
-      customQueueTracks: const <MusicTrack>[],
-      playbackQueue: PlaybackQueueDefinition(name: name, entries: const []),
-    );
-    _playbackFacade.registerSession(session);
-    _scheduleSessionPersistence();
-    return session;
-  }
-
   Future<void> addTrackToPlaybackQueue(
     String sessionId,
     MusicTrack track,

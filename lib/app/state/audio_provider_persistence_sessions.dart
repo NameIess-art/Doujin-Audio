@@ -27,7 +27,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         final loopModeIndex = item.loopModeIndex;
         final loopMode = SessionLoopMode
             .values[loopModeIndex.clamp(0, SessionLoopMode.values.length - 1)];
-        final volume = item.volume.clamp(0.0, _maxSessionVolume);
+        final volume = item.volume.clamp(0.0, PlaybackFacade.maxSessionVolume);
         final speed = _nearestPlaybackSpeed(item.speed);
 
         final recordProgress = _settingsRepository.recordPlaybackProgress;

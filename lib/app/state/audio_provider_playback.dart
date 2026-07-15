@@ -2,7 +2,6 @@ part of 'audio_provider.dart';
 
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 const TimerRuntimeCalculator _timerRuntimeCalculator = TimerRuntimeCalculator();
-const double _maxSessionVolume = 2.0;
 
 double _nearestPlaybackSpeed(double speed) {
   const options = AudioProvider.playbackSpeedOptions;
@@ -435,7 +434,7 @@ extension AudioProviderPlayback on AudioProvider {
   }) async {
     final session = _sessions[sessionId];
     if (session == null) return;
-    final nextVolume = volume.clamp(0.0, _maxSessionVolume);
+    final nextVolume = volume.clamp(0.0, PlaybackFacade.maxSessionVolume);
     final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
       session.id,
     );

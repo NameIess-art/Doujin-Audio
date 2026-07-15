@@ -49,9 +49,7 @@ class _NativePreparationResult {
 
 extension AudioProviderPlaybackSessions on AudioProvider {
   Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
-    final session = _createSessionForTrack(track);
-    _playbackFacade.registerSession(session);
-    _scheduleSessionPersistence();
+    final session = _playbackFacade.createTrackSession(track);
     unawaited(
       _enqueueSessionPreparation(
         session,
@@ -71,13 +69,11 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     if (tracks.isEmpty) return;
     final clampedStartIndex = startIndex.clamp(0, tracks.length - 1);
     final startTrack = tracks[clampedStartIndex];
-    final session = _createSessionForTrack(
+    final session = _playbackFacade.createTrackSession(
       startTrack,
       loopMode: loopMode,
       customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
     );
-    _playbackFacade.registerSession(session);
-    _scheduleSessionPersistence();
     unawaited(
       _enqueueSessionPreparation(
         session,
@@ -86,30 +82,6 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       ),
     );
     _playbackFacade.publishSessionActivated(session.id);
-  }
-
-  PlaybackSession _createSessionForTrack(
-    MusicTrack track, {
-    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-    double? volume,
-    List<MusicTrack>? customQueueTracks,
-  }) {
-    final session = PlaybackSession(
-      id: _nextSessionId(),
-      currentTrackPath: track.path,
-      loopMode: loopMode,
-      nonSingleLoopMode: loopMode == SessionLoopMode.single
-          ? SessionLoopMode.folderSequential
-          : loopMode,
-      volume: (volume ?? 1.0).clamp(0.0, _maxSessionVolume).toDouble(),
-      createdAt: DateTime.now(),
-      state: PlayerState(false, ProcessingState.idle),
-      customQueueTracks: customQueueTracks,
-    );
-    session.speed = 1.0;
-    session.channelSwapEnabled = false;
-    session.audioEffects = AudioEffectsState.flat;
-    return session;
   }
 
   Future<void> _enqueueSessionPreparation(

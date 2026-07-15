@@ -58,7 +58,9 @@ void main() {
         isSingle: false,
       );
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      final queueSession = provider.createPlaybackQueue('Queue 1');
+      final queueSession = provider.playbackFacade.createPlaybackQueue(
+        'Queue 1',
+      );
 
       final addFuture = provider.addTrackToPlaybackQueue(
         queueSession.id,
@@ -114,7 +116,9 @@ void main() {
           notify: false,
           persist: false,
         );
-        final queueSession = provider.createPlaybackQueue('Queue 1');
+        final queueSession = provider.playbackFacade.createPlaybackQueue(
+          'Queue 1',
+        );
 
         await provider.addTrackToPlaybackQueue(queueSession.id, track);
         await provider.addTrackToPlaybackQueue(queueSession.id, track);
@@ -146,7 +150,9 @@ void main() {
       );
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
 
-      final queueSession = provider.createPlaybackQueue('Queue 1');
+      final queueSession = provider.playbackFacade.createPlaybackQueue(
+        'Queue 1',
+      );
       expect(queueSession.isPlaybackQueue, isTrue);
       expect(queueSession.currentTrackPath, isEmpty);
 
@@ -198,7 +204,9 @@ void main() {
           notify: false,
           persist: false,
         );
-        final queueSession = provider.createPlaybackQueue('Queue 1');
+        final queueSession = provider.playbackFacade.createPlaybackQueue(
+          'Queue 1',
+        );
 
         await provider.addWorkToPlaybackQueue(queueSession.id, selected);
 
@@ -235,7 +243,9 @@ void main() {
         notify: false,
         persist: false,
       );
-      final queueSession = provider.createPlaybackQueue('Queue 1');
+      final queueSession = provider.playbackFacade.createPlaybackQueue(
+        'Queue 1',
+      );
       final sourceTrack = provider.library.firstWhere(
         (track) => track.displayName == first.displayName,
       );

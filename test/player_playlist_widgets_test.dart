@@ -820,7 +820,9 @@ void main() {
         notify: false,
         persist: false,
       );
-      final queueSession = audioProvider.createPlaybackQueue('Queue 1');
+      final queueSession = audioProvider.playbackFacade.createPlaybackQueue(
+        'Queue 1',
+      );
       queueSession
         ..currentTrackPath = track.path
         ..currentQueueIndex = 0

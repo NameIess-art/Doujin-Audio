@@ -240,7 +240,6 @@ class AudioProvider with ChangeNotifier {
     ),
   ];
 
-  int _sessionSeed = 0;
   bool _isInitialized = false;
   bool _settingsInitialized = false;
   bool _libraryInitialized = false;
@@ -608,6 +607,7 @@ class AudioProvider with ChangeNotifier {
        _skipDisposePersistence = skipDisposePersistence {
     _settingsRepository.attachPersistence(_savePlaybackSettings);
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
+    _playbackFacade.configurePersistence(enabled: !skipDisposePersistence);
     _libraryFacade.attachTrackRemovalHandler(_handleLibraryTracksRemoved);
     _libraryFacade.attachCoverChangeHandler(() {
       _playbackService.markActiveSessionsDirty();

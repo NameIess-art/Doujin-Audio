@@ -1,10 +1,13 @@
 import 'dart:async';
 
+import 'package:just_audio/just_audio.dart';
+
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../asmr/application/asmr_playback_cache_service.dart';
+import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
 import 'playback_session.dart';
@@ -66,6 +69,10 @@ final class PlaybackFacade {
   void Function()? _onSessionStateChanged;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   int _transportCommandSequence = 0;
+  int _sessionSeed = 0;
+  bool _persistenceEnabled = true;
+
+  static const double maxSessionVolume = 2.0;
 
   Stream<String> get sessionActivations => _sessionActivations.stream;
   PlaybackStateSliceData get state => service.slice.state;
@@ -233,9 +240,15 @@ final class PlaybackFacade {
     _persistSessionOrder ??= persist;
   }
 
+  void configurePersistence({required bool enabled}) {
+    _persistenceEnabled = enabled;
+    if (!enabled) cancelScheduledPersistence();
+  }
+
   void scheduleSessionStatePersistence({
     Duration delay = const Duration(milliseconds: 220),
   }) {
+    if (!_persistenceEnabled) return;
     service.saveSessionStateTimer?.cancel();
     service.saveSessionStateTimer = Timer(delay, () {
       service.saveSessionStateTimer = null;
@@ -246,6 +259,7 @@ final class PlaybackFacade {
   void scheduleSessionOrderPersistence({
     Duration delay = const Duration(milliseconds: 180),
   }) {
+    if (!_persistenceEnabled) return;
     service.saveSessionOrderTimer?.cancel();
     service.saveSessionOrderTimer = Timer(delay, () {
       service.saveSessionOrderTimer = null;
@@ -279,6 +293,60 @@ final class PlaybackFacade {
   void registerSession(PlaybackSession session) {
     service.registerSession(session);
     _onSessionRegistered?.call(session);
+  }
+
+  PlaybackSession createTrackSession(
+    MusicTrack track, {
+    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
+    double? volume,
+    List<MusicTrack>? customQueueTracks,
+  }) {
+    final session =
+        PlaybackSession(
+            id: _nextSessionId(),
+            currentTrackPath: track.path,
+            loopMode: loopMode,
+            nonSingleLoopMode: loopMode == SessionLoopMode.single
+                ? SessionLoopMode.folderSequential
+                : loopMode,
+            volume: (volume ?? 1.0).clamp(0.0, maxSessionVolume).toDouble(),
+            createdAt: DateTime.now(),
+            state: PlayerState(false, ProcessingState.idle),
+            customQueueTracks: customQueueTracks,
+          )
+          ..speed = 1.0
+          ..channelSwapEnabled = false
+          ..audioEffects = AudioEffectsState.flat;
+    registerSession(session);
+    _scheduleNewSessionPersistence();
+    return session;
+  }
+
+  PlaybackSession createPlaybackQueue(String name) {
+    final session = PlaybackSession(
+      id: _nextSessionId(),
+      currentTrackPath: '',
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime.now(),
+      state: PlayerState(false, ProcessingState.idle),
+      customQueueTracks: const <MusicTrack>[],
+      playbackQueue: PlaybackQueueDefinition(name: name, entries: const []),
+    );
+    registerSession(session);
+    _scheduleNewSessionPersistence();
+    return session;
+  }
+
+  String _nextSessionId() {
+    _sessionSeed += 1;
+    return 'session_${DateTime.now().microsecondsSinceEpoch}_$_sessionSeed';
+  }
+
+  void _scheduleNewSessionPersistence() {
+    scheduleSessionStatePersistence();
+    scheduleSessionOrderPersistence();
   }
 
   void reorderSessions(int oldIndex, int newIndex) {

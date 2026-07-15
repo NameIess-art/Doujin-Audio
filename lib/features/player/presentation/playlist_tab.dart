@@ -743,11 +743,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               final queueCount = listState.sessions
                                   .where((session) => session.isPlaybackQueue)
                                   .length;
-                              provider.createPlaybackQueue(
-                                i18n.tr('default_playback_queue_name', {
-                                  'number': queueCount + 1,
-                                }),
-                              );
+                              ref
+                                  .read(playbackFacadeProvider)
+                                  .createPlaybackQueue(
+                                    i18n.tr('default_playback_queue_name', {
+                                      'number': queueCount + 1,
+                                    }),
+                                  );
                             } else if (value == 'pause_all') {
                               provider.pauseAllSessions();
                               showAppSnackBar(

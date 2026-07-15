@@ -3,11 +3,6 @@ part of 'audio_provider.dart';
 extension AudioProviderPlaybackKeepAlive on AudioProvider {
   bool get _hasPlayingSession => _sessions.values.any((s) => s.state.playing);
 
-  String _nextSessionId() {
-    _sessionSeed += 1;
-    return 'session_${DateTime.now().microsecondsSinceEpoch}_$_sessionSeed';
-  }
-
   bool get _hasPlaybackToKeepAlive => _sessions.values.any(
     (s) =>
         s.state.playing ||

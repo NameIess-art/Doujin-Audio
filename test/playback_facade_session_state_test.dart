@@ -52,6 +52,78 @@ void main() {
     expect(reorderCount, 1);
   });
 
+  test('PlaybackFacade owns track and playback queue session creation', () {
+    final library = LibraryFacade.create();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+    );
+    addTearDown(() async {
+      for (final session in playback.service.sessions.values) {
+        session.dispose();
+      }
+      await playback.dispose();
+      await library.dispose();
+    });
+    final registered = <String>[];
+    playback.attachSessionRuntime(
+      onSessionRegistered: (session) => registered.add(session.id),
+      onSessionsReordered: () {},
+      onSessionStateChanged: () {},
+    );
+    const track = MusicTrack(
+      path: '/tracks/created.mp3',
+      displayName: 'Created',
+      groupKey: '/tracks',
+      groupTitle: 'Tracks',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+
+    final trackSession = playback.createTrackSession(
+      track,
+      loopMode: SessionLoopMode.single,
+      volume: 4,
+      customQueueTracks: const <MusicTrack>[track],
+    );
+    final queueSession = playback.createPlaybackQueue('Queue 1');
+
+    expect(trackSession.currentTrackPath, track.path);
+    expect(trackSession.loopMode, SessionLoopMode.single);
+    expect(trackSession.nonSingleLoopMode, SessionLoopMode.folderSequential);
+    expect(trackSession.volume, PlaybackFacade.maxSessionVolume);
+    expect(trackSession.state.processingState, ProcessingState.idle);
+    expect(trackSession.customQueueTracks, const <MusicTrack>[track]);
+    expect(queueSession.currentTrackPath, isEmpty);
+    expect(queueSession.playbackQueue?.name, 'Queue 1');
+    expect(queueSession.customQueueTracks, isEmpty);
+    expect(registered, <String>[trackSession.id, queueSession.id]);
+    expect(trackSession.id, isNot(queueSession.id));
+  });
+
+  test('PlaybackFacade can disable session persistence scheduling', () async {
+    final library = LibraryFacade.create();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+    );
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+    var stateSaves = 0;
+    var orderSaves = 0;
+    playback
+      ..attachSessionStatePersistence(() async => stateSaves++)
+      ..attachSessionOrderPersistence(() async => orderSaves++)
+      ..configurePersistence(enabled: false)
+      ..scheduleSessionStatePersistence(delay: const Duration(milliseconds: 1))
+      ..scheduleSessionOrderPersistence(delay: const Duration(milliseconds: 1));
+
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(stateSaves, 0);
+    expect(orderSaves, 0);
+  });
+
   test('PlaybackFacade normalizes native snapshots after a path retarget', () {
     final library = LibraryFacade.create();
     final playback = PlaybackFacade.create(

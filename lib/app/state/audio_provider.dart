@@ -47,7 +47,6 @@ import '../../features/library/application/library_snapshot_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/library/application/library_scan_models.dart';
 import '../../features/library/application/library_organizer.dart';
-import '../../core/media/media_file_support.dart';
 import '../../core/errors/native_result.dart';
 import '../../features/player/application/native_playback_repository.dart';
 import '../../features/player/application/playback_queue_resolver.dart';

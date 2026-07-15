@@ -1054,7 +1054,6 @@ class _LibraryEditFolderTreeTileState
     );
     final i18n = context.watch<AppLanguageProvider>();
     final libraryService = ref.read(libraryFacadeProvider);
-    final audioProvider = ref.read(audioProviderFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final editState = context.findAncestorStateOfType<_LibraryEditPageState>();
     final folderPath = widget.folder.folderPath;
@@ -1127,7 +1126,7 @@ class _LibraryEditFolderTreeTileState
                               widget.folder,
                             );
                           }
-                          audioProvider.setLibraryFolderExcluded(
+                          libraryService.setLibraryFolderExcluded(
                             widget.libraryPath,
                             folderPath,
                             !explicitExcluded,
@@ -1214,7 +1213,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
         _LibraryEditTrackKey(libraryPath, trackPath),
       ),
     );
-    final provider = ref.read(audioProviderFacadeProvider);
+    final libraryFacade = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
 
     return Padding(
@@ -1255,7 +1254,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
           onPressed: viewState.inheritedExcluded
               ? null
               : () {
-                  provider.setLibraryTrackExcluded(
+                  libraryFacade.setLibraryTrackExcluded(
                     libraryPath,
                     trackPath,
                     !viewState.explicitExcluded,

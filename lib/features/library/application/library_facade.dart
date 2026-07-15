@@ -5,12 +5,15 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:path/path.dart' as path;
 
 import '../../../core/app_language.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
+import '../../../core/media/media_file_support.dart';
+import '../../../core/media/path_display.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
@@ -1072,6 +1075,274 @@ final class LibraryFacade implements LibraryCatalog {
       (track) => PathMatcher.equalsNormalized(track.path, normalizedTrackPath),
     );
     _syncStateSlice();
+  }
+
+  void setLibraryFolderExcluded(
+    String libraryPath,
+    String folderPath,
+    bool excluded,
+  ) {
+    if (excluded) {
+      excludeLibraryFolder(libraryPath, folderPath);
+      return;
+    }
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedFolderPath = service.canonicalLibraryFolderPath(
+      normalizedLibraryPath,
+      folderPath,
+    );
+    final changed = service.setLibraryFolderExcluded(
+      normalizedLibraryPath,
+      normalizedFolderPath,
+      false,
+      onPersist: () {
+        if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
+      },
+    );
+    if (!changed) return;
+    final affectedPaths = service
+        .libraryEntriesForLibrary(normalizedLibraryPath)
+        .where(
+          (entry) =>
+              PathMatcher.isWithinOrEqual(entry.path, normalizedFolderPath),
+        )
+        .map((entry) => entry.path)
+        .toList(growable: false);
+    if (affectedPaths.isNotEmpty && _persistenceEnabled) {
+      unawaited(
+        databaseRepository.setLibraryEntriesState(
+          normalizedLibraryPath,
+          affectedPaths,
+          LibraryEntryState.active,
+        ),
+      );
+    }
+    unawaited(
+      _restoreExcludedFolder(normalizedLibraryPath, normalizedFolderPath),
+    );
+    _syncStateSlice();
+  }
+
+  void setLibraryTrackExcluded(
+    String libraryPath,
+    String trackPath,
+    bool excluded,
+  ) {
+    if (excluded) {
+      excludeLibraryTrack(libraryPath, trackPath);
+      return;
+    }
+    final normalizedTrackPath = PathMatcher.normalize(trackPath);
+    final changed = service.setLibraryTrackExcluded(
+      libraryPath,
+      normalizedTrackPath,
+      false,
+      onPersist: () {
+        if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
+      },
+    );
+    if (!changed) return;
+    if (_persistenceEnabled) {
+      unawaited(
+        databaseRepository.setLibraryEntriesState(libraryPath, <String>[
+          normalizedTrackPath,
+        ], LibraryEntryState.active),
+      );
+    }
+    unawaited(_restoreExcludedTrack(libraryPath, normalizedTrackPath));
+    _syncStateSlice();
+  }
+
+  Future<void> _restoreExcludedTrack(
+    String libraryPath,
+    String trackPath,
+  ) async {
+    if (service.libraryByPath.containsKey(trackPath)) return;
+    for (final entry in service.libraryEntriesForLibrary(libraryPath)) {
+      if (entry.isTrack &&
+          PathMatcher.equalsNormalized(entry.path, trackPath)) {
+        addTracks(<MusicTrack>[entry.toTrack()], notify: false);
+        return;
+      }
+    }
+    final isContentUri = PathMatcher.isContentUri(trackPath);
+    FileStat? stat;
+    if (!isContentUri) {
+      try {
+        final file = File(trackPath);
+        if (!await file.exists()) return;
+        stat = await file.stat();
+      } catch (_) {
+        return;
+      }
+    }
+    final parentFolder = path.dirname(trackPath);
+    final folderName = path.basename(parentFolder);
+    addTracks(<MusicTrack>[
+      MusicTrack(
+        path: trackPath,
+        displayName: PathDisplay.fileName(trackPath, withoutExtension: true),
+        groupKey: parentFolder,
+        groupTitle: folderName.isEmpty
+            ? PathDisplay.folderName(parentFolder)
+            : PathDisplay.normalizeDisplaySegment(folderName),
+        groupSubtitle: parentFolder,
+        isSingle: false,
+        isVideo: isVideoMediaFile(trackPath),
+        scannedAt: DateTime.now(),
+        fileSizeBytes: stat?.size,
+        modifiedAt: stat?.modified,
+      ),
+    ], notify: false);
+  }
+
+  Future<void> _restoreExcludedFolder(
+    String libraryPath,
+    String folderPath,
+  ) async {
+    final persistedTracks = service
+        .libraryEntriesForLibrary(libraryPath)
+        .where(
+          (entry) =>
+              entry.isTrack &&
+              entry.isActive &&
+              PathMatcher.isWithinOrEqual(entry.path, folderPath) &&
+              !service.isLibraryPathExcluded(libraryPath, entry.path),
+        )
+        .map((entry) => entry.toTrack())
+        .where((track) => !service.libraryByPath.containsKey(track.path))
+        .toList(growable: false);
+    if (persistedTracks.isNotEmpty) {
+      addOrReplaceTracks(persistedTracks, notify: false);
+      return;
+    }
+
+    final restoredTracks = PathMatcher.isContentUri(folderPath)
+        ? await _scanRestorableContentTracks(folderPath)
+        : await _scanRestorableFileTracks(folderPath);
+    final candidates = restoredTracks
+        .where(
+          (track) => !service.isLibraryPathExcluded(libraryPath, track.path),
+        )
+        .toList(growable: false);
+    if (candidates.isNotEmpty) {
+      addOrReplaceTracks(candidates, notify: false);
+    }
+  }
+
+  Future<List<MusicTrack>> _scanRestorableFileTracks(String folderPath) async {
+    final directory = Directory(folderPath);
+    if (!await directory.exists()) return const <MusicTrack>[];
+    final pendingDirectories = <Directory>[directory];
+    final restoredTracks = <MusicTrack>[];
+    while (pendingDirectories.isNotEmpty) {
+      final currentDirectory = pendingDirectories.removeLast();
+      late final Stream<FileSystemEntity> entities;
+      try {
+        entities = currentDirectory.list(followLinks: false);
+      } catch (_) {
+        continue;
+      }
+      await for (final entity in entities.handleError((_) {})) {
+        if (entity is Directory) {
+          pendingDirectories.add(entity);
+          continue;
+        }
+        if (entity is! File) continue;
+        final mediaPath = path.normalize(entity.path);
+        if (!isSupportedMediaFile(mediaPath) ||
+            service.libraryByPath.containsKey(mediaPath)) {
+          continue;
+        }
+        FileStat? stat;
+        try {
+          stat = await entity.stat();
+        } catch (_) {
+          // File metadata is optional for restored library entries.
+        }
+        final parentFolder = path.dirname(mediaPath);
+        final folderName = path.basename(parentFolder);
+        restoredTracks.add(
+          MusicTrack(
+            path: mediaPath,
+            displayName: path.basenameWithoutExtension(mediaPath),
+            groupKey: parentFolder,
+            groupTitle: folderName.isEmpty ? parentFolder : folderName,
+            groupSubtitle: parentFolder,
+            isSingle: false,
+            isVideo: isVideoMediaFile(mediaPath),
+            scannedAt: DateTime.now(),
+            fileSizeBytes: stat?.size,
+            modifiedAt: stat?.modified,
+          ),
+        );
+      }
+    }
+    return restoredTracks;
+  }
+
+  Future<List<MusicTrack>> _scanRestorableContentTracks(
+    String folderPath,
+  ) async {
+    try {
+      final data = await FileCachePlatformGateway.instance.scanFolderPayload(
+        folderPath,
+      );
+      if (data == null) return const <MusicTrack>[];
+      final tracks = <MusicTrack>[];
+      for (final item in data) {
+        if (item is! Map) continue;
+        final map = item.cast<Object?, Object?>();
+        final rawPath = map['path']?.toString().trim();
+        if (rawPath == null ||
+            rawPath.isEmpty ||
+            !isSupportedMediaFile(rawPath) ||
+            service.libraryByPath.containsKey(rawPath)) {
+          continue;
+        }
+        final mediaPath = PathMatcher.isContentUri(rawPath)
+            ? rawPath
+            : path.normalize(rawPath);
+        final nativeGroupKey = map['groupKey']?.toString().trim();
+        final nativeGroupTitle = map['groupTitle']?.toString().trim();
+        final nativeGroupSubtitle = map['groupSubtitle']?.toString().trim();
+        final groupKey = (nativeGroupKey?.isNotEmpty ?? false)
+            ? nativeGroupKey!
+            : path.dirname(mediaPath);
+        final groupTitle = (nativeGroupTitle?.isNotEmpty ?? false)
+            ? nativeGroupTitle!
+            : PathDisplay.folderName(groupKey);
+        final groupSubtitle = (nativeGroupSubtitle?.isNotEmpty ?? false)
+            ? nativeGroupSubtitle!
+            : groupKey;
+        final displayName = map['title']?.toString().trim();
+        final scannedAtMs = map['scannedAtMs'] as num?;
+        final modifiedAtMs = map['modifiedAtMs'] as num?;
+        tracks.add(
+          MusicTrack(
+            path: mediaPath,
+            displayName: displayName?.isEmpty ?? true
+                ? PathDisplay.fileName(mediaPath, withoutExtension: true)
+                : displayName!,
+            groupKey: groupKey,
+            groupTitle: groupTitle,
+            groupSubtitle: groupSubtitle,
+            isSingle: false,
+            isVideo: map['isVideo'] as bool? ?? isVideoMediaFile(mediaPath),
+            scannedAt: scannedAtMs == null
+                ? DateTime.now()
+                : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
+            fileSizeBytes: (map['fileSizeBytes'] as num?)?.toInt(),
+            modifiedAt: modifiedAtMs == null
+                ? null
+                : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
+          ),
+        );
+      }
+      return tracks;
+    } catch (_) {
+      return const <MusicTrack>[];
+    }
   }
 
   Future<void> _saveLibraryExclusions() {

@@ -778,7 +778,23 @@ Future<_AppShellHarness> _pumpAppShell(
     ),
   );
   await _pumpMainScreenAnimations(tester, startup: true);
+  await _waitForAppBootstrap(tester);
   return _AppShellHarness(language: languageProvider);
+}
+
+Future<void> _waitForAppBootstrap(WidgetTester tester) async {
+  final overlay = find.byKey(const ValueKey<String>('main_bootstrap_overlay'));
+  for (
+    var attempt = 0;
+    attempt < 20 && overlay.evaluate().isNotEmpty;
+    attempt++
+  ) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump(const Duration(milliseconds: 60));
+  }
+  expect(overlay, findsNothing, reason: 'App bootstrap did not complete.');
 }
 
 Future<void> _pumpMainScreenAnimations(

@@ -765,6 +765,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
                       if (!_bootstrapDone)
                         _BootstrapOverlay(
+                          key: const ValueKey<String>('main_bootstrap_overlay'),
                           visible: !_isDataReady,
                           onAnimationEnd: () {
                             if (mounted) setState(() => _bootstrapDone = true);

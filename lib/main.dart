@@ -147,6 +147,7 @@ Future<void> _runAudioPlayerApp() async {
           appLanguageProvider,
         ),
         appUpdateServiceProvider.overrideWithValue(appUpdateService),
+        asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
       ],
       child: legacy_provider.MultiProvider(
         providers: [

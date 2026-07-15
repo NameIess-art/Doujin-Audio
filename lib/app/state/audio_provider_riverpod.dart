@@ -15,6 +15,7 @@ import '../presentation/screen_view_models.dart';
 import '../theme/theme_provider.dart';
 import '../localization/app_language_provider.dart';
 import '../../features/settings/application/app_update_service.dart';
+import '../../features/asmr/application/asmr_download_manager.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
 
@@ -59,6 +60,35 @@ final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
     'appUpdateServiceProvider must be overridden in ProviderScope.',
   );
 });
+
+final asmrDownloadManagerProvider = Provider<AsmrDownloadManager>((ref) {
+  throw UnimplementedError(
+    'asmrDownloadManagerProvider must be overridden in ProviderScope.',
+  );
+});
+
+final asmrDownloadStateProvider = StreamProvider<AsmrDownloadState>((ref) {
+  final manager = ref.watch(asmrDownloadManagerProvider);
+  final states = StreamController<AsmrDownloadState>.broadcast(sync: true);
+  void emit() => states.add(manager.state);
+  manager.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    manager.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
+});
+
+final asmrDownloadTaskProvider =
+    Provider.family<AsmrDownloadTaskSnapshot?, int>((ref, workId) {
+      final manager = ref.watch(asmrDownloadManagerProvider);
+      return ref
+              .watch(asmrDownloadStateProvider)
+              .valueOrNull
+              ?.taskFor(workId) ??
+          manager.getTask(workId);
+    });
 
 final themeStateProvider = StreamProvider<ThemeState>((ref) {
   final controller = ref.watch(themeProviderInstanceProvider);

@@ -49,7 +49,8 @@ class _GlobalUpdateOperationBanner extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final top =
         (Platform.isWindows ? 40.0 : MediaQuery.paddingOf(context).top) + 8;

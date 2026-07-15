@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../localization/app_language_provider.dart';
+import '../state/audio_provider_riverpod.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 
@@ -32,14 +32,15 @@ class _OnboardingGateState extends State<OnboardingGate> {
   }
 }
 
-class OnboardingPage extends StatelessWidget {
+class OnboardingPage extends ConsumerWidget {
   const OnboardingPage({super.key, required this.onComplete});
 
   final Future<void> Function() onComplete;
 
   @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
       body: SafeArea(
@@ -155,12 +156,13 @@ class _TrustPoint extends StatelessWidget {
   }
 }
 
-class PrivacySummaryPage extends StatelessWidget {
+class PrivacySummaryPage extends ConsumerWidget {
   const PrivacySummaryPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     return Scaffold(
       appBar: AppBar(title: Text(i18n.tr('privacy_summary_title'))),
       body: ListView(

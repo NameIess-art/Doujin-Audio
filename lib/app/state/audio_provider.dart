@@ -607,7 +607,6 @@ class AudioProvider with ChangeNotifier {
       onSessionRegistered: (session) {
         _notificationsDismissedWhilePaused = false;
         _notificationFocusSessionId = session.id;
-        _bindSessionListeners(session);
         _syncKeepCpuAwake();
         _syncNotificationState();
         _notifyPlaybackChanged();
@@ -632,12 +631,18 @@ class AudioProvider with ChangeNotifier {
         _syncNotificationState();
       },
       onSessionPositionChanged: (session, position) {
-        _refreshNotificationSubtitleForSession(
+        if (!_isNotificationFocusedSessionId(session.id)) return;
+        final changed = _refreshNotificationSubtitleForSession(
           session,
           position: position,
           syncNotification: false,
         );
+        if (!changed) return;
         _scheduleFocusedNotificationRefresh(session.id, immediate: true);
+      },
+      onSessionCompleted: _handleSessionCompleted,
+      onSessionDurationChanged: (sessionId) {
+        _scheduleFocusedNotificationRefresh(sessionId);
       },
       onSessionSettingsChanged: () {
         _notifyPlaybackChanged();

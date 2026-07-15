@@ -98,6 +98,8 @@ final class PlaybackFacade {
   void Function()? _onRuntimeStateChanged;
   void Function(PlaybackSession session, Duration position)?
   _onSessionPositionChanged;
+  void Function(String sessionId)? _onSessionCompleted;
+  void Function(String sessionId)? _onSessionDurationChanged;
   void Function()? _onSessionSettingsChanged;
   PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
   PlaybackSessionPreparer? _prepareSession;
@@ -107,6 +109,7 @@ final class PlaybackFacade {
   PlaybackAdjacentResolver? _hasAdjacent;
   PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
   bool Function() _autoPlayAddedSessions = _defaultAutoPlayAddedSessions;
+  bool _sessionObserversAttached = false;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Random _random = Random();
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
@@ -330,6 +333,8 @@ final class PlaybackFacade {
     void Function()? onRuntimeStateChanged,
     void Function(PlaybackSession session, Duration position)?
     onSessionPositionChanged,
+    void Function(String sessionId)? onSessionCompleted,
+    void Function(String sessionId)? onSessionDurationChanged,
     void Function()? onSessionSettingsChanged,
   }) {
     _onSessionRegistered ??= onSessionRegistered;
@@ -338,6 +343,12 @@ final class PlaybackFacade {
     _onSessionStateChanged ??= onSessionStateChanged;
     _onRuntimeStateChanged ??= onRuntimeStateChanged;
     _onSessionPositionChanged ??= onSessionPositionChanged;
+    _onSessionCompleted ??= onSessionCompleted;
+    _onSessionDurationChanged ??= onSessionDurationChanged;
+    _sessionObserversAttached =
+        _sessionObserversAttached ||
+        onSessionCompleted != null ||
+        onSessionDurationChanged != null;
     _onSessionSettingsChanged ??= onSessionSettingsChanged;
   }
 
@@ -367,7 +378,86 @@ final class PlaybackFacade {
 
   void registerSession(PlaybackSession session) {
     service.registerSession(session);
+    if (_sessionObserversAttached) {
+      _bindSessionListeners(session);
+    }
     _onSessionRegistered?.call(session);
+  }
+
+  void observeSession(PlaybackSession session) {
+    _bindSessionListeners(session);
+  }
+
+  void _bindSessionListeners(PlaybackSession session) {
+    final stateSub = session.stateStream.listen((state) {
+      if (!service.sessions.containsKey(session.id)) return;
+
+      final previousState =
+          session.previousStateBeforeLastStateEvent ?? session.state;
+      session.previousStateBeforeLastStateEvent = null;
+      final previousPlaying = previousState.playing;
+      final previousProcessing = previousState.processingState;
+      session.state = state;
+      final isNewCompletion =
+          previousProcessing != ProcessingState.completed &&
+          state.processingState == ProcessingState.completed;
+      final currentGeneration = session.playbackCommandGeneration;
+      final shouldAutoAdvanceAfterCompletion =
+          isNewCompletion &&
+          !session.isLoading &&
+          !session.isAdvancingAfterCompletion &&
+          session.playbackError == null &&
+          _resolveAdvance?.call(session, forward: true) != null &&
+          session.lastHandledCompletionGeneration != currentGeneration;
+      if (shouldAutoAdvanceAfterCompletion) {
+        session.isLoading = true;
+        session.isAdvancingAfterCompletion = true;
+        session.lastHandledCompletionGeneration = currentGeneration;
+      }
+      if (!state.playing &&
+          (state.processingState == ProcessingState.idle ||
+              state.processingState == ProcessingState.completed)) {
+        session.isPlaybackStarting = false;
+      }
+      if (state.processingState != ProcessingState.completed) {
+        session.isAdvancingAfterCompletion = false;
+      }
+      _onRuntimeStateChanged?.call();
+      _onSessionStateChanged?.call();
+
+      if (previousPlaying != state.playing ||
+          previousProcessing != state.processingState) {
+        scheduleSessionStatePersistence();
+      }
+
+      if (isNewCompletion && shouldAutoAdvanceAfterCompletion) {
+        _onSessionCompleted?.call(session.id);
+      }
+    });
+    session.subscriptions.add(stateSub);
+
+    final positionSub = session.positionStream.listen((position) {
+      if (!service.sessions.containsKey(session.id)) return;
+      session.lastKnownPosition = position;
+      final bucket = position.inSeconds ~/ 5;
+      if (bucket != session.lastPersistedPositionBucket) {
+        session.lastPersistedPositionBucket = bucket;
+        scheduleSessionStatePersistence(
+          delay: const Duration(milliseconds: 800),
+        );
+      }
+      _onSessionPositionChanged?.call(session, position);
+    });
+    session.subscriptions.add(positionSub);
+
+    final durationSub = session.durationStream.listen((_) {
+      if (!service.sessions.containsKey(session.id)) return;
+      scheduleSessionStatePersistence(
+        delay: const Duration(milliseconds: 1500),
+      );
+      _onSessionDurationChanged?.call(session.id);
+    });
+    session.subscriptions.add(durationSub);
   }
 
   PlaybackSession createTrackSession(

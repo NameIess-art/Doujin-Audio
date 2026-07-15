@@ -62,7 +62,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         session.audioEffects = item.audioEffects;
         _sessions[session.id] = session;
         _playbackService.markActiveSessionsDirty();
-        _bindSessionListeners(session);
+        _playbackFacade.observeSession(session);
         restoredIds.add(session.id);
       }
 

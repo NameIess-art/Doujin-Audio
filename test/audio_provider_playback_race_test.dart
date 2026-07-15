@@ -98,7 +98,7 @@ void main() {
     });
 
     test('toggling play-pause with unknown id does not throw', () {
-      provider.toggleSessionPlayPause('non_existent_session');
+      provider.playbackFacade.toggleSessionPlayPause('non_existent_session');
       expect(provider.activeSessions, isEmpty);
     });
 
@@ -184,7 +184,9 @@ void main() {
         processingState: ProcessingState.ready,
       );
 
-      final toggle = provider.toggleSessionPlayPause(secondSession.id);
+      final toggle = provider.playbackFacade.toggleSessionPlayPause(
+        secondSession.id,
+      );
       expect(firstSession.effectivePlaying, isFalse);
       expect(secondSession.effectivePlaying, isTrue);
       await toggle;
@@ -266,19 +268,23 @@ void main() {
       }
       final session = provider.activeSessions.single;
 
-      final firstPlay = provider.toggleSessionPlayPause(session.id);
+      final firstPlay = provider.playbackFacade.toggleSessionPlayPause(
+        session.id,
+      );
       for (var i = 0; i < 20 && playCalls.isEmpty; i++) {
         await Future<void>.delayed(Duration.zero);
       }
       expect(session.effectivePlaying, isTrue);
 
-      final pause = provider.toggleSessionPlayPause(session.id);
+      final pause = provider.playbackFacade.toggleSessionPlayPause(session.id);
       for (var i = 0; i < 20 && pauseCall == null; i++) {
         await Future<void>.delayed(Duration.zero);
       }
       expect(session.effectivePlaying, isFalse);
 
-      final lastPlay = provider.toggleSessionPlayPause(session.id);
+      final lastPlay = provider.playbackFacade.toggleSessionPlayPause(
+        session.id,
+      );
       for (var i = 0; i < 20 && playCalls.length < 2; i++) {
         await Future<void>.delayed(Duration.zero);
       }
@@ -474,7 +480,7 @@ void main() {
           NativePlaybackSnapshot.fromMap(snapshot(first.path, playing: true)),
         );
 
-        await provider.switchSessionQueueTrack(session.id, 1);
+        await provider.playbackFacade.switchSessionQueueTrack(session.id, 1);
 
         expect(session.currentTrackPath, first.path);
         expect(session.loadedPath, first.path);

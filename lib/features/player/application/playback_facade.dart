@@ -17,10 +17,33 @@ import 'audio_state_services.dart';
 import 'native_playback_repository.dart';
 import 'native_playback_bridge.dart';
 import 'playback_command_runner.dart';
+import 'playback_queue_resolver.dart';
 import 'system_media_controls_service.dart';
 
 typedef PlaybackQueueSessionSynchronizer =
     Future<void> Function(PlaybackSession session, {bool selectFirst});
+typedef PlaybackSessionPreparer =
+    Future<bool> Function(
+      PlaybackSession session, {
+      required String nextPath,
+      bool autoPlay,
+      bool forceStartAtZero,
+      bool showLoading,
+      int? targetQueueIndex,
+    });
+typedef PlaybackSessionPauser = Future<void> Function(PlaybackSession session);
+typedef PlaybackSessionStarter =
+    Future<bool> Function(
+      PlaybackSession session, {
+      required bool shouldStartTriggerCountdown,
+    });
+typedef PlaybackAdvanceResolver =
+    PlaybackAdvanceResult? Function(
+      PlaybackSession session, {
+      required bool forward,
+    });
+typedef PlaybackAdjacentResolver =
+    bool Function(PlaybackSession session, {required bool forward});
 
 /// Owns playback sessions and the platform playback runtime.
 final class PlaybackFacade {
@@ -78,6 +101,11 @@ final class PlaybackFacade {
   _onSessionPositionChanged;
   void Function()? _onSessionSettingsChanged;
   PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
+  PlaybackSessionPreparer? _prepareSession;
+  PlaybackSessionPauser? _pauseSession;
+  PlaybackSessionStarter? _startSession;
+  PlaybackAdvanceResolver? _resolveAdvance;
+  PlaybackAdjacentResolver? _hasAdjacent;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Random _random = Random();
   final Set<String> _deferredVolumeReloadSessionIds = <String>{};
@@ -270,7 +298,6 @@ final class PlaybackFacade {
   void scheduleSessionStatePersistence({
     Duration delay = const Duration(milliseconds: 220),
   }) {
-    if (!_persistenceEnabled) return;
     service.saveSessionStateTimer?.cancel();
     service.saveSessionStateTimer = Timer(delay, () {
       service.saveSessionStateTimer = null;
@@ -281,7 +308,6 @@ final class PlaybackFacade {
   void scheduleSessionOrderPersistence({
     Duration delay = const Duration(milliseconds: 180),
   }) {
-    if (!_persistenceEnabled) return;
     service.saveSessionOrderTimer?.cancel();
     service.saveSessionOrderTimer = Timer(delay, () {
       service.saveSessionOrderTimer = null;
@@ -325,6 +351,20 @@ final class PlaybackFacade {
     PlaybackQueueSessionSynchronizer synchronize,
   ) {
     _synchronizePlaybackQueueSession ??= synchronize;
+  }
+
+  void attachPlaybackCommands({
+    required PlaybackSessionPreparer prepareSession,
+    required PlaybackSessionPauser pauseSession,
+    required PlaybackSessionStarter startSession,
+    required PlaybackAdvanceResolver resolveAdvance,
+    required PlaybackAdjacentResolver hasAdjacent,
+  }) {
+    _prepareSession ??= prepareSession;
+    _pauseSession ??= pauseSession;
+    _startSession ??= startSession;
+    _resolveAdvance ??= resolveAdvance;
+    _hasAdjacent ??= hasAdjacent;
   }
 
   void registerSession(PlaybackSession session) {
@@ -381,7 +421,8 @@ final class PlaybackFacade {
     return 'session_${DateTime.now().microsecondsSinceEpoch}_$_sessionSeed';
   }
 
-  void _scheduleNewSessionPersistence() {
+  void _scheduleNewSessionPersistence({bool respectConfiguration = true}) {
+    if (respectConfiguration && !_persistenceEnabled) return;
     scheduleSessionStatePersistence();
     scheduleSessionOrderPersistence();
   }
@@ -429,7 +470,9 @@ final class PlaybackFacade {
       }),
     );
     _onRuntimeStateChanged?.call();
-    if (persist) _scheduleNewSessionPersistence();
+    if (persist) {
+      _scheduleNewSessionPersistence(respectConfiguration: false);
+    }
   }
 
   Future<void> clearAllSessions() async {
@@ -448,7 +491,7 @@ final class PlaybackFacade {
       session.dispose();
     }
     _onRuntimeStateChanged?.call();
-    _scheduleNewSessionPersistence();
+    _scheduleNewSessionPersistence(respectConfiguration: false);
   }
 
   Future<void> seekSession(String sessionId, Duration position) async {
@@ -458,6 +501,100 @@ final class PlaybackFacade {
     session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
     _onSessionPositionChanged?.call(session, position);
     await nativeRepository.seek(session.id, position);
+  }
+
+  Future<void> toggleSessionPlayPause(String sessionId) async {
+    final session = service.sessions[sessionId];
+    if (session == null || session.currentTrackPath.isEmpty) return;
+    if (session.playbackError != null || session.isLoading) {
+      await _prepareSession?.call(session, nextPath: session.currentTrackPath);
+      return;
+    }
+    if (session.effectivePlaying) {
+      await _pauseSession?.call(session);
+      return;
+    }
+    if (session.state.processingState == ProcessingState.completed ||
+        session.state.processingState == ProcessingState.idle) {
+      await _prepareSession?.call(
+        session,
+        nextPath: session.currentTrackPath,
+        forceStartAtZero:
+            session.state.processingState == ProcessingState.completed,
+      );
+      return;
+    }
+    await _startSession?.call(session, shouldStartTriggerCountdown: true);
+  }
+
+  Future<void> switchSessionTrack(String sessionId, String newPath) async {
+    final session = service.sessions[sessionId];
+    if (session == null) return;
+    await _prepareSession?.call(
+      session,
+      nextPath: newPath,
+      forceStartAtZero: true,
+      showLoading: false,
+    );
+    scheduleSessionStatePersistence();
+  }
+
+  Future<void> switchSessionQueueTrack(String sessionId, int queueIndex) async {
+    final session = service.sessions[sessionId];
+    if (session == null) return;
+    final tracks = session.isPlaybackQueue
+        ? session.playbackQueue!.expandedTracks
+        : session.customQueueTracks;
+    if (tracks == null || tracks.isEmpty) return;
+    final index = queueIndex.clamp(0, tracks.length - 1);
+    await _prepareSession?.call(
+      session,
+      nextPath: tracks[index].path,
+      forceStartAtZero: true,
+      showLoading: false,
+      targetQueueIndex: index,
+    );
+    scheduleSessionStatePersistence();
+  }
+
+  Future<void> seekSessionToNext(String sessionId) async {
+    final session = service.sessions[sessionId];
+    final target = session == null
+        ? null
+        : _resolveAdvance?.call(session, forward: true);
+    if (session == null || target == null) return;
+    await _prepareSession?.call(
+      session,
+      nextPath: target.path,
+      forceStartAtZero: true,
+      showLoading: false,
+      targetQueueIndex: target.queueIndex,
+    );
+  }
+
+  Future<void> seekSessionToPrev(String sessionId) async {
+    final session = service.sessions[sessionId];
+    if (session == null) return;
+    if (!session.isPlaybackQueue && session.position.inSeconds > 3) {
+      await seekSession(sessionId, Duration.zero);
+      return;
+    }
+    final target = _resolveAdvance?.call(session, forward: false);
+    if (target == null) return;
+    await _prepareSession?.call(
+      session,
+      nextPath: target.path,
+      forceStartAtZero: true,
+      showLoading: false,
+      targetQueueIndex: target.queueIndex,
+    );
+  }
+
+  bool hasSessionAdjacentTrack(String sessionId, {required bool forward}) {
+    final session = service.sessions[sessionId];
+    return session != null &&
+        !session.isLoading &&
+        (_hasAdjacent?.call(session, forward: forward) ?? false);
   }
 
   Future<void> setSessionVolume(

@@ -217,12 +217,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     return sessions.first.id;
   }
 
-  bool hasSessionAdjacentTrack(String sessionId, {required bool forward}) {
-    final session = _sessions[sessionId];
-    if (session == null || session.isLoading) return false;
-    return _hasAdjacentPathFor(session, forward: forward);
-  }
-
   Future<void> _handleSessionCompleted(String sessionId) async {
     final session = _sessions[sessionId];
     if (session == null) return;

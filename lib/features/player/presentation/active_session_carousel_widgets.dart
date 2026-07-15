@@ -258,7 +258,9 @@ class _ActiveSessionCard extends ConsumerWidget {
                         AppInteractionFeedback.trigger(
                           AppInteractionFeedbackType.confirmation,
                         );
-                        provider.toggleSessionPlayPause(session.id);
+                        provider.playbackFacade.toggleSessionPlayPause(
+                          session.id,
+                        );
                       },
                     ),
                   );

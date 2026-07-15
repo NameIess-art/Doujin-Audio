@@ -684,12 +684,12 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                   );
                   Navigator.of(ctx).pop();
                   if (widget.session.isPlaybackQueue) {
-                    widget.provider.switchSessionQueueTrack(
+                    widget.provider.playbackFacade.switchSessionQueueTrack(
                       widget.session.id,
                       node.queueIndex,
                     );
                   } else {
-                    widget.provider.switchSessionTrack(
+                    widget.provider.playbackFacade.switchSessionTrack(
                       widget.session.id,
                       node.track!.path,
                     );

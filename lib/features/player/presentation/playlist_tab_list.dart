@@ -434,9 +434,10 @@ class _SessionListCard extends ConsumerWidget {
                                               AppInteractionFeedbackType
                                                   .selection,
                                             );
-                                            provider.toggleSessionPlayPause(
-                                              sessionId,
-                                            );
+                                            provider.playbackFacade
+                                                .toggleSessionPlayPause(
+                                                  sessionId,
+                                                );
                                           },
                                     style: IconButton.styleFrom(
                                       foregroundColor: isPlaying

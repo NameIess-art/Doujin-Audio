@@ -144,11 +144,14 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     final onPrimaryColor = isAsmr
         ? AppDesignTokens.of(context).onAsmrAccent
         : cs.onPrimary;
-    final hasPrevious = provider.hasSessionAdjacentTrack(
+    final hasPrevious = provider.playbackFacade.hasSessionAdjacentTrack(
       session.id,
       forward: false,
     );
-    final hasNext = provider.hasSessionAdjacentTrack(session.id, forward: true);
+    final hasNext = provider.playbackFacade.hasSessionAdjacentTrack(
+      session.id,
+      forward: true,
+    );
     final canPrevious =
         enabled && (session.position.inSeconds > 3 || hasPrevious);
     final canNext = enabled && hasNext;
@@ -178,7 +181,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
                   );
-                  provider.seekSessionToPrev(session.id);
+                  provider.playbackFacade.seekSessionToPrev(session.id);
                 },
               ),
               _PrimaryTransportButton(
@@ -214,7 +217,9 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                           AppInteractionFeedback.trigger(
                             AppInteractionFeedbackType.confirmation,
                           );
-                          provider.toggleSessionPlayPause(session.id);
+                          provider.playbackFacade.toggleSessionPlayPause(
+                            session.id,
+                          );
                         }
                       : null,
                   iconSize: playIconSize,
@@ -269,7 +274,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
                   );
-                  provider.seekSessionToNext(session.id);
+                  provider.playbackFacade.seekSessionToNext(session.id);
                 },
               ),
             ],

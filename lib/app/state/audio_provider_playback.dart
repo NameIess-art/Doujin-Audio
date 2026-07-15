@@ -15,32 +15,6 @@ String _folderKeyForTrack(MusicTrack track) {
 }
 
 extension AudioProviderPlayback on AudioProvider {
-  Future<void> toggleSessionPlayPause(String sessionId) async {
-    final session = _playbackService.sessionById(sessionId);
-    if (session == null) return;
-    if (session.currentTrackPath.isEmpty) return;
-
-    if (session.playbackError != null || session.isLoading) {
-      await _prepareAndPlay(session, nextPath: session.currentTrackPath);
-      return;
-    }
-
-    if (session.effectivePlaying) {
-      await _pauseSessionPlayback(session);
-    } else if (session.state.processingState == ProcessingState.completed ||
-        session.state.processingState == ProcessingState.idle) {
-      final isCompleted =
-          session.state.processingState == ProcessingState.completed;
-      await _prepareAndPlay(
-        session,
-        nextPath: session.currentTrackPath,
-        forceStartAtZero: isCompleted,
-      );
-    } else {
-      await _startSessionPlayback(session, shouldStartTriggerCountdown: true);
-    }
-  }
-
   Future<void> setSessionLoopMode(
     String sessionId,
     SessionLoopMode mode,
@@ -376,79 +350,5 @@ extension AudioProviderPlayback on AudioProvider {
               ? SessionLoopMode.crossRandom
               : SessionLoopMode.crossSequential);
     await setSessionLoopMode(sessionId, nextMode);
-  }
-
-  Future<void> switchSessionTrack(String sessionId, String newPath) async {
-    final session = _sessions[sessionId];
-    if (session == null) return;
-    await _prepareAndPlay(
-      session,
-      nextPath: newPath,
-      forceStartAtZero: true,
-      showLoading: false,
-    );
-    _playbackFacade.scheduleSessionStatePersistence();
-  }
-
-  Future<void> switchSessionQueueTrack(String sessionId, int queueIndex) async {
-    final session = _sessions[sessionId];
-    if (session == null) return;
-    final tracks = session.isPlaybackQueue
-        ? session.playbackQueue!.expandedTracks
-        : session.customQueueTracks;
-    if (tracks == null || tracks.isEmpty) {
-      return;
-    }
-    final index = queueIndex.clamp(0, tracks.length - 1);
-    await _prepareAndPlay(
-      session,
-      nextPath: tracks[index].path,
-      forceStartAtZero: true,
-      showLoading: false,
-      targetQueueIndex: index,
-    );
-    _playbackFacade.scheduleSessionStatePersistence();
-  }
-
-  Future<void> seekSessionToNext(String sessionId) async {
-    final session = _sessions[sessionId];
-    if (session == null) return;
-    final nextTarget = _nextPathFor(session, forward: true);
-    if (nextTarget != null) {
-      await _prepareAndPlay(
-        session,
-        nextPath: nextTarget.path,
-        forceStartAtZero: true,
-        showLoading: false,
-        targetQueueIndex: nextTarget.queueIndex,
-      );
-    }
-  }
-
-  Future<void> seekSessionToPrev(String sessionId) async {
-    final session = _sessions[sessionId];
-    if (session == null) return;
-    if (!session.isPlaybackQueue && session.position.inSeconds > 3) {
-      session.setOptimisticPosition(Duration.zero);
-      session.lastPersistedPositionBucket = 0;
-      _refreshNotificationSubtitleForSession(
-        session,
-        position: Duration.zero,
-        syncNotification: false,
-      );
-      _scheduleFocusedNotificationRefresh(session.id, immediate: true);
-      await _nativePlaybackRepository.seek(session.id, Duration.zero);
-      return;
-    }
-    final previousTarget = _nextPathFor(session, forward: false);
-    if (previousTarget != null) {
-      await _prepareAndPlay(
-        session,
-        nextPath: previousTarget.path,
-        forceStartAtZero: true,
-        showLoading: false,
-        targetQueueIndex: previousTarget.queueIndex,
-      );
-    }
   }
 }

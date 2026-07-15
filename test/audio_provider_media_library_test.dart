@@ -906,7 +906,7 @@ void main() {
         session.id,
         SessionLoopMode.crossSequential,
       );
-      await provider.seekSessionToNext(session.id);
+      await provider.playbackFacade.seekSessionToNext(session.id);
 
       expect(session.currentTrackPath, firstPath);
       expect(preparedQueues, isNotEmpty);

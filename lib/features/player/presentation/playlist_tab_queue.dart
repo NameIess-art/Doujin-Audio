@@ -142,7 +142,9 @@ class _PlaybackQueueCard extends StatelessWidget {
                                 AppInteractionFeedback.trigger(
                                   AppInteractionFeedbackType.selection,
                                 );
-                                provider.toggleSessionPlayPause(session.id);
+                                provider.playbackFacade.toggleSessionPlayPause(
+                                  session.id,
+                                );
                               },
                         style: IconButton.styleFrom(
                           foregroundColor: isPlaying

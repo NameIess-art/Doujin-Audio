@@ -128,13 +128,13 @@ void main() {
           queueSession.id,
           track,
         );
-        await provider.seekSessionToNext(queueSession.id);
+        await provider.playbackFacade.seekSessionToNext(queueSession.id);
 
         expect(preparedQueueIndexes.last, 1);
         expect(queueSession.currentQueueIndex, 1);
 
         queueSession.setOptimisticPosition(const Duration(seconds: 5));
-        await provider.seekSessionToPrev(queueSession.id);
+        await provider.playbackFacade.seekSessionToPrev(queueSession.id);
 
         expect(preparedQueueIndexes.last, 0);
         expect(queueSession.currentQueueIndex, 0);
@@ -363,8 +363,8 @@ void main() {
           otherSession.id,
           otherSeekPosition,
         );
-        await provider.seekSessionToNext(otherSession.id);
-        await provider.seekSessionToPrev(otherSession.id);
+        await provider.playbackFacade.seekSessionToNext(otherSession.id);
+        await provider.playbackFacade.seekSessionToPrev(otherSession.id);
 
         expect(otherSession.currentTrackPath, otherTrack.path);
         expect(

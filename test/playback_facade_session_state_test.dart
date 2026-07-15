@@ -8,6 +8,7 @@ import 'package:nameless_audio/features/player/application/playback_facade.dart'
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_session.dart';
+import 'package:nameless_audio/features/player/application/playback_queue_resolver.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/player/domain/playback_queue.dart';
 
@@ -142,6 +143,95 @@ void main() {
     expect(runtimeChanges, 3);
   });
 
+  test('PlaybackFacade owns transport command decisions', () async {
+    final library = LibraryFacade.create();
+    final native = _RecordingNativePlaybackRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('transport')
+      ..customQueueTracks = const <MusicTrack>[
+        MusicTrack(
+          path: '/tracks/first.mp3',
+          displayName: 'First',
+          groupKey: '/tracks',
+          groupTitle: 'Tracks',
+          groupSubtitle: '',
+          isSingle: false,
+        ),
+        MusicTrack(
+          path: '/tracks/second.mp3',
+          displayName: 'Second',
+          groupKey: '/tracks',
+          groupTitle: 'Tracks',
+          groupSubtitle: '',
+          isSingle: false,
+        ),
+      ];
+    final preparations = <(String, bool, bool, int?)>[];
+    var pauseCount = 0;
+    var startCount = 0;
+    addTearDown(() async {
+      session.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback
+      ..attachPlaybackCommands(
+        prepareSession:
+            (
+              session, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              preparations.add((
+                nextPath,
+                forceStartAtZero,
+                showLoading,
+                targetQueueIndex,
+              ));
+              return true;
+            },
+        pauseSession: (session) async => pauseCount++,
+        startSession: (session, {required shouldStartTriggerCountdown}) async {
+          startCount++;
+          return true;
+        },
+        resolveAdvance: (session, {required forward}) => PlaybackAdvanceResult(
+          path: forward ? '/tracks/second.mp3' : '/tracks/first.mp3',
+          queueIndex: forward ? 1 : 0,
+        ),
+        hasAdjacent: (session, {required forward}) => true,
+      )
+      ..registerSession(session);
+
+    await playback.toggleSessionPlayPause(session.id);
+    session.state = PlayerState(true, ProcessingState.ready);
+    await playback.toggleSessionPlayPause(session.id);
+    session.state = PlayerState(false, ProcessingState.ready);
+    await playback.toggleSessionPlayPause(session.id);
+    await playback.switchSessionTrack(session.id, '/tracks/direct.mp3');
+    await playback.switchSessionQueueTrack(session.id, 1);
+    await playback.seekSessionToNext(session.id);
+    session.setOptimisticPosition(const Duration(seconds: 5));
+    await playback.seekSessionToPrev(session.id);
+
+    expect(pauseCount, 1);
+    expect(startCount, 1);
+    expect(preparations, <(String, bool, bool, int?)>[
+      ('/tracks/transport.mp3', false, true, null),
+      ('/tracks/direct.mp3', true, false, null),
+      ('/tracks/second.mp3', true, false, 1),
+      ('/tracks/second.mp3', true, false, 1),
+    ]);
+    expect(native.seekPositions, <Duration>[Duration.zero]);
+    expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
+  });
+
   test('PlaybackFacade owns track and playback queue session creation', () {
     final library = LibraryFacade.create();
     final playback = PlaybackFacade.create(
@@ -204,9 +294,9 @@ void main() {
     playback
       ..attachSessionStatePersistence(() async => stateSaves++)
       ..attachSessionOrderPersistence(() async => orderSaves++)
-      ..configurePersistence(enabled: false)
-      ..scheduleSessionStatePersistence(delay: const Duration(milliseconds: 1))
-      ..scheduleSessionOrderPersistence(delay: const Duration(milliseconds: 1));
+      ..configurePersistence(enabled: false);
+    final queue = playback.createPlaybackQueue('No persistence');
+    addTearDown(queue.dispose);
 
     await Future<void>.delayed(const Duration(milliseconds: 10));
 

@@ -86,7 +86,7 @@ extension AudioProviderNotifications on AudioProvider {
         final session = _notificationActionSession;
         if (session == null) return;
         _notificationFocusSessionId = session.id;
-        await seekSessionToNext(session.id);
+        await _playbackFacade.seekSessionToNext(session.id);
       },
       notify: _notifyListeners,
       flushKeepAliveSync: _syncKeepCpuAwake,
@@ -101,7 +101,7 @@ extension AudioProviderNotifications on AudioProvider {
         final session = _notificationActionSession;
         if (session == null) return;
         _notificationFocusSessionId = session.id;
-        await seekSessionToPrev(session.id);
+        await _playbackFacade.seekSessionToPrev(session.id);
       },
       notify: _notifyListeners,
       flushKeepAliveSync: _syncKeepCpuAwake,
@@ -118,7 +118,7 @@ extension AudioProviderNotifications on AudioProvider {
         if (!_multiThreadPlaybackEnabled) {
           _notificationFocusSessionId = session.id;
         }
-        await toggleSessionPlayPause(session.id);
+        await _playbackFacade.toggleSessionPlayPause(session.id);
       },
       notify: _notifyListeners,
       flushKeepAliveSync: _syncKeepCpuAwake,
@@ -135,7 +135,7 @@ extension AudioProviderNotifications on AudioProvider {
         if (!_multiThreadPlaybackEnabled) {
           _notificationFocusSessionId = session.id;
         }
-        await seekSessionToPrev(session.id);
+        await _playbackFacade.seekSessionToPrev(session.id);
       },
       notify: _notifyListeners,
       flushKeepAliveSync: _syncKeepCpuAwake,
@@ -152,7 +152,7 @@ extension AudioProviderNotifications on AudioProvider {
         if (!_multiThreadPlaybackEnabled) {
           _notificationFocusSessionId = session.id;
         }
-        await seekSessionToNext(session.id);
+        await _playbackFacade.seekSessionToNext(session.id);
       },
       notify: _notifyListeners,
       flushKeepAliveSync: _syncKeepCpuAwake,

@@ -648,6 +648,15 @@ class AudioProvider with ChangeNotifier {
       },
     );
     _playbackFacade.attachPlaybackQueueSynchronizer(_syncPlaybackQueueSession);
+    _playbackFacade.attachPlaybackCommands(
+      prepareSession: _prepareAndPlay,
+      pauseSession: _pauseSessionPlayback,
+      startSession: _startSessionPlayback,
+      resolveAdvance: (session, {required forward}) =>
+          _nextPathFor(session, forward: forward),
+      hasAdjacent: (session, {required forward}) =>
+          _hasAdjacentPathFor(session, forward: forward),
+    );
     _timerFacade.attachRuntime(
       hasPlayingSession: () => _hasPlayingSession,
       sessions: () => _sessions.values,

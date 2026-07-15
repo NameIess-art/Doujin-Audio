@@ -171,15 +171,6 @@ class AudioProvider with ChangeNotifier {
     '256k',
     '320k',
   ];
-  static const List<double> playbackSpeedOptions = [
-    0.5,
-    0.75,
-    1.0,
-    1.25,
-    1.5,
-    1.75,
-    2.0,
-  ];
   static const List<EqPreset> builtInEqPresets = [
     EqPreset(
       id: 'flat',
@@ -243,7 +234,6 @@ class AudioProvider with ChangeNotifier {
   bool _settingsInitialized = false;
   bool _libraryInitialized = false;
   bool _playbackInitialized = false;
-  final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   final Map<String, _TimeSegmentLoopRuntime> _timeSegmentLoopsBySessionId =
       <String, _TimeSegmentLoopRuntime>{};
   final Set<String> _timeSegmentLoopBoundSessionIds = <String>{};
@@ -627,7 +617,6 @@ class AudioProvider with ChangeNotifier {
       },
       onSessionsRemoved: (sessions) {
         for (final session in sessions) {
-          _deferredVolumeReloadSessionIds.remove(session.id);
           _forgetTimeSegmentLoopSession(session.id);
           _clearNotificationSubtitleForSession(session.id);
           if (_notificationFocusSessionId == session.id) {
@@ -652,6 +641,10 @@ class AudioProvider with ChangeNotifier {
           syncNotification: false,
         );
         _scheduleFocusedNotificationRefresh(session.id, immediate: true);
+      },
+      onSessionSettingsChanged: () {
+        _notifyPlaybackChanged();
+        _syncNotificationState();
       },
     );
     _playbackFacade.attachPlaybackQueueSynchronizer(_syncPlaybackQueueSession);

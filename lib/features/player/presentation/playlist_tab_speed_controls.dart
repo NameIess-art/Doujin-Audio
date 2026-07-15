@@ -34,7 +34,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
   double _desktopScrollAccumulator = 0.0;
   int _targetDesktopWheelIndex = -1;
 
-  List<double> get _speeds => AudioProvider.playbackSpeedOptions;
+  List<double> get _speeds => PlaybackFacade.playbackSpeedOptions;
 
   @override
   void initState() {
@@ -82,7 +82,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
       setState(() => _selectedIndex = nextIndex);
     }
     unawaited(
-      widget.provider.setSessionSpeed(
+      widget.provider.playbackFacade.setSessionSpeed(
         widget.session.id,
         nextSpeed,
         persist: persist,

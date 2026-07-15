@@ -73,6 +73,7 @@ void main() {
     final removed = <String>[];
     var stateChanges = 0;
     var runtimeChanges = 0;
+    var settingsChanges = 0;
     final positionChanges = <Duration>[];
     playback.attachSessionRuntime(
       onSessionRegistered: (_) {},
@@ -85,6 +86,7 @@ void main() {
       onSessionPositionChanged: (session, position) {
         positionChanges.add(position);
       },
+      onSessionSettingsChanged: () => settingsChanges++,
     );
     playback
       ..registerSession(first)
@@ -107,12 +109,28 @@ void main() {
     expect(native.seekPositions, <Duration>[const Duration(seconds: 17)]);
     expect(positionChanges, <Duration>[const Duration(seconds: 17)]);
 
+    await playback.setSessionVolume(first.id, 1.75, persist: false);
+    await playback.setSessionVolume(first.id, 1.75);
+    await playback.setSessionSpeed(first.id, 1.6, persist: false);
+
+    expect(first.volume, 1.75);
+    expect(native.volumeUpdates, <(double, bool)>[(1.75, false), (1.75, true)]);
+    expect(first.speed, 1.5);
+    expect(native.speedUpdates, <double>[1.5]);
+    expect(settingsChanges, 1);
+
+    native.failSpeed = true;
+    await playback.setSessionSpeed(first.id, 2, persist: false);
+
+    expect(first.speed, 1.5);
+    expect(settingsChanges, 3);
+
     await playback.removeSession(first.id);
 
     expect(playback.sessionById(first.id), isNull);
     expect(native.removedSessionIds, <String>[first.id]);
     expect(removed, <String>[first.id]);
-    expect(stateChanges, 2);
+    expect(stateChanges, 3);
     expect(runtimeChanges, 2);
 
     await playback.clearAllSessions();
@@ -120,7 +138,7 @@ void main() {
     expect(playback.service.sessions, isEmpty);
     expect(native.clearAllCount, 1);
     expect(removed, <String>[first.id, second.id]);
-    expect(stateChanges, 3);
+    expect(stateChanges, 4);
     expect(runtimeChanges, 3);
   });
 
@@ -380,6 +398,9 @@ final class _RecordingNativePlaybackRepository
   int clearAllCount = 0;
   final List<String> removedSessionIds = <String>[];
   final List<Duration> seekPositions = <Duration>[];
+  final List<(double, bool)> volumeUpdates = <(double, bool)>[];
+  final List<double> speedUpdates = <double>[];
+  bool failSpeed = false;
 
   @override
   Future<NativeResult<void>> pauseAll() async {
@@ -406,6 +427,28 @@ final class _RecordingNativePlaybackRepository
   ) async {
     seekPositions.add(position);
     return const NativeFailure<NativePlaybackSnapshot>('not needed');
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setVolume(
+    String sessionId,
+    double volume, {
+    bool reloadSource = true,
+  }) async {
+    volumeUpdates.add((volume, reloadSource));
+    return const NativeSuccess<NativePlaybackSnapshot>();
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setSpeed(
+    String sessionId,
+    double speed,
+  ) async {
+    speedUpdates.add(speed);
+    if (failSpeed) {
+      return const NativeFailure<NativePlaybackSnapshot>('speed failed');
+    }
+    return const NativeSuccess<NativePlaybackSnapshot>();
   }
 
   @override

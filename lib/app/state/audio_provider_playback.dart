@@ -3,15 +3,6 @@ part of 'audio_provider.dart';
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 const TimerRuntimeCalculator _timerRuntimeCalculator = TimerRuntimeCalculator();
 
-double _nearestPlaybackSpeed(double speed) {
-  const options = AudioProvider.playbackSpeedOptions;
-  return options.reduce((best, candidate) {
-    final bestDistance = (best - speed).abs();
-    final candidateDistance = (candidate - speed).abs();
-    return candidateDistance < bestDistance ? candidate : best;
-  });
-}
-
 String _folderKeyForTrack(MusicTrack track) {
   if (track.remoteMetadataKind == 'asmr.one' ||
       PathMatcher.isRemoteUri(track.path)) {
@@ -385,93 +376,6 @@ extension AudioProviderPlayback on AudioProvider {
               ? SessionLoopMode.crossRandom
               : SessionLoopMode.crossSequential);
     await setSessionLoopMode(sessionId, nextMode);
-  }
-
-  Future<void> setSessionVolume(
-    String sessionId,
-    double volume, {
-    bool persist = true,
-    bool notify = true,
-  }) async {
-    final session = _sessions[sessionId];
-    if (session == null) return;
-    final nextVolume = volume.clamp(0.0, PlaybackFacade.maxSessionVolume);
-    final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
-      session.id,
-    );
-    if ((session.volume - nextVolume).abs() < 0.001) {
-      if (persist && hasDeferredReload) {
-        await _nativePlaybackRepository.setVolume(session.id, session.volume);
-        _deferredVolumeReloadSessionIds.remove(session.id);
-      }
-      if (persist) {
-        await _persistSessionConsoleSettings(session);
-      }
-      return;
-    }
-    session.volume = nextVolume;
-    if (persist) {
-      _deferredVolumeReloadSessionIds.remove(session.id);
-    } else {
-      _deferredVolumeReloadSessionIds.add(session.id);
-    }
-    if (notify) {
-      _playbackService.markActiveSessionsDirty();
-      _notifyPlaybackChanged();
-    }
-    await _nativePlaybackRepository.setVolume(
-      session.id,
-      session.volume,
-      reloadSource: persist,
-    );
-    if (persist) {
-      await _persistSessionConsoleSettings(session);
-    }
-  }
-
-  Future<void> setSessionSpeed(
-    String sessionId,
-    double speed, {
-    bool persist = true,
-    bool notify = true,
-  }) async {
-    final session = _sessions[sessionId];
-    if (session == null) return;
-    final nextSpeed = _nearestPlaybackSpeed(speed);
-    if ((session.speed - nextSpeed).abs() < 0.001) {
-      if (persist) {
-        await _persistSessionConsoleSettings(session);
-      }
-      return;
-    }
-    final previous = session.speed;
-    session.speed = nextSpeed;
-    _playbackService.markActiveSessionsDirty();
-    if (notify) {
-      _notifyPlaybackChanged();
-      _syncNotificationState();
-    }
-
-    final response = await _nativePlaybackRepository.setSpeed(
-      session.id,
-      nextSpeed,
-    );
-
-    if (response.isFailure) {
-      session.speed = previous;
-      _playbackService.markActiveSessionsDirty();
-      AppLogService.warning(
-        'AudioProvider.setSessionSpeed error: ${response.errorOrNull}',
-      );
-      if (notify) {
-        _notifyPlaybackChanged();
-        _syncNotificationState();
-      }
-      return;
-    }
-    if (persist) {
-      await _persistSessionConsoleSettings(session);
-    }
   }
 
   Future<void> switchSessionTrack(String sessionId, String newPath) async {

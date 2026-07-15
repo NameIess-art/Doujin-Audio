@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../asmr/application/asmr_playback_cache_service.dart';
@@ -75,14 +76,25 @@ final class PlaybackFacade {
   void Function()? _onRuntimeStateChanged;
   void Function(PlaybackSession session, Duration position)?
   _onSessionPositionChanged;
+  void Function()? _onSessionSettingsChanged;
   PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Random _random = Random();
+  final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   int _transportCommandSequence = 0;
   int _sessionSeed = 0;
   bool _persistenceEnabled = true;
 
   static const double maxSessionVolume = 2.0;
+  static const List<double> playbackSpeedOptions = <double>[
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    1.75,
+    2.0,
+  ];
 
   Stream<String> get sessionActivations => _sessionActivations.stream;
   PlaybackStateSliceData get state => service.slice.state;
@@ -298,6 +310,7 @@ final class PlaybackFacade {
     void Function()? onRuntimeStateChanged,
     void Function(PlaybackSession session, Duration position)?
     onSessionPositionChanged,
+    void Function()? onSessionSettingsChanged,
   }) {
     _onSessionRegistered ??= onSessionRegistered;
     _onSessionsRemoved ??= onSessionsRemoved;
@@ -305,6 +318,7 @@ final class PlaybackFacade {
     _onSessionStateChanged ??= onSessionStateChanged;
     _onRuntimeStateChanged ??= onRuntimeStateChanged;
     _onSessionPositionChanged ??= onSessionPositionChanged;
+    _onSessionSettingsChanged ??= onSessionSettingsChanged;
   }
 
   void attachPlaybackQueueSynchronizer(
@@ -404,6 +418,7 @@ final class PlaybackFacade {
     if (removedSessions.isEmpty) return;
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
+      _deferredVolumeReloadSessionIds.remove(session.id);
     }
     _onSessionsRemoved?.call(removedSessions);
     if (notify) _onSessionStateChanged?.call();
@@ -424,6 +439,7 @@ final class PlaybackFacade {
     if (removedSessions.isEmpty) return;
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
+      _deferredVolumeReloadSessionIds.remove(session.id);
     }
     _onSessionsRemoved?.call(removedSessions);
     _onSessionStateChanged?.call();
@@ -442,6 +458,86 @@ final class PlaybackFacade {
     session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
     _onSessionPositionChanged?.call(session, position);
     await nativeRepository.seek(session.id, position);
+  }
+
+  Future<void> setSessionVolume(
+    String sessionId,
+    double volume, {
+    bool persist = true,
+    bool notify = true,
+  }) async {
+    final session = service.sessions[sessionId];
+    if (session == null) return;
+    final nextVolume = volume.clamp(0.0, maxSessionVolume);
+    final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
+      session.id,
+    );
+    if ((session.volume - nextVolume).abs() < 0.001) {
+      if (persist && hasDeferredReload) {
+        await nativeRepository.setVolume(session.id, session.volume);
+        _deferredVolumeReloadSessionIds.remove(session.id);
+      }
+      if (persist) await flushSessionStatePersistence();
+      return;
+    }
+    session.volume = nextVolume;
+    if (persist) {
+      _deferredVolumeReloadSessionIds.remove(session.id);
+    } else {
+      _deferredVolumeReloadSessionIds.add(session.id);
+    }
+    if (notify) {
+      service.markActiveSessionsDirty();
+      _onSessionStateChanged?.call();
+    }
+    await nativeRepository.setVolume(
+      session.id,
+      session.volume,
+      reloadSource: persist,
+    );
+    if (persist) await flushSessionStatePersistence();
+  }
+
+  Future<void> setSessionSpeed(
+    String sessionId,
+    double speed, {
+    bool persist = true,
+    bool notify = true,
+  }) async {
+    final session = service.sessions[sessionId];
+    if (session == null) return;
+    final nextSpeed = nearestPlaybackSpeed(speed);
+    if ((session.speed - nextSpeed).abs() < 0.001) {
+      if (persist) await flushSessionStatePersistence();
+      return;
+    }
+    final previous = session.speed;
+    session.speed = nextSpeed;
+    service.markActiveSessionsDirty();
+    if (notify) _onSessionSettingsChanged?.call();
+    final response = await nativeRepository.setSpeed(session.id, nextSpeed);
+    if (response.isFailure) {
+      session.speed = previous;
+      service.markActiveSessionsDirty();
+      AppLogService.warning(
+        'PlaybackFacade.setSessionSpeed error: ${response.errorOrNull}',
+      );
+      if (notify) _onSessionSettingsChanged?.call();
+      return;
+    }
+    if (persist) await flushSessionStatePersistence();
+  }
+
+  double nearestPlaybackSpeed(double speed) {
+    return playbackSpeedOptions.reduce((best, candidate) {
+      final bestDistance = (best - speed).abs();
+      final candidateDistance = (candidate - speed).abs();
+      return candidateDistance < bestDistance ? candidate : best;
+    });
+  }
+
+  void clearDeferredVolumeReloads() {
+    _deferredVolumeReloadSessionIds.clear();
   }
 
   Future<void> addTrackToPlaybackQueue(String sessionId, MusicTrack track) {

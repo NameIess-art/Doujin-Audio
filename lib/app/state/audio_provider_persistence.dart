@@ -55,7 +55,7 @@ extension AudioProviderPersistence on AudioProvider {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }
 
-    _deferredVolumeReloadSessionIds.clear();
+    _playbackFacade.clearDeferredVolumeReloads();
     _playbackFacade.clearRetargetedPaths();
     _timeSegmentLoopsBySessionId.clear();
     _timeSegmentLoopBoundSessionIds.clear();

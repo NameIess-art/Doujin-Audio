@@ -86,7 +86,7 @@ void main() {
       await provider.spawnSession(track, autoPlay: false);
       final session = provider.activeSessions.single;
 
-      await provider.setSessionSpeed(session.id, 1.6);
+      await provider.playbackFacade.setSessionSpeed(session.id, 1.6);
 
       expect(setSpeedCalls, 1);
       expect(lastNativeSpeed, closeTo(1.5, 0.001));
@@ -479,8 +479,8 @@ void main() {
         await provider.spawnSession(track, autoPlay: false);
         final session = provider.activeSessions.single;
 
-        await provider.setSessionVolume(session.id, 1.25);
-        await provider.setSessionSpeed(session.id, 1.6);
+        await provider.playbackFacade.setSessionVolume(session.id, 1.25);
+        await provider.playbackFacade.setSessionSpeed(session.id, 1.6);
         await provider.setSessionSkipSilence(session.id, true);
         await provider.setSessionNoiseReduction(session.id, true);
         await provider.setSessionVolumeNormalization(session.id, true);

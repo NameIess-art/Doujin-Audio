@@ -359,7 +359,10 @@ void main() {
           otherSession.id,
           otherSeekPosition,
         );
-        await provider.seekSession(otherSession.id, otherSeekPosition);
+        await provider.playbackFacade.seekSession(
+          otherSession.id,
+          otherSeekPosition,
+        );
         await provider.seekSessionToNext(otherSession.id);
         await provider.seekSessionToPrev(otherSession.id);
 

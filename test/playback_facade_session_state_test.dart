@@ -73,6 +73,7 @@ void main() {
     final removed = <String>[];
     var stateChanges = 0;
     var runtimeChanges = 0;
+    final positionChanges = <Duration>[];
     playback.attachSessionRuntime(
       onSessionRegistered: (_) {},
       onSessionsRemoved: (sessions) {
@@ -81,6 +82,9 @@ void main() {
       onSessionsReordered: () {},
       onSessionStateChanged: () => stateChanges++,
       onRuntimeStateChanged: () => runtimeChanges++,
+      onSessionPositionChanged: (session, position) {
+        positionChanges.add(position);
+      },
     );
     playback
       ..registerSession(first)
@@ -95,6 +99,13 @@ void main() {
     expect(native.pauseAllCount, 1);
     expect(stateChanges, 1);
     expect(runtimeChanges, 1);
+
+    await playback.seekSession(first.id, const Duration(seconds: 17));
+
+    expect(first.position, const Duration(seconds: 17));
+    expect(first.lastPersistedPositionBucket, 3);
+    expect(native.seekPositions, <Duration>[const Duration(seconds: 17)]);
+    expect(positionChanges, <Duration>[const Duration(seconds: 17)]);
 
     await playback.removeSession(first.id);
 
@@ -368,6 +379,7 @@ final class _RecordingNativePlaybackRepository
   int pauseAllCount = 0;
   int clearAllCount = 0;
   final List<String> removedSessionIds = <String>[];
+  final List<Duration> seekPositions = <Duration>[];
 
   @override
   Future<NativeResult<void>> pauseAll() async {
@@ -385,6 +397,15 @@ final class _RecordingNativePlaybackRepository
   Future<NativeResult<void>> removeSession(String sessionId) async {
     removedSessionIds.add(sessionId);
     return const NativeSuccess<void>();
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> seek(
+    String sessionId,
+    Duration position,
+  ) async {
+    seekPositions.add(position);
+    return const NativeFailure<NativePlaybackSnapshot>('not needed');
   }
 
   @override

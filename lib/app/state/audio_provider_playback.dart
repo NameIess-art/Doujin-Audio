@@ -474,21 +474,6 @@ extension AudioProviderPlayback on AudioProvider {
     }
   }
 
-  Future<void> seekSession(String sessionId, Duration position) async {
-    final session = _sessions[sessionId];
-    if (session != null) {
-      session.setOptimisticPosition(position);
-      session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
-      _refreshNotificationSubtitleForSession(
-        session,
-        position: position,
-        syncNotification: false,
-      );
-      _scheduleFocusedNotificationRefresh(session.id, immediate: true);
-      await _nativePlaybackRepository.seek(session.id, position);
-    }
-  }
-
   Future<void> switchSessionTrack(String sessionId, String newPath) async {
     final session = _sessions[sessionId];
     if (session == null) return;

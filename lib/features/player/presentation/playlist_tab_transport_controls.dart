@@ -191,7 +191,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                     AppInteractionFeedbackType.selection,
                   );
                   final newPos = session.position - const Duration(seconds: 5);
-                  provider.seekSession(
+                  provider.playbackFacade.seekSession(
                     session.id,
                     newPos < Duration.zero ? Duration.zero : newPos,
                   );
@@ -253,7 +253,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
                   );
-                  provider.seekSession(
+                  provider.playbackFacade.seekSession(
                     session.id,
                     session.position + const Duration(seconds: 5),
                   );

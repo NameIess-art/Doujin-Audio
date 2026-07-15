@@ -314,7 +314,7 @@ class _ProgressSliderAndTimecodesState
     _clearTooltip();
     _publishProgressValue(force: true);
     widget.onManualSeek?.call(position);
-    widget.provider.seekSession(widget.session.id, position);
+    widget.provider.playbackFacade.seekSession(widget.session.id, position);
     _positionGate.tickerModeEnabled = _tickerModeEnabled;
   }
 

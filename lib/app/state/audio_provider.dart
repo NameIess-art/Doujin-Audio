@@ -645,6 +645,14 @@ class AudioProvider with ChangeNotifier {
         _syncKeepCpuAwake();
         _syncNotificationState();
       },
+      onSessionPositionChanged: (session, position) {
+        _refreshNotificationSubtitleForSession(
+          session,
+          position: position,
+          syncNotification: false,
+        );
+        _scheduleFocusedNotificationRefresh(session.id, immediate: true);
+      },
     );
     _playbackFacade.attachPlaybackQueueSynchronizer(_syncPlaybackQueueSession);
     _timerFacade.attachRuntime(

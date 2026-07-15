@@ -73,6 +73,8 @@ final class PlaybackFacade {
   void Function()? _onSessionsReordered;
   void Function()? _onSessionStateChanged;
   void Function()? _onRuntimeStateChanged;
+  void Function(PlaybackSession session, Duration position)?
+  _onSessionPositionChanged;
   PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Random _random = Random();
@@ -294,12 +296,15 @@ final class PlaybackFacade {
     required void Function() onSessionsReordered,
     required void Function() onSessionStateChanged,
     void Function()? onRuntimeStateChanged,
+    void Function(PlaybackSession session, Duration position)?
+    onSessionPositionChanged,
   }) {
     _onSessionRegistered ??= onSessionRegistered;
     _onSessionsRemoved ??= onSessionsRemoved;
     _onSessionsReordered ??= onSessionsReordered;
     _onSessionStateChanged ??= onSessionStateChanged;
     _onRuntimeStateChanged ??= onRuntimeStateChanged;
+    _onSessionPositionChanged ??= onSessionPositionChanged;
   }
 
   void attachPlaybackQueueSynchronizer(
@@ -428,6 +433,15 @@ final class PlaybackFacade {
     }
     _onRuntimeStateChanged?.call();
     _scheduleNewSessionPersistence();
+  }
+
+  Future<void> seekSession(String sessionId, Duration position) async {
+    final session = service.sessions[sessionId];
+    if (session == null) return;
+    session.setOptimisticPosition(position);
+    session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
+    _onSessionPositionChanged?.call(session, position);
+    await nativeRepository.seek(session.id, position);
   }
 
   Future<void> addTrackToPlaybackQueue(String sessionId, MusicTrack track) {

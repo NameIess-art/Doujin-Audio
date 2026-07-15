@@ -140,7 +140,7 @@ extension AudioProviderTimeSegments on AudioProvider {
   void _seekTimeSegmentLoopToStart(String sessionId, Duration start) {
     if (!_timeSegmentLoopSeekPendingSessionIds.add(sessionId)) return;
     unawaited(
-      seekSession(sessionId, start).whenComplete(() {
+      _playbackFacade.seekSession(sessionId, start).whenComplete(() {
         _timeSegmentLoopSeekPendingSessionIds.remove(sessionId);
       }),
     );

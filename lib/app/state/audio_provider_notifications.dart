@@ -167,7 +167,7 @@ extension AudioProviderNotifications on AudioProvider {
         final session = _notificationActionSession;
         if (session == null) return;
         _notificationFocusSessionId = session.id;
-        await seekSession(session.id, position);
+        await _playbackFacade.seekSession(session.id, position);
       },
       notify: _notifyListeners,
       flushKeepAliveSync: _syncKeepCpuAwake,

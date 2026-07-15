@@ -91,7 +91,7 @@ extension AudioProviderNotificationSync on AudioProvider {
         onToggle: toggleSessionPlaybackFromNotification,
         onPrevious: skipNotificationSessionToPreviousById,
         onNext: skipNotificationSessionToNextById,
-        onSeek: seekSession,
+        onSeek: _playbackFacade.seekSession,
       ),
     );
   }

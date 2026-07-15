@@ -1042,7 +1042,7 @@ void main() {
       final coordinator = UiInteractionCoordinator.instance;
       coordinator.beginInteraction(interactionSource);
 
-      provider.warmupLibraryCoversForTracks(const <MusicTrack?>[track]);
+      provider.libraryFacade.warmupCoversForTracks(const <MusicTrack?>[track]);
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(cache.requestedPaths, isEmpty);
 

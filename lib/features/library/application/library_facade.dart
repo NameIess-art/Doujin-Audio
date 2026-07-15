@@ -14,6 +14,8 @@ import '../../../core/media/music_track.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/ui/warmup_scheduler.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
 import '../../player/application/audio_state_services.dart';
 import '../../settings/application/app_preferences.dart';
@@ -47,7 +49,12 @@ final class LibraryFacade implements LibraryCatalog {
     required this.service,
     required this.snapshotCacheService,
     CoverArtworkCacheService? coverArtworkCacheService,
-  }) : _coverArtworkCacheService = coverArtworkCacheService;
+  }) : _coverArtworkCacheService = coverArtworkCacheService {
+    UiInteractionCoordinator.instance.addListener(
+      _handleWarmupInteractionChanged,
+    );
+    _handleWarmupInteractionChanged();
+  }
 
   factory LibraryFacade.create({
     AudioDatabaseRepository? databaseRepository,
@@ -96,6 +103,7 @@ final class LibraryFacade implements LibraryCatalog {
   bool _persistenceEnabled = true;
   bool _disposed = false;
   void Function(List<String> removedPaths)? _trackRemovalHandler;
+  final WarmupScheduler _coverWarmupScheduler = WarmupScheduler();
 
   LibraryState get state => service.slice.state;
   Stream<LibraryState> get states => service.slice.stream;
@@ -564,6 +572,40 @@ final class LibraryFacade implements LibraryCatalog {
     folderPath,
     selectedCoverPath: selectedCoverPath,
   );
+
+  void warmupCoversForTracks(Iterable<MusicTrack?> tracks) {
+    final generation = _coverWarmupScheduler.currentGeneration;
+    final scheduledKeys = <String>{};
+    var priority = 0;
+    for (final track in tracks) {
+      if (track == null || track.isVideo) continue;
+      if (resolvedCoverPathForTrack(track) != null) continue;
+      final coverSearchKey = coverArtworkCacheService.coverSearchKeyForTrack(
+        track,
+      );
+      if (coverSearchKey == null || !scheduledKeys.add(coverSearchKey)) {
+        continue;
+      }
+      _coverWarmupScheduler.schedule(
+        key: 'library_track_cover:$coverSearchKey',
+        priority: priority++,
+        generation: generation,
+        group: 'library_cover',
+        task: () async {
+          if (resolvedCoverPathForTrack(track) == null) {
+            await coverPathFutureForTrack(track);
+          }
+        },
+      );
+    }
+  }
+
+  void _handleWarmupInteractionChanged() {
+    _coverWarmupScheduler.setPaused(
+      UiInteractionCoordinator.instance.isInteracting,
+    );
+  }
+
   String? libraryEntryDisplayNameForPath(
     String libraryPath,
     String entryPath,
@@ -1215,6 +1257,10 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<void> dispose() async {
     _disposed = true;
+    UiInteractionCoordinator.instance.removeListener(
+      _handleWarmupInteractionChanged,
+    );
+    await _coverWarmupScheduler.shutdown();
     service.scanProgressNotifyTimer?.cancel();
     service.scanProgressNotifyTimer = null;
     _coverArtworkCacheService?.dispose();

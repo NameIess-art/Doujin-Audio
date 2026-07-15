@@ -168,7 +168,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
         final terms = _termsForCategory(snapshot);
         final entries = _filterCategoryEntries(snapshot);
         _scheduleLibraryCoverWarmup(
-          provider: provider,
+          libraryFacade: libraryFacade,
           tracks: entries.map((entry) => entry.firstTrack),
           structureRevision: structureRevision,
           detailRevision: detailRevision,

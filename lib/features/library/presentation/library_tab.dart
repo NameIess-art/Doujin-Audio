@@ -479,7 +479,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _scheduleLibraryCoverWarmup({
-    required AudioProvider provider,
+    required LibraryFacade libraryFacade,
     required Iterable<MusicTrack?> tracks,
     required int structureRevision,
     required int detailRevision,
@@ -508,7 +508,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           _lastLibraryCoverWarmupSignature != signature) {
         return;
       }
-      provider.warmupLibraryCoversForTracks(warmupTracks);
+      libraryFacade.warmupCoversForTracks(warmupTracks);
     });
   }
 
@@ -661,7 +661,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         _effectiveSearchQuery.isEmpty &&
         listStateIsInitialized) {
       _scheduleLibraryCoverWarmup(
-        provider: provider,
+        libraryFacade: libraryFacade,
         tracks: _libraryCoverWarmupTracksForTree(tree),
         structureRevision: listStateStructureRevision,
         detailRevision: detailRevision,

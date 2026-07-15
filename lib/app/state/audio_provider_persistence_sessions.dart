@@ -253,10 +253,4 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }
   }
-
-  void _scheduleSessionPersistence() {
-    if (_skipDisposePersistence) return;
-    _playbackFacade.scheduleSessionStatePersistence();
-    _playbackFacade.scheduleSessionOrderPersistence();
-  }
 }

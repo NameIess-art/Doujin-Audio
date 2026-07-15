@@ -22,7 +22,6 @@ import '../../features/library/domain/library_entry.dart';
 import '../../features/library/domain/library_node.dart';
 import '../../core/media/music_track.dart';
 import '../../features/player/domain/playback_mode.dart';
-import '../../features/player/domain/playback_queue.dart';
 import '../../features/player/application/playback_session.dart';
 import '../../features/player/domain/time_segment_label.dart';
 import '../../core/platform/app_platform.dart';
@@ -647,6 +646,7 @@ class AudioProvider with ChangeNotifier {
         _syncNotificationState();
       },
     );
+    _playbackFacade.attachPlaybackQueueSynchronizer(_syncPlaybackQueueSession);
     _timerFacade.attachRuntime(
       hasPlayingSession: () => _hasPlayingSession,
       sessions: () => _sessions.values,

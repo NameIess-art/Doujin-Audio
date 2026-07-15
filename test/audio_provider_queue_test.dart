@@ -62,7 +62,7 @@ void main() {
         'Queue 1',
       );
 
-      final addFuture = provider.addTrackToPlaybackQueue(
+      final addFuture = provider.playbackFacade.addTrackToPlaybackQueue(
         queueSession.id,
         track,
       );
@@ -120,8 +120,14 @@ void main() {
           'Queue 1',
         );
 
-        await provider.addTrackToPlaybackQueue(queueSession.id, track);
-        await provider.addTrackToPlaybackQueue(queueSession.id, track);
+        await provider.playbackFacade.addTrackToPlaybackQueue(
+          queueSession.id,
+          track,
+        );
+        await provider.playbackFacade.addTrackToPlaybackQueue(
+          queueSession.id,
+          track,
+        );
         await provider.seekSessionToNext(queueSession.id);
 
         expect(preparedQueueIndexes.last, 1);
@@ -156,8 +162,14 @@ void main() {
       expect(queueSession.isPlaybackQueue, isTrue);
       expect(queueSession.currentTrackPath, isEmpty);
 
-      await provider.addTrackToPlaybackQueue(queueSession.id, track);
-      await provider.addTrackToPlaybackQueue(queueSession.id, track);
+      await provider.playbackFacade.addTrackToPlaybackQueue(
+        queueSession.id,
+        track,
+      );
+      await provider.playbackFacade.addTrackToPlaybackQueue(
+        queueSession.id,
+        track,
+      );
 
       final updated = provider.sessionById(queueSession.id)!;
       expect(updated.playbackQueue?.entries, hasLength(2));
@@ -170,7 +182,7 @@ void main() {
         isTrue,
       );
 
-      await provider.removePlaybackQueueEntry(
+      await provider.playbackFacade.removePlaybackQueueEntry(
         queueSession.id,
         updated.playbackQueue!.entries.first.id,
       );

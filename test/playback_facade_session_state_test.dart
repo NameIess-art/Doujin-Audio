@@ -275,7 +275,7 @@ void main() {
     },
   );
 
-  test('PlaybackFacade owns queue metadata and track snapshots', () {
+  test('PlaybackFacade owns queue metadata and track snapshots', () async {
     final library = LibraryFacade.create();
     final playback = PlaybackFacade.create(
       databaseRepository: library.databaseRepository,
@@ -315,16 +315,27 @@ void main() {
       await library.dispose();
     });
     var changeCount = 0;
+    var synchronizeCount = 0;
     playback.attachSessionRuntime(
       onSessionRegistered: (_) {},
       onSessionsReordered: () {},
       onSessionStateChanged: () => changeCount++,
     );
+    playback.attachPlaybackQueueSynchronizer((
+      session, {
+      selectFirst = false,
+    }) async {
+      synchronizeCount++;
+      session.customQueueTracks = session.playbackQueue?.expandedTracks;
+    });
     playback.registerSession(queueSession);
 
     expect(playback.renamePlaybackQueue('queue', 'After'), isTrue);
     expect(playback.setPlaybackQueueColorValue('queue', 0xff112233), isTrue);
     expect(playback.replaceSessionTrackSnapshots(updated), isTrue);
+    await playback.addTrackToPlaybackQueue('queue', updated);
+    final addedEntry = queueSession.playbackQueue!.entries.last;
+    await playback.removePlaybackQueueEntry('queue', addedEntry.id);
 
     expect(queueSession.playbackQueue?.name, 'After');
     expect(queueSession.playbackQueue?.colorValue, 0xff112233);
@@ -333,7 +344,10 @@ void main() {
       queueSession.playbackQueue?.entries.single.tracks.single.displayName,
       'Updated',
     );
-    expect(changeCount, 2);
+    expect(changeCount, 5);
+    expect(synchronizeCount, 2);
+    expect(addedEntry.id, startsWith('queue_entry_'));
+    expect(queueSession.playbackQueue?.entries, hasLength(1));
   });
 }
 

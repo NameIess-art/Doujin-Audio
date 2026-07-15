@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:just_audio/just_audio.dart';
 
@@ -16,6 +17,9 @@ import 'native_playback_repository.dart';
 import 'native_playback_bridge.dart';
 import 'playback_command_runner.dart';
 import 'system_media_controls_service.dart';
+
+typedef PlaybackQueueSessionSynchronizer =
+    Future<void> Function(PlaybackSession session, {bool selectFirst});
 
 /// Owns playback sessions and the platform playback runtime.
 final class PlaybackFacade {
@@ -69,7 +73,9 @@ final class PlaybackFacade {
   void Function()? _onSessionsReordered;
   void Function()? _onSessionStateChanged;
   void Function()? _onRuntimeStateChanged;
+  PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
+  final Random _random = Random();
   int _transportCommandSequence = 0;
   int _sessionSeed = 0;
   bool _persistenceEnabled = true;
@@ -296,6 +302,12 @@ final class PlaybackFacade {
     _onRuntimeStateChanged ??= onRuntimeStateChanged;
   }
 
+  void attachPlaybackQueueSynchronizer(
+    PlaybackQueueSessionSynchronizer synchronize,
+  ) {
+    _synchronizePlaybackQueueSession ??= synchronize;
+  }
+
   void registerSession(PlaybackSession session) {
     service.registerSession(session);
     _onSessionRegistered?.call(session);
@@ -417,6 +429,112 @@ final class PlaybackFacade {
     _onRuntimeStateChanged?.call();
     _scheduleNewSessionPersistence();
   }
+
+  Future<void> addTrackToPlaybackQueue(String sessionId, MusicTrack track) {
+    return _addPlaybackQueueEntry(
+      sessionId,
+      PlaybackQueueEntry(
+        id: _nextQueueEntryId(),
+        kind: PlaybackQueueEntryKind.track,
+        title: track.displayName,
+        tracks: <MusicTrack>[track],
+      ),
+    );
+  }
+
+  Future<void> addWorkToPlaybackQueue(
+    String sessionId, {
+    required String title,
+    required List<MusicTrack> tracks,
+    String? workRootPath,
+  }) {
+    if (tracks.isEmpty) return Future<void>.value();
+    return _addPlaybackQueueEntry(
+      sessionId,
+      PlaybackQueueEntry(
+        id: _nextQueueEntryId(),
+        kind: PlaybackQueueEntryKind.work,
+        title: title,
+        tracks: List<MusicTrack>.unmodifiable(tracks),
+        workRootPath: workRootPath,
+      ),
+    );
+  }
+
+  Future<void> _addPlaybackQueueEntry(
+    String sessionId,
+    PlaybackQueueEntry entry,
+  ) async {
+    final session = service.sessions[sessionId];
+    final queue = session?.playbackQueue;
+    if (session == null || queue == null) return;
+    final wasEmpty = queue.expandedTracks.isEmpty;
+    session.playbackQueue = queue.copyWith(
+      entries: List<PlaybackQueueEntry>.unmodifiable(<PlaybackQueueEntry>[
+        ...queue.entries,
+        entry,
+      ]),
+    );
+    service.markActiveSessionsDirty();
+    _onSessionStateChanged?.call();
+    _scheduleNewSessionPersistence();
+    await _synchronizePlaybackQueueSession?.call(
+      session,
+      selectFirst: wasEmpty,
+    );
+    service.markActiveSessionsDirty();
+    _onSessionStateChanged?.call();
+    publishSessionActivated(session.id);
+  }
+
+  Future<void> removePlaybackQueueEntry(
+    String sessionId,
+    String entryId,
+  ) async {
+    final session = service.sessions[sessionId];
+    final queue = session?.playbackQueue;
+    if (session == null || queue == null) return;
+    final entries = queue.entries
+        .where((entry) => entry.id != entryId)
+        .toList(growable: false);
+    if (entries.length == queue.entries.length) return;
+    session.playbackQueue = queue.copyWith(entries: entries);
+    await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
+    service.markActiveSessionsDirty();
+    _onSessionStateChanged?.call();
+    _scheduleNewSessionPersistence();
+  }
+
+  Future<void> reorderPlaybackQueueEntry(
+    String sessionId,
+    int oldIndex,
+    int newIndex,
+  ) async {
+    final session = service.sessions[sessionId];
+    final queue = session?.playbackQueue;
+    if (session == null || queue == null) return;
+    if (oldIndex < newIndex) newIndex -= 1;
+    final entries = queue.entries.toList();
+    if (oldIndex < 0 ||
+        oldIndex >= entries.length ||
+        newIndex < 0 ||
+        newIndex > entries.length) {
+      return;
+    }
+    final item = entries.removeAt(oldIndex);
+    entries.insert(newIndex, item);
+    session.playbackQueue = queue.copyWith(entries: entries);
+    await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
+    service.markActiveSessionsDirty();
+    _onSessionStateChanged?.call();
+    await databaseRepository.updatePlaybackQueueEntryOrder(
+      session.id,
+      entries.map((entry) => entry.id).toList(growable: false),
+    );
+  }
+
+  String _nextQueueEntryId() =>
+      'queue_entry_${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 20)}';
 
   bool renamePlaybackQueue(String sessionId, String name) {
     final session = service.sessions[sessionId];

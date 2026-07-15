@@ -688,7 +688,7 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                     proxyDecorator: (child, index, animation) => child,
                     itemCount: queueEntries.length,
                     onReorder: (oldIndex, newIndex) {
-                      provider.reorderPlaybackQueueEntry(
+                      provider.playbackFacade.reorderPlaybackQueueEntry(
                         sessionId,
                         oldIndex,
                         newIndex,
@@ -698,10 +698,8 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                       final entry = queueEntries[index];
                       return _AnimatedQueueEntryCard(
                         key: ValueKey(entry.id),
-                        onRemove: () => provider.removePlaybackQueueEntry(
-                          sessionId,
-                          entry.id,
-                        ),
+                        onRemove: () => provider.playbackFacade
+                            .removePlaybackQueueEntry(sessionId, entry.id),
                         builder: (context, triggerRemove) {
                           return _QueueAudioEditCard(
                             provider: provider,
@@ -831,8 +829,10 @@ class _QueueSourceAudioTile extends ConsumerWidget {
             padding: EdgeInsets.zero,
             visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
-            onPressed: () =>
-                provider.addTrackToPlaybackQueue(queueSessionId, track),
+            onPressed: () => provider.playbackFacade.addTrackToPlaybackQueue(
+              queueSessionId,
+              track,
+            ),
           ),
           if (!track.isSingle)
             IconButton(

@@ -325,13 +325,9 @@ class AudioProvider with ChangeNotifier {
   int get _scanFailureCount => _libraryService.scanFailureCount;
   set _scanFailureCount(int value) => _libraryService.scanFailureCount = value;
   int get _scanGeneration => _libraryService.scanGeneration;
-  set _scanGeneration(int value) => _libraryService.scanGeneration = value;
   FolderScanStage get _scanStage => _libraryService.scanStage;
-  set _scanStage(FolderScanStage value) => _libraryService.scanStage = value;
   int get _scanProcessed => _libraryService.scanProcessed;
-  set _scanProcessed(int value) => _libraryService.scanProcessed = value;
   int? get _scanTotal => _libraryService.scanTotal;
-  set _scanTotal(int? value) => _libraryService.scanTotal = value;
   int get _libraryBatchDepth => _libraryService.libraryBatchDepth;
   set _libraryBatchDepth(int value) =>
       _libraryService.libraryBatchDepth = value;

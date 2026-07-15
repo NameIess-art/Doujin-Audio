@@ -92,7 +92,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   Future<void> removeLibrary(String libraryPath) async {
-    setScanning(false);
+    if (_libraryFacade.isScanning) _libraryFacade.cancelScan();
     await _libraryService.removeLibrary(
       libraryPath,
       removeFolder: removeFolderFromLibrary,
@@ -644,38 +644,6 @@ extension AudioProviderLibrary on AudioProvider {
           removedPaths,
         ),
       );
-    }
-  }
-
-  void setScanning(
-    bool scanning, {
-    bool background = false,
-    bool notify = true,
-  }) {
-    if (_isScanning == scanning && _isBackgroundScanning == background) return;
-    _isScanning = scanning;
-    _isBackgroundScanning = background;
-    if (scanning) {
-      _scanProgressNotifyTimer?.cancel();
-      _scanProgressNotifyTimer = null;
-      _scanCurrentFolder = '';
-      _scanFoundCount = 0;
-      _scanDuplicateCount = 0;
-      _scanFailureCount = 0;
-      _scanStage = FolderScanStage.preparing;
-      _scanProcessed = 0;
-      _scanTotal = null;
-    } else {
-      _scanProgressNotifyTimer?.cancel();
-      _scanProgressNotifyTimer = null;
-      _scanGeneration = 0;
-      _scanStage = FolderScanStage.idle;
-      _scanTotal = null;
-    }
-    if (notify) {
-      _notifyLibraryChanged();
-    } else {
-      _syncLibraryStateSlice();
     }
   }
 

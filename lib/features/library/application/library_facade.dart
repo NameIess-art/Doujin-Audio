@@ -96,6 +96,7 @@ final class LibraryFacade implements LibraryCatalogReader {
       UnmodifiableListView<String>(service.watchedLibraries);
   @override
   bool get isScanning => service.isScanning;
+  bool get isBackgroundScanning => service.isBackgroundScanning;
   @override
   int get scanFoundCount => service.scanFoundCount;
   @override

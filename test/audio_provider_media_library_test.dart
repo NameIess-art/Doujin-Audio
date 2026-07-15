@@ -404,35 +404,45 @@ void main() {
     test(
       'background scan progress does not notify visible library UI',
       () async {
-        var notificationCount = 0;
-        provider.addListener(() {
-          notificationCount++;
-        });
+        final facade = provider.libraryFacade;
+        var stateCount = 0;
+        final subscription = facade.states.listen((_) => stateCount++);
+        addTearDown(subscription.cancel);
 
-        provider.setScanning(true, background: true, notify: false);
+        final backgroundGeneration = facade.tryBeginScan(
+          source: 'background-folder',
+          background: true,
+        );
+        await Future<void>.delayed(Duration.zero);
+        final afterBackgroundStart = stateCount;
 
-        provider.setScanProgress(
+        facade.setScanProgress(
+          generation: backgroundGeneration,
           currentFolder: 'background-folder',
           foundCount: 1,
           duplicateCount: 2,
         );
         await Future<void>.delayed(const Duration(milliseconds: 180));
 
-        expect(notificationCount, 0);
+        expect(stateCount, afterBackgroundStart);
 
-        provider.setScanning(false, notify: false);
-        provider.setScanning(true);
-        final afterForegroundStart = notificationCount;
+        facade.finishScan(backgroundGeneration);
+        final foregroundGeneration = facade.tryBeginScan(
+          source: 'foreground-folder',
+        );
+        await Future<void>.delayed(Duration.zero);
+        final afterForegroundStart = stateCount;
 
-        provider.setScanProgress(
+        facade.setScanProgress(
+          generation: foregroundGeneration,
           currentFolder: 'foreground-folder',
           foundCount: 3,
         );
         await Future<void>.delayed(const Duration(milliseconds: 180));
 
-        expect(notificationCount, greaterThan(afterForegroundStart));
+        expect(stateCount, greaterThan(afterForegroundStart));
 
-        provider.setScanning(false);
+        facade.finishScan(foregroundGeneration);
       },
     );
 
@@ -444,7 +454,10 @@ void main() {
           notificationCount++;
         });
 
-        provider.setScanning(true, background: true, notify: false);
+        final generation = provider.libraryFacade.tryBeginScan(
+          source: 'background-folder',
+          background: true,
+        );
         provider.beginLibraryBatch();
         provider.addOrReplaceTracks(
           <MusicTrack>[
@@ -467,7 +480,7 @@ void main() {
 
         await provider.endLibraryBatch();
         await Future<void>.delayed(Duration.zero);
-        provider.setScanning(false, notify: false);
+        provider.libraryFacade.finishScan(generation);
 
         expect(notificationCount, 1);
       },

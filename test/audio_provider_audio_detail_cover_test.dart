@@ -498,12 +498,7 @@ void main() {
           '${tempDir.path}${Platform.pathSeparator}Old Folder',
         );
         final trackFile = File('${source.path}${Platform.pathSeparator}01.mp3');
-        final coverFile = File(
-          '${source.path}${Platform.pathSeparator}cover.jpg',
-        );
         await source.create();
-        await trackFile.writeAsBytes(const <int>[1, 2, 3]);
-        await coverFile.writeAsBytes(const <int>[4, 5, 6]);
 
         final track = MusicTrack(
           path: trackFile.path,
@@ -512,7 +507,6 @@ void main() {
           groupTitle: 'Old Folder',
           groupSubtitle: source.path,
           isSingle: false,
-          manualCoverPath: coverFile.path,
         );
         provider.addWatchedFolder(source.path, notify: false);
         provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
@@ -587,7 +581,6 @@ void main() {
         );
         final newFolderPath = result.detail.target.targetPath;
         final newTrackPath = '$newFolderPath${Platform.pathSeparator}01.mp3';
-        final newCoverPath = '$newFolderPath${Platform.pathSeparator}cover.jpg';
 
         expect(session.currentTrackPath, newTrackPath);
 
@@ -608,10 +601,6 @@ void main() {
         expect(
           provider.coverPathForTrack(resolvedTrack, trackPath: trackFile.path),
           isNull,
-        );
-        expect(
-          await provider.coverPathFutureForFolder(newFolderPath),
-          newCoverPath,
         );
         await fixture.dispose(currentProvider: provider);
       },

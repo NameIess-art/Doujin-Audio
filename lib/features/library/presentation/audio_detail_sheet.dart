@@ -11,6 +11,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../application/audio_detail_repository.dart';
+import '../application/library_facade.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/time_text_formatters.dart';
@@ -125,11 +126,12 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   Future<void> _load() async {
     try {
       final provider = context.read<AudioProvider>();
+      final libraryFacade = ref.read(libraryFacadeProvider);
       final result = await UiOperationService.instance
           .run<AudioDetailLoadResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_title',
-            task: (_) => provider.loadAudioDetail(_target),
+            task: (_) => libraryFacade.loadAudioDetail(_target),
           );
 
       if (!mounted) return;
@@ -261,11 +263,12 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     });
     try {
       final provider = context.read<AudioProvider>();
+      final libraryFacade = ref.read(libraryFacadeProvider);
       final result = await UiOperationService.instance
           .run<AudioDetailSaveResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_save_failed',
-            task: (_) => provider.saveAudioDetail(nextDetail),
+            task: (_) => libraryFacade.saveAudioDetail(nextDetail),
           );
       if (!mounted) return;
       setState(() {
@@ -316,9 +319,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
 
   Future<void> _confirmFetchInfo(AudioDetail detail) async {
     final i18n = context.read<AppLanguageProvider>();
-    final query = context.read<AudioProvider>().buildDlsiteMetadataQuery(
-      detail,
-    );
+    final query = ref
+        .read(libraryFacadeProvider)
+        .buildDlsiteMetadataQuery(detail);
     if (!query.hasQuery) {
       showAppSnackBar(
         context,
@@ -458,7 +461,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       context,
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
     final detail = _detail;
-    final provider = context.read<AudioProvider>();
+    final libraryFacade = ref.read(libraryFacadeProvider);
     final track = ref.watch(libraryTrackProvider(_target.targetPath));
     final coverGeneration = ref.watch(coverGenerationProvider);
 
@@ -577,7 +580,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                 _FolderCoverSelector(
                   key: ValueKey('${_target.targetPath}:$coverGeneration'),
                   folderPath: _target.targetPath,
-                  initialCoverPath: provider.resolvedCoverPathForFolder(
+                  initialCoverPath: libraryFacade.resolvedCoverPathForFolder(
                     _target.targetPath,
                   ),
                   onCoverSelected: (coverPath) {

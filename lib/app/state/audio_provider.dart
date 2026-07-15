@@ -26,7 +26,7 @@ import '../../features/library/domain/library_node.dart';
 import '../../core/media/music_track.dart';
 import '../../features/player/domain/playback_mode.dart';
 import '../../features/player/domain/playback_queue.dart';
-import '../../features/player/domain/playback_session.dart';
+import '../../features/player/application/playback_session.dart';
 import '../../features/player/domain/time_segment_label.dart';
 import '../../core/platform/app_platform.dart';
 import '../../features/settings/application/app_cache_service.dart';
@@ -41,6 +41,7 @@ import '../../features/asmr/application/asmr_api_service.dart';
 import '../../features/asmr/application/asmr_metadata_service.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/dlsite_metadata_service.dart';
+import '../../features/library/application/dlsite_metadata_query.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/library/application/library_snapshot_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
@@ -67,7 +68,7 @@ export '../../core/media/dlsite_metadata.dart';
 export '../../core/media/music_track.dart';
 export '../../features/player/domain/playback_mode.dart';
 export '../../features/player/domain/playback_queue.dart';
-export '../../features/player/domain/playback_session.dart';
+export '../../features/player/application/playback_session.dart';
 export '../../features/player/domain/time_segment_label.dart';
 export '../../features/player/application/audio_state_services.dart'
     show StartupPage;
@@ -693,6 +694,7 @@ class AudioProvider with ChangeNotifier {
        _settingsRepository = settings,
        _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh),
        _skipDisposePersistence = skipDisposePersistence {
+    _settingsRepository.attachPersistence(_savePlaybackSettings);
     _libraryFacade.attachCatalog(AudioProviderCompatibilityCatalog(this));
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
     _libraryFacade.attachCoverArtworkCacheService(

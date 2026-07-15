@@ -13,6 +13,20 @@ import org.junit.Test
 
 class NativePlaybackFocusRecoveryPolicyTest {
     @Test
+    fun `foreground sync waits for system gain during transient focus loss`() {
+        assertTrue(
+            shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
+                transientAudioFocusLossActive = true
+            )
+        )
+        assertFalse(
+            shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
+                transientAudioFocusLossActive = false
+            )
+        )
+    }
+
+    @Test
     fun `duckable focus loss keeps playback running`() {
         assertFalse(
             shouldPauseForAudioFocusChange(

@@ -138,6 +138,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
 
   Widget _buildCategoryBody({
     required AudioProvider provider,
+    required LibraryFacade libraryFacade,
     required AppLanguageProvider i18n,
     required double topPadding,
     required double bottomPadding,
@@ -149,8 +150,8 @@ extension _LibraryTabCategoryView on _LibraryTabState {
   }) {
     return FutureBuilder<AudioLibraryCategorySnapshot>(
       key: ValueKey('category_future_${_categoryType.name}_$detailRevision'),
-      future: provider.audioLibraryCategorySnapshot(),
-      initialData: provider.audioLibraryCategorySnapshotSync,
+      future: libraryFacade.audioLibraryCategorySnapshot(),
+      initialData: libraryFacade.categorySnapshot,
       builder: (context, snapshotState) {
         final snapshot = snapshotState.data;
         if (snapshot == null) {

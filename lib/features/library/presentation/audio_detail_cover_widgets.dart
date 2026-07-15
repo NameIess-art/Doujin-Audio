@@ -17,7 +17,7 @@ class _SingleFileCoverPreviewState
   int _lastCoverGeneration = -1;
 
   Future<String?> _futureFor(
-    AudioProvider provider,
+    LibraryFacade library,
     MusicTrack track,
     int coverGeneration,
   ) {
@@ -25,20 +25,20 @@ class _SingleFileCoverPreviewState
         _lastCoverGeneration != coverGeneration) {
       _lastTrackPath = track.path;
       _lastCoverGeneration = coverGeneration;
-      _coverFuture = provider.coverPathFutureForTrack(track);
+      _coverFuture = library.coverPathFutureForTrack(track);
     }
     return _coverFuture!;
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.read<AudioProvider>();
+    final library = ref.read(libraryFacadeProvider);
     final track = ref.watch(libraryTrackProvider(widget.filePath));
     if (track == null) return const SizedBox.shrink();
 
     final coverGeneration = ref.watch(coverGenerationProvider);
-    final initialPath = provider.resolvedCoverPathForTrack(track);
-    final coverFuture = _futureFor(provider, track, coverGeneration);
+    final initialPath = library.resolvedCoverPathForTrack(track);
+    final coverFuture = _futureFor(library, track, coverGeneration);
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(coverImageResolutionProvider),
     );
@@ -128,11 +128,11 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
 
   Future<void> _load() async {
     try {
-      final provider = context.read<AudioProvider>();
-      final currentCover = await provider.coverPathFutureForFolder(
+      final library = ref.read(libraryFacadeProvider);
+      final currentCover = await library.coverPathFutureForFolder(
         widget.folderPath,
       );
-      final discoveredImages = await provider.discoverCoverCandidatesInFolder(
+      final discoveredImages = await library.discoverCoverCandidatesInFolder(
         widget.folderPath,
         selectedCoverPath: currentCover ?? widget.initialCoverPath,
       );

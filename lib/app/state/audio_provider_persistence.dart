@@ -811,12 +811,8 @@ extension AudioProviderPersistence on AudioProvider {
   }
 
   Future<void> setAsmrDownloadDestinationRoot(String? destinationRoot) async {
-    final normalized = destinationRoot?.trim();
-    final next = normalized == null || normalized.isEmpty ? null : normalized;
-    if (_settingsRepository.asmrDownloadDestinationRoot == next) return;
-    _settingsRepository.asmrDownloadDestinationRoot = next;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
+    await _settingsRepository.setAsmrDownloadDestinationRoot(destinationRoot);
+    _notifyPresentationListeners();
   }
 
   Future<void> setAsmrDownloadConflictPolicy(

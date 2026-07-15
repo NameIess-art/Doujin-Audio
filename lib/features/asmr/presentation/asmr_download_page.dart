@@ -1,11 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
+import '../../../app/state/audio_provider_riverpod.dart';
 import '../domain/asmr_models.dart';
-import '../../../app/state/audio_provider.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_download_selection.dart';
 import '../application/asmr_library_controller.dart';
@@ -16,16 +17,16 @@ import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 import 'asmr_download_details_page.dart';
 
-class AsmrDownloadPage extends StatefulWidget {
+class AsmrDownloadPage extends ConsumerStatefulWidget {
   const AsmrDownloadPage({super.key, required this.work});
 
   final AsmrWork work;
 
   @override
-  State<AsmrDownloadPage> createState() => _AsmrDownloadPageState();
+  ConsumerState<AsmrDownloadPage> createState() => _AsmrDownloadPageState();
 }
 
-class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
+class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   AsmrDownloadSelectionModel? _selection;
   String? _destinationRoot;
   bool _loading = true;
@@ -50,17 +51,16 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
             task: (_) async {
               final libraryController = context.read<AsmrLibraryController>();
               final downloadManager = context.read<AsmrDownloadManager>();
-              final audioProvider = context.read<AudioProvider>();
+              final settings = ref.read(settingsRepositoryProvider);
               final tree = await libraryController.ensureTrackTree(widget.work);
               await downloadManager.initialize();
-              final savedDestination =
-                  audioProvider.asmrDownloadDestinationRoot;
+              final savedDestination = settings.asmrDownloadDestinationRoot;
               destinationMissing =
                   savedDestination != null &&
                   savedDestination.trim().isNotEmpty &&
                   !await downloadManager.destinationExists(savedDestination);
               if (destinationMissing) {
-                await audioProvider.setAsmrDownloadDestinationRoot(null);
+                await settings.setAsmrDownloadDestinationRoot(null);
               }
               return (
                 tree: tree,
@@ -98,7 +98,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
 
   Future<void> _chooseDestination() async {
     final downloadManager = context.read<AsmrDownloadManager>();
-    final audioProvider = context.read<AudioProvider>();
+    final settings = ref.read(settingsRepositoryProvider);
     final i18n = context.read<AppLanguageProvider>();
     final folder = await downloadManager.pickDestinationFolder(
       dialogTitle: i18n.tr('asmr_download_choose_path'),
@@ -106,7 +106,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
     if (!mounted || folder == null || folder.trim().isEmpty) {
       return;
     }
-    await audioProvider.setAsmrDownloadDestinationRoot(folder);
+    await settings.setAsmrDownloadDestinationRoot(folder);
     if (!mounted) return;
     setState(() {
       _destinationRoot = folder.trim();
@@ -125,7 +125,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
 
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final downloadManager = context.read<AsmrDownloadManager>();
-    final audioProvider = context.read<AudioProvider>();
+    final settings = ref.read(settingsRepositoryProvider);
     final i18n = context.read<AppLanguageProvider>();
     final task = downloadManager.getTask(widget.work.id);
     if (task != null &&
@@ -161,7 +161,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
       }
     }
     if (!await downloadManager.destinationExists(destination)) {
-      await audioProvider.setAsmrDownloadDestinationRoot(null);
+      await settings.setAsmrDownloadDestinationRoot(null);
       if (!mounted) return;
       setState(() {
         _destinationRoot = null;
@@ -191,7 +191,7 @@ class _AsmrDownloadPageState extends State<AsmrDownloadPage> {
           work: widget.work,
           selectedRoots: selectedRoots,
           destinationRoot: destination!,
-          conflictPolicy: audioProvider.asmrDownloadConflictPolicy,
+          conflictPolicy: settings.asmrDownloadConflictPolicy,
         ),
       );
       if (!mounted) return;

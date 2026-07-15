@@ -132,6 +132,11 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
   }
 
   Future<bool> _activateAudioSessionForPlayback() async {
+    // Android audio focus is owned by NativePlaybackService. Activating the
+    // Flutter audio_session here creates a second focus client for the same
+    // app, which can interrupt individual native sessions during background
+    // multi-session playback.
+    if (AppPlatform.isAndroid) return true;
     try {
       final audioSession = await AudioSession.instance;
       return await audioSession.setActive(true);
@@ -146,6 +151,7 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
   }
 
   Future<void> _deactivateAudioSession() async {
+    if (AppPlatform.isAndroid) return;
     try {
       final audioSession = await AudioSession.instance;
       await audioSession.setActive(false);

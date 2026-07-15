@@ -183,6 +183,7 @@ class NotificationCoordinatorService {
 }
 
 class SettingsRepository {
+  Future<void> Function()? _persist;
   String converterFormat = 'mp3';
   String converterBitrate = '320k';
   bool multiThreadPlaybackEnabled = false;
@@ -211,6 +212,19 @@ class SettingsRepository {
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
     const SettingsState(),
   );
+
+  void attachPersistence(Future<void> Function() persist) {
+    _persist ??= persist;
+  }
+
+  Future<void> setAsmrDownloadDestinationRoot(String? destinationRoot) async {
+    final normalized = destinationRoot?.trim();
+    final next = normalized == null || normalized.isEmpty ? null : normalized;
+    if (asmrDownloadDestinationRoot == next) return;
+    asmrDownloadDestinationRoot = next;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await _persist?.call();
+  }
 
   void syncSlice({bool isInitialized = false}) {
     slice.update(

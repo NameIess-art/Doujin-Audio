@@ -47,6 +47,11 @@ Current platform responsibility boundaries include:
 - `VideoConversionInputService`: video source and output-directory selection kept outside the converter screen.
 - `FileCachePlatformGateway`: the only Dart owner of `file_cache` MethodChannel/EventChannel I/O, including scanning, document operations, cache operations, media helpers, backup, and subtitle resolution.
 - `PlatformMethodClient`: the shared strict decoder for envelope-based request/response channels. Best-effort services keep their public safe defaults but log preserved `NativeFailure` details.
+- `UpdatePlatformService`: the only owner of the update MethodChannel and its
+  version, installer-permission, release-page, and APK-install envelopes.
+- `SubtitleOverlayPlatformService`: the only owner of the subtitle-overlay
+  MethodChannel. `SubtitleOverlayController` keeps overlay timing and state
+  coordination but no longer decodes platform responses.
 - `AppUpdateFlow`: the single presentation coordinator used by startup and settings update checks; it reuses `AppUpdateService`, operation progress, install permission handling, retry, and install feedback.
 - `AppUpdateService`: the stable update API. GitHub API and expanded-assets HTML are decoded immediately into private typed release/asset models; malformed rows and non-HTTP(S) URLs do not cross the application boundary.
 - `FileCacheMediaScanOrchestrator`: media-scan strategy and fallback ordering.
@@ -88,6 +93,12 @@ Shared media models live under `lib/core/media`; feature-specific models remain
 under the owning feature's `domain` directory. Tests for pure helpers live in
 `test/*_test.dart` and should be expanded before changing behavior in the
 corresponding application service.
+
+`PlaybackSession` is an application runtime type. It owns streams,
+subscriptions, native snapshot mapping, optimistic transport state, and player
+runtime objects, and is not exported from player domain. Feature domain code is
+kept free of Flutter, player SDK, application, and presentation imports by
+`test/architecture_boundaries_test.dart`.
 
 Large screen and compatibility-provider files may use same-library `part` files
 only while extracted code still depends on private compatibility state. New

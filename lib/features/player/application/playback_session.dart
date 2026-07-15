@@ -4,10 +4,10 @@ import 'dart:io';
 import 'package:just_audio/just_audio.dart';
 
 import '../../../core/media/music_track.dart';
-import 'audio_effects.dart';
-import '../application/native_playback_bridge.dart';
-import 'playback_mode.dart';
-import 'playback_queue.dart';
+import '../domain/audio_effects.dart';
+import '../domain/playback_mode.dart';
+import '../domain/playback_queue.dart';
+import 'native_playback_bridge.dart';
 
 class PlaybackSession {
   PlaybackSession({
@@ -261,36 +261,4 @@ ProcessingState _nativeProcessingState(String state) {
     default:
       return ProcessingState.idle;
   }
-}
-
-class TimerInfo {
-  const TimerInfo({
-    this.duration,
-    this.remaining,
-    this.active = false,
-    this.mode,
-  });
-
-  final Duration? duration;
-  final Duration? remaining;
-  final bool active;
-  final TimerMode? mode;
-}
-
-class ScanInfo {
-  const ScanInfo({
-    this.isScanning = false,
-    this.isBackgroundScanning = false,
-    this.currentFolder = '',
-    this.foundCount = 0,
-    this.duplicateCount = 0,
-    this.failureCount = 0,
-  });
-
-  final bool isScanning;
-  final bool isBackgroundScanning;
-  final String currentFolder;
-  final int foundCount;
-  final int duplicateCount;
-  final int failureCount;
 }

@@ -38,6 +38,12 @@ class AsmrPlaybackCoordinator {
     await _launch(work, tracks, autoPlay: autoPlay);
   }
 
+  Future<void> playTracks(
+    AsmrWork work,
+    List<MusicTrack> tracks, {
+    bool? autoPlay,
+  }) => _launch(work, tracks, autoPlay: autoPlay);
+
   Future<void> _launch(
     AsmrWork work,
     List<MusicTrack> tracks, {

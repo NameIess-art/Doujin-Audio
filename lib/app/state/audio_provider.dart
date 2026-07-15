@@ -685,6 +685,7 @@ class AudioProvider with ChangeNotifier {
        _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh),
        _skipDisposePersistence = skipDisposePersistence {
     _settingsRepository.attachPersistence(_savePlaybackSettings);
+    _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
     _libraryFacade.attachCatalog(AudioProviderCompatibilityCatalog(this));
     _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
     _libraryFacade.attachCoverArtworkCacheService(

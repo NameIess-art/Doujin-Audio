@@ -800,7 +800,7 @@ extension AudioProviderLibrary on AudioProvider {
     final mutation = _libraryService.addTracks(newTracks, persist: persist);
     final addedTracks = mutation.tracks;
     if (addedTracks.isEmpty) return;
-    _recordLibraryEntriesForTracks(addedTracks, persist: persist);
+    _libraryFacade.recordEntriesForTracks(addedTracks, persist: persist);
     if (mutation.batched) return;
     _clearResolvedCoverPaths();
     _librarySnapshotCacheService.markStructureChanged();
@@ -830,7 +830,7 @@ extension AudioProviderLibrary on AudioProvider {
     );
     final tracksToPersist = mutation.tracks;
     if (tracksToPersist.isEmpty) return;
-    _recordLibraryEntriesForTracks(tracksToPersist, persist: persist);
+    _libraryFacade.recordEntriesForTracks(tracksToPersist, persist: persist);
     if (mutation.batched) return;
     _clearResolvedCoverPaths();
     _librarySnapshotCacheService.markStructureChanged();
@@ -862,72 +862,14 @@ extension AudioProviderLibrary on AudioProvider {
     LibraryExclusionMatcher? exclusionMatcher,
     LibraryEntrySnapshot? entrySnapshot,
   }) {
-    final entries = _filterFreshLibraryEntries(
-      _libraryService.buildLibraryEntries(
-        libraryPath,
-        tracks,
-        folderPaths: folderPaths,
-        exclusionMatcher: exclusionMatcher,
-      ),
-      entrySnapshot,
+    _libraryFacade.recordLibraryEntriesForTracks(
+      libraryPath,
+      tracks,
+      folderPaths: folderPaths,
+      persist: persist,
+      exclusionMatcher: exclusionMatcher,
+      entrySnapshot: entrySnapshot,
     );
-    if (entries.isEmpty) return;
-    _libraryService.replaceLibraryEntries(entries);
-    entrySnapshot?.remember(entries);
-    _queueOrPersistLibraryEntries(entries, persist: persist);
-  }
-
-  List<LibraryEntry> _filterFreshLibraryEntries(
-    List<LibraryEntry> entries,
-    LibraryEntrySnapshot? entrySnapshot,
-  ) {
-    if (entries.isEmpty || entrySnapshot == null) return entries;
-    return entries
-        .where(entrySnapshot.entryNeedsRefresh)
-        .toList(growable: false);
-  }
-
-  void _recordLibraryEntriesForTracks(
-    List<MusicTrack> tracks, {
-    bool persist = true,
-  }) {
-    final entries = <LibraryEntry>[];
-    final tracksByLibrary = <String, List<MusicTrack>>{};
-    for (final track in tracks) {
-      final libraryPath = _libraryService.libraryPathForTrack(track);
-      if (libraryPath == null || libraryPath.isEmpty) continue;
-      tracksByLibrary.putIfAbsent(libraryPath, () => <MusicTrack>[]).add(track);
-    }
-    for (final entry in tracksByLibrary.entries) {
-      entries.addAll(
-        _libraryService.buildLibraryEntries(entry.key, entry.value),
-      );
-    }
-    if (entries.isEmpty) return;
-    _libraryService.replaceLibraryEntries(entries);
-    _queueOrPersistLibraryEntries(entries, persist: persist);
-  }
-
-  void _queueOrPersistLibraryEntries(
-    List<LibraryEntry> entries, {
-    required bool persist,
-  }) {
-    if (entries.isEmpty || !persist || _skipDisposePersistence) return;
-    if (_libraryBatchDepth > 0) {
-      for (final entry in entries) {
-        _libraryBatchPersistEntriesByKey[_libraryEntryBatchKey(entry)] = entry;
-      }
-      return;
-    }
-    unawaited(_audioDatabaseRepository.upsertLibraryEntries(entries));
-  }
-
-  String _libraryEntryBatchKey(LibraryEntry entry) {
-    return [
-      PathMatcher.normalize(entry.libraryPath),
-      PathMatcher.normalize(entry.path),
-      entry.kind.dbValue,
-    ].join('\x1F');
   }
 
   Future<void> removeTrackFromLibrary(String trackPath) async {

@@ -91,6 +91,7 @@ final class LibraryFacade implements LibraryCatalogReader {
   LibraryCatalog? _catalog;
   Future<void>? _missingDurationBackfill;
   bool _missingDurationBackfillRequestedAgain = false;
+  bool _persistenceEnabled = true;
   bool _disposed = false;
 
   LibraryState get state => service.slice.state;
@@ -658,6 +659,70 @@ final class LibraryFacade implements LibraryCatalogReader {
       _libraryNodeOrderPreferenceKey,
       json.encode(service.libraryNodeOrder),
     );
+  }
+
+  void configurePersistence({required bool enabled}) {
+    _persistenceEnabled = enabled;
+  }
+
+  void recordLibraryEntriesForTracks(
+    String libraryPath,
+    List<MusicTrack> tracks, {
+    Iterable<String> folderPaths = const <String>[],
+    bool persist = true,
+    LibraryExclusionMatcher? exclusionMatcher,
+    LibraryEntrySnapshot? entrySnapshot,
+  }) {
+    var entries = service.buildLibraryEntries(
+      libraryPath,
+      tracks,
+      folderPaths: folderPaths,
+      exclusionMatcher: exclusionMatcher,
+    );
+    if (entrySnapshot != null) {
+      entries = entries
+          .where(entrySnapshot.entryNeedsRefresh)
+          .toList(growable: false);
+    }
+    if (entries.isEmpty) return;
+    service.replaceLibraryEntries(entries);
+    entrySnapshot?.remember(entries);
+    _queueOrPersistLibraryEntries(entries, persist: persist);
+  }
+
+  void recordEntriesForTracks(List<MusicTrack> tracks, {bool persist = true}) {
+    final entries = <LibraryEntry>[];
+    final tracksByLibrary = <String, List<MusicTrack>>{};
+    for (final track in tracks) {
+      final libraryPath = service.libraryPathForTrack(track);
+      if (libraryPath == null || libraryPath.isEmpty) continue;
+      tracksByLibrary.putIfAbsent(libraryPath, () => <MusicTrack>[]).add(track);
+    }
+    for (final entry in tracksByLibrary.entries) {
+      entries.addAll(service.buildLibraryEntries(entry.key, entry.value));
+    }
+    if (entries.isEmpty) return;
+    service.replaceLibraryEntries(entries);
+    _queueOrPersistLibraryEntries(entries, persist: persist);
+  }
+
+  void _queueOrPersistLibraryEntries(
+    List<LibraryEntry> entries, {
+    required bool persist,
+  }) {
+    if (entries.isEmpty || !persist || !_persistenceEnabled) return;
+    if (service.libraryBatchDepth > 0) {
+      for (final entry in entries) {
+        final key = <String>[
+          PathMatcher.normalize(entry.libraryPath),
+          PathMatcher.normalize(entry.path),
+          entry.kind.dbValue,
+        ].join('\x1F');
+        service.libraryBatchPersistEntriesByKey[key] = entry;
+      }
+      return;
+    }
+    unawaited(databaseRepository.upsertLibraryEntries(entries));
   }
 
   int tryBeginScan({required String source, bool background = false}) {

@@ -152,8 +152,6 @@ class AudioProvider with ChangeNotifier {
       _libraryFacade.detailCacheService;
   DlsiteMetadataService get _dlsiteMetadataService =>
       _libraryFacade.metadataService;
-  AsmrMetadataService get _asmrMetadataService =>
-      _libraryFacade.asmrMetadataService;
   AsmrPlaybackCacheService get _asmrPlaybackCacheService =>
       _playbackFacade.playbackCacheService;
   NativePlaybackRepository get _nativePlaybackRepository =>

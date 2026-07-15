@@ -5,8 +5,10 @@ import 'dart:io';
 
 import 'package:just_audio/just_audio.dart';
 
+import '../../../core/app_language.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/audio_detail.dart';
+import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../../core/media/path_matcher.dart';
@@ -373,6 +375,122 @@ final class LibraryFacade implements LibraryCatalogReader {
 
   DlsiteMetadataQuery buildDlsiteMetadataQuery(AudioDetail detail) =>
       DlsiteMetadataQuery.fromDetail(detail);
+
+  Future<DlsiteMetadata> fetchPreferredMetadata(
+    String rjCode, {
+    required AppLanguage language,
+  }) async {
+    DlsiteMetadata? primary;
+    try {
+      primary = await asmrMetadataService.fetchByRjCode(
+        rjCode,
+        language: language,
+      );
+    } catch (_) {
+      return metadataService.fetchByRjCode(rjCode, language: language);
+    }
+    if (!_metadataHasMissingValue(primary)) return primary;
+    try {
+      final fallback = await metadataService.fetchByRjCode(
+        rjCode,
+        language: language,
+      );
+      return _mergeMetadata(primary, fallback);
+    } catch (_) {
+      return primary;
+    }
+  }
+
+  Future<List<DlsiteMetadata>> searchPreferredMetadataByTitles(
+    Iterable<String> titles, {
+    required AppLanguage language,
+  }) async {
+    List<DlsiteMetadata> primary;
+    try {
+      primary = await asmrMetadataService.searchByTitleCandidates(
+        titles,
+        language: language,
+      );
+    } catch (_) {
+      return metadataService.searchByTitleCandidates(
+        titles,
+        language: language,
+      );
+    }
+    if (primary.every((metadata) => !_metadataHasMissingValue(metadata))) {
+      return primary;
+    }
+    try {
+      final fallback = await metadataService.searchByTitleCandidates(
+        titles,
+        language: language,
+      );
+      final fallbackByKey = <String, DlsiteMetadata>{};
+      for (final metadata in fallback) {
+        final key = _metadataMergeKey(metadata);
+        if (key.isNotEmpty) fallbackByKey.putIfAbsent(key, () => metadata);
+      }
+      final singleFallback = primary.length == 1 && fallback.length == 1
+          ? fallback.single
+          : null;
+      return primary
+          .map((metadata) {
+            final match =
+                fallbackByKey[_metadataMergeKey(metadata)] ?? singleFallback;
+            return match == null ? metadata : _mergeMetadata(metadata, match);
+          })
+          .toList(growable: false);
+    } catch (_) {
+      return primary;
+    }
+  }
+
+  bool _metadataHasMissingValue(DlsiteMetadata metadata) {
+    return metadata.rjCode.trim().isEmpty ||
+        metadata.workTitle.trim().isEmpty ||
+        metadata.circleName.trim().isEmpty ||
+        metadata.voiceActors.isEmpty ||
+        metadata.tags.isEmpty ||
+        metadata.releaseDate == null ||
+        metadata.duration == null ||
+        metadata.salesCount == null ||
+        metadata.rating == null;
+  }
+
+  String _metadataMergeKey(DlsiteMetadata metadata) {
+    final rjCode = metadata.rjCode.trim().toUpperCase();
+    if (rjCode.isNotEmpty) return 'rj:$rjCode';
+    final title = metadata.workTitle.trim().toLowerCase();
+    return title.isEmpty ? '' : 'title:$title';
+  }
+
+  DlsiteMetadata _mergeMetadata(
+    DlsiteMetadata primary,
+    DlsiteMetadata fallback,
+  ) {
+    String fallbackString(String value, String fallbackValue) {
+      return value.trim().isNotEmpty ? value : fallbackValue;
+    }
+
+    String? fallbackNullableString(String? value, String? fallbackValue) {
+      return value != null && value.trim().isNotEmpty ? value : fallbackValue;
+    }
+
+    return primary.copyWith(
+      rjCode: fallbackString(primary.rjCode, fallback.rjCode),
+      workTitle: fallbackString(primary.workTitle, fallback.workTitle),
+      circleName: fallbackString(primary.circleName, fallback.circleName),
+      voiceActors: primary.voiceActors.isNotEmpty
+          ? primary.voiceActors
+          : fallback.voiceActors,
+      tags: primary.tags.isNotEmpty ? primary.tags : fallback.tags,
+      releaseDate: primary.releaseDate ?? fallback.releaseDate,
+      duration: primary.duration ?? fallback.duration,
+      salesCount: primary.salesCount ?? fallback.salesCount,
+      rating: primary.rating ?? fallback.rating,
+      coverUrl: fallbackNullableString(primary.coverUrl, fallback.coverUrl),
+    );
+  }
 
   AudioDetail? resolvedAudioDetail(AudioDetailTarget target) =>
       detailCacheService.resolvedDetail(target);

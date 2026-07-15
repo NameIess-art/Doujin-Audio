@@ -113,14 +113,24 @@ class _DlsiteMetadataReviewPageState
             scope: _operationScope,
             labelKey: 'dlsite_review_title',
             task: (_) async {
-              final provider = context.read<AudioProvider>();
+              final library = ref.read(libraryFacadeProvider);
+              final language = ref
+                  .read(settingsRepositoryProvider)
+                  .slice
+                  .state
+                  .dlsiteMetadataLanguage
+                  .resolve(context.read<AppLanguageProvider>().language);
               final rjCode = widget.rjCode;
               return rjCode != null
                   ? <DlsiteMetadata>[
-                      await provider.fetchPreferredMetadata(rjCode),
+                      await library.fetchPreferredMetadata(
+                        rjCode,
+                        language: language,
+                      ),
                     ]
-                  : provider.searchPreferredMetadataByTitles(
+                  : library.searchPreferredMetadataByTitles(
                       widget.searchTitles,
+                      language: language,
                     );
             },
           );

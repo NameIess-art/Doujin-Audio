@@ -277,9 +277,11 @@ void main() {
       addTearDown(fixture.dispose);
       final audioProvider = fixture.audioProvider;
 
-      final metadata = (await audioProvider.searchPreferredMetadataByTitles(
-        const <String>['Work'],
-      )).single;
+      final metadata =
+          (await audioProvider.libraryFacade.searchPreferredMetadataByTitles(
+            const <String>['Work'],
+            language: AppLanguage.zh,
+          )).single;
 
       expect(metadata.workTitle, 'ASMR fetched title');
       expect(metadata.circleName, 'Circle');

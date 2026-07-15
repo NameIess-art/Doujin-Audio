@@ -677,6 +677,28 @@ class LibraryService {
     );
   }
 
+  ({List<MusicTrack> tracks, bool batched}) removeTracksWhere(
+    bool Function(MusicTrack track) test,
+  ) {
+    final removedTracks = library.where(test).toList(growable: false);
+    if (removedTracks.isEmpty) {
+      return (tracks: const <MusicTrack>[], batched: false);
+    }
+    final removedPaths = removedTracks.map((track) => track.path).toSet();
+    library.removeWhere((track) => removedPaths.contains(track.path));
+    for (final trackPath in removedPaths) {
+      libraryByPath.remove(trackPath);
+      libraryIndexByPath.remove(trackPath);
+    }
+    if (libraryBatchDepth > 0) {
+      libraryBatchChanged = true;
+      return (tracks: removedTracks, batched: true);
+    }
+    rebuildLibraryIndexes();
+    syncLibraryNodeOrder(persist: false);
+    return (tracks: removedTracks, batched: false);
+  }
+
   bool trackNeedsRefresh(MusicTrack nextTrack) {
     final existing = libraryByPath[nextTrack.path];
     return existing == null || _mergedTrackHasChanges(existing, nextTrack);

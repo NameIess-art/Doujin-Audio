@@ -539,8 +539,8 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   void _removeTracksWhere(bool Function(MusicTrack track) test) {
-    final removedPaths = _library
-        .where(test)
+    final mutation = _libraryService.removeTracksWhere(test);
+    final removedPaths = mutation.tracks
         .map((track) => track.path)
         .toList(growable: false);
     if (removedPaths.isEmpty) return;
@@ -549,18 +549,8 @@ extension AudioProviderLibrary on AudioProvider {
         .where((session) => removedSet.contains(session.currentTrackPath))
         .map((session) => session.id)
         .toList(growable: false);
-    _library.removeWhere((track) => removedSet.contains(track.path));
-    for (final trackPath in removedPaths) {
-      _libraryByPath.remove(trackPath);
-      _libraryIndexByPath.remove(trackPath);
-    }
-    // Skip the expensive rebuild when inside a batch 鈥?endLibraryBatch will
-    // do a single consolidated rebuild when the batch closes.
-    if (_libraryBatchDepth <= 0) {
-      _rebuildLibraryIndexes();
-      _syncLibraryNodeOrder(persist: false);
-    } else {
-      _libraryBatchChanged = true;
+    if (!mutation.batched) {
+      _librarySnapshotCacheService.markStructureChanged();
     }
     if (sessionsToRemove.isNotEmpty) {
       unawaited(
@@ -570,7 +560,7 @@ extension AudioProviderLibrary on AudioProvider {
     if (!_skipDisposePersistence) {
       unawaited(_audioDatabaseRepository.deleteTracks(removedPaths));
     }
-    if (_libraryBatchDepth <= 0) {
+    if (!mutation.batched) {
       unawaited(_saveLibraryNodeOrder());
     }
   }

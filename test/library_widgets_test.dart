@@ -251,7 +251,7 @@ void main() {
     expect(find.byType(ReorderableListView), findsNothing);
     expect(find.byKey(const ValueKey('locked_library_list')), findsOneWidget);
 
-    await audioProvider.setCardPositionsLocked(false);
+    await audioProvider.settingsRepository.setCardPositionsLocked(false);
     await tester.pump();
     expect(find.byType(ReorderableListView), findsOneWidget);
 

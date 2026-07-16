@@ -93,8 +93,7 @@ final class NotificationFacade {
 
   NotificationFacade get _notificationFacade => this;
   PlaybackFacade get _playbackFacade => _playback!;
-  NotificationCoordinatorService get _notificationStateService =>
-      stateService;
+  NotificationCoordinatorService get _notificationStateService => stateService;
   PlaybackNotificationService get _notificationService => service;
   SystemMediaControlsService get _systemMediaControlsService =>
       _playbackFacade.systemMediaControlsService;
@@ -102,8 +101,7 @@ final class NotificationFacade {
       _playbackFacade.service.sessions;
   List<PlaybackSession> get activeSessions =>
       _playbackFacade.service.activeSessions;
-  bool get _multiThreadPlaybackEnabled =>
-      _multiThreadPlaybackEnabledResolver();
+  bool get _multiThreadPlaybackEnabled => _multiThreadPlaybackEnabledResolver();
   bool get _hasPlaybackToKeepAlive => _hasPlaybackToKeepAliveResolver();
   bool get _notificationsEnabled => _notificationsEnabledResolver();
 
@@ -197,6 +195,36 @@ final class NotificationFacade {
   bool isActiveCoverKey(String key) => _isActiveCoverKey(key);
   void ensureSubtitleTrackLoaded(String trackPath) =>
       _ensureSubtitleTrackLoaded(trackPath);
+
+  void prepareForPersistenceReset() {
+    stateService.notificationProgressRefreshTimer?.cancel();
+    stateService.notificationProgressRefreshTimer = null;
+    stateService.unifiedNotificationSyncTimer?.cancel();
+    stateService.unifiedNotificationSyncTimer = null;
+    stateService.notificationActionRefreshTimer?.cancel();
+    stateService.notificationActionRefreshTimer = null;
+    stateService.notificationActionGuardTimeout?.cancel();
+    stateService.notificationActionGuardTimeout = null;
+  }
+
+  Future<void> resetForBackupRestore() async {
+    stateService
+      ..notificationFocusSessionId = null
+      ..unifiedNotificationSyncKey = null
+      ..unifiedNotificationSyncInFlight = false
+      ..unifiedNotificationSyncPending = false
+      ..queuedNotificationRefreshSessionId = null
+      ..notificationsDismissedWhilePaused = false
+      ..notificationActionRefreshPending = false
+      ..keepAliveSyncDeferred = false;
+    stateService.notificationSubtitleTexts.clear();
+    stateService.notificationSubtitleTrackPaths.clear();
+    _subtitleService.clear();
+    _coverArtworkCacheService.invalidateAll();
+    await _clearUnifiedPlaybackNotificationsOnPlatform();
+    _syncKeepAlive();
+    _notifyNotificationChanged();
+  }
 
   NotificationState get state => stateService.slice.state;
   Stream<NotificationState> get states => stateService.slice.stream;
@@ -404,9 +432,8 @@ final class NotificationFacade {
       action,
       notify: _notify,
       flushKeepAliveSync: _syncKeepAlive,
-      syncNotificationState: () => _syncNotificationState(
-        immediateUnifiedSync: true,
-      ),
+      syncNotificationState: () =>
+          _syncNotificationState(immediateUnifiedSync: true),
     );
   }
 

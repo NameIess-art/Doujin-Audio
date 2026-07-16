@@ -21,6 +21,7 @@ import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/warmup_scheduler.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
 import '../../settings/application/app_preferences.dart';
+import '../../settings/application/app_cache_service.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_detail_repository.dart';
 import 'cover_artwork_cache_service.dart';
@@ -45,6 +46,7 @@ final class LibraryFacade implements LibraryCatalog {
   static const _libraryNodeOrderPreferenceKey = 'library_node_order_v1';
   static const _groupOrderPreferenceKey = 'group_order_v1';
   static const _libraryExclusionsPreferenceKey = 'library_exclusions_v1';
+  Future<void>? _postStartupMaintenance;
   LibraryFacade({
     required this.databaseRepository,
     required this.detailCacheService,
@@ -2358,6 +2360,76 @@ final class LibraryFacade implements LibraryCatalog {
     CoverArtworkCacheService Function() create,
   ) {
     _coverArtworkCacheService ??= create();
+  }
+
+  Future<LibraryTreeSnapshot> ensureCardSnapshot() {
+    return snapshotCacheService.cardSnapshot(onCommitted: _syncStateSlice);
+  }
+
+  void schedulePostStartupMaintenance() {
+    if (_postStartupMaintenance != null) return;
+    final retainedPaths = service.library
+        .map((track) => track.path)
+        .toList(growable: false);
+    late final Future<void> task;
+    task = _waitForContinuousUiIdle(const Duration(seconds: 3))
+        .then((idleReached) async {
+          if (!idleReached) return;
+          await AppLogService.measureAsync(
+            'library_post_startup_maintenance',
+            () async {
+              await AppCacheService.cleanupOrphanedPersistentImports(
+                retainedPaths,
+              );
+              await _ensureEntriesForLoadedTracks();
+            },
+            details: <String, Object?>{'tracks': retainedPaths.length},
+          );
+        })
+        .whenComplete(() {
+          if (identical(_postStartupMaintenance, task)) {
+            _postStartupMaintenance = null;
+          }
+        });
+    _postStartupMaintenance = task;
+  }
+
+  Future<bool> _waitForContinuousUiIdle(Duration quietWindow) async {
+    DateTime? idleSince;
+    while (!_disposed) {
+      if (UiInteractionCoordinator.instance.isInteracting) {
+        idleSince = null;
+      } else {
+        idleSince ??= DateTime.now();
+        if (DateTime.now().difference(idleSince) >= quietWindow) return true;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 160));
+    }
+    return false;
+  }
+
+  Future<void> _ensureEntriesForLoadedTracks() async {
+    final knownLibraries = <String>{
+      ...service.watchedLibraries,
+      ...service.watchedFolders,
+    };
+    if (knownLibraries.isEmpty || service.library.isEmpty) return;
+    final entriesToPersist = <LibraryEntry>[];
+    for (final libraryPath in knownLibraries) {
+      if (service.hasLibraryEntriesForLibrary(libraryPath)) continue;
+      final tracks = service.library
+          .where(
+            (track) =>
+                PathMatcher.isWithinOrEqual(track.path, libraryPath) ||
+                PathMatcher.isWithinOrEqual(track.groupKey, libraryPath),
+          )
+          .toList(growable: false);
+      if (tracks.isEmpty) continue;
+      entriesToPersist.addAll(service.buildLibraryEntries(libraryPath, tracks));
+    }
+    if (entriesToPersist.isEmpty) return;
+    service.replaceLibraryEntries(entriesToPersist);
+    await databaseRepository.upsertLibraryEntries(entriesToPersist);
   }
 
   void _syncStateSlice({bool? isInitialized}) {

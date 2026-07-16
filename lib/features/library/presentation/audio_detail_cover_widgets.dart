@@ -42,7 +42,9 @@ class _SingleFileCoverPreviewState
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(coverImageResolutionProvider),
     );
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final labelStyle = Theme.of(
       context,
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700);
@@ -196,7 +198,9 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
       if (!mounted) return;
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr('audio_detail_save_failed'),
+        ProviderScope.containerOf(context)
+            .read(appLanguageProviderInstanceProvider)
+            .tr('audio_detail_save_failed'),
         tone: AppFeedbackTone.warning,
       );
     } finally {
@@ -222,7 +226,9 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final labelStyle = Theme.of(
       context,

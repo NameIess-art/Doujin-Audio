@@ -148,7 +148,9 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
       _controller = FixedExtentScrollController(initialItem: _selectedIndex);
     }
 
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final selectedSpeed = _speeds[_selectedIndex];
 

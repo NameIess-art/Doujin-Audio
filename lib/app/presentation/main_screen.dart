@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:provider/provider.dart' hide Consumer;
 
 import '../localization/app_language_provider.dart';
 import '../state/audio_provider.dart';
@@ -606,7 +605,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!mounted) return;
     showAppSnackBar(
       context,
-      context.read<AppLanguageProvider>().tr('asmr_online_optional_notice'),
+      ProviderScope.containerOf(context)
+          .read(appLanguageProviderInstanceProvider)
+          .tr('asmr_online_optional_notice'),
       icon: Icons.cloud_outlined,
       duration: const Duration(seconds: 4),
     );
@@ -617,7 +618,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ref.listen<SubtitleSettingsState>(subtitleSettingsProvider, (_, _) {
       unawaited(_syncGlobalSubtitleOverlay());
     });
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final brightness = Theme.of(context).brightness;
     final overlayStyle = brightness == Brightness.dark
         ? const SystemUiOverlayStyle(

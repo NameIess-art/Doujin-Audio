@@ -326,7 +326,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         .where((label) => label.id == _selectedSegmentId)
         .firstOrNull;
     if (selected == null) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('segment_delete_title'),
@@ -359,7 +361,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     final displayName =
         track?.displayName ??
         path.basenameWithoutExtension(session.currentTrackPath);
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final rootFolderName = provider.getRootFolderName(session.currentTrackPath);
     final folderName = rootFolderName.isNotEmpty
         ? rootFolderName
@@ -639,7 +643,9 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
   }
 
   void _showTrackSwitcher(BuildContext context) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final tracks = orderTracksForSessionSwitcher(
       widget.session.isPlaybackQueue
           ? widget.session.playbackQueue!.expandedTracks
@@ -828,7 +834,9 @@ class _QueueSheetHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),
       child: Row(

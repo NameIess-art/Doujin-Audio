@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart';
 
 import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/logging/app_log_service.dart';
-import '../../asmr/application/asmr_library_controller.dart';
 import '../application/data_support_file_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -59,7 +57,8 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   Future<void> _restoreBackup() async {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final audioProvider = ref.read(audioProviderFacadeProvider);
-    final asmrController = context.read<AsmrLibraryController>();
+    final asmrController = ref.read(asmrLibraryControllerProvider);
+    if (asmrController == null) return;
     final confirmed = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('restore_backup'),

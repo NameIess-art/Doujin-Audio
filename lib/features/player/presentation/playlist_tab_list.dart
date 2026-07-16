@@ -101,7 +101,9 @@ class _SessionsEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -229,7 +231,9 @@ class _SessionListCard extends ConsumerWidget {
   }
 
   String _loopModeSummary(BuildContext context, SessionLoopMode mode) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     if (mode == SessionLoopMode.single) return i18n.tr('single_loop');
     final scope =
         mode == SessionLoopMode.crossRandom ||
@@ -246,7 +250,9 @@ class _SessionListCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final displayName =
         track?.displayName ??

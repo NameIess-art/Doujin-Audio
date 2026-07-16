@@ -3,12 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' hide Consumer;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
-import '../../asmr/application/asmr_download_manager.dart';
 import '../application/app_cache_service.dart';
 import '../application/app_update_service.dart';
 import '../../player/application/audio_state_services.dart';
@@ -142,13 +140,19 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   }
 
   Future<void> _chooseAsmrDownloadDestination() async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final folder = await _runSettingsOperation<String?>(
       scope: UiOperationScope.settingsAsmrDownloadPath,
       labelKey: 'loading_dot',
-      task: (_) => context.read<AsmrDownloadManager>().pickDestinationFolder(
-        dialogTitle: i18n.tr('asmr_download_choose_path'),
-      ),
+      task: (_) {
+        final manager = ref.read(asmrDownloadManagerProvider);
+        if (manager == null) return Future<String?>.value();
+        return manager.pickDestinationFolder(
+          dialogTitle: i18n.tr('asmr_download_choose_path'),
+        );
+      },
     );
     if (!mounted || folder == null || folder.trim().isEmpty) return;
     await _runSettingsOperation<void>(
@@ -163,7 +167,9 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final audioProvider = ref.read(audioProviderFacadeProvider);
     final bottomInset = MobileOverlayInset.of(context);
     final cs = Theme.of(context).colorScheme;

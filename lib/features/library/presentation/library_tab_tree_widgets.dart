@@ -126,7 +126,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     BuildContext context,
     LibraryFacade library,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final libraryPath = _findParentLibraryPath(library);
     if (libraryPath != null) {
       library.excludeLibraryFolder(libraryPath, widget.folder.path);
@@ -152,7 +154,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   }
 
   void _playFolder(BuildContext context, PlaybackFacade playback) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final firstTrack = widget.folder.firstTrack;
     if (firstTrack == null) return;
     AppInteractionFeedback.trigger(
@@ -172,7 +176,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
@@ -394,7 +400,9 @@ class _TrackNodeWidget extends ConsumerWidget {
     LibraryFacade library,
     MusicTrack track,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final parentLibraryPath = library.libraryRootForPath(track.path);
     if (parentLibraryPath != null) {
       library.excludeLibraryTrack(parentLibraryPath, track.path);
@@ -421,7 +429,9 @@ class _TrackNodeWidget extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
@@ -908,7 +918,9 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final fields = ref.watch(
       settingsStateProvider.select(
         (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
@@ -958,7 +970,9 @@ class _SingleAudioFileCardContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final fields = ref.watch(
       settingsStateProvider.select(
         (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,

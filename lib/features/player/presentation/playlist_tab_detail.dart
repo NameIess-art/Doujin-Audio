@@ -546,7 +546,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
       return;
     }
 
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     await _permissionActionController.ensureGrantedAndRun(
       context: context,
       title: i18n.tr('overlay_permission_title'),
@@ -562,7 +564,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   }
 
   Future<void> _openTimerSettingsPage() {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final mediaSize = MediaQuery.sizeOf(context);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -815,7 +819,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                   builder: (context, constraints) {
                     return Column(
                       children: [
-                        // Top Bar 鈥?outside drag GestureDetector so taps work
+                        // Top Bar 閳?outside drag GestureDetector so taps work
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Builder(
@@ -910,7 +914,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                             },
                           ),
                         ),
-                        // Content area 鈥?keep session drag gestures on artwork only
+                        // Content area 閳?keep session drag gestures on artwork only
                         Expanded(
                           child: Builder(
                             builder: (context) {

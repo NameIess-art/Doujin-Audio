@@ -136,7 +136,9 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton>
             maintainState: true,
             child: IconButton(
               padding: EdgeInsets.zero,
-              tooltip: context.read<AppLanguageProvider>().tr('volume'),
+              tooltip: ProviderScope.containerOf(
+                context,
+              ).read(appLanguageProviderInstanceProvider).tr('volume'),
               onPressed: () {
                 AppInteractionFeedback.trigger(
                   AppInteractionFeedbackType.selection,
@@ -190,7 +192,9 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
   double? _dragVolume;
 
   void _showVolumeInputDialog() {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final controller = TextEditingController(
       text: '${((_dragVolume ?? widget.session.volume) * 100).round()}',
     );

@@ -7,7 +7,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' as legacy_provider;
 
 import 'app/localization/app_language_provider.dart';
 import 'core/platform/app_platform.dart';
@@ -149,23 +148,11 @@ Future<void> _runAudioPlayerApp() async {
         appUpdateServiceProvider.overrideWithValue(appUpdateService),
         asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
         asmrLibraryControllerProvider.overrideWithValue(asmrLibraryController),
+        asmrPlaybackCoordinatorProvider.overrideWithValue(
+          asmrPlaybackCoordinator,
+        ),
       ],
-      child: legacy_provider.MultiProvider(
-        providers: [
-          legacy_provider.ChangeNotifierProvider.value(
-            value: appLanguageProvider,
-          ),
-          legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
-          legacy_provider.ChangeNotifierProvider.value(
-            value: asmrLibraryController,
-          ),
-          legacy_provider.ChangeNotifierProvider.value(
-            value: asmrDownloadManager,
-          ),
-          legacy_provider.Provider.value(value: asmrPlaybackCoordinator),
-        ],
-        child: const MusicPlayerApp(),
-      ),
+      child: const MusicPlayerApp(),
     ),
   );
 

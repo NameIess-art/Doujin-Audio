@@ -23,7 +23,9 @@ class _PlaybackQueueCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final queue = session.playbackQueue!;
     final tracks = queue.expandedTracks;
@@ -338,7 +340,9 @@ Future<void> _showPlaybackQueuePanel(
   BuildContext context, {
   required Widget panel,
 }) {
-  final i18n = context.read<AppLanguageProvider>();
+  final i18n = ProviderScope.containerOf(
+    context,
+  ).read(appLanguageProviderInstanceProvider);
   return showGeneralDialog<void>(
     context: context,
     barrierLabel: i18n.tr('close'),
@@ -422,7 +426,9 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     final playback = ref.read(playbackFacadeProvider);
     final session = playback.sessionById(sessionId);
     final queue = session?.playbackQueue;
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     if (queue == null) return const SizedBox.shrink();
     final cs = Theme.of(context).colorScheme;
     return Material(
@@ -597,7 +603,11 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text(context.read<AppLanguageProvider>().tr('edit_queue_name')),
+        title: Text(
+          ProviderScope.containerOf(
+            context,
+          ).read(appLanguageProviderInstanceProvider).tr('edit_queue_name'),
+        ),
         content: TextField(controller: controller, autofocus: true),
         actions: [
           Row(
@@ -605,7 +615,11 @@ class PlaybackQueueEditPage extends ConsumerWidget {
               Expanded(
                 child: TextButton(
                   onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(context.read<AppLanguageProvider>().tr('cancel')),
+                  child: Text(
+                    ProviderScope.containerOf(
+                      context,
+                    ).read(appLanguageProviderInstanceProvider).tr('cancel'),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -613,7 +627,11 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                 child: FilledButton(
                   onPressed: () =>
                       Navigator.of(dialogContext).pop(controller.text.trim()),
-                  child: Text(context.read<AppLanguageProvider>().tr('save')),
+                  child: Text(
+                    ProviderScope.containerOf(
+                      context,
+                    ).read(appLanguageProviderInstanceProvider).tr('save'),
+                  ),
                 ),
               ),
             ],
@@ -631,7 +649,9 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     BuildContext context,
     AudioProvider provider,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('remove_queue'),
@@ -656,7 +676,9 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
     final provider = ref.read(audioProviderFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
     final queue = playback.sessionById(sessionId)?.playbackQueue;
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     if (queue == null) return const SizedBox.shrink();
 
     return Scaffold(
@@ -815,7 +837,9 @@ class _QueueSourceAudioTile extends ConsumerWidget {
     final provider = ref.read(audioProviderFacadeProvider);
     final track = provider.trackByPath(source.currentTrackPath);
     if (track == null) return const SizedBox.shrink();
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     return _QueueAudioEditCard(
       provider: provider,
       track: track,
@@ -962,7 +986,9 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
     final color = value == null
         ? Theme.of(context).colorScheme.primary
         : Color(value);
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     return Material(
       color: cs.surfaceContainerLow.withValues(alpha: 0.96),

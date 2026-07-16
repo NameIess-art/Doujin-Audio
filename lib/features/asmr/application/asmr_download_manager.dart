@@ -203,6 +203,11 @@ class AsmrDownloadTaskSnapshot {
 class AsmrDownloadState {
   const AsmrDownloadState({required this.taskIds, required this.tasksByWorkId});
 
+  static const empty = AsmrDownloadState(
+    taskIds: <int>[],
+    tasksByWorkId: <int, AsmrDownloadTaskSnapshot>{},
+  );
+
   factory AsmrDownloadState.fromManager(AsmrDownloadManager manager) {
     return AsmrDownloadState(
       taskIds: manager.taskIds,

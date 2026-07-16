@@ -42,7 +42,9 @@ extension _MainScreenNotifications on _MainScreenState {
             );
           }
           _backgroundPlaybackPromptShownThisLaunch = true;
-          final i18n = context.read<AppLanguageProvider>();
+          final i18n = ProviderScope.containerOf(
+            context,
+          ).read(appLanguageProviderInstanceProvider);
           showAppSnackBar(
             context,
             i18n.tr('background_cleaner_detected_message'),
@@ -74,7 +76,9 @@ extension _MainScreenNotifications on _MainScreenState {
 
   Future<void> _promptOpenBatteryOptimizationSettings() async {
     if (!mounted) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final openSettings = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('background_play_permission_title'),
@@ -121,7 +125,9 @@ extension _MainScreenNotifications on _MainScreenState {
     showAppSnackBar(
       context,
       _notificationPermissionEnabledMessage(
-        context.read<AppLanguageProvider>(),
+        ProviderScope.containerOf(
+          context,
+        ).read(appLanguageProviderInstanceProvider),
       ),
       tone: AppFeedbackTone.success,
       icon: Icons.notifications_active_rounded,
@@ -163,7 +169,9 @@ extension _MainScreenNotifications on _MainScreenState {
   Future<void> _promptOpenNotificationSettings() async {
     if (!mounted || _notificationSettingsDialogVisible) return;
     _notificationSettingsDialogVisible = true;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final openSettings = await showConfirmActionDialog(
       context: context,
       title: _notificationPermissionTitle(i18n),

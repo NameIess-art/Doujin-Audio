@@ -17,6 +17,8 @@ import '../localization/app_language_provider.dart';
 import '../../features/settings/application/app_update_service.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
+import '../../features/asmr/application/asmr_playback_coordinator.dart';
+import '../../features/asmr/domain/asmr_models.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
 
@@ -62,21 +64,18 @@ final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
   );
 });
 
-final asmrDownloadManagerProvider = Provider<AsmrDownloadManager>((ref) {
-  throw UnimplementedError(
-    'asmrDownloadManagerProvider must be overridden in ProviderScope.',
-  );
+final asmrDownloadManagerProvider = Provider<AsmrDownloadManager?>((ref) {
+  return null;
 });
 
-final asmrLibraryControllerProvider = Provider<AsmrLibraryController>((ref) {
-  throw UnimplementedError(
-    'asmrLibraryControllerProvider must be overridden in ProviderScope.',
-  );
+final asmrLibraryControllerProvider = Provider<AsmrLibraryController?>((ref) {
+  return null;
 });
 
 final asmrLibraryGlobalStateProvider =
-    StreamProvider<AsmrLibraryGlobalViewState>((ref) {
+    StreamProvider<AsmrLibraryGlobalViewState?>((ref) {
       final controller = ref.watch(asmrLibraryControllerProvider);
+      if (controller == null) return Stream.value(null);
       final states = StreamController<AsmrLibraryGlobalViewState>.broadcast(
         sync: true,
       );
@@ -90,8 +89,79 @@ final asmrLibraryGlobalStateProvider =
       return states.stream;
     });
 
+final asmrCategoryStateProvider =
+    StreamProvider.family<AsmrCategoryViewState?, AsmrCategoryType>((
+      ref,
+      category,
+    ) {
+      final controller = ref.watch(asmrLibraryControllerProvider);
+      if (controller == null) return Stream.value(null);
+      final states = StreamController<AsmrCategoryViewState?>.broadcast(
+        sync: true,
+      );
+
+      void emit() => states.add(controller.categoryViewState(category));
+      controller.addListener(emit);
+      emit();
+      ref.onDispose(() {
+        controller.removeListener(emit);
+        states.close();
+      });
+      return states.stream;
+    });
+
+final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
+  final controller = ref.watch(asmrLibraryControllerProvider);
+  if (controller == null) return Stream.value(null);
+  final states = StreamController<AsmrAuthViewState?>.broadcast(sync: true);
+  void emit() => states.add(controller.authViewState);
+  controller.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    controller.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
+});
+
+final asmrTrackTreeStateProvider =
+    StreamProvider.family<AsmrTrackTreeViewState?, int>((ref, workId) {
+      final controller = ref.watch(asmrLibraryControllerProvider);
+      if (controller == null) return Stream.value(null);
+      final states = StreamController<AsmrTrackTreeViewState?>.broadcast(
+        sync: true,
+      );
+      void emit() => states.add(controller.trackTreeViewState(workId));
+      controller.addListener(emit);
+      emit();
+      ref.onDispose(() {
+        controller.removeListener(emit);
+        states.close();
+      });
+      return states.stream;
+    });
+
+final asmrSyncStateProvider = StreamProvider<AsmrSyncViewState?>((ref) {
+  final controller = ref.watch(asmrLibraryControllerProvider);
+  if (controller == null) return Stream.value(null);
+  final states = StreamController<AsmrSyncViewState?>.broadcast(sync: true);
+  void emit() => states.add(controller.syncViewState);
+  controller.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    controller.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
+});
+
+final asmrPlaybackCoordinatorProvider = Provider<AsmrPlaybackCoordinator?>(
+  (ref) => null,
+);
+
 final asmrDownloadStateProvider = StreamProvider<AsmrDownloadState>((ref) {
   final manager = ref.watch(asmrDownloadManagerProvider);
+  if (manager == null) return Stream.value(AsmrDownloadState.empty);
   final states = StreamController<AsmrDownloadState>.broadcast(sync: true);
   void emit() => states.add(manager.state);
   manager.addListener(emit);
@@ -110,7 +180,7 @@ final asmrDownloadTaskProvider =
               .watch(asmrDownloadStateProvider)
               .valueOrNull
               ?.taskFor(workId) ??
-          manager.getTask(workId);
+          manager?.getTask(workId);
     });
 
 final themeStateProvider = StreamProvider<ThemeState>((ref) {

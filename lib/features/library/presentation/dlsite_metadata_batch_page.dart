@@ -2,9 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart';
 
-import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../application/dlsite_metadata_query.dart';
@@ -194,7 +192,9 @@ class _DlsiteMetadataBatchPageState
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: Stack(
@@ -300,7 +300,9 @@ class _BatchMetadataSetupView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     if (running) {
       return Center(
         child: Column(
@@ -474,7 +476,9 @@ class _DlsiteMetadataWorkPickerPageState
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final filtered = _filteredEntries;
     final cs = Theme.of(context).colorScheme;
 
@@ -575,7 +579,9 @@ class _BatchMetadataSummaryView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final topPadding = MediaQuery.paddingOf(context).top;
     final topTotalHeight = 82 + topPadding;
 
@@ -607,7 +613,9 @@ class _BatchMetadataErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final topPadding = MediaQuery.paddingOf(context).top;
     final topTotalHeight = 82 + topPadding;
 

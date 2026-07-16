@@ -296,14 +296,14 @@ class _AsmrSelectionTile extends StatelessWidget {
   }
 }
 
-class _AsmrAccountPanel extends StatefulWidget {
+class _AsmrAccountPanel extends ConsumerStatefulWidget {
   const _AsmrAccountPanel();
 
   @override
-  State<_AsmrAccountPanel> createState() => _AsmrAccountPanelState();
+  ConsumerState<_AsmrAccountPanel> createState() => _AsmrAccountPanelState();
 }
 
-class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
+class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
   final TextEditingController _accountController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _submitting = false;
@@ -326,16 +326,15 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
     }
     setState(() => _submitting = true);
     try {
-      await context.read<AsmrLibraryController>().loginAsmrAccount(
-        account,
-        password,
-      );
+      final controller = ref.read(asmrLibraryControllerProvider);
+      if (controller == null) return;
+      await controller.loginAsmrAccount(account, password);
       if (!mounted) {
         return;
       }
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr('asmr_login_success'),
+        ref.read(appLanguageProviderInstanceProvider).tr('asmr_login_success'),
         tone: AppFeedbackTone.success,
         icon: Icons.verified_user_rounded,
         iconColor: _accountAccentColor(context),
@@ -346,7 +345,7 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
       }
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr('asmr_login_failed'),
+        ref.read(appLanguageProviderInstanceProvider).tr('asmr_login_failed'),
         tone: AppFeedbackTone.destructive,
         icon: Icons.error_outline_rounded,
         iconColor: _accountAccentColor(context),
@@ -363,7 +362,8 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
       return;
     }
     setState(() => _submitting = true);
-    final controller = context.read<AsmrLibraryController>();
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
     try {
       await controller.syncAsmrAccount(force: true);
       if (!mounted) {
@@ -374,13 +374,15 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
       final authExpired = _isAuthExpired(syncState.lastError);
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr(
-          authExpired
-              ? 'asmr_token_expired'
-              : failed
-              ? 'asmr_account_sync_failed'
-              : 'asmr_account_sync_done',
-        ),
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr(
+              authExpired
+                  ? 'asmr_token_expired'
+                  : failed
+                  ? 'asmr_account_sync_failed'
+                  : 'asmr_account_sync_done',
+            ),
         tone: failed ? AppFeedbackTone.destructive : AppFeedbackTone.success,
         icon: failed ? Icons.sync_problem_rounded : Icons.sync_rounded,
         iconColor: _accountAccentColor(context),
@@ -397,14 +399,16 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
       return;
     }
     setState(() => _submitting = true);
-    await context.read<AsmrLibraryController>().logoutAsmrAccount();
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
+    await controller.logoutAsmrAccount();
     if (!mounted) {
       return;
     }
     setState(() => _submitting = false);
     showAppSnackBar(
       context,
-      context.read<AppLanguageProvider>().tr('asmr_logout_success'),
+      ref.read(appLanguageProviderInstanceProvider).tr('asmr_logout_success'),
       icon: Icons.logout_rounded,
       iconColor: _accountAccentColor(context),
     );
@@ -412,13 +416,20 @@ class _AsmrAccountPanelState extends State<_AsmrAccountPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
-    final authState = context.select<AsmrLibraryController, AsmrAuthViewState>(
-      (controller) => controller.authViewState,
-    );
-    final syncState = context.select<AsmrLibraryController, AsmrSyncViewState>(
-      (controller) => controller.syncViewState,
-    );
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final authState =
+        ref.watch(asmrAuthStateProvider).valueOrNull ??
+        const AsmrAuthViewState(isLoggedIn: false, userName: '', revision: 0);
+    final syncState =
+        ref.watch(asmrSyncStateProvider).valueOrNull ??
+        const AsmrSyncViewState(
+          phase: AsmrSyncPhase.idle,
+          lastSyncAt: null,
+          pendingCount: 0,
+          lastError: null,
+          revision: 0,
+        );
     final syncing = syncState.phase == AsmrSyncPhase.syncing || _submitting;
 
     if (!authState.isLoggedIn) {

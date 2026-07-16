@@ -134,7 +134,9 @@ class _PlaybackPrimaryControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final enabled = session.currentTrackPath.isNotEmpty;
     final track = provider.trackByPath(session.currentTrackPath);
     final isAsmr = track?.remoteMetadataKind == 'asmr.one';
@@ -319,7 +321,9 @@ class _PlaybackSecondaryControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
 
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 4, right: 4),

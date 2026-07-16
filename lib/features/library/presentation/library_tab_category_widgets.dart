@@ -13,7 +13,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
   List<String> get _termSearchKeywords {
     return _termSearchQuery
         .toLowerCase()
-        .split(RegExp(r'[\s,，;；|]+'))
+        .split(RegExp(r'[\s,锛?锛泑]+'))
         .where((s) => s.isNotEmpty)
         .toList(growable: false);
   }
@@ -532,7 +532,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                                   color: cs.primary,
                                 ),
                                 const SizedBox(width: 2),
-                                Text(_expanded ? '收起' : '展开'),
+                                Text(_expanded ? '鏀惰捣' : '灞曞紑'),
                               ],
                             ),
                           ),
@@ -630,9 +630,9 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     showAppSnackBar(
       context,
-      context.read<AppLanguageProvider>().tr('copied_to_clipboard', {
-        'value': term,
-      }),
+      ProviderScope.containerOf(context)
+          .read(appLanguageProviderInstanceProvider)
+          .tr('copied_to_clipboard', {'value': term}),
       icon: Icons.content_copy_rounded,
     );
   }
@@ -656,7 +656,9 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   }
 
   Future<void> _remove(BuildContext context, LibraryFacade library) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final libraryPath = _findParentLibraryPath(library);
     if (entry.isFolder) {
       if (libraryPath != null) {
@@ -709,7 +711,9 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   void _play(BuildContext context, PlaybackFacade playback) {
     final track = entry.firstTrack;
     if (track == null) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     AppInteractionFeedback.trigger(
       AppInteractionFeedbackType.tap,
       context: context,
@@ -729,7 +733,9 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;

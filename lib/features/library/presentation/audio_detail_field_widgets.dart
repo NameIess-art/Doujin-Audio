@@ -22,9 +22,9 @@ class _AudioDetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final emptyText = context.read<AppLanguageProvider>().tr(
-      'audio_detail_empty',
-    );
+    final emptyText = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider).tr('audio_detail_empty');
     final displayValues =
         values.isEmpty || (values.length == 1 && values.first.isEmpty)
         ? [emptyText]
@@ -133,7 +133,9 @@ Future<void> _copyText(BuildContext context, String value) async {
   if (!context.mounted) {
     return;
   }
-  final i18n = context.read<AppLanguageProvider>();
+  final i18n = ProviderScope.containerOf(
+    context,
+  ).read(appLanguageProviderInstanceProvider);
   showAppSnackBar(
     context,
     i18n.tr('copied_to_clipboard', {'value': text}),

@@ -49,6 +49,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             task: (_) async {
               final libraryController = ref.read(asmrLibraryControllerProvider);
               final downloadManager = ref.read(asmrDownloadManagerProvider);
+              if (libraryController == null || downloadManager == null) {
+                throw StateError('ASMR services are not configured.');
+              }
               final settings = ref.read(settingsRepositoryProvider);
               final tree = await libraryController.ensureTrackTree(widget.work);
               await downloadManager.initialize();
@@ -96,6 +99,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
 
   Future<void> _chooseDestination() async {
     final downloadManager = ref.read(asmrDownloadManagerProvider);
+    if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final folder = await downloadManager.pickDestinationFolder(
@@ -123,6 +127,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
 
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final downloadManager = ref.read(asmrDownloadManagerProvider);
+    if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final task = downloadManager.getTask(widget.work.id);
@@ -369,7 +374,9 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(asmrDownloadStateProvider).valueOrNull;
     final taskIds =
-        state?.taskIds ?? ref.read(asmrDownloadManagerProvider).taskIds;
+        state?.taskIds ??
+        ref.read(asmrDownloadManagerProvider)?.taskIds ??
+        const <int>[];
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
@@ -425,6 +432,8 @@ class _TaskCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final task = ref.watch(asmrDownloadTaskProvider(workId));
     if (task == null) return const SizedBox.shrink();
+    final manager = ref.read(asmrDownloadManagerProvider);
+    if (manager == null) return const SizedBox.shrink();
 
     final cs = Theme.of(context).colorScheme;
     ref.watch(appLanguageStateProvider);
@@ -481,7 +490,6 @@ class _TaskCard extends ConsumerWidget {
                             ? i18n.tr('resume')
                             : i18n.tr('pause'),
                         onPressed: () {
-                          final manager = ref.read(asmrDownloadManagerProvider);
                           if (task.status == AsmrDownloadTaskStatus.paused) {
                             manager.resumeTask(task.work.id);
                           } else {
@@ -501,9 +509,7 @@ class _TaskCard extends ConsumerWidget {
                       color: cs.error.withValues(alpha: 0.8),
                       tooltip: i18n.tr('cancel'),
                       onPressed: () async {
-                        await ref
-                            .read(asmrDownloadManagerProvider)
-                            .cancelTask(task.work.id);
+                        await manager.cancelTask(task.work.id);
                         if (!context.mounted) return;
                         showAppSnackBar(
                           context,

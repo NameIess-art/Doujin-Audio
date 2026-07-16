@@ -853,7 +853,9 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
         alignment: Alignment.topLeft,
         child: ClipRect(
           child: Text(
-            context.watch<AppLanguageProvider>().tr('playback_loading'),
+            ProviderScope.containerOf(
+              context,
+            ).read(appLanguageProviderInstanceProvider).tr('playback_loading'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(

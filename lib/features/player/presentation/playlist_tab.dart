@@ -8,7 +8,6 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart' hide Consumer;
 import 'package:window_manager/window_manager.dart';
 
 import '../../../app/localization/app_language_provider.dart';
@@ -402,7 +401,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     BuildContext context,
     PlaybackFacade playbackFacade,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('clear_all_sessions'),
@@ -449,7 +450,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final provider = ref.read(audioProviderFacadeProvider);
     final PlaylistListState listState;
     if (_isReordering) {
@@ -671,7 +674,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     ? ref.watch(playlistHeaderUiProvider)
                     : ref.read(playlistHeaderUiProvider);
                 final sessionSummary =
-                    '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
+                    '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} 路 '
                     '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
                 return TopPageHeader(
                   key: headerKey,

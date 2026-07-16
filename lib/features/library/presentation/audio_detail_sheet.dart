@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart' hide Consumer;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
@@ -153,7 +152,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     final detail = _detail;
     if (detail == null || _savingField != null || _runningAction) return;
 
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final initialValue = field.isMulti
         ? field.readList(detail).join(_multiValueSeparator)
         : field.readText(detail);
@@ -232,7 +233,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
         _savingField = null;
         _runningAction = false;
       });
-      final i18n = context.read<AppLanguageProvider>();
+      final i18n = ProviderScope.containerOf(
+        context,
+      ).read(appLanguageProviderInstanceProvider);
       if (result.backupFailed) {
         showAppSnackBar(
           context,
@@ -248,7 +251,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       });
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr('audio_detail_rename_failed'),
+        ProviderScope.containerOf(context)
+            .read(appLanguageProviderInstanceProvider)
+            .tr('audio_detail_rename_failed'),
         tone: AppFeedbackTone.warning,
       );
     }
@@ -280,7 +285,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       if (field == _AudioDetailField.duration) {
         _startAutomaticDurationCalculation(libraryFacade, result.detail);
       }
-      final i18n = context.read<AppLanguageProvider>();
+      final i18n = ProviderScope.containerOf(
+        context,
+      ).read(appLanguageProviderInstanceProvider);
       if (field == _AudioDetailField.rjCode &&
           !_looksLikeRjCode(result.detail.rjCode)) {
         showAppSnackBar(
@@ -310,14 +317,18 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       });
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr('audio_detail_save_failed'),
+        ProviderScope.containerOf(context)
+            .read(appLanguageProviderInstanceProvider)
+            .tr('audio_detail_save_failed'),
         tone: AppFeedbackTone.warning,
       );
     }
   }
 
   Future<void> _confirmFetchInfo(AudioDetail detail) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final query = ref
         .read(libraryFacadeProvider)
         .buildDlsiteMetadataQuery(detail);
@@ -354,7 +365,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   }
 
   Future<void> _confirmRename(AudioDetail detail) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     if (detail.workTitle.trim().isEmpty) {
       showAppSnackBar(
         context,
@@ -415,7 +428,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     required String message,
     required String confirmLabel,
   }) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
@@ -455,7 +470,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final labelStyle = Theme.of(
       context,

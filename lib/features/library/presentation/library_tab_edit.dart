@@ -71,7 +71,9 @@ class LibraryManagementPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final libraries = ref.watch(
       libraryListUiProvider.select((state) => state.watchedLibraries),
@@ -181,7 +183,9 @@ Future<bool> _confirmRemoveWatchedLibrary(
   WidgetRef ref,
   String libraryPath,
 ) async {
-  final i18n = context.read<AppLanguageProvider>();
+  final i18n = ProviderScope.containerOf(
+    context,
+  ).read(appLanguageProviderInstanceProvider);
   final confirmed = await showConfirmActionDialog(
     context: context,
     title: i18n.tr('remove_library'),
@@ -314,7 +318,9 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
         (value) => value.valueOrNull?.contentRevision ?? 0,
       ),
     );
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final libraryService = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final localSnapshotPending = _initialLoadPending;
@@ -1052,7 +1058,9 @@ class _LibraryEditFolderTreeTileState
         (value) => value.valueOrNull?.contentRevision ?? 0,
       ),
     );
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final libraryService = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final editState = context.findAncestorStateOfType<_LibraryEditPageState>();
@@ -1207,7 +1215,9 @@ class _LibraryEditTrackTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final viewState = ref.watch(
       _libraryEditTrackViewStateProvider(
         _LibraryEditTrackKey(libraryPath, trackPath),

@@ -115,7 +115,9 @@ extension _MainScreenLayout on _MainScreenState {
     BuildContext context,
     _TimerPresentation timerState,
   ) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final mediaSize = MediaQuery.sizeOf(context);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -150,7 +152,9 @@ extension _MainScreenLayout on _MainScreenState {
   }
 
   Widget _buildBottomBar(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
 
     final items = _MainScreenState._destinations.asMap().entries.map((entry) {

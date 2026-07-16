@@ -12,7 +12,9 @@ class _AudioFeaturesPage extends ConsumerWidget {
     final effects = detail?.audioEffects ?? session.audioEffects;
     final channelSwapEnabled =
         detail?.channelSwapEnabled ?? session.channelSwapEnabled;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     return ListView(
       padding: const EdgeInsets.only(top: 6),
       children: [
@@ -152,7 +154,9 @@ class _VolumeBalancePage extends ConsumerWidget {
     final detail = ref.watch(sessionDetailTransportProvider(session.id));
     final panning =
         detail?.audioEffects.panning ?? session.audioEffects.panning;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Center(
@@ -268,7 +272,9 @@ class _EqualizerPage extends ConsumerWidget {
     final effects = detail?.audioEffects ?? session.audioEffects;
     final eqCapabilities = detail?.eqCapabilities ?? session.eqCapabilities;
 
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final presets = [
       ...AudioProvider.builtInEqPresets,
@@ -438,7 +444,9 @@ class _EqualizerPage extends ConsumerWidget {
     required AudioProvider provider,
     required PlaybackSession session,
   }) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+    ).read(appLanguageProviderInstanceProvider);
     final controller = TextEditingController();
     final name = await showDialog<String>(
       context: context,

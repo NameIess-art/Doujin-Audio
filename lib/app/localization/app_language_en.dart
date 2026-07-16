@@ -171,7 +171,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_detail_load_failed':
       'Failed to load work information. Please try again later.',
   'asmr_detail_basic_info': 'Basic Information',
-  'asmr_detail_other': 'Other',
+  'asmr_detail_other': 'Other details',
   'asmr_detail_statistics': 'Statistics',
   'asmr_detail_release_date': 'Release date',
   'asmr_detail_duration': 'Duration',
@@ -709,7 +709,7 @@ const Map<String, String> appLanguageEn = {
       'Background and auto-resume requirements are satisfied.',
   'timer_reliability_missing':
       'Review notification and background permissions to improve timer reliability.',
-  'add_playback_queue': 'Add playback queue',
+  'add_playback_queue': 'Create playback queue',
   'default_playback_queue_name': 'Playback queue {number}',
   'edit_playback_queue': 'Edit playback queue',
   'edit_queue_audio': 'Edit queue audio',

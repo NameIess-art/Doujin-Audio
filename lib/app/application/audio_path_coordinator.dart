@@ -129,9 +129,12 @@ final class AudioPathCoordinator {
   }
 
   String rootFolderName(String trackPath) {
-    final root = _library.libraryRootForPath(
-      _playback.resolveRetargetedPath(trackPath),
-    );
+    final resolvedPath = _playback.resolveRetargetedPath(trackPath);
+    final workRoot = workRootForTrack(resolvedPath);
+    if (workRoot != null && workRoot.isNotEmpty) {
+      return PathDisplay.folderName(workRoot);
+    }
+    final root = _library.libraryRootForPath(resolvedPath);
     return root == null ? '' : PathDisplay.folderName(root);
   }
 

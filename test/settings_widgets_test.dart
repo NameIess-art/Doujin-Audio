@@ -4,13 +4,13 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/settings/presentation/settings_tab.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'support/audio_provider_test_fixture.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 Future<void> _scrollTo(
   WidgetTester tester,
@@ -26,7 +26,7 @@ Future<void> _scrollTo(
 }
 
 void main() {
-  AudioProviderTestFixture.initialize();
+  AppRuntimeTestFixture.initialize();
 
   late Database testDatabase;
 
@@ -35,17 +35,17 @@ void main() {
   });
 
   setUpAll(() async {
-    testDatabase = await AudioProviderTestFixture.installSharedDatabase();
+    testDatabase = await AppRuntimeTestFixture.installSharedDatabase();
   });
 
   tearDownAll(() async {
-    await AudioProviderTestFixture.disposeSharedDatabase(testDatabase);
+    await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
   testWidgets('settings renders six sections in order with critical entries', (
     tester,
   ) async {
-    final harness = AudioProviderWidgetTestFixture();
+    final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
     await tester.pumpWidget(harness.build(const SettingsTab()));
     await tester.pump();
@@ -54,17 +54,21 @@ void main() {
     expect(find.text(i18n.tr('dlsite_metadata_language')), findsOneWidget);
     expect(find.text(i18n.tr('follow_page_language')), findsOneWidget);
     expect(
-      harness.audioProvider.dlsiteMetadataLanguage,
+      harness.settingsRepository.dlsiteMetadataLanguage,
       ContentLanguagePreference.followPage,
     );
     expect(
-      harness.audioProvider.effectiveDlsiteMetadataLanguage,
+      harness.settingsRepository.dlsiteMetadataLanguage.resolve(
+        harness.languageProvider.language,
+      ),
       AppLanguage.zh,
     );
     await i18n.setLanguage(AppLanguage.en);
     await tester.pumpAndSettle();
     expect(
-      harness.audioProvider.effectiveDlsiteMetadataLanguage,
+      harness.settingsRepository.dlsiteMetadataLanguage.resolve(
+        harness.languageProvider.language,
+      ),
       AppLanguage.en,
     );
     expect(find.text(i18n.tr('startup_page')), findsOneWidget);
@@ -114,7 +118,7 @@ void main() {
   testWidgets('card info settings enforce the selected field limit', (
     tester,
   ) async {
-    final harness = AudioProviderWidgetTestFixture();
+    final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
     await tester.pumpWidget(harness.build(const SettingsTab()));
     await tester.pump();
@@ -141,7 +145,7 @@ void main() {
     await tester.tap(bottomNavigationStyleTile);
     await tester.pumpAndSettle();
     expect(
-      harness.audioProvider.bottomNavigationStyle,
+      harness.settingsRepository.bottomNavigationStyle,
       BottomNavigationStyle.bar,
     );
 
@@ -173,7 +177,7 @@ void main() {
       ),
     );
     await tester.pump();
-    expect(harness.audioProvider.cardInfoFields, hasLength(5));
+    expect(harness.settingsRepository.cardInfoFields, hasLength(5));
     final salesTile = tester.widget<CheckboxListTile>(
       find.widgetWithText(
         CheckboxListTile,
@@ -191,7 +195,7 @@ void main() {
     await tester.pump();
 
     expect(
-      harness.audioProvider.cardInfoFields,
+      harness.settingsRepository.cardInfoFields,
       hasLength(CardInfoField.maxSelected),
     );
     final ratingTile = tester.widget<CheckboxListTile>(
@@ -203,7 +207,7 @@ void main() {
   testWidgets('update tile reflects checking and download progress', (
     tester,
   ) async {
-    final harness = AudioProviderWidgetTestFixture();
+    final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
     await tester.pumpWidget(harness.build(const SettingsTab()));
     await tester.pump();

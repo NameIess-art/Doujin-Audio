@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:nameless_audio/main.dart' as app;
 import 'package:nameless_audio/app/presentation/main_screen.dart';
-import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/app/presentation/onboarding_page.dart';
 import 'package:nameless_audio/features/player/application/subtitle_overlay_controller.dart';
 

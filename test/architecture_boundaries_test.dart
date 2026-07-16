@@ -5,6 +5,33 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final libDirectory = Directory('lib');
 
+  test('removed compatibility runtime APIs cannot return', () {
+    final violations = <String>[];
+    final forbiddenText = <String>[
+      'Audio' 'Provider',
+      'createAudio' 'ProviderOverrides',
+      'audio_' 'provider_',
+      'package:' 'provider',
+      'Multi' 'Provider',
+    ];
+    final contextAccess = RegExp(r'context\.(?:read|watch|select)\s*[<(]');
+    for (final root in <Directory>[
+      libDirectory,
+      Directory('test'),
+      Directory('integration_test'),
+    ]) {
+      for (final file in _dartFiles(root)) {
+        final source = file.readAsStringSync();
+        final matchesText = forbiddenText.any(source.contains);
+        if (matchesText || contextAccess.hasMatch(source)) {
+          violations.add(_normalizedPath(file));
+        }
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
   test('feature domain code remains framework and layer independent', () {
     final violations = <String>[];
     for (final file in _dartFiles(libDirectory)) {

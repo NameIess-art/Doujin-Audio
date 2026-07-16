@@ -7,19 +7,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderContainer;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
-import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
+import 'support/runtime_test_models.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/core/widgets/duration_overlay.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'support/audio_provider_test_fixture.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
   _RecordingPlaybackCoverCacheService()
@@ -86,15 +85,15 @@ void _expectFixedSessionResetButtonStyle(WidgetTester tester, Finder finder) {
 }
 
 void main() {
-  AudioProviderTestFixture.initialize();
+  AppRuntimeTestFixture.initialize();
   late Database testDatabase;
 
   setUpAll(() async {
-    testDatabase = await AudioProviderTestFixture.installSharedDatabase();
+    testDatabase = await AppRuntimeTestFixture.installSharedDatabase();
   });
 
   tearDownAll(() async {
-    await AudioProviderTestFixture.disposeSharedDatabase(testDatabase);
+    await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
   test('equalizer badge only appears while equalizer is enabled', () {
@@ -225,19 +224,19 @@ void main() {
           .setMockMethodCallHandler(nativePlaybackChannel, null);
     });
 
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
     final track = testMusicTrack(
       name: 'Balance track',
@@ -254,7 +253,11 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     )..audioEffects = AudioEffectsState.flat.copyWith(panning: 0.6);
-    audioProvider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+    runtimeGraph.library.addTracks(
+      <MusicTrack>[track],
+      notify: false,
+      persist: false,
+    );
     playbackService.registerSession(session);
     playbackService.syncSlice(
       activeSessions: <PlaybackSession>[session],
@@ -266,8 +269,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -313,7 +316,7 @@ void main() {
     );
 
     unawaited(
-      audioProvider.playbackFacade.applySessionEqPreset(
+      runtimeGraph.playback.applySessionEqPreset(
         session.id,
         builtInEqPresets[1],
       ),
@@ -364,25 +367,25 @@ void main() {
   testWidgets('playlist cards freeze background updates while reordering', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture(
+    final fixture = AppRuntimeWidgetTestFixture(
       coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
       configureSettingsRepository: (settingsRepository) {
         settingsRepository.cardPositionsLocked = false;
         settingsRepository.syncSlice();
       },
     );
-    addTearDown(() => tester.runAsync(fixture.disposeAfterWarmups));
-    final audioProvider = fixture.audioProvider;
+    addTearDown(fixture.disposeAfterWarmups);
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
     final track = testMusicTrack(
       name: 'Frozen card',
@@ -401,7 +404,7 @@ void main() {
     );
 
     addTearDown(session.dispose);
-    audioProvider.addTracks([track], notify: false, persist: false);
+    runtimeGraph.library.addTracks([track], notify: false, persist: false);
     playbackService.syncSlice(
       activeSessions: [session],
       playingSessionCount: 0,
@@ -411,16 +414,13 @@ void main() {
       isInitialized: true,
     );
     await tester.runAsync(() async {
-      audioProvider.uiWarmupCoordinator.schedule(
-        currentPageIndex: 2,
-        immediate: true,
-      );
-      await audioProvider.uiWarmupCoordinator.waitUntilIdle();
+      runtimeGraph.warmup.schedule(currentPageIndex: 2, immediate: true);
+      await runtimeGraph.warmup.waitUntilIdle();
     });
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -467,19 +467,19 @@ void main() {
   testWidgets('playlist cards keep track and single-file durations separate', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
     final workTrack = testMusicTrack(
       name: 'Work track',
@@ -520,7 +520,7 @@ void main() {
       createdAt: DateTime(2026, 1, 2),
       state: PlayerState(false, ProcessingState.ready),
     );
-    audioProvider.addTracks([workTrack, singleTrack], persist: false);
+    runtimeGraph.library.addTracks([workTrack, singleTrack], persist: false);
     playbackService.registerSession(workSession);
     playbackService.registerSession(singleSession);
     playbackService.syncSlice(
@@ -533,8 +533,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -566,12 +566,12 @@ void main() {
       singleTrack.path,
     );
     await tester.runAsync(() async {
-      await audioProvider.libraryFacade.saveAudioDetail(
+      await runtimeGraph.library.saveAudioDetail(
         AudioDetail.empty(
           workDetailTarget,
         ).copyWith(duration: const Duration(minutes: 3, seconds: 40)),
       );
-      await audioProvider.libraryFacade.saveAudioDetail(
+      await runtimeGraph.library.saveAudioDetail(
         AudioDetail.empty(
           singleDetailTarget,
         ).copyWith(duration: const Duration(minutes: 4, seconds: 50)),
@@ -588,15 +588,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      audioProvider.libraryFacade
-          .resolvedAudioDetail(workDetailTarget)
-          ?.duration,
+      runtimeGraph.library.resolvedAudioDetail(workDetailTarget)?.duration,
       const Duration(minutes: 3, seconds: 40),
     );
     expect(
-      audioProvider.libraryFacade
-          .resolvedAudioDetail(singleDetailTarget)
-          ?.duration,
+      runtimeGraph.library.resolvedAudioDetail(singleDetailTarget)?.duration,
       const Duration(minutes: 4, seconds: 50),
     );
     final shownDurations = tester
@@ -619,24 +615,24 @@ void main() {
     WidgetTester tester,
   ) async {
     final coverCache = _RecordingPlaybackCoverCacheService();
-    final fixture = AudioProviderWidgetTestFixture(
+    final fixture = AppRuntimeWidgetTestFixture(
       coverArtworkCacheService: coverCache,
       configureSettingsRepository: (settingsRepository) {
         settingsRepository.cardPositionsLocked = false;
       },
     );
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
     final track = testMusicTrack(
       name: 'Warmup card',
@@ -655,7 +651,7 @@ void main() {
     );
 
     addTearDown(session.dispose);
-    audioProvider.addTracks([track], notify: false, persist: false);
+    runtimeGraph.library.addTracks([track], notify: false, persist: false);
     playbackService.syncSlice(
       activeSessions: [session],
       playingSessionCount: 0,
@@ -666,8 +662,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -708,19 +704,19 @@ void main() {
   testWidgets('playlist more menu toggles fixed card positions', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
 
     playbackService.syncSlice(
@@ -733,8 +729,8 @@ void main() {
     );
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -766,19 +762,20 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      audioProvider.activeSessions.where((session) => session.isPlaybackQueue),
+      runtimeGraph.playback.service.activeSessions.where(
+        (session) => session.isPlaybackQueue,
+      ),
       hasLength(1),
     );
     expect(
-      audioProvider.activeSessions
+      runtimeGraph.playback.service.activeSessions
           .singleWhere((session) => session.isPlaybackQueue)
           .playbackQueue
           ?.name,
       languageProvider.tr('default_playback_queue_name', {'number': 1}),
     );
-    final queueSession = audioProvider.activeSessions.singleWhere(
-      (session) => session.isPlaybackQueue,
-    );
+    final queueSession = runtimeGraph.playback.service.activeSessions
+        .singleWhere((session) => session.isPlaybackQueue);
     unawaited(
       showPlaybackQueueEditPanel(
         tester.element(find.byType(PlaylistTab)),
@@ -799,7 +796,7 @@ void main() {
   testWidgets('playlist resolves ASMR metadata from the session queue', (
     tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     const track = MusicTrack(
       path: 'https://api.asmr-300.com/api/media/stream/f3d4baa6ec96a6ad',
@@ -810,7 +807,7 @@ void main() {
       isSingle: false,
       remoteMetadataKind: 'asmr.one',
     );
-    final session = fixture.audioProvider.playbackFacade.createTrackSession(
+    final session = fixture.runtimeGraph.playback.createTrackSession(
       track,
       loopMode: SessionLoopMode.single,
       customQueueTracks: const <MusicTrack>[track],
@@ -837,19 +834,19 @@ void main() {
   testWidgets(
     'single-file queue cover fills the card and switcher shows an audio entry',
     (WidgetTester tester) async {
-      final fixture = AudioProviderWidgetTestFixture();
+      final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
-      final audioProvider = fixture.audioProvider;
+      final runtimeGraph = fixture.runtimeGraph;
       final audioDatabaseRepository = fixture.audioDatabaseRepository;
       final nativePlaybackRepository = fixture.nativePlaybackRepository;
       const playbackCommandRunner =
-          AudioProviderWidgetTestFixture.playbackCommandRunner;
+          AppRuntimeWidgetTestFixture.playbackCommandRunner;
       final libraryService = fixture.libraryService;
       final playbackService = fixture.playbackService;
       final timerService = fixture.timerService;
       final notificationCoordinatorService =
           fixture.notificationCoordinatorService;
-      final settingsRepository = fixture.settingsRepository;
+      final settingsRepository = fixture.settings;
       final languageProvider = fixture.languageProvider;
       const track = MusicTrack(
         path: '/imports/standalone.mp4',
@@ -860,14 +857,12 @@ void main() {
         isSingle: true,
         isVideo: true,
       );
-      audioProvider.addTracks(
+      runtimeGraph.library.addTracks(
         const <MusicTrack>[track],
         notify: false,
         persist: false,
       );
-      final queueSession = audioProvider.playbackFacade.createPlaybackQueue(
-        'Queue 1',
-      );
+      final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
       queueSession
         ..currentTrackPath = track.path
         ..currentQueueIndex = 0
@@ -892,8 +887,8 @@ void main() {
       );
 
       await tester.pumpWidget(
-        buildAudioProviderTestApp(
-          audioProvider: audioProvider,
+        buildAppRuntimeTestApp(
+          runtimeGraph: runtimeGraph,
           audioDatabaseRepository: audioDatabaseRepository,
           nativePlaybackRepository: nativePlaybackRepository,
           playbackCommandRunner: playbackCommandRunner,

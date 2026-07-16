@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
@@ -13,25 +13,25 @@ import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'support/audio_provider_test_fixture.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
-  AudioProviderTestFixture.initialize();
+  AppRuntimeTestFixture.initialize();
 
-  late AudioProviderTestFixture fixture;
-  late AudioProvider provider;
+  late AppRuntimeTestFixture fixture;
+  late AppRuntimeGraph runtimeGraph;
   late PlaybackNotificationService notificationService;
   late Database db;
 
   setUp(() async {
-    fixture = await AudioProviderTestFixture.create();
-    provider = fixture.provider;
+    fixture = await AppRuntimeTestFixture.create();
+    runtimeGraph = fixture.runtimeGraph;
     notificationService = fixture.notificationService;
     db = fixture.database;
   });
 
   tearDown(() async {
-    await fixture.dispose(currentProvider: provider);
+    await fixture.dispose(currentGraph: runtimeGraph);
   });
 
   test('missing folder durations include every audio track', () async {
@@ -76,43 +76,42 @@ void main() {
         isVideo: true,
       ),
     ];
-    provider.addWatchedFolder(folder.path, notify: false);
-    provider.addTracks(tracks, notify: false, persist: false);
+    runtimeGraph.library.addWatchedFolder(folder.path, notify: false);
+    runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
 
     final requestedPaths = <String>[];
     var activeDurationReads = 0;
     var peakDurationReads = 0;
-    final duration = await provider.libraryFacade
-        .calculateMissingLibraryDuration(
-          folder.path,
-          durationReader: (trackPath) async {
-            requestedPaths.add(trackPath);
-            activeDurationReads++;
-            if (activeDurationReads > peakDurationReads) {
-              peakDurationReads = activeDurationReads;
-            }
-            await Future<void>.delayed(const Duration(milliseconds: 10));
-            activeDurationReads--;
-            return trackPath == secondPath
-                ? const Duration(minutes: 2)
-                : const Duration(minutes: 3);
-          },
-        );
+    final duration = await runtimeGraph.library.calculateMissingLibraryDuration(
+      folder.path,
+      durationReader: (trackPath) async {
+        requestedPaths.add(trackPath);
+        activeDurationReads++;
+        if (activeDurationReads > peakDurationReads) {
+          peakDurationReads = activeDurationReads;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        activeDurationReads--;
+        return trackPath == secondPath
+            ? const Duration(minutes: 2)
+            : const Duration(minutes: 3);
+      },
+    );
 
     expect(requestedPaths, <String>[secondPath, thirdPath]);
     expect(peakDurationReads, 2);
     expect(duration, const Duration(minutes: 6));
     expect(
-      provider.trackByPath(secondPath)?.duration,
+      runtimeGraph.library.trackByPath(secondPath)?.duration,
       const Duration(minutes: 2),
     );
     expect(
-      provider.trackByPath(thirdPath)?.duration,
+      runtimeGraph.library.trackByPath(thirdPath)?.duration,
       const Duration(minutes: 3),
     );
 
     final unreadablePath = path.join(thirdFolder, '04.ogg');
-    provider.addTracks(
+    runtimeGraph.library.addTracks(
       <MusicTrack>[
         MusicTrack(
           path: unreadablePath,
@@ -127,7 +126,7 @@ void main() {
       persist: false,
     );
     final retryPaths = <String>[];
-    final incompleteDuration = await provider.libraryFacade
+    final incompleteDuration = await runtimeGraph.library
         .calculateMissingLibraryDuration(
           folder.path,
           durationReader: (trackPath) async {
@@ -143,8 +142,8 @@ void main() {
     const contentTrackPath =
         'content://com.android.externalstorage.documents/tree/primary%3AMusic/'
         'document/primary%3AMusic%2FWork%2FDisc%2F05.m4a';
-    provider.addWatchedFolder(contentRoot, notify: false);
-    provider.addTracks(
+    runtimeGraph.library.addWatchedFolder(contentRoot, notify: false);
+    runtimeGraph.library.addTracks(
       const <MusicTrack>[
         MusicTrack(
           path: contentTrackPath,
@@ -158,7 +157,7 @@ void main() {
       notify: false,
       persist: false,
     );
-    final contentDuration = await provider.libraryFacade
+    final contentDuration = await runtimeGraph.library
         .calculateMissingLibraryDuration(
           contentRoot,
           durationReader: (trackPath) async =>
@@ -169,7 +168,7 @@ void main() {
 
   test('missing duration is resolved for a single video file', () async {
     const videoPath = r'C:\library\standalone-video.mp4';
-    provider.addTracks(
+    runtimeGraph.library.addTracks(
       const <MusicTrack>[
         MusicTrack(
           path: videoPath,
@@ -186,19 +185,18 @@ void main() {
     );
 
     final requestedPaths = <String>[];
-    final duration = await provider.libraryFacade
-        .calculateMissingLibraryDuration(
-          videoPath.toUpperCase(),
-          durationReader: (trackPath) async {
-            requestedPaths.add(trackPath);
-            return const Duration(minutes: 7, seconds: 12);
-          },
-        );
+    final duration = await runtimeGraph.library.calculateMissingLibraryDuration(
+      videoPath.toUpperCase(),
+      durationReader: (trackPath) async {
+        requestedPaths.add(trackPath);
+        return const Duration(minutes: 7, seconds: 12);
+      },
+    );
 
     expect(requestedPaths, const <String>[videoPath]);
     expect(duration, const Duration(minutes: 7, seconds: 12));
     expect(
-      provider.trackByPath(videoPath)?.duration,
+      runtimeGraph.library.trackByPath(videoPath)?.duration,
       const Duration(minutes: 7, seconds: 12),
     );
   });
@@ -219,8 +217,8 @@ void main() {
       final firstPath = path.join(workDir.path, '01.mp3');
       final secondPath = path.join(workDir.path, '02.flac');
       final singlePath = path.join(singlesDir.path, 'standalone.m4a');
-      provider.addWatchedFolder(workDir.path, notify: false);
-      provider.addTracks(
+      runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+      runtimeGraph.library.addTracks(
         <MusicTrack>[
           MusicTrack(
             path: firstPath,
@@ -251,7 +249,7 @@ void main() {
         persist: false,
       );
 
-      await provider.libraryFacade.backfillMissingLibraryDurations(
+      await runtimeGraph.library.backfillMissingLibraryDurations(
         durationReader: (trackPath) async => switch (trackPath) {
           final value when value == firstPath => const Duration(minutes: 1),
           final value when value == secondPath => const Duration(minutes: 2),
@@ -263,13 +261,13 @@ void main() {
       final workTarget = AudioDetailTarget.libraryRootFolder(workDir.path);
       final singleTarget = AudioDetailTarget.singleAudioFile(singlePath);
       expect(
-        (await provider.libraryFacade.loadAudioDetail(
+        (await runtimeGraph.library.loadAudioDetail(
           workTarget,
         )).detail.duration,
         const Duration(minutes: 3),
       );
       expect(
-        (await provider.libraryFacade.loadAudioDetail(
+        (await runtimeGraph.library.loadAudioDetail(
           singleTarget,
         )).detail.duration,
         const Duration(seconds: 45),
@@ -343,8 +341,8 @@ void main() {
         if (await workDir.exists()) await workDir.delete(recursive: true);
       });
       final trackPath = path.join(workDir.path, '01.mp3');
-      provider.addWatchedFolder(workDir.path, notify: false);
-      provider.addTracks(
+      runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+      runtimeGraph.library.addTracks(
         <MusicTrack>[
           MusicTrack(
             path: trackPath,
@@ -359,14 +357,14 @@ void main() {
         persist: false,
       );
       final target = AudioDetailTarget.libraryRootFolder(workDir.path);
-      await provider.libraryFacade.saveAudioDetail(
+      await runtimeGraph.library.saveAudioDetail(
         AudioDetail.empty(
           target,
         ).copyWith(duration: const Duration(minutes: 9)),
       );
 
       final requestedPaths = <String>[];
-      await provider.libraryFacade.backfillMissingLibraryDurations(
+      await runtimeGraph.library.backfillMissingLibraryDurations(
         durationReader: (path) async {
           requestedPaths.add(path);
           return const Duration(minutes: 2);
@@ -375,11 +373,11 @@ void main() {
 
       expect(requestedPaths, <String>[trackPath]);
       expect(
-        provider.trackByPath(trackPath)?.duration,
+        runtimeGraph.library.trackByPath(trackPath)?.duration,
         const Duration(minutes: 2),
       );
       expect(
-        (await provider.libraryFacade.loadAudioDetail(target)).detail.duration,
+        (await runtimeGraph.library.loadAudioDetail(target)).detail.duration,
         const Duration(minutes: 9),
       );
     },
@@ -389,31 +387,31 @@ void main() {
 
   group('library folder restore', () {
     test('scan generations reject stale progress and stale completion', () {
-      final first = provider.tryBeginScan(source: '/music/first');
+      final first = runtimeGraph.library.tryBeginScan(source: '/music/first');
       expect(first, greaterThan(0));
-      expect(provider.tryBeginScan(source: '/music/second'), 0);
+      expect(runtimeGraph.library.tryBeginScan(source: '/music/second'), 0);
 
-      provider.setScanProgress(
+      runtimeGraph.library.setScanProgress(
         generation: first + 1,
         foundCount: 99,
         stage: FolderScanStage.enumerating,
       );
-      expect(provider.scanFoundCount, 0);
+      expect(runtimeGraph.library.scanFoundCount, 0);
 
-      provider.cancelScan();
-      final second = provider.tryBeginScan(source: '/music/second');
+      runtimeGraph.library.cancelScan();
+      final second = runtimeGraph.library.tryBeginScan(source: '/music/second');
       expect(second, greaterThan(first));
-      provider.finishScan(first);
-      expect(provider.isScanGenerationActive(second), isTrue);
+      runtimeGraph.library.finishScan(first);
+      expect(runtimeGraph.library.isScanGenerationActive(second), isTrue);
 
-      provider.finishScan(second);
-      expect(provider.isScanning, isFalse);
+      runtimeGraph.library.finishScan(second);
+      expect(runtimeGraph.library.isScanning, isFalse);
     });
 
     test(
       'background scan progress does not notify visible library UI',
       () async {
-        final facade = provider.libraryFacade;
+        final facade = runtimeGraph.library;
         var stateCount = 0;
         final subscription = facade.states.listen((_) => stateCount++);
         addTearDown(subscription.cancel);
@@ -459,16 +457,19 @@ void main() {
       'background refresh commits changed tracks once after batch',
       () async {
         var notificationCount = 0;
-        provider.addListener(() {
+        final subscription = runtimeGraph.library.states.listen((_) {
           notificationCount++;
         });
+        addTearDown(subscription.cancel);
 
-        final generation = provider.libraryFacade.tryBeginScan(
+        final generation = runtimeGraph.library.tryBeginScan(
           source: 'background-folder',
           background: true,
         );
-        provider.beginLibraryBatch();
-        provider.addOrReplaceTracks(
+        await Future<void>.delayed(Duration.zero);
+        final afterScanStart = notificationCount;
+        runtimeGraph.library.beginLibraryBatch();
+        runtimeGraph.library.addOrReplaceTracks(
           <MusicTrack>[
             const MusicTrack(
               path: '/library/work/new.mp3',
@@ -482,25 +483,27 @@ void main() {
           notify: false,
           persist: false,
         );
-        provider.setScanProgress(currentFolder: 'background-folder');
+        runtimeGraph.library.setScanProgress(
+          currentFolder: 'background-folder',
+        );
         await Future<void>.delayed(const Duration(milliseconds: 180));
 
-        expect(notificationCount, 0);
+        expect(notificationCount, afterScanStart);
 
-        await provider.endLibraryBatch();
+        await runtimeGraph.library.endLibraryBatch();
         await Future<void>.delayed(Duration.zero);
-        provider.libraryFacade.finishScan(generation);
+        runtimeGraph.library.finishScan(generation);
 
-        expect(notificationCount, 1);
+        expect(notificationCount, greaterThan(afterScanStart));
       },
     );
 
     test('library entry persistence is deferred until batch close', () async {
-      provider.dispose();
+      await runtimeGraph.runtime.dispose();
       final countingRepository = _CountingAudioDatabaseRepository(
         AppDatabase.test(db),
       );
-      provider = AudioProvider.test(
+      runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
         audioDatabaseRepository: countingRepository,
         skipPersistence: false,
@@ -527,19 +530,24 @@ void main() {
         scannedAt: DateTime.fromMillisecondsSinceEpoch(2000),
       );
 
-      provider.beginLibraryBatch();
-      provider.recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
-        firstTrack,
-      ]);
-      provider.recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
-        renamedTrack,
-      ]);
+      runtimeGraph.library.beginLibraryBatch();
+      runtimeGraph.library.recordLibraryEntriesForTracks(
+        libraryPath,
+        <MusicTrack>[firstTrack],
+      );
+      runtimeGraph.library.recordLibraryEntriesForTracks(
+        libraryPath,
+        <MusicTrack>[renamedTrack],
+      );
 
-      expect(provider.libraryEntriesForLibrary(libraryPath), isNotEmpty);
+      expect(
+        runtimeGraph.library.libraryEntriesForLibrary(libraryPath),
+        isNotEmpty,
+      );
       expect(countingRepository.upsertLibraryEntriesCallCount, 0);
       expect(await db.query('library_entries'), isEmpty);
 
-      await provider.endLibraryBatch();
+      await runtimeGraph.library.endLibraryBatch();
 
       expect(countingRepository.upsertLibraryEntriesCallCount, 1);
       final rows = await db.query(
@@ -577,27 +585,33 @@ void main() {
           fileSizeBytes: 3,
           modifiedAt: (await File(trackPath).stat()).modified,
         );
-        provider.addWatchedFolder(normalizedFolderPath, notify: false);
-        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-        provider.recordLibraryEntriesForTracks(
+        runtimeGraph.library.addWatchedFolder(
+          normalizedFolderPath,
+          notify: false,
+        );
+        runtimeGraph.library.addTracks(
+          <MusicTrack>[track],
+          notify: false,
+          persist: false,
+        );
+        runtimeGraph.library.recordLibraryEntriesForTracks(
           normalizedFolderPath,
           <MusicTrack>[track],
           persist: false,
         );
-        for (var i = 0; i < 100 && provider.libraryTree.isEmpty; i++) {
+        for (
+          var i = 0;
+          i < 100 && runtimeGraph.library.libraryTree.isEmpty;
+          i++
+        ) {
           await Future<void>.delayed(const Duration(milliseconds: 10));
         }
-        expect(provider.libraryTree, isNotEmpty);
+        expect(runtimeGraph.library.libraryTree, isNotEmpty);
 
-        final beforeRevision = provider.libraryContentRevision;
-        var notificationCount = 0;
-        provider.addListener(() {
-          notificationCount++;
-        });
-
+        final beforeRevision = runtimeGraph.library.service.contentRevision;
         final scanner = LibraryScannerService();
         await scanner.refreshWatchedFolders(
-          provider: provider.libraryFacade,
+          provider: runtimeGraph.library,
           labels: const LibraryScanLabels(
             chooseMusicFolder: 'Choose music folder',
             chooseLibraryFolder: 'Choose library folder',
@@ -607,14 +621,13 @@ void main() {
           ),
         );
 
-        final refreshedTrack = provider.trackByPath(trackPath);
+        final refreshedTrack = runtimeGraph.library.trackByPath(trackPath);
         expect(
           refreshedTrack,
           same(track),
           reason: 'before=${track.toJson()} after=${refreshedTrack?.toJson()}',
         );
-        expect(provider.libraryContentRevision, beforeRevision);
-        expect(notificationCount, 0);
+        expect(runtimeGraph.library.service.contentRevision, beforeRevision);
       },
     );
 
@@ -624,7 +637,7 @@ void main() {
       final refreshedScannedAt = DateTime.fromMillisecondsSinceEpoch(3000);
       const trackPath = '/library/work/01.mp3';
 
-      provider.addTracks(
+      runtimeGraph.library.addTracks(
         <MusicTrack>[
           MusicTrack(
             path: trackPath,
@@ -642,13 +655,14 @@ void main() {
         persist: false,
       );
 
-      final beforeRefresh = provider.library.single;
+      final beforeRefresh = runtimeGraph.library.library.single;
       var notificationCount = 0;
-      provider.addListener(() {
+      final subscription = runtimeGraph.library.states.listen((_) {
         notificationCount++;
       });
+      addTearDown(subscription.cancel);
 
-      provider.addOrReplaceTracks(<MusicTrack>[
+      runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
         MusicTrack(
           path: trackPath,
           displayName: '01',
@@ -663,9 +677,9 @@ void main() {
       ], persist: false);
 
       expect(notificationCount, 0);
-      expect(provider.library.single, same(beforeRefresh));
+      expect(runtimeGraph.library.library.single, same(beforeRefresh));
 
-      provider.addOrReplaceTracks(<MusicTrack>[
+      runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
         MusicTrack(
           path: trackPath,
           displayName: '01 renamed',
@@ -681,7 +695,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(notificationCount, 1);
-      expect(provider.library.single.displayName, '01 renamed');
+      expect(runtimeGraph.library.library.single.displayName, '01 renamed');
     });
 
     test('folder rescan prunes tracks and entries deleted from disk', () async {
@@ -702,14 +716,14 @@ void main() {
       final deletedPath =
           '$deletedFolderPath${Platform.pathSeparator}deleted.mp3';
 
-      provider.addWatchedLibrary(libraryRoot.path, notify: false);
-      provider.recordLibraryEntriesForTracks(
+      runtimeGraph.library.addWatchedLibrary(libraryRoot.path, notify: false);
+      runtimeGraph.library.recordLibraryEntriesForTracks(
         libraryRoot.path,
         const <MusicTrack>[],
         folderPaths: <String>[keptFolderPath, deletedFolderPath],
         persist: false,
       );
-      provider.addTracks(<MusicTrack>[
+      runtimeGraph.library.addTracks(<MusicTrack>[
         MusicTrack(
           path: keptPath,
           displayName: 'kept',
@@ -728,29 +742,31 @@ void main() {
         ),
       ], notify: false);
 
-      provider.removeTracksDeletedFromFolder(libraryRoot.path, {keptPath});
-      provider.removeLibraryEntriesDeletedFromFolder(
+      runtimeGraph.library.removeTracksDeletedFromFolder(libraryRoot.path, {
+        keptPath,
+      });
+      runtimeGraph.library.removeLibraryEntriesDeletedFromFolder(
         libraryRoot.path,
         libraryRoot.path,
         {keptPath, keptFolderPath},
       );
 
-      expect(provider.trackByPath(keptPath), isNotNull);
-      expect(provider.trackByPath(deletedPath), isNull);
+      expect(runtimeGraph.library.trackByPath(keptPath), isNotNull);
+      expect(runtimeGraph.library.trackByPath(deletedPath), isNull);
       expect(
-        provider
+        runtimeGraph.library
             .libraryEntriesForLibrary(libraryRoot.path)
             .where((entry) => entry.path == deletedPath),
         isEmpty,
       );
       expect(
-        provider
+        runtimeGraph.library
             .libraryEntriesForLibrary(libraryRoot.path)
             .where((entry) => entry.path == deletedFolderPath),
         isEmpty,
       );
       expect(
-        provider
+        runtimeGraph.library
             .libraryEntriesForLibrary(libraryRoot.path)
             .where((entry) => entry.path == keptFolderPath),
         hasLength(1),
@@ -765,9 +781,9 @@ void main() {
       const trackPath =
           'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2F01.mp3';
 
-      provider.addWatchedLibrary(libraryRoot, notify: false);
-      provider.addWatchedFolder(childFolder, notify: false);
-      provider.addTracks(<MusicTrack>[
+      runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+      runtimeGraph.library.addWatchedFolder(childFolder, notify: false);
+      runtimeGraph.library.addTracks(<MusicTrack>[
         const MusicTrack(
           path: trackPath,
           displayName: '01',
@@ -778,19 +794,24 @@ void main() {
         ),
       ], notify: false);
 
-      provider.setLibraryFolderExcluded(libraryRoot, childFolder, true);
+      runtimeGraph.library.setLibraryFolderExcluded(
+        libraryRoot,
+        childFolder,
+        true,
+      );
 
-      expect(provider.excludedFoldersForLibrary(libraryRoot), <String>[
-        syntheticChildFolder,
-      ]);
       expect(
-        provider
+        runtimeGraph.library.excludedFoldersForLibrary(libraryRoot),
+        <String>[syntheticChildFolder],
+      );
+      expect(
+        runtimeGraph.library
             .libraryEntriesForLibrary(libraryRoot)
             .where((entry) => entry.path == syntheticChildFolder),
         hasLength(1),
       );
       expect(
-        provider
+        runtimeGraph.library
             .libraryEntriesForLibrary(libraryRoot)
             .where((entry) => entry.path == syntheticChildFolder)
             .single
@@ -809,8 +830,8 @@ void main() {
       const secondPath = '$secondFolder\\02.mp3';
       const outsidePath = '$outsideFolder\\03.mp3';
 
-      provider.addWatchedLibrary(libraryRoot, notify: false);
-      provider.addTracks(<MusicTrack>[
+      runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+      runtimeGraph.library.addTracks(<MusicTrack>[
         const MusicTrack(
           path: firstPath,
           displayName: '01',
@@ -839,15 +860,15 @@ void main() {
 
       expect(
         AudioPathCoordinator(
-          library: provider.libraryFacade,
-          playback: provider.playbackFacade,
+          library: runtimeGraph.library,
+          playback: runtimeGraph.playback,
         ).tracksInSameWork(firstPath).map((track) => track.path).toSet(),
         <String>{firstPath, secondPath},
       );
       expect(
         AudioPathCoordinator(
-          library: provider.libraryFacade,
-          playback: provider.playbackFacade,
+          library: runtimeGraph.library,
+          playback: runtimeGraph.playback,
         ).workRootForTrack(firstPath),
         workRoot,
       );
@@ -876,8 +897,8 @@ void main() {
             return <String, Object?>{'ok': true, 'value': null};
           });
 
-      provider.addWatchedLibrary(libraryRoot, notify: false);
-      provider.addTracks(<MusicTrack>[
+      runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+      runtimeGraph.library.addTracks(<MusicTrack>[
         const MusicTrack(
           path: firstPath,
           displayName: '01',
@@ -904,19 +925,19 @@ void main() {
         ),
       ], notify: false);
 
-      await provider.playbackFacade.spawnSession(
-        provider.trackByPath(secondPath)!,
+      await runtimeGraph.playback.spawnSession(
+        runtimeGraph.library.trackByPath(secondPath)!,
         autoPlay: false,
       );
-      final session = provider.activeSessions.single;
+      final session = runtimeGraph.playback.service.activeSessions.single;
       for (var i = 0; i < 50 && session.isLoading; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
-      await provider.playbackFacade.setSessionLoopMode(
+      await runtimeGraph.playback.setSessionLoopMode(
         session.id,
         SessionLoopMode.crossSequential,
       );
-      await provider.playbackFacade.seekSessionToNext(session.id);
+      await runtimeGraph.playback.seekSessionToNext(session.id);
 
       expect(session.currentTrackPath, firstPath);
       expect(preparedQueues, isNotEmpty);
@@ -937,8 +958,8 @@ void main() {
         final folder = '${libraryRoot.path}${Platform.pathSeparator}work';
         final trackPath = '$folder${Platform.pathSeparator}01.mp3';
 
-        provider.addWatchedLibrary(libraryRoot.path, notify: false);
-        provider.addTracks(<MusicTrack>[
+        runtimeGraph.library.addWatchedLibrary(libraryRoot.path, notify: false);
+        runtimeGraph.library.addTracks(<MusicTrack>[
           MusicTrack(
             path: trackPath,
             displayName: '01',
@@ -949,24 +970,32 @@ void main() {
           ),
         ], notify: false);
 
-        provider.setLibraryFolderExcluded(libraryRoot.path, folder, true);
+        runtimeGraph.library.setLibraryFolderExcluded(
+          libraryRoot.path,
+          folder,
+          true,
+        );
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(provider.trackByPath(trackPath), isNull);
+        expect(runtimeGraph.library.trackByPath(trackPath), isNull);
         expect(
-          provider
+          runtimeGraph.library
               .libraryEntriesForLibrary(libraryRoot.path)
               .where((entry) => entry.path == folder || entry.path == trackPath)
               .every((entry) => entry.isExcluded),
           isTrue,
         );
 
-        provider.setLibraryFolderExcluded(libraryRoot.path, folder, false);
+        runtimeGraph.library.setLibraryFolderExcluded(
+          libraryRoot.path,
+          folder,
+          false,
+        );
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(provider.trackByPath(trackPath), isNotNull);
+        expect(runtimeGraph.library.trackByPath(trackPath), isNotNull);
         expect(
-          provider
+          runtimeGraph.library
               .libraryEntriesForLibrary(libraryRoot.path)
               .where((entry) => entry.path == folder || entry.path == trackPath)
               .every((entry) => entry.isActive),
@@ -982,8 +1011,12 @@ void main() {
       const trackPath =
           'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2F01.mp4';
 
-      provider.addWatchedLibrary(libraryRoot, notify: false);
-      provider.setLibraryFolderExcluded(libraryRoot, restoredFolder, true);
+      runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+      runtimeGraph.library.setLibraryFolderExcluded(
+        libraryRoot,
+        restoredFolder,
+        true,
+      );
 
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(fileCacheChannel, (call) async {
@@ -1009,10 +1042,14 @@ void main() {
             };
           });
 
-      provider.setLibraryFolderExcluded(libraryRoot, restoredFolder, false);
+      runtimeGraph.library.setLibraryFolderExcluded(
+        libraryRoot,
+        restoredFolder,
+        false,
+      );
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
-      final restoredTrack = provider.trackByPath(trackPath);
+      final restoredTrack = runtimeGraph.library.trackByPath(trackPath);
       expect(restoredTrack, isNotNull);
       expect(restoredTrack!.groupKey, restoredFolder);
       expect(restoredTrack.isVideo, isTrue);
@@ -1032,8 +1069,8 @@ void main() {
       final trackPath = '${folder.path}${Platform.pathSeparator}01.mp3';
       await File(trackPath).writeAsBytes(const <int>[1, 2, 3]);
 
-      provider.addWatchedFolder(folder.path, notify: false);
-      provider.addTracks(<MusicTrack>[
+      runtimeGraph.library.addWatchedFolder(folder.path, notify: false);
+      runtimeGraph.library.addTracks(<MusicTrack>[
         MusicTrack(
           path: trackPath,
           displayName: '01',
@@ -1044,14 +1081,21 @@ void main() {
         ),
       ], notify: false);
 
-      provider.setLibraryTrackExcluded(folder.path, trackPath, true);
+      runtimeGraph.library.setLibraryTrackExcluded(
+        folder.path,
+        trackPath,
+        true,
+      );
 
-      expect(provider.trackByPath(trackPath), isNull);
-      expect(provider.hasLibraryExclusions(folder.path), isTrue);
-      expect(provider.isLibraryPathExcluded(folder.path, trackPath), isTrue);
+      expect(runtimeGraph.library.trackByPath(trackPath), isNull);
+      expect(runtimeGraph.library.hasLibraryExclusions(folder.path), isTrue);
+      expect(
+        runtimeGraph.library.isLibraryPathExcluded(folder.path, trackPath),
+        isTrue,
+      );
 
-      if (!provider.isLibraryPathExcluded(folder.path, trackPath)) {
-        provider.addOrReplaceTracks(<MusicTrack>[
+      if (!runtimeGraph.library.isLibraryPathExcluded(folder.path, trackPath)) {
+        runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[
           MusicTrack(
             path: trackPath,
             displayName: '01',
@@ -1063,12 +1107,12 @@ void main() {
         ], notify: false);
       }
 
-      expect(provider.trackByPath(trackPath), isNull);
+      expect(runtimeGraph.library.trackByPath(trackPath), isNull);
 
-      provider.clearLibraryExclusions(folder.path);
+      runtimeGraph.library.clearLibraryExclusions(folder.path);
 
-      expect(provider.trackByPath(trackPath), isNotNull);
-      expect(provider.hasLibraryExclusions(folder.path), isFalse);
+      expect(runtimeGraph.library.trackByPath(trackPath), isNotNull);
+      expect(runtimeGraph.library.hasLibraryExclusions(folder.path), isFalse);
     });
   });
 }

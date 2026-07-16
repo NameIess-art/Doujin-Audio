@@ -2,17 +2,23 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/media/audio_detail.dart';
+import '../../core/media/music_track.dart';
+
 import '../application/app_persistence_coordinator.dart';
 import '../application/persisted_state_reloader.dart';
 import '../application/audio_path_coordinator.dart';
 import '../application/playback_queue_coordinator.dart';
 import '../application/audio_runtime_coordinator.dart';
 import '../application/audio_ui_warmup_coordinator.dart';
+import '../application/playback_command_coordinator.dart';
+import '../application/playback_keep_alive_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/library/application/library_state_models.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/playback_session.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/playback_time_segment_service.dart';
 import '../../features/player/application/subtitle_overlay_controller.dart';
@@ -32,7 +38,6 @@ import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
 import '../../features/asmr/application/asmr_playback_coordinator.dart';
 import '../../features/asmr/domain/asmr_models.dart';
-import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
 
 final themeProviderInstanceProvider = Provider<ThemeProvider>((ref) {
@@ -243,6 +248,21 @@ final audioUiWarmupCoordinatorProvider = Provider<AudioUiWarmupCoordinator>((
     'audioUiWarmupCoordinatorProvider must be overridden in ProviderScope.',
   );
 });
+
+final playbackCommandCoordinatorProvider = Provider<PlaybackCommandCoordinator>(
+  (ref) {
+    throw UnimplementedError(
+      'playbackCommandCoordinatorProvider must be overridden in ProviderScope.',
+    );
+  },
+);
+
+final playbackKeepAliveCoordinatorProvider =
+    Provider<PlaybackKeepAliveCoordinator>((ref) {
+      throw UnimplementedError(
+        'playbackKeepAliveCoordinatorProvider must be overridden in ProviderScope.',
+      );
+    });
 
 final libraryFacadeProvider = Provider<LibraryFacade>((ref) {
   throw UnimplementedError(
@@ -591,32 +611,32 @@ final sessionDetailTransportProvider =
       );
     });
 
-List<Override> createAudioProviderOverrides({
-  required AudioProvider audioProvider,
+List<Override> createAppRuntimeOverrides({
+  required AppPersistenceCoordinator persistence,
+  required AudioRuntimeCoordinator runtime,
+  required AudioUiWarmupCoordinator warmup,
+  required PlaybackCommandCoordinator playbackCommands,
+  required PlaybackKeepAliveCoordinator keepAlive,
+  required LibraryFacade library,
+  required PlaybackFacade playback,
+  required PlaybackSubtitleService subtitles,
+  required TimerFacade timer,
+  required NotificationFacade notifications,
+  required SettingsRepository settings,
   UiOperationService? uiOperationService,
 }) {
   return <Override>[
-    appPersistenceCoordinatorProvider.overrideWithValue(
-      audioProvider.persistenceCoordinator,
-    ),
-    audioRuntimeCoordinatorProvider.overrideWithValue(
-      audioProvider.runtimeCoordinator,
-    ),
-    audioUiWarmupCoordinatorProvider.overrideWithValue(
-      audioProvider.uiWarmupCoordinator,
-    ),
-    libraryFacadeProvider.overrideWithValue(audioProvider.libraryFacade),
-    playbackFacadeProvider.overrideWithValue(audioProvider.playbackFacade),
-    playbackSubtitleServiceProvider.overrideWithValue(
-      audioProvider.subtitleService,
-    ),
-    timerFacadeProvider.overrideWithValue(audioProvider.timerFacade),
-    notificationFacadeProvider.overrideWithValue(
-      audioProvider.notificationFacade,
-    ),
-    settingsRepositoryProvider.overrideWithValue(
-      audioProvider.settingsRepository,
-    ),
+    appPersistenceCoordinatorProvider.overrideWithValue(persistence),
+    audioRuntimeCoordinatorProvider.overrideWithValue(runtime),
+    audioUiWarmupCoordinatorProvider.overrideWithValue(warmup),
+    playbackCommandCoordinatorProvider.overrideWithValue(playbackCommands),
+    playbackKeepAliveCoordinatorProvider.overrideWithValue(keepAlive),
+    libraryFacadeProvider.overrideWithValue(library),
+    playbackFacadeProvider.overrideWithValue(playback),
+    playbackSubtitleServiceProvider.overrideWithValue(subtitles),
+    timerFacadeProvider.overrideWithValue(timer),
+    notificationFacadeProvider.overrideWithValue(notifications),
+    settingsRepositoryProvider.overrideWithValue(settings),
     uiOperationServiceProvider.overrideWithValue(
       uiOperationService ?? UiOperationService.instance,
     ),

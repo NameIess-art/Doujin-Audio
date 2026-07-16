@@ -10,6 +10,7 @@ import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/player/application/timer_runtime_calculator.dart';
 import '../../features/settings/application/settings_repository.dart';
+
 /// Coordinates playback/timer keep-alive state without owning UI state.
 final class PlaybackKeepAliveCoordinator {
   PlaybackKeepAliveCoordinator({
@@ -47,15 +48,13 @@ final class PlaybackKeepAliveCoordinator {
         session.loadedPath != null,
   );
 
-  bool get hasRetainedPlaybackSession =>
-      _playback.service.sessions.isNotEmpty;
+  bool get hasRetainedPlaybackSession => _playback.service.sessions.isNotEmpty;
 
-  bool get hasPendingAutoResume =>
-      _timerRuntimeCalculator.hasPendingAutoResume(
-        autoResumeAt: _timer.service.autoResumeAt,
-        hasPausedByTimerSessionIds:
-            _timer.service.pausedByTimerSessionIds.isNotEmpty,
-      );
+  bool get hasPendingAutoResume => _timerRuntimeCalculator.hasPendingAutoResume(
+    autoResumeAt: _timer.service.autoResumeAt,
+    hasPausedByTimerSessionIds:
+        _timer.service.pausedByTimerSessionIds.isNotEmpty,
+  );
 
   void sync() {
     final hasPlayback = hasPlaybackToKeepAlive;

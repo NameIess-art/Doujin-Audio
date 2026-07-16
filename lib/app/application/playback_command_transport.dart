@@ -23,8 +23,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           _sessions.containsKey(session.id) &&
           session.playbackCommandGeneration == generation,
     );
-    _notificationFacade.stateService.notificationsDismissedWhilePaused =
-        false;
+    _notificationFacade.stateService.notificationsDismissedWhilePaused = false;
     unawaited(_nativePlaybackRepository.undismissNotifications());
     _notificationFacade.stateService.notificationFocusSessionId = session.id;
     session.beginTransportCommand(commandId: generation, playing: true);
@@ -49,7 +48,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       _activateAudioSessionForPlayback().then((activated) {
         if (!activated) {
           AppLogService.warning(
-            'AudioProvider._startSessionPlayback: audio session activation '
+            'PlaybackCommandCoordinator.startSession: audio session activation '
             'returned false; continuing playback attempt.',
           );
         }
@@ -89,7 +88,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         _notifyPlaybackChanged();
       }
       AppLogService.error(
-        'AudioProvider._startSessionPlayback error',
+        'PlaybackCommandCoordinator.startSession error',
         error: e,
         stackTrace: stackTrace,
       );
@@ -143,7 +142,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         _notifyPlaybackChanged();
       }
       AppLogService.error(
-        'AudioProvider._pauseSessionPlayback error',
+        'PlaybackCommandCoordinator.pauseSession error',
         error: error,
         stackTrace: stackTrace,
       );
@@ -166,8 +165,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           (session) => session.id != keepSessionId && session.state.playing,
         )
         .toList(growable: false);
-    _notificationFacade.stateService.notificationFocusSessionId =
-        keepSessionId;
+    _notificationFacade.stateService.notificationFocusSessionId = keepSessionId;
     if (sessionsToPause.isEmpty) {
       _syncNotificationState();
       return;
@@ -184,8 +182,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         (session) => _nativePlaybackRepository.pause(session.id),
       ),
     );
-    _notificationFacade.stateService.notificationFocusSessionId =
-        keepSessionId;
+    _notificationFacade.stateService.notificationFocusSessionId = keepSessionId;
     _syncKeepCpuAwake();
     _syncNotificationState();
   }

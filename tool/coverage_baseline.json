@@ -1,7 +1,7 @@
 {
   "minimumTotalLineCoveragePercent": 61,
   "moduleMinimumLineCoveragePercent": {
-    "lib/app/state/": 70,
+    "lib/app/application/": 70,
     "lib/features/player/application/": 74,
     "lib/features/library/application/": 71,
     "lib/features/asmr/application/": 76,

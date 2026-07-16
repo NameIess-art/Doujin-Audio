@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../state/audio_provider_riverpod.dart';
+import '../state/app_runtime_providers.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 

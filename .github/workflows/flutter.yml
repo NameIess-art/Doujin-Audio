@@ -57,7 +57,7 @@ jobs:
         run: |
           for ($iteration = 1; $iteration -le 10; $iteration++) {
             Write-Output "Windows rename iteration $iteration/10"
-            flutter test --no-pub test/audio_provider_audio_detail_cover_test.dart --plain-name "renaming an active folder keeps playlist track lookups after stale native paths"
+            flutter test --no-pub test/library_audio_detail_cover_test.dart --plain-name "renaming an active folder keeps playlist track lookups after stale native paths"
             if ($LASTEXITCODE -ne 0) {
               exit $LASTEXITCODE
             }

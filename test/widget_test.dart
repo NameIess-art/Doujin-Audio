@@ -3,20 +3,20 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    show Override, ProviderScope;
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/main.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
-import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
+import 'support/runtime_test_models.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/app/presentation/main_screen.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
@@ -28,6 +28,23 @@ import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'support/app_runtime_test_fixture.dart';
+
+List<Override> _testRuntimeOverrides(AppRuntimeGraph graph) {
+  return createAppRuntimeOverrides(
+    persistence: graph.persistence,
+    runtime: graph.runtime,
+    warmup: graph.warmup,
+    playbackCommands: graph.playbackCommands,
+    keepAlive: graph.keepAlive,
+    library: graph.library,
+    playback: graph.playback,
+    subtitles: graph.subtitles,
+    timer: graph.timer,
+    notifications: graph.notifications,
+    settings: graph.settings,
+  );
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -340,7 +357,7 @@ void main() {
     final timerService = TimerService();
     final notificationCoordinatorService = NotificationCoordinatorService();
     final settingsRepository = SettingsRepository();
-    final audioProvider = AudioProvider.test(
+    final runtimeGraph = createTestRuntimeGraph(
       notificationService: notificationService,
       audioDatabaseRepository: audioDatabaseRepository,
       nativePlaybackRepository: nativePlaybackRepository,
@@ -368,9 +385,9 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.idle),
     )..playbackError = 'network failed';
-    addTearDown(audioProvider.dispose);
+    addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
     addTearDown(session.dispose);
-    audioProvider.addTracks([track], notify: false, persist: false);
+    runtimeGraph.library.addTracks([track], notify: false, persist: false);
     playbackService.registerSession(session);
     playbackService.syncSlice(
       activeSessions: [session],
@@ -384,7 +401,7 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          ...createAudioProviderOverrides(audioProvider: audioProvider),
+          ..._testRuntimeOverrides(runtimeGraph),
           themeProviderInstanceProvider.overrideWithValue(themeProvider),
           appLanguageProviderInstanceProvider.overrideWithValue(
             languageProvider,
@@ -748,7 +765,7 @@ Future<_AppShellHarness> _pumpAppShell(
   final timerService = TimerService();
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
-  final audioProvider = AudioProvider.test(
+  final runtimeGraph = createTestRuntimeGraph(
     notificationService: notificationService,
     audioDatabaseRepository: audioDatabaseRepository,
     nativePlaybackRepository: nativePlaybackRepository,
@@ -758,11 +775,16 @@ Future<_AppShellHarness> _pumpAppShell(
     notificationStateService: notificationCoordinatorService,
     settingsRepository: settingsRepository,
   );
+  addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
   settingsRepository.syncSlice(isInitialized: true);
   libraryService.syncSlice(isInitialized: true, detailRevision: 0);
   if (includePlaybackSession) {
     if (playbackTrack != null) {
-      audioProvider.addTracks([playbackTrack], notify: false, persist: false);
+      runtimeGraph.library.addTracks(
+        [playbackTrack],
+        notify: false,
+        persist: false,
+      );
     }
     final session = PlaybackSession(
       id: 'orientation_session',
@@ -788,7 +810,7 @@ Future<_AppShellHarness> _pumpAppShell(
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        ...createAudioProviderOverrides(audioProvider: audioProvider),
+        ..._testRuntimeOverrides(runtimeGraph),
         themeProviderInstanceProvider.overrideWithValue(themeProvider),
         appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
         appUpdateServiceProvider.overrideWithValue(AppUpdateService()),

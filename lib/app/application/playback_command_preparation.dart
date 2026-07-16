@@ -158,7 +158,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       }
     } catch (e, stackTrace) {
       AppLogService.error(
-        'AudioProvider._prepareAndPlay error',
+        'PlaybackCommandCoordinator.prepareAndPlay error',
         error: e,
         stackTrace: stackTrace,
       );
@@ -299,7 +299,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0) {
         AppLogService.warning(
-          'AudioProvider._prepareAndPlay: retrying prepareSession '
+          'PlaybackCommandCoordinator.prepareAndPlay: retrying prepareSession '
           'after 300ms delay.',
         );
         await Future<void>.delayed(const Duration(milliseconds: 300));
@@ -348,7 +348,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       }
       lastError = result.errorOrNull;
       AppLogService.warning(
-        'AudioProvider._prepareAndPlay: attempt ${attempt + 1} failed: '
+        'PlaybackCommandCoordinator.prepareAndPlay: attempt ${attempt + 1} failed: '
         '${result.errorOrNull ?? "unknown error"}.',
       );
     }
@@ -404,7 +404,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       return true;
     } catch (error, stackTrace) {
       AppLogService.warning(
-        'AudioProvider failed to restore the previous native track.',
+        'PlaybackCommandCoordinator failed to restore the previous native track.',
         error: error,
         stackTrace: stackTrace,
       );

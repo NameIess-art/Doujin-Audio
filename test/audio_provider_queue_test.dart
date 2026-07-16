@@ -5,10 +5,12 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/app/application/playback_queue_coordinator.dart';
+import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/player/application/playback_time_segment_service.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/core/media/path_matcher.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
@@ -24,21 +26,33 @@ void main() {
   late AudioProviderTestFixture fixture;
   late AudioProvider provider;
   late PlaybackQueueCoordinator queueCoordinator;
+  late PlaybackTimeSegmentService timeSegments;
+  late AudioPathCoordinator paths;
   late PlaybackNotificationService notificationService;
   late Database db;
 
   setUp(() async {
     fixture = await AudioProviderTestFixture.create();
     provider = fixture.provider;
-    queueCoordinator = PlaybackQueueCoordinator(
+    paths = AudioPathCoordinator(
       library: provider.libraryFacade,
       playback: provider.playbackFacade,
+    );
+    queueCoordinator = PlaybackQueueCoordinator(
+      playback: provider.playbackFacade,
+      paths: paths,
+    );
+    timeSegments = PlaybackTimeSegmentService(
+      database: provider.libraryFacade.databaseRepository,
+      playback: provider.playbackFacade,
+      paths: paths,
     );
     notificationService = fixture.notificationService;
     db = fixture.database;
   });
 
   tearDown(() async {
+    await timeSegments.dispose();
     await fixture.dispose(currentProvider: provider);
   });
 
@@ -268,6 +282,12 @@ void main() {
         (track) => track.displayName == first.displayName,
       );
 
+      expect(sourceTrack.isSingle, isFalse);
+      expect(sourceTrack.groupKey, isNotEmpty);
+      expect(paths.trackByPath(sourceTrack.path), isNotNull);
+      expect(paths.workRootForTrack(sourceTrack.path), isNotNull);
+      expect(paths.tracksInSameWork(sourceTrack.path), hasLength(2));
+
       await queueCoordinator.addWork(queueSession.id, sourceTrack);
 
       final entry = provider
@@ -336,7 +356,7 @@ void main() {
         final otherSession = provider.activeSessions.firstWhere(
           (session) => session.currentTrackPath == otherTrack.path,
         );
-        final trackKey = provider.timeSegmentTrackKeyForTrack(loopTrack);
+        final trackKey = timeSegments.trackKeyForTrack(loopTrack);
         final now = DateTime(2026, 6, 2);
         final label = TimeSegmentLabel(
           id: 'loop-segment',
@@ -349,11 +369,11 @@ void main() {
           updatedAt: now,
         );
 
-        provider.toggleTimeSegmentLoop(sessionId: loopSession.id, label: label);
+        timeSegments.toggleLoop(sessionId: loopSession.id, label: label);
         await Future<void>.delayed(Duration.zero);
 
         expect(
-          provider.timeSegmentLoopLabelIdForSession(
+          timeSegments.loopLabelIdForSession(
             loopSession.id,
             trackKey: trackKey,
           ),
@@ -361,10 +381,7 @@ void main() {
         );
 
         const otherSeekPosition = Duration(seconds: 90);
-        provider.handleTimeSegmentManualSeek(
-          otherSession.id,
-          otherSeekPosition,
-        );
+        timeSegments.handleManualSeek(otherSession.id, otherSeekPosition);
         await provider.playbackFacade.seekSession(
           otherSession.id,
           otherSeekPosition,
@@ -374,7 +391,7 @@ void main() {
 
         expect(otherSession.currentTrackPath, otherTrack.path);
         expect(
-          provider.timeSegmentLoopLabelIdForSession(
+          timeSegments.loopLabelIdForSession(
             loopSession.id,
             trackKey: trackKey,
           ),
@@ -483,9 +500,10 @@ void main() {
             ?.toJson(),
         firstTrack.toJson(),
       );
-      final siblings = restoredProvider.tracksInSameGroup(
-        'https://example.com/asmr/01.mp3',
-      );
+      final siblings = AudioPathCoordinator(
+        library: restoredProvider.libraryFacade,
+        playback: restoredProvider.playbackFacade,
+      ).tracksInSameGroup('https://example.com/asmr/01.mp3');
       expect(siblings.map((track) => track.path), <String>[
         'https://example.com/asmr/01.mp3',
         'https://example.com/asmr/02.mp3',
@@ -515,6 +533,10 @@ void main() {
           asmrPlaybackCacheService: const _FakeAsmrPlaybackCacheService(
             cachedPath,
           ),
+        );
+        paths = AudioPathCoordinator(
+          library: provider.libraryFacade,
+          playback: provider.playbackFacade,
         );
         const firstTrack = MusicTrack(
           path: 'https://example.com/asmr/01.mp3',
@@ -582,8 +604,10 @@ void main() {
 
         expect(session.currentTrackPath, firstTrack.path);
         expect(provider.trackByPath(cachedPath)?.toJson(), firstTrack.toJson());
+        expect(paths.trackByPath(cachedPath)?.toJson(), firstTrack.toJson());
+        expect(provider.activeSessions.single.customQueueTracks, hasLength(2));
         expect(
-          provider.tracksInSameGroup(cachedPath).map((track) => track.path),
+          paths.tracksInSameGroup(cachedPath).map((track) => track.path),
           <String>[
             'https://example.com/asmr/01.mp3',
             'https://example.com/asmr/02.mp3',

@@ -2,53 +2,58 @@ import 'dart:async';
 
 import '../../../core/platform/subtitle_overlay_platform_service.dart';
 
-class SubtitleOverlayController {
-  static final SubtitleOverlayPlatformService _platform =
-      SubtitleOverlayPlatformService();
+typedef SubtitleOverlayStopTimerFactory =
+    Timer Function(Duration duration, void Function() callback);
 
-  static Future<bool> canDrawOverlays() async {
-    return _platform.canDrawOverlays();
-  }
+final class SubtitleOverlayController {
+  SubtitleOverlayController({
+    SubtitleOverlayPlatformService? platform,
+    SubtitleOverlayStopTimerFactory? stopTimerFactory,
+  }) : _platform = platform ?? SubtitleOverlayPlatformService(),
+       _stopTimerFactory = stopTimerFactory ?? Timer.new;
 
-  static Future<bool> openOverlaySettings() async {
-    return _platform.openOverlaySettings();
-  }
+  final SubtitleOverlayPlatformService _platform;
+  final SubtitleOverlayStopTimerFactory _stopTimerFactory;
+  Timer? _stopTimer;
+  bool _disposed = false;
 
-  static Timer? _stopTimer;
+  Future<bool> canDrawOverlays() => _platform.canDrawOverlays();
 
-  static Future<void> startOverlay() async {
+  Future<bool> openOverlaySettings() => _platform.openOverlaySettings();
+
+  Future<void> startOverlay() async {
+    if (_disposed) return;
     _stopTimer?.cancel();
     _stopTimer = null;
     await _platform.startOverlay();
   }
 
-  static Future<void> stopOverlay({bool immediate = false}) async {
+  Future<void> stopOverlay({bool immediate = false}) async {
     _stopTimer?.cancel();
     _stopTimer = null;
     if (immediate) {
       await _doStop();
     } else {
-      _stopTimer = Timer(const Duration(milliseconds: 300), () {
+      if (_disposed) return;
+      _stopTimer = _stopTimerFactory(const Duration(milliseconds: 300), () {
         unawaited(_doStop());
       });
     }
   }
 
-  static Future<void> _doStop() async {
+  Future<void> _doStop() async {
     _stopTimer?.cancel();
     _stopTimer = null;
     await _platform.stopOverlay();
   }
 
-  static Future<void> updateSubtitle(String text) async {
-    await _platform.updateSubtitle(text);
-  }
+  Future<void> updateSubtitle(String text) => _platform.updateSubtitle(text);
 
-  static Future<void> updatePlaybackState(bool isPlaying) async {
+  Future<void> updatePlaybackState(bool isPlaying) async {
     // The Android overlay receives playback state through its service.
   }
 
-  static Future<void> updateStyle({
+  Future<void> updateStyle({
     double? fontSize,
     String? backgroundColor,
     String? textColor,
@@ -65,5 +70,13 @@ class SubtitleOverlayController {
       'borderDepth': borderDepth,
     }..removeWhere((_, value) => value == null);
     await _platform.updateStyle(args);
+  }
+
+  Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    _stopTimer?.cancel();
+    _stopTimer = null;
+    await _platform.stopOverlay();
   }
 }

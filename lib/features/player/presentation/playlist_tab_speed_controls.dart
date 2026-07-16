@@ -4,11 +4,11 @@ class _SpeedWheelPage extends ConsumerStatefulWidget {
   const _SpeedWheelPage({
     super.key,
     required this.session,
-    required this.provider,
+    required this.playback,
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
 
   @override
   ConsumerState<_SpeedWheelPage> createState() => _SpeedWheelPageState();
@@ -82,7 +82,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
       setState(() => _selectedIndex = nextIndex);
     }
     unawaited(
-      widget.provider.playbackFacade.setSessionSpeed(
+      widget.playback.setSessionSpeed(
         widget.session.id,
         nextSpeed,
         persist: persist,

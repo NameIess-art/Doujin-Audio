@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/widgets/app_feedback.dart';
 import '../application/audio_runtime_coordinator.dart';
+import '../application/audio_path_coordinator.dart';
 import '../application/audio_ui_warmup_coordinator.dart';
 
 import '../../core/app_language.dart';
@@ -23,7 +24,6 @@ import '../../features/library/domain/library_node.dart';
 import '../../core/media/music_track.dart';
 import '../../features/player/domain/playback_mode.dart';
 import '../../features/player/application/playback_session.dart';
-import '../../features/player/domain/time_segment_label.dart';
 import '../../core/platform/app_platform.dart';
 import '../../features/settings/application/app_cache_service.dart';
 import '../../core/logging/app_log_service.dart';
@@ -66,7 +66,6 @@ import '../../features/player/application/native_playback_bridge.dart';
 import '../../features/player/application/playback_notification_service.dart';
 import '../../features/player/application/playback_command_runner.dart';
 import '../../core/media/path_matcher.dart';
-import '../../core/media/path_display.dart';
 import '../../features/player/application/system_media_controls_service.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
@@ -87,7 +86,6 @@ part 'audio_provider_notification_subtitles.dart';
 part 'audio_provider_persistence_sessions.dart';
 part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
-part 'audio_provider_time_segments.dart';
 part 'audio_provider_queues.dart';
 
 const _kGroupOrderKey = 'group_order_v1';
@@ -115,6 +113,7 @@ class AudioProvider with ChangeNotifier {
   final NotificationFacade _notificationFacade;
   final SettingsRepository _settingsRepository;
   late final PlaybackSubtitleService _subtitleService;
+  late final AudioPathCoordinator _audioPathCoordinator;
   late final AudioRuntimeCoordinator _runtimeCoordinator;
   late final AudioUiWarmupCoordinator _uiWarmupCoordinator;
   final AppLanguage Function() _pageLanguageResolver;
@@ -169,73 +168,10 @@ class AudioProvider with ChangeNotifier {
     '256k',
     '320k',
   ];
-  static const List<EqPreset> builtInEqPresets = [
-    EqPreset(
-      id: 'flat',
-      labelKey: 'eq_preset_flat',
-      bandLevels: <int, double>{},
-    ),
-    EqPreset(
-      id: 'asmr_immersive',
-      labelKey: 'eq_preset_asmr_immersive',
-      bandLevels: <int, double>{
-        60: 2.5,
-        170: 1.5,
-        310: -1.0,
-        3000: 1.5,
-        6000: 2.5,
-        12000: 3.5,
-      },
-    ),
-    EqPreset(
-      id: 'voice_clear',
-      labelKey: 'eq_preset_voice_clear',
-      bandLevels: <int, double>{
-        170: -2.0,
-        310: -1.0,
-        1000: 1.5,
-        3000: 3.0,
-        6000: 1.5,
-      },
-    ),
-    EqPreset(
-      id: 'ear_massage',
-      labelKey: 'eq_preset_ear_massage',
-      bandLevels: <int, double>{
-        60: 3.0,
-        170: 1.0,
-        1000: -1.5,
-        3000: 1.0,
-        6000: 3.5,
-        12000: 4.5,
-      },
-    ),
-    EqPreset(
-      id: 'night_soft',
-      labelKey: 'eq_preset_night_soft',
-      bandLevels: <int, double>{
-        60: -2.0,
-        170: -1.5,
-        3000: -1.5,
-        6000: -3.0,
-        12000: -4.5,
-      },
-    ),
-    EqPreset(
-      id: 'bass_boost',
-      labelKey: 'eq_preset_bass_boost',
-      bandLevels: <int, double>{60: 4.5, 170: 3.0, 310: 1.0, 6000: -1.0},
-    ),
-  ];
-
   bool _isInitialized = false;
   bool _settingsInitialized = false;
   bool _libraryInitialized = false;
   bool _playbackInitialized = false;
-  final Map<String, _TimeSegmentLoopRuntime> _timeSegmentLoopsBySessionId =
-      <String, _TimeSegmentLoopRuntime>{};
-  final Set<String> _timeSegmentLoopBoundSessionIds = <String>{};
-  final Set<String> _timeSegmentLoopSeekPendingSessionIds = <String>{};
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
   int _persistenceLoadEpoch = 0;
@@ -569,6 +505,10 @@ class AudioProvider with ChangeNotifier {
        _settingsRepository = settings,
        _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh),
        _skipDisposePersistence = skipDisposePersistence {
+    _audioPathCoordinator = AudioPathCoordinator(
+      library: _libraryFacade,
+      playback: _playbackFacade,
+    );
     _subtitleService = PlaybackSubtitleService(
       trackResolver: _libraryFacade.trackByPath,
       onTrackLoaded: _handleSubtitleTrackLoaded,
@@ -604,7 +544,6 @@ class AudioProvider with ChangeNotifier {
       },
       onSessionsRemoved: (sessions) {
         for (final session in sessions) {
-          _forgetTimeSegmentLoopSession(session.id);
           _clearNotificationSubtitleForSession(session.id);
           if (_notificationFocusSessionId == session.id) {
             _notificationFocusSessionId = null;
@@ -789,9 +728,6 @@ class AudioProvider with ChangeNotifier {
       session.dispose();
     }
     _sessions.clear();
-    _timeSegmentLoopsBySessionId.clear();
-    _timeSegmentLoopBoundSessionIds.clear();
-    _timeSegmentLoopSeekPendingSessionIds.clear();
     await _libraryFacade.dispose();
     await _playbackFacade.dispose();
     await _timerFacade.dispose();

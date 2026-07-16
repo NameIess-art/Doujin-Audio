@@ -26,8 +26,9 @@ void main() {
     expect(find.byType(MainScreen), findsOneWidget);
 
     if (Platform.isWindows) {
-      expect(await SubtitleOverlayController.canDrawOverlays(), isTrue);
-      await SubtitleOverlayController.updateStyle(
+      final overlay = SubtitleOverlayController();
+      expect(await overlay.canDrawOverlays(), isTrue);
+      await overlay.updateStyle(
         fontSize: 18,
         backgroundColor: '#cc202020',
         textColor: '#ffffffff',
@@ -35,10 +36,11 @@ void main() {
         fontFamily: 'sans-serif',
         borderDepth: 1,
       );
-      await SubtitleOverlayController.updateSubtitle('Windows overlay test');
-      await SubtitleOverlayController.startOverlay();
+      await overlay.updateSubtitle('Windows overlay test');
+      await overlay.startOverlay();
       await tester.pump(const Duration(milliseconds: 300));
-      await SubtitleOverlayController.stopOverlay(immediate: true);
+      await overlay.stopOverlay(immediate: true);
+      await overlay.dispose();
     }
 
     final context = tester.element(find.byType(MainScreen));

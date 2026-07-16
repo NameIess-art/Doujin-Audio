@@ -216,6 +216,10 @@ class SettingsRepository {
     _persistConverter ??= persist;
   }
 
+  Future<void> persist() async {
+    await _persist?.call();
+  }
+
   Future<void> setConverterSettings({String? format, String? bitrate}) async {
     var changed = false;
     if (format != null &&

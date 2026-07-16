@@ -2,6 +2,8 @@ import '../../library/application/cover_image_cache_policy.dart';
 import '../../player/application/audio_state_services.dart';
 import '../../player/application/notification_facade.dart';
 import '../../player/application/playback_facade.dart';
+import '../../player/application/playback_session.dart';
+import '../../player/domain/audio_effects.dart';
 import 'app_cache_service.dart';
 
 /// Applies settings whose changes require cross-service coordination.
@@ -42,5 +44,27 @@ final class SettingsCommandController {
     if (_settings.maxCacheBytes == normalized) return;
     await AppCacheService.setMaxCacheBytes(normalized);
     await _settings.setMaxCacheBytes(normalized);
+  }
+
+  Future<void> saveCustomEqPreset(
+    String name,
+    PlaybackSession session, {
+    DateTime? now,
+  }) async {
+    final trimmedName = name.trim();
+    if (trimmedName.isEmpty) return;
+    final timestamp = now ?? DateTime.now();
+    _settings.customEqPresets = List<EqPreset>.unmodifiable(<EqPreset>[
+      ..._settings.customEqPresets,
+      EqPreset(
+        id: 'custom_${timestamp.microsecondsSinceEpoch}',
+        labelKey: trimmedName,
+        bandLevels: Map<int, double>.unmodifiable(
+          session.audioEffects.eqBandLevels,
+        ),
+      ),
+    ]);
+    _settings.syncSlice(isInitialized: _settings.slice.state.isInitialized);
+    await _settings.persist();
   }
 }

@@ -370,7 +370,7 @@ void main() {
         settingsRepository.syncSlice();
       },
     );
-    addTearDown(fixture.disposeAfterWarmups);
+    addTearDown(() => tester.runAsync(fixture.disposeAfterWarmups));
     final audioProvider = fixture.audioProvider;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
@@ -409,10 +409,13 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
-    audioProvider.uiWarmupCoordinator.schedule(
-      currentPageIndex: 2,
-      immediate: true,
-    );
+    await tester.runAsync(() async {
+      audioProvider.uiWarmupCoordinator.schedule(
+        currentPageIndex: 2,
+        immediate: true,
+      );
+      await audioProvider.uiWarmupCoordinator.waitUntilIdle();
+    });
 
     await tester.pumpWidget(
       buildAudioProviderTestApp(

@@ -4,7 +4,8 @@ class _PlaybackQueueCard extends StatelessWidget {
   const _PlaybackQueueCard({
     required this.session,
     required this.cardState,
-    required this.provider,
+    required this.library,
+    required this.playback,
     required this.index,
     required this.cardPositionsLocked,
     required this.coverCacheWidth,
@@ -14,7 +15,8 @@ class _PlaybackQueueCard extends StatelessWidget {
 
   final PlaybackSession session;
   final PlaylistSessionCardState cardState;
-  final AudioProvider provider;
+  final LibraryFacade library;
+  final PlaybackFacade playback;
   final int index;
   final bool cardPositionsLocked;
   final int? coverCacheWidth;
@@ -44,7 +46,7 @@ class _PlaybackQueueCard extends StatelessWidget {
         .map(
           (track) => (
             track: track,
-            coverPath: provider.resolvedPlaybackCoverPathForTrack(track),
+            coverPath: library.resolvedPlaybackCoverPathForTrack(track),
           ),
         )
         .where(
@@ -145,9 +147,7 @@ class _PlaybackQueueCard extends StatelessWidget {
                                 AppInteractionFeedback.trigger(
                                   AppInteractionFeedbackType.selection,
                                 );
-                                provider.playbackFacade.toggleSessionPlayPause(
-                                  session.id,
-                                );
+                                playback.toggleSessionPlayPause(session.id);
                               },
                         style: IconButton.styleFrom(
                           foregroundColor: isPlaying

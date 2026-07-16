@@ -100,6 +100,8 @@ final class AudioUiWarmupCoordinator {
     _syncPauseState();
   }
 
+  Future<void> waitUntilIdle() => _scheduler.idle;
+
   Future<void> shutdown() async {
     if (_disposed) return;
     _disposed = true;

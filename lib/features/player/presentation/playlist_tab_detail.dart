@@ -347,7 +347,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                       pageSession.currentTrackPath,
                     );
                     final coverPathFuture = _coverFutureForTrack(
-                      provider,
+                      ref.read(libraryFacadeProvider),
                       detailTrack,
                     );
 
@@ -787,8 +787,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           requestKey: session.id,
                           initialPath: provider
                               .resolvedPlaybackCoverPathForTrack(track),
-                          retryFutureBuilder: () =>
-                              _coverFutureForTrack(provider, track),
+                          retryFutureBuilder: () => _coverFutureForTrack(
+                            ref.read(libraryFacadeProvider),
+                            track,
+                          ),
                           fallbackBuilder: (_) => CoverFallbackArtwork(
                             seed:
                                 track?.displayName ?? session.currentTrackPath,

@@ -226,7 +226,7 @@ class SessionFeatureBadgeStack extends StatelessWidget {
 }
 
 Future<String?> _coverFutureForTrack(
-  AudioProvider provider,
+  LibraryFacade library,
   MusicTrack? track, {
   bool cachedOnly = false,
 }) {
@@ -235,10 +235,10 @@ Future<String?> _coverFutureForTrack(
   }
   if (cachedOnly) {
     return SynchronousFuture<String?>(
-      provider.resolvedPlaybackCoverPathForTrack(track),
+      library.resolvedPlaybackCoverPathForTrack(track),
     );
   }
-  return provider.playbackCoverPathFutureForTrack(track);
+  return library.playbackCoverPathFutureForTrack(track);
 }
 
 PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
@@ -457,8 +457,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final provider = ref.read(audioProviderFacadeProvider);
     final library = ref.read(libraryFacadeProvider);
+    final playback = ref.read(playbackFacadeProvider);
+    final settings = ref.read(settingsRepositoryProvider);
     final warmup = ref.read(audioUiWarmupCoordinatorProvider);
     final PlaylistListState listState;
     if (_isReordering) {
@@ -506,14 +507,15 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       if (cardState == null) {
         return SizedBox.shrink(key: ValueKey(session.id));
       }
-      final track = provider.trackByPath(cardState.trackPath);
-      final coverPath = provider.resolvedPlaybackCoverPathForTrack(track);
+      final track = library.trackByPath(cardState.trackPath);
+      final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
       final child = RepaintBoundary(
         child: session.isPlaybackQueue
             ? _PlaybackQueueCard(
                 session: session,
                 cardState: cardState,
-                provider: provider,
+                library: library,
+                playback: playback,
                 index: index,
                 cardPositionsLocked: cardPositionsLocked,
                 coverCacheWidth: coverCacheWidth,
@@ -535,7 +537,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 coverGeneration: listState.coverGeneration,
                 coverCacheWidth: coverCacheWidth,
                 showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
-                provider: provider,
+                library: library,
+                playback: playback,
                 index: index,
                 cardPositionsLocked: cardPositionsLocked,
                 onOpen: () => _openSessionDetail(context, session.id),
@@ -777,7 +780,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             } else if (value ==
                                 'toggle_card_positions_locked') {
                               unawaited(
-                                provider.setCardPositionsLocked(
+                                settings.setCardPositionsLocked(
                                   !cardPositionsLocked,
                                 ),
                               );

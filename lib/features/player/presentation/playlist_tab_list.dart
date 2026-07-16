@@ -206,7 +206,8 @@ class _SessionListCard extends ConsumerWidget {
     required this.coverGeneration,
     required this.coverCacheWidth,
     required this.showSubtitles,
-    required this.provider,
+    required this.library,
+    required this.playback,
     required this.index,
     required this.cardPositionsLocked,
     required this.onOpen,
@@ -219,13 +220,14 @@ class _SessionListCard extends ConsumerWidget {
   final int coverGeneration;
   final int? coverCacheWidth;
   final bool showSubtitles;
-  final AudioProvider provider;
+  final LibraryFacade library;
+  final PlaybackFacade playback;
   final int index;
   final bool cardPositionsLocked;
   final VoidCallback onOpen;
 
   void _confirmRemoveSession(BuildContext context) {
-    provider.playbackFacade.removeSession(sessionId);
+    playback.removeSession(sessionId);
     ProviderScope.containerOf(
       context,
       listen: false,
@@ -262,9 +264,15 @@ class _SessionListCard extends ConsumerWidget {
         track?.displayName ??
         path.basenameWithoutExtension(cardState.trackPath);
     final currentTrack = track;
+    final resolvedTrackPath = playback.resolveRetargetedPath(
+      cardState.trackPath,
+    );
+    final rootFolderPath = library.libraryRootForPath(resolvedTrackPath);
     final rootFolderName = track?.remoteMetadataKind == 'asmr.one'
         ? ''
-        : provider.getRootFolderName(cardState.trackPath);
+        : rootFolderPath == null
+        ? ''
+        : PathDisplay.folderName(rootFolderPath);
     final folderName = rootFolderName.isNotEmpty
         ? rootFolderName
         : (currentTrack != null && !currentTrack.isSingle)
@@ -444,10 +452,9 @@ class _SessionListCard extends ConsumerWidget {
                                               AppInteractionFeedbackType
                                                   .selection,
                                             );
-                                            provider.playbackFacade
-                                                .toggleSessionPlayPause(
-                                                  sessionId,
-                                                );
+                                            playback.toggleSessionPlayPause(
+                                              sessionId,
+                                            );
                                           },
                                     style: IconButton.styleFrom(
                                       foregroundColor: isPlaying

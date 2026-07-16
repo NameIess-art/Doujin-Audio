@@ -40,7 +40,7 @@ typedef PlaybackNotificationSynchronizer =
 /// Owns playback command serialization and native preparation coordination.
 ///
 /// Mutable playback state remains owned by [PlaybackFacade].
-final class PlaybackCommandCoordinator {
+final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
   PlaybackCommandCoordinator({
     required LibraryFacade library,
     required PlaybackFacade playback,
@@ -174,6 +174,7 @@ final class PlaybackCommandCoordinator {
     return true;
   }
 
+  @override
   Future<bool> prepareAndPlay(
     PlaybackSession session, {
     required String nextPath,
@@ -190,6 +191,7 @@ final class PlaybackCommandCoordinator {
     targetQueueIndex: targetQueueIndex,
   );
 
+  @override
   Future<bool> startSession(
     PlaybackSession session, {
     required bool shouldStartTriggerCountdown,
@@ -214,6 +216,7 @@ final class PlaybackCommandCoordinator {
     required bool forward,
   }) => _nextPathFor(session, forward: forward);
 
+  @override
   bool hasAdjacent(PlaybackSession session, {required bool forward}) =>
       _hasAdjacentPathFor(session, forward: forward);
 

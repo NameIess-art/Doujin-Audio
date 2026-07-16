@@ -78,8 +78,8 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             );
           }
           session.loadedPath = track.path;
-          _ensureSubtitleTrackLoaded(track.path);
-          _refreshNotificationSubtitleForSession(
+          _notificationFacade.ensureSubtitleTrackLoaded(track.path);
+          _notificationFacade.refreshSessionSubtitle(
             session,
             position: session.lastKnownPosition,
             syncNotification: false,
@@ -107,7 +107,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         }
       }
 
-      _syncNotificationState();
+      _notificationFacade.syncPlaybackState();
       if (_sessions.isNotEmpty) _notifyListeners();
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);

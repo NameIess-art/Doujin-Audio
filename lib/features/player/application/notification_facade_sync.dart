@@ -1,6 +1,6 @@
-part of 'audio_provider.dart';
+part of 'notification_facade.dart';
 
-extension AudioProviderNotificationSync on AudioProvider {
+extension NotificationFacadeSync on NotificationFacade {
   List<PlaybackSession> get _singleThreadNotificationSessions {
     return _notificationStateService.singleThreadNotificationSessions(
       activeSessions,
@@ -48,7 +48,7 @@ extension AudioProviderNotificationSync on AudioProvider {
 
   Future<void> _stopPlaybackKeepAliveOnPlatform() async {
     try {
-      await _powerPlatformService.stopPlaybackKeepAlive();
+      await _stopPlaybackKeepAlive();
     } catch (error, stackTrace) {
       AppLogService.error(
         'stop_playback_keep_alive_failed',
@@ -59,6 +59,7 @@ extension AudioProviderNotificationSync on AudioProvider {
   }
 
   void _syncNotificationState({bool immediateUnifiedSync = false}) {
+    if (!_synchronizationAttached) return;
     unawaited(_syncSystemMediaControlsState());
 
     if (!_notificationsEnabled) {
@@ -119,11 +120,11 @@ extension AudioProviderNotificationSync on AudioProvider {
         album: track?.groupSubtitle,
         thumbnail: coverPath ?? track?.remoteCoverUrl,
         playing: mainSession.state.playing,
-        hasPrevious: _playbackCommandCoordinator.hasAdjacent(
+        hasPrevious: _playbackCommands.hasAdjacent(
           mainSession,
           forward: false,
         ),
-        hasNext: _playbackCommandCoordinator.hasAdjacent(
+        hasNext: _playbackCommands.hasAdjacent(
           mainSession,
           forward: true,
         ),
@@ -147,7 +148,7 @@ extension AudioProviderNotificationSync on AudioProvider {
       return;
     }
     _unifiedNotificationSyncTimer = Timer(
-      AudioProvider._unifiedNotificationDebounceInterval,
+      NotificationFacade._unifiedNotificationDebounceInterval,
       () {
         _unifiedNotificationSyncTimer = null;
         _requestUnifiedPlaybackNotificationFlush();
@@ -310,11 +311,11 @@ extension AudioProviderNotificationSync on AudioProvider {
             if (subtitle != null && subtitle.isNotEmpty) 'subtitle': subtitle,
             if (artPath != null && artPath.isNotEmpty) 'artPath': artPath,
             'playing': session.state.playing,
-            'hasPrevious': _playbackCommandCoordinator.hasAdjacent(
+            'hasPrevious': _playbackCommands.hasAdjacent(
               session,
               forward: false,
             ),
-            'hasNext': _playbackCommandCoordinator.hasAdjacent(
+            'hasNext': _playbackCommands.hasAdjacent(
               session,
               forward: true,
             ),

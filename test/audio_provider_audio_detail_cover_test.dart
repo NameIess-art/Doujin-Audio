@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
@@ -84,10 +85,10 @@ void main() {
         provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
 
         expect(
-          await provider.coverPathFutureForFolder(workDir.path),
+          await provider.notificationFacade.coverPathFutureForFolder(workDir.path),
           coverPath,
         );
-        expect(await provider.coverPathFutureForTrack(track), isNull);
+        expect(await provider.notificationFacade.coverPathFutureForTrack(track), isNull);
       },
     );
   });
@@ -117,7 +118,7 @@ void main() {
         isVideo: true,
       );
 
-      expect(await provider.coverPathFutureForTrack(videoTrack), framePath);
+      expect(await provider.notificationFacade.coverPathFutureForTrack(videoTrack), framePath);
       expect(
         calls.where((call) => call.method == FileCacheMethod.resolveVideoFrame),
         hasLength(1),
@@ -154,7 +155,7 @@ void main() {
             return <String, Object?>{'ok': true, 'value': null};
           });
 
-      await provider.coverPathFutureForTrack(provider.trackByPath(trackPath));
+      await provider.notificationFacade.coverPathFutureForTrack(provider.trackByPath(trackPath));
 
       expect(
         calls.any((call) {
@@ -181,7 +182,7 @@ void main() {
             return <String, Object?>{'ok': true, 'value': const <String>[]};
           });
 
-      await provider.coverPathFutureForFolder(workScope);
+      await provider.notificationFacade.coverPathFutureForFolder(workScope);
 
       expect(
         calls.any((call) {
@@ -233,13 +234,13 @@ void main() {
           persist: false,
         );
 
-        final resolved = await provider.coverPathFutureForTrack(
+        final resolved = await provider.notificationFacade.coverPathFutureForTrack(
           provider.trackByPath(trackPath),
         );
 
         expect(resolved, isNull);
         expect(
-          await provider.coverPathFutureForFolder(workDir.path),
+          await provider.notificationFacade.coverPathFutureForFolder(workDir.path),
           coverFile.path,
         );
       },
@@ -285,7 +286,7 @@ void main() {
         persist: false,
       );
 
-      final resolved = await provider.coverPathFutureForFolder(workDir.path);
+      final resolved = await provider.notificationFacade.coverPathFutureForFolder(workDir.path);
       expect(resolved, isNull);
     });
 
@@ -344,15 +345,15 @@ void main() {
         final updatedTrack = provider.trackByPath(trackPath);
         expect(updatedTrack?.manualCoverPath, isNull);
         expect(
-          await provider.coverPathFutureForFolder(workDir.path),
+          await provider.notificationFacade.coverPathFutureForFolder(workDir.path),
           coverPath,
         );
-        expect(await provider.coverPathFutureForTrack(updatedTrack), coverPath);
+        expect(await provider.notificationFacade.coverPathFutureForTrack(updatedTrack), coverPath);
         expect(
-          await provider.playbackCoverPathFutureForTrack(updatedTrack),
+          await provider.notificationFacade.playbackCoverPathFutureForTrack(updatedTrack),
           coverPath,
         );
-        expect(provider.coverPathForTrack(updatedTrack), coverPath);
+        expect(provider.notificationFacade.coverPathForTrack(updatedTrack), coverPath);
 
         await provider.libraryFacade.setFolderManualCover(
           workDir.path,
@@ -365,11 +366,11 @@ void main() {
         expect(replacementCoverBackup['cardCoverRelativePath'], 'folder-2.jpg');
 
         expect(
-          provider.coverPathForTrack(provider.trackByPath(trackPath)),
+          provider.notificationFacade.coverPathForTrack(provider.trackByPath(trackPath)),
           replacementCoverPath,
         );
         expect(
-          await provider.playbackCoverPathFutureForTrack(
+          await provider.notificationFacade.playbackCoverPathFutureForTrack(
             provider.trackByPath(trackPath),
           ),
           replacementCoverPath,
@@ -612,7 +613,7 @@ void main() {
         expect(resolvedTrack?.displayName, '01');
         expect(pathCoordinator.rootFolderName(trackFile.path), 'New Folder');
         expect(
-          provider.coverPathForTrack(resolvedTrack, trackPath: trackFile.path),
+          provider.notificationFacade.coverPathForTrack(resolvedTrack, trackPath: trackFile.path),
           isNull,
         );
         await fixture.dispose(currentProvider: provider);
@@ -745,14 +746,14 @@ void main() {
           'New Folder',
         );
         expect(
-          restoredProvider.coverPathForTrack(
+          restoredProvider.notificationFacade.coverPathForTrack(
             restoredTrack,
             trackPath: restoredSession.currentTrackPath,
           ),
           newCoverPath,
         );
         expect(
-          await restoredProvider.coverPathFutureForFolder(newFolder.path),
+          await restoredProvider.notificationFacade.coverPathFutureForFolder(newFolder.path),
           newCoverPath,
         );
       },
@@ -979,11 +980,11 @@ void main() {
             '${Directory.systemTemp.path}'
             '${Platform.pathSeparator}missing_cover_lookup';
 
-        final future = provider.coverPathFutureForFolder(missingFolder);
+        final future = provider.notificationFacade.coverPathFutureForFolder(missingFolder);
 
-        expect(provider.isCoverPathLoadingForFolder(missingFolder), isTrue);
+        expect(provider.notificationFacade.isCoverPathLoadingForFolder(missingFolder), isTrue);
         expect(await future, isNull);
-        expect(provider.isCoverPathLoadingForFolder(missingFolder), isFalse);
+        expect(provider.notificationFacade.isCoverPathLoadingForFolder(missingFolder), isFalse);
       },
     );
 

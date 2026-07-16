@@ -77,7 +77,6 @@ void main() {
       setFocusSessionId: (sessionId) => focusedSessionId = sessionId ?? '',
       notify: () {},
       syncKeepAlive: () {},
-      syncNotificationState: () {},
       hasPlaybackToKeepAlive: () => true,
       clearUnifiedNotifications: () async {},
       stopPlaybackKeepAlive: () async {},
@@ -104,7 +103,6 @@ void main() {
       );
       var clearCount = 0;
       var keepAliveSyncCount = 0;
-      var notificationSyncCount = 0;
       String? focusedSessionId = 'stale';
       addTearDown(() async {
         await facade.dispose();
@@ -120,7 +118,6 @@ void main() {
         setFocusSessionId: (sessionId) => focusedSessionId = sessionId,
         notify: () {},
         syncKeepAlive: () => keepAliveSyncCount++,
-        syncNotificationState: () => notificationSyncCount++,
         hasPlaybackToKeepAlive: () => false,
         clearUnifiedNotifications: () async => clearCount++,
         stopPlaybackKeepAlive: () async {},
@@ -135,7 +132,6 @@ void main() {
       expect(focusedSessionId, isNull);
       expect(clearCount, 1);
       expect(keepAliveSyncCount, 1);
-      expect(notificationSyncCount, 1);
     },
   );
 }

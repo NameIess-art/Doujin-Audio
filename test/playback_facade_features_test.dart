@@ -969,6 +969,49 @@ void main() {
   });
 
   group('playback notification integration', () {
+    test(
+      'ordinary work session keeps the complete library switcher scope',
+      () async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        const first = MusicTrack(
+          path: r'C:\Audio\Work\01.mp3',
+          displayName: '01',
+          groupKey: r'C:\Audio\Work',
+          groupTitle: 'Work',
+          groupSubtitle: r'C:\Audio\Work',
+          isSingle: false,
+        );
+        const second = MusicTrack(
+          path: r'C:\Audio\Work\02.mp3',
+          displayName: '02',
+          groupKey: r'C:\Audio\Work',
+          groupTitle: 'Work',
+          groupSubtitle: r'C:\Audio\Work',
+          isSingle: false,
+        );
+        runtimeGraph.library.addTracks(
+          const <MusicTrack>[first, second],
+          notify: false,
+          persist: false,
+        );
+
+        await runtimeGraph.playback.spawnSession(first, autoPlay: false);
+        await runtimeGraph.playback.service.sessionPreparationQueue;
+
+        final session = runtimeGraph.playback.ordinarySessions.single;
+        expect(session.customQueueTracks, isNull);
+        expect(
+          runtimeGraph.audioPaths
+              .tracksForSessionSwitcher(session.id)
+              .map((track) => track.path),
+          <String>[first.path, second.path],
+        );
+      },
+    );
+
     test('passes ASMR remote cover to native session and queue', () async {
       Map<Object?, Object?>? prepareArguments;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger

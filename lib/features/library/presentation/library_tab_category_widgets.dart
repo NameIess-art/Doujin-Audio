@@ -720,13 +720,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
       AppInteractionFeedbackType.tap,
       context: context,
     );
-    unawaited(
-      playback.launchQueue(
-        <MusicTrack>[track],
-        autoPlay: true,
-        loopMode: SessionLoopMode.folderSequential,
-      ),
-    );
+    unawaited(playback.spawnSession(track, autoPlay: true));
     _showSessionCreatedSnack(
       context,
       i18n.tr('session_created', {'name': track.displayName}),

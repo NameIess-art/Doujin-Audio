@@ -81,7 +81,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _backgroundPlaybackPromptShownThisLaunch = false;
   bool _backgroundPlaybackPromptQueued = false;
   bool _autoUpdateCheckQueued = false;
-  bool _showScrollToTopButton = false;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
   late final AppUpdateFlow _updateFlow;
@@ -199,30 +198,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     unawaited(
       AppPreferences.setBool('desktop_menu_collapsed', _isMenuCollapsed),
     );
-  }
-
-  bool _handlePageScrollNotification(ScrollNotification notification) {
-    if (!Platform.isWindows || notification.metrics.axis != Axis.vertical) {
-      return false;
-    }
-
-    final shouldShow = notification.metrics.pixels > 96;
-    if (shouldShow != _showScrollToTopButton && mounted) {
-      setState(() {
-        _showScrollToTopButton = shouldShow;
-      });
-    }
-    return false;
-  }
-
-  void _scrollCurrentPageToTop() {
-    if (!Platform.isWindows) return;
-    ref.read(mainScreenControllerProvider).requestScrollToTop(_currentIndex);
-    if (_showScrollToTopButton && mounted) {
-      setState(() {
-        _showScrollToTopButton = false;
-      });
-    }
   }
 
   Future<void> _checkForUpdatesOnLaunch() async {
@@ -563,7 +538,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final generation = coordinator.beginGeneration();
     setState(() {
       _currentIndex = index;
-      _showScrollToTopButton = false;
     });
     _activePageIndex.value = index;
     if (_pageController.hasClients) {
@@ -725,44 +699,36 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      NotificationListener<ScrollNotification>(
-                        onNotification: _handlePageScrollNotification,
-                        child: isDesktop
-                            ? Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  _buildDesktopNavigation(
-                                    context,
-                                    i18n,
-                                    visibleSessions,
-                                  ),
-                                  Expanded(
-                                    child: _buildAnimatedBody(isDesktop: true),
-                                  ),
-                                ],
-                              )
-                            : Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  MobileOverlayInset(
-                                    bottomInset: mobileContentInset,
-                                    child: _buildAnimatedBody(isDesktop: false),
-                                  ),
-                                  _buildMobileBottomDock(
-                                    context,
-                                    i18n: i18n,
-                                    overlaySessions: visibleSessions,
-                                    style: bottomNavigationStyle,
-                                    tinyMode: isTinyWindow,
-                                  ),
-                                ],
-                              ),
-                      ),
-
                       if (isDesktop)
-                        _ScrollToTopButton(
-                          visible: _showScrollToTopButton,
-                          onPressed: _scrollCurrentPageToTop,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            _buildDesktopNavigation(
+                              context,
+                              i18n,
+                              visibleSessions,
+                            ),
+                            Expanded(
+                              child: _buildAnimatedBody(isDesktop: true),
+                            ),
+                          ],
+                        )
+                      else
+                        Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            MobileOverlayInset(
+                              bottomInset: mobileContentInset,
+                              child: _buildAnimatedBody(isDesktop: false),
+                            ),
+                            _buildMobileBottomDock(
+                              context,
+                              i18n: i18n,
+                              overlaySessions: visibleSessions,
+                              style: bottomNavigationStyle,
+                              tinyMode: isTinyWindow,
+                            ),
+                          ],
                         ),
 
                       if (_timerOverlayPrimed) const _ImmediateTimerScrim(),

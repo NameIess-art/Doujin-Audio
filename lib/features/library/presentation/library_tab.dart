@@ -22,7 +22,6 @@ import '../application/library_facade.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../domain/library_entry.dart';
-import '../../player/domain/playback_mode.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';

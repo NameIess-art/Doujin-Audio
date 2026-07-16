@@ -165,11 +165,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
       AppInteractionFeedbackType.tap,
       context: context,
     );
-    unawaited(
-      playback.launchQueue(<MusicTrack>[
-        firstTrack,
-      ], loopMode: SessionLoopMode.folderSequential),
-    );
+    unawaited(playback.spawnSession(firstTrack));
     _showSessionCreatedSnack(
       context,
       i18n.tr('session_created', {'name': firstTrack.displayName}),
@@ -472,11 +468,7 @@ class _TrackNodeWidget extends ConsumerWidget {
         context: context,
       );
       unawaited(
-        playback.launchQueue(
-          <MusicTrack>[track],
-          autoPlay: track.isVideo ? true : null,
-          loopMode: SessionLoopMode.folderSequential,
-        ),
+        playback.spawnSession(track, autoPlay: track.isVideo ? true : null),
       );
       _showSessionCreatedSnack(
         context,
@@ -613,11 +605,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                       AppInteractionFeedbackType.tap,
                       context: context,
                     );
-                    unawaited(
-                      playback.launchQueue(<MusicTrack>[
-                        track,
-                      ], loopMode: SessionLoopMode.folderSequential),
-                    );
+                    unawaited(playback.spawnSession(track));
                     _showSessionCreatedSnack(
                       context,
                       i18n.tr('session_created', {'name': track.displayName}),

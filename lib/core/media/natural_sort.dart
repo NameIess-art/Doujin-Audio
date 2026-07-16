@@ -37,6 +37,22 @@ int compareNatural(String left, String right, {bool caseSensitive = false}) {
   return left.compareTo(right);
 }
 
+int compareNaturalTreeEntries({
+  required bool leftIsFolder,
+  required String leftName,
+  required String leftPath,
+  required bool rightIsFolder,
+  required String rightName,
+  required String rightPath,
+}) {
+  if (leftIsFolder != rightIsFolder) {
+    return leftIsFolder ? -1 : 1;
+  }
+  final nameResult = compareNatural(leftName, rightName);
+  if (nameResult != 0) return nameResult;
+  return compareNatural(leftPath, rightPath);
+}
+
 int _consumeDigits(String value, int start) {
   var index = start;
   while (index < value.length && _isDigit(value.codeUnitAt(index))) {

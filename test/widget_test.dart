@@ -270,45 +270,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Windows shows a blurred scroll-to-top button away from top', (
-    tester,
-  ) async {
-    if (!Platform.isWindows) {
-      return;
-    }
-
-    _setLogicalTestViewSize(tester, const Size(1100, 750));
-    await _pumpAppShell(tester, includePlaybackSession: false);
-    await _tapSettingsDestination(tester);
-    await _pumpMainScreenAnimations(tester);
-
-    final buttonFinder = find.byKey(
-      const ValueKey('main_scroll_to_top_button'),
-    );
-    expect(buttonFinder, findsOneWidget);
-    expect(_scrollToTopOpacity(tester), 0);
-
-    await tester.drag(find.byType(ListView).last, const Offset(0, -520));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 160));
-
-    expect(_scrollToTopOpacity(tester), 1);
-    expect(
-      find.ancestor(
-        of: buttonFinder,
-        matching: find.byKey(const ValueKey('main_scroll_to_top_blur')),
-      ),
-      findsOneWidget,
-    );
-
-    await tester.tap(buttonFinder);
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 320));
-
-    expect(_scrollToTopOpacity(tester), 0);
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('app shell handles keyboard and dynamic portrait sizes', (
     tester,
   ) async {
@@ -741,13 +702,6 @@ void _setLogicalTestViewSize(WidgetTester tester, Size size) {
     tester.view.resetDevicePixelRatio();
     tester.view.resetPhysicalSize();
   });
-}
-
-double _scrollToTopOpacity(WidgetTester tester) {
-  final opacity = tester.widget<AnimatedOpacity>(
-    find.byKey(const ValueKey('main_scroll_to_top_opacity')),
-  );
-  return opacity.opacity;
 }
 
 Future<_AppShellHarness> _pumpAppShell(

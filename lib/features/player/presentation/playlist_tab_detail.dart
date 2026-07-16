@@ -543,6 +543,12 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
       notifier.toggleGlobalSubtitles(sessionId);
       return;
     }
+    if (!shouldRequestSubtitleOverlayPermission(
+      isAndroid: Platform.isAndroid,
+    )) {
+      notifier.toggleGlobalSubtitles(sessionId);
+      return;
+    }
 
     final i18n = ProviderScope.containerOf(
       context,

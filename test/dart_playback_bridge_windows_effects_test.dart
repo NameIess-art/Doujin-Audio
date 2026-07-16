@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:media_kit/media_kit.dart' as media;
 import 'package:nameless_audio/features/player/domain/audio_effects.dart';
@@ -490,6 +492,61 @@ void main() {
       'https://fast.example.com/media/track.m4a',
     );
   });
+
+  test('Windows resolves HTTP redirects to their final signed URI', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      if (request.uri.path == '/api/media/stream/track') {
+        await request.response.redirect(
+          Uri.parse('/signed/audio.wav?verify=token'),
+        );
+      } else {
+        request.response.statusCode = HttpStatus.ok;
+        await request.response.close();
+      }
+    });
+    final source = Uri.parse(
+      'http://${server.address.host}:${server.port}/api/media/stream/track',
+    );
+
+    final resolved = await resolveDartPlaybackRedirectForTest(source);
+
+    expect(resolved, source.resolve('/signed/audio.wav?verify=token'));
+  });
+
+  test(
+    'Windows resolves ASMR media API URLs before opening media_kit',
+    () async {
+      final platformPlayer = _FakePlatformPlayer();
+      final resolvedInputs = <Uri>[];
+      final bridge = DartPlaybackBridge(
+        playerFactory: () => media.Player(platformPlayer: platformPlayer),
+        uriResolver: (uri) async {
+          resolvedInputs.add(uri);
+          return Uri.parse(
+            'https://raw.kiko-play-niptan.one/audio.wav?verify=signed',
+          );
+        },
+      );
+      addTearDown(bridge.dispose);
+      final source = Uri.parse(
+        'https://api.asmr.one/api/media/stream/1605918/1875222',
+      );
+
+      final result = await bridge.prepareSession(
+        sessionId: 'session-1',
+        uri: source,
+        title: 'track',
+      );
+
+      expect(result.isOk, isTrue);
+      expect(resolvedInputs, <Uri>[source]);
+      expect(platformPlayer.openedUris, <String>[
+        'https://raw.kiko-play-niptan.one/audio.wav?verify=signed',
+      ]);
+    },
+  );
 }
 
 class _FakePlatformPlayer extends media.PlatformPlayer {

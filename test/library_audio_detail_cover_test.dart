@@ -7,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/app_language.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
@@ -20,30 +20,30 @@ import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'support/audio_provider_test_fixture.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
-  AudioProviderTestFixture.initialize();
+  AppRuntimeTestFixture.initialize();
 
-  late AudioProviderTestFixture fixture;
-  late AudioProvider provider;
+  late AppRuntimeTestFixture fixture;
+  late AppRuntimeGraph runtimeGraph;
   late AudioPathCoordinator pathCoordinator;
   late PlaybackNotificationService notificationService;
   late Database db;
 
   setUp(() async {
-    fixture = await AudioProviderTestFixture.create();
-    provider = fixture.provider;
+    fixture = await AppRuntimeTestFixture.create();
+    runtimeGraph = fixture.runtimeGraph;
     pathCoordinator = AudioPathCoordinator(
-      library: provider.libraryFacade,
-      playback: provider.playbackFacade,
+      library: runtimeGraph.library,
+      playback: runtimeGraph.playback,
     );
     notificationService = fixture.notificationService;
     db = fixture.database;
   });
 
   tearDown(() async {
-    await fixture.dispose(currentProvider: provider);
+    await fixture.dispose(currentGraph: runtimeGraph);
   });
 
   group('folder image isolation', () {
@@ -51,7 +51,7 @@ void main() {
       'loose image files affect the folder but not the track cover',
       () async {
         final tempDir = await Directory.systemTemp.createTemp(
-          'audio_provider_cover_',
+          'library_cover_',
         );
         addTearDown(() async {
           if (await tempDir.exists()) {
@@ -81,14 +81,23 @@ void main() {
           groupSubtitle: audioDir.path,
           isSingle: false,
         );
-        provider.addWatchedFolder(workDir.path, notify: false);
-        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+        runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+        runtimeGraph.library.addTracks(
+          <MusicTrack>[track],
+          notify: false,
+          persist: false,
+        );
 
         expect(
-          await provider.notificationFacade.coverPathFutureForFolder(workDir.path),
+          await runtimeGraph.notifications.coverPathFutureForFolder(
+            workDir.path,
+          ),
           coverPath,
         );
-        expect(await provider.notificationFacade.coverPathFutureForTrack(track), isNull);
+        expect(
+          await runtimeGraph.notifications.coverPathFutureForTrack(track),
+          isNull,
+        );
       },
     );
   });
@@ -118,7 +127,10 @@ void main() {
         isVideo: true,
       );
 
-      expect(await provider.notificationFacade.coverPathFutureForTrack(videoTrack), framePath);
+      expect(
+        await runtimeGraph.notifications.coverPathFutureForTrack(videoTrack),
+        framePath,
+      );
       expect(
         calls.where((call) => call.method == FileCacheMethod.resolveVideoFrame),
         hasLength(1),
@@ -132,8 +144,8 @@ void main() {
       const trackPath =
           'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2FDisc1%2F01.mp3';
 
-      provider.addWatchedLibrary(libraryRoot, notify: false);
-      provider.addTracks(
+      runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+      runtimeGraph.library.addTracks(
         const <MusicTrack>[
           MusicTrack(
             path: trackPath,
@@ -155,7 +167,9 @@ void main() {
             return <String, Object?>{'ok': true, 'value': null};
           });
 
-      await provider.notificationFacade.coverPathFutureForTrack(provider.trackByPath(trackPath));
+      await runtimeGraph.notifications.coverPathFutureForTrack(
+        runtimeGraph.library.trackByPath(trackPath),
+      );
 
       expect(
         calls.any((call) {
@@ -182,7 +196,7 @@ void main() {
             return <String, Object?>{'ok': true, 'value': const <String>[]};
           });
 
-      await provider.notificationFacade.coverPathFutureForFolder(workScope);
+      await runtimeGraph.notifications.coverPathFutureForFolder(workScope);
 
       expect(
         calls.any((call) {
@@ -218,8 +232,8 @@ void main() {
         final trackPath = '${nestedDir.path}${Platform.pathSeparator}01.mp3';
         await File(trackPath).writeAsBytes(const <int>[4, 5, 6]);
 
-        provider.addWatchedFolder(workDir.path, notify: false);
-        provider.addTracks(
+        runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+        runtimeGraph.library.addTracks(
           <MusicTrack>[
             MusicTrack(
               path: trackPath,
@@ -234,13 +248,16 @@ void main() {
           persist: false,
         );
 
-        final resolved = await provider.notificationFacade.coverPathFutureForTrack(
-          provider.trackByPath(trackPath),
-        );
+        final resolved = await runtimeGraph.notifications
+            .coverPathFutureForTrack(
+              runtimeGraph.library.trackByPath(trackPath),
+            );
 
         expect(resolved, isNull);
         expect(
-          await provider.notificationFacade.coverPathFutureForFolder(workDir.path),
+          await runtimeGraph.notifications.coverPathFutureForFolder(
+            workDir.path,
+          ),
           coverFile.path,
         );
       },
@@ -269,8 +286,8 @@ void main() {
       final trackPath = '${workDir.path}${Platform.pathSeparator}01.mp3';
       await File(trackPath).writeAsBytes(const <int>[4, 5, 6]);
 
-      provider.addWatchedFolder(workDir.path, notify: false);
-      provider.addTracks(
+      runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+      runtimeGraph.library.addTracks(
         <MusicTrack>[
           MusicTrack(
             path: trackPath,
@@ -286,7 +303,8 @@ void main() {
         persist: false,
       );
 
-      final resolved = await provider.notificationFacade.coverPathFutureForFolder(workDir.path);
+      final resolved = await runtimeGraph.notifications
+          .coverPathFutureForFolder(workDir.path);
       expect(resolved, isNull);
     });
 
@@ -312,8 +330,8 @@ void main() {
         await File(coverPath).writeAsBytes(const <int>[4, 5, 6]);
         await File(replacementCoverPath).writeAsBytes(const <int>[7, 8, 9]);
 
-        provider.addWatchedFolder(workDir.path, notify: false);
-        provider.addTracks(
+        runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+        runtimeGraph.library.addTracks(
           <MusicTrack>[
             MusicTrack(
               path: trackPath,
@@ -328,7 +346,7 @@ void main() {
           persist: false,
         );
 
-        await provider.libraryFacade.setFolderManualCover(
+        await runtimeGraph.library.setFolderManualCover(
           workDir.path,
           coverPath,
         );
@@ -342,20 +360,32 @@ void main() {
                 as Map<String, dynamic>;
         expect(selectedCoverBackup['cardCoverRelativePath'], 'folder.jpg');
 
-        final updatedTrack = provider.trackByPath(trackPath);
+        final updatedTrack = runtimeGraph.library.trackByPath(trackPath);
         expect(updatedTrack?.manualCoverPath, isNull);
         expect(
-          await provider.notificationFacade.coverPathFutureForFolder(workDir.path),
+          await runtimeGraph.notifications.coverPathFutureForFolder(
+            workDir.path,
+          ),
           coverPath,
         );
-        expect(await provider.notificationFacade.coverPathFutureForTrack(updatedTrack), coverPath);
         expect(
-          await provider.notificationFacade.playbackCoverPathFutureForTrack(updatedTrack),
+          await runtimeGraph.notifications.coverPathFutureForTrack(
+            updatedTrack,
+          ),
           coverPath,
         );
-        expect(provider.notificationFacade.coverPathForTrack(updatedTrack), coverPath);
+        expect(
+          await runtimeGraph.notifications.playbackCoverPathFutureForTrack(
+            updatedTrack,
+          ),
+          coverPath,
+        );
+        expect(
+          runtimeGraph.notifications.coverPathForTrack(updatedTrack),
+          coverPath,
+        );
 
-        await provider.libraryFacade.setFolderManualCover(
+        await runtimeGraph.library.setFolderManualCover(
           workDir.path,
           replacementCoverPath,
         );
@@ -366,12 +396,14 @@ void main() {
         expect(replacementCoverBackup['cardCoverRelativePath'], 'folder-2.jpg');
 
         expect(
-          provider.notificationFacade.coverPathForTrack(provider.trackByPath(trackPath)),
+          runtimeGraph.notifications.coverPathForTrack(
+            runtimeGraph.library.trackByPath(trackPath),
+          ),
           replacementCoverPath,
         );
         expect(
-          await provider.notificationFacade.playbackCoverPathFutureForTrack(
-            provider.trackByPath(trackPath),
+          await runtimeGraph.notifications.playbackCoverPathFutureForTrack(
+            runtimeGraph.library.trackByPath(trackPath),
           ),
           replacementCoverPath,
         );
@@ -456,8 +488,8 @@ void main() {
         await source.create();
         await trackFile.writeAsBytes(const <int>[1, 2, 3]);
 
-        provider.addWatchedFolder(source.path, notify: false);
-        provider.addTracks(<MusicTrack>[
+        runtimeGraph.library.addWatchedFolder(source.path, notify: false);
+        runtimeGraph.library.addTracks(<MusicTrack>[
           MusicTrack(
             path: trackFile.path,
             displayName: '01',
@@ -467,7 +499,11 @@ void main() {
             isSingle: false,
           ),
         ], notify: false);
-        provider.setLibraryTrackExcluded(source.path, trackFile.path, true);
+        runtimeGraph.library.setLibraryTrackExcluded(
+          source.path,
+          trackFile.path,
+          true,
+        );
 
         final result = await pathCoordinator.renameAudioDetailTargetToName(
           AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
@@ -476,23 +512,30 @@ void main() {
         final newFolderPath = result.detail.target.targetPath;
         final newTrackPath = '$newFolderPath${Platform.pathSeparator}01.mp3';
 
-        expect(provider.watchedFolders, contains(newFolderPath));
-        expect(provider.watchedFolders, isNot(contains(source.path)));
-        expect(provider.excludedTracksForLibrary(newFolderPath), <String>[
-          newTrackPath,
-        ]);
-        expect(provider.excludedTracksForLibrary(source.path), isEmpty);
+        expect(runtimeGraph.library.watchedFolders, contains(newFolderPath));
         expect(
-          provider
+          runtimeGraph.library.watchedFolders,
+          isNot(contains(source.path)),
+        );
+        expect(
+          runtimeGraph.library.excludedTracksForLibrary(newFolderPath),
+          <String>[newTrackPath],
+        );
+        expect(
+          runtimeGraph.library.excludedTracksForLibrary(source.path),
+          isEmpty,
+        );
+        expect(
+          runtimeGraph.library
               .libraryEntriesForLibrary(newFolderPath)
               .where((entry) => entry.path == newTrackPath),
           hasLength(1),
         );
-        expect(provider.trackByPath(newTrackPath), isNull);
+        expect(runtimeGraph.library.trackByPath(newTrackPath), isNull);
 
-        provider.clearLibraryExclusions(newFolderPath);
+        runtimeGraph.library.clearLibraryExclusions(newFolderPath);
 
-        expect(provider.trackByPath(newTrackPath), isNotNull);
+        expect(runtimeGraph.library.trackByPath(newTrackPath), isNotNull);
       },
     );
 
@@ -522,8 +565,12 @@ void main() {
           groupSubtitle: source.path,
           isSingle: false,
         );
-        provider.addWatchedFolder(source.path, notify: false);
-        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+        runtimeGraph.library.addWatchedFolder(source.path, notify: false);
+        runtimeGraph.library.addTracks(
+          <MusicTrack>[track],
+          notify: false,
+          persist: false,
+        );
 
         final prepareStarted = Completer<void>();
         final releasePrepare = Completer<void>();
@@ -585,9 +632,9 @@ void main() {
               }
             });
 
-        await provider.playbackFacade.spawnSession(track, autoPlay: false);
+        await runtimeGraph.playback.spawnSession(track, autoPlay: false);
         await prepareStarted.future;
-        final session = provider.activeSessions.single;
+        final session = runtimeGraph.playback.service.activeSessions.single;
 
         final result = await pathCoordinator.renameAudioDetailTargetToName(
           AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
@@ -604,19 +651,24 @@ void main() {
         releasePrepare.complete();
         await preparationApplied;
 
-        await provider.playbackFacade.setSessionChannelSwap(session.id, true);
+        await runtimeGraph.playback.setSessionChannelSwap(session.id, true);
 
         expect(session.currentTrackPath, newTrackPath);
-        final resolvedTrack = provider.trackByPath(trackFile.path);
+        final resolvedTrack = runtimeGraph.playbackCommands.trackByPath(
+          trackFile.path,
+        );
         expect(resolvedTrack, isNotNull);
         expect(resolvedTrack?.path, newTrackPath);
         expect(resolvedTrack?.displayName, '01');
         expect(pathCoordinator.rootFolderName(trackFile.path), 'New Folder');
         expect(
-          provider.notificationFacade.coverPathForTrack(resolvedTrack, trackPath: trackFile.path),
+          runtimeGraph.notifications.coverPathForTrack(
+            resolvedTrack,
+            trackPath: trackFile.path,
+          ),
           isNull,
         );
-        await fixture.dispose(currentProvider: provider);
+        await fixture.dispose(currentGraph: runtimeGraph);
       },
     );
 
@@ -714,46 +766,49 @@ void main() {
               }
             });
 
-        final restoredProvider = AudioProvider.test(
+        final restoredGraph = createTestRuntimeGraph(
           notificationService: notificationService,
           audioDatabaseRepository: restoredRepository,
           skipPersistence: false,
           startRuntime: true,
         );
-        addTearDown(restoredProvider.dispose);
+        addTearDown(restoredGraph.runtime.dispose);
 
         for (var i = 0; i < 100; i++) {
-          if (restoredProvider.activeSessions.isNotEmpty) {
+          if (restoredGraph.playback.service.activeSessions.isNotEmpty) {
             break;
           }
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
         await Future<void>.delayed(const Duration(milliseconds: 120));
 
-        expect(restoredProvider.activeSessions, hasLength(1));
-        final restoredSession = restoredProvider.activeSessions.single;
+        expect(restoredGraph.playback.service.activeSessions, hasLength(1));
+        final restoredSession =
+            restoredGraph.playback.service.activeSessions.single;
         expect(restoredSession.currentTrackPath, newTrackPath);
-        final restoredTrack = restoredProvider.trackByPath(
+        final restoredTrack = restoredGraph.library.trackByPath(
           restoredSession.currentTrackPath,
         );
         expect(restoredTrack, isNotNull);
         expect(restoredTrack?.displayName, '01');
         expect(
           AudioPathCoordinator(
-            library: restoredProvider.libraryFacade,
-            playback: restoredProvider.playbackFacade,
+            library: restoredGraph.library,
+            playback: restoredGraph.playback,
           ).rootFolderName(restoredSession.currentTrackPath),
           'New Folder',
         );
         expect(
-          restoredProvider.notificationFacade.coverPathForTrack(
+          restoredGraph.notifications.coverPathForTrack(
             restoredTrack,
             trackPath: restoredSession.currentTrackPath,
           ),
           newCoverPath,
         );
         expect(
-          await restoredProvider.notificationFacade.coverPathFutureForFolder(newFolder.path),
+          await restoredGraph.notifications.coverPathFutureForFolder(
+            newFolder.path,
+          ),
           newCoverPath,
         );
       },
@@ -775,31 +830,33 @@ void main() {
 
         const firstPath = '/library/first.mp3';
         const secondPath = '/library/second.mp3';
-        provider.addTracks(
+        runtimeGraph.library.addTracks(
           <MusicTrack>[track(firstPath, 'first')],
           notify: false,
           persist: false,
         );
-        await provider.libraryFacade.saveAudioDetail(
+        await runtimeGraph.library.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(firstPath),
           ).copyWith(rjCode: 'RJ111111'),
         );
-        final firstSnapshot = await provider.audioLibraryCategorySnapshot();
+        final firstSnapshot = await runtimeGraph.library
+            .audioLibraryCategorySnapshot();
         expect(firstSnapshot.entries, hasLength(1));
 
-        provider.addTracks(
+        runtimeGraph.library.addTracks(
           <MusicTrack>[track(secondPath, 'second')],
           notify: false,
           persist: false,
         );
-        await provider.libraryFacade.saveAudioDetail(
+        await runtimeGraph.library.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(secondPath),
           ).copyWith(rjCode: 'RJ222222'),
         );
 
-        final refreshedSnapshot = await provider.audioLibraryCategorySnapshot();
+        final refreshedSnapshot = await runtimeGraph.library
+            .audioLibraryCategorySnapshot();
 
         expect(refreshedSnapshot.entries, hasLength(2));
         expect(
@@ -829,7 +886,7 @@ void main() {
         final source = File('${tempDir.path}${Platform.pathSeparator}work.mp3');
         await source.writeAsBytes(const <int>[1, 2, 3]);
         final target = AudioDetailTarget.singleAudioFile(source.path);
-        provider.addTracks(
+        runtimeGraph.library.addTracks(
           <MusicTrack>[
             MusicTrack(
               path: source.path,
@@ -843,18 +900,18 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.libraryFacade.saveAudioDetail(
+        await runtimeGraph.library.saveAudioDetail(
           AudioDetail.empty(target).copyWith(rjCode: 'RJ333333'),
         );
 
-        await provider.audioLibraryCategorySnapshot();
+        await runtimeGraph.library.audioLibraryCategorySnapshot();
 
-        expect(provider.audioLibraryCategorySnapshotSync, isNull);
+        expect(runtimeGraph.library.categorySnapshot, isNull);
 
         coordinator.cancelInteraction(interactionSource);
         coordinator.flushPendingCommitsForTest();
         expect(
-          provider.audioLibraryCategorySnapshotSync?.detailFor(target)?.rjCode,
+          runtimeGraph.library.categorySnapshot?.detailFor(target)?.rjCode,
           'RJ333333',
         );
       },
@@ -874,7 +931,7 @@ void main() {
 
         final source = File('${tempDir.path}${Platform.pathSeparator}work.mp3');
         await source.writeAsBytes(const <int>[1, 2, 3]);
-        provider.addTracks(
+        runtimeGraph.library.addTracks(
           <MusicTrack>[
             MusicTrack(
               path: source.path,
@@ -889,12 +946,13 @@ void main() {
           persist: false,
         );
 
-        await provider.libraryFacade.saveAudioDetail(
+        await runtimeGraph.library.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(source.path),
           ).copyWith(rjCode: 'RJ111111'),
         );
-        final firstSnapshot = await provider.audioLibraryCategorySnapshot();
+        final firstSnapshot = await runtimeGraph.library
+            .audioLibraryCategorySnapshot();
         expect(
           firstSnapshot
               .detailFor(AudioDetailTarget.singleAudioFile(source.path))
@@ -902,13 +960,13 @@ void main() {
           'RJ111111',
         );
 
-        await provider.libraryFacade.saveAudioDetail(
+        await runtimeGraph.library.saveAudioDetail(
           AudioDetail.empty(
             AudioDetailTarget.singleAudioFile(source.path),
           ).copyWith(rjCode: 'RJ222222'),
         );
 
-        final refreshedSyncSnapshot = provider.audioLibraryCategorySnapshotSync;
+        final refreshedSyncSnapshot = runtimeGraph.library.categorySnapshot;
         expect(refreshedSyncSnapshot, isNotNull);
         expect(refreshedSyncSnapshot, isNot(same(firstSnapshot)));
         expect(
@@ -918,7 +976,8 @@ void main() {
           'RJ222222',
         );
 
-        final refreshedSnapshot = await provider.audioLibraryCategorySnapshot();
+        final refreshedSnapshot = await runtimeGraph.library
+            .audioLibraryCategorySnapshot();
         expect(
           refreshedSnapshot
               .detailFor(AudioDetailTarget.singleAudioFile(source.path))
@@ -941,7 +1000,7 @@ void main() {
           duration: const Duration(minutes: 30),
         );
 
-        final result = await provider.libraryFacade.applyDlsiteMetadata(
+        final result = await runtimeGraph.library.applyDlsiteMetadata(
           detail,
           DlsiteMetadata(
             rjCode: 'RJ222222',
@@ -980,20 +1039,28 @@ void main() {
             '${Directory.systemTemp.path}'
             '${Platform.pathSeparator}missing_cover_lookup';
 
-        final future = provider.notificationFacade.coverPathFutureForFolder(missingFolder);
+        final future = runtimeGraph.notifications.coverPathFutureForFolder(
+          missingFolder,
+        );
 
-        expect(provider.notificationFacade.isCoverPathLoadingForFolder(missingFolder), isTrue);
+        expect(
+          runtimeGraph.notifications.isCoverPathLoadingForFolder(missingFolder),
+          isTrue,
+        );
         expect(await future, isNull);
-        expect(provider.notificationFacade.isCoverPathLoadingForFolder(missingFolder), isFalse);
+        expect(
+          runtimeGraph.notifications.isCoverPathLoadingForFolder(missingFolder),
+          isFalse,
+        );
       },
     );
 
     test('playlist cover warmup skips resolved and duplicate tracks', () async {
-      provider.dispose();
+      await runtimeGraph.runtime.dispose();
       final cache = _PlaybackCoverWarmupRecordingCacheService(
         resolvedPaths: const <String>{'/library/resolved.flac'},
       );
-      provider = AudioProvider.test(
+      runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
         audioDatabaseRepository: AudioDatabaseRepository(
           database: AppDatabase.test(db),
@@ -1025,7 +1092,7 @@ void main() {
         isSingle: false,
       );
 
-      provider.uiWarmupCoordinator.warmupPlaybackCovers(<MusicTrack?>[
+      runtimeGraph.warmup.warmupPlaybackCovers(<MusicTrack?>[
         unresolved,
         duplicate,
         resolved,
@@ -1039,9 +1106,9 @@ void main() {
     });
 
     test('library cover warmup pauses during UI interaction', () async {
-      provider.dispose();
+      await runtimeGraph.runtime.dispose();
       final cache = _PlaybackCoverWarmupRecordingCacheService();
-      provider = AudioProvider.test(
+      runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
         audioDatabaseRepository: AudioDatabaseRepository(
           database: AppDatabase.test(db),
@@ -1060,7 +1127,7 @@ void main() {
       final coordinator = UiInteractionCoordinator.instance;
       coordinator.beginInteraction(interactionSource);
 
-      provider.libraryFacade.warmupCoversForTracks(const <MusicTrack?>[track]);
+      runtimeGraph.library.warmupCoversForTracks(const <MusicTrack?>[track]);
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(cache.requestedPaths, isEmpty);
 

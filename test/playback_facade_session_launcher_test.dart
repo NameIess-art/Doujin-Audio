@@ -9,7 +9,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'facade launcher forwards queues without depending on AudioProvider',
+    'facade launcher forwards queues through the playback owner',
     () async {
       final facade = PlaybackFacade.create(
         databaseRepository: AudioDatabaseRepository(),

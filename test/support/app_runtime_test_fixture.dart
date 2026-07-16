@@ -1,27 +1,123 @@
-import 'package:flutter/services.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/app/application/app_runtime_graph.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
-import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'package:nameless_audio/core/platform/power_platform_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_metadata_service.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_playback_cache_service.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/dlsite_metadata_service.dart';
+import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/library/application/library_snapshot_cache_service.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
+import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_command_runner.dart';
+import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
+import 'package:nameless_audio/features/player/application/system_media_controls_service.dart';
+import 'package:nameless_audio/features/player/application/timer_facade.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import 'runtime_test_models.dart';
+
+export 'package:nameless_audio/app/application/app_runtime_graph.dart'
+    show AppRuntimeGraph;
+
+AppRuntimeGraph createTestRuntimeGraph({
+  LibraryFacade? library,
+  PlaybackFacade? playback,
+  TimerFacade? timer,
+  NotificationFacade? notification,
+  SettingsRepository? settings,
+  PlaybackNotificationService? notificationService,
+  AudioDatabaseRepository? audioDatabaseRepository,
+  AudioDetailRepository? audioDetailRepository,
+  AudioDetailCacheService? audioDetailCacheService,
+  CoverArtworkCacheService? coverArtworkCacheService,
+  DlsiteMetadataService? dlsiteMetadataService,
+  AsmrMetadataService? asmrMetadataService,
+  AsmrPlaybackCacheService asmrPlaybackCacheService =
+      const AsmrPlaybackCacheService(),
+  NativePlaybackRepository? nativePlaybackRepository,
+  PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
+  PowerPlatformService? powerPlatformService,
+  LibraryService? libraryService,
+  LibrarySnapshotCacheService? librarySnapshotCacheService,
+  PlaybackSessionService? playbackService,
+  TimerService? timerService,
+  NotificationCoordinatorService? notificationStateService,
+  SettingsRepository? settingsRepository,
+  SystemMediaControlsService? systemMediaControlsService,
+  bool skipPersistence = true,
+  bool startRuntime = false,
+}) {
+  final database = audioDatabaseRepository ?? AudioDatabaseRepository();
+  final detailCache =
+      audioDetailCacheService ??
+      AudioDetailCacheService(
+        repository:
+            audioDetailRepository ??
+            AudioDetailRepository(databaseRepository: database),
+      );
+  final resolvedLibraryService = libraryService ?? LibraryService();
+  final resolvedLibrary =
+      library ??
+      LibraryFacade.create(
+        databaseRepository: database,
+        detailCacheService: detailCache,
+        metadataService: dlsiteMetadataService,
+        asmrMetadataService: asmrMetadataService,
+        service: resolvedLibraryService,
+        snapshotCacheService: librarySnapshotCacheService,
+        coverArtworkCacheService: coverArtworkCacheService,
+      );
+  final resolvedPlayback =
+      playback ??
+      PlaybackFacade.create(
+        databaseRepository: resolvedLibrary.databaseRepository,
+        nativeRepository: nativePlaybackRepository,
+        commandRunner: playbackCommandRunner,
+        playbackCacheService: asmrPlaybackCacheService,
+        service: playbackService,
+        systemMediaControlsService: systemMediaControlsService,
+      );
+  final graph = createAppRuntimeGraph(
+    library: resolvedLibrary,
+    playback: resolvedPlayback,
+    timer:
+        timer ??
+        TimerFacade.create(
+          service: timerService,
+          powerPlatformService: powerPlatformService,
+        ),
+    notifications:
+        notification ??
+        NotificationFacade.create(
+          service: notificationService ?? PlaybackNotificationService(),
+          stateService: notificationStateService,
+        ),
+    settings: settings ?? settingsRepository ?? SettingsRepository(),
+    persistenceEnabled: !skipPersistence,
+  );
+  if (startRuntime) unawaited(graph.runtime.start());
+  return graph;
+}
 
 const fileCacheChannel = MethodChannel(FileCacheChannel.name);
 const nativePlaybackChannel = MethodChannel(NativePlaybackChannel.name);
@@ -78,15 +174,14 @@ Future<void> pumpUntilFound(
 
 Future<void> pumpUntilLibraryTreeReady(
   WidgetTester tester,
-  AudioProvider audioProvider, {
+  LibraryFacade library, {
   Duration timeout = const Duration(seconds: 10),
   bool waitForCategorySnapshot = false,
 }) async {
   final ticks = timeout.inMilliseconds ~/ 50;
   for (var i = 0; i < ticks; i++) {
-    if (audioProvider.libraryTree.isNotEmpty &&
-        (!waitForCategorySnapshot ||
-            audioProvider.audioLibraryCategorySnapshotSync != null)) {
+    if (library.libraryTree.isNotEmpty &&
+        (!waitForCategorySnapshot || library.categorySnapshot != null)) {
       return;
     }
     await tester.pump(const Duration(milliseconds: 50));
@@ -97,8 +192,8 @@ Future<void> pumpUntilLibraryTreeReady(
   fail('Timed out waiting for library tree');
 }
 
-Widget buildAudioProviderTestApp({
-  required AudioProvider audioProvider,
+Widget buildAppRuntimeTestApp({
+  required AppRuntimeGraph runtimeGraph,
   required AudioDatabaseRepository audioDatabaseRepository,
   required NativePlaybackRepository nativePlaybackRepository,
   required PlaybackCommandRunner playbackCommandRunner,
@@ -114,8 +209,18 @@ Widget buildAudioProviderTestApp({
   final themeProvider = ThemeProvider();
   return ProviderScope(
     overrides: [
-      ...createAudioProviderOverrides(
-        audioProvider: audioProvider,
+      ...createAppRuntimeOverrides(
+        persistence: runtimeGraph.persistence,
+        runtime: runtimeGraph.runtime,
+        warmup: runtimeGraph.warmup,
+        playbackCommands: runtimeGraph.playbackCommands,
+        keepAlive: runtimeGraph.keepAlive,
+        library: runtimeGraph.library,
+        playback: runtimeGraph.playback,
+        subtitles: runtimeGraph.subtitles,
+        timer: runtimeGraph.timer,
+        notifications: runtimeGraph.notifications,
+        settings: runtimeGraph.settings,
         uiOperationService: uiOperationService,
       ),
       appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
@@ -126,8 +231,8 @@ Widget buildAudioProviderTestApp({
   );
 }
 
-final class AudioProviderWidgetTestFixture {
-  AudioProviderWidgetTestFixture({
+final class AppRuntimeWidgetTestFixture {
+  AppRuntimeWidgetTestFixture({
     CoverArtworkCacheService? coverArtworkCacheService,
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
@@ -144,19 +249,30 @@ final class AudioProviderWidgetTestFixture {
        uiOperationService = UiOperationService(),
        languageProvider = AppLanguageProvider() {
     configureSettingsRepository?.call(settingsRepository);
-    audioProvider = AudioProvider.test(
-      notificationService: notificationService,
-      audioDatabaseRepository: audioDatabaseRepository,
-      nativePlaybackRepository: nativePlaybackRepository,
-      libraryService: libraryService,
-      playbackService: playbackService,
-      timerService: timerService,
-      notificationStateService: notificationCoordinatorService,
-      settingsRepository: settingsRepository,
+    library = LibraryFacade.create(
+      databaseRepository: audioDatabaseRepository,
+      service: libraryService,
       coverArtworkCacheService: coverArtworkCacheService,
-      dlsiteMetadataService: dlsiteMetadataService,
+      metadataService: dlsiteMetadataService,
       asmrMetadataService: asmrMetadataService,
-      pageLanguageResolver: () => languageProvider.language,
+    );
+    playback = PlaybackFacade.create(
+      databaseRepository: audioDatabaseRepository,
+      nativeRepository: nativePlaybackRepository,
+      service: playbackService,
+    );
+    timer = TimerFacade.create(service: timerService);
+    notifications = NotificationFacade.create(
+      service: notificationService,
+      stateService: notificationCoordinatorService,
+    );
+    runtimeGraph = createAppRuntimeGraph(
+      library: library,
+      playback: playback,
+      timer: timer,
+      notifications: notifications,
+      settings: settingsRepository,
+      persistenceEnabled: false,
     );
   }
 
@@ -172,39 +288,16 @@ final class AudioProviderWidgetTestFixture {
   final SettingsRepository settingsRepository;
   final UiOperationService uiOperationService;
   final AppLanguageProvider languageProvider;
-  late final AudioProvider audioProvider;
+  late final LibraryFacade library;
+  late final PlaybackFacade playback;
+  late final TimerFacade timer;
+  late final NotificationFacade notifications;
+  late final AppRuntimeGraph runtimeGraph;
 
-  ({
-    PlaybackNotificationService notificationService,
-    AudioDatabaseRepository audioDatabaseRepository,
-    NativePlaybackRepository nativePlaybackRepository,
-    PlaybackCommandRunner playbackCommandRunner,
-    LibraryService libraryService,
-    PlaybackSessionService playbackService,
-    TimerService timerService,
-    NotificationCoordinatorService notificationCoordinatorService,
-    SettingsRepository settingsRepository,
-    UiOperationService uiOperationService,
-    AppLanguageProvider languageProvider,
-    AudioProvider audioProvider,
-  })
-  get dependencies => (
-    notificationService: notificationService,
-    audioDatabaseRepository: audioDatabaseRepository,
-    nativePlaybackRepository: nativePlaybackRepository,
-    playbackCommandRunner: playbackCommandRunner,
-    libraryService: libraryService,
-    playbackService: playbackService,
-    timerService: timerService,
-    notificationCoordinatorService: notificationCoordinatorService,
-    settingsRepository: settingsRepository,
-    uiOperationService: uiOperationService,
-    languageProvider: languageProvider,
-    audioProvider: audioProvider,
-  );
+  SettingsRepository get settings => settingsRepository;
 
-  Widget build(Widget child) => buildAudioProviderTestApp(
-    audioProvider: audioProvider,
+  Widget build(Widget child) => buildAppRuntimeTestApp(
+    runtimeGraph: runtimeGraph,
     audioDatabaseRepository: audioDatabaseRepository,
     nativePlaybackRepository: nativePlaybackRepository,
     playbackCommandRunner: playbackCommandRunner,
@@ -218,24 +311,33 @@ final class AudioProviderWidgetTestFixture {
     child: child,
   );
 
-  void dispose() => audioProvider.dispose();
-
-  Future<void> disposeAfterWarmups() async {
-    await audioProvider.uiWarmupCoordinator.shutdown();
-    audioProvider.dispose();
+  void dispose() {
+    unawaited(runtimeGraph.runtime.dispose());
   }
+
+  void disposeAfterWarmups() => dispose();
 }
 
-final class AudioProviderTestFixture {
-  AudioProviderTestFixture._({
+final class AppRuntimeTestFixture {
+  AppRuntimeTestFixture._({
     required this.database,
     required this.notificationService,
-    required this.provider,
+    required this.library,
+    required this.playback,
+    required this.timer,
+    required this.notifications,
+    required this.settings,
+    required this.runtimeGraph,
   });
 
   final Database database;
   final PlaybackNotificationService notificationService;
-  final AudioProvider provider;
+  final LibraryFacade library;
+  final PlaybackFacade playback;
+  final TimerFacade timer;
+  final NotificationFacade notifications;
+  final SettingsRepository settings;
+  final AppRuntimeGraph runtimeGraph;
   bool _disposed = false;
 
   static void initialize() {
@@ -245,22 +347,39 @@ final class AudioProviderTestFixture {
     databaseFactory = databaseFactoryFfi;
   }
 
-  static Future<AudioProviderTestFixture> create() async {
+  static Future<AppRuntimeTestFixture> create() async {
     final database = await databaseFactoryFfi.openDatabase(
       inMemoryDatabasePath,
     );
     await AppDatabase.createSchemaForTest(database);
     final notificationService = PlaybackNotificationService();
-    final provider = AudioProvider.test(
-      notificationService: notificationService,
-      audioDatabaseRepository: AudioDatabaseRepository(
-        database: AppDatabase.test(database),
-      ),
+    final repository = AudioDatabaseRepository(
+      database: AppDatabase.test(database),
     );
-    return AudioProviderTestFixture._(
+    final library = LibraryFacade.create(databaseRepository: repository);
+    final playback = PlaybackFacade.create(databaseRepository: repository);
+    final timer = TimerFacade.create();
+    final notifications = NotificationFacade.create(
+      service: notificationService,
+    );
+    final settings = SettingsRepository();
+    final runtimeGraph = createAppRuntimeGraph(
+      library: library,
+      playback: playback,
+      timer: timer,
+      notifications: notifications,
+      settings: settings,
+      persistenceEnabled: false,
+    );
+    return AppRuntimeTestFixture._(
       database: database,
       notificationService: notificationService,
-      provider: provider,
+      library: library,
+      playback: playback,
+      timer: timer,
+      notifications: notifications,
+      settings: settings,
+      runtimeGraph: runtimeGraph,
     );
   }
 
@@ -278,11 +397,10 @@ final class AudioProviderTestFixture {
     await database.close();
   }
 
-  Future<void> dispose({required AudioProvider currentProvider}) async {
+  Future<void> dispose({AppRuntimeGraph? currentGraph}) async {
     if (_disposed) return;
     _disposed = true;
-    await currentProvider.uiWarmupCoordinator.shutdown();
-    currentProvider.dispose();
+    await (currentGraph ?? runtimeGraph).runtime.dispose();
     await Future<void>.delayed(Duration.zero);
     final messenger =
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;

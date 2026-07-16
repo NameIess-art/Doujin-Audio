@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/application/playback_queue_coordinator.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
@@ -19,13 +19,13 @@ import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'support/audio_provider_test_fixture.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
-  AudioProviderTestFixture.initialize();
+  AppRuntimeTestFixture.initialize();
 
-  late AudioProviderTestFixture fixture;
-  late AudioProvider provider;
+  late AppRuntimeTestFixture fixture;
+  late AppRuntimeGraph runtimeGraph;
   late PlaybackQueueCoordinator queueCoordinator;
   late PlaybackTimeSegmentService timeSegments;
   late AudioPathCoordinator paths;
@@ -33,19 +33,19 @@ void main() {
   late Database db;
 
   setUp(() async {
-    fixture = await AudioProviderTestFixture.create();
-    provider = fixture.provider;
+    fixture = await AppRuntimeTestFixture.create();
+    runtimeGraph = fixture.runtimeGraph;
     paths = AudioPathCoordinator(
-      library: provider.libraryFacade,
-      playback: provider.playbackFacade,
+      library: runtimeGraph.library,
+      playback: runtimeGraph.playback,
     );
     queueCoordinator = PlaybackQueueCoordinator(
-      playback: provider.playbackFacade,
+      playback: runtimeGraph.playback,
       paths: paths,
     );
     timeSegments = PlaybackTimeSegmentService(
-      database: provider.libraryFacade.databaseRepository,
-      playback: provider.playbackFacade,
+      database: runtimeGraph.library.databaseRepository,
+      playback: runtimeGraph.playback,
       paths: paths,
     );
     notificationService = fixture.notificationService;
@@ -54,7 +54,7 @@ void main() {
 
   tearDown(() async {
     await timeSegments.dispose();
-    await fixture.dispose(currentProvider: provider);
+    await fixture.dispose(currentGraph: runtimeGraph);
   });
 
   group('playback queues', () {
@@ -78,18 +78,22 @@ void main() {
         groupSubtitle: 'Optimistic',
         isSingle: false,
       );
-      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      final queueSession = provider.playbackFacade.createPlaybackQueue(
-        'Queue 1',
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
       );
+      final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
 
-      final addFuture = provider.playbackFacade.addTrackToPlaybackQueue(
+      final addFuture = runtimeGraph.playback.addTrackToPlaybackQueue(
         queueSession.id,
         track,
       );
       await Future<void>.delayed(Duration.zero);
 
-      final optimisticSession = provider.sessionById(queueSession.id)!;
+      final optimisticSession = runtimeGraph.playback.sessionById(
+        queueSession.id,
+      )!;
       expect(optimisticSession.playbackQueue?.entries, hasLength(1));
       expect(
         PathMatcher.equalsNormalized(
@@ -132,30 +136,30 @@ void main() {
           isSingle: true,
           isVideo: true,
         );
-        provider.addTracks(
+        runtimeGraph.library.addTracks(
           const <MusicTrack>[track],
           notify: false,
           persist: false,
         );
-        final queueSession = provider.playbackFacade.createPlaybackQueue(
+        final queueSession = runtimeGraph.playback.createPlaybackQueue(
           'Queue 1',
         );
 
-        await provider.playbackFacade.addTrackToPlaybackQueue(
+        await runtimeGraph.playback.addTrackToPlaybackQueue(
           queueSession.id,
           track,
         );
-        await provider.playbackFacade.addTrackToPlaybackQueue(
+        await runtimeGraph.playback.addTrackToPlaybackQueue(
           queueSession.id,
           track,
         );
-        await provider.playbackFacade.seekSessionToNext(queueSession.id);
+        await runtimeGraph.playback.seekSessionToNext(queueSession.id);
 
         expect(preparedQueueIndexes.last, 1);
         expect(queueSession.currentQueueIndex, 1);
 
         queueSession.setOptimisticPosition(const Duration(seconds: 5));
-        await provider.playbackFacade.seekSessionToPrev(queueSession.id);
+        await runtimeGraph.playback.seekSessionToPrev(queueSession.id);
 
         expect(preparedQueueIndexes.last, 0);
         expect(queueSession.currentQueueIndex, 0);
@@ -175,40 +179,42 @@ void main() {
         groupSubtitle: 'Work',
         isSingle: false,
       );
-      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-
-      final queueSession = provider.playbackFacade.createPlaybackQueue(
-        'Queue 1',
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
       );
+
+      final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
       expect(queueSession.isPlaybackQueue, isTrue);
       expect(queueSession.currentTrackPath, isEmpty);
 
-      await provider.playbackFacade.addTrackToPlaybackQueue(
+      await runtimeGraph.playback.addTrackToPlaybackQueue(
         queueSession.id,
         track,
       );
-      await provider.playbackFacade.addTrackToPlaybackQueue(
+      await runtimeGraph.playback.addTrackToPlaybackQueue(
         queueSession.id,
         track,
       );
 
-      final updated = provider.sessionById(queueSession.id)!;
+      final updated = runtimeGraph.playback.sessionById(queueSession.id)!;
       expect(updated.playbackQueue?.entries, hasLength(2));
       expect(updated.customQueueTracks, hasLength(2));
       expect(
         PathMatcher.equalsNormalized(
           updated.currentTrackPath,
-          provider.trackByPath(track.path)!.path,
+          runtimeGraph.library.trackByPath(track.path)!.path,
         ),
         isTrue,
       );
 
-      await provider.playbackFacade.removePlaybackQueueEntry(
+      await runtimeGraph.playback.removePlaybackQueueEntry(
         queueSession.id,
         updated.playbackQueue!.entries.first.id,
       );
       expect(
-        provider.sessionById(queueSession.id)?.customQueueTracks,
+        runtimeGraph.playback.sessionById(queueSession.id)?.customQueueTracks,
         hasLength(1),
       );
     });
@@ -232,18 +238,18 @@ void main() {
           groupSubtitle: 'Manually selected files',
           isSingle: true,
         );
-        provider.addTracks(
+        runtimeGraph.library.addTracks(
           const <MusicTrack>[selected, other],
           notify: false,
           persist: false,
         );
-        final queueSession = provider.playbackFacade.createPlaybackQueue(
+        final queueSession = runtimeGraph.playback.createPlaybackQueue(
           'Queue 1',
         );
 
         await queueCoordinator.addWork(queueSession.id, selected);
 
-        final entry = provider
+        final entry = runtimeGraph.playback
             .sessionById(queueSession.id)!
             .playbackQueue!
             .entries
@@ -271,15 +277,13 @@ void main() {
         groupSubtitle: 'Work',
         isSingle: false,
       );
-      provider.addTracks(
+      runtimeGraph.library.addTracks(
         const <MusicTrack>[first, second],
         notify: false,
         persist: false,
       );
-      final queueSession = provider.playbackFacade.createPlaybackQueue(
-        'Queue 1',
-      );
-      final sourceTrack = provider.library.firstWhere(
+      final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
+      final sourceTrack = runtimeGraph.library.library.firstWhere(
         (track) => track.displayName == first.displayName,
       );
 
@@ -291,7 +295,7 @@ void main() {
 
       await queueCoordinator.addWork(queueSession.id, sourceTrack);
 
-      final entry = provider
+      final entry = runtimeGraph.playback
           .sessionById(queueSession.id)!
           .playbackQueue!
           .entries
@@ -339,24 +343,28 @@ void main() {
           isSingle: false,
         );
 
-        await provider.playbackFacade.spawnSession(loopTrack, autoPlay: false);
-        await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
+        await runtimeGraph.playback.spawnSession(loopTrack, autoPlay: false);
+        await runtimeGraph.playback.spawnSessionWithQueue(const <MusicTrack>[
           otherTrack,
           otherNextTrack,
         ], autoPlay: false);
         for (var i = 0; i < 50; i++) {
-          if (provider.activeSessions.every((session) => !session.isLoading)) {
+          if (runtimeGraph.playback.service.activeSessions.every(
+            (session) => !session.isLoading,
+          )) {
             break;
           }
           await Future<void>.delayed(const Duration(milliseconds: 10));
         }
 
-        final loopSession = provider.activeSessions.firstWhere(
-          (session) => session.currentTrackPath == loopTrack.path,
-        );
-        final otherSession = provider.activeSessions.firstWhere(
-          (session) => session.currentTrackPath == otherTrack.path,
-        );
+        final loopSession = runtimeGraph.playback.service.activeSessions
+            .firstWhere(
+              (session) => session.currentTrackPath == loopTrack.path,
+            );
+        final otherSession = runtimeGraph.playback.service.activeSessions
+            .firstWhere(
+              (session) => session.currentTrackPath == otherTrack.path,
+            );
         final trackKey = timeSegments.trackKeyForTrack(loopTrack);
         final now = DateTime(2026, 6, 2);
         final label = TimeSegmentLabel(
@@ -383,12 +391,12 @@ void main() {
 
         const otherSeekPosition = Duration(seconds: 90);
         timeSegments.handleManualSeek(otherSession.id, otherSeekPosition);
-        await provider.playbackFacade.seekSession(
+        await runtimeGraph.playback.seekSession(
           otherSession.id,
           otherSeekPosition,
         );
-        await provider.playbackFacade.seekSessionToNext(otherSession.id);
-        await provider.playbackFacade.seekSessionToPrev(otherSession.id);
+        await runtimeGraph.playback.seekSessionToNext(otherSession.id);
+        await runtimeGraph.playback.seekSessionToPrev(otherSession.id);
 
         expect(otherSession.currentTrackPath, otherTrack.path);
         expect(
@@ -478,7 +486,7 @@ void main() {
             }
           });
 
-      final restoredProvider = AudioProvider.test(
+      final restoredGraph = createTestRuntimeGraph(
         notificationService: notificationService,
         audioDatabaseRepository: restoredRepository,
         coverArtworkCacheService: _RecordingCoverArtworkCacheService(
@@ -490,43 +498,42 @@ void main() {
       );
 
       for (var i = 0; i < 100; i++) {
-        if (restoredProvider.activeSessions.isNotEmpty) break;
+        if (restoredGraph.playback.service.activeSessions.isNotEmpty) break;
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
 
-      expect(restoredProvider.activeSessions, hasLength(1));
+      expect(restoredGraph.playback.service.activeSessions, hasLength(1));
       expect(
-        restoredProvider
+        restoredGraph.playbackCommands
             .trackByPath('https://example.com/asmr/01.mp3')
             ?.toJson(),
         firstTrack.toJson(),
       );
       final siblings = AudioPathCoordinator(
-        library: restoredProvider.libraryFacade,
-        playback: restoredProvider.playbackFacade,
+        library: restoredGraph.library,
+        playback: restoredGraph.playback,
       ).tracksInSameGroup('https://example.com/asmr/01.mp3');
       expect(siblings.map((track) => track.path), <String>[
         'https://example.com/asmr/01.mp3',
         'https://example.com/asmr/02.mp3',
       ]);
-      final restoredTrack = restoredProvider.trackByPath(
+      final restoredTrack = restoredGraph.playbackCommands.trackByPath(
         'https://example.com/asmr/01.mp3',
       );
-      final coverPath = await restoredProvider.notificationFacade.coverPathFutureForTrack(
-        restoredTrack,
-      );
+      final coverPath = await restoredGraph.notifications
+          .coverPathFutureForTrack(restoredTrack);
       expect(coverPath, coverFile.path);
 
       await Future<void>.delayed(const Duration(milliseconds: 200));
-      restoredProvider.dispose();
+      await restoredGraph.runtime.dispose();
     });
 
     test(
       'ASMR playback cache keeps custom queue metadata on cached paths',
       () async {
         const cachedPath = '/cache/asmr_playback_cache/cached_01.mp3';
-        provider.dispose();
-        provider = AudioProvider.test(
+        await runtimeGraph.runtime.dispose();
+        runtimeGraph = createTestRuntimeGraph(
           notificationService: notificationService,
           audioDatabaseRepository: AudioDatabaseRepository(
             database: AppDatabase.test(db),
@@ -536,8 +543,8 @@ void main() {
           ),
         );
         paths = AudioPathCoordinator(
-          library: provider.libraryFacade,
-          playback: provider.playbackFacade,
+          library: runtimeGraph.library,
+          playback: runtimeGraph.playback,
         );
         const firstTrack = MusicTrack(
           path: 'https://example.com/asmr/01.mp3',
@@ -591,22 +598,30 @@ void main() {
               return <String, Object?>{'ok': true, 'value': null};
             });
 
-        await provider.settingsRepository.setAsmrPlaybackCacheEnabled(true);
-        await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
+        await runtimeGraph.settings.setAsmrPlaybackCacheEnabled(true);
+        await runtimeGraph.playback.spawnSessionWithQueue(const <MusicTrack>[
           firstTrack,
           secondTrack,
         ], autoPlay: false);
 
-        final session = provider.activeSessions.single;
+        final session = runtimeGraph.playback.service.activeSessions.single;
         for (var i = 0; i < 100; i++) {
-          if (provider.trackByPath(cachedPath) != null) break;
+          if (runtimeGraph.playbackCommands.trackByPath(cachedPath) != null) {
+            break;
+          }
           await Future<void>.delayed(const Duration(milliseconds: 10));
         }
 
         expect(session.currentTrackPath, firstTrack.path);
-        expect(provider.trackByPath(cachedPath)?.toJson(), firstTrack.toJson());
+        expect(
+          runtimeGraph.playbackCommands.trackByPath(cachedPath)?.toJson(),
+          firstTrack.toJson(),
+        );
         expect(paths.trackByPath(cachedPath)?.toJson(), firstTrack.toJson());
-        expect(provider.activeSessions.single.customQueueTracks, hasLength(2));
+        expect(
+          runtimeGraph.playback.service.activeSessions.single.customQueueTracks,
+          hasLength(2),
+        );
         expect(
           paths.tracksInSameGroup(cachedPath).map((track) => track.path),
           <String>[

@@ -90,7 +90,7 @@ void main() {
       expect(repository.converterBitrate, '192k');
     });
 
-    test('syncSlice publishes settings without AudioProvider', () {
+    test('syncSlice publishes settings from the owning repository', () {
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
 

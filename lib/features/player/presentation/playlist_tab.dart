@@ -13,7 +13,7 @@ import 'package:window_manager/window_manager.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/application/audio_path_coordinator.dart';
 import '../../../app/application/audio_ui_warmup_coordinator.dart';
-import '../../../app/state/audio_provider_riverpod.dart';
+import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../application/playback_facade.dart';
 import '../../settings/application/settings_state.dart';

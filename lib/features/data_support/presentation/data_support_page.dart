@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/state/audio_provider_riverpod.dart';
+import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../application/data_support_file_service.dart';
 import '../../../core/ui/ui_operation_service.dart';

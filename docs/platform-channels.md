@@ -8,7 +8,7 @@ playback and scanning behavior to their services.
 
 ```text
 Flutter UI
-  -> Riverpod playback projection / legacy AudioProvider command
+  -> Riverpod playback projection / PlaybackFacade command
   -> PlaybackFacade
   -> NativePlaybackRepository
   -> NativePlaybackBridge (Dart)
@@ -39,10 +39,9 @@ channel names, methods, arguments, and envelopes. The high-frequency
 `NativePlaybackBridge` MethodChannel/EventChannel pair remains the sole explicit
 application-layer exception.
 
-`AudioProvider` does not create a `MethodChannel`. `PlaybackFacade` owns the
-native repository lifecycle, while UI code receives only facade/state
-providers. Existing channel names, payloads, and Android playback semantics are
-unchanged by the facade migration.
+`PlaybackFacade` owns the native repository lifecycle, while UI code receives
+only facade/state providers. Existing channel names, payloads, and Android
+playback semantics are unchanged by the runtime migration.
 
 Wire names remain maintained on both Dart and Kotlin sides. Whenever a channel,
 method, or stable error code changes, update both

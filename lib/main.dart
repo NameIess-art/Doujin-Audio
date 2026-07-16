@@ -9,10 +9,10 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/localization/app_language_provider.dart';
+import 'app/application/app_runtime_graph.dart';
 import 'core/platform/app_platform.dart';
 import 'core/platform/app_window_bootstrap.dart';
-import 'app/state/audio_provider.dart';
-import 'app/state/audio_provider_riverpod.dart';
+import 'app/state/app_runtime_providers.dart';
 import 'app/presentation/main_screen.dart';
 import 'app/presentation/onboarding_page.dart';
 import 'features/asmr/application/asmr_library_controller.dart';
@@ -37,6 +37,7 @@ import 'app/theme/theme_provider.dart';
 import 'features/settings/application/app_preferences.dart';
 import 'features/settings/application/app_update_service.dart';
 import 'features/settings/application/settings_repository.dart';
+import 'features/settings/application/settings_state.dart';
 import 'core/persistence/app_database.dart';
 import 'core/widgets/global_shortcuts.dart';
 import 'core/widgets/app_error_view.dart';
@@ -119,16 +120,13 @@ Future<void> _runAudioPlayerApp() async {
     service: notificationService,
     stateService: notificationCoordinatorService,
   );
-  final audioProvider = AudioProvider(
+  final runtimeGraph = createAppRuntimeGraph(
     library: libraryFacade,
     playback: playbackFacade,
     timer: timerFacade,
-    notification: notificationFacade,
+    notifications: notificationFacade,
     settings: settingsRepository,
-    pageLanguageResolver: () => appLanguageProvider.language,
-    deferRuntimeStart: true,
   );
-  final audioRuntimeCoordinator = audioProvider.runtimeCoordinator;
   final asmrLibraryController = AsmrLibraryController(
     audioDatabaseRepository: audioDatabaseRepository,
     preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
@@ -142,7 +140,19 @@ Future<void> _runAudioPlayerApp() async {
   runApp(
     ProviderScope(
       overrides: [
-        ...createAudioProviderOverrides(audioProvider: audioProvider),
+        ...createAppRuntimeOverrides(
+          persistence: runtimeGraph.persistence,
+          runtime: runtimeGraph.runtime,
+          warmup: runtimeGraph.warmup,
+          playbackCommands: runtimeGraph.playbackCommands,
+          keepAlive: runtimeGraph.keepAlive,
+          library: libraryFacade,
+          playback: playbackFacade,
+          subtitles: runtimeGraph.subtitles,
+          timer: timerFacade,
+          notifications: notificationFacade,
+          settings: settingsRepository,
+        ),
         themeProviderInstanceProvider.overrideWithValue(themeProvider),
         appLanguageProviderInstanceProvider.overrideWithValue(
           appLanguageProvider,
@@ -159,7 +169,7 @@ Future<void> _runAudioPlayerApp() async {
   );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaited(audioRuntimeCoordinator.start());
+    unawaited(runtimeGraph.runtime.start());
     unawaited(
       asmrLibraryController.initialize(
         defaultLanguage: AsmrContentLanguage.fromAppLanguageName(

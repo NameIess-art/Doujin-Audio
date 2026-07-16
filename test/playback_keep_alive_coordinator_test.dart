@@ -12,56 +12,59 @@ import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 
 void main() {
-  test('sync mirrors retained playback into platform keep-alive state', () async {
-    final power = _RecordingPowerPlatformService();
-    final playback = PlaybackFacade.create(
-      databaseRepository: AudioDatabaseRepository(),
-    );
-    final timer = TimerFacade.create(powerPlatformService: power);
-    final notifications = NotificationFacade.create(
-      service: PlaybackNotificationService(),
-    );
-    final settings = SettingsRepository();
-    final coordinator = PlaybackKeepAliveCoordinator(
-      playback: playback,
-      timer: timer,
-      notifications: notifications,
-      settings: settings,
-      enterBackgroundWarmup: () {},
-      resumeForegroundWarmup: () {},
-    );
-    addTearDown(playback.dispose);
-    addTearDown(timer.dispose);
-    addTearDown(notifications.dispose);
-    addTearDown(settings.dispose);
+  test(
+    'sync mirrors retained playback into platform keep-alive state',
+    () async {
+      final power = _RecordingPowerPlatformService();
+      final playback = PlaybackFacade.create(
+        databaseRepository: AudioDatabaseRepository(),
+      );
+      final timer = TimerFacade.create(powerPlatformService: power);
+      final notifications = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      final settings = SettingsRepository();
+      final coordinator = PlaybackKeepAliveCoordinator(
+        playback: playback,
+        timer: timer,
+        notifications: notifications,
+        settings: settings,
+        enterBackgroundWarmup: () {},
+        resumeForegroundWarmup: () {},
+      );
+      addTearDown(playback.dispose);
+      addTearDown(timer.dispose);
+      addTearDown(notifications.dispose);
+      addTearDown(settings.dispose);
 
-    final session = PlaybackSession(
-      id: 'session-a',
-      currentTrackPath: 'track.mp3',
-      loopMode: SessionLoopMode.folderSequential,
-      nonSingleLoopMode: SessionLoopMode.folderSequential,
-      volume: 1,
-      createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
-    )..loadedPath = 'track.mp3';
-    playback.registerSession(session);
+      final session = PlaybackSession(
+        id: 'session-a',
+        currentTrackPath: 'track.mp3',
+        loopMode: SessionLoopMode.folderSequential,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: PlayerState(false, ProcessingState.ready),
+      )..loadedPath = 'track.mp3';
+      playback.registerSession(session);
 
-    coordinator.sync();
-    await Future<void>.delayed(Duration.zero);
+      coordinator.sync();
+      await Future<void>.delayed(Duration.zero);
 
-    expect(settings.keepCpuAwake, isTrue);
-    expect(timer.keepAliveHasPlayback, isTrue);
-    expect(power.calls.single.enabled, isTrue);
-    expect(power.calls.single.hasActivePlayback, isTrue);
+      expect(settings.keepCpuAwake, isTrue);
+      expect(timer.keepAliveHasPlayback, isTrue);
+      expect(power.calls.single.enabled, isTrue);
+      expect(power.calls.single.hasActivePlayback, isTrue);
 
-    playback.service.sessions.clear();
-    coordinator.sync();
-    await Future<void>.delayed(Duration.zero);
+      playback.service.sessions.clear();
+      coordinator.sync();
+      await Future<void>.delayed(Duration.zero);
 
-    expect(settings.keepCpuAwake, isFalse);
-    expect(timer.keepAliveHasPlayback, isFalse);
-    expect(power.calls.last.enabled, isFalse);
-  });
+      expect(settings.keepCpuAwake, isFalse);
+      expect(timer.keepAliveHasPlayback, isFalse);
+      expect(power.calls.last.enabled, isFalse);
+    },
+  );
 }
 
 final class _RecordingPowerPlatformService extends PowerPlatformService {
@@ -78,10 +81,7 @@ final class _RecordingPowerPlatformService extends PowerPlatformService {
     required bool keepForegroundServiceAlive,
   }) async {
     calls.add(
-      _KeepAliveCall(
-        enabled: enabled,
-        hasActivePlayback: hasActivePlayback,
-      ),
+      _KeepAliveCall(enabled: enabled, hasActivePlayback: hasActivePlayback),
     );
   }
 }

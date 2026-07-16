@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
@@ -8,6 +8,7 @@ import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/player/application/system_media_controls_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -15,7 +16,7 @@ void main() {
 
   const nativePlaybackChannel = MethodChannel(NativePlaybackChannel.name);
   late Database db;
-  late AudioProvider provider;
+  late AppRuntimeGraph runtimeGraph;
   late _FakeSystemMediaControlsService systemMediaControlsService;
   late List<Map<dynamic, dynamic>> prepareCalls;
 
@@ -36,7 +37,7 @@ void main() {
           return <String, Object?>{'ok': true, 'value': null};
         });
     systemMediaControlsService = _FakeSystemMediaControlsService();
-    provider = AudioProvider.test(
+    runtimeGraph = createTestRuntimeGraph(
       notificationService: PlaybackNotificationService(),
       audioDatabaseRepository: AudioDatabaseRepository(
         database: AppDatabase.test(db),
@@ -48,11 +49,11 @@ void main() {
   tearDown(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(nativePlaybackChannel, null);
-    provider.dispose();
+    await runtimeGraph.runtime.dispose();
     await db.close();
   });
 
-  test('system next callback reuses provider queue advancement', () async {
+  test('system next callback reuses playback queue advancement', () async {
     const first = MusicTrack(
       path: '/music/work/01.mp3',
       displayName: '01',
@@ -69,9 +70,12 @@ void main() {
       groupSubtitle: '/music/work',
       isSingle: false,
     );
-    provider.addTracks(const <MusicTrack>[first, second], persist: false);
+    runtimeGraph.library.addTracks(const <MusicTrack>[
+      first,
+      second,
+    ], persist: false);
 
-    await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
+    await runtimeGraph.playback.spawnSessionWithQueue(const <MusicTrack>[
       first,
       second,
     ], autoPlay: false);

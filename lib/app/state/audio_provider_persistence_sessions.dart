@@ -22,7 +22,10 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         }
 
         try {
-          final track = _sessionTrackForPath(session, session.currentTrackPath);
+          final track = _playbackCommandCoordinator.sessionTrackForPath(
+            session,
+            session.currentTrackPath,
+          );
           if (track == null) continue;
 
           final uri =
@@ -44,17 +47,19 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               channelSwapEnabled: session.channelSwapEnabled,
             ),
             repeatOne: session.loopMode == SessionLoopMode.single,
-            queue: _nativePlaybackQueueFor(
+            queue: _playbackCommandCoordinator.nativePlaybackQueueFor(
               session,
               currentPath: session.currentTrackPath,
             ),
-            queueStartIndex: _nativePlaybackQueueStartIndexFor(
+            queueStartIndex: _playbackCommandCoordinator
+                .nativePlaybackQueueStartIndexFor(
               session,
               currentPath: session.currentTrackPath,
             ),
             repeatAll: session.loopMode != SessionLoopMode.single,
             shuffle: session.loopMode.isShuffle,
-            candidateUris: _candidatePlaybackUrisForTrack(track),
+            candidateUris: _playbackCommandCoordinator
+                .candidatePlaybackUrisForTrack(track),
             deferPlayerCreation: !shouldPrepareNow,
           );
           if (!prepareResult.isOk) {
@@ -63,7 +68,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           final preparedSnapshot = prepareResult.valueOrNull;
           if (AppPlatform.usesDesktopPlaybackBridge &&
               preparedSnapshot != null) {
-            _handleNativePlaybackSnapshot(
+            _playbackCommandCoordinator.handleNativeSnapshot(
               preparedSnapshot.copyWith(
                 volume: session.volume,
                 speed: session.speed,
@@ -89,7 +94,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       if (snapshotValue != null) {
         for (final snapshot in snapshotValue.sessions) {
           final session = _sessions[snapshot.sessionId];
-          _handleNativePlaybackSnapshot(
+          _playbackCommandCoordinator.handleNativeSnapshot(
             session == null
                 ? snapshot
                 : snapshot.copyWith(

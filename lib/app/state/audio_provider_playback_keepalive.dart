@@ -18,8 +18,4 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
     _keepAliveCoordinator.resumeForeground();
   }
 
-  Future<bool> _activateAudioSessionForPlayback() async {
-    return _keepAliveCoordinator.activateAudioSession();
-  }
-
 }

@@ -1,6 +1,6 @@
-part of 'audio_provider.dart';
+part of 'playback_command_coordinator.dart';
 
-extension AudioProviderNativeBridge on AudioProvider {
+extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
   void _handleNativePlaybackSnapshot(NativePlaybackSnapshot snapshot) {
     final application = _playbackFacade.applyNativeSnapshot(
       snapshot,

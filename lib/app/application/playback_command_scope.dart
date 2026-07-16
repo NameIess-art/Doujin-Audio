@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+part of 'playback_command_coordinator.dart';
 
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
 String _folderKeyForTrack(MusicTrack track) {
@@ -12,7 +12,7 @@ String _folderKeyForTrack(MusicTrack track) {
   return track.groupKey;
 }
 
-extension AudioProviderPlayback on AudioProvider {
+extension PlaybackCommandScope on PlaybackCommandCoordinator {
   List<String> _crossFolderTrackPathsFor(MusicTrack? currentTrack) {
     if (currentTrack == null) return const <String>[];
     return _audioPathCoordinator

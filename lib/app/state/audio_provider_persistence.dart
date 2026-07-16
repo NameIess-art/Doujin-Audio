@@ -74,7 +74,7 @@ extension AudioProviderPersistence on AudioProvider {
     if (!_multiThreadPlaybackEnabled) {
       await AppLogService.measureAsync(
         'audio_provider_enforce_single_thread_playback',
-        _enforceSingleThreadPlayback,
+        _playbackCommandCoordinator.enforceSingleThreadPlayback,
       );
     }
     await AppLogService.measureAsync(

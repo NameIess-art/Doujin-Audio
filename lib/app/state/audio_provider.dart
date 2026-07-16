@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
-import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
@@ -13,6 +12,7 @@ import '../application/app_persistence_coordinator.dart';
 import '../application/audio_path_coordinator.dart';
 import '../application/audio_ui_warmup_coordinator.dart';
 import '../application/playback_keep_alive_coordinator.dart';
+import '../application/playback_command_coordinator.dart';
 
 import '../../core/app_language.dart';
 import '../../features/asmr/domain/asmr_download.dart';
@@ -32,7 +32,6 @@ import '../../features/library/application/cover_artwork_cache_service.dart';
 import '../../core/persistence/audio_database_repository.dart';
 import '../../features/library/application/audio_detail_repository.dart';
 import '../../features/player/application/audio_state_services.dart';
-import '../../features/asmr/application/asmr_api_service.dart';
 import '../../features/asmr/application/asmr_metadata_service.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/dlsite_metadata_service.dart';
@@ -42,7 +41,6 @@ import '../../features/library/application/library_service.dart';
 import '../../features/library/application/library_scan_models.dart';
 import '../../features/library/application/library_state_models.dart';
 import '../../features/player/application/native_playback_repository.dart';
-import '../../features/player/application/playback_queue_resolver.dart';
 import '../../core/platform/power_platform_service.dart';
 import '../../features/library/application/cover_image_cache_policy.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
@@ -62,7 +60,6 @@ export '../../features/player/domain/time_segment_label.dart';
 export '../../features/settings/application/settings_state.dart'
     show StartupPage, BottomNavigationStyle, CoverImageResolution;
 export '../../features/asmr/domain/asmr_download.dart';
-import '../../features/player/application/native_playback_bridge.dart';
 import '../../features/player/application/playback_notification_service.dart';
 import '../../features/player/application/playback_command_runner.dart';
 import '../../core/media/path_matcher.dart';
@@ -78,17 +75,12 @@ import '../../core/media/subtitle_parser.dart';
 part 'audio_provider_persistence.dart';
 part 'audio_provider_library.dart';
 part 'audio_provider_library_categories.dart';
-part 'audio_provider_playback.dart';
-part 'audio_provider_playback_sessions.dart';
 part 'audio_provider_playback_keepalive.dart';
-part 'audio_provider_playback_engine.dart';
 part 'audio_provider_notification_covers.dart';
 part 'audio_provider_notification_sync.dart';
 part 'audio_provider_notification_subtitles.dart';
 part 'audio_provider_persistence_sessions.dart';
 part 'audio_provider_state.dart';
-part 'audio_provider_native_bridge.dart';
-part 'audio_provider_queues.dart';
 
 class AudioProvider with ChangeNotifier {
   static const Duration _notificationProgressRefreshInterval = Duration(
@@ -111,6 +103,7 @@ class AudioProvider with ChangeNotifier {
   late final AppPersistenceCoordinator _persistenceCoordinator;
   late final AudioUiWarmupCoordinator _uiWarmupCoordinator;
   late final PlaybackKeepAliveCoordinator _keepAliveCoordinator;
+  late final PlaybackCommandCoordinator _playbackCommandCoordinator;
   final AppLanguage Function() _pageLanguageResolver;
 
   LibraryFacade get libraryFacade => _libraryFacade;
@@ -125,6 +118,8 @@ class AudioProvider with ChangeNotifier {
   AudioUiWarmupCoordinator get uiWarmupCoordinator => _uiWarmupCoordinator;
   PlaybackKeepAliveCoordinator get keepAliveCoordinator =>
       _keepAliveCoordinator;
+  PlaybackCommandCoordinator get playbackCommandCoordinator =>
+      _playbackCommandCoordinator;
 
   PlaybackNotificationService get _notificationService =>
       _notificationFacade.service;
@@ -132,12 +127,8 @@ class AudioProvider with ChangeNotifier {
       _libraryFacade.databaseRepository;
   AudioDetailCacheService get _audioDetailCacheService =>
       _libraryFacade.detailCacheService;
-  AsmrPlaybackCacheService get _asmrPlaybackCacheService =>
-      _playbackFacade.playbackCacheService;
   NativePlaybackRepository get _nativePlaybackRepository =>
       _playbackFacade.nativeRepository;
-  PlaybackCommandRunner get _playbackCommandRunner =>
-      _playbackFacade.commandRunner;
   PowerPlatformService get _powerPlatformService =>
       _timerFacade.powerPlatformService;
   LibraryService get _libraryService => _libraryFacade.service;
@@ -161,14 +152,7 @@ class AudioProvider with ChangeNotifier {
   bool _isReloadingPersistedState = false;
   Future<void>? _postStartupLibraryMaintenance;
 
-  final Random _random = Random();
-
   List<MusicTrack> get _library => _libraryService.library;
-  Map<String, MusicTrack> get _libraryByPath => _libraryService.libraryByPath;
-  Map<String, List<MusicTrack>> get _tracksByGroup =>
-      _libraryService.tracksByGroup;
-  List<String> get _sortedLibraryTrackPaths =>
-      _libraryService.sortedLibraryTrackPaths;
   List<String> get _watchedFolders => _libraryService.watchedFolders;
   List<String> get _watchedLibraries => _libraryService.watchedLibraries;
   Map<String, Set<String>> get _excludedLibraryFolders =>
@@ -423,6 +407,18 @@ class AudioProvider with ChangeNotifier {
       enterBackgroundWarmup: _uiWarmupCoordinator.enterBackground,
       resumeForegroundWarmup: _uiWarmupCoordinator.resumeForeground,
     );
+    _playbackCommandCoordinator = PlaybackCommandCoordinator(
+      library: _libraryFacade,
+      playback: _playbackFacade,
+      timer: _timerFacade,
+      notifications: _notificationFacade,
+      settings: _settingsRepository,
+      audioPaths: _audioPathCoordinator,
+      subtitles: _subtitleService,
+      keepAlive: _keepAliveCoordinator,
+      notifyPlaybackChanged: _notifyPlaybackChanged,
+      syncNotificationState: _syncNotificationState,
+    );
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
     _playbackFacade.configurePersistence(enabled: !skipDisposePersistence);
     _libraryFacade.attachTrackRemovalHandler(_handleLibraryTracksRemoved);
@@ -479,7 +475,7 @@ class AudioProvider with ChangeNotifier {
         if (!changed) return;
         _scheduleFocusedNotificationRefresh(session.id, immediate: true);
       },
-      onSessionCompleted: _handleSessionCompleted,
+      onSessionCompleted: _playbackCommandCoordinator.handleSessionCompleted,
       onSessionDurationChanged: (sessionId) {
         _scheduleFocusedNotificationRefresh(sessionId);
       },
@@ -488,25 +484,34 @@ class AudioProvider with ChangeNotifier {
         _syncNotificationState();
       },
     );
-    _playbackFacade.attachPlaybackQueueSynchronizer(_syncPlaybackQueueSession);
+    _playbackFacade.attachPlaybackQueueSynchronizer(
+      _playbackCommandCoordinator.syncPlaybackQueueSession,
+    );
     _playbackFacade.attachPlaybackCommands(
-      prepareSession: _prepareAndPlay,
-      pauseSession: _pauseSessionPlayback,
-      startSession: _startSessionPlayback,
+      prepareSession: _playbackCommandCoordinator.prepareAndPlay,
+      pauseSession: _playbackCommandCoordinator.pauseSession,
+      startSession: _playbackCommandCoordinator.startSession,
       resolveAdvance: (session, {required forward}) =>
-          _nextPathFor(session, forward: forward),
+          _playbackCommandCoordinator.resolveAdvance(
+            session,
+            forward: forward,
+          ),
       hasAdjacent: (session, {required forward}) =>
-          _hasAdjacentPathFor(session, forward: forward),
+          _playbackCommandCoordinator.hasAdjacent(
+            session,
+            forward: forward,
+          ),
     );
     _playbackFacade.attachLoopModeSynchronizer((session, mode) {
       return _nativePlaybackRepository.setRepeatOne(
         session.id,
         mode == SessionLoopMode.single,
-        queue: _nativePlaybackQueueFor(
+        queue: _playbackCommandCoordinator.nativePlaybackQueueFor(
           session,
           currentPath: session.currentTrackPath,
         ),
-        queueStartIndex: _nativePlaybackQueueStartIndexFor(
+        queueStartIndex: _playbackCommandCoordinator
+            .nativePlaybackQueueStartIndexFor(
           session,
           currentPath: session.currentTrackPath,
         ),
@@ -517,10 +522,13 @@ class AudioProvider with ChangeNotifier {
     _timerFacade.attachRuntime(
       hasPlayingSession: () => _hasPlayingSession,
       sessions: () => _sessions.values,
-      pauseSession: _pauseSessionPlayback,
-      activateAudioSession: _activateAudioSessionForPlayback,
+      pauseSession: _playbackCommandCoordinator.pauseSession,
+      activateAudioSession: _keepAliveCoordinator.activateAudioSession,
       resumeSession: (session) =>
-          _startSessionPlayback(session, shouldStartTriggerCountdown: false),
+          _playbackCommandCoordinator.startSession(
+            session,
+            shouldStartTriggerCountdown: false,
+          ),
       onStateChanged: () {
         _syncKeepCpuAwake();
         _notifyListeners();
@@ -567,7 +575,8 @@ class AudioProvider with ChangeNotifier {
       hasPlaybackToKeepAlive: () => _hasPlaybackToKeepAlive,
       clearUnifiedNotifications: _clearUnifiedPlaybackNotificationsOnPlatform,
       stopPlaybackKeepAlive: _stopPlaybackKeepAliveOnPlatform,
-      preferredSessionId: () => _preferredSingleSessionId,
+      preferredSessionId: () =>
+          _playbackCommandCoordinator.preferredSingleSessionId,
       notifyNotificationChanged: _notifyNotificationChanged,
     );
     _libraryFacade.attachCoverArtworkCacheService(
@@ -599,7 +608,7 @@ class AudioProvider with ChangeNotifier {
       progressUpdates: _nativePlaybackRepository.progressUpdates,
       startListening: _nativePlaybackRepository.startListening,
       stopListening: _nativePlaybackRepository.stopListening,
-      onSnapshot: _handleNativePlaybackSnapshot,
+      onSnapshot: _playbackCommandCoordinator.handleNativeSnapshot,
       onProgress: _playbackFacade.applyNativeProgress,
       onStart: _persistenceCoordinator.loadPersistedState,
       onEnterBackground: syncKeepAliveBeforeBackground,

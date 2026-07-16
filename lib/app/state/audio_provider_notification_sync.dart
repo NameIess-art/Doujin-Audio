@@ -119,8 +119,14 @@ extension AudioProviderNotificationSync on AudioProvider {
         album: track?.groupSubtitle,
         thumbnail: coverPath ?? track?.remoteCoverUrl,
         playing: mainSession.state.playing,
-        hasPrevious: _hasAdjacentPathFor(mainSession, forward: false),
-        hasNext: _hasAdjacentPathFor(mainSession, forward: true),
+        hasPrevious: _playbackCommandCoordinator.hasAdjacent(
+          mainSession,
+          forward: false,
+        ),
+        hasNext: _playbackCommandCoordinator.hasAdjacent(
+          mainSession,
+          forward: true,
+        ),
         position: mainSession.position,
         duration: duration == Duration.zero ? null : duration,
       ),
@@ -304,8 +310,14 @@ extension AudioProviderNotificationSync on AudioProvider {
             if (subtitle != null && subtitle.isNotEmpty) 'subtitle': subtitle,
             if (artPath != null && artPath.isNotEmpty) 'artPath': artPath,
             'playing': session.state.playing,
-            'hasPrevious': _hasAdjacentPathFor(session, forward: false),
-            'hasNext': _hasAdjacentPathFor(session, forward: true),
+            'hasPrevious': _playbackCommandCoordinator.hasAdjacent(
+              session,
+              forward: false,
+            ),
+            'hasNext': _playbackCommandCoordinator.hasAdjacent(
+              session,
+              forward: true,
+            ),
           };
         })
         .toList(growable: false);

@@ -931,7 +931,7 @@ void main() {
         );
 
         final coverGenerationBeforeReload = provider.coverGeneration;
-        await provider.reloadPersistedStateAfterBackupRestore();
+        await provider.persistenceCoordinator.reloadPersistedState();
 
         expect(clearAllCalls, greaterThanOrEqualTo(1));
         expect(

@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../application/app_persistence_coordinator.dart';
+import '../application/persisted_state_reloader.dart';
 import '../application/audio_path_coordinator.dart';
 import '../application/playback_queue_coordinator.dart';
 import '../application/audio_runtime_coordinator.dart';
@@ -24,21 +26,14 @@ import '../../features/settings/application/app_update_service.dart';
 import '../../features/settings/application/settings_command_controller.dart';
 import '../../features/settings/application/settings_repository.dart';
 import '../../features/settings/application/settings_state.dart';
+import '../../features/data_support/application/backup_restore_coordinator.dart';
+import '../../features/data_support/application/data_support_file_service.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
 import '../../features/asmr/application/asmr_playback_coordinator.dart';
 import '../../features/asmr/domain/asmr_models.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
-
-// AudioProvider remains the single mutable UI facade. Riverpod providers below
-// only expose repositories, service slices, and derived UI projections; they
-// must not introduce a second mutable source for playback or library state.
-final audioProviderFacadeProvider = Provider<AudioProvider>((ref) {
-  throw UnimplementedError(
-    'audioProviderFacadeProvider must be overridden in ProviderScope.',
-  );
-});
 
 final themeProviderInstanceProvider = Provider<ThemeProvider>((ref) {
   throw UnimplementedError(
@@ -73,12 +68,40 @@ final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
   );
 });
 
+final appPersistenceCoordinatorProvider = Provider<AppPersistenceCoordinator>((
+  ref,
+) {
+  throw UnimplementedError(
+    'appPersistenceCoordinatorProvider must be overridden in ProviderScope.',
+  );
+});
+
+final dataSupportFileServiceProvider = Provider<DataSupportFileService>((ref) {
+  return DataSupportFileService(
+    appUpdateService: ref.watch(appUpdateServiceProvider),
+  );
+});
+
 final asmrDownloadManagerProvider = Provider<AsmrDownloadManager?>((ref) {
   return null;
 });
 
 final asmrLibraryControllerProvider = Provider<AsmrLibraryController?>((ref) {
   return null;
+});
+
+final backupRestoreCoordinatorProvider = Provider<BackupRestoreCoordinator>((
+  ref,
+) {
+  final reloaders = <PersistedStateReloader>[
+    ref.watch(appPersistenceCoordinatorProvider),
+  ];
+  final asmr = ref.watch(asmrLibraryControllerProvider);
+  if (asmr != null) reloaders.add(asmr);
+  return BackupRestoreCoordinator(
+    fileService: ref.watch(dataSupportFileServiceProvider),
+    reloaders: reloaders,
+  );
 });
 
 final asmrLibraryGlobalStateProvider =
@@ -573,7 +596,9 @@ List<Override> createAudioProviderOverrides({
   UiOperationService? uiOperationService,
 }) {
   return <Override>[
-    audioProviderFacadeProvider.overrideWithValue(audioProvider),
+    appPersistenceCoordinatorProvider.overrideWithValue(
+      audioProvider.persistenceCoordinator,
+    ),
     audioRuntimeCoordinatorProvider.overrideWithValue(
       audioProvider.runtimeCoordinator,
     ),

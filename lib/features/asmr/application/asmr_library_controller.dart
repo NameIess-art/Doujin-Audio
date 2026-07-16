@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+import '../../../app/application/persisted_state_reloader.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/persistence/audio_database_repository.dart';
@@ -221,7 +222,7 @@ typedef _AsmrWorkRequestKey = ({int workId, int contentEpoch, int authEpoch});
 typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
 
 class AsmrLibraryController extends ChangeNotifier
-    implements AsmrPlaybackSource {
+    implements AsmrPlaybackSource, PersistedStateReloader {
   AsmrLibraryController({
     AsmrApiService? apiService,
     AsmrAuthService? authService,
@@ -576,7 +577,8 @@ class AsmrLibraryController extends ChangeNotifier
     }
   }
 
-  Future<void> reloadPersistedStateAfterBackupRestore() async {
+  @override
+  Future<void> reloadPersistedState() async {
     _initialized = false;
     _worksByCategory.clear();
     _detailCache.clear();

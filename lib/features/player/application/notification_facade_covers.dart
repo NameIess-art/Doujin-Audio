@@ -1,18 +1,21 @@
-part of 'audio_provider.dart';
+part of 'notification_facade.dart';
 
-extension AudioProviderNotificationCovers on AudioProvider {
+extension NotificationFacadeCovers on NotificationFacade {
   Future<void> _resumeNotificationSession(PlaybackSession session) async {
     if (session.isLoading || session.state.playing) return;
     _notificationFocusSessionId = session.id;
     if (session.state.processingState == ProcessingState.completed) {
-      await _prepareAndPlay(
+      await _playbackCommands.prepareAndPlay(
         session,
         nextPath: session.currentTrackPath,
         forceStartAtZero: true,
       );
       return;
     }
-    await _startSessionPlayback(session, shouldStartTriggerCountdown: true);
+    await _playbackCommands.startSession(
+      session,
+      shouldStartTriggerCountdown: true,
+    );
   }
 
   String _notificationTitleForSession(PlaybackSession session) {

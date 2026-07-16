@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/app/application/playback_queue_coordinator.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
@@ -511,7 +512,7 @@ void main() {
       final restoredTrack = restoredProvider.trackByPath(
         'https://example.com/asmr/01.mp3',
       );
-      final coverPath = await restoredProvider.coverPathFutureForTrack(
+      final coverPath = await restoredProvider.notificationFacade.coverPathFutureForTrack(
         restoredTrack,
       );
       expect(coverPath, coverFile.path);

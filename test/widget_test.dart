@@ -106,6 +106,7 @@ void main() {
       find.text(harness.language.tr('asmr_category_collected')),
       findsOneWidget,
     );
+    expect(find.text(harness.language.tr('loading_dot')), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

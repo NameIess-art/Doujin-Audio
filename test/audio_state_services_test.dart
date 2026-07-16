@@ -652,16 +652,51 @@ void main() {
           '$albumDocument/document/primary%3AMusic%2FAlbum%2F01.mp3',
         };
 
-      final removedFolders = <String>[];
-      await service.removeLibrary(
-        root,
-        removeFolder: (folderPath) async => removedFolders.add(folderPath),
-      );
+      final removal = service.removeLibrary(root);
 
-      expect(removedFolders, <String>[albumTree]);
+      expect(removal.removedFolderPaths, <String>[albumTree]);
+      expect(removal.changed, isTrue);
+      expect(service.watchedFolders, isEmpty);
       expect(service.watchedLibraries, isEmpty);
       expect(service.excludedLibraryFolders, isEmpty);
       expect(service.excludedLibraryTracks, isEmpty);
+    });
+
+    test('folder exclusion reports changed entry paths with one revision', () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      const root = '/library/root';
+      const folder = '$root/work';
+      const trackPath = '$folder/01.mp3';
+      service.replaceLibraryEntries(<LibraryEntry>[
+        LibraryEntry.folder(
+          libraryPath: root,
+          path: folder,
+          displayName: 'work',
+          parentPath: root,
+          state: LibraryEntryState.active,
+        ),
+        LibraryEntry.track(
+          libraryPath: root,
+          track: const MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: folder,
+            groupTitle: 'work',
+            groupSubtitle: folder,
+            isSingle: false,
+          ),
+          parentPath: folder,
+          state: LibraryEntryState.active,
+        ),
+      ]);
+      final beforeRevision = service.structureRevision;
+
+      final mutation = service.setLibraryFolderExcluded(root, folder, true);
+
+      expect(mutation.changed, isTrue);
+      expect(mutation.affectedEntryPaths, <String>[folder, trackPath]);
+      expect(service.structureRevision, beforeRevision + 1);
     });
 
     test('library entry pruning retains normalized equivalent file paths', () {

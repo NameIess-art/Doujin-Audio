@@ -143,6 +143,16 @@ class AudioDetailCacheService {
     _bumpRevision();
   }
 
+  Future<void> deleteMany(Iterable<AudioDetailTarget> targets) async {
+    final values = targets.toList(growable: false);
+    if (values.isEmpty) return;
+    await _repository.deleteMany(values);
+    for (final target in values) {
+      _remove(target);
+    }
+    _bumpRevision();
+  }
+
   Future<AudioDetailSaveResult?> prefillRjCodeFromText(
     AudioDetailTarget target,
     String text,

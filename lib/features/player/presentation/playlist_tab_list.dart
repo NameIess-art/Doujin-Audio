@@ -264,15 +264,9 @@ class _SessionListCard extends ConsumerWidget {
         track?.displayName ??
         path.basenameWithoutExtension(cardState.trackPath);
     final currentTrack = track;
-    final resolvedTrackPath = playback.resolveRetargetedPath(
-      cardState.trackPath,
-    );
-    final rootFolderPath = library.libraryRootForPath(resolvedTrackPath);
-    final rootFolderName = track?.remoteMetadataKind == 'asmr.one'
-        ? ''
-        : rootFolderPath == null
-        ? ''
-        : PathDisplay.folderName(rootFolderPath);
+    final rootFolderName = ref
+        .read(audioPathCoordinatorProvider)
+        .rootFolderName(cardState.trackPath);
     final folderName = rootFolderName.isNotEmpty
         ? rootFolderName
         : (currentTrack != null && !currentTrack.isSingle)

@@ -9,10 +9,6 @@ void _logAudioProviderPersistenceFailure(Object error, StackTrace stackTrace) {
 }
 
 extension AudioProviderPersistence on AudioProvider {
-  Future<void> reloadPersistedStateAfterBackupRestore() {
-    return _persistenceCoordinator.reloadPersistedState();
-  }
-
   Future<void> _beforePersistenceReset() async {
     _isReloadingPersistedState = true;
     _isInitialized = false;

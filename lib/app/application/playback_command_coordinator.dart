@@ -33,6 +33,7 @@ part 'playback_command_transport.dart';
 part 'playback_command_preparation.dart';
 part 'playback_command_queue_sync.dart';
 part 'playback_command_native_mapper.dart';
+part 'playback_command_restore.dart';
 
 typedef PlaybackNotificationSynchronizer =
     void Function({bool immediateUnifiedSync});
@@ -238,11 +239,17 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
     required String currentPath,
   }) => _nativePlaybackQueueStartIndexFor(session, currentPath: currentPath);
 
-  MusicTrack? sessionTrackForPath(
-    PlaybackSession session,
-    String trackPath,
-  ) => _sessionTrackForPath(session, trackPath);
+  MusicTrack? sessionTrackForPath(PlaybackSession session, String trackPath) =>
+      _sessionTrackForPath(session, trackPath);
 
   List<Uri>? candidatePlaybackUrisForTrack(MusicTrack? track) =>
       _candidatePlaybackUrisForTrack(track);
+
+  Future<void> restorePersistedRuntime(
+    List<PlaybackSession> restoredSessions, {
+    required String? focusedSessionId,
+  }) => _restorePersistedRuntime(
+    restoredSessions,
+    focusedSessionId: focusedSessionId,
+  );
 }

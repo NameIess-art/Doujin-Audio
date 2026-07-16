@@ -409,7 +409,10 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
-    audioProvider.scheduleUiWarmup(currentPageIndex: 2, immediate: true);
+    audioProvider.uiWarmupCoordinator.schedule(
+      currentPageIndex: 2,
+      immediate: true,
+    );
 
     await tester.pumpWidget(
       buildAudioProviderTestApp(

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/audio_path_coordinator.dart';
 import '../application/audio_runtime_coordinator.dart';
+import '../application/audio_ui_warmup_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/notification_facade.dart';
@@ -202,6 +203,14 @@ final audioRuntimeCoordinatorProvider = Provider<AudioRuntimeCoordinator>((
 ) {
   throw UnimplementedError(
     'audioRuntimeCoordinatorProvider must be overridden in ProviderScope.',
+  );
+});
+
+final audioUiWarmupCoordinatorProvider = Provider<AudioUiWarmupCoordinator>((
+  ref,
+) {
+  throw UnimplementedError(
+    'audioUiWarmupCoordinatorProvider must be overridden in ProviderScope.',
   );
 });
 
@@ -521,6 +530,9 @@ List<Override> createAudioProviderOverrides({
     audioProviderFacadeProvider.overrideWithValue(audioProvider),
     audioRuntimeCoordinatorProvider.overrideWithValue(
       audioProvider.runtimeCoordinator,
+    ),
+    audioUiWarmupCoordinatorProvider.overrideWithValue(
+      audioProvider.uiWarmupCoordinator,
     ),
     libraryFacadeProvider.overrideWithValue(audioProvider.libraryFacade),
     playbackFacadeProvider.overrideWithValue(audioProvider.playbackFacade),

@@ -11,6 +11,7 @@ import 'package:path/path.dart' as path;
 import 'package:window_manager/window_manager.dart';
 
 import '../../../app/localization/app_language_provider.dart';
+import '../../../app/application/audio_ui_warmup_coordinator.dart';
 import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
@@ -357,7 +358,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _schedulePlaybackCoverWarmup(
     PlaylistListState listState,
-    AudioProvider provider,
+    LibraryFacade library,
+    AudioUiWarmupCoordinator warmup,
   ) {
     if (_isReordering || !listState.isInitialized || !listState.hasSessions) {
       return;
@@ -381,7 +383,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       }
       final trackPath = cardState?.trackPath ?? session.currentTrackPath;
       signatureParts.add(trackPath);
-      tracks.add(provider.trackByPath(trackPath));
+      tracks.add(library.trackByPath(trackPath));
     }
     if (tracks.isEmpty) return;
     final signature = signatureParts.join('|');
@@ -393,7 +395,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           _lastPlaybackCoverWarmupSignature != signature) {
         return;
       }
-      provider.warmupPlaybackCoversForTracks(tracks);
+      warmup.warmupPlaybackCovers(tracks);
     });
   }
 
@@ -456,6 +458,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final provider = ref.read(audioProviderFacadeProvider);
+    final library = ref.read(libraryFacadeProvider);
+    final warmup = ref.read(audioUiWarmupCoordinatorProvider);
     final PlaylistListState listState;
     if (_isReordering) {
       listState = _reorderSnapshot ?? ref.read(playlistListUiProvider);
@@ -477,7 +481,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         : (_isActive
               ? ref.watch(subtitleSettingsProvider)
               : ref.read(subtitleSettingsProvider));
-    _schedulePlaybackCoverWarmup(listState, provider);
+    _schedulePlaybackCoverWarmup(listState, library, warmup);
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final coverCacheWidth = coverCacheWidthForResolution(
       settingsState.coverImageResolution,

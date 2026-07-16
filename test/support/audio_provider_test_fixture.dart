@@ -217,7 +217,7 @@ final class AudioProviderWidgetTestFixture {
   void dispose() => audioProvider.dispose();
 
   Future<void> disposeAfterWarmups() async {
-    await audioProvider.shutdownUiWarmupsForTesting();
+    await audioProvider.uiWarmupCoordinator.shutdown();
     audioProvider.dispose();
   }
 }
@@ -277,7 +277,7 @@ final class AudioProviderTestFixture {
   Future<void> dispose({required AudioProvider currentProvider}) async {
     if (_disposed) return;
     _disposed = true;
-    await currentProvider.shutdownUiWarmupsForTesting();
+    await currentProvider.uiWarmupCoordinator.shutdown();
     currentProvider.dispose();
     await Future<void>.delayed(Duration.zero);
     final messenger =

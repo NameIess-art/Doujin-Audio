@@ -13,11 +13,8 @@ class NotificationCoordinatorService {
   bool keepAliveSyncDeferred = false;
   String? queuedNotificationRefreshSessionId;
   bool notificationsDismissedWhilePaused = false;
-  Timer? deferredWarmupTimer;
   Timer? notificationActionRefreshTimer;
   Timer? notificationActionGuardTimeout;
-  final WarmupScheduler warmupScheduler = WarmupScheduler();
-  int warmupGeneration = 0;
   final AudioStateSlice<NotificationState> slice =
       AudioStateSlice<NotificationState>(const NotificationState());
 

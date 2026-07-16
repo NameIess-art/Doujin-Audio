@@ -70,12 +70,7 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
 
   void syncKeepAliveBeforeBackground() {
     if (AppPlatform.isAndroid) {
-      _deferredWarmupTimer?.cancel();
-      _deferredWarmupTimer = null;
-      _warmupGeneration += 1;
-      _warmupPausedForLifecycle = true;
-      _warmupScheduler.clear();
-      _syncWarmupPauseState();
+      _uiWarmupCoordinator.enterBackground();
       compactCoverImageCacheForBackground();
     }
     _keepAliveHasPlayback = _hasPlaybackToKeepAlive;
@@ -102,8 +97,7 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
 
   void syncKeepAliveAfterForegroundResume() {
     if (!AppPlatform.isAndroid) return;
-    _warmupPausedForLifecycle = false;
-    _syncWarmupPauseState();
+    _uiWarmupCoordinator.resumeForeground();
     applyCoverImageCachePolicy(_settingsRepository.coverImageResolution);
   }
 

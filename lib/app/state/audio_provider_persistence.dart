@@ -15,8 +15,9 @@ extension AudioProviderPersistence on AudioProvider {
     await _resetRuntimeStateForPersistenceReload();
     if (_isDisposed) return;
     await _loadData();
+    _uiWarmupCoordinator.resumeForeground();
     _clearResolvedCoverPaths();
-    scheduleUiWarmup(currentPageIndex: 0, immediate: true);
+    _uiWarmupCoordinator.schedule(currentPageIndex: 0, immediate: true);
     _notifyListeners();
   }
 
@@ -30,8 +31,7 @@ extension AudioProviderPersistence on AudioProvider {
     _playbackFacade.cancelScheduledPersistence();
     _scanProgressNotifyTimer?.cancel();
     _scanProgressNotifyTimer = null;
-    _deferredWarmupTimer?.cancel();
-    _deferredWarmupTimer = null;
+    _uiWarmupCoordinator.enterBackground();
     _notificationProgressRefreshTimer?.cancel();
     _notificationProgressRefreshTimer = null;
     _unifiedNotificationSyncTimer?.cancel();
@@ -299,7 +299,7 @@ extension AudioProviderPersistence on AudioProvider {
     } finally {
       if (isCurrentLoad()) {
         // Phase 7: Deferred warmup, keep-alive sync, final UI update.
-        scheduleUiWarmup(currentPageIndex: 0);
+        _uiWarmupCoordinator.schedule(currentPageIndex: 0);
         _syncKeepCpuAwake();
         await _ensureLibraryCardSnapshot(notifyOnCommit: false);
         _settingsInitialized = true;

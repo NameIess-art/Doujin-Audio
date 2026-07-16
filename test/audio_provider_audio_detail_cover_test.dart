@@ -1021,7 +1021,7 @@ void main() {
         isSingle: false,
       );
 
-      provider.warmupPlaybackCoversForTracks(<MusicTrack?>[
+      provider.uiWarmupCoordinator.warmupPlaybackCovers(<MusicTrack?>[
         unresolved,
         duplicate,
         resolved,

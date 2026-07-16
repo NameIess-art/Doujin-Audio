@@ -165,15 +165,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _rememberCurrentViewMetrics();
-      final provider = ref.read(audioProviderFacadeProvider);
+      final warmup = ref.read(audioUiWarmupCoordinatorProvider);
       unawaited(_syncGlobalSubtitleOverlay());
       unawaited(_consumePendingNotificationSession());
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
-        provider.scheduleUiWarmup(
-          currentPageIndex: _currentIndex,
-          immediate: true,
-        );
+        warmup.schedule(currentPageIndex: _currentIndex, immediate: true);
       });
     });
   }
@@ -350,8 +347,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (!mounted) return;
       _restoreActivePageAfterMetricsChange();
       ref
-          .read(audioProviderFacadeProvider)
-          .scheduleUiWarmup(currentPageIndex: _currentIndex, immediate: true);
+          .read(audioUiWarmupCoordinatorProvider)
+          .schedule(currentPageIndex: _currentIndex, immediate: true);
     });
   }
 
@@ -539,11 +536,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
     unawaited(
       ref.read(audioRuntimeCoordinatorProvider).resumeForeground().then((_) {
         if (!mounted) return;
-        final provider = ref.read(audioProviderFacadeProvider);
-        provider.scheduleUiWarmup(
-          currentPageIndex: _currentIndex,
-          immediate: true,
-        );
+        final warmup = ref.read(audioUiWarmupCoordinatorProvider);
+        warmup.schedule(currentPageIndex: _currentIndex, immediate: true);
       }),
     );
     if (!_notificationSettingsOpened) {
@@ -558,7 +552,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       ref.read(mainScreenControllerProvider).requestScrollToTop(index);
       return;
     }
-    final provider = ref.read(audioProviderFacadeProvider);
+    final warmup = ref.read(audioUiWarmupCoordinatorProvider);
     if (withFeedback) {
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     }
@@ -591,7 +585,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         priority: 0,
         task: () async {
           if (!mounted || _currentIndex != index) return;
-          provider.scheduleUiWarmup(currentPageIndex: index, immediate: true);
+          warmup.schedule(currentPageIndex: index, immediate: true);
         },
       );
     });

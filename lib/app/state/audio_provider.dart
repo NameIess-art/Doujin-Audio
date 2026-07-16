@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/widgets/app_feedback.dart';
 import '../application/audio_runtime_coordinator.dart';
+import '../application/audio_ui_warmup_coordinator.dart';
 
 import '../../core/app_language.dart';
 import '../../features/asmr/domain/asmr_download.dart';
@@ -45,7 +46,6 @@ import '../../core/platform/power_platform_service.dart';
 import '../../features/library/application/cover_image_cache_policy.dart';
 import '../../features/player/application/timer_runtime_calculator.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
-import '../../core/ui/warmup_scheduler.dart';
 
 export '../../features/library/domain/library_node.dart';
 export '../../features/library/domain/library_entry.dart';
@@ -87,7 +87,6 @@ part 'audio_provider_notification_subtitles.dart';
 part 'audio_provider_persistence_sessions.dart';
 part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
-part 'audio_provider_warmup.dart';
 part 'audio_provider_time_segments.dart';
 part 'audio_provider_queues.dart';
 
@@ -117,6 +116,7 @@ class AudioProvider with ChangeNotifier {
   final SettingsRepository _settingsRepository;
   late final PlaybackSubtitleService _subtitleService;
   late final AudioRuntimeCoordinator _runtimeCoordinator;
+  late final AudioUiWarmupCoordinator _uiWarmupCoordinator;
   final AppLanguage Function() _pageLanguageResolver;
   final bool _skipDisposePersistence;
   SharedPreferences? _cachedPrefs;
@@ -128,6 +128,7 @@ class AudioProvider with ChangeNotifier {
   SettingsRepository get settingsRepository => _settingsRepository;
   PlaybackSubtitleService get subtitleService => _subtitleService;
   AudioRuntimeCoordinator get runtimeCoordinator => _runtimeCoordinator;
+  AudioUiWarmupCoordinator get uiWarmupCoordinator => _uiWarmupCoordinator;
 
   PlaybackNotificationService get _notificationService =>
       _notificationFacade.service;
@@ -237,7 +238,6 @@ class AudioProvider with ChangeNotifier {
   final Set<String> _timeSegmentLoopSeekPendingSessionIds = <String>{};
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
-  bool _warmupPausedForLifecycle = false;
   int _persistenceLoadEpoch = 0;
   Future<void>? _postStartupLibraryMaintenance;
 
@@ -369,19 +369,6 @@ class AudioProvider with ChangeNotifier {
       _notificationStateService.notificationsDismissedWhilePaused;
   set _notificationsDismissedWhilePaused(bool value) {
     _notificationStateService.notificationsDismissedWhilePaused = value;
-  }
-
-  Timer? get _deferredWarmupTimer =>
-      _notificationStateService.deferredWarmupTimer;
-  set _deferredWarmupTimer(Timer? value) {
-    _notificationStateService.deferredWarmupTimer = value;
-  }
-
-  WarmupScheduler get _warmupScheduler =>
-      _notificationStateService.warmupScheduler;
-  int get _warmupGeneration => _notificationStateService.warmupGeneration;
-  set _warmupGeneration(int value) {
-    _notificationStateService.warmupGeneration = value;
   }
 
   Timer? get _notificationActionRefreshTimer =>
@@ -586,6 +573,12 @@ class AudioProvider with ChangeNotifier {
       trackResolver: _libraryFacade.trackByPath,
       onTrackLoaded: _handleSubtitleTrackLoaded,
     );
+    _uiWarmupCoordinator = AudioUiWarmupCoordinator(
+      library: _libraryFacade,
+      playback: _playbackFacade,
+      notifications: _notificationFacade,
+      subtitles: _subtitleService,
+    );
     _settingsRepository.attachPersistence(_savePlaybackSettings);
     _settingsRepository.attachConverterPersistence(_saveConverterSettings);
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
@@ -741,10 +734,6 @@ class AudioProvider with ChangeNotifier {
         },
       ),
     );
-    UiInteractionCoordinator.instance.addListener(
-      _handleWarmupInteractionChanged,
-    );
-    _syncWarmupPauseState();
     _runtimeCoordinator = AudioRuntimeCoordinator(
       snapshots: _nativePlaybackRepository.snapshots,
       progressUpdates: _nativePlaybackRepository.progressUpdates,
@@ -772,15 +761,11 @@ class AudioProvider with ChangeNotifier {
   void dispose() {
     _isDisposed = true;
     _persistenceLoadEpoch++;
-    UiInteractionCoordinator.instance.removeListener(
-      _handleWarmupInteractionChanged,
-    );
     _timerService.countdownTimer?.cancel();
     _timerService.autoResumeTimer?.cancel();
     _playbackFacade.cancelScheduledPersistence();
     _scanProgressNotifyTimer?.cancel();
-    _deferredWarmupTimer?.cancel();
-    unawaited(_warmupScheduler.shutdown());
+    unawaited(_uiWarmupCoordinator.shutdown());
     _notificationProgressRefreshTimer?.cancel();
     _unifiedNotificationSyncTimer?.cancel();
     _notificationActionRefreshTimer?.cancel();

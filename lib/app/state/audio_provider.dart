@@ -3,7 +3,6 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
@@ -13,6 +12,7 @@ import '../application/audio_runtime_coordinator.dart';
 import '../application/app_persistence_coordinator.dart';
 import '../application/audio_path_coordinator.dart';
 import '../application/audio_ui_warmup_coordinator.dart';
+import '../application/playback_keep_alive_coordinator.dart';
 
 import '../../core/app_language.dart';
 import '../../features/asmr/domain/asmr_download.dart';
@@ -45,7 +45,6 @@ import '../../features/player/application/native_playback_repository.dart';
 import '../../features/player/application/playback_queue_resolver.dart';
 import '../../core/platform/power_platform_service.dart';
 import '../../features/library/application/cover_image_cache_policy.dart';
-import '../../features/player/application/timer_runtime_calculator.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 
 export '../../features/library/domain/library_node.dart';
@@ -111,6 +110,7 @@ class AudioProvider with ChangeNotifier {
   late final AudioRuntimeCoordinator _runtimeCoordinator;
   late final AppPersistenceCoordinator _persistenceCoordinator;
   late final AudioUiWarmupCoordinator _uiWarmupCoordinator;
+  late final PlaybackKeepAliveCoordinator _keepAliveCoordinator;
   final AppLanguage Function() _pageLanguageResolver;
 
   LibraryFacade get libraryFacade => _libraryFacade;
@@ -123,6 +123,8 @@ class AudioProvider with ChangeNotifier {
   AppPersistenceCoordinator get persistenceCoordinator =>
       _persistenceCoordinator;
   AudioUiWarmupCoordinator get uiWarmupCoordinator => _uiWarmupCoordinator;
+  PlaybackKeepAliveCoordinator get keepAliveCoordinator =>
+      _keepAliveCoordinator;
 
   PlaybackNotificationService get _notificationService =>
       _notificationFacade.service;
@@ -280,27 +282,6 @@ class AudioProvider with ChangeNotifier {
 
   int get _maxCacheBytes => _settingsRepository.maxCacheBytes;
 
-  bool get _keepCpuAwake => _settingsRepository.keepCpuAwake;
-  set _keepCpuAwake(bool value) => _settingsRepository.keepCpuAwake = value;
-  bool get _keepAliveHasPlayback => _timerFacade.keepAliveHasPlayback;
-  set _keepAliveHasPlayback(bool value) {
-    _timerFacade.keepAliveHasPlayback = value;
-  }
-
-  bool get _keepAliveHasTimer => _timerFacade.keepAliveHasTimer;
-  set _keepAliveHasTimer(bool value) => _timerFacade.keepAliveHasTimer = value;
-  bool get _keepAliveUsesUnifiedNotifications =>
-      _timerFacade.keepAliveUsesUnifiedNotifications;
-  set _keepAliveUsesUnifiedNotifications(bool value) {
-    _timerFacade.keepAliveUsesUnifiedNotifications = value;
-  }
-
-  bool get _keepAliveKeepsForegroundService =>
-      _timerFacade.keepAliveKeepsForegroundService;
-  set _keepAliveKeepsForegroundService(bool value) {
-    _timerFacade.keepAliveKeepsForegroundService = value;
-  }
-
   factory AudioProvider({
     required LibraryFacade library,
     required PlaybackFacade playback,
@@ -433,6 +414,14 @@ class AudioProvider with ChangeNotifier {
       playback: _playbackFacade,
       notifications: _notificationFacade,
       subtitles: _subtitleService,
+    );
+    _keepAliveCoordinator = PlaybackKeepAliveCoordinator(
+      playback: _playbackFacade,
+      timer: _timerFacade,
+      notifications: _notificationFacade,
+      settings: _settingsRepository,
+      enterBackgroundWarmup: _uiWarmupCoordinator.enterBackground,
+      resumeForegroundWarmup: _uiWarmupCoordinator.resumeForeground,
     );
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
     _playbackFacade.configurePersistence(enabled: !skipDisposePersistence);
@@ -641,16 +630,7 @@ class AudioProvider with ChangeNotifier {
     _unifiedNotificationSyncTimer?.cancel();
     _notificationActionRefreshTimer?.cancel();
     _notificationActionGuardTimeout?.cancel();
-    unawaited(
-      _setKeepCpuAwake(
-        false,
-        hasActivePlayback: false,
-        hasActiveTimer: false,
-        usesUnifiedPlaybackNotifications: false,
-        keepForegroundServiceAlive: false,
-      ),
-    );
-    unawaited(_deactivateAudioSession());
+    unawaited(_keepAliveCoordinator.shutdown());
     unawaited(_runtimeCoordinator.dispose());
     super.dispose();
   }

@@ -64,6 +64,19 @@ class _LibraryEditTrackViewState {
   final bool explicitExcluded;
   final bool muted;
   final bool inheritedExcluded;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _LibraryEditTrackViewState &&
+        other.title == title &&
+        other.explicitExcluded == explicitExcluded &&
+        other.muted == muted &&
+        other.inheritedExcluded == inheritedExcluded;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(title, explicitExcluded, muted, inheritedExcluded);
 }
 
 class LibraryManagementPage extends ConsumerWidget {
@@ -315,11 +328,6 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
 
   @override
   Widget build(BuildContext context) {
-    ref.watch(
-      libraryStateProvider.select(
-        (value) => value.valueOrNull?.contentRevision ?? 0,
-      ),
-    );
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -359,14 +367,30 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
               .where((entry) => _folderExistsInDiskSnapshot(entry.key))
               .map((entry) => entry.value)
               .toList(growable: false);
+    final editTrackPaths = localSnapshotPending
+        ? const <String>[]
+        : _collectLibraryEditTrackPaths(
+            libraryService,
+            _diskAudioFilePaths,
+            excludedTracks,
+            persistedEntries,
+          );
+    final persistentFolderPaths =
+        localSnapshotPending
+              ? <String>[]
+              : <String>{
+                  ...childFolders,
+                  ...excludedFolders,
+                  for (final entry in persistedEntries)
+                    if (entry.isFolder) _folderPathForLibraryChild(entry.path),
+                }.toList(growable: false)
+          ..sort(compareNatural);
     final cacheKey = Object.hash(
-      localSnapshotPending ? 0 : _libraryTrackPathsHash(libraryService),
+      Object.hashAll(editTrackPaths),
       Object.hashAll(_diskAudioFilePaths),
       _folderStructureSnapshotRevision,
-      Object.hashAll(childFolders),
-      Object.hashAll(excludedTracks),
-      Object.hashAll(excludedFolders),
-      _libraryEntriesHash(persistedEntries),
+      Object.hashAll(persistentFolderPaths),
+      _libraryEntryStructureHash(persistedEntries),
       Object.hashAll(
         folderStructureSnapshots.map((folder) => folder.folderPath),
       ),
@@ -376,18 +400,8 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
       _editTreeCacheKey = cacheKey;
       _cachedEditTree = _filterEditTree(
         _buildEditTree(
-          _collectLibraryEditTrackPaths(
-            libraryService,
-            _diskAudioFilePaths,
-            excludedTracks,
-            persistedEntries,
-          ),
-          <String>{
-            ...childFolders,
-            ...excludedFolders,
-            for (final entry in persistedEntries)
-              if (entry.isFolder) _folderPathForLibraryChild(entry.path),
-          }.toList(growable: false),
+          editTrackPaths,
+          persistentFolderPaths,
           folderStructureSnapshots,
         ),
         _searchQuery,
@@ -559,15 +573,6 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     );
   }
 
-  int _libraryTrackPathsHash(LibraryFacade libraryService) {
-    return Object.hashAll(
-      libraryService.library
-          .where((track) => _trackBelongsToLibrary(track.path))
-          .where((track) => _trackExistsInDiskSnapshot(track.path))
-          .map((track) => PathMatcher.normalize(track.path)),
-    );
-  }
-
   bool get _hasAuthoritativeDiskSnapshot => _diskSnapshotLoaded;
 
   Set<String> _buildLiveDiskFolderPathSet({
@@ -626,13 +631,12 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     return _trackExistsInDiskSnapshot(entry.path);
   }
 
-  int _libraryEntriesHash(List<LibraryEntry> entries) {
+  int _libraryEntryStructureHash(List<LibraryEntry> entries) {
     return Object.hashAll(
       entries.map(
         (entry) => Object.hash(
           entry.path,
           entry.kind,
-          entry.state,
           entry.parentPath,
           entry.displayName,
         ),

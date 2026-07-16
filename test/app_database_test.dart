@@ -909,8 +909,11 @@ void main() {
     },
   );
 
-  test('audio details round-trip and delete by target', () async {
+  test('audio details round-trip and delete targets in one batch', () async {
     final target = AudioDetailTarget.libraryRootFolder('/library/root');
+    final secondTarget = AudioDetailTarget.libraryRootFolder(
+      '/library/root/work',
+    );
     final detail = AudioDetail(
       target: target,
       rjCode: 'RJ123456',
@@ -928,6 +931,7 @@ void main() {
     );
 
     await appDatabase.upsertAudioDetail(detail);
+    await appDatabase.upsertAudioDetail(AudioDetail.empty(secondTarget));
 
     final loaded = await appDatabase.loadAudioDetail(target);
     expect(loaded?.rjCode, 'RJ123456');
@@ -939,9 +943,14 @@ void main() {
     expect(loaded?.salesCount, 1234);
     expect(loaded?.rating, 4.5);
 
-    await appDatabase.deleteAudioDetail(target);
+    await appDatabase.deleteAudioDetails(<AudioDetailTarget>[
+      target,
+      secondTarget,
+      target,
+    ]);
 
     expect(await appDatabase.loadAudioDetail(target), isNull);
+    expect(await appDatabase.loadAudioDetail(secondTarget), isNull);
   });
 
   test(

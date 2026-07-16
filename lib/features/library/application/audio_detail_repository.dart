@@ -231,6 +231,12 @@ class AudioDetailRepository {
     return _databaseRepository.deleteAudioDetail(_normalizeTarget(target));
   }
 
+  Future<void> deleteMany(Iterable<AudioDetailTarget> targets) {
+    return _databaseRepository.deleteAudioDetails(
+      targets.map(_normalizeTarget),
+    );
+  }
+
   Future<AudioDetailSaveResult?> prefillRjCodeFromText(
     AudioDetailTarget target,
     String text,

@@ -1253,11 +1253,15 @@ final class LibraryFacade implements LibraryCatalog {
     }
   }
 
-  Future<void> removeLibrary(String libraryPath) async {
+  Future<void> removeLibrary(String libraryPath) {
     if (isScanning) cancelScan();
-    await service.removeLibrary(
-      libraryPath,
-      removeFolder: removeFolderFromLibrary,
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    beginLibraryBatch();
+    final removal = service.removeLibrary(
+      normalizedLibraryPath,
+      onSaveWatchedFolders: () {
+        if (_persistenceEnabled) unawaited(_saveWatchedFolders());
+      },
       onSaveWatchedLibraries: () {
         if (_persistenceEnabled) unawaited(_saveWatchedLibraries());
       },
@@ -1265,9 +1269,34 @@ final class LibraryFacade implements LibraryCatalog {
         if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
       },
     );
-    await removeFolderFromLibrary(libraryPath);
+    final removedTrackPaths = removeTracksMatching(
+      (track) =>
+          PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath) ||
+          PathMatcher.isWithinOrEqual(track.groupKey, normalizedLibraryPath),
+    );
+    final changed = removal.changed || removedTrackPaths.isNotEmpty;
+    if (changed) _syncStateSlice();
+    unawaited(endLibraryBatch(waitForPersistence: false));
+
+    final detailTargets = <AudioDetailTarget>{
+      AudioDetailTarget.libraryRootFolder(normalizedLibraryPath),
+      for (final folderPath in removal.removedFolderPaths)
+        AudioDetailTarget.libraryRootFolder(folderPath),
+    };
+    unawaited(
+      _deleteRemovedLibraryPersistence(normalizedLibraryPath, detailTargets),
+    );
+    return Future<void>.value();
+  }
+
+  Future<void> _deleteRemovedLibraryPersistence(
+    String libraryPath,
+    Set<AudioDetailTarget> detailTargets,
+  ) async {
+    await detailCacheService.deleteMany(detailTargets);
+    snapshotCacheService.markDetailChanged();
     if (_persistenceEnabled) {
-      unawaited(databaseRepository.deleteLibraryEntriesForLibrary(libraryPath));
+      await databaseRepository.deleteLibraryEntriesForLibrary(libraryPath);
     }
     _syncStateSlice();
   }
@@ -1278,7 +1307,7 @@ final class LibraryFacade implements LibraryCatalog {
       normalizedLibraryPath,
       folderPath,
     );
-    final changed = service.setLibraryFolderExcluded(
+    final mutation = service.setLibraryFolderExcluded(
       normalizedLibraryPath,
       normalizedFolderPath,
       true,
@@ -1286,35 +1315,28 @@ final class LibraryFacade implements LibraryCatalog {
         if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
       },
     );
-    if (!changed) return;
-    final affectedEntryPaths = service
-        .libraryEntriesForLibrary(normalizedLibraryPath)
-        .where(
-          (entry) =>
-              PathMatcher.isWithinOrEqual(entry.path, normalizedFolderPath),
-        )
-        .map((entry) => entry.path)
-        .toList(growable: false);
-    if (affectedEntryPaths.isNotEmpty && _persistenceEnabled) {
+    if (!mutation.changed) return;
+    if (mutation.affectedEntryPaths.isNotEmpty && _persistenceEnabled) {
       unawaited(
         databaseRepository.setLibraryEntriesState(
           normalizedLibraryPath,
-          affectedEntryPaths,
+          mutation.affectedEntryPaths,
           LibraryEntryState.excluded,
         ),
       );
     }
-    removeTracksMatching(
-      (track) =>
-          PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
-          PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
-    );
     _syncStateSlice();
+    unawaited(
+      _removeExcludedFolderFromActiveLibrary(
+        normalizedLibraryPath,
+        normalizedFolderPath,
+      ),
+    );
   }
 
   void excludeLibraryTrack(String libraryPath, String trackPath) {
     final normalizedTrackPath = PathMatcher.normalize(trackPath);
-    final changed = service.setLibraryTrackExcluded(
+    final mutation = service.setLibraryTrackExcluded(
       libraryPath,
       normalizedTrackPath,
       true,
@@ -1322,25 +1344,20 @@ final class LibraryFacade implements LibraryCatalog {
         if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
       },
     );
-    if (!changed) return;
-    if (service
-        .libraryEntriesForLibrary(libraryPath)
-        .any(
-          (entry) =>
-              PathMatcher.equalsNormalized(entry.path, normalizedTrackPath),
-        )) {
-      if (_persistenceEnabled) {
-        unawaited(
-          databaseRepository.setLibraryEntriesState(libraryPath, <String>[
-            normalizedTrackPath,
-          ], LibraryEntryState.excluded),
-        );
-      }
+    if (!mutation.changed) return;
+    if (mutation.affectedEntryPaths.isNotEmpty && _persistenceEnabled) {
+      unawaited(
+        databaseRepository.setLibraryEntriesState(
+          libraryPath,
+          mutation.affectedEntryPaths,
+          LibraryEntryState.excluded,
+        ),
+      );
     }
-    removeTracksMatching(
-      (track) => PathMatcher.equalsNormalized(track.path, normalizedTrackPath),
-    );
     _syncStateSlice();
+    unawaited(
+      _removeExcludedTrackFromActiveLibrary(libraryPath, normalizedTrackPath),
+    );
   }
 
   void setLibraryFolderExcluded(
@@ -1357,7 +1374,7 @@ final class LibraryFacade implements LibraryCatalog {
       normalizedLibraryPath,
       folderPath,
     );
-    final changed = service.setLibraryFolderExcluded(
+    final mutation = service.setLibraryFolderExcluded(
       normalizedLibraryPath,
       normalizedFolderPath,
       false,
@@ -1365,20 +1382,12 @@ final class LibraryFacade implements LibraryCatalog {
         if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
       },
     );
-    if (!changed) return;
-    final affectedPaths = service
-        .libraryEntriesForLibrary(normalizedLibraryPath)
-        .where(
-          (entry) =>
-              PathMatcher.isWithinOrEqual(entry.path, normalizedFolderPath),
-        )
-        .map((entry) => entry.path)
-        .toList(growable: false);
-    if (affectedPaths.isNotEmpty && _persistenceEnabled) {
+    if (!mutation.changed) return;
+    if (mutation.affectedEntryPaths.isNotEmpty && _persistenceEnabled) {
       unawaited(
         databaseRepository.setLibraryEntriesState(
           normalizedLibraryPath,
-          affectedPaths,
+          mutation.affectedEntryPaths,
           LibraryEntryState.active,
         ),
       );
@@ -1399,7 +1408,7 @@ final class LibraryFacade implements LibraryCatalog {
       return;
     }
     final normalizedTrackPath = PathMatcher.normalize(trackPath);
-    final changed = service.setLibraryTrackExcluded(
+    final mutation = service.setLibraryTrackExcluded(
       libraryPath,
       normalizedTrackPath,
       false,
@@ -1407,29 +1416,63 @@ final class LibraryFacade implements LibraryCatalog {
         if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
       },
     );
-    if (!changed) return;
-    if (_persistenceEnabled) {
+    if (!mutation.changed) return;
+    if (mutation.affectedEntryPaths.isNotEmpty && _persistenceEnabled) {
       unawaited(
-        databaseRepository.setLibraryEntriesState(libraryPath, <String>[
-          normalizedTrackPath,
-        ], LibraryEntryState.active),
+        databaseRepository.setLibraryEntriesState(
+          libraryPath,
+          mutation.affectedEntryPaths,
+          LibraryEntryState.active,
+        ),
       );
     }
     unawaited(_restoreExcludedTrack(libraryPath, normalizedTrackPath));
     _syncStateSlice();
   }
 
+  Future<void> _removeExcludedFolderFromActiveLibrary(
+    String libraryPath,
+    String folderPath,
+  ) async {
+    await Future<void>.value();
+    if (!service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath)) {
+      return;
+    }
+    beginLibraryBatch();
+    removeTracksMatching(
+      (track) =>
+          PathMatcher.isWithinOrEqual(track.path, folderPath) ||
+          PathMatcher.isWithinOrEqual(track.groupKey, folderPath),
+    );
+    await endLibraryBatch(waitForPersistence: false);
+  }
+
+  Future<void> _removeExcludedTrackFromActiveLibrary(
+    String libraryPath,
+    String trackPath,
+  ) async {
+    await Future<void>.value();
+    if (!service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath)) {
+      return;
+    }
+    beginLibraryBatch();
+    removeTracksMatching(
+      (track) => PathMatcher.equalsNormalized(track.path, trackPath),
+    );
+    await endLibraryBatch(waitForPersistence: false);
+  }
+
   Future<void> _restoreExcludedTrack(
     String libraryPath,
     String trackPath,
   ) async {
+    await Future<void>.value();
+    if (service.isLibraryPathExcluded(libraryPath, trackPath)) return;
     if (service.libraryByPath.containsKey(trackPath)) return;
-    for (final entry in service.libraryEntriesForLibrary(libraryPath)) {
-      if (entry.isTrack &&
-          PathMatcher.equalsNormalized(entry.path, trackPath)) {
-        addTracks(<MusicTrack>[entry.toTrack()], notify: false);
-        return;
-      }
+    final entry = service.libraryEntryForPath(libraryPath, trackPath);
+    if (entry != null && entry.isTrack && entry.isActive) {
+      await _addRestoredTracks(<MusicTrack>[entry.toTrack()]);
+      return;
     }
     final isContentUri = PathMatcher.isContentUri(trackPath);
     FileStat? stat;
@@ -1444,7 +1487,8 @@ final class LibraryFacade implements LibraryCatalog {
     }
     final parentFolder = path.dirname(trackPath);
     final folderName = path.basename(parentFolder);
-    addTracks(<MusicTrack>[
+    if (service.isLibraryPathExcluded(libraryPath, trackPath)) return;
+    await _addRestoredTracks(<MusicTrack>[
       MusicTrack(
         path: trackPath,
         displayName: PathDisplay.fileName(trackPath, withoutExtension: true),
@@ -1459,13 +1503,15 @@ final class LibraryFacade implements LibraryCatalog {
         fileSizeBytes: stat?.size,
         modifiedAt: stat?.modified,
       ),
-    ], notify: false);
+    ]);
   }
 
   Future<void> _restoreExcludedFolder(
     String libraryPath,
     String folderPath,
   ) async {
+    await Future<void>.value();
+    if (service.isLibraryPathExcluded(libraryPath, folderPath)) return;
     final persistedTracks = service
         .libraryEntriesForLibrary(libraryPath)
         .where(
@@ -1479,7 +1525,7 @@ final class LibraryFacade implements LibraryCatalog {
         .where((track) => !service.libraryByPath.containsKey(track.path))
         .toList(growable: false);
     if (persistedTracks.isNotEmpty) {
-      addOrReplaceTracks(persistedTracks, notify: false);
+      await _addRestoredTracks(persistedTracks);
       return;
     }
 
@@ -1492,8 +1538,15 @@ final class LibraryFacade implements LibraryCatalog {
         )
         .toList(growable: false);
     if (candidates.isNotEmpty) {
-      addOrReplaceTracks(candidates, notify: false);
+      await _addRestoredTracks(candidates);
     }
+  }
+
+  Future<void> _addRestoredTracks(List<MusicTrack> tracks) async {
+    if (tracks.isEmpty) return;
+    beginLibraryBatch();
+    addOrReplaceTracks(tracks, notify: false);
+    await endLibraryBatch(waitForPersistence: false);
   }
 
   Future<List<MusicTrack>> _scanRestorableFileTracks(String folderPath) async {

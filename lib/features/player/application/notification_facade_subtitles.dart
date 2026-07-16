@@ -1,6 +1,6 @@
-part of 'audio_provider.dart';
+part of 'notification_facade.dart';
 
-extension AudioProviderNotificationSubtitles on AudioProvider {
+extension NotificationFacadeSubtitles on NotificationFacade {
   Future<SubtitleTrack?> _subtitleTrackForPath(String trackPath) {
     return _subtitleService.load(trackPath);
   }
@@ -52,8 +52,8 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
 
   Duration get _notificationRefreshInterval =>
       _shouldUseUnifiedPlaybackNotifications
-      ? AudioProvider._multiSessionNotificationRefreshInterval
-      : AudioProvider._notificationProgressRefreshInterval;
+      ? NotificationFacade._multiSessionNotificationRefreshInterval
+      : NotificationFacade._notificationProgressRefreshInterval;
 
   void _ensureSubtitleTrackLoaded(String trackPath) {
     if (_subtitleService.hasResult(trackPath) ||

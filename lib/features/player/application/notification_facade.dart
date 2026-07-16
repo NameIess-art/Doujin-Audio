@@ -1,12 +1,47 @@
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:just_audio/just_audio.dart';
+import 'package:path/path.dart' as path;
+
+import '../../../core/logging/app_log_service.dart';
+import '../../../core/media/music_track.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/media/subtitle_parser.dart';
+import '../../library/application/cover_artwork_cache_service.dart';
 
 import 'audio_state_services.dart';
 import 'playback_facade.dart';
 import 'playback_notification_service.dart';
 import 'playback_session.dart';
+import 'playback_subtitle_service.dart';
+import 'system_media_controls_service.dart';
+
+part 'notification_facade_covers.dart';
+part 'notification_facade_subtitles.dart';
+part 'notification_facade_sync.dart';
 
 typedef NotificationSessionResolver =
     PlaybackSession? Function([String? sessionId]);
+typedef NotificationTrackResolver = MusicTrack? Function(String trackPath);
+
+abstract interface class NotificationPlaybackCommands {
+  Future<bool> prepareAndPlay(
+    PlaybackSession session, {
+    required String nextPath,
+    bool autoPlay,
+    bool forceStartAtZero,
+    bool showLoading,
+    int? targetQueueIndex,
+  });
+
+  Future<bool> startSession(
+    PlaybackSession session, {
+    required bool shouldStartTriggerCountdown,
+  });
+
+  bool hasAdjacent(PlaybackSession session, {required bool forward});
+}
 
 /// Owns notification synchronization state and the notification gateway.
 final class NotificationFacade {
@@ -24,6 +59,15 @@ final class NotificationFacade {
 
   final PlaybackNotificationService service;
   final NotificationCoordinatorService stateService;
+  static const Duration _notificationProgressRefreshInterval = Duration(
+    milliseconds: 750,
+  );
+  static const Duration _multiSessionNotificationRefreshInterval = Duration(
+    milliseconds: 700,
+  );
+  static const Duration _unifiedNotificationDebounceInterval = Duration(
+    milliseconds: 90,
+  );
   Future<void> Function() _undismissNotifications = _noopAsync;
   void Function() _onNotificationsRestored = _noop;
   PlaybackFacade? _playback;
@@ -31,16 +75,128 @@ final class NotificationFacade {
   PlaybackSession? Function() _resolveActionSession = _noopActionSession;
   Future<void> Function(PlaybackSession session) _resumeSession =
       _noopResumeSession;
-  bool Function() _multiThreadPlaybackEnabled = _alwaysFalse;
+  bool Function() _multiThreadPlaybackEnabledResolver = _alwaysFalse;
   void Function(String? sessionId) _setFocusSessionId = _ignoreSessionId;
   void Function() _notify = _noop;
   void Function() _syncKeepAlive = _noop;
-  void Function() _syncNotificationState = _noop;
-  bool Function() _hasPlaybackToKeepAlive = _alwaysFalse;
+  bool Function() _hasPlaybackToKeepAliveResolver = _alwaysFalse;
   Future<void> Function() _clearUnifiedNotifications = _noopAsync;
   Future<void> Function() _stopPlaybackKeepAlive = _noopAsync;
   String? Function() _preferredSessionId = _noSessionId;
   void Function() _notifyNotificationChanged = _noop;
+  NotificationTrackResolver _trackByPath = _noTrack;
+  late NotificationPlaybackCommands _playbackCommands;
+  late PlaybackSubtitleService _subtitleService;
+  late CoverArtworkCacheService _coverArtworkCacheService;
+  bool Function() _notificationsEnabledResolver = _alwaysFalse;
+  bool _synchronizationAttached = false;
+
+  NotificationFacade get _notificationFacade => this;
+  PlaybackFacade get _playbackFacade => _playback!;
+  NotificationCoordinatorService get _notificationStateService =>
+      stateService;
+  PlaybackNotificationService get _notificationService => service;
+  SystemMediaControlsService get _systemMediaControlsService =>
+      _playbackFacade.systemMediaControlsService;
+  Map<String, PlaybackSession> get _sessions =>
+      _playbackFacade.service.sessions;
+  List<PlaybackSession> get activeSessions =>
+      _playbackFacade.service.activeSessions;
+  bool get _multiThreadPlaybackEnabled =>
+      _multiThreadPlaybackEnabledResolver();
+  bool get _hasPlaybackToKeepAlive => _hasPlaybackToKeepAliveResolver();
+  bool get _notificationsEnabled => _notificationsEnabledResolver();
+
+  String? get _notificationFocusSessionId =>
+      stateService.notificationFocusSessionId;
+  set _notificationFocusSessionId(String? value) {
+    stateService.notificationFocusSessionId = value;
+  }
+
+  String? get _unifiedNotificationSyncKey =>
+      stateService.unifiedNotificationSyncKey;
+  set _unifiedNotificationSyncKey(String? value) {
+    stateService.unifiedNotificationSyncKey = value;
+  }
+
+  Timer? get _notificationProgressRefreshTimer =>
+      stateService.notificationProgressRefreshTimer;
+  set _notificationProgressRefreshTimer(Timer? value) {
+    stateService.notificationProgressRefreshTimer = value;
+  }
+
+  Timer? get _unifiedNotificationSyncTimer =>
+      stateService.unifiedNotificationSyncTimer;
+  set _unifiedNotificationSyncTimer(Timer? value) {
+    stateService.unifiedNotificationSyncTimer = value;
+  }
+
+  bool get _unifiedNotificationSyncInFlight =>
+      stateService.unifiedNotificationSyncInFlight;
+  set _unifiedNotificationSyncInFlight(bool value) {
+    stateService.unifiedNotificationSyncInFlight = value;
+  }
+
+  bool get _unifiedNotificationSyncPending =>
+      stateService.unifiedNotificationSyncPending;
+  set _unifiedNotificationSyncPending(bool value) {
+    stateService.unifiedNotificationSyncPending = value;
+  }
+
+  bool get _notificationActionRefreshPending =>
+      stateService.notificationActionRefreshPending;
+  String? get _queuedNotificationRefreshSessionId =>
+      stateService.queuedNotificationRefreshSessionId;
+  set _queuedNotificationRefreshSessionId(String? value) {
+    stateService.queuedNotificationRefreshSessionId = value;
+  }
+
+  bool get _notificationsDismissedWhilePaused =>
+      stateService.notificationsDismissedWhilePaused;
+  Map<String, String?> get _notificationSubtitleTexts =>
+      stateService.notificationSubtitleTexts;
+  Map<String, String> get _notificationSubtitleTrackPaths =>
+      stateService.notificationSubtitleTrackPaths;
+
+  MusicTrack? trackByPath(String trackPath) => _trackByPath(trackPath);
+
+  void handleSubtitleTrackLoaded(String trackPath, SubtitleTrack? track) =>
+      _handleSubtitleTrackLoaded(trackPath, track);
+
+  void syncPlaybackState({bool immediateUnifiedSync = false}) =>
+      _syncNotificationState(immediateUnifiedSync: immediateUnifiedSync);
+
+  void clearSessionSubtitle(String sessionId) =>
+      _clearNotificationSubtitleForSession(sessionId);
+
+  bool isFocusedSessionId(String sessionId) =>
+      _isNotificationFocusedSessionId(sessionId);
+
+  bool refreshSessionSubtitle(
+    PlaybackSession session, {
+    Duration? position,
+    bool syncNotification = true,
+  }) => _refreshNotificationSubtitleForSession(
+    session,
+    position: position,
+    syncNotification: syncNotification,
+  );
+
+  void scheduleFocusedRefresh(String sessionId, {bool immediate = false}) =>
+      _scheduleFocusedNotificationRefresh(sessionId, immediate: immediate);
+
+  PlaybackSession? resolveNotificationSession([String? sessionId]) =>
+      _resolveNotificationSession(sessionId);
+  PlaybackSession? get notificationActionSession => _notificationActionSession;
+  Future<void> resumeNotificationSession(PlaybackSession session) =>
+      _resumeNotificationSession(session);
+  Future<void> clearUnifiedNotificationsOnPlatform() =>
+      _clearUnifiedPlaybackNotificationsOnPlatform();
+  Future<void> stopPlaybackKeepAliveOnPlatform() =>
+      _stopPlaybackKeepAliveOnPlatform();
+  bool isActiveCoverKey(String key) => _isActiveCoverKey(key);
+  void ensureSubtitleTrackLoaded(String trackPath) =>
+      _ensureSubtitleTrackLoaded(trackPath);
 
   NotificationState get state => stateService.slice.state;
   Stream<NotificationState> get states => stateService.slice.stream;
@@ -76,7 +232,6 @@ final class NotificationFacade {
     required void Function(String? sessionId) setFocusSessionId,
     required void Function() notify,
     required void Function() syncKeepAlive,
-    required void Function() syncNotificationState,
     required bool Function() hasPlaybackToKeepAlive,
     required Future<void> Function() clearUnifiedNotifications,
     required Future<void> Function() stopPlaybackKeepAlive,
@@ -87,16 +242,30 @@ final class NotificationFacade {
     _resolveSession = resolveSession;
     _resolveActionSession = resolveActionSession;
     _resumeSession = resumeSession;
-    _multiThreadPlaybackEnabled = multiThreadPlaybackEnabled;
+    _multiThreadPlaybackEnabledResolver = multiThreadPlaybackEnabled;
     _setFocusSessionId = setFocusSessionId;
     _notify = notify;
     _syncKeepAlive = syncKeepAlive;
-    _syncNotificationState = syncNotificationState;
-    _hasPlaybackToKeepAlive = hasPlaybackToKeepAlive;
+    _hasPlaybackToKeepAliveResolver = hasPlaybackToKeepAlive;
     _clearUnifiedNotifications = clearUnifiedNotifications;
     _stopPlaybackKeepAlive = stopPlaybackKeepAlive;
     _preferredSessionId = preferredSessionId;
     _notifyNotificationChanged = notifyNotificationChanged;
+  }
+
+  void attachSynchronization({
+    required NotificationPlaybackCommands playbackCommands,
+    required PlaybackSubtitleService subtitles,
+    required NotificationTrackResolver trackByPath,
+    required CoverArtworkCacheService coverArtworkCacheService,
+    required bool Function() notificationsEnabled,
+  }) {
+    _playbackCommands = playbackCommands;
+    _subtitleService = subtitles;
+    _trackByPath = trackByPath;
+    _coverArtworkCacheService = coverArtworkCacheService;
+    _notificationsEnabledResolver = notificationsEnabled;
+    _synchronizationAttached = true;
   }
 
   Future<void> playPrimarySession() {
@@ -216,7 +385,7 @@ final class NotificationFacade {
     if (playback == null) return;
     stateService.notificationsDismissedWhilePaused = true;
     await playback.nativeRepository.dismissNotifications();
-    if (_hasPlaybackToKeepAlive()) {
+    if (_hasPlaybackToKeepAlive) {
       await _clearUnifiedNotifications();
       _syncKeepAlive();
       _notifyNotificationChanged();
@@ -235,12 +404,14 @@ final class NotificationFacade {
       action,
       notify: _notify,
       flushKeepAliveSync: _syncKeepAlive,
-      syncNotificationState: _syncNotificationState,
+      syncNotificationState: () => _syncNotificationState(
+        immediateUnifiedSync: true,
+      ),
     );
   }
 
   void _focusExplicitSession(PlaybackSession session) {
-    if (!_multiThreadPlaybackEnabled()) {
+    if (!_multiThreadPlaybackEnabled) {
       _setFocusSessionId(session.id);
     }
   }
@@ -271,3 +442,4 @@ Future<void> _noopResumeSession(PlaybackSession session) async {}
 bool _alwaysFalse() => false;
 void _ignoreSessionId(String? sessionId) {}
 String? _noSessionId() => null;
+MusicTrack? _noTrack(String trackPath) => null;

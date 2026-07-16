@@ -451,12 +451,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           ),
           const SizedBox(height: 8),
           if (widget.subtitleEnabled && !_segmentPanelExpanded)
-            RepaintBoundary(
-              child: _SessionSubtitlePanel(
-                session: session,
-                provider: provider,
-              ),
-            ),
+            RepaintBoundary(child: _SessionSubtitlePanel(session: session)),
           RepaintBoundary(child: buildProgressBar()),
           buildTransportControls(),
           if (!widget.isLandscape && !widget.useArtworkConsole)

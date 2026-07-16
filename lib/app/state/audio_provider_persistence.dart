@@ -123,9 +123,7 @@ extension AudioProviderPersistence on AudioProvider {
     _notificationsDismissedWhilePaused = false;
     _notificationStateService.notificationActionRefreshPending = false;
     _keepAliveSyncDeferred = false;
-    _subtitleTrackFutures.clear();
-    _subtitleTracks.clear();
-    _subtitleTrackResultFutures.clear();
+    _subtitleService.clear();
     _notificationSubtitleTexts.clear();
     _notificationSubtitleTrackPaths.clear();
     _clearResolvedCoverPaths();

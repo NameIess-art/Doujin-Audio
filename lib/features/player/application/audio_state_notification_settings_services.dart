@@ -1,11 +1,6 @@
 part of 'audio_state_services.dart';
 
 class NotificationCoordinatorService {
-  final Map<String, Future<SubtitleTrack?>> subtitleTrackFutures =
-      <String, Future<SubtitleTrack?>>{};
-  final Map<String, SubtitleTrack?> subtitleTracks = <String, SubtitleTrack?>{};
-  final Map<String, Future<SubtitleTrack?>> subtitleTrackResultFutures =
-      <String, Future<SubtitleTrack?>>{};
   final Map<String, String?> notificationSubtitleTexts = <String, String?>{};
   final Map<String, String> notificationSubtitleTrackPaths = <String, String>{};
   String? notificationFocusSessionId;

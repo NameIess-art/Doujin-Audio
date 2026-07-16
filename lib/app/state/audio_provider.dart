@@ -5,7 +5,6 @@ import 'dart:math';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,7 +36,6 @@ import '../../features/asmr/application/asmr_api_service.dart';
 import '../../features/asmr/application/asmr_metadata_service.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/dlsite_metadata_service.dart';
-import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/library/application/library_snapshot_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/library/application/library_scan_models.dart';
@@ -71,6 +69,7 @@ import '../../core/media/path_matcher.dart';
 import '../../core/media/path_display.dart';
 import '../../features/player/application/system_media_controls_service.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../core/media/subtitle_parser.dart';
@@ -111,13 +110,12 @@ class AudioProvider with ChangeNotifier {
   static const Duration _unifiedNotificationDebounceInterval = Duration(
     milliseconds: 90,
   );
-  static final FileCachePlatformGateway _fileCacheGateway =
-      FileCachePlatformGateway.instance;
   final LibraryFacade _libraryFacade;
   final PlaybackFacade _playbackFacade;
   final TimerFacade _timerFacade;
   final NotificationFacade _notificationFacade;
   final SettingsRepository _settingsRepository;
+  late final PlaybackSubtitleService _subtitleService;
   late final AudioRuntimeCoordinator _runtimeCoordinator;
   final AppLanguage Function() _pageLanguageResolver;
   final bool _skipDisposePersistence;
@@ -128,6 +126,7 @@ class AudioProvider with ChangeNotifier {
   TimerFacade get timerFacade => _timerFacade;
   NotificationFacade get notificationFacade => _notificationFacade;
   SettingsRepository get settingsRepository => _settingsRepository;
+  PlaybackSubtitleService get subtitleService => _subtitleService;
   AudioRuntimeCoordinator get runtimeCoordinator => _runtimeCoordinator;
 
   PlaybackNotificationService get _notificationService =>
@@ -313,12 +312,6 @@ class AudioProvider with ChangeNotifier {
   Map<String, PlaybackSession> get _sessions => _playbackService.sessions;
   List<String> get _sessionOrder => _playbackService.sessionOrder;
 
-  Map<String, Future<SubtitleTrack?>> get _subtitleTrackFutures =>
-      _notificationStateService.subtitleTrackFutures;
-  Map<String, SubtitleTrack?> get _subtitleTracks =>
-      _notificationStateService.subtitleTracks;
-  Map<String, Future<SubtitleTrack?>> get _subtitleTrackResultFutures =>
-      _notificationStateService.subtitleTrackResultFutures;
   Map<String, String?> get _notificationSubtitleTexts =>
       _notificationStateService.notificationSubtitleTexts;
   Map<String, String> get _notificationSubtitleTrackPaths =>
@@ -589,6 +582,10 @@ class AudioProvider with ChangeNotifier {
        _settingsRepository = settings,
        _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh),
        _skipDisposePersistence = skipDisposePersistence {
+    _subtitleService = PlaybackSubtitleService(
+      trackResolver: _libraryFacade.trackByPath,
+      onTrackLoaded: _handleSubtitleTrackLoaded,
+    );
     _settingsRepository.attachPersistence(_savePlaybackSettings);
     _settingsRepository.attachConverterPersistence(_saveConverterSettings);
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);

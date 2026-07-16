@@ -151,7 +151,7 @@ extension AudioProviderWarmup on AudioProvider {
         generation: generation,
         group: 'subtitle',
         task: () async {
-          await subtitleTrackForPath(trackPath);
+          await _subtitleTrackForPath(trackPath);
         },
       );
     }
@@ -177,7 +177,7 @@ extension AudioProviderWarmup on AudioProvider {
       generation: generation,
       group: 'subtitle',
       task: () async {
-        await subtitleTrackForPath(trackPath);
+        await _subtitleTrackForPath(trackPath);
       },
     );
   }

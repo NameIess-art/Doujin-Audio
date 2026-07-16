@@ -435,7 +435,7 @@ class _ActiveSessionTitleSubtitleState
         _subtitleText = null;
       });
     }
-    widget.provider.subtitleTrackForPath(trackPath).then((track) {
+    ref.read(playbackSubtitleServiceProvider).load(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
       _subtitleTrack = track;
       _subtitleTextCache.clear();

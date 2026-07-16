@@ -1,15 +1,10 @@
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
-import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
 
 void main() {
-  WidgetsFlutterBinding.ensureInitialized();
-  SharedPreferences.setMockInitialValues(const <String, Object>{});
-
   test(
     'ASMR.ONE subtitles load even when remote metadata omits the extension',
     () async {
@@ -25,10 +20,10 @@ void main() {
         await request.response.close();
       });
 
-      final provider = AudioProvider.test(
-        notificationService: PlaybackNotificationService(),
+      final tracks = <String, MusicTrack>{};
+      final subtitles = PlaybackSubtitleService(
+        trackResolver: (path) => tracks[path],
       );
-      addTearDown(provider.dispose);
 
       for (final format in <String>['vtt', 'srt', 'ass', 'ssa']) {
         final track = MusicTrack(
@@ -47,9 +42,9 @@ void main() {
           },
         );
 
-        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
+        tracks[track.path] = track;
 
-        final subtitleTrack = await provider.subtitleTrackForPath(track.path);
+        final subtitleTrack = await subtitles.load(track.path);
         expect(subtitleTrack, isNotNull);
         expect(subtitleTrack!.cues, isNotEmpty);
         expect(subtitleTrack.cues.first.text, '第一句');

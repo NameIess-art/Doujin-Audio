@@ -19,7 +19,6 @@ import '../../library/application/library_organizer.dart';
 import '../../library/application/library_scan_models.dart';
 import 'native_playback_bridge.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../../core/media/subtitle_parser.dart';
 import '../../../core/ui/warmup_scheduler.dart';
 
 part 'audio_state_models.dart';

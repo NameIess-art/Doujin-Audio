@@ -826,14 +826,15 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Builder(
                             builder: (context) {
-                              final cachedTrack = provider.getSubtitleTrackSync(
+                              final subtitles = ref.read(
+                                playbackSubtitleServiceProvider,
+                              );
+                              final cachedTrack = subtitles.trackSync(
                                 session.currentTrackPath,
                               );
                               if (cachedTrack == null) {
                                 unawaited(
-                                  provider.subtitleTrackForPath(
-                                    session.currentTrackPath,
-                                  ),
+                                  subtitles.load(session.currentTrackPath),
                                 );
                               }
                               final hasSubtitle = cachedTrack != null;
@@ -967,14 +968,15 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 isLandscape ? 64 : 28,
                                 isLandscape ? 32 : 8,
                               );
-                              final cachedTrack = provider.getSubtitleTrackSync(
+                              final subtitles = ref.read(
+                                playbackSubtitleServiceProvider,
+                              );
+                              final cachedTrack = subtitles.trackSync(
                                 session.currentTrackPath,
                               );
                               if (cachedTrack == null) {
                                 unawaited(
-                                  provider.subtitleTrackForPath(
-                                    session.currentTrackPath,
-                                  ),
+                                  subtitles.load(session.currentTrackPath),
                                 );
                               }
                               final hasSubtitle = cachedTrack != null;

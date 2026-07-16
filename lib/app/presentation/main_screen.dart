@@ -16,6 +16,7 @@ import '../state/subtitle_settings_provider.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../features/player/application/audio_state_services.dart';
+import '../../features/player/application/playback_facade.dart';
 import '../../core/platform/notifications_platform_service.dart';
 import '../../core/platform/permission_action_controller.dart';
 import '../../core/platform/power_platform_service.dart';
@@ -362,10 +363,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   PlaybackSession? _globalSubtitleOverlaySession(
-    AudioProvider provider,
+    PlaybackFacade playback,
     SubtitleSettingsState settings,
   ) {
-    final candidates = provider.activeSessions
+    final candidates = playback.state.activeSessions
         .where((session) {
           return settings.isShowEnabled(session.id) &&
               settings.isGlobalEnabled(session.id);
@@ -392,9 +393,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     _globalSubtitleOverlaySyncing = true;
     try {
-      final provider = ref.read(audioProviderFacadeProvider);
+      final playback = ref.read(playbackFacadeProvider);
       final settings = ref.read(subtitleSettingsProvider);
-      final session = _globalSubtitleOverlaySession(provider, settings);
+      final session = _globalSubtitleOverlaySession(playback, settings);
       if (session == null) {
         await _stopGlobalSubtitleOverlay(immediate: true);
         return;
@@ -466,9 +467,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       unawaited(_stopGlobalSubtitleOverlay(immediate: true));
       return;
     }
-    final provider = ref.read(audioProviderFacadeProvider);
+    final playback = ref.read(playbackFacadeProvider);
     final settings = ref.read(subtitleSettingsProvider);
-    final session = _globalSubtitleOverlaySession(provider, settings);
+    final session = _globalSubtitleOverlaySession(playback, settings);
     if (session == null) {
       unawaited(_stopGlobalSubtitleOverlay(immediate: true));
       return;
@@ -477,7 +478,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _updateGlobalSubtitleOverlayForSession(PlaybackSession session) {
-    final provider = ref.read(audioProviderFacadeProvider);
+    final subtitles = ref.read(playbackSubtitleServiceProvider);
     if (_globalSubtitleOverlaySessionId != session.id) {
       _globalSubtitleOverlaySessionId = session.id;
       _lastGlobalSubtitleOverlayText = null;
@@ -486,7 +487,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _globalSubtitleOverlayTrackPath = session.currentTrackPath;
       _lastGlobalSubtitleOverlayText = null;
       unawaited(
-        provider.subtitleTrackForPath(session.currentTrackPath).then((_) {
+        subtitles.load(session.currentTrackPath).then((_) {
           if (mounted &&
               shouldRunGlobalSubtitleOverlay(
                 appInForeground: _appInForeground,
@@ -498,11 +499,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       );
     }
 
-    final subtitleTrack = provider.getSubtitleTrackSync(
-      session.currentTrackPath,
-    );
+    final subtitleTrack = subtitles.trackSync(session.currentTrackPath);
     final text =
-        provider.subtitleTextForTrackAt(
+        subtitles.textAt(
           session.currentTrackPath,
           session.position,
           subtitleTrack: subtitleTrack,

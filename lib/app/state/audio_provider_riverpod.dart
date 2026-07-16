@@ -8,6 +8,7 @@ import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../presentation/audio_ui_controllers.dart';
@@ -213,6 +214,14 @@ final libraryFacadeProvider = Provider<LibraryFacade>((ref) {
 final playbackFacadeProvider = Provider<PlaybackFacade>((ref) {
   throw UnimplementedError(
     'playbackFacadeProvider must be overridden in ProviderScope.',
+  );
+});
+
+final playbackSubtitleServiceProvider = Provider<PlaybackSubtitleService>((
+  ref,
+) {
+  throw UnimplementedError(
+    'playbackSubtitleServiceProvider must be overridden in ProviderScope.',
   );
 });
 
@@ -515,6 +524,9 @@ List<Override> createAudioProviderOverrides({
     ),
     libraryFacadeProvider.overrideWithValue(audioProvider.libraryFacade),
     playbackFacadeProvider.overrideWithValue(audioProvider.playbackFacade),
+    playbackSubtitleServiceProvider.overrideWithValue(
+      audioProvider.subtitleService,
+    ),
     timerFacadeProvider.overrideWithValue(audioProvider.timerFacade),
     notificationFacadeProvider.overrideWithValue(
       audioProvider.notificationFacade,

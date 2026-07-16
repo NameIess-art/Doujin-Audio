@@ -750,10 +750,9 @@ class _TimeSegmentDragTooltip extends StatelessWidget {
 }
 
 class _SessionSubtitlePanel extends ConsumerStatefulWidget {
-  const _SessionSubtitlePanel({required this.session, required this.provider});
+  const _SessionSubtitlePanel({required this.session});
 
   final PlaybackSession session;
-  final AudioProvider provider;
 
   @override
   ConsumerState<_SessionSubtitlePanel> createState() =>
@@ -818,7 +817,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
       _subtitleTrack = null;
       _subtitleText = null;
     });
-    widget.provider.subtitleTrackForPath(trackPath).then((track) {
+    ref.read(playbackSubtitleServiceProvider).load(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
       _subtitleTrack = track;
       _subtitleTextCache.clear();

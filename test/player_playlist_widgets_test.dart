@@ -796,6 +796,44 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
   });
 
+  testWidgets('playlist resolves ASMR metadata from the session queue', (
+    tester,
+  ) async {
+    final fixture = AudioProviderWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    const track = MusicTrack(
+      path: 'https://api.asmr-300.com/api/media/stream/f3d4baa6ec96a6ad',
+      displayName: '本編トラック 01',
+      groupKey: 'asmr-work-123456',
+      groupTitle: 'ASMR 作品タイトル',
+      groupSubtitle: 'RJ123456',
+      isSingle: false,
+      remoteMetadataKind: 'asmr.one',
+    );
+    final session = fixture.audioProvider.playbackFacade.createTrackSession(
+      track,
+      loopMode: SessionLoopMode.single,
+      customQueueTracks: const <MusicTrack>[track],
+    );
+    fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pump();
+
+    expect(find.text(track.displayName), findsOneWidget);
+    expect(find.text(track.groupTitle), findsOneWidget);
+    expect(find.text('f3d4baa6ec96a6ad'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 120));
+  });
+
   testWidgets(
     'single-file queue cover fills the card and switcher shows an audio entry',
     (WidgetTester tester) async {

@@ -235,7 +235,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           itemCount: sessions.length,
           itemBuilder: (context, index) {
             final session = sessions[index];
-            final track = library.trackByPath(session.currentTrackPath);
+            final track = ref
+                .read(audioPathCoordinatorProvider)
+                .sessionTrackForPath(session.id, session.currentTrackPath);
 
             return _ActiveSessionPageTransform(
               pageListenable: _pageNotifier,

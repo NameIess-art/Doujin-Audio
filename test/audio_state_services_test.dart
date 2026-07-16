@@ -42,6 +42,54 @@ void main() {
   });
 
   group('SettingsRepository', () {
+    test('loads persisted playback and converter settings', () async {
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.setString(
+        'playback_settings_v1',
+        json.encode(<String, Object?>{
+          'multiThreadPlaybackEnabled': true,
+          'notificationsEnabled': false,
+          'showPlaybackCard': false,
+          'startupPage': StartupPage.asmrOne.name,
+          'bottomNavigationStyle': BottomNavigationStyle.bar.name,
+          'autoPlayAddedSessions': false,
+          'autoCheckUpdates': true,
+          'recordPlaybackProgress': false,
+          'asmrPlaybackCacheEnabled': true,
+          'blurPlayerBackgroundEnabled': false,
+          'uiBlurEffectEnabled': false,
+          'hapticFeedbackEnabled': false,
+          'coverImageResolution': CoverImageResolution.high.name,
+          'asmrDownloadDestinationRoot': '/backup/asmr',
+          'asmrDownloadConflictPolicy': AsmrDownloadConflictPolicy.skip.name,
+          'dlsiteMetadataLanguage': ContentLanguagePreference.en.name,
+          'cardPositionsLocked': false,
+          'maxCacheBytes': 256 * 1024 * 1024,
+        }),
+      );
+      await preferences.setString(
+        'converter_settings_v1',
+        json.encode(<String, Object?>{'format': 'flac', 'bitrate': '192k'}),
+      );
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      await repository.loadPersistedState();
+
+      expect(repository.slice.state.isInitialized, isTrue);
+      expect(repository.multiThreadPlaybackEnabled, isTrue);
+      expect(repository.notificationsEnabled, isFalse);
+      expect(repository.startupPage, StartupPage.asmrOne);
+      expect(repository.bottomNavigationStyle, BottomNavigationStyle.bar);
+      expect(repository.asmrDownloadDestinationRoot, '/backup/asmr');
+      expect(
+        repository.asmrDownloadConflictPolicy,
+        AsmrDownloadConflictPolicy.skip,
+      );
+      expect(repository.converterFormat, 'flac');
+      expect(repository.converterBitrate, '192k');
+    });
+
     test('syncSlice publishes settings without AudioProvider', () {
       final repository = SettingsRepository();
       addTearDown(repository.dispose);

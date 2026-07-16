@@ -143,20 +143,6 @@ extension AudioProviderState on AudioProvider {
 }
 
 extension AudioProviderCoreState on AudioProvider {
-  void _markLibraryStructureDirty() {
-    _libraryService.markStructureChanged();
-    _librarySnapshotCacheService.markStructureChanged();
-  }
-
-  void _syncGroupOrderFromLibrary() {
-    _libraryService.syncGroupOrderFromLibrary();
-  }
-
-  Future<SharedPreferences> get _prefs async {
-    _cachedPrefs ??= await SharedPreferences.getInstance();
-    return _cachedPrefs!;
-  }
-
   Future<LibraryTreeSnapshot> _ensureLibraryTreeSnapshot({
     bool notifyOnCommit = true,
   }) {

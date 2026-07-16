@@ -17,7 +17,9 @@ class AppPreferences {
   }
 
   static Future<SharedPreferences> get _prefs async {
-    return _instance ??= await SharedPreferences.getInstance();
+    final preferences = await SharedPreferences.getInstance();
+    _instance = preferences;
+    return preferences;
   }
 
   static String? getStringSync(String key) => _instance?.getString(key);

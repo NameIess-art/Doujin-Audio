@@ -144,7 +144,7 @@ void main() {
         applyFadeMultiplier: (_) {},
       );
 
-      await timer.loadSettings();
+      await timer.loadPersistedState();
       await timer.loadRuntimeFromSystem();
 
       expect(timer.service.autoResumeEnabled, isTrue);

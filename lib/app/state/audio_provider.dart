@@ -7,10 +7,10 @@ import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/widgets/app_feedback.dart';
 import '../application/audio_runtime_coordinator.dart';
+import '../application/app_persistence_coordinator.dart';
 import '../application/audio_path_coordinator.dart';
 import '../application/audio_ui_warmup_coordinator.dart';
 
@@ -32,7 +32,6 @@ import '../../features/library/application/cover_artwork_cache_service.dart';
 import '../../core/persistence/audio_database_repository.dart';
 import '../../features/library/application/audio_detail_repository.dart';
 import '../../features/player/application/audio_state_services.dart';
-import '../../core/persistence/app_database.dart' show PersistedSession;
 import '../../features/asmr/application/asmr_api_service.dart';
 import '../../features/asmr/application/asmr_metadata_service.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
@@ -92,15 +91,6 @@ part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
 part 'audio_provider_queues.dart';
 
-const _kGroupOrderKey = 'group_order_v1';
-const _kLibraryNodeOrderKey = 'library_node_order_v1';
-const _kSessionOrderKey = 'session_order_v1';
-const _kWatchedFoldersKey = 'watched_folders_v1';
-const _kWatchedLibrariesKey = 'watched_libraries_v1';
-const _kLibraryExclusionsKey = 'library_exclusions_v1';
-const _kConverterSettingsKey = 'converter_settings_v1';
-const _kPlaybackSettingsKey = 'playback_settings_v1';
-
 class AudioProvider with ChangeNotifier {
   static const Duration _notificationProgressRefreshInterval = Duration(
     milliseconds: 750,
@@ -119,10 +109,9 @@ class AudioProvider with ChangeNotifier {
   late final PlaybackSubtitleService _subtitleService;
   late final AudioPathCoordinator _audioPathCoordinator;
   late final AudioRuntimeCoordinator _runtimeCoordinator;
+  late final AppPersistenceCoordinator _persistenceCoordinator;
   late final AudioUiWarmupCoordinator _uiWarmupCoordinator;
   final AppLanguage Function() _pageLanguageResolver;
-  final bool _skipDisposePersistence;
-  SharedPreferences? _cachedPrefs;
 
   LibraryFacade get libraryFacade => _libraryFacade;
   PlaybackFacade get playbackFacade => _playbackFacade;
@@ -131,6 +120,8 @@ class AudioProvider with ChangeNotifier {
   SettingsRepository get settingsRepository => _settingsRepository;
   PlaybackSubtitleService get subtitleService => _subtitleService;
   AudioRuntimeCoordinator get runtimeCoordinator => _runtimeCoordinator;
+  AppPersistenceCoordinator get persistenceCoordinator =>
+      _persistenceCoordinator;
   AudioUiWarmupCoordinator get uiWarmupCoordinator => _uiWarmupCoordinator;
 
   PlaybackNotificationService get _notificationService =>
@@ -159,49 +150,23 @@ class AudioProvider with ChangeNotifier {
   SystemMediaControlsService get _systemMediaControlsService =>
       _playbackFacade.systemMediaControlsService;
 
-  static const List<String> converterFormats = [
-    'mp3',
-    'flac',
-    'wav',
-    'aac',
-    'ogg',
-  ];
-  static const List<String> converterBitrates = [
-    '128k',
-    '192k',
-    '256k',
-    '320k',
-  ];
   bool _isInitialized = false;
   bool _settingsInitialized = false;
   bool _libraryInitialized = false;
   bool _playbackInitialized = false;
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
-  int _persistenceLoadEpoch = 0;
+  bool _isReloadingPersistedState = false;
   Future<void>? _postStartupLibraryMaintenance;
 
   final Random _random = Random();
 
   List<MusicTrack> get _library => _libraryService.library;
   Map<String, MusicTrack> get _libraryByPath => _libraryService.libraryByPath;
-  Map<String, int> get _libraryIndexByPath =>
-      _libraryService.libraryIndexByPath;
   Map<String, List<MusicTrack>> get _tracksByGroup =>
       _libraryService.tracksByGroup;
-  set _sortedLibraryTracks(List<MusicTrack> value) {
-    _libraryService.sortedLibraryTracks = value;
-  }
-
   List<String> get _sortedLibraryTrackPaths =>
       _libraryService.sortedLibraryTrackPaths;
-  set _sortedLibraryTrackPaths(List<String> value) {
-    _libraryService.sortedLibraryTrackPaths = value;
-  }
-
-  List<String> get _groupOrder => _libraryService.groupOrder;
-  Set<String> get _groupOrderSet => _libraryService.groupOrderSet;
-  List<String> get _libraryNodeOrder => _libraryService.libraryNodeOrder;
   List<String> get _watchedFolders => _libraryService.watchedFolders;
   List<String> get _watchedLibraries => _libraryService.watchedLibraries;
   Map<String, Set<String>> get _excludedLibraryFolders =>
@@ -209,40 +174,15 @@ class AudioProvider with ChangeNotifier {
   Map<String, Set<String>> get _excludedLibraryTracks =>
       _libraryService.excludedLibraryTracks;
   bool get _isScanning => _libraryService.isScanning;
-  set _isScanning(bool value) => _libraryService.isScanning = value;
   bool get _isBackgroundScanning => _libraryService.isBackgroundScanning;
-  set _isBackgroundScanning(bool value) {
-    _libraryService.isBackgroundScanning = value;
-  }
-
   String get _scanCurrentFolder => _libraryService.scanCurrentFolder;
-  set _scanCurrentFolder(String value) =>
-      _libraryService.scanCurrentFolder = value;
   int get _scanFoundCount => _libraryService.scanFoundCount;
-  set _scanFoundCount(int value) => _libraryService.scanFoundCount = value;
   int get _scanDuplicateCount => _libraryService.scanDuplicateCount;
-  set _scanDuplicateCount(int value) =>
-      _libraryService.scanDuplicateCount = value;
   int get _scanFailureCount => _libraryService.scanFailureCount;
-  set _scanFailureCount(int value) => _libraryService.scanFailureCount = value;
   int get _scanGeneration => _libraryService.scanGeneration;
   FolderScanStage get _scanStage => _libraryService.scanStage;
   int get _scanProcessed => _libraryService.scanProcessed;
   int? get _scanTotal => _libraryService.scanTotal;
-  set _libraryBatchDepth(int value) =>
-      _libraryService.libraryBatchDepth = value;
-  set _libraryBatchChanged(bool value) {
-    _libraryService.libraryBatchChanged = value;
-  }
-
-  set _libraryBatchChangedGroupOrder(bool value) {
-    _libraryService.libraryBatchChangedGroupOrder = value;
-  }
-
-  List<MusicTrack> get _libraryBatchPersistTracks =>
-      _libraryService.libraryBatchPersistTracks;
-  Map<String, LibraryEntry> get _libraryBatchPersistEntriesByKey =>
-      _libraryService.libraryBatchPersistEntriesByKey;
   Timer? get _scanProgressNotifyTimer =>
       _libraryService.scanProgressNotifyTimer;
   set _scanProgressNotifyTimer(Timer? value) {
@@ -250,7 +190,6 @@ class AudioProvider with ChangeNotifier {
   }
 
   Map<String, PlaybackSession> get _sessions => _playbackService.sessions;
-  List<String> get _sessionOrder => _playbackService.sessionOrder;
 
   Map<String, String?> get _notificationSubtitleTexts =>
       _notificationStateService.notificationSubtitleTexts;
@@ -318,16 +257,9 @@ class AudioProvider with ChangeNotifier {
       _notificationStateService.notificationActionGuardTimeout;
 
   String get _converterFormat => _settingsRepository.converterFormat;
-  set _converterFormat(String value) =>
-      _settingsRepository.converterFormat = value;
   String get _converterBitrate => _settingsRepository.converterBitrate;
-  set _converterBitrate(String value) =>
-      _settingsRepository.converterBitrate = value;
   bool get _multiThreadPlaybackEnabled =>
       _settingsRepository.multiThreadPlaybackEnabled;
-  set _multiThreadPlaybackEnabled(bool value) {
-    _settingsRepository.multiThreadPlaybackEnabled = value;
-  }
 
   bool get _notificationsEnabled => _settingsRepository.notificationsEnabled;
   set _notificationsEnabled(bool value) {
@@ -335,38 +267,18 @@ class AudioProvider with ChangeNotifier {
   }
 
   bool get _showPlaybackCard => _settingsRepository.showPlaybackCard;
-  set _showPlaybackCard(bool value) =>
-      _settingsRepository.showPlaybackCard = value;
   StartupPage get _startupPage => _settingsRepository.startupPage;
-  set _startupPage(StartupPage value) =>
-      _settingsRepository.startupPage = value;
   BottomNavigationStyle get _bottomNavigationStyle =>
       _settingsRepository.bottomNavigationStyle;
-  set _bottomNavigationStyle(BottomNavigationStyle value) =>
-      _settingsRepository.bottomNavigationStyle = value;
   bool get _autoPlayAddedSessions => _settingsRepository.autoPlayAddedSessions;
-  set _autoPlayAddedSessions(bool value) {
-    _settingsRepository.autoPlayAddedSessions = value;
-  }
-
-  bool get _autoCheckUpdates => _settingsRepository.autoCheckUpdates;
-  set _autoCheckUpdates(bool value) {
-    _settingsRepository.autoCheckUpdates = value;
-  }
 
   ContentLanguagePreference get _dlsiteMetadataLanguagePreference =>
       _settingsRepository.dlsiteMetadataLanguage;
-  set _dlsiteMetadataLanguagePreference(ContentLanguagePreference value) {
-    _settingsRepository.dlsiteMetadataLanguage = value;
-  }
 
   AppLanguage get _dlsiteMetadataLanguage =>
       _dlsiteMetadataLanguagePreference.resolve(_pageLanguageResolver());
 
   int get _maxCacheBytes => _settingsRepository.maxCacheBytes;
-  set _maxCacheBytes(int value) {
-    _settingsRepository.maxCacheBytes = value;
-  }
 
   bool get _keepCpuAwake => _settingsRepository.keepCpuAwake;
   set _keepCpuAwake(bool value) => _settingsRepository.keepCpuAwake = value;
@@ -507,8 +419,7 @@ class AudioProvider with ChangeNotifier {
        _timerFacade = timer,
        _notificationFacade = notification,
        _settingsRepository = settings,
-       _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh),
-       _skipDisposePersistence = skipDisposePersistence {
+       _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh) {
     _audioPathCoordinator = AudioPathCoordinator(
       library: _libraryFacade,
       playback: _playbackFacade,
@@ -523,8 +434,6 @@ class AudioProvider with ChangeNotifier {
       notifications: _notificationFacade,
       subtitles: _subtitleService,
     );
-    _settingsRepository.attachPersistence(_savePlaybackSettings);
-    _settingsRepository.attachConverterPersistence(_saveConverterSettings);
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
     _playbackFacade.configurePersistence(enabled: !skipDisposePersistence);
     _libraryFacade.attachTrackRemovalHandler(_handleLibraryTracksRemoved);
@@ -536,8 +445,15 @@ class AudioProvider with ChangeNotifier {
     _playbackFacade.attachSessionDefaults(
       autoPlayAddedSessions: () => _autoPlayAddedSessions,
     );
-    _playbackFacade.attachSessionStatePersistence(_saveSessionState);
-    _playbackFacade.attachSessionOrderPersistence(_saveSessionOrder);
+    _playbackFacade.attachPersistenceRuntime(
+      trackByPath: _libraryFacade.trackByPath,
+      recordPlaybackProgress: () => _settingsRepository.recordPlaybackProgress,
+      restoreRuntime: _restorePersistedPlaybackRuntime,
+      updatePlaybackHistory: _libraryFacade.updatePlaybackHistory,
+      onFocusChanged: (sessionId) {
+        _notificationFocusSessionId = sessionId;
+      },
+    );
     _playbackFacade.attachSessionRuntime(
       onSessionRegistered: (session) {
         _notificationsDismissedWhilePaused = false;
@@ -677,6 +593,18 @@ class AudioProvider with ChangeNotifier {
         },
       ),
     );
+    _persistenceCoordinator = AppPersistenceCoordinator(
+      library: _libraryFacade,
+      playback: _playbackFacade,
+      settings: _settingsRepository,
+      timer: _timerFacade,
+      beforeReset: _beforePersistenceReset,
+      afterReset: _afterPersistenceReset,
+      onSettingsLoaded: _onPersistedSettingsLoaded,
+      onLibraryLoaded: _onPersistedLibraryLoaded,
+      onPlaybackLoaded: _onPersistedPlaybackLoaded,
+      onLoadCompleted: _onPersistedLoadCompleted,
+    );
     _runtimeCoordinator = AudioRuntimeCoordinator(
       snapshots: _nativePlaybackRepository.snapshots,
       progressUpdates: _nativePlaybackRepository.progressUpdates,
@@ -684,7 +612,7 @@ class AudioProvider with ChangeNotifier {
       stopListening: _nativePlaybackRepository.stopListening,
       onSnapshot: _handleNativePlaybackSnapshot,
       onProgress: _playbackFacade.applyNativeProgress,
-      onStart: _loadData,
+      onStart: _persistenceCoordinator.loadPersistedState,
       onEnterBackground: syncKeepAliveBeforeBackground,
       onResumeForeground: () async {
         syncKeepAliveAfterForegroundResume();
@@ -703,7 +631,7 @@ class AudioProvider with ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
-    _persistenceLoadEpoch++;
+    _persistenceCoordinator.dispose();
     _timerService.countdownTimer?.cancel();
     _timerService.autoResumeTimer?.cancel();
     _playbackFacade.cancelScheduledPersistence();

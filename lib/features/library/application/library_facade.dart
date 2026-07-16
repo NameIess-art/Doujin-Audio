@@ -134,6 +134,143 @@ final class LibraryFacade implements LibraryCatalog {
   AudioLibraryCategorySnapshot? get categorySnapshot =>
       snapshotCacheService.categorySnapshotSync;
 
+  Future<void> loadPersistedState() async {
+    final tracksFuture = databaseRepository.loadStartupTracks();
+    final entriesFuture = databaseRepository.loadAllLibraryEntries();
+    final preferences = await Future.wait<Object?>(<Future<Object?>>[
+      AppPreferences.readJson<List<String>>(
+        _groupOrderPreferenceKey,
+        _decodeStringList,
+      ),
+      AppPreferences.readJson<List<String>>(
+        _watchedFoldersPreferenceKey,
+        _decodeStringList,
+      ),
+      AppPreferences.readJson<List<String>>(
+        _watchedLibrariesPreferenceKey,
+        _decodeStringList,
+      ),
+      AppPreferences.readJson<Map<String, dynamic>>(
+        _libraryExclusionsPreferenceKey,
+        _decodeStringMap,
+      ),
+      AppPreferences.readJson<List<String>>(
+        _libraryNodeOrderPreferenceKey,
+        _decodeStringList,
+      ),
+    ]);
+    final tracks = await tracksFuture;
+    final entries = await entriesFuture;
+
+    service
+      ..library.addAll(tracks)
+      ..groupOrder.addAll((preferences[0] as List<String>?) ?? const <String>[])
+      ..groupOrderSet.addAll(
+        (preferences[0] as List<String>?) ?? const <String>[],
+      )
+      ..watchedFolders.addAll(
+        (preferences[1] as List<String>?) ?? const <String>[],
+      )
+      ..watchedLibraries.addAll(
+        (preferences[2] as List<String>?) ?? const <String>[],
+      )
+      ..libraryNodeOrder.addAll(
+        (preferences[4] as List<String>?) ?? const <String>[],
+      );
+    final exclusions = preferences[3] as Map<String, dynamic>?;
+    _decodeExclusionMap(exclusions?['folders'], service.excludedLibraryFolders);
+    _decodeExclusionMap(exclusions?['tracks'], service.excludedLibraryTracks);
+    service
+      ..replaceLibraryEntries(entries)
+      ..rebuildExclusionsFromEntries(entries);
+    _applyExclusionsToLibrary();
+
+    beginLibraryBatch();
+    service.libraryBatchChanged = service.library.isNotEmpty;
+    await endLibraryBatch(notify: false, waitForPersistence: false);
+    service
+      ..syncGroupOrderFromLibrary()
+      ..syncLibraryNodeOrder(persist: false);
+    await loadLibraryTree();
+    _syncStateSlice(isInitialized: true);
+  }
+
+  Future<void> resetForBackupRestore() async {
+    service.scanProgressNotifyTimer?.cancel();
+    service
+      ..scanProgressNotifyTimer = null
+      ..library.clear()
+      ..libraryByPath.clear()
+      ..libraryIndexByPath.clear()
+      ..tracksByGroup.clear()
+      ..sortedLibraryTracks = const <MusicTrack>[]
+      ..sortedLibraryTrackPaths = const <String>[]
+      ..groupOrder.clear()
+      ..groupOrderSet.clear()
+      ..libraryNodeOrder.clear()
+      ..watchedFolders.clear()
+      ..watchedLibraries.clear()
+      ..excludedLibraryFolders.clear()
+      ..excludedLibraryTracks.clear()
+      ..libraryEntriesByLibrary.clear()
+      ..isScanning = false
+      ..isBackgroundScanning = false
+      ..scanCurrentFolder = ''
+      ..scanFoundCount = 0
+      ..scanDuplicateCount = 0
+      ..scanFailureCount = 0
+      ..libraryBatchDepth = 0
+      ..libraryBatchChanged = false
+      ..libraryBatchChangedGroupOrder = false
+      ..libraryBatchPersistTracks.clear()
+      ..libraryBatchPersistEntriesByKey.clear()
+      ..markStructureChanged();
+    snapshotCacheService.clear();
+    _coverArtworkCacheService?.invalidateAll();
+    _syncStateSlice(isInitialized: false);
+  }
+
+  List<String> _decodeStringList(Object? value) {
+    return (value as List<dynamic>).cast<String>();
+  }
+
+  Map<String, dynamic> _decodeStringMap(Object? value) {
+    return (value as Map<Object?, Object?>).map(
+      (key, value) => MapEntry(key.toString(), value),
+    );
+  }
+
+  void _decodeExclusionMap(Object? raw, Map<String, Set<String>> target) {
+    target.clear();
+    if (raw is! Map) return;
+    for (final entry in raw.entries) {
+      final values = entry.value;
+      if (values is! List) continue;
+      target[path.normalize(entry.key.toString())] = values
+          .map((value) => path.normalize(value.toString()))
+          .where((value) => value.isNotEmpty)
+          .toSet();
+    }
+  }
+
+  void _applyExclusionsToLibrary() {
+    final excludedTracks = service.excludedLibraryTracks.values
+        .expand((paths) => paths)
+        .toSet();
+    final excludedFolders = service.excludedLibraryFolders.values
+        .expand((paths) => paths)
+        .toSet();
+    if (excludedTracks.isEmpty && excludedFolders.isEmpty) return;
+    final trackIndex = PathMembershipIndex(excludedTracks);
+    final folderIndex = PathMembershipIndex(excludedFolders);
+    removeTracksMatching(
+      (track) =>
+          trackIndex.containsEquivalent(track.path) ||
+          folderIndex.containsAncestorOrEqual(track.path) ||
+          folderIndex.containsAncestorOrEqual(track.groupKey),
+    );
+  }
+
   List<LibraryNode> get libraryTree {
     if (snapshotCacheService.treeSnapshotRevision !=
         service.structureRevision) {
@@ -549,6 +686,30 @@ final class LibraryFacade implements LibraryCatalog {
       detailCacheService.resolvedDetail(target);
   @override
   MusicTrack? trackByPath(String trackPath) => service.trackByPath(trackPath);
+
+  MusicTrack? updatePlaybackHistory({
+    required String trackPath,
+    required Duration position,
+    required DateTime now,
+    required bool updatePlayedAt,
+  }) {
+    final track = service.libraryByPath[trackPath];
+    if (track == null) return null;
+    final updated = _copyTrack(
+      track,
+      lastPlayedPosition: position,
+      lastPlayedAt: updatePlayedAt ? now : track.lastPlayedAt,
+    );
+    service.libraryByPath[track.path] = updated;
+    final index = service.libraryIndexByPath[track.path];
+    if (index != null &&
+        index < service.library.length &&
+        service.library[index].path == track.path) {
+      service.library[index] = updated;
+    }
+    return updated;
+  }
+
   List<MusicTrack> tracksInGroup(String groupKey) =>
       List<MusicTrack>.unmodifiable(
         service.tracksByGroup[groupKey] ?? const <MusicTrack>[],
@@ -806,6 +967,13 @@ final class LibraryFacade implements LibraryCatalog {
     );
     snapshotCacheService.applyCurrentTopLevelOrder();
     _syncStateSlice();
+  }
+
+  void syncLibraryNodeOrder({bool persist = true}) {
+    service.syncLibraryNodeOrder(
+      persist: persist,
+      onPersist: () => unawaited(_saveLibraryNodeOrder()),
+    );
   }
 
   Future<void> _saveLibraryNodeOrder() {
@@ -1862,6 +2030,8 @@ final class LibraryFacade implements LibraryCatalog {
     String? coverCachePath,
     String? lyricsPath,
     String? manualCoverPath,
+    Duration? lastPlayedPosition,
+    DateTime? lastPlayedAt,
   }) {
     return MusicTrack(
       path: path ?? track.path,
@@ -1874,8 +2044,8 @@ final class LibraryFacade implements LibraryCatalog {
       scannedAt: track.scannedAt,
       fileSizeBytes: track.fileSizeBytes,
       modifiedAt: track.modifiedAt,
-      lastPlayedPosition: track.lastPlayedPosition,
-      lastPlayedAt: track.lastPlayedAt,
+      lastPlayedPosition: lastPlayedPosition ?? track.lastPlayedPosition,
+      lastPlayedAt: lastPlayedAt ?? track.lastPlayedAt,
       isFavorite: track.isFavorite,
       tags: track.tags,
       coverCachePath: coverCachePath ?? track.coverCachePath,
@@ -2190,10 +2360,10 @@ final class LibraryFacade implements LibraryCatalog {
     _coverArtworkCacheService ??= create();
   }
 
-  void _syncStateSlice() {
+  void _syncStateSlice({bool? isInitialized}) {
     final current = service.slice.state;
     service.syncSlice(
-      isInitialized: current.isInitialized,
+      isInitialized: isInitialized ?? current.isInitialized,
       detailRevision: detailCacheService.revision,
       treeSnapshotRevision: snapshotCacheService.cardSnapshotRevision,
       categorySnapshotRevision: snapshotCacheService.categorySnapshotRevision,

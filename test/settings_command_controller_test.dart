@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
@@ -9,11 +11,13 @@ import 'package:nameless_audio/features/player/application/playback_session.dart
 import 'package:nameless_audio/features/player/domain/audio_effects.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/settings/application/settings_command_controller.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   test(
     'custom EQ preset is published and persisted by settings owner',
     () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
       final settings = SettingsRepository()..syncSlice(isInitialized: true);
       final playback = PlaybackFacade.create(
         databaseRepository: AudioDatabaseRepository(),
@@ -24,8 +28,6 @@ void main() {
       addTearDown(settings.dispose);
       addTearDown(playback.dispose);
       addTearDown(notifications.dispose);
-      var persistCount = 0;
-      settings.attachPersistence(() async => persistCount++);
       final controller = SettingsCommandController(
         settings: settings,
         playback: playback,
@@ -63,7 +65,14 @@ void main() {
         ),
       );
       expect(settings.slice.state.customEqPresets, settings.customEqPresets);
-      expect(persistCount, 1);
+      final saved =
+          json.decode(
+                (await SharedPreferences.getInstance()).getString(
+                  'playback_settings_v1',
+                )!,
+              )
+              as Map<String, dynamic>;
+      expect((saved['customEqPresets'] as List<dynamic>), hasLength(1));
     },
   );
 }

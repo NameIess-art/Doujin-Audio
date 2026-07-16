@@ -51,7 +51,9 @@ class _ActiveSessionCard extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
-    final currentTrack = library.trackByPath(view.trackPath);
+    final currentTrack = ref
+        .read(audioPathCoordinatorProvider)
+        .sessionTrackForPath(session.id, view.trackPath);
     final displayName =
         currentTrack?.displayName ??
         path.basenameWithoutExtension(view.trackPath);

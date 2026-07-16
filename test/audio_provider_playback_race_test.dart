@@ -7,7 +7,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/settings/application/settings_state.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
 import 'package:nameless_audio/core/platform/notifications_platform_service.dart';
 import 'package:nameless_audio/core/media/path_matcher.dart';
@@ -383,6 +383,7 @@ void main() {
     test(
       'failed queue prepare restores the previous native track without committing target state',
       () async {
+        provider.playbackFacade.configurePersistence(enabled: true);
         const first = MusicTrack(
           path: 'https://example.com/transaction-a.mp3',
           displayName: 'A',

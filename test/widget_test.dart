@@ -17,6 +17,8 @@ import 'package:nameless_audio/features/settings/application/app_preferences.dar
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/library/application/library_service.dart';
+import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
@@ -89,6 +91,22 @@ void main() {
       find.byKey(const ValueKey<String>('main_page_fade_1')),
       findsNothing,
     );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('ASMR initial shell keeps category and search controls visible', (
+    tester,
+  ) async {
+    final harness = await _pumpAppShell(tester, includePlaybackSession: false);
+
+    await _tapAsmrDestination(tester);
+    await _pumpMainScreenAnimations(tester);
+
+    expect(
+      find.text(harness.language.tr('asmr_category_collected')),
+      findsOneWidget,
+    );
+    expect(find.byType(TextField), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -838,6 +856,27 @@ Future<void> _tapSettingsDestination(WidgetTester tester) async {
         .call();
   }
   await _waitForMainPage(tester, 3);
+}
+
+Future<void> _tapAsmrDestination(WidgetTester tester) async {
+  final navigationRail = find.byType(NavigationRail);
+  if (navigationRail.evaluate().isNotEmpty) {
+    tester
+        .widget<NavigationRail>(navigationRail)
+        .onDestinationSelected!
+        .call(0);
+  } else {
+    final destination = find.byKey(
+      const ValueKey<String>('main_destination_ASMR.ONE'),
+    );
+    tester
+        .widget<InkResponse>(
+          find.descendant(of: destination, matching: find.byType(InkResponse)),
+        )
+        .onTap!
+        .call();
+  }
+  await _waitForMainPage(tester, 0);
 }
 
 Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {

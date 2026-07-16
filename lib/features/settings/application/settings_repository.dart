@@ -1,0 +1,360 @@
+import 'package:flutter/foundation.dart';
+
+import '../../../app/application/audio_state_slice.dart';
+import '../../../core/app_language.dart';
+import '../../../core/media/card_info_field.dart';
+import '../../asmr/domain/asmr_download.dart';
+import '../../player/domain/audio_effects.dart';
+import 'app_cache_service.dart';
+import 'app_preferences.dart';
+import 'settings_state.dart';
+
+class SettingsRepository {
+  static const _playbackSettingsKey = 'playback_settings_v1';
+  static const _converterSettingsKey = 'converter_settings_v1';
+  static const converterFormats = <String>['mp3', 'flac', 'wav', 'aac', 'ogg'];
+  static const converterBitrates = <String>['128k', '192k', '256k', '320k'];
+  String converterFormat = 'mp3';
+  String converterBitrate = '320k';
+  bool multiThreadPlaybackEnabled = false;
+  bool notificationsEnabled = true;
+  bool showPlaybackCard = true;
+  bool autoPlayAddedSessions = true;
+  bool autoCheckUpdates = false;
+  ContentLanguagePreference dlsiteMetadataLanguage =
+      ContentLanguagePreference.followPage;
+  List<CardInfoField> cardInfoFields = CardInfoField.defaults;
+  bool cardPositionsLocked = true;
+  List<EqPreset> customEqPresets = const <EqPreset>[];
+  int maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
+  bool asmrPlaybackCacheEnabled = false;
+  bool keepCpuAwake = false;
+  bool recordPlaybackProgress = true;
+  bool blurPlayerBackgroundEnabled = true;
+  bool uiBlurEffectEnabled = true;
+  bool hapticFeedbackEnabled = true;
+  StartupPage startupPage = StartupPage.library;
+  BottomNavigationStyle bottomNavigationStyle = BottomNavigationStyle.capsule;
+  CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
+  String? asmrDownloadDestinationRoot;
+  AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
+      AsmrDownloadConflictPolicy.overwrite;
+  final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
+    const SettingsState(),
+  );
+
+  Future<void> loadPersistedState() async {
+    _resetValues();
+    final playback = await AppPreferences.readJson<Map<String, dynamic>>(
+      _playbackSettingsKey,
+      (value) => (value as Map<Object?, Object?>).map(
+        (key, value) => MapEntry(key.toString(), value),
+      ),
+    );
+    if (playback != null) {
+      multiThreadPlaybackEnabled =
+          playback['multiThreadPlaybackEnabled'] as bool? ?? false;
+      notificationsEnabled = playback['notificationsEnabled'] as bool? ?? true;
+      showPlaybackCard = playback['showPlaybackCard'] as bool? ?? true;
+      startupPage = StartupPage.values.firstWhere(
+        (value) => value.name == playback['startupPage'],
+        orElse: () => StartupPage.library,
+      );
+      bottomNavigationStyle = BottomNavigationStyle.values.firstWhere(
+        (value) => value.name == playback['bottomNavigationStyle'],
+        orElse: () => BottomNavigationStyle.capsule,
+      );
+      autoPlayAddedSessions =
+          playback['autoPlayAddedSessions'] as bool? ?? true;
+      autoCheckUpdates = playback['autoCheckUpdates'] as bool? ?? false;
+      recordPlaybackProgress =
+          playback['recordPlaybackProgress'] as bool? ?? true;
+      asmrPlaybackCacheEnabled =
+          playback['asmrPlaybackCacheEnabled'] as bool? ?? false;
+      blurPlayerBackgroundEnabled =
+          playback['blurPlayerBackgroundEnabled'] as bool? ?? true;
+      uiBlurEffectEnabled = playback['uiBlurEffectEnabled'] as bool? ?? true;
+      hapticFeedbackEnabled =
+          playback['hapticFeedbackEnabled'] as bool? ?? true;
+      coverImageResolution = CoverImageResolution.values.firstWhere(
+        (value) => value.name == playback['coverImageResolution'],
+        orElse: () => CoverImageResolution.balanced,
+      );
+      asmrDownloadDestinationRoot = _optionalString(
+        playback['asmrDownloadDestinationRoot'],
+      );
+      asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.values.firstWhere(
+        (value) => value.name == playback['asmrDownloadConflictPolicy'],
+        orElse: () => AsmrDownloadConflictPolicy.overwrite,
+      );
+      dlsiteMetadataLanguage = ContentLanguagePreference.fromName(
+        playback['dlsiteMetadataLanguage'],
+      );
+      cardInfoFields = CardInfoField.decode(playback['cardInfoFields']);
+      cardPositionsLocked = playback['cardPositionsLocked'] as bool? ?? true;
+      customEqPresets = _decodeEqPresets(playback['customEqPresets']);
+      maxCacheBytes =
+          (playback['maxCacheBytes'] as num?)?.toInt() ??
+          AppCacheService.defaultMaxCacheBytes;
+    }
+
+    final converter = await AppPreferences.readJson<Map<String, dynamic>>(
+      _converterSettingsKey,
+      (value) => (value as Map<Object?, Object?>).map(
+        (key, value) => MapEntry(key.toString(), value),
+      ),
+    );
+    final savedFormat = converter?['format'];
+    final savedBitrate = converter?['bitrate'];
+    if (savedFormat is String && converterFormats.contains(savedFormat)) {
+      converterFormat = savedFormat;
+    }
+    if (savedBitrate is String && converterBitrates.contains(savedBitrate)) {
+      converterBitrate = savedBitrate;
+    }
+    await AppCacheService.setMaxCacheBytes(maxCacheBytes);
+    syncSlice(isInitialized: true);
+  }
+
+  Future<void> resetForBackupRestore() async {
+    _resetValues();
+    syncSlice();
+  }
+
+  Future<void> persist() {
+    return AppPreferences.writeJson(_playbackSettingsKey, <String, Object?>{
+      'multiThreadPlaybackEnabled': multiThreadPlaybackEnabled,
+      'notificationsEnabled': notificationsEnabled,
+      'showPlaybackCard': showPlaybackCard,
+      'startupPage': startupPage.name,
+      'bottomNavigationStyle': bottomNavigationStyle.name,
+      'autoPlayAddedSessions': autoPlayAddedSessions,
+      'autoCheckUpdates': autoCheckUpdates,
+      'recordPlaybackProgress': recordPlaybackProgress,
+      'asmrPlaybackCacheEnabled': asmrPlaybackCacheEnabled,
+      'blurPlayerBackgroundEnabled': blurPlayerBackgroundEnabled,
+      'uiBlurEffectEnabled': uiBlurEffectEnabled,
+      'hapticFeedbackEnabled': hapticFeedbackEnabled,
+      'coverImageResolution': coverImageResolution.name,
+      'asmrDownloadDestinationRoot': asmrDownloadDestinationRoot,
+      'asmrDownloadConflictPolicy': asmrDownloadConflictPolicy.name,
+      'dlsiteMetadataLanguage': dlsiteMetadataLanguage.name,
+      'cardInfoFields': cardInfoFields
+          .map((field) => field.name)
+          .toList(growable: false),
+      'cardPositionsLocked': cardPositionsLocked,
+      'customEqPresets': customEqPresets
+          .map((preset) => preset.toJson())
+          .toList(growable: false),
+      'maxCacheBytes': maxCacheBytes,
+    });
+  }
+
+  Future<void> setConverterSettings({String? format, String? bitrate}) async {
+    var changed = false;
+    if (format != null &&
+        converterFormats.contains(format) &&
+        format != converterFormat) {
+      converterFormat = format;
+      changed = true;
+    }
+    if (bitrate != null &&
+        converterBitrates.contains(bitrate) &&
+        bitrate != converterBitrate) {
+      converterBitrate = bitrate;
+      changed = true;
+    }
+    if (!changed) return;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await AppPreferences.writeJson(_converterSettingsKey, <String, Object?>{
+      'format': converterFormat,
+      'bitrate': converterBitrate,
+    });
+  }
+
+  Future<void> setAsmrDownloadDestinationRoot(String? destinationRoot) async {
+    final normalized = destinationRoot?.trim();
+    final next = normalized == null || normalized.isEmpty ? null : normalized;
+    if (asmrDownloadDestinationRoot == next) return;
+    asmrDownloadDestinationRoot = next;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await persist();
+  }
+
+  Future<void> setCardInfoFields(Iterable<CardInfoField> fields) async {
+    final normalized = CardInfoField.normalize(fields);
+    if (listEquals(cardInfoFields, normalized)) return;
+    cardInfoFields = normalized;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await persist();
+  }
+
+  Future<void> setCardPositionsLocked(bool locked) async {
+    if (cardPositionsLocked == locked) return;
+    cardPositionsLocked = locked;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await persist();
+  }
+
+  Future<void> setMultiThreadPlaybackEnabled(bool enabled) => _setValue(
+    unchanged: multiThreadPlaybackEnabled == enabled,
+    update: () => multiThreadPlaybackEnabled = enabled,
+  );
+
+  Future<void> setShowPlaybackCard(bool enabled) => _setValue(
+    unchanged: showPlaybackCard == enabled,
+    update: () => showPlaybackCard = enabled,
+  );
+
+  Future<void> setAutoPlayAddedSessions(bool enabled) => _setValue(
+    unchanged: autoPlayAddedSessions == enabled,
+    update: () => autoPlayAddedSessions = enabled,
+  );
+
+  Future<void> setAutoCheckUpdates(bool enabled) => _setValue(
+    unchanged: autoCheckUpdates == enabled,
+    update: () => autoCheckUpdates = enabled,
+  );
+
+  Future<void> setDlsiteMetadataLanguage(ContentLanguagePreference language) =>
+      _setValue(
+        unchanged: dlsiteMetadataLanguage == language,
+        update: () => dlsiteMetadataLanguage = language,
+      );
+
+  Future<void> setMaxCacheBytes(int bytes) => _setValue(
+    unchanged: maxCacheBytes == bytes,
+    update: () => maxCacheBytes = bytes,
+  );
+
+  Future<void> setAsmrPlaybackCacheEnabled(bool enabled) => _setValue(
+    unchanged: asmrPlaybackCacheEnabled == enabled,
+    update: () => asmrPlaybackCacheEnabled = enabled,
+  );
+
+  Future<void> setRecordPlaybackProgress(bool enabled) => _setValue(
+    unchanged: recordPlaybackProgress == enabled,
+    update: () => recordPlaybackProgress = enabled,
+  );
+
+  Future<void> setBlurPlayerBackgroundEnabled(bool enabled) => _setValue(
+    unchanged: blurPlayerBackgroundEnabled == enabled,
+    update: () => blurPlayerBackgroundEnabled = enabled,
+  );
+
+  Future<void> setUiBlurEffectEnabled(bool enabled) => _setValue(
+    unchanged: uiBlurEffectEnabled == enabled,
+    update: () => uiBlurEffectEnabled = enabled,
+  );
+
+  Future<void> setHapticFeedbackEnabled(bool enabled) => _setValue(
+    unchanged: hapticFeedbackEnabled == enabled,
+    update: () => hapticFeedbackEnabled = enabled,
+  );
+
+  Future<void> setStartupPage(StartupPage page) => _setValue(
+    unchanged: startupPage == page,
+    update: () => startupPage = page,
+  );
+
+  Future<void> setBottomNavigationStyle(BottomNavigationStyle style) =>
+      _setValue(
+        unchanged: bottomNavigationStyle == style,
+        update: () => bottomNavigationStyle = style,
+      );
+
+  Future<void> setCoverImageResolution(CoverImageResolution resolution) =>
+      _setValue(
+        unchanged: coverImageResolution == resolution,
+        update: () => coverImageResolution = resolution,
+      );
+
+  Future<void> setAsmrDownloadConflictPolicy(
+    AsmrDownloadConflictPolicy policy,
+  ) => _setValue(
+    unchanged: asmrDownloadConflictPolicy == policy,
+    update: () => asmrDownloadConflictPolicy = policy,
+  );
+
+  Future<void> _setValue({
+    required bool unchanged,
+    required void Function() update,
+  }) async {
+    if (unchanged) return;
+    update();
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await persist();
+  }
+
+  void _resetValues() {
+    converterFormat = 'mp3';
+    converterBitrate = '320k';
+    multiThreadPlaybackEnabled = false;
+    notificationsEnabled = true;
+    showPlaybackCard = true;
+    autoPlayAddedSessions = true;
+    autoCheckUpdates = false;
+    dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
+    cardInfoFields = CardInfoField.defaults;
+    cardPositionsLocked = true;
+    customEqPresets = const <EqPreset>[];
+    maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
+    asmrPlaybackCacheEnabled = false;
+    keepCpuAwake = false;
+    recordPlaybackProgress = true;
+    blurPlayerBackgroundEnabled = true;
+    uiBlurEffectEnabled = true;
+    hapticFeedbackEnabled = true;
+    startupPage = StartupPage.library;
+    bottomNavigationStyle = BottomNavigationStyle.capsule;
+    coverImageResolution = CoverImageResolution.balanced;
+    asmrDownloadDestinationRoot = null;
+    asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
+  }
+
+  String? _optionalString(Object? value) {
+    if (value is! String) return null;
+    final trimmed = value.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
+
+  List<EqPreset> _decodeEqPresets(Object? value) {
+    if (value is! List) return const <EqPreset>[];
+    return value
+        .map(EqPreset.fromJson)
+        .where((preset) => preset.id.isNotEmpty && preset.labelKey.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  void syncSlice({bool isInitialized = false}) {
+    slice.update(
+      SettingsState(
+        converterFormat: converterFormat,
+        converterBitrate: converterBitrate,
+        multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
+        notificationsEnabled: notificationsEnabled,
+        showPlaybackCard: showPlaybackCard,
+        autoPlayAddedSessions: autoPlayAddedSessions,
+        autoCheckUpdates: autoCheckUpdates,
+        dlsiteMetadataLanguage: dlsiteMetadataLanguage,
+        cardInfoFields: List<CardInfoField>.unmodifiable(cardInfoFields),
+        cardPositionsLocked: cardPositionsLocked,
+        customEqPresets: List<EqPreset>.unmodifiable(customEqPresets),
+        maxCacheBytes: maxCacheBytes,
+        asmrPlaybackCacheEnabled: asmrPlaybackCacheEnabled,
+        recordPlaybackProgress: recordPlaybackProgress,
+        blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
+        uiBlurEffectEnabled: uiBlurEffectEnabled,
+        hapticFeedbackEnabled: hapticFeedbackEnabled,
+        startupPage: startupPage,
+        bottomNavigationStyle: bottomNavigationStyle,
+        coverImageResolution: coverImageResolution,
+        asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
+        asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,
+        isInitialized: isInitialized,
+      ),
+    );
+  }
+
+  Future<void> dispose() => slice.dispose();
+}

@@ -1,7 +1,7 @@
 import '../domain/library_entry.dart';
 import '../../../core/media/music_track.dart';
-import '../../player/application/audio_state_services.dart';
 import 'library_scan_models.dart';
+import 'library_state_models.dart';
 
 abstract interface class LibraryCatalogReader {
   List<MusicTrack> get library;

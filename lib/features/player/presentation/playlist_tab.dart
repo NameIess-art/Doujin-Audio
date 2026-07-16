@@ -15,8 +15,8 @@ import '../../../app/application/audio_path_coordinator.dart';
 import '../../../app/application/audio_ui_warmup_coordinator.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
-import '../application/audio_state_services.dart';
 import '../application/playback_facade.dart';
+import '../../settings/application/settings_state.dart';
 import '../application/playback_session.dart';
 import '../application/playback_time_segment_service.dart';
 import '../../../core/media/path_display.dart';
@@ -365,7 +365,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _schedulePlaybackCoverWarmup(
     PlaylistListState listState,
-    LibraryFacade library,
+    AudioPathCoordinator paths,
     AudioUiWarmupCoordinator warmup,
   ) {
     if (_isReordering || !listState.isInitialized || !listState.hasSessions) {
@@ -390,7 +390,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       }
       final trackPath = cardState?.trackPath ?? session.currentTrackPath;
       signatureParts.add(trackPath);
-      tracks.add(library.trackByPath(trackPath));
+      tracks.add(paths.sessionTrackForPath(session.id, trackPath));
     }
     if (tracks.isEmpty) return;
     final signature = signatureParts.join('|');
@@ -465,6 +465,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
+    final paths = ref.read(audioPathCoordinatorProvider);
     final playback = ref.read(playbackFacadeProvider);
     final settings = ref.read(settingsRepositoryProvider);
     final warmup = ref.read(audioUiWarmupCoordinatorProvider);
@@ -489,7 +490,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         : (_isActive
               ? ref.watch(subtitleSettingsProvider)
               : ref.read(subtitleSettingsProvider));
-    _schedulePlaybackCoverWarmup(listState, library, warmup);
+    _schedulePlaybackCoverWarmup(listState, paths, warmup);
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final coverCacheWidth = coverCacheWidthForResolution(
       settingsState.coverImageResolution,
@@ -514,7 +515,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       if (cardState == null) {
         return SizedBox.shrink(key: ValueKey(session.id));
       }
-      final track = library.trackByPath(cardState.trackPath);
+      final track = paths.sessionTrackForPath(session.id, cardState.trackPath);
       final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
       final child = RepaintBoundary(
         child: session.isPlaybackQueue

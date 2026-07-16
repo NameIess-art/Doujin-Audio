@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../application/data_support_file_service.dart';
@@ -26,9 +25,7 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   @override
   void initState() {
     super.initState();
-    _fileService = DataSupportFileService(
-      appUpdateService: ref.read(appUpdateServiceProvider),
-    );
+    _fileService = ref.read(dataSupportFileServiceProvider);
   }
 
   Future<void> _exportBackup() async {
@@ -56,9 +53,6 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
 
   Future<void> _restoreBackup() async {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final audioProvider = ref.read(audioProviderFacadeProvider);
-    final asmrController = ref.read(asmrLibraryControllerProvider);
-    if (asmrController == null) return;
     final confirmed = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('restore_backup'),
@@ -73,7 +67,9 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
       scope: UiOperationScope.dataSupportBackupRestore,
       labelKey: 'restore_backup',
       action: () async {
-        final result = await _fileService.pickAndRestoreBackup();
+        final result = await ref
+            .read(backupRestoreCoordinatorProvider)
+            .pickAndRestoreBackup();
         if (result == null) return;
         if (!result.isValid) {
           if (!mounted) return;
@@ -89,8 +85,6 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
           );
           return;
         }
-        await audioProvider.reloadPersistedStateAfterBackupRestore();
-        await asmrController.reloadPersistedStateAfterBackupRestore();
         if (!mounted) return;
         showAppSnackBar(
           context,

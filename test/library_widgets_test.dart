@@ -592,6 +592,15 @@ void main() {
 
     expect(find.text('WorkA', findRichText: true), findsOneWidget);
     expect(find.text(languageProvider.tr('restore')), findsOneWidget);
+    expect(find.text(languageProvider.tr('excluded')), findsNothing);
+    expect(
+      tester
+          .widget<TextButton>(
+            find.widgetWithText(TextButton, languageProvider.tr('restore')),
+          )
+          .style,
+      isNull,
+    );
 
     await tester.tap(find.text('WorkA', findRichText: true).first);
     await tester.pump();
@@ -617,7 +626,7 @@ void main() {
     expect(find.text(languageProvider.tr('exclude')), findsWidgets);
   });
 
-  testWidgets('library edit contains long excluded labels on a narrow screen', (
+  testWidgets('library edit keeps excluded tracks compact on a narrow screen', (
     WidgetTester tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(360, 800));
@@ -684,6 +693,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
+    final surfacePaths = <String>[firstTrackPath, secondTrackPath];
+    final initialSurfaceHeights = <String, double>{
+      for (final path in surfacePaths)
+        path: tester
+            .getSize(find.byKey(ValueKey('library-edit-track-surface:$path')))
+            .height,
+    };
+
     await tester.tap(
       find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
     );
@@ -698,6 +715,7 @@ void main() {
     expect(find.text(secondTitle), findsOneWidget);
     expect(find.textContaining('primary%3A'), findsNothing);
     expect(find.text(languageProvider.tr('restore')), findsNWidgets(2));
+    expect(find.text(languageProvider.tr('excluded')), findsNothing);
     expect(tester.takeException(), isNull);
 
     final tileRects = <Rect>[];
@@ -713,28 +731,23 @@ void main() {
           languageProvider.tr('restore'),
         ),
       );
-      final excludedFinder = find.descendant(
-        of: tileFinder,
-        matching: find.text(languageProvider.tr('excluded')),
-      );
       expect(tileFinder, findsOneWidget);
       expect(restoreFinder, findsOneWidget);
-      expect(excludedFinder, findsOneWidget);
-      expect(tester.widget<ListTile>(tileFinder).isThreeLine, isTrue);
+      expect(tester.widget<ListTile>(tileFinder).isThreeLine, isNot(isTrue));
+      expect(tester.widget<ListTile>(tileFinder).subtitle, isNull);
+      expect(tester.widget<TextButton>(restoreFinder).style, isNull);
 
+      final path = title == firstTitle ? firstTrackPath : secondTrackPath;
       final surfaceFinder = find.byKey(
-        ValueKey(
-          'library-edit-track-surface:${title == firstTitle ? firstTrackPath : secondTrackPath}',
-        ),
+        ValueKey('library-edit-track-surface:$path'),
       );
       expect(surfaceFinder, findsOneWidget);
 
       final tileRect = tester.getRect(surfaceFinder);
       final titleRect = tester.getRect(find.text(title));
-      final excludedRect = tester.getRect(excludedFinder);
       final restoreRect = tester.getRect(restoreFinder);
+      expect(tileRect.height, initialSurfaceHeights[path]);
       expect(titleRect.right, lessThanOrEqualTo(restoreRect.left));
-      expect(excludedRect.bottom, lessThanOrEqualTo(tileRect.bottom));
       expect(restoreRect.right, lessThanOrEqualTo(tileRect.right));
       expect(restoreRect.bottom, lessThanOrEqualTo(tileRect.bottom));
       tileRects.add(tileRect);

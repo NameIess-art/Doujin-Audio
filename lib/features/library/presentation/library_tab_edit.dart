@@ -1117,9 +1117,7 @@ class _LibraryEditFolderTreeTileState
           ),
         ),
         subtitle: Text(
-          muted
-              ? i18n.tr('excluded')
-              : i18n.tr('audio_count', {'count': includedCount}),
+          i18n.tr('audio_count', {'count': includedCount}),
           style: Theme.of(context).textTheme.labelSmall?.copyWith(
             color: cs.onSurfaceVariant,
             fontWeight: FontWeight.w700,
@@ -1132,7 +1130,6 @@ class _LibraryEditFolderTreeTileState
             children: [
               Flexible(
                 child: TextButton.icon(
-                  style: muted ? _libraryMutedButtonStyle(cs) : null,
                   onPressed: inheritedExcluded
                       ? null
                       : () {
@@ -1242,70 +1239,54 @@ class _LibraryEditTrackTile extends ConsumerWidget {
         color: cs.surfaceContainerHigh.withValues(alpha: 0.4),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         clipBehavior: Clip.antiAlias,
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: viewState.muted ? 88 : 0),
-          child: ListTile(
-            dense: true,
-            isThreeLine: viewState.muted,
-            minVerticalPadding: viewState.muted ? 8 : 2,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 2,
+        child: ListTile(
+          dense: true,
+          minVerticalPadding: 2,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 2,
+          ),
+          leading: Icon(
+            viewState.muted
+                ? Icons.music_off_rounded
+                : Icons.music_note_rounded,
+            color: viewState.muted
+                ? cs.onSurfaceVariant
+                : cs.primary.withValues(alpha: 0.8),
+            size: 20,
+          ),
+          title: Text(
+            viewState.title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: viewState.muted ? cs.onSurfaceVariant : cs.onSurface,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
             ),
-            leading: Icon(
-              viewState.muted
-                  ? Icons.music_off_rounded
-                  : Icons.music_note_rounded,
-              color: viewState.muted
-                  ? cs.onSurfaceVariant
-                  : cs.primary.withValues(alpha: 0.8),
-              size: 20,
+          ),
+          trailing: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minWidth: 64,
+              maxWidth: 88,
+              minHeight: 48,
             ),
-            title: Text(
-              viewState.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: viewState.muted ? cs.onSurfaceVariant : cs.onSurface,
-                fontWeight: FontWeight.w600,
-                fontSize: 13,
-              ),
-            ),
-            subtitle: viewState.muted
-                ? Text(
-                    i18n.tr('excluded'),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: cs.onSurfaceVariant.withValues(alpha: 0.8),
-                      fontSize: 11,
-                    ),
-                  )
-                : null,
-            trailing: ConstrainedBox(
-              constraints: const BoxConstraints(
-                minWidth: 64,
-                maxWidth: 88,
-                minHeight: 48,
-              ),
-              child: TextButton(
-                style: viewState.muted ? _libraryMutedButtonStyle(cs) : null,
-                onPressed: viewState.inheritedExcluded
-                    ? null
-                    : () {
-                        libraryFacade.setLibraryTrackExcluded(
-                          libraryPath,
-                          trackPath,
-                          !viewState.explicitExcluded,
-                        );
-                      },
-                child: Text(
-                  viewState.explicitExcluded
-                      ? i18n.tr('restore')
-                      : i18n.tr('exclude'),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+            child: TextButton(
+              onPressed: viewState.inheritedExcluded
+                  ? null
+                  : () {
+                      libraryFacade.setLibraryTrackExcluded(
+                        libraryPath,
+                        trackPath,
+                        !viewState.explicitExcluded,
+                      );
+                    },
+              child: Text(
+                viewState.explicitExcluded
+                    ? i18n.tr('restore')
+                    : i18n.tr('exclude'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
           ),
@@ -1313,12 +1294,4 @@ class _LibraryEditTrackTile extends ConsumerWidget {
       ),
     );
   }
-}
-
-ButtonStyle _libraryMutedButtonStyle(ColorScheme cs) {
-  return TextButton.styleFrom(
-    foregroundColor: cs.onSurfaceVariant,
-    backgroundColor: cs.surfaceContainerHighest.withValues(alpha: 0.72),
-    side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.68)),
-  );
 }

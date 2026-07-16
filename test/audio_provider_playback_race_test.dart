@@ -383,6 +383,7 @@ void main() {
     test(
       'failed queue prepare restores the previous native track without committing target state',
       () async {
+        provider.playbackFacade.configurePersistence(enabled: true);
         const first = MusicTrack(
           path: 'https://example.com/transaction-a.mp3',
           displayName: 'A',

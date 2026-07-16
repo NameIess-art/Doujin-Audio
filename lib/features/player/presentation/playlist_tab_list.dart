@@ -103,6 +103,7 @@ class _SessionsEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     return Padding(
@@ -227,12 +228,14 @@ class _SessionListCard extends ConsumerWidget {
     provider.playbackFacade.removeSession(sessionId);
     ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(subtitleSettingsProvider.notifier).resetForSession(sessionId);
   }
 
   String _loopModeSummary(BuildContext context, SessionLoopMode mode) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (mode == SessionLoopMode.single) return i18n.tr('single_loop');
     final scope =
@@ -252,6 +255,7 @@ class _SessionListCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final displayName =

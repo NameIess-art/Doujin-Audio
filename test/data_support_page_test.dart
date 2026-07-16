@@ -8,7 +8,6 @@ import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/data_support/presentation/data_support_page.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
-import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -47,11 +46,7 @@ void main() {
             ),
             appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
           ],
-          child:
-              legacy_provider.ChangeNotifierProvider<AppLanguageProvider>.value(
-                value: languageProvider,
-                child: const MaterialApp(home: DataSupportPage()),
-              ),
+          child: const MaterialApp(home: DataSupportPage()),
         ),
       );
       await tester.pump();

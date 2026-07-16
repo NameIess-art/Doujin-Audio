@@ -117,6 +117,7 @@ extension _MainScreenLayout on _MainScreenState {
   ) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final mediaSize = MediaQuery.sizeOf(context);
     final isLandscape =
@@ -154,6 +155,7 @@ extension _MainScreenLayout on _MainScreenState {
   Widget _buildBottomBar(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
 

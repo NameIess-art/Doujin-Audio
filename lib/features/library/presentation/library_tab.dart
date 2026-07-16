@@ -228,6 +228,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final catalog = ref.read(libraryFacadeProvider);
     final operations = ref.read(uiOperationServiceProvider);
@@ -269,6 +270,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Future<void> _runLibraryPullRefresh({bool showSnackbar = false}) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (showSnackbar) {
       showAppSnackBar(
@@ -292,6 +294,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final catalog = ref.read(libraryFacadeProvider);
     final outcome = await ref
@@ -551,6 +554,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     super.build(context);
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
     final libraryHeaderAudioCount = _readOrWatch(
@@ -1022,7 +1026,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 ),
               ),
 
-            // Header 鈥?frosted glass overlay on top of the scrolling list
+            // Header — frosted glass overlay on top of the scrolling list
             Positioned(
               top: 0,
               left: 0,

@@ -548,6 +548,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
 
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     await _permissionActionController.ensureGrantedAndRun(
       context: context,
@@ -566,6 +567,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   Future<void> _openTimerSettingsPage() {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final mediaSize = MediaQuery.sizeOf(context);
     final isLandscape =
@@ -819,7 +821,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                   builder: (context, constraints) {
                     return Column(
                       children: [
-                        // Top Bar 閳?outside drag GestureDetector so taps work
+                        // Top Bar — outside drag GestureDetector so taps work
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Builder(
@@ -914,7 +916,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                             },
                           ),
                         ),
-                        // Content area 閳?keep session drag gestures on artwork only
+                        // Content area — keep session drag gestures on artwork only
                         Expanded(
                           child: Builder(
                             builder: (context) {

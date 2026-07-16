@@ -13,7 +13,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
   List<String> get _termSearchKeywords {
     return _termSearchQuery
         .toLowerCase()
-        .split(RegExp(r'[\s,锛?锛泑]+'))
+        .split(RegExp(r'[\s,，;；|]+'))
         .where((s) => s.isNotEmpty)
         .toList(growable: false);
   }
@@ -532,7 +532,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                                   color: cs.primary,
                                 ),
                                 const SizedBox(width: 2),
-                                Text(_expanded ? '鏀惰捣' : '灞曞紑'),
+                                Text(_expanded ? '收起' : '展开'),
                               ],
                             ),
                           ),
@@ -630,7 +630,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     showAppSnackBar(
       context,
-      ProviderScope.containerOf(context)
+      ProviderScope.containerOf(context, listen: false)
           .read(appLanguageProviderInstanceProvider)
           .tr('copied_to_clipboard', {'value': term}),
       icon: Icons.content_copy_rounded,
@@ -658,6 +658,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   Future<void> _remove(BuildContext context, LibraryFacade library) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final libraryPath = _findParentLibraryPath(library);
     if (entry.isFolder) {
@@ -713,6 +714,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     if (track == null) return;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     AppInteractionFeedback.trigger(
       AppInteractionFeedbackType.tap,
@@ -735,6 +737,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);

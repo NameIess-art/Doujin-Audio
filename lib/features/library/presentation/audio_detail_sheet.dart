@@ -154,6 +154,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
 
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final initialValue = field.isMulti
         ? field.readList(detail).join(_multiValueSeparator)
@@ -235,6 +236,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       });
       final i18n = ProviderScope.containerOf(
         context,
+        listen: false,
       ).read(appLanguageProviderInstanceProvider);
       if (result.backupFailed) {
         showAppSnackBar(
@@ -251,7 +253,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       });
       showAppSnackBar(
         context,
-        ProviderScope.containerOf(context)
+        ProviderScope.containerOf(context, listen: false)
             .read(appLanguageProviderInstanceProvider)
             .tr('audio_detail_rename_failed'),
         tone: AppFeedbackTone.warning,
@@ -287,6 +289,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       }
       final i18n = ProviderScope.containerOf(
         context,
+        listen: false,
       ).read(appLanguageProviderInstanceProvider);
       if (field == _AudioDetailField.rjCode &&
           !_looksLikeRjCode(result.detail.rjCode)) {
@@ -317,7 +320,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       });
       showAppSnackBar(
         context,
-        ProviderScope.containerOf(context)
+        ProviderScope.containerOf(context, listen: false)
             .read(appLanguageProviderInstanceProvider)
             .tr('audio_detail_save_failed'),
         tone: AppFeedbackTone.warning,
@@ -328,6 +331,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   Future<void> _confirmFetchInfo(AudioDetail detail) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final query = ref
         .read(libraryFacadeProvider)
@@ -367,6 +371,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   Future<void> _confirmRename(AudioDetail detail) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (detail.workTitle.trim().isEmpty) {
       showAppSnackBar(
@@ -430,6 +435,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   }) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showDialog<bool>(
       context: context,
@@ -472,6 +478,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final labelStyle = Theme.of(

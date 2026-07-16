@@ -128,6 +128,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   ) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final libraryPath = _findParentLibraryPath(library);
     if (libraryPath != null) {
@@ -156,6 +157,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   void _playFolder(BuildContext context, PlaybackFacade playback) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final firstTrack = widget.folder.firstTrack;
     if (firstTrack == null) return;
@@ -178,6 +180,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
@@ -402,6 +405,7 @@ class _TrackNodeWidget extends ConsumerWidget {
   ) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final parentLibraryPath = library.libraryRootForPath(track.path);
     if (parentLibraryPath != null) {
@@ -431,6 +435,7 @@ class _TrackNodeWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
@@ -920,6 +925,7 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final fields = ref.watch(
       settingsStateProvider.select(
@@ -972,6 +978,7 @@ class _SingleAudioFileCardContent extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final fields = ref.watch(
       settingsStateProvider.select(

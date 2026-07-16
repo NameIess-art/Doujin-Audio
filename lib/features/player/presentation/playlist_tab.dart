@@ -403,6 +403,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   ) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showConfirmActionDialog(
       context: context,
@@ -452,6 +453,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     super.build(context);
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final provider = ref.read(audioProviderFacadeProvider);
     final PlaylistListState listState;
@@ -674,7 +676,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     ? ref.watch(playlistHeaderUiProvider)
                     : ref.read(playlistHeaderUiProvider);
                 final sessionSummary =
-                    '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} 路 '
+                    '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
                     '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
                 return TopPageHeader(
                   key: headerKey,

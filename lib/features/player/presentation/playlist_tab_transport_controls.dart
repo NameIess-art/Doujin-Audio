@@ -136,6 +136,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final enabled = session.currentTrackPath.isNotEmpty;
     final track = provider.trackByPath(session.currentTrackPath);
@@ -323,6 +324,7 @@ class _PlaybackSecondaryControls extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
 
     return Padding(

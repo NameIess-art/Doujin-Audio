@@ -60,6 +60,7 @@ class _UpdateSettingsTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
@@ -138,6 +139,7 @@ class _UpdateSubtitle extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (checking) {
       return Text(
@@ -308,6 +310,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final labelStyle = Theme.of(
       context,
@@ -810,6 +813,7 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final audioProvider = ref.read(audioProviderFacadeProvider);

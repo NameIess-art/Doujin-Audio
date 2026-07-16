@@ -121,6 +121,7 @@ class _DlsiteMetadataReviewPageState
                   .resolve(
                     ProviderScope.containerOf(
                       context,
+                      listen: false,
                     ).read(appLanguageProviderInstanceProvider).language,
                   );
               final rjCode = widget.rjCode;
@@ -207,6 +208,7 @@ class _DlsiteMetadataReviewPageState
           .resolve(
             ProviderScope.containerOf(
               context,
+              listen: false,
             ).read(appLanguageProviderInstanceProvider).language,
           );
       final result = await UiOperationService.instance
@@ -227,7 +229,7 @@ class _DlsiteMetadataReviewPageState
       if (result.coverFailed) {
         showAppSnackBar(
           context,
-          ProviderScope.containerOf(context)
+          ProviderScope.containerOf(context, listen: false)
               .read(appLanguageProviderInstanceProvider)
               .tr('dlsite_cover_save_failed'),
           tone: AppFeedbackTone.warning,
@@ -243,7 +245,7 @@ class _DlsiteMetadataReviewPageState
       });
       showAppSnackBar(
         context,
-        ProviderScope.containerOf(context)
+        ProviderScope.containerOf(context, listen: false)
             .read(appLanguageProviderInstanceProvider)
             .tr('audio_detail_save_failed'),
         tone: AppFeedbackTone.warning,
@@ -260,6 +262,7 @@ class _DlsiteMetadataReviewPageState
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final metadata = _metadata;
     final coverUrl = widget.detail.target.isLibraryRootFolder
@@ -275,7 +278,7 @@ class _DlsiteMetadataReviewPageState
         title: Text(
           widget.batchIndex == null || widget.batchTotal == null
               ? i18n.tr('dlsite_review_title')
-              : '${i18n.tr('dlsite_review_title')} 路 ${i18n.tr('batch_metadata_progress', {'current': widget.batchIndex, 'total': widget.batchTotal})}',
+              : '${i18n.tr('dlsite_review_title')} · ${i18n.tr('batch_metadata_progress', {'current': widget.batchIndex, 'total': widget.batchTotal})}',
         ),
         actions: [
           if (widget.allowSkip)
@@ -550,6 +553,7 @@ class _DlsiteErrorView extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return Center(
       child: Padding(

@@ -605,7 +605,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!mounted) return;
     showAppSnackBar(
       context,
-      ProviderScope.containerOf(context)
+      ProviderScope.containerOf(context, listen: false)
           .read(appLanguageProviderInstanceProvider)
           .tr('asmr_online_optional_notice'),
       icon: Icons.cloud_outlined,
@@ -620,6 +620,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     });
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final brightness = Theme.of(context).brightness;
     final overlayStyle = brightness == Brightness.dark

@@ -328,6 +328,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     if (selected == null) return;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showConfirmActionDialog(
       context: context,
@@ -363,6 +364,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         path.basenameWithoutExtension(session.currentTrackPath);
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final rootFolderName = provider.getRootFolderName(session.currentTrackPath);
     final folderName = rootFolderName.isNotEmpty
@@ -645,6 +647,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
   void _showTrackSwitcher(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final tracks = orderTracksForSessionSwitcher(
       widget.session.isPlaybackQueue
@@ -836,6 +839,7 @@ class _QueueSheetHeader extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(2, 0, 2, 6),

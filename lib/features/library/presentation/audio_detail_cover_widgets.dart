@@ -44,6 +44,7 @@ class _SingleFileCoverPreviewState
     );
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final labelStyle = Theme.of(
       context,
@@ -198,7 +199,7 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
       if (!mounted) return;
       showAppSnackBar(
         context,
-        ProviderScope.containerOf(context)
+        ProviderScope.containerOf(context, listen: false)
             .read(appLanguageProviderInstanceProvider)
             .tr('audio_detail_save_failed'),
         tone: AppFeedbackTone.warning,
@@ -228,6 +229,7 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final labelStyle = Theme.of(

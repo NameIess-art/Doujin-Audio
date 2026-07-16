@@ -420,6 +420,7 @@ extension UiOperationServiceFeedback on UiOperationService {
       if (context.mounted) {
         final i18n = ProviderScope.containerOf(
           context,
+          listen: false,
         ).read(appLanguageProviderInstanceProvider);
         showAppSnackBar(
           context,

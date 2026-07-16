@@ -142,6 +142,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   Future<void> _chooseAsmrDownloadDestination() async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final folder = await _runSettingsOperation<String?>(
       scope: UiOperationScope.settingsAsmrDownloadPath,
@@ -169,6 +170,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     super.build(context);
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final audioProvider = ref.read(audioProviderFacadeProvider);
     final bottomInset = MobileOverlayInset.of(context);

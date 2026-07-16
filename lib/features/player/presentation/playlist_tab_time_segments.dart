@@ -88,6 +88,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final selected = widget.labels
         .where((label) => label.id == widget.selectedId)
@@ -187,6 +188,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
   }) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -532,6 +534,7 @@ Future<Duration?> _showSegmentTimeInputDialog(
 }) async {
   final i18n = ProviderScope.containerOf(
     context,
+    listen: false,
   ).read(appLanguageProviderInstanceProvider);
   final controller = TextEditingController(
     text: initial == null ? '' : _formatSegmentTime(initial),

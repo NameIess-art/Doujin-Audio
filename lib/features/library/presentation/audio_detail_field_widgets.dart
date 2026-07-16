@@ -24,6 +24,7 @@ class _AudioDetailRow extends StatelessWidget {
     final cs = Theme.of(context).colorScheme;
     final emptyText = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider).tr('audio_detail_empty');
     final displayValues =
         values.isEmpty || (values.length == 1 && values.first.isEmpty)
@@ -135,6 +136,7 @@ Future<void> _copyText(BuildContext context, String value) async {
   }
   final i18n = ProviderScope.containerOf(
     context,
+    listen: false,
   ).read(appLanguageProviderInstanceProvider);
   showAppSnackBar(
     context,

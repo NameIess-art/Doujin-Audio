@@ -14,6 +14,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
         detail?.channelSwapEnabled ?? session.channelSwapEnabled;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return ListView(
       padding: const EdgeInsets.only(top: 6),
@@ -156,6 +157,7 @@ class _VolumeBalancePage extends ConsumerWidget {
         detail?.audioEffects.panning ?? session.audioEffects.panning;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
@@ -274,6 +276,7 @@ class _EqualizerPage extends ConsumerWidget {
 
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final presets = [
@@ -446,6 +449,7 @@ class _EqualizerPage extends ConsumerWidget {
   }) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final controller = TextEditingController();
     final name = await showDialog<String>(

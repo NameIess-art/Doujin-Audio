@@ -194,6 +194,7 @@ class _DlsiteMetadataBatchPageState
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -302,6 +303,7 @@ class _BatchMetadataSetupView extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (running) {
       return Center(
@@ -478,6 +480,7 @@ class _DlsiteMetadataWorkPickerPageState
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final filtered = _filteredEntries;
     final cs = Theme.of(context).colorScheme;
@@ -581,6 +584,7 @@ class _BatchMetadataSummaryView extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final topPadding = MediaQuery.paddingOf(context).top;
     final topTotalHeight = 82 + topPadding;
@@ -615,6 +619,7 @@ class _BatchMetadataErrorView extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final topPadding = MediaQuery.paddingOf(context).top;
     final topTotalHeight = 82 + topPadding;

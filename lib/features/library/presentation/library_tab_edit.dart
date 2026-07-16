@@ -73,6 +73,7 @@ class LibraryManagementPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final libraries = ref.watch(
@@ -185,6 +186,7 @@ Future<bool> _confirmRemoveWatchedLibrary(
 ) async {
   final i18n = ProviderScope.containerOf(
     context,
+    listen: false,
   ).read(appLanguageProviderInstanceProvider);
   final confirmed = await showConfirmActionDialog(
     context: context,
@@ -320,6 +322,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     );
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final libraryService = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
@@ -1060,6 +1063,7 @@ class _LibraryEditFolderTreeTileState
     );
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final libraryService = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
@@ -1217,6 +1221,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final viewState = ref.watch(
       _libraryEditTrackViewStateProvider(

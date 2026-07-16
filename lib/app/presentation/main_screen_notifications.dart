@@ -44,6 +44,7 @@ extension _MainScreenNotifications on _MainScreenState {
           _backgroundPlaybackPromptShownThisLaunch = true;
           final i18n = ProviderScope.containerOf(
             context,
+            listen: false,
           ).read(appLanguageProviderInstanceProvider);
           showAppSnackBar(
             context,
@@ -78,6 +79,7 @@ extension _MainScreenNotifications on _MainScreenState {
     if (!mounted) return;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final openSettings = await showConfirmActionDialog(
       context: context,
@@ -127,6 +129,7 @@ extension _MainScreenNotifications on _MainScreenState {
       _notificationPermissionEnabledMessage(
         ProviderScope.containerOf(
           context,
+          listen: false,
         ).read(appLanguageProviderInstanceProvider),
       ),
       tone: AppFeedbackTone.success,
@@ -171,6 +174,7 @@ extension _MainScreenNotifications on _MainScreenState {
     _notificationSettingsDialogVisible = true;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final openSettings = await showConfirmActionDialog(
       context: context,

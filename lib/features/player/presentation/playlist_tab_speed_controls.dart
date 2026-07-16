@@ -150,6 +150,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
 
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final selectedSpeed = _speeds[_selectedIndex];

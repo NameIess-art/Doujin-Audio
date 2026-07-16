@@ -4,6 +4,7 @@ extension _SettingsTabActions on _SettingsTabState {
   Future<void> _clearApplicationCache(BuildContext context) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showConfirmActionDialog(
       context: context,

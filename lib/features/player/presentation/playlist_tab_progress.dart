@@ -855,6 +855,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
           child: Text(
             ProviderScope.containerOf(
               context,
+              listen: false,
             ).read(appLanguageProviderInstanceProvider).tr('playback_loading'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,

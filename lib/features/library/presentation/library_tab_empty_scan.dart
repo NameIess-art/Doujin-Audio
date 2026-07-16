@@ -56,6 +56,7 @@ class _LibraryEmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
 

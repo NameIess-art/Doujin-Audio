@@ -24,7 +24,6 @@ import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
-import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -372,22 +371,13 @@ void main() {
             languageProvider,
           ),
         ],
-        child: legacy_provider.MultiProvider(
-          providers: [
-            legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
-            legacy_provider.ChangeNotifierProvider.value(
-              value: languageProvider,
-            ),
-            legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
-          ],
-          child: MaterialApp(
-            home: Scaffold(
-              body: Center(
-                child: ActiveSessionCarousel(
-                  sessions: [session],
-                  provider: audioProvider,
-                  onOpenSession: (_) {},
-                ),
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: ActiveSessionCarousel(
+                sessions: [session],
+                provider: audioProvider,
+                onOpenSession: (_) {},
               ),
             ),
           ),
@@ -785,14 +775,7 @@ Future<_AppShellHarness> _pumpAppShell(
         appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
         appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
       ],
-      child: legacy_provider.MultiProvider(
-        providers: [
-          legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
-          legacy_provider.ChangeNotifierProvider.value(value: languageProvider),
-          legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
-        ],
-        child: const MusicPlayerApp(),
-      ),
+      child: const MusicPlayerApp(),
     ),
   );
   await _pumpMainScreenAnimations(tester, startup: true);

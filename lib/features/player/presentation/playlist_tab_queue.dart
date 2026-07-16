@@ -25,6 +25,7 @@ class _PlaybackQueueCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final queue = session.playbackQueue!;
@@ -342,6 +343,7 @@ Future<void> _showPlaybackQueuePanel(
 }) {
   final i18n = ProviderScope.containerOf(
     context,
+    listen: false,
   ).read(appLanguageProviderInstanceProvider);
   return showGeneralDialog<void>(
     context: context,
@@ -428,6 +430,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     final queue = session?.playbackQueue;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (queue == null) return const SizedBox.shrink();
     final cs = Theme.of(context).colorScheme;
@@ -606,6 +609,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
         title: Text(
           ProviderScope.containerOf(
             context,
+            listen: false,
           ).read(appLanguageProviderInstanceProvider).tr('edit_queue_name'),
         ),
         content: TextField(controller: controller, autofocus: true),
@@ -618,6 +622,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                   child: Text(
                     ProviderScope.containerOf(
                       context,
+                      listen: false,
                     ).read(appLanguageProviderInstanceProvider).tr('cancel'),
                   ),
                 ),
@@ -630,6 +635,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                   child: Text(
                     ProviderScope.containerOf(
                       context,
+                      listen: false,
                     ).read(appLanguageProviderInstanceProvider).tr('save'),
                   ),
                 ),
@@ -651,6 +657,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
   ) async {
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showConfirmActionDialog(
       context: context,
@@ -678,6 +685,7 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
     final queue = playback.sessionById(sessionId)?.playbackQueue;
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     if (queue == null) return const SizedBox.shrink();
 
@@ -839,6 +847,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
     if (track == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return _QueueAudioEditCard(
       provider: provider,
@@ -988,6 +997,7 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
         : Color(value);
     final i18n = ProviderScope.containerOf(
       context,
+      listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     return Material(

@@ -376,7 +376,6 @@ void main() {
             body: Center(
               child: ActiveSessionCarousel(
                 sessions: [session],
-                provider: audioProvider,
                 onOpenSession: (_) {},
               ),
             ),

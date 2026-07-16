@@ -297,7 +297,6 @@ extension _MainScreenLayout on _MainScreenState {
               if (overlaySessions.isNotEmpty)
                 ActiveSessionCarousel(
                   sessions: overlaySessions,
-                  provider: ref.read(audioProviderFacadeProvider),
                   i18n: i18n,
                   onOpenSession: (sessionId) {
                     Navigator.of(
@@ -375,7 +374,6 @@ extension _MainScreenLayout on _MainScreenState {
             if (overlaySessions.isNotEmpty)
               ActiveSessionCarousel(
                 sessions: overlaySessions,
-                provider: ref.read(audioProviderFacadeProvider),
                 i18n: i18n,
                 onOpenSession: (sessionId) {
                   Navigator.of(
@@ -588,7 +586,6 @@ extension _MainScreenLayout on _MainScreenState {
               padding: const EdgeInsets.only(top: AppSpacing.sm),
               child: ActiveSessionCarousel(
                 sessions: overlaySessions,
-                provider: ref.read(audioProviderFacadeProvider),
                 i18n: i18n,
                 compactForFab: _isMenuCollapsed,
                 onOpenSession: (sessionId) {

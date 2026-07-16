@@ -6,7 +6,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/settings/presentation/settings_tab.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';

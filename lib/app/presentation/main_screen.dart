@@ -15,7 +15,6 @@ import '../state/audio_provider_riverpod.dart';
 import '../state/subtitle_settings_provider.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/logging/app_log_service.dart';
-import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../core/platform/notifications_platform_service.dart';

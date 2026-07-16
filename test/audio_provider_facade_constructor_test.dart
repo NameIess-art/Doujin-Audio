@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/features/player/application/timer_facade.dart';
+import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

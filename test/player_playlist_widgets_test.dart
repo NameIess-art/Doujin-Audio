@@ -15,6 +15,7 @@ import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/core/widgets/duration_overlay.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 

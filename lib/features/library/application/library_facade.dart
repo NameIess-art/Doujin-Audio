@@ -20,7 +20,6 @@ import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/warmup_scheduler.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
-import '../../player/application/audio_state_services.dart';
 import '../../settings/application/app_preferences.dart';
 import 'audio_detail_cache_service.dart';
 import 'audio_detail_repository.dart';
@@ -31,9 +30,11 @@ import 'library_snapshot_cache_service.dart';
 import 'library_catalog.dart';
 import 'library_scan_models.dart';
 import 'library_organizer.dart';
+import 'library_service.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../domain/library_entry.dart';
+import 'library_state_models.dart';
 
 /// Owns the library-side services used by the compatibility audio facade.
 ///

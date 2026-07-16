@@ -625,6 +625,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
             child: TopPageHeader(
               key: _headerKey,
               title: 'ASMR.ONE',
+              subtitle: collectedSubtitle,
+              subtitleFontSize: 11,
+              fitSubtitleToWidth: true,
               collapseController: currentScrollController,
               collapseDistance: headerControlsFullHeight,
               floatingReveal: true,

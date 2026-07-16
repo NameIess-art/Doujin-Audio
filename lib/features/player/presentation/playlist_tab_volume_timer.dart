@@ -136,7 +136,10 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton>
             maintainState: true,
             child: IconButton(
               padding: EdgeInsets.zero,
-              tooltip: context.read<AppLanguageProvider>().tr('volume'),
+              tooltip: ProviderScope.containerOf(
+                context,
+                listen: false,
+              ).read(appLanguageProviderInstanceProvider).tr('volume'),
               onPressed: () {
                 AppInteractionFeedback.trigger(
                   AppInteractionFeedbackType.selection,
@@ -190,7 +193,10 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
   double? _dragVolume;
 
   void _showVolumeInputDialog() {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final controller = TextEditingController(
       text: '${((_dragVolume ?? widget.session.volume) * 100).round()}',
     );
@@ -243,7 +249,10 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
     Navigator.of(dialogContext).pop();
     widget.onClose();
     setState(() => _dragVolume = parsed / 100);
-    widget.provider.setSessionVolume(widget.session.id, parsed / 100);
+    widget.provider.playbackFacade.setSessionVolume(
+      widget.session.id,
+      parsed / 100,
+    );
   }
 
   @override
@@ -323,8 +332,8 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                               UiInteractionCoordinator.instance
                                   .scheduleThrottledCommit(
                                     key: 'session_volume:${widget.session.id}',
-                                    commit: () =>
-                                        widget.provider.setSessionVolume(
+                                    commit: () => widget.provider.playbackFacade
+                                        .setSessionVolume(
                                           widget.session.id,
                                           v,
                                           persist: false,
@@ -338,7 +347,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                                   .cancelThrottledCommit(
                                     'session_volume:${widget.session.id}',
                                   );
-                              widget.provider.setSessionVolume(
+                              widget.provider.playbackFacade.setSessionVolume(
                                 widget.session.id,
                                 v,
                               );

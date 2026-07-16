@@ -2,7 +2,7 @@ part of 'settings_tab.dart';
 
 List<Widget> _buildSettingsGeneralSection({
   required AppLanguageProvider i18n,
-  required AudioProvider audioProvider,
+  required SettingsRepository settings,
   required TextStyle? descStyle,
   required ColorScheme cs,
 }) {
@@ -85,7 +85,7 @@ List<Widget> _buildSettingsGeneralSection({
                 value: startupPage,
                 onChanged: (value) {
                   if (value != null) {
-                    audioProvider.setStartupPage(value);
+                    settings.setStartupPage(value);
                   }
                 },
                 items: StartupPage.values
@@ -135,7 +135,7 @@ List<Widget> _buildSettingsGeneralSection({
                 value: dlsiteLanguage,
                 onChanged: (value) {
                   if (value != null) {
-                    audioProvider.setDlsiteMetadataLanguage(value);
+                    settings.setDlsiteMetadataLanguage(value);
                   }
                 },
                 items: ContentLanguagePreference.values.map((preference) {
@@ -173,7 +173,7 @@ List<Widget> _buildSettingsGeneralSection({
                   style: descStyle,
                 ),
                 value: hapticFeedbackEnabled,
-                onChanged: audioProvider.setHapticFeedbackEnabled,
+                onChanged: settings.setHapticFeedbackEnabled,
                 secondary: Container(
                   width: 38,
                   height: 38,

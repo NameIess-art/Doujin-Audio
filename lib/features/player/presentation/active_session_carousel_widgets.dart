@@ -3,14 +3,12 @@ part of 'active_session_carousel.dart';
 class _ActiveSessionCard extends ConsumerWidget {
   const _ActiveSessionCard({
     required this.session,
-    required this.provider,
     required this.coverPathFuture,
     required this.onOpen,
     this.compact = false,
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
   final Future<String?> coverPathFuture;
   final VoidCallback onOpen;
   final bool compact;
@@ -50,12 +48,14 @@ class _ActiveSessionCard extends ConsumerWidget {
       }),
     );
     final isPlaying = view.playing;
-    final i18n = context.read<AppLanguageProvider>();
-    final currentTrack = provider.trackByPath(view.trackPath);
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final library = ref.read(libraryFacadeProvider);
+    final currentTrack = library.trackByPath(view.trackPath);
     final displayName =
         currentTrack?.displayName ??
         path.basenameWithoutExtension(view.trackPath);
-    final resolvedCoverPath = provider.resolvedPlaybackCoverPathForTrack(
+    final resolvedCoverPath = library.resolvedPlaybackCoverPathForTrack(
       currentTrack,
     );
     final showCover = shouldShowPlaylistCoverArtwork(
@@ -132,6 +132,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                         view,
                         currentTrack,
                         displayName,
+                        i18n: i18n,
                         showCover: false,
                       ))
               : _buildCardContent(
@@ -141,6 +142,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   view,
                   currentTrack,
                   displayName,
+                  i18n: i18n,
                   showCover: showCover,
                 ),
         ),
@@ -184,6 +186,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     view,
     MusicTrack? currentTrack,
     String displayName, {
+    required AppLanguageProvider i18n,
     required bool showCover,
   }) {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -214,7 +217,6 @@ class _ActiveSessionCard extends ConsumerWidget {
                 _ActiveSessionTitleSubtitle(
                   key: ValueKey('${session.id}:${view.trackPath}'),
                   session: session,
-                  provider: provider,
                   displayName: displayName,
                   playbackError: view.error,
                   useAsmrOneErrorText: hasAsmrOnePlaybackError,
@@ -249,7 +251,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                       isLoading: view.loading,
                       enabled: view.trackPath.isNotEmpty && !view.loading,
                       activeColor: activeColor,
-                      semanticLabel: context.read<AppLanguageProvider>().tr(
+                      semanticLabel: i18n.tr(
                         view.loading
                             ? 'playback_loading'
                             : (isPlaying ? 'pause' : 'play'),
@@ -258,7 +260,9 @@ class _ActiveSessionCard extends ConsumerWidget {
                         AppInteractionFeedback.trigger(
                           AppInteractionFeedbackType.confirmation,
                         );
-                        provider.toggleSessionPlayPause(session.id);
+                        ref
+                            .read(playbackFacadeProvider)
+                            .toggleSessionPlayPause(session.id);
                       },
                     ),
                   );
@@ -351,29 +355,27 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
   }
 }
 
-class _ActiveSessionTitleSubtitle extends StatefulWidget {
+class _ActiveSessionTitleSubtitle extends ConsumerStatefulWidget {
   const _ActiveSessionTitleSubtitle({
     super.key,
     required this.session,
-    required this.provider,
     required this.displayName,
     required this.playbackError,
     required this.useAsmrOneErrorText,
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
   final String displayName;
   final String? playbackError;
   final bool useAsmrOneErrorText;
 
   @override
-  State<_ActiveSessionTitleSubtitle> createState() =>
+  ConsumerState<_ActiveSessionTitleSubtitle> createState() =>
       _ActiveSessionTitleSubtitleState();
 }
 
 class _ActiveSessionTitleSubtitleState
-    extends State<_ActiveSessionTitleSubtitle> {
+    extends ConsumerState<_ActiveSessionTitleSubtitle> {
   late final PlaybackPositionUiGate _positionGate;
   final SubtitleTextCache _subtitleTextCache = SubtitleTextCache();
   SubtitleTrack? _subtitleTrack;
@@ -429,7 +431,7 @@ class _ActiveSessionTitleSubtitleState
         _subtitleText = null;
       });
     }
-    widget.provider.subtitleTrackForPath(trackPath).then((track) {
+    ref.read(playbackSubtitleServiceProvider).load(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
       _subtitleTrack = track;
       _subtitleTextCache.clear();
@@ -453,7 +455,8 @@ class _ActiveSessionTitleSubtitleState
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final secondaryText = widget.playbackError == null
         ? _subtitleText
         : widget.useAsmrOneErrorText
@@ -658,7 +661,7 @@ class _ActiveSessionCover extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final provider = ref.read(audioProviderFacadeProvider);
+    final library = ref.read(libraryFacadeProvider);
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
         settingsStateProvider.select(
@@ -689,9 +692,8 @@ class _ActiveSessionCover extends ConsumerWidget {
         clipBehavior: Clip.antiAlias,
         child: AsyncLocalCoverImage(
           future: coverPathFuture,
-          initialPath: provider.resolvedPlaybackCoverPathForTrack(track),
-          retryFutureBuilder: () =>
-              _sessionCoverFutureForTrack(provider, track),
+          initialPath: library.resolvedPlaybackCoverPathForTrack(track),
+          retryFutureBuilder: () => _sessionCoverFutureForTrack(library, track),
           seed: track?.displayName ?? track?.path ?? sessionId,
           cacheWidth: coverCacheWidth,
           useDefaultCacheWidth: coverCacheWidth != null,

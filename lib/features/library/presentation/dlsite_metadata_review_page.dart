@@ -2,9 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart';
 
-import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
@@ -120,7 +118,12 @@ class _DlsiteMetadataReviewPageState
                   .slice
                   .state
                   .dlsiteMetadataLanguage
-                  .resolve(context.read<AppLanguageProvider>().language);
+                  .resolve(
+                    ProviderScope.containerOf(
+                      context,
+                      listen: false,
+                    ).read(appLanguageProviderInstanceProvider).language,
+                  );
               final rjCode = widget.rjCode;
               return rjCode != null
                   ? <DlsiteMetadata>[
@@ -202,7 +205,12 @@ class _DlsiteMetadataReviewPageState
           .slice
           .state
           .dlsiteMetadataLanguage
-          .resolve(context.read<AppLanguageProvider>().language);
+          .resolve(
+            ProviderScope.containerOf(
+              context,
+              listen: false,
+            ).read(appLanguageProviderInstanceProvider).language,
+          );
       final result = await UiOperationService.instance
           .run<DlsiteMetadataApplyResult>(
             scope: _operationScope,
@@ -221,7 +229,9 @@ class _DlsiteMetadataReviewPageState
       if (result.coverFailed) {
         showAppSnackBar(
           context,
-          context.read<AppLanguageProvider>().tr('dlsite_cover_save_failed'),
+          ProviderScope.containerOf(context, listen: false)
+              .read(appLanguageProviderInstanceProvider)
+              .tr('dlsite_cover_save_failed'),
           tone: AppFeedbackTone.warning,
         );
       }
@@ -235,7 +245,9 @@ class _DlsiteMetadataReviewPageState
       });
       showAppSnackBar(
         context,
-        context.read<AppLanguageProvider>().tr('audio_detail_save_failed'),
+        ProviderScope.containerOf(context, listen: false)
+            .read(appLanguageProviderInstanceProvider)
+            .tr('audio_detail_save_failed'),
         tone: AppFeedbackTone.warning,
       );
     }
@@ -248,7 +260,10 @@ class _DlsiteMetadataReviewPageState
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final metadata = _metadata;
     final coverUrl = widget.detail.target.isLibraryRootFolder
         ? metadata?.coverUrl
@@ -536,7 +551,10 @@ class _DlsiteErrorView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(24),

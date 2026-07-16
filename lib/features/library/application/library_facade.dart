@@ -548,6 +548,12 @@ final class LibraryFacade implements LibraryCatalog {
       detailCacheService.resolvedDetail(target);
   @override
   MusicTrack? trackByPath(String trackPath) => service.trackByPath(trackPath);
+  List<MusicTrack> tracksInGroup(String groupKey) =>
+      List<MusicTrack>.unmodifiable(
+        service.tracksByGroup[groupKey] ?? const <MusicTrack>[],
+      );
+  int compareTracks(MusicTrack first, MusicTrack second) =>
+      service.compareTracks(first, second);
   String? resolvedCoverPathForTrack(MusicTrack? track, {String? trackPath}) =>
       coverArtworkCacheService.resolvedForTrack(track, trackPath: trackPath);
   String? resolvedPlaybackCoverPathForTrack(

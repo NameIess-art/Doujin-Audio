@@ -9,6 +9,30 @@ import 'app_language_zh.dart';
 
 export '../../core/app_language.dart';
 
+@immutable
+class AppLanguageState {
+  const AppLanguageState({required this.language});
+
+  factory AppLanguageState.from(AppLanguageProvider provider) {
+    return AppLanguageState(language: provider.language);
+  }
+
+  final AppLanguage language;
+
+  Locale get locale => switch (language) {
+    AppLanguage.zh => const Locale('zh'),
+    AppLanguage.ja => const Locale('ja'),
+    AppLanguage.en => const Locale('en'),
+  };
+
+  @override
+  bool operator ==(Object other) =>
+      other is AppLanguageState && other.language == language;
+
+  @override
+  int get hashCode => language.hashCode;
+}
+
 class AppLanguageProvider with ChangeNotifier {
   static const _prefsKey = 'app_language';
 

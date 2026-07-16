@@ -1,12 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
+import '../../app/state/audio_provider_riverpod.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../ui/ui_operation_service.dart';
 import '../logging/app_log_service.dart';
-import '../../app/localization/app_language_provider.dart';
-import 'package:provider/provider.dart';
 
 enum AppFeedbackTone { info, success, warning, destructive }
 
@@ -418,7 +418,10 @@ extension UiOperationServiceFeedback on UiOperationService {
         stackTrace: stackTrace,
       );
       if (context.mounted) {
-        final i18n = context.read<AppLanguageProvider>();
+        final i18n = ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(appLanguageProviderInstanceProvider);
         showAppSnackBar(
           context,
           i18n.tr(failureMessageKey),

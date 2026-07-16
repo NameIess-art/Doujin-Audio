@@ -42,7 +42,10 @@ extension _MainScreenNotifications on _MainScreenState {
             );
           }
           _backgroundPlaybackPromptShownThisLaunch = true;
-          final i18n = context.read<AppLanguageProvider>();
+          final i18n = ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(appLanguageProviderInstanceProvider);
           showAppSnackBar(
             context,
             i18n.tr('background_cleaner_detected_message'),
@@ -74,7 +77,10 @@ extension _MainScreenNotifications on _MainScreenState {
 
   Future<void> _promptOpenBatteryOptimizationSettings() async {
     if (!mounted) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final openSettings = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('background_play_permission_title'),
@@ -121,7 +127,10 @@ extension _MainScreenNotifications on _MainScreenState {
     showAppSnackBar(
       context,
       _notificationPermissionEnabledMessage(
-        context.read<AppLanguageProvider>(),
+        ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(appLanguageProviderInstanceProvider),
       ),
       tone: AppFeedbackTone.success,
       icon: Icons.notifications_active_rounded,
@@ -134,7 +143,7 @@ extension _MainScreenNotifications on _MainScreenState {
       return;
     }
     _notificationPermissionCheckDone = true;
-    final provider = ref.read(audioProviderFacadeProvider);
+    final notifications = ref.read(notificationFacadeProvider);
 
     var enabled = await _areNotificationsEnabled();
     if (enabled) return;
@@ -151,7 +160,7 @@ extension _MainScreenNotifications on _MainScreenState {
       enabled = await _areNotificationsEnabled();
       if (!context.mounted) return;
       if (status.isGranted && enabled) {
-        provider.refreshNotificationState();
+        notifications.refreshState();
         _showNotificationPermissionEnabledSnack();
         return;
       }
@@ -163,7 +172,10 @@ extension _MainScreenNotifications on _MainScreenState {
   Future<void> _promptOpenNotificationSettings() async {
     if (!mounted || _notificationSettingsDialogVisible) return;
     _notificationSettingsDialogVisible = true;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final openSettings = await showConfirmActionDialog(
       context: context,
       title: _notificationPermissionTitle(i18n),
@@ -182,10 +194,10 @@ extension _MainScreenNotifications on _MainScreenState {
 
   Future<void> _handleNotificationSettingsReturn() async {
     if (!mounted || !Platform.isAndroid) return;
-    final audioProvider = ref.read(audioProviderFacadeProvider);
+    final notifications = ref.read(notificationFacadeProvider);
     final enabled = await _areNotificationsEnabled();
     if (!mounted || !enabled) return;
-    audioProvider.refreshNotificationState();
+    notifications.refreshState();
     _showNotificationPermissionEnabledSnack();
   }
 

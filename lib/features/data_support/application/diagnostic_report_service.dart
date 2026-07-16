@@ -14,6 +14,7 @@ class DiagnosticReportService {
   DiagnosticReportService({
     PermissionStatusService? permissionStatusService,
     Future<AppVersionInfo> Function()? appVersionProvider,
+    AppUpdateService? appUpdateService,
     Future<int> Function()? cacheBytesProvider,
     Future<List<File>> Function()? logFilesProvider,
     Future<BackgroundRunDiagnostics?> Function()?
@@ -21,9 +22,11 @@ class DiagnosticReportService {
     String? platformName,
     String? platformVersion,
   }) : _permissionStatusService =
-           permissionStatusService ?? PermissionStatusService(),
+           permissionStatusService ??
+           PermissionStatusService(appUpdateService: appUpdateService),
        _appVersionProvider =
-           appVersionProvider ?? AppUpdateService.currentAppVersion,
+           appVersionProvider ??
+           (appUpdateService ?? AppUpdateService()).currentAppVersion,
        _cacheBytesProvider =
            cacheBytesProvider ?? AppCacheService.estimateDartCacheBytes,
        _logFilesProvider = logFilesProvider ?? _defaultLogFiles,

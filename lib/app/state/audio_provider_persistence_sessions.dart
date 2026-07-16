@@ -27,8 +27,8 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         final loopModeIndex = item.loopModeIndex;
         final loopMode = SessionLoopMode
             .values[loopModeIndex.clamp(0, SessionLoopMode.values.length - 1)];
-        final volume = item.volume.clamp(0.0, _maxSessionVolume);
-        final speed = _nearestPlaybackSpeed(item.speed);
+        final volume = item.volume.clamp(0.0, PlaybackFacade.maxSessionVolume);
+        final speed = _playbackFacade.nearestPlaybackSpeed(item.speed);
 
         final recordProgress = _settingsRepository.recordPlaybackProgress;
         final restoredPositionMs = recordProgress ? item.positionMs : 0;
@@ -61,8 +61,8 @@ extension AudioProviderPersistenceSessions on AudioProvider {
         session.speed = speed;
         session.audioEffects = item.audioEffects;
         _sessions[session.id] = session;
-        _markActiveSessionsDirty();
-        _bindSessionListeners(session);
+        _playbackService.markActiveSessionsDirty();
+        _playbackFacade.observeSession(session);
         restoredIds.add(session.id);
       }
 
@@ -75,7 +75,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       _sessionOrder
         ..clear()
         ..addAll(validOrdered);
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
 
       final firstSessionId = _sessionOrder.firstOrNull;
       _notificationFocusSessionId = firstSessionId;
@@ -122,7 +122,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               currentPath: session.currentTrackPath,
             ),
             repeatAll: session.loopMode != SessionLoopMode.single,
-            shuffle: _isShuffleMode(session.loopMode),
+            shuffle: session.loopMode.isShuffle,
             candidateUris: _candidatePlaybackUrisForTrack(track),
             deferPlayerCreation: !shouldPrepareNow,
           );
@@ -252,21 +252,5 @@ extension AudioProviderPersistenceSessions on AudioProvider {
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }
-  }
-
-  void _scheduleSaveSessionState({
-    Duration delay = const Duration(milliseconds: 220),
-  }) {
-    _saveSessionStateTimer?.cancel();
-    _saveSessionStateTimer = Timer(delay, () {
-      _saveSessionStateTimer = null;
-      unawaited(_saveSessionState());
-    });
-  }
-
-  void _scheduleSessionPersistence() {
-    if (_skipDisposePersistence) return;
-    _scheduleSaveSessionState();
-    _scheduleSaveSessionOrder();
   }
 }

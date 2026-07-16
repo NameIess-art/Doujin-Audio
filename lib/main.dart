@@ -6,8 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/localization/app_language_provider.dart';
 import 'core/platform/app_platform.dart';
@@ -35,6 +34,7 @@ import 'core/logging/app_log_service.dart';
 import 'core/ui/ui_interaction_coordinator.dart';
 import 'app/theme/theme_provider.dart';
 import 'features/settings/application/app_preferences.dart';
+import 'features/settings/application/app_update_service.dart';
 import 'core/persistence/app_database.dart';
 import 'core/widgets/global_shortcuts.dart';
 import 'core/widgets/app_error_view.dart';
@@ -102,6 +102,7 @@ Future<void> _runAudioPlayerApp() async {
   final settingsRepository = SettingsRepository();
   final asmrDownloadManager = AsmrDownloadManager();
   final appLanguageProvider = AppLanguageProvider();
+  final appUpdateService = AppUpdateService();
   final libraryFacade = LibraryFacade.create(
     databaseRepository: audioDatabaseRepository,
     service: libraryService,
@@ -125,6 +126,7 @@ Future<void> _runAudioPlayerApp() async {
     pageLanguageResolver: () => appLanguageProvider.language,
     deferRuntimeStart: true,
   );
+  final audioRuntimeCoordinator = audioProvider.runtimeCoordinator;
   final asmrLibraryController = AsmrLibraryController(
     audioDatabaseRepository: audioDatabaseRepository,
     preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
@@ -133,26 +135,29 @@ Future<void> _runAudioPlayerApp() async {
     source: asmrLibraryController,
     launcher: PlaybackFacadeSessionLauncher(playbackFacade),
   );
+  final themeProvider = ThemeProvider();
 
   runApp(
     ProviderScope(
-      overrides: createAudioProviderOverrides(audioProvider: audioProvider),
-      child: MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => ThemeProvider()),
-          ChangeNotifierProvider.value(value: appLanguageProvider),
-          ChangeNotifierProvider.value(value: audioProvider),
-          ChangeNotifierProvider.value(value: asmrLibraryController),
-          ChangeNotifierProvider.value(value: asmrDownloadManager),
-          Provider.value(value: asmrPlaybackCoordinator),
-        ],
-        child: const MusicPlayerApp(),
-      ),
+      overrides: [
+        ...createAudioProviderOverrides(audioProvider: audioProvider),
+        themeProviderInstanceProvider.overrideWithValue(themeProvider),
+        appLanguageProviderInstanceProvider.overrideWithValue(
+          appLanguageProvider,
+        ),
+        appUpdateServiceProvider.overrideWithValue(appUpdateService),
+        asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
+        asmrLibraryControllerProvider.overrideWithValue(asmrLibraryController),
+        asmrPlaybackCoordinatorProvider.overrideWithValue(
+          asmrPlaybackCoordinator,
+        ),
+      ],
+      child: const MusicPlayerApp(),
     ),
   );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    audioProvider.startRuntime();
+    unawaited(audioRuntimeCoordinator.start());
     unawaited(
       asmrLibraryController.initialize(
         defaultLanguage: AsmrContentLanguage.fromAppLanguageName(
@@ -201,45 +206,46 @@ class _StretchOverscrollBehavior extends MaterialScrollBehavior {
   }
 }
 
-class MusicPlayerApp extends StatelessWidget {
+class MusicPlayerApp extends ConsumerWidget {
   const MusicPlayerApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    return Consumer2<ThemeProvider, AppLanguageProvider>(
-      builder: (context, themeProvider, languageProvider, child) {
-        return MaterialApp(
-          title: languageProvider.tr('app_title'),
-          debugShowCheckedModeBanner: false,
-          navigatorObservers: [UiInteractionNavigatorObserver.instance],
-          color: const Color(0xFFC94D63),
-          locale: languageProvider.locale,
-          supportedLocales: AppLanguageProvider.supportedLocales,
-          localizationsDelegates: const [
-            GlobalMaterialLocalizations.delegate,
-            GlobalCupertinoLocalizations.delegate,
-            GlobalWidgetsLocalizations.delegate,
-          ],
-          theme: themeProvider.lightTheme,
-          darkTheme: themeProvider.darkTheme,
-          themeMode: themeProvider.themeMode,
-          scrollBehavior: const _StretchOverscrollBehavior().copyWith(
-            scrollbars: AppPlatform.showsDesktopScrollbars,
-            physics: const ClampingScrollPhysics(
-              parent: AlwaysScrollableScrollPhysics(),
-            ),
-          ),
-          builder: (context, child) {
-            return TooltipVisibility(
-              visible: false,
-              child: child ?? const SizedBox(),
-            );
-          },
-          home: const OnboardingGate(
-            child: GlobalShortcuts(child: MainScreen()),
-          ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final themeProvider =
+        ref.watch(themeStateProvider).valueOrNull ??
+        ThemeState.from(ref.read(themeProviderInstanceProvider));
+    final languageProvider = ref.read(appLanguageProviderInstanceProvider);
+    final languageState =
+        ref.watch(appLanguageStateProvider).valueOrNull ??
+        AppLanguageState.from(languageProvider);
+    return MaterialApp(
+      title: languageProvider.tr('app_title'),
+      debugShowCheckedModeBanner: false,
+      navigatorObservers: [UiInteractionNavigatorObserver.instance],
+      color: const Color(0xFFC94D63),
+      locale: languageState.locale,
+      supportedLocales: AppLanguageProvider.supportedLocales,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ],
+      theme: themeProvider.lightTheme,
+      darkTheme: themeProvider.darkTheme,
+      themeMode: themeProvider.themeMode,
+      scrollBehavior: const _StretchOverscrollBehavior().copyWith(
+        scrollbars: AppPlatform.showsDesktopScrollbars,
+        physics: const ClampingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
+      ),
+      builder: (context, child) {
+        return TooltipVisibility(
+          visible: false,
+          child: child ?? const SizedBox(),
         );
       },
+      home: const OnboardingGate(child: GlobalShortcuts(child: MainScreen())),
     );
   }
 }

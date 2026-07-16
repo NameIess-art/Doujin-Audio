@@ -1,14 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
-import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
 
 void main() {
-  TestWidgetsFlutterBinding.ensureInitialized();
-  SharedPreferences.setMockInitialValues(const <String, Object>{});
-
   test('subtitle track requests share the in-flight load', () async {
     final tempDir = await Directory.systemTemp.createTemp('subtitle_cache_');
     addTearDown(() async {
@@ -28,13 +23,10 @@ void main() {
 hello
 ''');
 
-    final provider = AudioProvider.test(
-      notificationService: PlaybackNotificationService(),
-    );
-    addTearDown(provider.dispose);
+    final subtitles = PlaybackSubtitleService(trackResolver: (_) => null);
 
-    final first = provider.subtitleTrackForPath(audioFile.path);
-    final second = provider.subtitleTrackForPath(audioFile.path);
+    final first = subtitles.load(audioFile.path);
+    final second = subtitles.load(audioFile.path);
 
     expect(identical(first, second), isTrue);
 
@@ -42,7 +34,7 @@ hello
     expect(track, isNotNull);
     expect(track!.cues.single.text, 'hello');
 
-    final cached = await provider.subtitleTrackForPath(audioFile.path);
+    final cached = await subtitles.load(audioFile.path);
     expect(cached, same(track));
   });
 
@@ -72,31 +64,22 @@ WEBVTT
 hello
 ''');
 
-      final provider = AudioProvider.test(
-        notificationService: PlaybackNotificationService(),
-      );
-      addTearDown(provider.dispose);
+      final subtitles = PlaybackSubtitleService(trackResolver: (_) => null);
 
-      final track = await provider.subtitleTrackForPath(audioFile.path);
+      final track = await subtitles.load(audioFile.path);
       expect(track, isNotNull);
       expect(track!.cues.single.text, 'hello');
     },
   );
 
   test('content uri subtitle requests cache the null result', () async {
-    final provider = AudioProvider.test(
-      notificationService: PlaybackNotificationService(),
-    );
-    addTearDown(provider.dispose);
+    final subtitles = PlaybackSubtitleService(trackResolver: (_) => null);
 
-    final first = provider.subtitleTrackForPath('content://media/audio/1');
-    final second = provider.subtitleTrackForPath('content://media/audio/1');
+    final first = subtitles.load('content://media/audio/1');
+    final second = subtitles.load('content://media/audio/1');
 
     expect(identical(first, second), isTrue);
     expect(await first, isNull);
-    expect(
-      await provider.subtitleTrackForPath('content://media/audio/1'),
-      isNull,
-    );
+    expect(await subtitles.load('content://media/audio/1'), isNull);
   });
 }

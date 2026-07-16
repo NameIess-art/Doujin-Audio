@@ -2,8 +2,9 @@ part of 'timer_tab.dart';
 
 extension _TimerTabBody on _TimerTabState {
   Widget _buildTimerTab(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
-    final provider = ref.read(audioProviderFacadeProvider);
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final timer = ref.read(timerFacadeProvider);
     final timerSlice =
         ref.watch(timerStateProvider).valueOrNull ??
         const TimerStateSliceData();
@@ -23,7 +24,7 @@ extension _TimerTabBody on _TimerTabState {
     if (_lastTimerHash != timerHash) {
       _lastTimerHash = timerHash;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _syncDraftFromProvider(provider);
+        if (mounted) _syncDraftFromState(timerSlice);
       });
     }
     final cs = Theme.of(context).colorScheme;
@@ -87,7 +88,7 @@ extension _TimerTabBody on _TimerTabState {
       );
       final picked = await showAutoResumeTimePicker();
       if (picked != null) {
-        provider.setAutoResume(
+        timer.setAutoResume(
           timerSlice.autoResumeEnabled,
           picked.hour,
           picked.minute,
@@ -224,7 +225,7 @@ extension _TimerTabBody on _TimerTabState {
             _minutes = m;
             _seconds = s;
             _lastSyncedDraftKey = _draftKey(_selectedMode, _pickedDuration);
-            provider.setTimerDraft(_selectedMode, _pickedDuration);
+            timer.setTimerDraft(_selectedMode, _pickedDuration);
           }),
         ),
         SizedBox(height: compactMode ? 12 : 18),
@@ -244,12 +245,12 @@ extension _TimerTabBody on _TimerTabState {
               AppInteractionFeedbackType.selection,
             );
             if (timerConfigured && timerSlice.mode != mode) {
-              provider.configureTimer(mode, _pickedDuration);
+              timer.configureTimer(mode, _pickedDuration);
               if (mode == TimerMode.manual) {
-                provider.startCountdown();
+                timer.startCountdown();
               }
             } else {
-              provider.setTimerDraft(mode, _pickedDuration);
+              timer.setTimerDraft(mode, _pickedDuration);
             }
             _setLocalState(() {
               _selectedMode = mode;
@@ -266,7 +267,7 @@ extension _TimerTabBody on _TimerTabState {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.confirmation,
                   );
-                  _onConfirm(provider);
+                  _onConfirm(timer);
                 },
           icon: Icon(
             _selectedMode == TimerMode.manual
@@ -363,7 +364,8 @@ extension _TimerTabBody on _TimerTabState {
                     ? _buildCompactDetailPage(
                         context: context,
                         i18n: i18n,
-                        provider: provider,
+                        timer: timer,
+                        timerState: timerSlice,
                         cs: cs,
                         timerExpired: timerExpired,
                         timerWaitingTrigger: timerWaitingTrigger,
@@ -416,7 +418,7 @@ extension _TimerTabBody on _TimerTabState {
                   if (!showCompactOnly &&
                       (timerActive || timerExpired || timerWaitingTrigger)) ...[
                     _CountdownCard(
-                      provider: provider,
+                      timerState: timerSlice,
                       timerExpired: timerExpired,
                       waitingTrigger: timerWaitingTrigger,
                       fmtDuration: _fmtDuration,
@@ -441,7 +443,7 @@ extension _TimerTabBody on _TimerTabState {
                         AppInteractionFeedback.trigger(
                           AppInteractionFeedbackType.destructive,
                         );
-                        provider.cancelTimer();
+                        timer.cancelTimer();
                       },
                       icon: const Icon(Icons.cancel_outlined),
                       label: Text(i18n.tr('cancel_timer')),
@@ -472,7 +474,7 @@ extension _TimerTabBody on _TimerTabState {
                                 );
                                 unawaited(
                                   _setAutoResumeWithCapabilityCheck(
-                                    provider,
+                                    timer,
                                     enabled: value,
                                     hour: timerSlice.autoResumeHour,
                                     minute: timerSlice.autoResumeMinute,
@@ -516,7 +518,7 @@ extension _TimerTabBody on _TimerTabState {
                                   final picked =
                                       await showAutoResumeTimePicker();
                                   if (picked != null) {
-                                    provider.setAutoResume(
+                                    timer.setAutoResume(
                                       timerSlice.autoResumeEnabled,
                                       picked.hour,
                                       picked.minute,

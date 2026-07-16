@@ -108,7 +108,7 @@ class PlaybackQueueResolver {
       );
     }
 
-    final nextIndex = _isShuffleMode(effectiveLoopMode)
+    final nextIndex = effectiveLoopMode.isShuffle
         ? _randomDifferentIndex(paths, scope.currentIndex, nextInt)
         : (scope.currentIndex + (forward ? 1 : -1) + paths.length) %
               paths.length;
@@ -127,7 +127,7 @@ class PlaybackQueueResolver {
     if (!scope.isCustomQueue && loopMode == SessionLoopMode.single) {
       return true;
     }
-    if (!scope.isCustomQueue && _isCrossFolderMode(loopMode)) {
+    if (!scope.isCustomQueue && loopMode.isCrossFolder) {
       return true;
     }
     return scope.paths.length > 1;
@@ -190,7 +190,7 @@ class PlaybackQueueResolver {
           : <String>[trackPath(currentTrack)];
     }
     Iterable<MusicTrack> candidateTracks = customQueueTracks;
-    if (!isPlaybackQueue && !_isCrossFolderMode(loopMode)) {
+    if (!isPlaybackQueue && !loopMode.isCrossFolder) {
       final folderKey = currentTrack == null
           ? null
           : folderKeyForTrack(currentTrack);
@@ -264,15 +264,5 @@ class PlaybackQueueResolver {
       guard++;
     }
     return candidateIndex.clamp(0, paths.length - 1);
-  }
-
-  bool _isShuffleMode(SessionLoopMode mode) {
-    return mode == SessionLoopMode.crossRandom ||
-        mode == SessionLoopMode.folderRandom;
-  }
-
-  bool _isCrossFolderMode(SessionLoopMode mode) {
-    return mode == SessionLoopMode.crossRandom ||
-        mode == SessionLoopMode.crossSequential;
   }
 }

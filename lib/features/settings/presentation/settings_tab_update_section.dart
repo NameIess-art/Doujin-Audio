@@ -2,7 +2,7 @@ part of 'settings_tab.dart';
 
 List<Widget> _buildSettingsUpdateSection({
   required AppLanguageProvider i18n,
-  required AudioProvider audioProvider,
+  required SettingsRepository settings,
   required TextStyle? descStyle,
   required ColorScheme cs,
   required AppUpdateInfo? updateInfo,
@@ -73,7 +73,7 @@ List<Widget> _buildSettingsUpdateSection({
             );
             return SwitchListTile(
               value: autoCheckUpdates,
-              onChanged: audioProvider.setAutoCheckUpdates,
+              onChanged: settings.setAutoCheckUpdates,
               title: Text(i18n.tr('auto_check_updates')),
               subtitle: Text(
                 i18n.tr('auto_check_updates_subtitle'),

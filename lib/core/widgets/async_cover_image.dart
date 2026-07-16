@@ -2,10 +2,10 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../media/music_track.dart' show MusicTrack;
-import '../../app/state/audio_provider.dart' as ap;
+import '../../app/state/audio_provider_riverpod.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import 'scroll_activity_gate.dart';
@@ -40,24 +40,14 @@ int coverCacheWidthForLogicalSize({
       : requestedWidth.clamp(1, resolutionLimit);
 }
 
-CoverImageResolution coverImageResolutionOf(BuildContext context) {
-  try {
-    return context.select<ap.AudioProvider, CoverImageResolution>(
-      (provider) => provider.coverImageResolution,
-    );
-  } on ProviderNotFoundException {
-    return CoverImageResolution.balanced;
-  }
-}
-
-int? coverCacheWidthForContext(
-  BuildContext context, {
+int? coverCacheWidth({
+  CoverImageResolution resolution = CoverImageResolution.balanced,
   int? cacheWidth,
   bool useDefaultCacheWidth = true,
 }) {
   if (cacheWidth != null) return cacheWidth;
   if (!useDefaultCacheWidth) return null;
-  return coverCacheWidthForResolution(coverImageResolutionOf(context));
+  return coverCacheWidthForResolution(resolution);
 }
 
 bool hasDisplayableCoverArtwork(MusicTrack? track, String? resolvedCoverPath) {
@@ -605,7 +595,7 @@ class _CoverFallbackTexturePainter extends CustomPainter {
   }
 }
 
-class RetryingNetworkImage extends StatelessWidget {
+class RetryingNetworkImage extends ConsumerWidget {
   const RetryingNetworkImage({
     super.key,
     required this.url,
@@ -640,13 +630,13 @@ class RetryingNetworkImage extends StatelessWidget {
   final int maxRetryAttempts;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final trimmedUrl = url.trim();
     if (trimmedUrl.isEmpty) {
       return fallbackBuilder(context);
     }
-    final effectiveCacheWidth = coverCacheWidthForContext(
-      context,
+    final effectiveCacheWidth = coverCacheWidth(
+      resolution: ref.watch(coverImageResolutionProvider),
       cacheWidth: cacheWidth,
       useDefaultCacheWidth: useDefaultCacheWidth,
     );
@@ -745,7 +735,7 @@ class AsyncRemoteCoverImage extends StatelessWidget {
   }
 }
 
-class RetryingFileImage extends StatelessWidget {
+class RetryingFileImage extends ConsumerWidget {
   const RetryingFileImage({
     super.key,
     required this.path,
@@ -782,12 +772,12 @@ class RetryingFileImage extends StatelessWidget {
   final bool deferRetryDuringInteraction;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     if (path.isEmpty) {
       return fallbackBuilder(context);
     }
-    final effectiveCacheWidth = coverCacheWidthForContext(
-      context,
+    final effectiveCacheWidth = coverCacheWidth(
+      resolution: ref.watch(coverImageResolutionProvider),
       cacheWidth: cacheWidth,
       useDefaultCacheWidth: useDefaultCacheWidth,
     );

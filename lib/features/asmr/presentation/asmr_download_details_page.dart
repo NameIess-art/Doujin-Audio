@@ -1,21 +1,20 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/state/audio_provider_riverpod.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_manager.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/top_page_header.dart';
 
-class AsmrDownloadDetailsPage extends StatelessWidget {
+class AsmrDownloadDetailsPage extends ConsumerWidget {
   const AsmrDownloadDetailsPage({super.key, required this.workId});
 
   final int workId;
 
   @override
-  Widget build(BuildContext context) {
-    final task = context.select<AsmrDownloadManager, AsmrDownloadTaskSnapshot?>(
-      (manager) => manager.getTask(workId),
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final task = ref.watch(asmrDownloadTaskProvider(workId));
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
     final cs = Theme.of(context).colorScheme;
 

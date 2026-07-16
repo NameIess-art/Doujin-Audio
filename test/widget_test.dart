@@ -14,6 +14,7 @@ import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
 import 'package:nameless_audio/app/presentation/main_screen.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
+import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
@@ -23,7 +24,6 @@ import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
-import 'package:provider/provider.dart' as legacy_provider;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -364,23 +364,19 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: createAudioProviderOverrides(audioProvider: audioProvider),
-        child: legacy_provider.MultiProvider(
-          providers: [
-            legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
-            legacy_provider.ChangeNotifierProvider.value(
-              value: languageProvider,
-            ),
-            legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
-          ],
-          child: MaterialApp(
-            home: Scaffold(
-              body: Center(
-                child: ActiveSessionCarousel(
-                  sessions: [session],
-                  provider: audioProvider,
-                  onOpenSession: (_) {},
-                ),
+        overrides: [
+          ...createAudioProviderOverrides(audioProvider: audioProvider),
+          themeProviderInstanceProvider.overrideWithValue(themeProvider),
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: ActiveSessionCarousel(
+                sessions: [session],
+                onOpenSession: (_) {},
               ),
             ),
           ),
@@ -695,8 +691,7 @@ final class _AppShellHarness {
   final AppLanguageProvider language;
 }
 
-final class _AppShellAudioDatabaseRepository
-    extends AudioDatabaseRepository {
+final class _AppShellAudioDatabaseRepository extends AudioDatabaseRepository {
   @override
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
     return const <TimeSegmentLabel>[];
@@ -773,15 +768,13 @@ Future<_AppShellHarness> _pumpAppShell(
 
   await tester.pumpWidget(
     ProviderScope(
-      overrides: createAudioProviderOverrides(audioProvider: audioProvider),
-      child: legacy_provider.MultiProvider(
-        providers: [
-          legacy_provider.ChangeNotifierProvider.value(value: themeProvider),
-          legacy_provider.ChangeNotifierProvider.value(value: languageProvider),
-          legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
-        ],
-        child: const MusicPlayerApp(),
-      ),
+      overrides: [
+        ...createAudioProviderOverrides(audioProvider: audioProvider),
+        themeProviderInstanceProvider.overrideWithValue(themeProvider),
+        appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
+        appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+      ],
+      child: const MusicPlayerApp(),
     ),
   );
   await _pumpMainScreenAnimations(tester, startup: true);

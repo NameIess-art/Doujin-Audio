@@ -1,14 +1,15 @@
 part of 'asmr_tab.dart';
 
-class _AsmrDownloadProgressInlineButton extends StatelessWidget {
+class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
   const _AsmrDownloadProgressInlineButton();
 
   @override
-  Widget build(BuildContext context) {
-    final state = context
-        .select<AsmrDownloadManager, AsmrDownloadButtonViewState>(
-          (manager) => manager.buttonViewState,
-        );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final manager = ref.read(asmrDownloadManagerProvider);
+    final state = ref.watch(asmrDownloadStateProvider).valueOrNull != null
+        ? manager?.buttonViewState ??
+              const AsmrDownloadButtonViewState(visible: false, progress: null)
+        : const AsmrDownloadButtonViewState(visible: false, progress: null);
     if (!state.visible) {
       return const SizedBox.shrink();
     }
@@ -81,7 +82,7 @@ class _AsmrCollapsingHeaderControls extends StatelessWidget {
   }
 }
 
-class _AsmrSearchBar extends StatelessWidget {
+class _AsmrSearchBar extends ConsumerWidget {
   const _AsmrSearchBar({
     required this.controller,
     required this.onChanged,
@@ -93,11 +94,12 @@ class _AsmrSearchBar extends StatelessWidget {
   final VoidCallback onClear;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
       child: SizedBox(
@@ -237,7 +239,7 @@ class _AsmrCategoryButton extends StatelessWidget {
   }
 }
 
-class _AsmrMoreMenuButton extends StatelessWidget {
+class _AsmrMoreMenuButton extends ConsumerWidget {
   const _AsmrMoreMenuButton({
     required this.onAccount,
     required this.onLanguage,
@@ -247,8 +249,9 @@ class _AsmrMoreMenuButton extends StatelessWidget {
   final VoidCallback onLanguage;
 
   @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     return UnifiedPopupMenuButton<_AsmrMoreAction>(
       icon: Icons.more_horiz_rounded,
       tooltip: i18n.tr('asmr_more'),

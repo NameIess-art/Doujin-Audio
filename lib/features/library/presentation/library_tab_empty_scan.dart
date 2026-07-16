@@ -54,7 +54,10 @@ class _LibraryEmptyState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
 
     return ListView(

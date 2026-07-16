@@ -86,7 +86,10 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final selected = widget.labels
         .where((label) => label.id == widget.selectedId)
         .firstOrNull;
@@ -183,7 +186,10 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
     required Color activeColor,
     required bool loopActive,
   }) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -526,7 +532,10 @@ Future<Duration?> _showSegmentTimeInputDialog(
   BuildContext context, {
   Duration? initial,
 }) async {
-  final i18n = context.read<AppLanguageProvider>();
+  final i18n = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appLanguageProviderInstanceProvider);
   final controller = TextEditingController(
     text: initial == null ? '' : _formatSegmentTime(initial),
   );

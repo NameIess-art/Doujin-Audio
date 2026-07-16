@@ -8,16 +8,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:provider/provider.dart' hide Consumer;
 
 import '../localization/app_language_provider.dart';
 import '../state/audio_provider.dart';
 import '../state/audio_provider_riverpod.dart';
 import '../state/subtitle_settings_provider.dart';
-import '../../features/settings/application/app_update_service.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../features/player/application/audio_state_services.dart';
+import '../../features/player/application/playback_facade.dart';
 import '../../core/platform/notifications_platform_service.dart';
 import '../../core/platform/permission_action_controller.dart';
 import '../../core/platform/power_platform_service.dart';
@@ -84,9 +83,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _showScrollToTopButton = false;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
-  late final AppUpdateFlow _updateFlow = AppUpdateFlow(
-    permissionController: _permissionActionController,
-  );
+  late final AppUpdateFlow _updateFlow;
   bool _timerOverlayPrimed = false;
 
   bool _bootstrapDone = false;
@@ -138,6 +135,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void initState() {
     super.initState();
+    _updateFlow = AppUpdateFlow(
+      permissionController: _permissionActionController,
+      languageProvider: ref.read(appLanguageProviderInstanceProvider),
+      updateService: ref.read(appUpdateServiceProvider),
+    );
     _pageController = PageController(initialPage: _currentIndex);
     _activePageIndex = ValueNotifier<int>(_currentIndex);
     _pages = [
@@ -163,27 +165,26 @@ class _MainScreenState extends ConsumerState<MainScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _rememberCurrentViewMetrics();
-      final provider = ref.read(audioProviderFacadeProvider);
+      final warmup = ref.read(audioUiWarmupCoordinatorProvider);
       unawaited(_syncGlobalSubtitleOverlay());
       unawaited(_consumePendingNotificationSession());
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
-        provider.scheduleUiWarmup(
-          currentPageIndex: _currentIndex,
-          immediate: true,
-        );
+        warmup.schedule(currentPageIndex: _currentIndex, immediate: true);
       });
     });
   }
 
   void _openTimerFromPlaylist() {
     if (!mounted) return;
-    final provider = ref.read(audioProviderFacadeProvider);
+    final timer =
+        ref.read(timerStateProvider).valueOrNull ??
+        ref.read(timerFacadeProvider).state;
     final timerState = _TimerPresentation(
-      duration: provider.timerDuration,
-      remaining: provider.timerRemaining,
-      active: provider.timerActive,
-      mode: provider.timerMode,
+      duration: timer.duration,
+      remaining: timer.remaining,
+      active: timer.active,
+      mode: timer.mode,
     );
     _openTimerSettingsPage(context, timerState);
   }
@@ -346,8 +347,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (!mounted) return;
       _restoreActivePageAfterMetricsChange();
       ref
-          .read(audioProviderFacadeProvider)
-          .scheduleUiWarmup(currentPageIndex: _currentIndex, immediate: true);
+          .read(audioUiWarmupCoordinatorProvider)
+          .schedule(currentPageIndex: _currentIndex, immediate: true);
     });
   }
 
@@ -359,10 +360,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   PlaybackSession? _globalSubtitleOverlaySession(
-    AudioProvider provider,
+    PlaybackFacade playback,
     SubtitleSettingsState settings,
   ) {
-    final candidates = provider.activeSessions
+    final candidates = playback.state.activeSessions
         .where((session) {
           return settings.isShowEnabled(session.id) &&
               settings.isGlobalEnabled(session.id);
@@ -389,9 +390,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     _globalSubtitleOverlaySyncing = true;
     try {
-      final provider = ref.read(audioProviderFacadeProvider);
+      final playback = ref.read(playbackFacadeProvider);
       final settings = ref.read(subtitleSettingsProvider);
-      final session = _globalSubtitleOverlaySession(provider, settings);
+      final session = _globalSubtitleOverlaySession(playback, settings);
       if (session == null) {
         await _stopGlobalSubtitleOverlay(immediate: true);
         return;
@@ -463,9 +464,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       unawaited(_stopGlobalSubtitleOverlay(immediate: true));
       return;
     }
-    final provider = ref.read(audioProviderFacadeProvider);
+    final playback = ref.read(playbackFacadeProvider);
     final settings = ref.read(subtitleSettingsProvider);
-    final session = _globalSubtitleOverlaySession(provider, settings);
+    final session = _globalSubtitleOverlaySession(playback, settings);
     if (session == null) {
       unawaited(_stopGlobalSubtitleOverlay(immediate: true));
       return;
@@ -474,7 +475,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _updateGlobalSubtitleOverlayForSession(PlaybackSession session) {
-    final provider = ref.read(audioProviderFacadeProvider);
+    final subtitles = ref.read(playbackSubtitleServiceProvider);
     if (_globalSubtitleOverlaySessionId != session.id) {
       _globalSubtitleOverlaySessionId = session.id;
       _lastGlobalSubtitleOverlayText = null;
@@ -483,7 +484,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _globalSubtitleOverlayTrackPath = session.currentTrackPath;
       _lastGlobalSubtitleOverlayText = null;
       unawaited(
-        provider.subtitleTrackForPath(session.currentTrackPath).then((_) {
+        subtitles.load(session.currentTrackPath).then((_) {
           if (mounted &&
               shouldRunGlobalSubtitleOverlay(
                 appInForeground: _appInForeground,
@@ -495,11 +496,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       );
     }
 
-    final subtitleTrack = provider.getSubtitleTrackSync(
-      session.currentTrackPath,
-    );
+    final subtitleTrack = subtitles.trackSync(session.currentTrackPath);
     final text =
-        provider.subtitleTextForTrackAt(
+        subtitles.textAt(
           session.currentTrackPath,
           session.position,
           subtitleTrack: subtitleTrack,
@@ -519,8 +518,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.hidden) {
       _appInForeground = false;
-      final provider = ref.read(audioProviderFacadeProvider);
-      provider.syncKeepAliveBeforeBackground();
+      unawaited(ref.read(audioRuntimeCoordinatorProvider).enterBackground());
       unawaited(_syncGlobalSubtitleOverlay());
       return;
     }
@@ -534,17 +532,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
       unawaited(_stopGlobalSubtitleOverlay(immediate: true));
     }
     unawaited(_consumePendingNotificationSession());
-    final provider = ref.read(audioProviderFacadeProvider);
-    provider.syncKeepAliveAfterForegroundResume();
     unawaited(_permissionActionController.handleAppResumed());
-    provider.resyncNotificationsAfterResume();
     unawaited(
-      provider.syncTimerRuntimeFromNative().then((_) {
-        provider.retryOverdueAutoResume();
-        provider.scheduleUiWarmup(
-          currentPageIndex: _currentIndex,
-          immediate: true,
-        );
+      ref.read(audioRuntimeCoordinatorProvider).resumeForeground().then((_) {
+        if (!mounted) return;
+        final warmup = ref.read(audioUiWarmupCoordinatorProvider);
+        warmup.schedule(currentPageIndex: _currentIndex, immediate: true);
       }),
     );
     if (!_notificationSettingsOpened) {
@@ -559,7 +552,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       ref.read(mainScreenControllerProvider).requestScrollToTop(index);
       return;
     }
-    final provider = ref.read(audioProviderFacadeProvider);
+    final warmup = ref.read(audioUiWarmupCoordinatorProvider);
     if (withFeedback) {
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     }
@@ -592,7 +585,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         priority: 0,
         task: () async {
           if (!mounted || _currentIndex != index) return;
-          provider.scheduleUiWarmup(currentPageIndex: index, immediate: true);
+          warmup.schedule(currentPageIndex: index, immediate: true);
         },
       );
     });
@@ -605,7 +598,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (!mounted) return;
     showAppSnackBar(
       context,
-      context.read<AppLanguageProvider>().tr('asmr_online_optional_notice'),
+      ProviderScope.containerOf(context, listen: false)
+          .read(appLanguageProviderInstanceProvider)
+          .tr('asmr_online_optional_notice'),
       icon: Icons.cloud_outlined,
       duration: const Duration(seconds: 4),
     );
@@ -616,7 +611,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     ref.listen<SubtitleSettingsState>(subtitleSettingsProvider, (_, _) {
       unawaited(_syncGlobalSubtitleOverlay());
     });
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final brightness = Theme.of(context).brightness;
     final overlayStyle = brightness == Brightness.dark
         ? const SystemUiOverlayStyle(

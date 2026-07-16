@@ -1,14 +1,28 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/audio_path_coordinator.dart';
+import '../application/playback_queue_coordinator.dart';
+import '../application/audio_runtime_coordinator.dart';
+import '../application/audio_ui_warmup_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../presentation/audio_ui_controllers.dart';
 import '../presentation/screen_view_models.dart';
+import '../theme/theme_provider.dart';
+import '../localization/app_language_provider.dart';
+import '../../features/settings/application/app_update_service.dart';
+import '../../features/settings/application/settings_command_controller.dart';
+import '../../features/asmr/application/asmr_download_manager.dart';
+import '../../features/asmr/application/asmr_library_controller.dart';
+import '../../features/asmr/application/asmr_playback_coordinator.dart';
+import '../../features/asmr/domain/asmr_models.dart';
 import 'audio_provider.dart';
 import 'subtitle_settings_provider.dart';
 
@@ -18,6 +32,187 @@ import 'subtitle_settings_provider.dart';
 final audioProviderFacadeProvider = Provider<AudioProvider>((ref) {
   throw UnimplementedError(
     'audioProviderFacadeProvider must be overridden in ProviderScope.',
+  );
+});
+
+final themeProviderInstanceProvider = Provider<ThemeProvider>((ref) {
+  throw UnimplementedError(
+    'themeProviderInstanceProvider must be overridden in ProviderScope.',
+  );
+});
+
+final appLanguageProviderInstanceProvider = Provider<AppLanguageProvider>((
+  ref,
+) {
+  throw UnimplementedError(
+    'appLanguageProviderInstanceProvider must be overridden in ProviderScope.',
+  );
+});
+
+final appLanguageStateProvider = StreamProvider<AppLanguageState>((ref) {
+  final controller = ref.watch(appLanguageProviderInstanceProvider);
+  final states = StreamController<AppLanguageState>.broadcast(sync: true);
+  void emit() => states.add(AppLanguageState.from(controller));
+  controller.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    controller.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
+});
+
+final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
+  throw UnimplementedError(
+    'appUpdateServiceProvider must be overridden in ProviderScope.',
+  );
+});
+
+final asmrDownloadManagerProvider = Provider<AsmrDownloadManager?>((ref) {
+  return null;
+});
+
+final asmrLibraryControllerProvider = Provider<AsmrLibraryController?>((ref) {
+  return null;
+});
+
+final asmrLibraryGlobalStateProvider =
+    StreamProvider<AsmrLibraryGlobalViewState?>((ref) {
+      final controller = ref.watch(asmrLibraryControllerProvider);
+      if (controller == null) return Stream.value(null);
+      final states = StreamController<AsmrLibraryGlobalViewState>.broadcast(
+        sync: true,
+      );
+      void emit() => states.add(controller.globalViewState);
+      controller.addListener(emit);
+      emit();
+      ref.onDispose(() {
+        controller.removeListener(emit);
+        states.close();
+      });
+      return states.stream;
+    });
+
+final asmrCategoryStateProvider =
+    StreamProvider.family<AsmrCategoryViewState?, AsmrCategoryType>((
+      ref,
+      category,
+    ) {
+      final controller = ref.watch(asmrLibraryControllerProvider);
+      if (controller == null) return Stream.value(null);
+      final states = StreamController<AsmrCategoryViewState?>.broadcast(
+        sync: true,
+      );
+
+      void emit() => states.add(controller.categoryViewState(category));
+      controller.addListener(emit);
+      emit();
+      ref.onDispose(() {
+        controller.removeListener(emit);
+        states.close();
+      });
+      return states.stream;
+    });
+
+final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
+  final controller = ref.watch(asmrLibraryControllerProvider);
+  if (controller == null) return Stream.value(null);
+  final states = StreamController<AsmrAuthViewState?>.broadcast(sync: true);
+  void emit() => states.add(controller.authViewState);
+  controller.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    controller.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
+});
+
+final asmrTrackTreeStateProvider =
+    StreamProvider.family<AsmrTrackTreeViewState?, int>((ref, workId) {
+      final controller = ref.watch(asmrLibraryControllerProvider);
+      if (controller == null) return Stream.value(null);
+      final states = StreamController<AsmrTrackTreeViewState?>.broadcast(
+        sync: true,
+      );
+      void emit() => states.add(controller.trackTreeViewState(workId));
+      controller.addListener(emit);
+      emit();
+      ref.onDispose(() {
+        controller.removeListener(emit);
+        states.close();
+      });
+      return states.stream;
+    });
+
+final asmrSyncStateProvider = StreamProvider<AsmrSyncViewState?>((ref) {
+  final controller = ref.watch(asmrLibraryControllerProvider);
+  if (controller == null) return Stream.value(null);
+  final states = StreamController<AsmrSyncViewState?>.broadcast(sync: true);
+  void emit() => states.add(controller.syncViewState);
+  controller.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    controller.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
+});
+
+final asmrPlaybackCoordinatorProvider = Provider<AsmrPlaybackCoordinator?>(
+  (ref) => null,
+);
+
+final asmrDownloadStateProvider = StreamProvider<AsmrDownloadState>((ref) {
+  final manager = ref.watch(asmrDownloadManagerProvider);
+  if (manager == null) return Stream.value(AsmrDownloadState.empty);
+  final states = StreamController<AsmrDownloadState>.broadcast(sync: true);
+  void emit() => states.add(manager.state);
+  manager.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    manager.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
+});
+
+final asmrDownloadTaskProvider =
+    Provider.family<AsmrDownloadTaskSnapshot?, int>((ref, workId) {
+      final manager = ref.watch(asmrDownloadManagerProvider);
+      return ref
+              .watch(asmrDownloadStateProvider)
+              .valueOrNull
+              ?.taskFor(workId) ??
+          manager?.getTask(workId);
+    });
+
+final themeStateProvider = StreamProvider<ThemeState>((ref) {
+  final controller = ref.watch(themeProviderInstanceProvider);
+  final states = StreamController<ThemeState>.broadcast(sync: true);
+  void emit() => states.add(ThemeState.from(controller));
+  controller.addListener(emit);
+  emit();
+  ref.onDispose(() {
+    controller.removeListener(emit);
+    states.close();
+  });
+  return states.stream;
+});
+
+final audioRuntimeCoordinatorProvider = Provider<AudioRuntimeCoordinator>((
+  ref,
+) {
+  throw UnimplementedError(
+    'audioRuntimeCoordinatorProvider must be overridden in ProviderScope.',
+  );
+});
+
+final audioUiWarmupCoordinatorProvider = Provider<AudioUiWarmupCoordinator>((
+  ref,
+) {
+  throw UnimplementedError(
+    'audioUiWarmupCoordinatorProvider must be overridden in ProviderScope.',
   );
 });
 
@@ -33,8 +228,25 @@ final playbackFacadeProvider = Provider<PlaybackFacade>((ref) {
   );
 });
 
+final playbackSubtitleServiceProvider = Provider<PlaybackSubtitleService>((
+  ref,
+) {
+  throw UnimplementedError(
+    'playbackSubtitleServiceProvider must be overridden in ProviderScope.',
+  );
+});
+
 final audioPathCoordinatorProvider = Provider<AudioPathCoordinator>((ref) {
   return AudioPathCoordinator(
+    library: ref.watch(libraryFacadeProvider),
+    playback: ref.watch(playbackFacadeProvider),
+  );
+});
+
+final playbackQueueCoordinatorProvider = Provider<PlaybackQueueCoordinator>((
+  ref,
+) {
+  return PlaybackQueueCoordinator(
     library: ref.watch(libraryFacadeProvider),
     playback: ref.watch(playbackFacadeProvider),
   );
@@ -69,6 +281,16 @@ final playlistUiControllerProvider = Provider<PlaylistUiController>((ref) {
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
   throw UnimplementedError(
     'settingsRepositoryProvider must be overridden in ProviderScope.',
+  );
+});
+
+final settingsCommandControllerProvider = Provider<SettingsCommandController>((
+  ref,
+) {
+  return SettingsCommandController(
+    settings: ref.watch(settingsRepositoryProvider),
+    playback: ref.watch(playbackFacadeProvider),
+    notifications: ref.watch(notificationFacadeProvider),
   );
 });
 
@@ -327,8 +549,17 @@ List<Override> createAudioProviderOverrides({
 }) {
   return <Override>[
     audioProviderFacadeProvider.overrideWithValue(audioProvider),
+    audioRuntimeCoordinatorProvider.overrideWithValue(
+      audioProvider.runtimeCoordinator,
+    ),
+    audioUiWarmupCoordinatorProvider.overrideWithValue(
+      audioProvider.uiWarmupCoordinator,
+    ),
     libraryFacadeProvider.overrideWithValue(audioProvider.libraryFacade),
     playbackFacadeProvider.overrideWithValue(audioProvider.playbackFacade),
+    playbackSubtitleServiceProvider.overrideWithValue(
+      audioProvider.subtitleService,
+    ),
     timerFacadeProvider.overrideWithValue(audioProvider.timerFacade),
     notificationFacadeProvider.overrideWithValue(
       audioProvider.notificationFacade,

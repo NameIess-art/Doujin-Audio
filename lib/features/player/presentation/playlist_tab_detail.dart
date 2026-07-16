@@ -237,7 +237,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.read<AudioProvider>();
+    final provider = ref.read(audioProviderFacadeProvider);
     final detailState = ref.watch(sessionDetailUiProvider(_currentSessionId));
     final sessionIds = detailState.sessionOrder.sessionIds;
 
@@ -347,7 +347,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                       pageSession.currentTrackPath,
                     );
                     final coverPathFuture = _coverFutureForTrack(
-                      provider,
+                      ref.read(libraryFacadeProvider),
                       detailTrack,
                     );
 
@@ -546,7 +546,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
       return;
     }
 
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     await _permissionActionController.ensureGrantedAndRun(
       context: context,
       title: i18n.tr('overlay_permission_title'),
@@ -562,7 +565,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   }
 
   Future<void> _openTimerSettingsPage() {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final mediaSize = MediaQuery.sizeOf(context);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
@@ -781,8 +787,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           requestKey: session.id,
                           initialPath: provider
                               .resolvedPlaybackCoverPathForTrack(track),
-                          retryFutureBuilder: () =>
-                              _coverFutureForTrack(provider, track),
+                          retryFutureBuilder: () => _coverFutureForTrack(
+                            ref.read(libraryFacadeProvider),
+                            track,
+                          ),
                           fallbackBuilder: (_) => CoverFallbackArtwork(
                             seed:
                                 track?.displayName ?? session.currentTrackPath,
@@ -815,19 +823,20 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                   builder: (context, constraints) {
                     return Column(
                       children: [
-                        // Top Bar 鈥?outside drag GestureDetector so taps work
+                        // Top Bar — outside drag GestureDetector so taps work
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Builder(
                             builder: (context) {
-                              final cachedTrack = provider.getSubtitleTrackSync(
+                              final subtitles = ref.read(
+                                playbackSubtitleServiceProvider,
+                              );
+                              final cachedTrack = subtitles.trackSync(
                                 session.currentTrackPath,
                               );
                               if (cachedTrack == null) {
                                 unawaited(
-                                  provider.subtitleTrackForPath(
-                                    session.currentTrackPath,
-                                  ),
+                                  subtitles.load(session.currentTrackPath),
                                 );
                               }
                               final hasSubtitle = cachedTrack != null;
@@ -910,7 +919,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                             },
                           ),
                         ),
-                        // Content area 鈥?keep session drag gestures on artwork only
+                        // Content area — keep session drag gestures on artwork only
                         Expanded(
                           child: Builder(
                             builder: (context) {
@@ -961,14 +970,15 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 isLandscape ? 64 : 28,
                                 isLandscape ? 32 : 8,
                               );
-                              final cachedTrack = provider.getSubtitleTrackSync(
+                              final subtitles = ref.read(
+                                playbackSubtitleServiceProvider,
+                              );
+                              final cachedTrack = subtitles.trackSync(
                                 session.currentTrackPath,
                               );
                               if (cachedTrack == null) {
                                 unawaited(
-                                  provider.subtitleTrackForPath(
-                                    session.currentTrackPath,
-                                  ),
+                                  subtitles.load(session.currentTrackPath),
                                 );
                               }
                               final hasSubtitle = cachedTrack != null;

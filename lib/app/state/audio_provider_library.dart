@@ -1,13 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderLibrary on AudioProvider {
-  void _rememberRetargetedPath(String oldPath, String newPath) {
-    _playbackFacade.rememberRetargetedPath(oldPath, newPath);
-  }
-
-  String _resolveRetargetedPath(String value) =>
-      _playbackFacade.resolveRetargetedPath(value);
-
   void _syncLibraryNodeOrder({bool persist = true}) {
     _libraryService.syncLibraryNodeOrder(
       persist: persist,
@@ -61,7 +54,7 @@ extension AudioProviderLibrary on AudioProvider {
       _libraryService.childFoldersForLibrary(libraryPath);
 
   String? libraryRootForPath(String entityPath) {
-    final resolvedPath = _resolveRetargetedPath(entityPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(entityPath);
     for (final libraryPath in _watchedLibraries) {
       if (PathMatcher.isWithinOrEqual(resolvedPath, libraryPath)) {
         return libraryPath;
@@ -187,7 +180,11 @@ extension AudioProviderLibrary on AudioProvider {
         .toList(growable: false);
     if (sessionsToRemove.isNotEmpty) {
       unawaited(
-        _removeSessions(sessionsToRemove, persist: false, notify: false),
+        _playbackFacade.removeSessions(
+          sessionsToRemove,
+          persist: false,
+          notify: false,
+        ),
       );
     }
   }
@@ -375,7 +372,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   MusicTrack? trackByPath(String trackPath) {
-    final resolvedPath = _resolveRetargetedPath(trackPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
     final libraryTrack = _libraryService.trackByPath(resolvedPath);
     if (libraryTrack != null) {
       return libraryTrack;
@@ -385,7 +382,7 @@ extension AudioProviderLibrary on AudioProvider {
         if (PathMatcher.equalsNormalized(track.path, trackPath) ||
             PathMatcher.equalsNormalized(track.path, resolvedPath) ||
             PathMatcher.equalsNormalized(
-              _resolveRetargetedPath(track.path),
+              _playbackFacade.resolveRetargetedPath(track.path),
               resolvedPath,
             )) {
           return track;
@@ -401,7 +398,7 @@ extension AudioProviderLibrary on AudioProvider {
   String? sessionTrackPath(String sessionId) =>
       _playbackService.sessionById(sessionId)?.currentTrackPath == null
       ? null
-      : _resolveRetargetedPath(
+      : _playbackFacade.resolveRetargetedPath(
           _playbackService.sessionById(sessionId)!.currentTrackPath,
         );
 
@@ -415,7 +412,7 @@ extension AudioProviderLibrary on AudioProvider {
     if (libraryGroupTracks != null && libraryGroupTracks.isNotEmpty) {
       return libraryGroupTracks;
     }
-    final resolvedPath = _resolveRetargetedPath(trackPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
     for (final session in _sessions.values) {
       final customQueueTracks = session.customQueueTracks;
       if (customQueueTracks == null || customQueueTracks.isEmpty) continue;
@@ -424,7 +421,7 @@ extension AudioProviderLibrary on AudioProvider {
             PathMatcher.equalsNormalized(candidate.path, trackPath) ||
             PathMatcher.equalsNormalized(candidate.path, resolvedPath) ||
             PathMatcher.equalsNormalized(
-              _resolveRetargetedPath(candidate.path),
+              _playbackFacade.resolveRetargetedPath(candidate.path),
               resolvedPath,
             ),
       )) {
@@ -479,7 +476,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   String getRootFolderPath(String trackPath) {
-    final resolvedPath = _resolveRetargetedPath(trackPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
     for (final folder in _watchedFolders) {
       if (PathMatcher.isWithinOrEqual(resolvedPath, folder)) {
         return folder;
@@ -494,7 +491,7 @@ extension AudioProviderLibrary on AudioProvider {
   }
 
   String getRootFolderName(String trackPath) {
-    final resolvedPath = _resolveRetargetedPath(trackPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
     for (final folder in _watchedFolders) {
       if (PathMatcher.isWithinOrEqual(resolvedPath, folder)) {
         return PathDisplay.folderName(folder);

@@ -6,45 +6,45 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart' hide Consumer;
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../application/audio_state_services.dart';
+import '../application/playback_session.dart';
+import '../domain/audio_effects.dart';
+import '../../library/application/library_facade.dart';
 import 'playlist_tab.dart';
 import 'playback_position_ui_gate.dart';
 
 part 'active_session_carousel_widgets.dart';
 
 Future<String?> _sessionCoverFutureForTrack(
-  AudioProvider provider,
+  LibraryFacade library,
   MusicTrack? track,
 ) {
   if (track == null) {
     return Future<String?>.value();
   }
-  return provider.playbackCoverPathFutureForTrack(track);
+  return library.playbackCoverPathFutureForTrack(track);
 }
 
 class ActiveSessionCarousel extends ConsumerStatefulWidget {
   const ActiveSessionCarousel({
     super.key,
     this.sessions,
-    this.provider,
     this.i18n,
     this.onOpenSession,
     this.compactForFab = false,
   });
 
   final List<PlaybackSession>? sessions;
-  final AudioProvider? provider;
   final AppLanguageProvider? i18n;
   final ValueChanged<String>? onOpenSession;
   final bool compactForFab;
@@ -177,8 +177,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final playbackState =
         ref.watch(playbackStateProvider).valueOrNull ??
         const PlaybackStateSliceData();
-    final AudioProvider provider =
-        widget.provider ?? ref.read(audioProviderFacadeProvider);
+    final library = ref.read(libraryFacadeProvider);
     final sessions = widget.sessions ?? playbackState.activeSessions;
     if (sessions.isEmpty) {
       return const SizedBox.shrink();
@@ -235,7 +234,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           itemCount: sessions.length,
           itemBuilder: (context, index) {
             final session = sessions[index];
-            final track = provider.trackByPath(session.currentTrackPath);
+            final track = library.trackByPath(session.currentTrackPath);
 
             return _ActiveSessionPageTransform(
               pageListenable: _pageNotifier,
@@ -244,8 +243,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
               child: RepaintBoundary(
                 child: _ActiveSessionCard(
                   session: session,
-                  provider: provider,
-                  coverPathFuture: _sessionCoverFutureForTrack(provider, track),
+                  coverPathFuture: _sessionCoverFutureForTrack(library, track),
                   compact: widget.compactForFab,
                   onOpen: () => _openSessionDetail(context, session),
                 ),

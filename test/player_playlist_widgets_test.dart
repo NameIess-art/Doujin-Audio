@@ -312,7 +312,7 @@ void main() {
     );
 
     unawaited(
-      audioProvider.applySessionEqPreset(
+      audioProvider.playbackFacade.applySessionEqPreset(
         session.id,
         AudioProvider.builtInEqPresets[1],
       ),
@@ -370,7 +370,7 @@ void main() {
         settingsRepository.syncSlice();
       },
     );
-    addTearDown(fixture.disposeAfterWarmups);
+    addTearDown(() => tester.runAsync(fixture.disposeAfterWarmups));
     final audioProvider = fixture.audioProvider;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
@@ -409,7 +409,13 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
-    audioProvider.scheduleUiWarmup(currentPageIndex: 2, immediate: true);
+    await tester.runAsync(() async {
+      audioProvider.uiWarmupCoordinator.schedule(
+        currentPageIndex: 2,
+        immediate: true,
+      );
+      await audioProvider.uiWarmupCoordinator.waitUntilIdle();
+    });
 
     await tester.pumpWidget(
       buildAudioProviderTestApp(
@@ -820,7 +826,9 @@ void main() {
         notify: false,
         persist: false,
       );
-      final queueSession = audioProvider.createPlaybackQueue('Queue 1');
+      final queueSession = audioProvider.playbackFacade.createPlaybackQueue(
+        'Queue 1',
+      );
       queueSession
         ..currentTrackPath = track.path
         ..currentQueueIndex = 0

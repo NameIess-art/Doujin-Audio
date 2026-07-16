@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart' hide Consumer, Provider;
 import 'package:lottie/lottie.dart';
 
 import '../../../app/localization/app_language_provider.dart';
@@ -227,7 +226,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     bool silent = false,
     bool forceShowResult = false,
   }) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final catalog = ref.read(libraryFacadeProvider);
     final operations = ref.read(uiOperationServiceProvider);
     final importBusy = <UiOperationScope>[
@@ -266,7 +268,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   Future<void> _runLibraryPullRefresh({bool showSnackbar = false}) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     if (showSnackbar) {
       showAppSnackBar(
         context,
@@ -287,7 +292,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     action,
     required Future<void> Function() retry,
   }) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final catalog = ref.read(libraryFacadeProvider);
     final outcome = await ref
         .read(uiOperationServiceProvider)
@@ -544,7 +552,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final libraryFacade = ref.read(libraryFacadeProvider);
     final libraryHeaderAudioCount = _readOrWatch(
       libraryHeaderUiProvider.select((s) => s.audioCount),

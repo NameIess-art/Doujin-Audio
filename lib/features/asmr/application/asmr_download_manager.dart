@@ -200,6 +200,42 @@ class AsmrDownloadTaskSnapshot {
   }
 }
 
+class AsmrDownloadState {
+  const AsmrDownloadState({required this.taskIds, required this.tasksByWorkId});
+
+  static const empty = AsmrDownloadState(
+    taskIds: <int>[],
+    tasksByWorkId: <int, AsmrDownloadTaskSnapshot>{},
+  );
+
+  factory AsmrDownloadState.fromManager(AsmrDownloadManager manager) {
+    return AsmrDownloadState(
+      taskIds: manager.taskIds,
+      tasksByWorkId: Map<int, AsmrDownloadTaskSnapshot>.unmodifiable(
+        manager._tasks,
+      ),
+    );
+  }
+
+  final List<int> taskIds;
+  final Map<int, AsmrDownloadTaskSnapshot> tasksByWorkId;
+
+  AsmrDownloadTaskSnapshot? taskFor(int workId) => tasksByWorkId[workId];
+
+  @override
+  bool operator ==(Object other) {
+    return other is AsmrDownloadState &&
+        listEquals(other.taskIds, taskIds) &&
+        mapEquals(other.tasksByWorkId, tasksByWorkId);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAll(taskIds),
+    Object.hashAll(tasksByWorkId.entries),
+  );
+}
+
 class AsmrDownloadButtonViewState {
   const AsmrDownloadButtonViewState({
     required this.visible,
@@ -368,6 +404,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   List<AsmrDownloadTaskSnapshot> get tasks => _tasks.values.toList();
   List<int> get taskIds => _taskIdsSnapshot;
   AsmrDownloadTaskSnapshot? getTask(int workId) => _tasks[workId];
+  AsmrDownloadState get state => AsmrDownloadState.fromManager(this);
   bool get hasLiveTask => _activeTasks.isNotEmpty || _queue.isNotEmpty;
 
   AsmrDownloadButtonViewState get buttonViewState {

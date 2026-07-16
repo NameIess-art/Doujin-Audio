@@ -10,7 +10,8 @@ extension _TimerTabDetailBody on _TimerTabState {
   Widget _buildCompactDetailPage({
     required BuildContext context,
     required AppLanguageProvider i18n,
-    required AudioProvider provider,
+    required TimerFacade timer,
+    required TimerStateSliceData timerState,
     required ColorScheme cs,
     required bool timerExpired,
     required bool timerWaitingTrigger,
@@ -59,7 +60,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                       const SizedBox(height: 10),
                       if (timerConfigured)
                         _CountdownCard(
-                          provider: provider,
+                          timerState: timerState,
                           timerExpired: timerExpired,
                           waitingTrigger: timerWaitingTrigger,
                           fmtDuration: _fmtDuration,
@@ -104,20 +105,20 @@ extension _TimerTabDetailBody on _TimerTabState {
                                   ),
                                 ),
                                 Switch.adaptive(
-                                  value: provider.autoResumeEnabled,
+                                  value: timerState.autoResumeEnabled,
                                   onChanged: (value) {
                                     AppInteractionFeedback.trigger(
                                       AppInteractionFeedbackType.selection,
                                     );
                                     unawaited(
                                       _setAutoResumeWithCapabilityCheck(
-                                        provider,
+                                        timer,
                                         enabled: value,
-                                        hour: provider.autoResumeHour,
-                                        minute: provider.autoResumeMinute,
+                                        hour: timerState.autoResumeHour,
+                                        minute: timerState.autoResumeMinute,
                                         promptForCapability:
                                             value &&
-                                            !provider.autoResumeEnabled,
+                                            !timerState.autoResumeEnabled,
                                       ),
                                     );
                                   },
@@ -126,7 +127,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                             ),
                           ),
                         ),
-                        if (provider.autoResumeEnabled) ...[
+                        if (timerState.autoResumeEnabled) ...[
                           const SizedBox(height: 8),
                           Material(
                             color: Colors.transparent,
@@ -155,8 +156,8 @@ extension _TimerTabDetailBody on _TimerTabState {
                                             Text(
                                               i18n.tr('resume_time', {
                                                 'time': _fmtClockTime(
-                                                  provider.autoResumeHour,
-                                                  provider.autoResumeMinute,
+                                                  timerState.autoResumeHour,
+                                                  timerState.autoResumeMinute,
                                                 ),
                                               }),
                                               style: Theme.of(context)
@@ -186,7 +187,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                             AppInteractionFeedback.trigger(
                               AppInteractionFeedbackType.destructive,
                             );
-                            provider.cancelTimer();
+                            timer.cancelTimer();
                             _setLocalState(() => _showCompactDetail = false);
                           },
                           icon: const Icon(Icons.stop_circle_outlined),

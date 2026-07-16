@@ -9,6 +9,14 @@ enum SessionLoopMode {
 enum TimerMode { manual, trigger }
 
 extension SessionLoopModeExtension on SessionLoopMode {
+  bool get isShuffle =>
+      this == SessionLoopMode.crossRandom ||
+      this == SessionLoopMode.folderRandom;
+
+  bool get isCrossFolder =>
+      this == SessionLoopMode.crossRandom ||
+      this == SessionLoopMode.crossSequential;
+
   String get label {
     switch (this) {
       case SessionLoopMode.single:

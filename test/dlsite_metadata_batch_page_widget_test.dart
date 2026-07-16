@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
+import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
 import 'package:nameless_audio/features/library/domain/audio_library_category.dart';
 import 'package:nameless_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
-import 'package:provider/provider.dart' as legacy_provider;
 
 void main() {
   testWidgets('picker result is ignored after batch page is disposed', (
@@ -16,20 +16,22 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        child: legacy_provider.ChangeNotifierProvider.value(
-          value: languageProvider,
-          child: MaterialApp(
-            navigatorKey: navigatorKey,
-            navigatorObservers: <NavigatorObserver>[observer],
-            home: Builder(
-              builder: (context) => FilledButton(
-                onPressed: () => Navigator.of(context).push<void>(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const DlsiteMetadataBatchPage(entries: []),
-                  ),
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          navigatorKey: navigatorKey,
+          navigatorObservers: <NavigatorObserver>[observer],
+          home: Builder(
+            builder: (context) => FilledButton(
+              onPressed: () => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => const DlsiteMetadataBatchPage(entries: []),
                 ),
-                child: const Text('open'),
               ),
+              child: const Text('open'),
             ),
           ),
         ),

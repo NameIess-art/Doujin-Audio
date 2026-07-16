@@ -8,14 +8,15 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart' hide Consumer;
 import 'package:window_manager/window_manager.dart';
 
 import '../../../app/localization/app_language_provider.dart';
+import '../../../app/application/audio_ui_warmup_coordinator.dart';
 import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../application/audio_state_services.dart';
+import '../application/playback_facade.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/natural_sort.dart';
@@ -225,7 +226,7 @@ class SessionFeatureBadgeStack extends StatelessWidget {
 }
 
 Future<String?> _coverFutureForTrack(
-  AudioProvider provider,
+  LibraryFacade library,
   MusicTrack? track, {
   bool cachedOnly = false,
 }) {
@@ -234,10 +235,10 @@ Future<String?> _coverFutureForTrack(
   }
   if (cachedOnly) {
     return SynchronousFuture<String?>(
-      provider.resolvedPlaybackCoverPathForTrack(track),
+      library.resolvedPlaybackCoverPathForTrack(track),
     );
   }
-  return provider.playbackCoverPathFutureForTrack(track);
+  return library.playbackCoverPathFutureForTrack(track);
 }
 
 PageRoute<void> buildSessionDetailRoute({required String sessionId}) {
@@ -357,7 +358,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _schedulePlaybackCoverWarmup(
     PlaylistListState listState,
-    AudioProvider provider,
+    LibraryFacade library,
+    AudioUiWarmupCoordinator warmup,
   ) {
     if (_isReordering || !listState.isInitialized || !listState.hasSessions) {
       return;
@@ -381,7 +383,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       }
       final trackPath = cardState?.trackPath ?? session.currentTrackPath;
       signatureParts.add(trackPath);
-      tracks.add(provider.trackByPath(trackPath));
+      tracks.add(library.trackByPath(trackPath));
     }
     if (tracks.isEmpty) return;
     final signature = signatureParts.join('|');
@@ -393,15 +395,18 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           _lastPlaybackCoverWarmupSignature != signature) {
         return;
       }
-      provider.warmupPlaybackCoversForTracks(tracks);
+      warmup.warmupPlaybackCovers(tracks);
     });
   }
 
   Future<void> _confirmClearAll(
     BuildContext context,
-    AudioProvider provider,
+    PlaybackFacade playbackFacade,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final confirmed = await showConfirmActionDialog(
       context: context,
       title: i18n.tr('clear_all_sessions'),
@@ -411,7 +416,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       icon: Icons.delete_sweep_rounded,
     );
     if (!confirmed || !mounted) return;
-    await provider.clearAllSessions();
+    await playbackFacade.clearAllSessions();
     if (!mounted || !context.mounted) return;
     showAppSnackBar(
       context,
@@ -448,8 +453,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final i18n = context.watch<AppLanguageProvider>();
-    final provider = ref.read(audioProviderFacadeProvider);
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    final library = ref.read(libraryFacadeProvider);
+    final playback = ref.read(playbackFacadeProvider);
+    final settings = ref.read(settingsRepositoryProvider);
+    final warmup = ref.read(audioUiWarmupCoordinatorProvider);
     final PlaylistListState listState;
     if (_isReordering) {
       listState = _reorderSnapshot ?? ref.read(playlistListUiProvider);
@@ -471,7 +482,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         : (_isActive
               ? ref.watch(subtitleSettingsProvider)
               : ref.read(subtitleSettingsProvider));
-    _schedulePlaybackCoverWarmup(listState, provider);
+    _schedulePlaybackCoverWarmup(listState, library, warmup);
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final coverCacheWidth = coverCacheWidthForResolution(
       settingsState.coverImageResolution,
@@ -496,14 +507,15 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       if (cardState == null) {
         return SizedBox.shrink(key: ValueKey(session.id));
       }
-      final track = provider.trackByPath(cardState.trackPath);
-      final coverPath = provider.resolvedPlaybackCoverPathForTrack(track);
+      final track = library.trackByPath(cardState.trackPath);
+      final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
       final child = RepaintBoundary(
         child: session.isPlaybackQueue
             ? _PlaybackQueueCard(
                 session: session,
                 cardState: cardState,
-                provider: provider,
+                library: library,
+                playback: playback,
                 index: index,
                 cardPositionsLocked: cardPositionsLocked,
                 coverCacheWidth: coverCacheWidth,
@@ -525,7 +537,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 coverGeneration: listState.coverGeneration,
                 coverCacheWidth: coverCacheWidth,
                 showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
-                provider: provider,
+                library: library,
+                playback: playback,
                 index: index,
                 cardPositionsLocked: cardPositionsLocked,
                 onOpen: () => _openSessionDetail(context, session.id),
@@ -613,10 +626,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                           ScrollViewKeyboardDismissBehavior
                                               .onDrag,
                                       onReorder: (oldIndex, newIndex) {
-                                        provider.reorderSessions(
-                                          oldIndex,
-                                          newIndex,
-                                        );
+                                        ref
+                                            .read(playbackFacadeProvider)
+                                            .reorderSessions(
+                                              oldIndex,
+                                              newIndex,
+                                            );
                                         setState(() {
                                           _isReordering = false;
                                           _reorderSnapshot = null;
@@ -740,13 +755,17 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               final queueCount = listState.sessions
                                   .where((session) => session.isPlaybackQueue)
                                   .length;
-                              provider.createPlaybackQueue(
-                                i18n.tr('default_playback_queue_name', {
-                                  'number': queueCount + 1,
-                                }),
-                              );
+                              ref
+                                  .read(playbackFacadeProvider)
+                                  .createPlaybackQueue(
+                                    i18n.tr('default_playback_queue_name', {
+                                      'number': queueCount + 1,
+                                    }),
+                                  );
                             } else if (value == 'pause_all') {
-                              provider.pauseAllSessions();
+                              ref
+                                  .read(playbackFacadeProvider)
+                                  .pauseAllSessions();
                               showAppSnackBar(
                                 context,
                                 i18n.tr('all_paused'),
@@ -754,11 +773,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 icon: Icons.pause_circle_outline_rounded,
                               );
                             } else if (value == 'clear_all') {
-                              _confirmClearAll(context, provider);
+                              _confirmClearAll(
+                                context,
+                                ref.read(playbackFacadeProvider),
+                              );
                             } else if (value ==
                                 'toggle_card_positions_locked') {
                               unawaited(
-                                provider.setCardPositionsLocked(
+                                settings.setCardPositionsLocked(
                                   !cardPositionsLocked,
                                 ),
                               );

@@ -3,11 +3,6 @@ part of 'audio_provider.dart';
 extension AudioProviderPlaybackKeepAlive on AudioProvider {
   bool get _hasPlayingSession => _sessions.values.any((s) => s.state.playing);
 
-  String _nextSessionId() {
-    _sessionSeed += 1;
-    return 'session_${DateTime.now().microsecondsSinceEpoch}_$_sessionSeed';
-  }
-
   bool get _hasPlaybackToKeepAlive => _sessions.values.any(
     (s) =>
         s.state.playing ||
@@ -20,14 +15,17 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
 
   bool get _hasPendingAutoResume =>
       _timerRuntimeCalculator.hasPendingAutoResume(
-        autoResumeAt: _autoResumeAt,
-        hasPausedByTimerSessionIds: _pausedByTimerSessionIds.isNotEmpty,
+        autoResumeAt: _timerService.autoResumeAt,
+        hasPausedByTimerSessionIds:
+            _timerService.pausedByTimerSessionIds.isNotEmpty,
       );
 
   void _syncKeepCpuAwake() {
     final hasPlayback = _hasPlaybackToKeepAlive;
     final hasTimer =
-        _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
+        _timerService.timerActive ||
+        _timerService.timerWaitingForPlayback ||
+        _hasPendingAutoResume;
     final usesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
     // Keep the CPU awake whenever there is active playback OR a timer is
@@ -72,17 +70,14 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
 
   void syncKeepAliveBeforeBackground() {
     if (AppPlatform.isAndroid) {
-      _deferredWarmupTimer?.cancel();
-      _deferredWarmupTimer = null;
-      _warmupGeneration += 1;
-      _warmupPausedForLifecycle = true;
-      _warmupScheduler.clear();
-      _syncWarmupPauseState();
+      _uiWarmupCoordinator.enterBackground();
       compactCoverImageCacheForBackground();
     }
     _keepAliveHasPlayback = _hasPlaybackToKeepAlive;
     _keepAliveHasTimer =
-        _timerActive || _timerWaitingForPlayback || _hasPendingAutoResume;
+        _timerService.timerActive ||
+        _timerService.timerWaitingForPlayback ||
+        _hasPendingAutoResume;
     _keepAliveUsesUnifiedNotifications =
         _multiThreadPlaybackEnabled && _notificationsEnabled;
     // Keep awake for both playback and timer (same logic as _syncKeepCpuAwake).
@@ -102,8 +97,7 @@ extension AudioProviderPlaybackKeepAlive on AudioProvider {
 
   void syncKeepAliveAfterForegroundResume() {
     if (!AppPlatform.isAndroid) return;
-    _warmupPausedForLifecycle = false;
-    _syncWarmupPauseState();
+    _uiWarmupCoordinator.resumeForeground();
     applyCoverImageCachePolicy(_settingsRepository.coverImageResolution);
   }
 

@@ -130,6 +130,7 @@ class AppBackupService {
     Future<Map<String, Object>> Function()? exportPreferences,
     Future<void> Function(Map<String, Object?> values)? restorePreferences,
     Future<AppVersionInfo> Function()? appVersionProvider,
+    AppUpdateService? appUpdateService,
     Future<String> Function()? databasePathProvider,
     Future<void> Function()? closeDatabase,
     Future<void> Function()? reopenDatabase,
@@ -146,7 +147,8 @@ class AppBackupService {
        _restorePreferences =
            restorePreferences ?? AppPreferences.restoreSafeValues,
        _appVersionProvider =
-           appVersionProvider ?? AppUpdateService.currentAppVersion,
+           appVersionProvider ??
+           (appUpdateService ?? AppUpdateService()).currentAppVersion,
        _databasePathProvider =
            databasePathProvider ??
            (() => (database ?? AppDatabase.instance).filePath),

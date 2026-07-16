@@ -1,8 +1,6 @@
 part of 'audio_provider.dart';
 
 const PlaybackQueueResolver _playbackQueueResolver = PlaybackQueueResolver();
-const TimerRuntimeCalculator _timerRuntimeCalculator = TimerRuntimeCalculator();
-
 String _folderKeyForTrack(MusicTrack track) {
   if (track.remoteMetadataKind == 'asmr.one' ||
       PathMatcher.isRemoteUri(track.path)) {

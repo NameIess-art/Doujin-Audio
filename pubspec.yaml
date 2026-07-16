@@ -35,7 +35,7 @@ dependencies:
   sqflite_common_ffi: ^2.3.6
   flutter_riverpod: ^2.6.1
   audio_session: ^0.2.4
-  window_manager: ^0.4.3
+  window_manager: ^0.5.2
   ffmpeg_kit_flutter_new_audio: ^2.0.0
   lottie: ^3.3.3
   media_kit: ^1.0.2

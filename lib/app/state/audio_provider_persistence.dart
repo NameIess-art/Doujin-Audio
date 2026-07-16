@@ -57,9 +57,6 @@ extension AudioProviderPersistence on AudioProvider {
 
     _playbackFacade.clearDeferredVolumeReloads();
     _playbackFacade.clearRetargetedPaths();
-    _timeSegmentLoopsBySessionId.clear();
-    _timeSegmentLoopBoundSessionIds.clear();
-    _timeSegmentLoopSeekPendingSessionIds.clear();
 
     _library.clear();
     _libraryByPath.clear();
@@ -657,23 +654,5 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setCardPositionsLocked(bool locked) async {
     await _settingsRepository.setCardPositionsLocked(locked);
     _notifySettingsChanged();
-  }
-
-  Future<void> saveCustomEqPreset(String name, PlaybackSession session) async {
-    final trimmedName = name.trim();
-    if (trimmedName.isEmpty) return;
-    final preset = EqPreset(
-      id: 'custom_${DateTime.now().microsecondsSinceEpoch}',
-      labelKey: trimmedName,
-      bandLevels: Map<int, double>.unmodifiable(
-        session.audioEffects.eqBandLevels,
-      ),
-    );
-    _settingsRepository.customEqPresets = List<EqPreset>.unmodifiable([
-      ..._settingsRepository.customEqPresets,
-      preset,
-    ]);
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
   }
 }

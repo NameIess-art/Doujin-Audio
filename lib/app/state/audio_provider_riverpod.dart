@@ -11,6 +11,8 @@ import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
+import '../../features/player/application/playback_time_segment_service.dart';
+import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../presentation/audio_ui_controllers.dart';
@@ -247,9 +249,29 @@ final playbackQueueCoordinatorProvider = Provider<PlaybackQueueCoordinator>((
   ref,
 ) {
   return PlaybackQueueCoordinator(
-    library: ref.watch(libraryFacadeProvider),
     playback: ref.watch(playbackFacadeProvider),
+    paths: ref.watch(audioPathCoordinatorProvider),
   );
+});
+
+final playbackTimeSegmentServiceProvider = Provider<PlaybackTimeSegmentService>(
+  (ref) {
+    final service = PlaybackTimeSegmentService(
+      database: ref.watch(libraryFacadeProvider).databaseRepository,
+      playback: ref.watch(playbackFacadeProvider),
+      paths: ref.watch(audioPathCoordinatorProvider),
+    );
+    ref.onDispose(service.dispose);
+    return service;
+  },
+);
+
+final subtitleOverlayControllerProvider = Provider<SubtitleOverlayController>((
+  ref,
+) {
+  final controller = SubtitleOverlayController();
+  ref.onDispose(controller.dispose);
+  return controller;
 });
 
 final timerFacadeProvider = Provider<TimerFacade>((ref) {

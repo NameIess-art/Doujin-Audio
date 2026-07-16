@@ -17,10 +17,10 @@ import '../../features/settings/application/app_preferences.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../core/platform/notifications_platform_service.dart';
 import '../../core/platform/permission_action_controller.dart';
 import '../../core/platform/power_platform_service.dart';
-import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
@@ -84,6 +84,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   final PermissionActionController _permissionActionController =
       PermissionActionController();
   late final AppUpdateFlow _updateFlow;
+  late final SubtitleOverlayController _subtitleOverlay;
   bool _timerOverlayPrimed = false;
 
   bool _bootstrapDone = false;
@@ -135,6 +136,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void initState() {
     super.initState();
+    _subtitleOverlay = ref.read(subtitleOverlayControllerProvider);
     _updateFlow = AppUpdateFlow(
       permissionController: _permissionActionController,
       languageProvider: ref.read(appLanguageProviderInstanceProvider),
@@ -397,13 +399,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
         await _stopGlobalSubtitleOverlay(immediate: true);
         return;
       }
-      final canDraw = await SubtitleOverlayController.canDrawOverlays();
+      final canDraw = await _subtitleOverlay.canDrawOverlays();
       if (!canDraw) {
         await _stopGlobalSubtitleOverlay(immediate: true);
         return;
       }
       await _applyGlobalSubtitleOverlayStyle(settings);
-      await SubtitleOverlayController.startOverlay();
+      await _subtitleOverlay.startOverlay();
       _globalSubtitleOverlayRunning = true;
       _ensureGlobalSubtitleOverlayTimer();
       _updateGlobalSubtitleOverlayForSession(session);
@@ -424,8 +426,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _lastGlobalSubtitleOverlayText = null;
     if (!_globalSubtitleOverlayRunning && !immediate) return;
     _globalSubtitleOverlayRunning = false;
-    await SubtitleOverlayController.updateSubtitle('');
-    await SubtitleOverlayController.stopOverlay(immediate: immediate);
+    await _subtitleOverlay.updateSubtitle('');
+    await _subtitleOverlay.stopOverlay(immediate: immediate);
   }
 
   Future<void> _applyGlobalSubtitleOverlayStyle(
@@ -434,7 +436,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final backgroundColor = (settings.backgroundColor ?? Colors.black)
         .withValues(alpha: settings.backgroundOpacity);
     final textColor = settings.fontColor ?? Colors.white;
-    return SubtitleOverlayController.updateStyle(
+    return _subtitleOverlay.updateStyle(
       fontSize: settings.fontSize,
       backgroundColor: _overlayColorValue(backgroundColor),
       textColor: _overlayColorValue(textColor),
@@ -506,11 +508,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
         '';
     if (_lastGlobalSubtitleOverlayText != text) {
       _lastGlobalSubtitleOverlayText = text;
-      unawaited(SubtitleOverlayController.updateSubtitle(text));
+      unawaited(_subtitleOverlay.updateSubtitle(text));
     }
-    unawaited(
-      SubtitleOverlayController.updatePlaybackState(session.state.playing),
-    );
+    unawaited(_subtitleOverlay.updatePlaybackState(session.state.playing));
   }
 
   @override

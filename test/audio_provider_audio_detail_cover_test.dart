@@ -610,7 +610,7 @@ void main() {
         expect(resolvedTrack, isNotNull);
         expect(resolvedTrack?.path, newTrackPath);
         expect(resolvedTrack?.displayName, '01');
-        expect(provider.getRootFolderName(trackFile.path), 'New Folder');
+        expect(pathCoordinator.rootFolderName(trackFile.path), 'New Folder');
         expect(
           provider.coverPathForTrack(resolvedTrack, trackPath: trackFile.path),
           isNull,
@@ -738,7 +738,10 @@ void main() {
         expect(restoredTrack, isNotNull);
         expect(restoredTrack?.displayName, '01');
         expect(
-          restoredProvider.getRootFolderName(restoredSession.currentTrackPath),
+          AudioPathCoordinator(
+            library: restoredProvider.libraryFacade,
+            playback: restoredProvider.playbackFacade,
+          ).rootFolderName(restoredSession.currentTrackPath),
           'New Folder',
         );
         expect(

@@ -194,7 +194,7 @@ void main() {
       );
       expect(manualBand['gainDb'], 6.0);
 
-      final voicePreset = AudioProvider.builtInEqPresets.firstWhere(
+      final voicePreset = builtInEqPresets.firstWhere(
         (preset) => preset.id == 'voice_clear',
       );
       await provider.playbackFacade.applySessionEqPreset(
@@ -208,7 +208,7 @@ void main() {
 
       await provider.playbackFacade.applySessionEqPreset(
         session.id,
-        AudioProvider.builtInEqPresets.first,
+        builtInEqPresets.first,
       );
       expect(session.audioEffects.eqPresetId, 'flat');
       expect(session.audioEffects.eqEnabled, isTrue);

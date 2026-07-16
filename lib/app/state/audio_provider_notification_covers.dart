@@ -118,13 +118,6 @@ extension AudioProviderNotificationCovers on AudioProvider {
     );
   }
 
-  String? _resolveCoverScopeFolderPath(MusicTrack? track, {String? trackPath}) {
-    return _coverArtworkCacheService.coverScopeFolderForTrack(
-      track,
-      trackPath: trackPath,
-    );
-  }
-
   bool _isActiveCoverKey(String coverSearchKey) {
     for (final session in activeSessions) {
       final track = trackByPath(session.currentTrackPath);

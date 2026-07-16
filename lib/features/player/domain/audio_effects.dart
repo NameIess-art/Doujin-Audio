@@ -263,6 +263,61 @@ class EqPreset {
   }
 }
 
+const List<EqPreset> builtInEqPresets = <EqPreset>[
+  EqPreset(id: 'flat', labelKey: 'eq_preset_flat', bandLevels: <int, double>{}),
+  EqPreset(
+    id: 'asmr_immersive',
+    labelKey: 'eq_preset_asmr_immersive',
+    bandLevels: <int, double>{
+      60: 2.5,
+      170: 1.5,
+      310: -1.0,
+      3000: 1.5,
+      6000: 2.5,
+      12000: 3.5,
+    },
+  ),
+  EqPreset(
+    id: 'voice_clear',
+    labelKey: 'eq_preset_voice_clear',
+    bandLevels: <int, double>{
+      170: -2.0,
+      310: -1.0,
+      1000: 1.5,
+      3000: 3.0,
+      6000: 1.5,
+    },
+  ),
+  EqPreset(
+    id: 'ear_massage',
+    labelKey: 'eq_preset_ear_massage',
+    bandLevels: <int, double>{
+      60: 3.0,
+      170: 1.0,
+      1000: -1.5,
+      3000: 1.0,
+      6000: 3.5,
+      12000: 4.5,
+    },
+  ),
+  EqPreset(
+    id: 'night_soft',
+    labelKey: 'eq_preset_night_soft',
+    bandLevels: <int, double>{
+      60: -2.0,
+      170: -1.5,
+      3000: -1.5,
+      6000: -3.0,
+      12000: -4.5,
+    },
+  ),
+  EqPreset(
+    id: 'bass_boost',
+    labelKey: 'eq_preset_bass_boost',
+    bandLevels: <int, double>{60: 4.5, 170: 3.0, 310: 1.0, 6000: -1.0},
+  ),
+];
+
 class NativeAudioEffects {
   const NativeAudioEffects({
     required this.state,

@@ -314,7 +314,7 @@ void main() {
     unawaited(
       audioProvider.playbackFacade.applySessionEqPreset(
         session.id,
-        AudioProvider.builtInEqPresets[1],
+        builtInEqPresets[1],
       ),
     );
     await tester.runAsync(

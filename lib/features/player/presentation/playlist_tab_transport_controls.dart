@@ -4,7 +4,8 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
   const _TransportPlaybackControlPanel({
     super.key,
     required this.session,
-    required this.provider,
+    required this.playback,
+    required this.paths,
     required this.hasSiblings,
     required this.segmentPanelExpanded,
     required this.hasSubtitle,
@@ -19,7 +20,8 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
+  final AudioPathCoordinator paths;
   final bool hasSiblings;
   final bool segmentPanelExpanded;
   final bool hasSubtitle;
@@ -37,7 +39,8 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
     final transport = ref.watch(sessionDetailTransportProvider(session.id));
     return _PlaybackControlPanel(
       session: session,
-      provider: provider,
+      playback: playback,
+      paths: paths,
       showPauseIcon:
           transport?.showPauseIcon ??
           (session.effectivePlaying ||
@@ -61,7 +64,8 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
 class _PlaybackControlPanel extends StatelessWidget {
   const _PlaybackControlPanel({
     required this.session,
-    required this.provider,
+    required this.playback,
+    required this.paths,
     required this.showPauseIcon,
     required this.hasSiblings,
     required this.segmentPanelExpanded,
@@ -77,7 +81,8 @@ class _PlaybackControlPanel extends StatelessWidget {
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
+  final AudioPathCoordinator paths;
   final bool showPauseIcon;
   final bool hasSiblings;
   final bool segmentPanelExpanded;
@@ -97,12 +102,13 @@ class _PlaybackControlPanel extends StatelessWidget {
       children: [
         _PlaybackPrimaryControls(
           session: session,
-          provider: provider,
+          playback: playback,
+          paths: paths,
           showPauseIcon: showPauseIcon,
         ),
         _PlaybackSecondaryControls(
           session: session,
-          provider: provider,
+          playback: playback,
           hasSiblings: hasSiblings,
           segmentPanelExpanded: segmentPanelExpanded,
           hasSubtitle: hasSubtitle,
@@ -123,12 +129,14 @@ class _PlaybackControlPanel extends StatelessWidget {
 class _PlaybackPrimaryControls extends StatelessWidget {
   const _PlaybackPrimaryControls({
     required this.session,
-    required this.provider,
+    required this.playback,
+    required this.paths,
     required this.showPauseIcon,
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
+  final AudioPathCoordinator paths;
   final bool showPauseIcon;
 
   @override
@@ -139,7 +147,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final enabled = session.currentTrackPath.isNotEmpty;
-    final track = provider.trackByPath(session.currentTrackPath);
+    final track = paths.trackByPath(session.currentTrackPath);
     final isAsmr = track?.remoteMetadataKind == 'asmr.one';
     final primaryColor = isAsmr
         ? AppDesignTokens.of(context).asmrAccent
@@ -147,14 +155,11 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     final onPrimaryColor = isAsmr
         ? AppDesignTokens.of(context).onAsmrAccent
         : cs.onPrimary;
-    final hasPrevious = provider.playbackFacade.hasSessionAdjacentTrack(
+    final hasPrevious = playback.hasSessionAdjacentTrack(
       session.id,
       forward: false,
     );
-    final hasNext = provider.playbackFacade.hasSessionAdjacentTrack(
-      session.id,
-      forward: true,
-    );
+    final hasNext = playback.hasSessionAdjacentTrack(session.id, forward: true);
     final canPrevious =
         enabled && (session.position.inSeconds > 3 || hasPrevious);
     final canNext = enabled && hasNext;
@@ -184,7 +189,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
                   );
-                  provider.playbackFacade.seekSessionToPrev(session.id);
+                  playback.seekSessionToPrev(session.id);
                 },
               ),
               _PrimaryTransportButton(
@@ -197,7 +202,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                     AppInteractionFeedbackType.selection,
                   );
                   final newPos = session.position - const Duration(seconds: 5);
-                  provider.playbackFacade.seekSession(
+                  playback.seekSession(
                     session.id,
                     newPos < Duration.zero ? Duration.zero : newPos,
                   );
@@ -220,9 +225,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                           AppInteractionFeedback.trigger(
                             AppInteractionFeedbackType.confirmation,
                           );
-                          provider.playbackFacade.toggleSessionPlayPause(
-                            session.id,
-                          );
+                          playback.toggleSessionPlayPause(session.id);
                         }
                       : null,
                   iconSize: playIconSize,
@@ -261,7 +264,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
                   );
-                  provider.playbackFacade.seekSession(
+                  playback.seekSession(
                     session.id,
                     session.position + const Duration(seconds: 5),
                   );
@@ -277,7 +280,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
                   );
-                  provider.playbackFacade.seekSessionToNext(session.id);
+                  playback.seekSessionToNext(session.id);
                 },
               ),
             ],
@@ -291,7 +294,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
 class _PlaybackSecondaryControls extends StatelessWidget {
   const _PlaybackSecondaryControls({
     required this.session,
-    required this.provider,
+    required this.playback,
     required this.hasSiblings,
     required this.segmentPanelExpanded,
     required this.hasSubtitle,
@@ -306,7 +309,7 @@ class _PlaybackSecondaryControls extends StatelessWidget {
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
   final bool hasSiblings;
   final bool segmentPanelExpanded;
   final bool hasSubtitle;
@@ -342,8 +345,8 @@ class _PlaybackSecondaryControls extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
-                _ExpandableLoopOptions(session: session, provider: provider),
-                _SessionVolumeButton(session: session, provider: provider),
+                _ExpandableLoopOptions(session: session, playback: playback),
+                _SessionVolumeButton(session: session, playback: playback),
                 _SecondaryControlButton(
                   icon: Icons.alarm_rounded,
                   tooltip: i18n.tr('timer'),

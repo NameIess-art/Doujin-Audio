@@ -8,7 +8,6 @@ import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/platform/notifications_platform_service.dart';
 import '../application/permission_status_service.dart';
 import '../../../core/platform/power_platform_service.dart';
-import '../../player/application/subtitle_overlay_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
@@ -42,6 +41,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
         PermissionStatusService(
           powerService: _powerService,
           notificationsService: _notificationsService,
+          subtitleOverlayController: ref.read(
+            subtitleOverlayControllerProvider,
+          ),
         );
     _snapshot = _loadSnapshot();
     WidgetsBinding.instance.addObserver(this);
@@ -240,7 +242,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
                       onTap: () => _open(
                         title: i18n.tr('overlay_permission_title'),
                         description: i18n.tr('permission_overlay_description'),
-                        action: SubtitleOverlayController.openOverlaySettings,
+                        action: ref
+                            .read(subtitleOverlayControllerProvider)
+                            .openOverlaySettings,
                       ),
                     ),
                     _PermissionTile(

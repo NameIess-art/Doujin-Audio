@@ -4,7 +4,7 @@ import 'package:nameless_audio/features/library/domain/library_node.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/features/library/application/library_snapshot_cache_service.dart';
 

@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../media/music_track.dart' show MusicTrack;
 import '../../app/state/audio_provider_riverpod.dart';
-import '../../features/player/application/audio_state_services.dart';
+import '../../features/settings/application/settings_state.dart';
 import '../ui/ui_interaction_coordinator.dart';
 import 'scroll_activity_gate.dart';
 

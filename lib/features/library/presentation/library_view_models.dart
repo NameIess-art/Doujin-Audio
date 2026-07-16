@@ -3,8 +3,8 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 
 import '../domain/library_node.dart';
-import '../../player/application/audio_state_services.dart';
 import '../application/library_scan_models.dart';
+import '../application/library_state_models.dart';
 import '../../../core/media/search_query_utils.dart';
 
 @immutable

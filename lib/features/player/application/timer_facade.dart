@@ -210,7 +210,7 @@ final class TimerFacade {
     _applyFadeMultiplier(1.0);
   }
 
-  void resetForPersistenceReload() {
+  Future<void> resetForBackupRestore() async {
     _cachedPreferences = null;
     resetRuntimeState();
     service
@@ -369,7 +369,7 @@ final class TimerFacade {
     await syncNativeAlarms();
   }
 
-  Future<void> loadSettings() async {
+  Future<void> loadPersistedState() async {
     try {
       final raw = (await _preferences).getString(_settingsKey);
       if (raw == null || raw.isEmpty) return;

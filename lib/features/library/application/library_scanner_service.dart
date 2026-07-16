@@ -9,8 +9,8 @@ export 'library_scan_data_source.dart' show scanFileSystemFolderPayloadForTest;
 
 import '../../../core/media/music_track.dart';
 import '../../../core/logging/app_log_service.dart';
-import '../../player/application/audio_state_services.dart';
 import 'library_catalog.dart';
+import 'library_state_models.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/media_file_support.dart';

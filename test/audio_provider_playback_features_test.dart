@@ -216,6 +216,7 @@ void main() {
     });
 
     test('failed audio effect update restores state and persistence', () async {
+      provider.playbackFacade.configurePersistence(enabled: true);
       const track = MusicTrack(
         path: 'https://example.com/effects-rollback.mp3',
         displayName: 'track',
@@ -344,6 +345,7 @@ void main() {
     test(
       'console settings stay scoped to their session and do not become defaults',
       () async {
+        provider.playbackFacade.configurePersistence(enabled: true);
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         const track = MusicTrack(
           path: 'https://example.com/remembered-console.mp3',
@@ -581,6 +583,7 @@ void main() {
     test(
       'failed paused console updates roll back and stay rolled back after restart',
       () async {
+        provider.playbackFacade.configurePersistence(enabled: true);
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         const track = MusicTrack(
           path: 'https://example.com/paused-console.mp3',
@@ -928,7 +931,7 @@ void main() {
         );
 
         final coverGenerationBeforeReload = provider.coverGeneration;
-        await provider.reloadPersistedStateAfterBackupRestore();
+        await provider.persistenceCoordinator.reloadPersistedState();
 
         expect(clearAllCalls, greaterThanOrEqualTo(1));
         expect(

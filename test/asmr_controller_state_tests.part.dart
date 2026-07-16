@@ -365,6 +365,89 @@ void registerAsmrControllerStateTests({
     expect(first.visibleTree?.map((node) => node.title), <String>['Disc']);
   });
 
+  test(
+    'ASMR track tree view state exposes loading until request completes',
+    () async {
+      await resetPrefs();
+      final started = Completer<void>();
+      final release = Completer<void>();
+      final work = _work(id: 52, title: 'Loading Tree Work');
+      final api = _FakeAsmrApiService(
+        beforeFetchTrackTree: (_) async {
+          started.complete();
+          await release.future;
+        },
+      );
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        apiService: api,
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      final request = controller.ensureTrackTree(work);
+      await started.future;
+
+      final loading = controller.trackTreeViewState(work.id);
+      expect(loading.isLoading, isTrue);
+      expect(loading.tree, isNull);
+      expect(loading.operationError, isNull);
+
+      release.complete();
+      await request;
+
+      final loaded = controller.trackTreeViewState(work.id);
+      expect(loaded.isLoading, isFalse);
+      expect(loaded.tree, isEmpty);
+      expect(loaded.operationError, isNull);
+    },
+  );
+
+  test(
+    'ASMR track tree failure remains distinct from confirmed empty tree',
+    () async {
+      await resetPrefs();
+      var attempts = 0;
+      final work = _work(id: 53, title: 'Retry Tree Work');
+      final api = _FakeAsmrApiService(
+        beforeFetchTrackTree: (_) async {
+          attempts++;
+          if (attempts == 1) {
+            throw const SocketException('offline');
+          }
+        },
+      );
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        apiService: api,
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      await expectLater(
+        controller.ensureTrackTree(work),
+        throwsA(isA<SocketException>()),
+      );
+
+      final failed = controller.trackTreeViewState(work.id);
+      expect(failed.isLoading, isFalse);
+      expect(failed.tree, isNull);
+      expect(failed.operationError, isA<SocketException>());
+
+      await controller.ensureTrackTree(work);
+
+      final empty = controller.trackTreeViewState(work.id);
+      expect(empty.isLoading, isFalse);
+      expect(empty.tree, isEmpty);
+      expect(empty.visibleTree, isEmpty);
+      expect(empty.operationError, isNull);
+    },
+  );
+
   test('detail and track tree requests are single flight', () async {
     await resetPrefs();
     final detailStarted = Completer<void>();

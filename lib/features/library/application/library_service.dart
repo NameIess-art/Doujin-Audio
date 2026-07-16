@@ -1,4 +1,17 @@
-part of 'audio_state_services.dart';
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+import 'package:path/path.dart' as path;
+
+import '../../../app/application/audio_state_slice.dart';
+import '../../../core/media/music_track.dart';
+import '../../../core/media/path_matcher.dart';
+import '../../../core/media/path_display.dart';
+import '../domain/library_entry.dart';
+import '../domain/library_node.dart';
+import 'library_organizer.dart';
+import 'library_scan_models.dart';
+import 'library_state_models.dart';
 
 class LibraryService {
   static const LibraryOrganizer organizer = LibraryOrganizer();

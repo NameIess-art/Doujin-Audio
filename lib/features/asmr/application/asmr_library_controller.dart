@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+import '../../../app/application/persisted_state_reloader.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/persistence/audio_database_repository.dart';
@@ -221,7 +222,7 @@ typedef _AsmrWorkRequestKey = ({int workId, int contentEpoch, int authEpoch});
 typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
 
 class AsmrLibraryController extends ChangeNotifier
-    implements AsmrPlaybackSource {
+    implements AsmrPlaybackSource, PersistedStateReloader {
   AsmrLibraryController({
     AsmrApiService? apiService,
     AsmrAuthService? authService,
@@ -279,6 +280,7 @@ class AsmrLibraryController extends ChangeNotifier
   final LinkedHashMap<int, List<AsmrTrackFile>> _visibleTrackCache =
       LinkedHashMap();
   final Set<int> _loadingTrackWorkIds = <int>{};
+  final Map<int, Object> _trackTreeErrors = <int, Object>{};
   final Map<_AsmrWorkRequestKey, Future<AsmrWorkDetail>> _detailTasks =
       <_AsmrWorkRequestKey, Future<AsmrWorkDetail>>{};
   final Map<_AsmrWorkRequestKey, Future<List<AsmrTrackFile>>> _trackTreeTasks =
@@ -342,6 +344,7 @@ class AsmrLibraryController extends ChangeNotifier
     _detailCache.clear();
     _trackCache.clear();
     _visibleTrackCache.clear();
+    _trackTreeErrors.clear();
   }
 
   void _applyAccountSnapshot(AsmrAccountSnapshot snapshot) {
@@ -447,7 +450,7 @@ class AsmrLibraryController extends ChangeNotifier
       isLoading: isTrackTreeLoading(workId),
       isRefreshing: isTrackTreeLoading(workId) && tree != null,
       isStale: isTrackTreeLoading(workId) && tree != null,
-      operationError: null,
+      operationError: _trackTreeErrors[workId],
       revision: _trackRevisions[workId] ?? 0,
     );
   }
@@ -576,12 +579,14 @@ class AsmrLibraryController extends ChangeNotifier
     }
   }
 
-  Future<void> reloadPersistedStateAfterBackupRestore() async {
+  @override
+  Future<void> reloadPersistedState() async {
     _initialized = false;
     _worksByCategory.clear();
     _detailCache.clear();
     _trackCache.clear();
     _visibleTrackCache.clear();
+    _trackTreeErrors.clear();
     _filteredWorksCache.clear();
     await initialize();
   }
@@ -1251,6 +1256,7 @@ class AsmrLibraryController extends ChangeNotifier
     final key = _workRequestKey(work.id);
     final existing = _trackTreeTasks[key];
     if (existing != null) return existing;
+    _trackTreeErrors.remove(work.id);
     if (!_trackTreeTasks.keys.any((candidate) => candidate.workId == work.id) &&
         _loadingTrackWorkIds.add(work.id)) {
       _bumpTrackRevision(work.id);
@@ -1278,16 +1284,25 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrWork work,
     _AsmrWorkRequestKey key,
   ) async {
-    final tree = await _remoteCatalogService.loadTrackTree(
-      work.id,
-      token: _authSession?.token,
-    );
-    if (_isWorkRequestCurrent(key)) {
-      final sortedTree = _storeTrackTree(work.id, tree);
-      _bumpTrackRevision(work.id);
-      return sortedTree;
+    try {
+      final tree = await _remoteCatalogService.loadTrackTree(
+        work.id,
+        token: _authSession?.token,
+      );
+      if (_isWorkRequestCurrent(key)) {
+        _trackTreeErrors.remove(work.id);
+        final sortedTree = _storeTrackTree(work.id, tree);
+        _bumpTrackRevision(work.id);
+        return sortedTree;
+      }
+      return ensureTrackTree(work);
+    } catch (error) {
+      if (_isWorkRequestCurrent(key)) {
+        _trackTreeErrors[work.id] = error;
+        _bumpTrackRevision(work.id);
+      }
+      rethrow;
     }
-    return ensureTrackTree(work);
   }
 
   Future<void> toggleFavorite(AsmrWork work) {

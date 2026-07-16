@@ -18,6 +18,7 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../application/audio_state_services.dart';
 import '../application/playback_session.dart';
+import '../../settings/application/settings_state.dart';
 import '../domain/audio_effects.dart';
 import '../../library/application/library_facade.dart';
 import 'playlist_tab.dart';
@@ -234,7 +235,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           itemCount: sessions.length,
           itemBuilder: (context, index) {
             final session = sessions[index];
-            final track = library.trackByPath(session.currentTrackPath);
+            final track = ref
+                .read(audioPathCoordinatorProvider)
+                .sessionTrackForPath(session.id, session.currentTrackPath);
 
             return _ActiveSessionPageTransform(
               pageListenable: _pageNotifier,

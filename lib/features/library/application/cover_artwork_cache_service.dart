@@ -17,7 +17,7 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import 'audio_detail_cache_service.dart';
 import 'cover_image_cache_policy.dart';
-import '../../player/application/audio_state_services.dart';
+import 'library_service.dart';
 import 'embedded_cover_artwork_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';

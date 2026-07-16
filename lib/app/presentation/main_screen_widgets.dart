@@ -231,60 +231,6 @@ class _FloatingGlassPanel extends ConsumerWidget {
   }
 }
 
-class _ScrollToTopButton extends StatelessWidget {
-  const _ScrollToTopButton({required this.visible, required this.onPressed});
-
-  final bool visible;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Positioned(
-      right: 28,
-      bottom: 28,
-      child: IgnorePointer(
-        ignoring: !visible,
-        child: AnimatedOpacity(
-          key: const ValueKey('main_scroll_to_top_opacity'),
-          opacity: visible ? 1 : 0,
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          child: AnimatedScale(
-            scale: visible ? 1 : 0.92,
-            duration: const Duration(milliseconds: 140),
-            curve: Curves.easeOutCubic,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: BackdropFilter(
-                key: const ValueKey('main_scroll_to_top_blur'),
-                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: SizedBox.square(
-                  dimension: 56,
-                  child: IconButton(
-                    key: const ValueKey('main_scroll_to_top_button'),
-                    icon: const Icon(Icons.keyboard_arrow_up_rounded),
-                    color: cs.primary,
-                    iconSize: 28,
-                    tooltip: 'Back to top',
-                    style: const ButtonStyle(
-                      backgroundColor: WidgetStatePropertyAll(
-                        Colors.transparent,
-                      ),
-                      overlayColor: WidgetStatePropertyAll(Colors.transparent),
-                    ),
-                    onPressed: onPressed,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _TimerOverlaySheet extends StatelessWidget {
   const _TimerOverlaySheet({
     required this.isDesktop,

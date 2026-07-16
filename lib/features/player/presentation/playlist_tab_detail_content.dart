@@ -780,6 +780,9 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
           );
           queueIndex++;
         }
+        if (!identical(parent, root)) {
+          parent.sortChildrenNaturally();
+        }
       }
       return root.children;
     }
@@ -796,6 +799,10 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
           queueIndex: index,
         ),
       );
+    }
+    if (widget.session.customQueueTracks == null ||
+        tracks.every((track) => track.remoteMetadataKind == 'asmr.one')) {
+      root.sortChildrenNaturally();
     }
     return root.children;
   }
@@ -897,6 +904,22 @@ class _QueueTreeNode {
     final folder = _QueueTreeNode.folder(name);
     children.add(folder);
     return folder;
+  }
+
+  void sortChildrenNaturally() {
+    for (final child in children) {
+      child.sortChildrenNaturally();
+    }
+    children.sort(
+      (left, right) => compareNaturalTreeEntries(
+        leftIsFolder: left.isFolder,
+        leftName: left.title,
+        leftPath: left.track?.path ?? left.title,
+        rightIsFolder: right.isFolder,
+        rightName: right.title,
+        rightPath: right.track?.path ?? right.title,
+      ),
+    );
   }
 }
 

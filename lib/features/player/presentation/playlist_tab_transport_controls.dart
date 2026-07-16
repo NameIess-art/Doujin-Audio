@@ -340,8 +340,7 @@ class _PlaybackSecondaryControls extends StatelessWidget {
             color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
+          child: _WindowsHorizontalWheelScrollView(
             padding: const EdgeInsets.symmetric(horizontal: 8),
             child: Row(
               children: [
@@ -399,6 +398,73 @@ class _PlaybackSecondaryControls extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _WindowsHorizontalWheelScrollView extends StatefulWidget {
+  const _WindowsHorizontalWheelScrollView({
+    required this.padding,
+    required this.child,
+  });
+
+  final EdgeInsetsGeometry padding;
+  final Widget child;
+
+  @override
+  State<_WindowsHorizontalWheelScrollView> createState() =>
+      _WindowsHorizontalWheelScrollViewState();
+}
+
+class _WindowsHorizontalWheelScrollViewState
+    extends State<_WindowsHorizontalWheelScrollView> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handlePointerSignal(PointerSignalEvent event) {
+    if (defaultTargetPlatform != TargetPlatform.windows ||
+        event is! PointerScrollEvent ||
+        !_controller.hasClients) {
+      return;
+    }
+    GestureBinding.instance.pointerSignalResolver.register(event, (signal) {
+      if (signal is! PointerScrollEvent || !_controller.hasClients) return;
+      final delta = signal.scrollDelta.dy.abs() >= signal.scrollDelta.dx.abs()
+          ? signal.scrollDelta.dy
+          : signal.scrollDelta.dx;
+      if (delta == 0) return;
+      final position = _controller.position;
+      final target = (_controller.offset + delta).clamp(
+        position.minScrollExtent,
+        position.maxScrollExtent,
+      );
+      if (target == _controller.offset) return;
+      unawaited(
+        _controller.animateTo(
+          target,
+          duration: const Duration(milliseconds: 140),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      onPointerSignal: _handlePointerSignal,
+      child: SingleChildScrollView(
+        key: const ValueKey('playback_secondary_controls_horizontal_scroll'),
+        controller: _controller,
+        scrollDirection: Axis.horizontal,
+        padding: widget.padding,
+        child: widget.child,
       ),
     );
   }

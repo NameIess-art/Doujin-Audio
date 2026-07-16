@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_download.dart';
@@ -13,8 +15,13 @@ import 'package:nameless_audio/features/library/application/library_service.dart
 import 'package:nameless_audio/features/library/application/library_state_models.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/settings/application/settings_state.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  setUp(() {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+  });
+
   group('AudioStateSlice', () {
     test('update skips equal states', () async {
       final slice = AudioStateSlice<int>(1);
@@ -138,13 +145,9 @@ void main() {
       );
     });
 
-    test('ASMR download destination publishes and persists once', () async {
+    test('ASMR download destination publishes and persists', () async {
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
-      var persistCount = 0;
-      repository.attachPersistence(() async {
-        persistCount++;
-      });
 
       await repository.setAsmrDownloadDestinationRoot('  /downloads/asmr  ');
       await repository.setAsmrDownloadDestinationRoot('/downloads/asmr');
@@ -154,7 +157,14 @@ void main() {
         repository.slice.state.asmrDownloadDestinationRoot,
         '/downloads/asmr',
       );
-      expect(persistCount, 1);
+      final saved =
+          json.decode(
+                (await SharedPreferences.getInstance()).getString(
+                  'playback_settings_v1',
+                )!,
+              )
+              as Map<String, dynamic>;
+      expect(saved['asmrDownloadDestinationRoot'], '/downloads/asmr');
     });
 
     test('ASMR.ONE playback cache defaults to disabled', () {
@@ -170,10 +180,6 @@ void main() {
     test('converter settings validate, publish, and persist once', () async {
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
-      var persistCount = 0;
-      repository.attachConverterPersistence(() async {
-        persistCount++;
-      });
 
       await repository.setConverterSettings(format: 'flac', bitrate: '192k');
       await repository.setConverterSettings(format: 'invalid');
@@ -182,16 +188,19 @@ void main() {
       expect(repository.converterBitrate, '192k');
       expect(repository.slice.state.converterFormat, 'flac');
       expect(repository.slice.state.converterBitrate, '192k');
-      expect(persistCount, 1);
+      final saved =
+          json.decode(
+                (await SharedPreferences.getInstance()).getString(
+                  'converter_settings_v1',
+                )!,
+              )
+              as Map<String, dynamic>;
+      expect(saved, <String, dynamic>{'format': 'flac', 'bitrate': '192k'});
     });
 
     test('card info fields normalize, publish, and persist', () async {
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
-      var persistCount = 0;
-      repository.attachPersistence(() async {
-        persistCount++;
-      });
 
       await repository.setCardInfoFields(const <CardInfoField>[
         CardInfoField.rjCode,
@@ -204,7 +213,14 @@ void main() {
         CardInfoField.voiceActors,
       ]);
       expect(repository.slice.state.cardInfoFields, repository.cardInfoFields);
-      expect(persistCount, 1);
+      final saved =
+          json.decode(
+                (await SharedPreferences.getInstance()).getString(
+                  'playback_settings_v1',
+                )!,
+              )
+              as Map<String, dynamic>;
+      expect(saved['cardInfoFields'], <String>['rjCode', 'voiceActors']);
     });
 
     test(
@@ -212,10 +228,6 @@ void main() {
       () async {
         final repository = SettingsRepository();
         addTearDown(repository.dispose);
-        var persistCount = 0;
-        repository.attachPersistence(() async {
-          persistCount++;
-        });
 
         await repository.setStartupPage(StartupPage.playlist);
         await repository.setAutoPlayAddedSessions(false);
@@ -225,7 +237,16 @@ void main() {
         expect(repository.slice.state.startupPage, StartupPage.playlist);
         expect(repository.slice.state.autoPlayAddedSessions, isFalse);
         expect(repository.slice.state.asmrPlaybackCacheEnabled, isTrue);
-        expect(persistCount, 3);
+        final saved =
+            json.decode(
+                  (await SharedPreferences.getInstance()).getString(
+                    'playback_settings_v1',
+                  )!,
+                )
+                as Map<String, dynamic>;
+        expect(saved['startupPage'], 'playlist');
+        expect(saved['autoPlayAddedSessions'], isFalse);
+        expect(saved['asmrPlaybackCacheEnabled'], isTrue);
       },
     );
   });

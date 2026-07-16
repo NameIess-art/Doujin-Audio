@@ -7,9 +7,11 @@ import '../../../core/errors/native_result.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/logging/app_log_service.dart';
+import '../../../core/persistence/app_database.dart' show PersistedSession;
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../asmr/application/asmr_playback_cache_service.dart';
+import '../../settings/application/app_preferences.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
@@ -47,6 +49,18 @@ typedef PlaybackAdjacentResolver =
     bool Function(PlaybackSession session, {required bool forward});
 typedef PlaybackLoopModeSynchronizer =
     Future<void> Function(PlaybackSession session, SessionLoopMode mode);
+typedef RestoredPlaybackRuntime =
+    Future<void> Function(
+      List<PlaybackSession> sessions, {
+      required String? focusedSessionId,
+    });
+typedef PlaybackHistoryUpdater =
+    MusicTrack? Function({
+      required String trackPath,
+      required Duration position,
+      required DateTime now,
+      required bool updatePlayedAt,
+    });
 
 bool _defaultAutoPlayAddedSessions() => true;
 
@@ -89,8 +103,11 @@ final class PlaybackFacade {
   final SystemMediaControlsService systemMediaControlsService;
   final StreamController<String> _sessionActivations =
       StreamController<String>.broadcast(sync: true);
-  Future<void> Function()? _persistSessionState;
-  Future<void> Function()? _persistSessionOrder;
+  MusicTrack? Function(String trackPath)? _persistedTrackResolver;
+  bool Function()? _recordPlaybackProgress;
+  RestoredPlaybackRuntime? _restoreRuntime;
+  PlaybackHistoryUpdater? _updatePlaybackHistory;
+  void Function(String? sessionId)? _onPersistenceFocusChanged;
   void Function(PlaybackSession session)? _onSessionRegistered;
   void Function(List<PlaybackSession> sessions)? _onSessionsRemoved;
   void Function()? _onSessionsReordered;
@@ -279,12 +296,18 @@ final class PlaybackFacade {
     _autoPlayAddedSessions = autoPlayAddedSessions;
   }
 
-  void attachSessionStatePersistence(Future<void> Function() persist) {
-    _persistSessionState ??= persist;
-  }
-
-  void attachSessionOrderPersistence(Future<void> Function() persist) {
-    _persistSessionOrder ??= persist;
+  void attachPersistenceRuntime({
+    required MusicTrack? Function(String trackPath) trackByPath,
+    required bool Function() recordPlaybackProgress,
+    required RestoredPlaybackRuntime restoreRuntime,
+    required PlaybackHistoryUpdater updatePlaybackHistory,
+    required void Function(String? sessionId) onFocusChanged,
+  }) {
+    _persistedTrackResolver ??= trackByPath;
+    _recordPlaybackProgress ??= recordPlaybackProgress;
+    _restoreRuntime ??= restoreRuntime;
+    _updatePlaybackHistory ??= updatePlaybackHistory;
+    _onPersistenceFocusChanged ??= onFocusChanged;
   }
 
   void configurePersistence({required bool enabled}) {
@@ -292,30 +315,206 @@ final class PlaybackFacade {
     if (!enabled) cancelScheduledPersistence();
   }
 
+  Future<void> loadPersistedState() async {
+    final persistedSessions = await databaseRepository.loadAllSessions();
+    if (persistedSessions.isEmpty) return;
+    final legacyOrder = await AppPreferences.readJson<List<String>>(
+      'session_order_v1',
+      (value) => (value as List<dynamic>).cast<String>(),
+    );
+    final restoredSessions = <PlaybackSession>[];
+    final recordProgress = _recordPlaybackProgress?.call() ?? true;
+
+    for (final item in persistedSessions) {
+      final customQueueTracks = item.customQueueTracks == null
+          ? null
+          : List<MusicTrack>.unmodifiable(item.customQueueTracks!);
+      MusicTrack? track;
+      if (customQueueTracks != null && customQueueTracks.isNotEmpty) {
+        track = customQueueTracks.firstWhere(
+          (candidate) =>
+              PathMatcher.equalsNormalized(candidate.path, item.trackPath),
+          orElse: () => customQueueTracks.first,
+        );
+      }
+      track ??= _persistedTrackResolver?.call(item.trackPath);
+      if (track == null && item.playbackQueue == null) continue;
+
+      final loopMode =
+          SessionLoopMode.values[item.loopModeIndex.clamp(
+            0,
+            SessionLoopMode.values.length - 1,
+          )];
+      final restoredPosition = Duration(
+        milliseconds: max(0, recordProgress ? item.positionMs : 0),
+      );
+      final session = PlaybackSession(
+        id: item.id,
+        currentTrackPath: track?.path ?? '',
+        loopMode: loopMode,
+        nonSingleLoopMode: loopMode == SessionLoopMode.single
+            ? SessionLoopMode.folderSequential
+            : loopMode,
+        volume: item.volume.clamp(0.0, maxSessionVolume),
+        createdAt: item.createdAtMs == null
+            ? DateTime.now()
+            : DateTime.fromMillisecondsSinceEpoch(item.createdAtMs!),
+        state: PlayerState(false, ProcessingState.idle),
+        customQueueTracks: customQueueTracks,
+        playbackQueue: item.playbackQueue,
+        currentQueueIndex: recordProgress ? item.currentQueueIndex : 0,
+      );
+      session
+        ..lastKnownPosition = restoredPosition
+        ..setOptimisticDuration(Duration(milliseconds: item.durationMs))
+        ..lastPersistedPositionBucket = restoredPosition.inSeconds ~/ 5
+        ..channelSwapEnabled = item.channelSwapEnabled
+        ..speed = nearestPlaybackSpeed(item.speed)
+        ..audioEffects = item.audioEffects;
+      service.sessions[session.id] = session;
+      observeSession(session);
+      restoredSessions.add(session);
+    }
+
+    final restoredIds = restoredSessions.map((session) => session.id).toSet();
+    final orderedIds = (legacyOrder ?? const <String>[])
+        .where(restoredIds.contains)
+        .toList(growable: true);
+    for (final session in restoredSessions) {
+      if (!orderedIds.contains(session.id)) orderedIds.add(session.id);
+    }
+    service.sessionOrder
+      ..clear()
+      ..addAll(orderedIds);
+    service.markActiveSessionsDirty();
+    final focusedSessionId = orderedIds.firstOrNull;
+    _onPersistenceFocusChanged?.call(focusedSessionId);
+    await _restoreRuntime?.call(
+      restoredSessions,
+      focusedSessionId: focusedSessionId,
+    );
+  }
+
+  Future<void> resetForBackupRestore() async {
+    cancelScheduledPersistence();
+    final removedSessions = service.sessions.values.toList(growable: false);
+    service.sessions.clear();
+    service.sessionOrder.clear();
+    service.markActiveSessionsDirty();
+    for (final session in removedSessions) {
+      session.isPlaybackStarting = false;
+      session.dispose();
+    }
+    try {
+      await nativeRepository.clearAll();
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'playback_backup_restore_clear_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+    clearDeferredVolumeReloads();
+    clearRetargetedPaths();
+    _onPersistenceFocusChanged?.call(null);
+  }
+
+  Future<void> savePersistedState() async {
+    if (!_persistenceEnabled) return;
+    final ordered = service.sessionOrder
+        .map((id) => service.sessions[id])
+        .whereType<PlaybackSession>()
+        .toList(growable: false);
+    final tracksToUpdate = <MusicTrack>[];
+    final now = DateTime.now();
+    final payload = ordered
+        .asMap()
+        .entries
+        .map((entry) {
+          final session = entry.value;
+          final positionMs = max(
+            0,
+            max(
+              session.position.inMilliseconds,
+              session.lastKnownPosition.inMilliseconds,
+            ),
+          );
+          final position = Duration(milliseconds: positionMs);
+          final track = _persistedTrackResolver?.call(session.currentTrackPath);
+          if (track != null &&
+              (track.lastPlayedPosition.inSeconds ~/ 5 !=
+                      position.inSeconds ~/ 5 ||
+                  session.state.playing)) {
+            final updated = _updatePlaybackHistory?.call(
+              trackPath: track.path,
+              position: position,
+              now: now,
+              updatePlayedAt: session.state.playing,
+            );
+            if (updated != null) tracksToUpdate.add(updated);
+          }
+          return PersistedSession(
+            id: session.id,
+            trackPath: session.currentTrackPath,
+            loopModeIndex: session.loopMode.index,
+            volume: session.volume,
+            speed: session.speed,
+            positionMs: positionMs,
+            durationMs: session.duration?.inMilliseconds ?? 0,
+            customQueueTracks: session.customQueueTracks,
+            playbackQueue: session.playbackQueue,
+            currentQueueIndex: session.currentQueueIndex,
+            channelSwapEnabled: session.channelSwapEnabled,
+            audioEffects: session.audioEffects,
+            createdAtMs: session.createdAt.millisecondsSinceEpoch,
+            updatedAtMs: now.millisecondsSinceEpoch,
+            lastPlayedAtMs: session.state.playing
+                ? now.millisecondsSinceEpoch
+                : null,
+            sortOrder: entry.key,
+          );
+        })
+        .toList(growable: false);
+    if (tracksToUpdate.isNotEmpty) {
+      await databaseRepository.upsertTracks(tracksToUpdate);
+    }
+    await databaseRepository.saveAllSessions(payload);
+  }
+
+  Future<void> saveSessionOrder() async {
+    if (!_persistenceEnabled) return;
+    await databaseRepository.updateSessionOrder(
+      service.sessionOrder.toList(growable: false),
+    );
+    await AppPreferences.remove('session_order_v1');
+  }
+
   void scheduleSessionStatePersistence({
     Duration delay = const Duration(milliseconds: 220),
   }) {
+    if (!_persistenceEnabled) return;
     service.saveSessionStateTimer?.cancel();
     service.saveSessionStateTimer = Timer(delay, () {
       service.saveSessionStateTimer = null;
-      unawaited(_persistSessionState?.call());
+      unawaited(savePersistedState());
     });
   }
 
   void scheduleSessionOrderPersistence({
     Duration delay = const Duration(milliseconds: 180),
   }) {
+    if (!_persistenceEnabled) return;
     service.saveSessionOrderTimer?.cancel();
     service.saveSessionOrderTimer = Timer(delay, () {
       service.saveSessionOrderTimer = null;
-      unawaited(_persistSessionOrder?.call());
+      unawaited(saveSessionOrder());
     });
   }
 
   Future<void> flushSessionStatePersistence() async {
     service.saveSessionStateTimer?.cancel();
     service.saveSessionStateTimer = null;
-    await _persistSessionState?.call();
+    await savePersistedState();
   }
 
   void cancelScheduledPersistence() {
@@ -1335,7 +1534,7 @@ final class PlaybackFacade {
       coverGeneration: current.coverGeneration,
       isInitialized: current.isInitialized,
     );
-    await _persistSessionState?.call();
+    await savePersistedState();
   }
 
   Future<void> launchQueue(

@@ -3,6 +3,9 @@ import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/core/errors/native_result.dart';
 import 'package:nameless_audio/core/media/path_matcher.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart'
+    show PersistedSession;
+import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
@@ -364,7 +367,8 @@ void main() {
   });
 
   test('PlaybackFacade can disable session persistence scheduling', () async {
-    final library = LibraryFacade.create();
+    final database = _RecordingAudioDatabaseRepository();
+    final library = LibraryFacade.create(databaseRepository: database);
     final playback = PlaybackFacade.create(
       databaseRepository: library.databaseRepository,
     );
@@ -372,19 +376,16 @@ void main() {
       await playback.dispose();
       await library.dispose();
     });
-    var stateSaves = 0;
-    var orderSaves = 0;
-    playback
-      ..attachSessionStatePersistence(() async => stateSaves++)
-      ..attachSessionOrderPersistence(() async => orderSaves++)
-      ..configurePersistence(enabled: false);
+    playback.configurePersistence(enabled: false);
     final queue = playback.createPlaybackQueue('No persistence');
     addTearDown(queue.dispose);
 
     await Future<void>.delayed(const Duration(milliseconds: 10));
 
-    expect(stateSaves, 0);
-    expect(orderSaves, 0);
+    expect(database.sessionSaves, 0);
+    expect(database.orderSaves, 0);
+    expect(playback.service.saveSessionStateTimer, isNull);
+    expect(playback.service.saveSessionOrderTimer, isNull);
   });
 
   test('PlaybackFacade normalizes native snapshots after a path retarget', () {
@@ -442,7 +443,8 @@ void main() {
   test(
     'PlaybackFacade owns debounced session persistence scheduling',
     () async {
-      final library = LibraryFacade.create();
+      final database = _RecordingAudioDatabaseRepository();
+      final library = LibraryFacade.create(databaseRepository: database);
       final playback = PlaybackFacade.create(
         databaseRepository: library.databaseRepository,
       );
@@ -450,11 +452,7 @@ void main() {
         await playback.dispose();
         await library.dispose();
       });
-      var stateSaves = 0;
-      var orderSaves = 0;
       playback
-        ..attachSessionStatePersistence(() async => stateSaves++)
-        ..attachSessionOrderPersistence(() async => orderSaves++)
         ..scheduleSessionStatePersistence(
           delay: const Duration(milliseconds: 5),
         )
@@ -466,14 +464,14 @@ void main() {
         );
 
       await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(stateSaves, 1);
-      expect(orderSaves, 1);
+      expect(database.sessionSaves, 1);
+      expect(database.orderSaves, 1);
 
       playback.scheduleSessionStatePersistence(
         delay: const Duration(minutes: 1),
       );
       await playback.flushSessionStatePersistence();
-      expect(stateSaves, 2);
+      expect(database.sessionSaves, 2);
     },
   );
 
@@ -551,6 +549,21 @@ void main() {
     expect(addedEntry.id, startsWith('queue_entry_'));
     expect(queueSession.playbackQueue?.entries, hasLength(1));
   });
+}
+
+final class _RecordingAudioDatabaseRepository extends AudioDatabaseRepository {
+  int sessionSaves = 0;
+  int orderSaves = 0;
+
+  @override
+  Future<void> saveAllSessions(List<PersistedSession> sessions) async {
+    sessionSaves++;
+  }
+
+  @override
+  Future<void> updateSessionOrder(List<String> sessionIds) async {
+    orderSaves++;
+  }
 }
 
 PlaybackSession _session(String id) {

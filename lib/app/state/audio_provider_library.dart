@@ -1,13 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderLibrary on AudioProvider {
-  void _syncLibraryNodeOrder({bool persist = true}) {
-    _libraryService.syncLibraryNodeOrder(
-      persist: persist,
-      onPersist: () => unawaited(_saveLibraryNodeOrder()),
-    );
-  }
-
   void reorderLibraryNodes(int oldIndex, int newIndex) {
     _libraryFacade.reorderLibraryNodes(oldIndex, newIndex);
     _notifyLibraryChanged();
@@ -143,29 +136,6 @@ extension AudioProviderLibrary on AudioProvider {
     } else {
       _notifyLibraryChanged();
     }
-  }
-
-  /// Removes tracks from the in-memory library that are currently marked as
-  /// excluded in [_excludedLibraryFolders] or [_excludedLibraryTracks].
-  /// Called once during startup after both the library and exclusion maps have
-  /// been loaded, so that excluded items are not shown on the first render.
-  void _applyExclusionsToLibrary() {
-    final allExcludedTracks = <String>{};
-    for (final paths in _excludedLibraryTracks.values) {
-      allExcludedTracks.addAll(paths);
-    }
-    final allExcludedFolders = <String>{};
-    for (final paths in _excludedLibraryFolders.values) {
-      allExcludedFolders.addAll(paths);
-    }
-    if (allExcludedTracks.isEmpty && allExcludedFolders.isEmpty) return;
-    final excludedTrackIndex = PathMembershipIndex(allExcludedTracks);
-    final excludedFolderIndex = PathMembershipIndex(allExcludedFolders);
-    _removeTracksWhere((track) {
-      return excludedTrackIndex.containsEquivalent(track.path) ||
-          excludedFolderIndex.containsAncestorOrEqual(track.path) ||
-          excludedFolderIndex.containsAncestorOrEqual(track.groupKey);
-    });
   }
 
   void _removeTracksWhere(bool Function(MusicTrack track) test) {

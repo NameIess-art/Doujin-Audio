@@ -50,6 +50,15 @@ final class NotificationFacade {
     _notifyNotificationChanged();
   }
 
+  Future<void> handlePlaybackModeChanged() async {
+    stateService.unifiedNotificationSyncKey = null;
+    _setFocusSessionId(null);
+    await _clearUnifiedNotifications();
+    _syncKeepAlive();
+    _syncNotificationState();
+    _notifyNotificationChanged();
+  }
+
   void attachRuntime({
     required Future<void> Function() undismissNotifications,
     required void Function() onNotificationsRestored,

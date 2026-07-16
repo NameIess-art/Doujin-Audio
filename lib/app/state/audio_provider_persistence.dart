@@ -635,20 +635,6 @@ extension AudioProviderPersistence on AudioProvider {
     }
   }
 
-  Future<void> setMultiThreadPlaybackEnabled(bool enabled) async {
-    if (_multiThreadPlaybackEnabled == enabled) return;
-    _multiThreadPlaybackEnabled = enabled;
-    if (!enabled) {
-      await _resetSessionsForSingleThreadMode();
-    }
-    _unifiedNotificationSyncKey = null;
-    await _clearUnifiedPlaybackNotificationsOnPlatform();
-    _syncKeepCpuAwake();
-    _syncNotificationState(immediateUnifiedSync: true);
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
   Future<void> setNotificationsEnabled(bool enabled) async {
     if (_notificationsEnabled == enabled) return;
     _notificationsEnabled = enabled;
@@ -664,107 +650,6 @@ extension AudioProviderPersistence on AudioProvider {
     }
     _syncKeepCpuAwake();
     _syncNotificationState(immediateUnifiedSync: true);
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setShowPlaybackCard(bool show) async {
-    if (_showPlaybackCard == show) return;
-    _showPlaybackCard = show;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setStartupPage(StartupPage page) async {
-    if (_startupPage == page) return;
-    _startupPage = page;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setBottomNavigationStyle(BottomNavigationStyle style) async {
-    if (_bottomNavigationStyle == style) return;
-    _bottomNavigationStyle = style;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setBlurPlayerBackgroundEnabled(bool enabled) async {
-    if (_settingsRepository.blurPlayerBackgroundEnabled == enabled) return;
-    _settingsRepository.blurPlayerBackgroundEnabled = enabled;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setUiBlurEffectEnabled(bool enabled) async {
-    if (_settingsRepository.uiBlurEffectEnabled == enabled) return;
-    _settingsRepository.uiBlurEffectEnabled = enabled;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setHapticFeedbackEnabled(bool enabled) async {
-    if (_settingsRepository.hapticFeedbackEnabled == enabled) return;
-    _settingsRepository.hapticFeedbackEnabled = enabled;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setCoverImageResolution(CoverImageResolution resolution) async {
-    if (_settingsRepository.coverImageResolution == resolution) return;
-    _settingsRepository.coverImageResolution = resolution;
-    applyCoverImageCachePolicy(resolution, clear: true);
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setAsmrDownloadDestinationRoot(String? destinationRoot) async {
-    await _settingsRepository.setAsmrDownloadDestinationRoot(destinationRoot);
-    _notifyPresentationListeners();
-  }
-
-  Future<void> setAsmrDownloadConflictPolicy(
-    AsmrDownloadConflictPolicy policy,
-  ) async {
-    if (_settingsRepository.asmrDownloadConflictPolicy == policy) return;
-    _settingsRepository.asmrDownloadConflictPolicy = policy;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setAutoPlayAddedSessions(bool enabled) async {
-    if (_autoPlayAddedSessions == enabled) return;
-    _autoPlayAddedSessions = enabled;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setAutoCheckUpdates(bool enabled) async {
-    if (_autoCheckUpdates == enabled) return;
-    _autoCheckUpdates = enabled;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setRecordPlaybackProgress(bool enabled) async {
-    if (_settingsRepository.recordPlaybackProgress == enabled) return;
-    _settingsRepository.recordPlaybackProgress = enabled;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setAsmrPlaybackCacheEnabled(bool enabled) async {
-    if (_settingsRepository.asmrPlaybackCacheEnabled == enabled) return;
-    _settingsRepository.asmrPlaybackCacheEnabled = enabled;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setDlsiteMetadataLanguage(
-    ContentLanguagePreference language,
-  ) async {
-    if (_dlsiteMetadataLanguagePreference == language) return;
-    _dlsiteMetadataLanguagePreference = language;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }
@@ -789,17 +674,6 @@ extension AudioProviderPersistence on AudioProvider {
       preset,
     ]);
     _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setMaxCacheBytes(int bytes) async {
-    final normalized = bytes <= 0
-        ? AppCacheService.defaultMaxCacheBytes
-        : bytes;
-    if (_maxCacheBytes == normalized) return;
-    _maxCacheBytes = normalized;
-    _notifySettingsChanged();
-    await AppCacheService.setMaxCacheBytes(normalized);
     unawaited(_savePlaybackSettings());
   }
 }

@@ -10,7 +10,7 @@ const List<int> _settingsCacheLimitOptions = <int>[
 
 List<Widget> _buildSettingsDataSection({
   required AppLanguageProvider i18n,
-  required AudioProvider audioProvider,
+  required SettingsCommandController settingsController,
   required TextStyle? descStyle,
   required ColorScheme cs,
   required VoidCallback onOpenDataAndSupport,
@@ -85,7 +85,7 @@ List<Widget> _buildSettingsDataSection({
                       : AppCacheService.defaultMaxCacheBytes,
                   onChanged: (value) {
                     if (value != null) {
-                      audioProvider.setMaxCacheBytes(value);
+                      settingsController.setMaxCacheBytes(value);
                     }
                   },
                   items: _settingsCacheLimitOptions

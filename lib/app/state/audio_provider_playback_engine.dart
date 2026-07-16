@@ -150,27 +150,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     }
   }
 
-  Future<void> _resetSessionsForSingleThreadMode() async {
-    if (_sessions.isEmpty) {
-      _notificationFocusSessionId = null;
-      _syncNotificationState();
-      return;
-    }
-
-    await Future.wait(
-      _sessions.values.map(
-        (session) => _nativePlaybackRepository.pause(session.id),
-      ),
-    );
-    for (final session in _sessions.values) {
-      session.setOptimisticState(playing: false);
-    }
-    _syncKeepCpuAwake();
-    _notificationFocusSessionId = null;
-    _syncNotificationState();
-    _notifyPlaybackChanged();
-  }
-
   Future<void> _enforceSingleThreadPlayback({
     String? preferredSessionId,
   }) async {

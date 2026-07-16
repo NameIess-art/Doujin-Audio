@@ -91,6 +91,53 @@ void main() {
     expect(session.state.playing, isFalse);
     expect(focusedSessionId, session.id);
   });
+
+  test(
+    'NotificationFacade resets platform state after playback mode changes',
+    () async {
+      final library = LibraryFacade.create();
+      final playback = PlaybackFacade.create(
+        databaseRepository: library.databaseRepository,
+      );
+      final facade = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      var clearCount = 0;
+      var keepAliveSyncCount = 0;
+      var notificationSyncCount = 0;
+      String? focusedSessionId = 'stale';
+      addTearDown(() async {
+        await facade.dispose();
+        await playback.dispose();
+        await library.dispose();
+      });
+      facade.attachActions(
+        playback: playback,
+        resolveSession: ([sessionId]) => null,
+        resolveActionSession: () => null,
+        resumeSession: (_) async {},
+        multiThreadPlaybackEnabled: () => false,
+        setFocusSessionId: (sessionId) => focusedSessionId = sessionId,
+        notify: () {},
+        syncKeepAlive: () => keepAliveSyncCount++,
+        syncNotificationState: () => notificationSyncCount++,
+        hasPlaybackToKeepAlive: () => false,
+        clearUnifiedNotifications: () async => clearCount++,
+        stopPlaybackKeepAlive: () async {},
+        preferredSessionId: () => null,
+        notifyNotificationChanged: () {},
+      );
+      facade.stateService.unifiedNotificationSyncKey = 'stale';
+
+      await facade.handlePlaybackModeChanged();
+
+      expect(facade.stateService.unifiedNotificationSyncKey, isNull);
+      expect(focusedSessionId, isNull);
+      expect(clearCount, 1);
+      expect(keepAliveSyncCount, 1);
+      expect(notificationSyncCount, 1);
+    },
+  );
 }
 
 final class _RecordingNativePlaybackRepository

@@ -2,7 +2,8 @@ part of 'settings_tab.dart';
 
 List<Widget> _buildSettingsPlaybackSection({
   required AppLanguageProvider i18n,
-  required AudioProvider audioProvider,
+  required SettingsRepository settings,
+  required SettingsCommandController settingsController,
   required TextStyle? descStyle,
   required ColorScheme cs,
 }) {
@@ -19,7 +20,7 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return SwitchListTile(
               value: autoPlay,
-              onChanged: audioProvider.setAutoPlayAddedSessions,
+              onChanged: settings.setAutoPlayAddedSessions,
               title: Text(i18n.tr('auto_play_added_sessions')),
               subtitle: Text(
                 i18n.tr('auto_play_added_sessions_subtitle'),
@@ -53,7 +54,7 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return SwitchListTile(
               value: asmrPlaybackCacheEnabled,
-              onChanged: audioProvider.setAsmrPlaybackCacheEnabled,
+              onChanged: settings.setAsmrPlaybackCacheEnabled,
               title: Text(i18n.tr('asmr_playback_cache')),
               subtitle: Text(
                 i18n.tr('asmr_playback_cache_subtitle'),
@@ -87,7 +88,7 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return SwitchListTile(
               value: recordProgress,
-              onChanged: audioProvider.setRecordPlaybackProgress,
+              onChanged: settings.setRecordPlaybackProgress,
               title: Text(i18n.tr('record_playback_progress')),
               subtitle: Text(
                 i18n.tr('record_playback_progress_subtitle'),
@@ -122,7 +123,7 @@ List<Widget> _buildSettingsPlaybackSection({
             return SwitchListTile(
               value: multiThreadEnabled,
               onChanged: (value) {
-                audioProvider.setMultiThreadPlaybackEnabled(value);
+                settingsController.setMultiThreadPlaybackEnabled(value);
                 if (!value) {
                   ref
                       .read(subtitleSettingsProvider.notifier)

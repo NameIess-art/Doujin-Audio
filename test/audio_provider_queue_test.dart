@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'package:nameless_audio/app/application/playback_queue_coordinator.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
@@ -22,12 +23,17 @@ void main() {
 
   late AudioProviderTestFixture fixture;
   late AudioProvider provider;
+  late PlaybackQueueCoordinator queueCoordinator;
   late PlaybackNotificationService notificationService;
   late Database db;
 
   setUp(() async {
     fixture = await AudioProviderTestFixture.create();
     provider = fixture.provider;
+    queueCoordinator = PlaybackQueueCoordinator(
+      library: provider.libraryFacade,
+      playback: provider.playbackFacade,
+    );
     notificationService = fixture.notificationService;
     db = fixture.database;
   });
@@ -220,7 +226,7 @@ void main() {
           'Queue 1',
         );
 
-        await provider.addWorkToPlaybackQueue(queueSession.id, selected);
+        await queueCoordinator.addWork(queueSession.id, selected);
 
         final entry = provider
             .sessionById(queueSession.id)!
@@ -262,7 +268,7 @@ void main() {
         (track) => track.displayName == first.displayName,
       );
 
-      await provider.addWorkToPlaybackQueue(queueSession.id, sourceTrack);
+      await queueCoordinator.addWork(queueSession.id, sourceTrack);
 
       final entry = provider
           .sessionById(queueSession.id)!
@@ -562,7 +568,7 @@ void main() {
               return <String, Object?>{'ok': true, 'value': null};
             });
 
-        await provider.setAsmrPlaybackCacheEnabled(true);
+        await provider.settingsRepository.setAsmrPlaybackCacheEnabled(true);
         await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
           firstTrack,
           secondTrack,

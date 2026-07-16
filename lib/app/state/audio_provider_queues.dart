@@ -1,44 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderQueues on AudioProvider {
-  Future<void> addWorkToPlaybackQueue(
-    String sessionId,
-    MusicTrack track,
-  ) async {
-    if (track.isSingle) {
-      await _playbackFacade.addTrackToPlaybackQueue(sessionId, track);
-      return;
-    }
-    final workTracks = tracksInSameWork(track.path);
-    final groupTracks = tracksInSameGroup(track.path);
-    final tracks = workTracks.isNotEmpty
-        ? workTracks
-        : groupTracks.isNotEmpty
-        ? groupTracks
-        : (library
-              .where(
-                (candidate) => PathMatcher.equalsNormalized(
-                  candidate.groupKey,
-                  track.groupKey,
-                ),
-              )
-              .toList(growable: false)
-            ..sort(getTrackComparator));
-    if (tracks.isEmpty) return;
-    final resolvedWorkRootPath = workRootForTrack(track.path);
-    final workRootPath = resolvedWorkRootPath?.isNotEmpty == true
-        ? resolvedWorkRootPath
-        : track.groupKey.trim().isEmpty || track.groupKey == '__single_files__'
-        ? null
-        : PathMatcher.normalize(track.groupKey);
-    await _playbackFacade.addWorkToPlaybackQueue(
-      sessionId,
-      title: track.groupTitle,
-      tracks: tracks,
-      workRootPath: workRootPath,
-    );
-  }
-
   Future<void> _syncPlaybackQueueSession(
     PlaybackSession session, {
     bool selectFirst = false,

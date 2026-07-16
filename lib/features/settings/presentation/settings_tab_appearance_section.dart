@@ -3,7 +3,8 @@ part of 'settings_tab.dart';
 List<Widget> _buildSettingsAppearanceSection({
   required BuildContext context,
   required AppLanguageProvider i18n,
-  required AudioProvider audioProvider,
+  required SettingsRepository settings,
+  required SettingsCommandController settingsController,
   required TextStyle? descStyle,
   required ColorScheme cs,
   required VoidCallback onShowSubtitleWindowSettings,
@@ -128,7 +129,7 @@ List<Widget> _buildSettingsAppearanceSection({
                 value: ref.watch(coverImageResolutionProvider),
                 onChanged: (value) {
                   if (value != null) {
-                    audioProvider.setCoverImageResolution(value);
+                    settingsController.setCoverImageResolution(value);
                   }
                 },
                 items: CoverImageResolution.values
@@ -162,7 +163,7 @@ List<Widget> _buildSettingsAppearanceSection({
             return SwitchListTile(
               value: style == BottomNavigationStyle.capsule,
               onChanged: (value) {
-                audioProvider.setBottomNavigationStyle(
+                settings.setBottomNavigationStyle(
                   value
                       ? BottomNavigationStyle.capsule
                       : BottomNavigationStyle.bar,
@@ -201,7 +202,7 @@ List<Widget> _buildSettingsAppearanceSection({
             );
             return SwitchListTile(
               value: uiBlurEnabled,
-              onChanged: audioProvider.setUiBlurEffectEnabled,
+              onChanged: settings.setUiBlurEffectEnabled,
               title: Text(i18n.tr('ui_blur_effect')),
               subtitle: Text(
                 i18n.tr('ui_blur_effect_subtitle'),
@@ -235,7 +236,7 @@ List<Widget> _buildSettingsAppearanceSection({
             );
             return SwitchListTile(
               value: blurEnabled,
-              onChanged: audioProvider.setBlurPlayerBackgroundEnabled,
+              onChanged: settings.setBlurPlayerBackgroundEnabled,
               title: Text(i18n.tr('blur_player_background')),
               subtitle: Text(
                 i18n.tr('blur_player_background_subtitle'),
@@ -269,7 +270,7 @@ List<Widget> _buildSettingsAppearanceSection({
             );
             return SwitchListTile(
               value: showPlaybackCard,
-              onChanged: audioProvider.setShowPlaybackCard,
+              onChanged: settings.setShowPlaybackCard,
               title: Text(i18n.tr('show_playback_card')),
               subtitle: Text(
                 i18n.tr('show_playback_card_subtitle'),

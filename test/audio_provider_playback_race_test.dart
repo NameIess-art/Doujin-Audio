@@ -62,7 +62,7 @@ void main() {
         isSingle: true,
       );
 
-      await provider.setAutoPlayAddedSessions(false);
+      await provider.settingsRepository.setAutoPlayAddedSessions(false);
       await provider.playbackFacade.spawnSession(track);
       for (var i = 0; i < 20 && prepareCalls < 1; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -70,7 +70,7 @@ void main() {
       expect(prepareCalls, 1);
       expect(playCalls, 0);
 
-      await provider.setAutoPlayAddedSessions(true);
+      await provider.settingsRepository.setAutoPlayAddedSessions(true);
       await provider.playbackFacade.spawnSession(track);
       for (var i = 0; i < 20 && playCalls < 1; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -82,7 +82,7 @@ void main() {
     test('ASMR.ONE playback cache setting is disabled by default', () async {
       expect(provider.asmrPlaybackCacheEnabled, isFalse);
 
-      await provider.setAsmrPlaybackCacheEnabled(true);
+      await provider.settingsRepository.setAsmrPlaybackCacheEnabled(true);
 
       expect(provider.asmrPlaybackCacheEnabled, isTrue);
       expect(

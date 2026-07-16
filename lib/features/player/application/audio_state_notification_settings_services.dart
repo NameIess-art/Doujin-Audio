@@ -259,6 +259,96 @@ class SettingsRepository {
     await _persist?.call();
   }
 
+  Future<void> setMultiThreadPlaybackEnabled(bool enabled) => _setValue(
+    unchanged: multiThreadPlaybackEnabled == enabled,
+    update: () => multiThreadPlaybackEnabled = enabled,
+  );
+
+  Future<void> setShowPlaybackCard(bool enabled) => _setValue(
+    unchanged: showPlaybackCard == enabled,
+    update: () => showPlaybackCard = enabled,
+  );
+
+  Future<void> setAutoPlayAddedSessions(bool enabled) => _setValue(
+    unchanged: autoPlayAddedSessions == enabled,
+    update: () => autoPlayAddedSessions = enabled,
+  );
+
+  Future<void> setAutoCheckUpdates(bool enabled) => _setValue(
+    unchanged: autoCheckUpdates == enabled,
+    update: () => autoCheckUpdates = enabled,
+  );
+
+  Future<void> setDlsiteMetadataLanguage(ContentLanguagePreference language) =>
+      _setValue(
+        unchanged: dlsiteMetadataLanguage == language,
+        update: () => dlsiteMetadataLanguage = language,
+      );
+
+  Future<void> setMaxCacheBytes(int bytes) => _setValue(
+    unchanged: maxCacheBytes == bytes,
+    update: () => maxCacheBytes = bytes,
+  );
+
+  Future<void> setAsmrPlaybackCacheEnabled(bool enabled) => _setValue(
+    unchanged: asmrPlaybackCacheEnabled == enabled,
+    update: () => asmrPlaybackCacheEnabled = enabled,
+  );
+
+  Future<void> setRecordPlaybackProgress(bool enabled) => _setValue(
+    unchanged: recordPlaybackProgress == enabled,
+    update: () => recordPlaybackProgress = enabled,
+  );
+
+  Future<void> setBlurPlayerBackgroundEnabled(bool enabled) => _setValue(
+    unchanged: blurPlayerBackgroundEnabled == enabled,
+    update: () => blurPlayerBackgroundEnabled = enabled,
+  );
+
+  Future<void> setUiBlurEffectEnabled(bool enabled) => _setValue(
+    unchanged: uiBlurEffectEnabled == enabled,
+    update: () => uiBlurEffectEnabled = enabled,
+  );
+
+  Future<void> setHapticFeedbackEnabled(bool enabled) => _setValue(
+    unchanged: hapticFeedbackEnabled == enabled,
+    update: () => hapticFeedbackEnabled = enabled,
+  );
+
+  Future<void> setStartupPage(StartupPage page) => _setValue(
+    unchanged: startupPage == page,
+    update: () => startupPage = page,
+  );
+
+  Future<void> setBottomNavigationStyle(BottomNavigationStyle style) =>
+      _setValue(
+        unchanged: bottomNavigationStyle == style,
+        update: () => bottomNavigationStyle = style,
+      );
+
+  Future<void> setCoverImageResolution(CoverImageResolution resolution) =>
+      _setValue(
+        unchanged: coverImageResolution == resolution,
+        update: () => coverImageResolution = resolution,
+      );
+
+  Future<void> setAsmrDownloadConflictPolicy(
+    AsmrDownloadConflictPolicy policy,
+  ) => _setValue(
+    unchanged: asmrDownloadConflictPolicy == policy,
+    update: () => asmrDownloadConflictPolicy = policy,
+  );
+
+  Future<void> _setValue({
+    required bool unchanged,
+    required void Function() update,
+  }) async {
+    if (unchanged) return;
+    update();
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await _persist?.call();
+  }
+
   void syncSlice({bool isInitialized = false}) {
     slice.update(
       SettingsState(

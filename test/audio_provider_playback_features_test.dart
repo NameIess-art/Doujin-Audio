@@ -896,7 +896,7 @@ void main() {
           persist: false,
         );
         await provider.playbackFacade.spawnSession(oldTrack, autoPlay: false);
-        await provider.setAutoPlayAddedSessions(false);
+        await provider.settingsRepository.setAutoPlayAddedSessions(false);
 
         final databaseRepository = AudioDatabaseRepository(
           database: AppDatabase.test(db),
@@ -1040,7 +1040,7 @@ void main() {
     test('startup page is saved with playback settings', () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
 
-      await provider.setStartupPage(StartupPage.playlist);
+      await provider.settingsRepository.setStartupPage(StartupPage.playlist);
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       final prefs = await SharedPreferences.getInstance();
@@ -1053,8 +1053,10 @@ void main() {
     test('DLsite language preference persists follow page selection', () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
 
-      await provider.setDlsiteMetadataLanguage(ContentLanguagePreference.en);
-      await provider.setDlsiteMetadataLanguage(
+      await provider.settingsRepository.setDlsiteMetadataLanguage(
+        ContentLanguagePreference.en,
+      );
+      await provider.settingsRepository.setDlsiteMetadataLanguage(
         ContentLanguagePreference.followPage,
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));

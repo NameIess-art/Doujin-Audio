@@ -201,6 +201,28 @@ void main() {
       expect(repository.slice.state.cardInfoFields, repository.cardInfoFields);
       expect(persistCount, 1);
     });
+
+    test(
+      'owned settings commands publish and persist only on change',
+      () async {
+        final repository = SettingsRepository();
+        addTearDown(repository.dispose);
+        var persistCount = 0;
+        repository.attachPersistence(() async {
+          persistCount++;
+        });
+
+        await repository.setStartupPage(StartupPage.playlist);
+        await repository.setAutoPlayAddedSessions(false);
+        await repository.setAutoPlayAddedSessions(false);
+        await repository.setAsmrPlaybackCacheEnabled(true);
+
+        expect(repository.slice.state.startupPage, StartupPage.playlist);
+        expect(repository.slice.state.autoPlayAddedSessions, isFalse);
+        expect(repository.slice.state.asmrPlaybackCacheEnabled, isTrue);
+        expect(persistCount, 3);
+      },
+    );
   });
 
   group('TimerService', () {

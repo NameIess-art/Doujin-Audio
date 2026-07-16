@@ -843,7 +843,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
-    final audioProvider = ref.read(audioProviderFacadeProvider);
+    final queueCoordinator = ref.read(playbackQueueCoordinatorProvider);
     final track = library.trackByPath(source.currentTrackPath);
     if (track == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
@@ -874,8 +874,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
               padding: EdgeInsets.zero,
               visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.library_add_rounded, size: 22),
-              onPressed: () =>
-                  audioProvider.addWorkToPlaybackQueue(queueSessionId, track),
+              onPressed: () => queueCoordinator.addWork(queueSessionId, track),
             ),
         ],
       ),

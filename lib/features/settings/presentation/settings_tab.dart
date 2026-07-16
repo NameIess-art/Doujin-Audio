@@ -5,12 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../application/app_cache_service.dart';
+import '../application/settings_command_controller.dart';
 import '../application/app_update_service.dart';
 import '../../player/application/audio_state_services.dart';
 import '../../../core/media/path_display.dart';
+import '../../../core/media/card_info_field.dart';
 import '../../../core/platform/permission_action_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
@@ -26,6 +27,7 @@ import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../../data_support/presentation/data_support_page.dart';
+import '../../asmr/domain/asmr_download.dart';
 import 'permission_status_page.dart';
 import 'app_update_flow.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
@@ -168,11 +170,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    ref.watch(appLanguageStateProvider);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final audioProvider = ref.read(audioProviderFacadeProvider);
+    final settings = ref.read(settingsRepositoryProvider);
+    final settingsController = ref.read(settingsCommandControllerProvider);
     final bottomInset = MobileOverlayInset.of(context);
     final cs = Theme.of(context).colorScheme;
     final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -203,14 +207,15 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                     children: [
                       ..._buildSettingsGeneralSection(
                         i18n: i18n,
-                        audioProvider: audioProvider,
+                        settings: settings,
                         descStyle: descStyle,
                         cs: cs,
                       ),
                       ..._buildSettingsAppearanceSection(
                         context: context,
                         i18n: i18n,
-                        audioProvider: audioProvider,
+                        settings: settings,
+                        settingsController: settingsController,
                         descStyle: descStyle,
                         cs: cs,
                         onShowSubtitleWindowSettings: () =>
@@ -220,13 +225,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       ),
                       ..._buildSettingsPlaybackSection(
                         i18n: i18n,
-                        audioProvider: audioProvider,
+                        settings: settings,
+                        settingsController: settingsController,
                         descStyle: descStyle,
                         cs: cs,
                       ),
                       ..._buildSettingsAsmrSection(
                         i18n: i18n,
-                        audioProvider: audioProvider,
+                        settings: settings,
                         descStyle: descStyle,
                         cs: cs,
                         onChooseAsmrDownloadDestination:
@@ -234,7 +240,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       ),
                       ..._buildSettingsDataSection(
                         i18n: i18n,
-                        audioProvider: audioProvider,
+                        settingsController: settingsController,
                         descStyle: descStyle,
                         cs: cs,
                         onOpenDataAndSupport: _openDataAndSupport,
@@ -243,7 +249,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                       ),
                       ..._buildSettingsUpdateSection(
                         i18n: i18n,
-                        audioProvider: audioProvider,
+                        settings: settings,
                         descStyle: descStyle,
                         cs: cs,
                         updateInfo: _lastUpdateInfo,

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/audio_path_coordinator.dart';
+import '../application/playback_queue_coordinator.dart';
 import '../application/audio_runtime_coordinator.dart';
 import '../application/audio_ui_warmup_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
@@ -17,6 +18,7 @@ import '../presentation/screen_view_models.dart';
 import '../theme/theme_provider.dart';
 import '../localization/app_language_provider.dart';
 import '../../features/settings/application/app_update_service.dart';
+import '../../features/settings/application/settings_command_controller.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
 import '../../features/asmr/application/asmr_playback_coordinator.dart';
@@ -241,6 +243,15 @@ final audioPathCoordinatorProvider = Provider<AudioPathCoordinator>((ref) {
   );
 });
 
+final playbackQueueCoordinatorProvider = Provider<PlaybackQueueCoordinator>((
+  ref,
+) {
+  return PlaybackQueueCoordinator(
+    library: ref.watch(libraryFacadeProvider),
+    playback: ref.watch(playbackFacadeProvider),
+  );
+});
+
 final timerFacadeProvider = Provider<TimerFacade>((ref) {
   throw UnimplementedError(
     'timerFacadeProvider must be overridden in ProviderScope.',
@@ -270,6 +281,16 @@ final playlistUiControllerProvider = Provider<PlaylistUiController>((ref) {
 final settingsRepositoryProvider = Provider<SettingsRepository>((ref) {
   throw UnimplementedError(
     'settingsRepositoryProvider must be overridden in ProviderScope.',
+  );
+});
+
+final settingsCommandControllerProvider = Provider<SettingsCommandController>((
+  ref,
+) {
+  return SettingsCommandController(
+    settings: ref.watch(settingsRepositoryProvider),
+    playback: ref.watch(playbackFacadeProvider),
+    notifications: ref.watch(notificationFacadeProvider),
   );
 });
 

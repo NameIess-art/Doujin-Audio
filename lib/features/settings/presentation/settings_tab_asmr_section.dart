@@ -2,7 +2,7 @@ part of 'settings_tab.dart';
 
 List<Widget> _buildSettingsAsmrSection({
   required AppLanguageProvider i18n,
-  required AudioProvider audioProvider,
+  required SettingsRepository settings,
   required TextStyle? descStyle,
   required ColorScheme cs,
   required VoidCallback onChooseAsmrDownloadDestination,
@@ -104,7 +104,7 @@ List<Widget> _buildSettingsAsmrSection({
                 value: conflictPolicy,
                 onChanged: (value) {
                   if (value != null) {
-                    audioProvider.setAsmrDownloadConflictPolicy(value);
+                    settings.setAsmrDownloadConflictPolicy(value);
                   }
                 },
                 items: AsmrDownloadConflictPolicy.values

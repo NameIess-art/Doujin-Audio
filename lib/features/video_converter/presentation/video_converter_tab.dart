@@ -3,10 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
-import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/audio_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../player/application/audio_state_services.dart';
@@ -43,7 +41,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
       VideoConversionInputService();
 
   Future<void> _pickVideoFile() async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final selectedPath = await UiOperationService.instance.run<String?>(
       scope: UiOperationScope.videoConverterPick,
       labelKey: 'source_video_file',
@@ -96,9 +94,9 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     });
   }
 
-  Future<void> _startConversion(AudioProvider provider) async {
+  Future<void> _startConversion(SettingsRepository settings) async {
     if (_isConverting) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     if (_selectedVideoPath == null || _outputDirectoryPath == null) {
       showAppSnackBar(
         context,
@@ -129,8 +127,8 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
             labelKey: 'conversion_starting',
             cancelPrevious: false,
             task: (operationProgress) async {
-              final selectedFormat = provider.converterFormat;
-              final selectedBitrate = provider.converterBitrate;
+              final selectedFormat = settings.converterFormat;
+              final selectedBitrate = settings.converterBitrate;
               final plan = await createVideoConversionPlan(
                 inputPath: inputPath,
                 outputDirectoryPath: outputDirectoryPath,
@@ -223,7 +221,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
 
   Future<void> _cancelConversion() async {
     if (!_isConverting || _isCanceling) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final generation = _conversionGeneration;
     setState(() {
       _isCanceling = true;
@@ -256,8 +254,9 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
-    final provider = ref.read(audioProviderFacadeProvider);
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final settings = ref.read(settingsRepositoryProvider);
     final settingsState =
         ref.watch(settingsStateProvider).valueOrNull ?? const SettingsState();
     final pickOperation = ref.watch(
@@ -367,11 +366,11 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                             child: _SelectField(
                               label: i18n.tr('format'),
                               value: selectedFormat,
-                              items: AudioProvider.converterFormats,
+                              items: SettingsRepository.converterFormats,
                               displayBuilder: (item) => item.toUpperCase(),
                               onChanged: (value) {
                                 if (value != null) {
-                                  provider.setConverterSettings(format: value);
+                                  settings.setConverterSettings(format: value);
                                 }
                               },
                             ),
@@ -381,12 +380,12 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                             child: _SelectField(
                               label: i18n.tr('bitrate'),
                               value: selectedBitrate,
-                              items: AudioProvider.converterBitrates,
+                              items: SettingsRepository.converterBitrates,
                               displayBuilder: (item) => item,
                               enabled: bitrateEnabled,
                               onChanged: (value) {
                                 if (value != null) {
-                                  provider.setConverterSettings(bitrate: value);
+                                  settings.setConverterSettings(bitrate: value);
                                 }
                               },
                             ),
@@ -506,7 +505,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                 FilledButton.icon(
                   onPressed:
                       _selectedVideoPath != null && _outputDirectoryPath != null
-                      ? () => _startConversion(provider)
+                      ? () => _startConversion(settings)
                       : null,
                   icon: const Icon(Icons.transform_rounded),
                   label: Text(i18n.tr('start_conversion')),

@@ -9,15 +9,21 @@ import 'app_backup_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'diagnostic_report_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
+import '../../settings/application/app_update_service.dart';
 
 class DataSupportFileService {
   DataSupportFileService({
     AppBackupService? backupService,
     DiagnosticReportService? diagnosticService,
     FileCachePlatformGateway? fileCacheGateway,
+    AppUpdateService? appUpdateService,
     bool Function()? isAndroid,
-  }) : _backupService = backupService ?? AppBackupService(),
-       _diagnosticService = diagnosticService ?? DiagnosticReportService(),
+  }) : _backupService =
+           backupService ??
+           AppBackupService(appUpdateService: appUpdateService),
+       _diagnosticService =
+           diagnosticService ??
+           DiagnosticReportService(appUpdateService: appUpdateService),
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
        _isAndroid = isAndroid ?? (() => AppPlatform.isAndroid);

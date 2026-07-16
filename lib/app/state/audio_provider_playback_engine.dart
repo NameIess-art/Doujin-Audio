@@ -15,7 +15,7 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     required bool shouldStartTriggerCountdown,
   }) async {
     if (!_sessions.containsKey(session.id)) return false;
-    final generation = ++_transportCommandSequence;
+    final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
       generation: generation,
@@ -100,14 +100,14 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     }
     _syncKeepCpuAwake();
     if (shouldStartTriggerCountdown) {
-      _maybeStartTriggerCountdown();
+      _timerFacade.maybeStartTriggerCountdown();
     }
     return true;
   }
 
   Future<bool> _pauseSessionPlayback(PlaybackSession session) async {
     if (!_sessions.containsKey(session.id)) return false;
-    final generation = ++_transportCommandSequence;
+    final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
       generation: generation,
@@ -148,27 +148,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
       );
       return false;
     }
-  }
-
-  Future<void> _resetSessionsForSingleThreadMode() async {
-    if (_sessions.isEmpty) {
-      _notificationFocusSessionId = null;
-      _syncNotificationState();
-      return;
-    }
-
-    await Future.wait(
-      _sessions.values.map(
-        (session) => _nativePlaybackRepository.pause(session.id),
-      ),
-    );
-    for (final session in _sessions.values) {
-      session.setOptimisticState(playing: false);
-    }
-    _syncKeepCpuAwake();
-    _notificationFocusSessionId = null;
-    _syncNotificationState();
-    _notifyPlaybackChanged();
   }
 
   Future<void> _enforceSingleThreadPlayback({
@@ -215,24 +194,6 @@ extension AudioProviderPlaybackEngine on AudioProvider {
     final sessions = activeSessions;
     if (sessions.isEmpty) return null;
     return sessions.first.id;
-  }
-
-  void reorderSessions(int oldIndex, int newIndex) {
-    if (oldIndex < 0 || oldIndex >= _sessionOrder.length) return;
-    if (newIndex < 0 || newIndex > _sessionOrder.length) return;
-    if (newIndex > oldIndex) newIndex -= 1;
-    final moved = _sessionOrder.removeAt(oldIndex);
-    _sessionOrder.insert(newIndex, moved);
-    _markActiveSessionsDirty();
-    _syncNotificationState();
-    _notifyPlaybackChanged();
-    _scheduleSaveSessionOrder();
-  }
-
-  bool hasSessionAdjacentTrack(String sessionId, {required bool forward}) {
-    final session = _sessions[sessionId];
-    if (session == null || session.isLoading) return false;
-    return _hasAdjacentPathFor(session, forward: forward);
   }
 
   Future<void> _handleSessionCompleted(String sessionId) async {

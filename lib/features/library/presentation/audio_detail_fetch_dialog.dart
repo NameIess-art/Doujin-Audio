@@ -7,7 +7,10 @@ class _AudioDetailFetchScopeDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
 

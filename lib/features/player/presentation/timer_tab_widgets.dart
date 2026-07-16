@@ -1,6 +1,6 @@
 part of 'timer_tab.dart';
 
-class _ModeSelector extends StatelessWidget {
+class _ModeSelector extends ConsumerWidget {
   const _ModeSelector({
     required this.value,
     required this.onChanged,
@@ -14,8 +14,9 @@ class _ModeSelector extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
 
     Widget modeCard(

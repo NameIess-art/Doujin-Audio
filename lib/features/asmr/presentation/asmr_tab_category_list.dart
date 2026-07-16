@@ -1,6 +1,6 @@
 part of 'asmr_tab.dart';
 
-class _AsmrCategoryList extends StatefulWidget {
+class _AsmrCategoryList extends ConsumerStatefulWidget {
   const _AsmrCategoryList({
     super.key,
     required this.category,
@@ -19,10 +19,10 @@ class _AsmrCategoryList extends StatefulWidget {
   final Future<void> Function() onRefresh;
 
   @override
-  State<_AsmrCategoryList> createState() => _AsmrCategoryListState();
+  ConsumerState<_AsmrCategoryList> createState() => _AsmrCategoryListState();
 }
 
-class _AsmrCategoryListState extends State<_AsmrCategoryList>
+class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     with AutomaticKeepAliveClientMixin {
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
@@ -34,18 +34,36 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final state = context.select<AsmrLibraryController, AsmrCategoryViewState>(
-      (controller) => controller.categoryViewState(
-        widget.category,
-        searchQuery: widget.searchQuery,
-      ),
-    );
+    final state =
+        ref.watch(asmrCategoryStateProvider(widget.category)).valueOrNull ??
+        ref
+            .read(asmrLibraryControllerProvider)
+            ?.categoryViewState(
+              widget.category,
+              searchQuery: widget.searchQuery,
+            ) ??
+        AsmrCategoryViewState(
+          category: widget.category,
+          works: const <AsmrWork>[],
+          isLoading: false,
+          isLoadingMore: false,
+          isRefreshing: false,
+          isStale: false,
+          hasAttemptedLoad: false,
+          hasMore: false,
+          totalCount: 0,
+          activeQuery: widget.searchQuery,
+          lastError: null,
+          operationError: null,
+          revision: 0,
+        );
     final works = state.works;
     final showPlaceholder =
         works.isEmpty &&
         (state.isLoading ||
             (!state.hasAttemptedLoad && state.lastError == null));
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     return Theme(
@@ -88,10 +106,12 @@ class _AsmrCategoryListState extends State<_AsmrCategoryList>
                 if (notification.metrics.pixels >
                     notification.metrics.maxScrollExtent - 400) {
                   if (!state.isLoadingMore && state.hasMore) {
-                    context.read<AsmrLibraryController>().loadMoreCategory(
-                      widget.category,
-                      searchQuery: widget.searchQuery,
-                    );
+                    ref
+                        .read(asmrLibraryControllerProvider)
+                        ?.loadMoreCategory(
+                          widget.category,
+                          searchQuery: widget.searchQuery,
+                        );
                   }
                 }
               } else if (notification is ScrollEndNotification) {

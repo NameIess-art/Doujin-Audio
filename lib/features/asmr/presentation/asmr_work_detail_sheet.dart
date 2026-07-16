@@ -2,12 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
-import '../application/asmr_library_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
@@ -43,14 +41,20 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
         widget.work.id,
       ),
       labelKey: 'loading_dot',
-      task: (_) =>
-          context.read<AsmrLibraryController>().loadWorkDetail(widget.work),
+      task: (_) async {
+        final controller = ref.read(asmrLibraryControllerProvider);
+        if (controller == null) {
+          throw StateError('ASMR library service is not configured.');
+        }
+        return controller.loadWorkDetail(widget.work);
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final labelStyle = Theme.of(
@@ -165,35 +169,35 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
                   values: [effectiveWork.rjCode],
                   labelStyle: labelStyle,
                   isCapsule: true,
-                  onCopy: (val) => _copyText(context, val),
+                  onCopy: (val) => _copyText(context, val, i18n),
                 ),
                 _AsmrDetailRow(
                   label: i18n.tr('audio_detail_work_title'),
                   values: [effectiveWork.title],
                   labelStyle: labelStyle,
                   isCapsule: true,
-                  onCopy: (val) => _copyText(context, val),
+                  onCopy: (val) => _copyText(context, val, i18n),
                 ),
                 _AsmrDetailRow(
                   label: i18n.tr('asmr_circle_label'),
                   values: [effectiveWork.circleName],
                   labelStyle: labelStyle,
                   isCapsule: true,
-                  onCopy: (val) => _copyText(context, val),
+                  onCopy: (val) => _copyText(context, val, i18n),
                 ),
                 _AsmrDetailRow(
                   label: i18n.tr('audio_detail_voice_actors'),
                   values: effectiveWork.voiceActors,
                   labelStyle: labelStyle,
                   isCapsule: true,
-                  onCopy: (val) => _copyText(context, val),
+                  onCopy: (val) => _copyText(context, val, i18n),
                 ),
                 _AsmrDetailRow(
                   label: i18n.tr('asmr_tags_label'),
                   values: effectiveWork.tags,
                   labelStyle: labelStyle,
                   isCapsule: true,
-                  onCopy: (val) => _copyText(context, val),
+                  onCopy: (val) => _copyText(context, val, i18n),
                 ),
                 const SizedBox(height: 16),
                 Text(
@@ -231,19 +235,19 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
                     label: i18n.tr('asmr_detail_release_date'),
                     values: [_formatDate(i18n, effectiveWork.releaseDate)],
                     labelStyle: labelStyle,
-                    onCopy: (val) => _copyText(context, val),
+                    onCopy: (val) => _copyText(context, val, i18n),
                   ),
                   _AsmrDetailRow(
                     label: i18n.tr('asmr_detail_duration'),
                     values: [_formatDuration(i18n, effectiveWork.duration)],
                     labelStyle: labelStyle,
-                    onCopy: (val) => _copyText(context, val),
+                    onCopy: (val) => _copyText(context, val, i18n),
                   ),
                   _AsmrDetailRow(
                     label: i18n.tr('asmr_detail_sales'),
                     values: ['${effectiveWork.dlCount}'],
                     labelStyle: labelStyle,
-                    onCopy: (val) => _copyText(context, val),
+                    onCopy: (val) => _copyText(context, val, i18n),
                   ),
                   _AsmrDetailRow(
                     label: i18n.tr('asmr_detail_rating'),
@@ -253,25 +257,25 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
                           : effectiveWork.rating.toStringAsFixed(2),
                     ],
                     labelStyle: labelStyle,
-                    onCopy: (val) => _copyText(context, val),
+                    onCopy: (val) => _copyText(context, val, i18n),
                   ),
                   _AsmrDetailRow(
                     label: i18n.tr('asmr_detail_reviews'),
                     values: ['${effectiveWork.reviewCount}'],
                     labelStyle: labelStyle,
-                    onCopy: (val) => _copyText(context, val),
+                    onCopy: (val) => _copyText(context, val, i18n),
                   ),
                   _AsmrDetailRow(
                     label: i18n.tr('asmr_detail_age_rating'),
                     values: [detail?.ageCategory ?? ''],
                     labelStyle: labelStyle,
-                    onCopy: (val) => _copyText(context, val),
+                    onCopy: (val) => _copyText(context, val, i18n),
                   ),
                   _AsmrDetailRow(
                     label: i18n.tr('asmr_detail_language_editions'),
                     values: detail?.languageEditionLabels ?? const <String>[],
                     labelStyle: labelStyle,
-                    onCopy: (val) => _copyText(context, val),
+                    onCopy: (val) => _copyText(context, val, i18n),
                   ),
                   if ((detail?.description.trim().isNotEmpty ?? false)) ...[
                     const SizedBox(height: 4),
@@ -291,7 +295,7 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
   }
 }
 
-class _AsmrDetailRow extends StatelessWidget {
+class _AsmrDetailRow extends ConsumerWidget {
   const _AsmrDetailRow({
     required this.label,
     required this.values,
@@ -307,11 +311,11 @@ class _AsmrDetailRow extends StatelessWidget {
   final void Function(String)? onCopy;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final emptyText = context.read<AppLanguageProvider>().tr(
-      'audio_detail_empty',
-    );
+    final emptyText = ref
+        .read(appLanguageProviderInstanceProvider)
+        .tr('audio_detail_empty');
     final displayValues =
         values.isEmpty || (values.length == 1 && values.first.isEmpty)
         ? [emptyText]
@@ -388,7 +392,7 @@ class _DetailCapsule extends StatelessWidget {
   }
 }
 
-class _AsmrDetailDescriptionBlock extends StatelessWidget {
+class _AsmrDetailDescriptionBlock extends ConsumerWidget {
   const _AsmrDetailDescriptionBlock({
     required this.label,
     required this.text,
@@ -400,10 +404,14 @@ class _AsmrDetailDescriptionBlock extends StatelessWidget {
   final TextStyle? labelStyle;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     return InkWell(
-      onTap: () => _copyText(context, text),
+      onTap: () => _copyText(
+        context,
+        text,
+        ref.read(appLanguageProviderInstanceProvider),
+      ),
       borderRadius: BorderRadius.circular(16),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 14),
@@ -432,7 +440,11 @@ class _AsmrDetailDescriptionBlock extends StatelessWidget {
   }
 }
 
-Future<void> _copyText(BuildContext context, String value) async {
+Future<void> _copyText(
+  BuildContext context,
+  String value,
+  AppLanguageProvider i18n,
+) async {
   final text = value.trim();
   if (text.isEmpty) {
     return;
@@ -442,7 +454,6 @@ Future<void> _copyText(BuildContext context, String value) async {
     return;
   }
   final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-  final i18n = context.read<AppLanguageProvider>();
   showAppSnackBar(
     context,
     i18n.tr('copied_to_clipboard', {'value': text}),

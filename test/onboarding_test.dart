@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/app/presentation/onboarding_page.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
-import 'package:provider/provider.dart';
+import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -34,8 +35,10 @@ void main() {
     await AppPreferences.init();
     final language = AppLanguageProvider();
     await tester.pumpWidget(
-      ChangeNotifierProvider.value(
-        value: language,
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+        ],
         child: MaterialApp(home: OnboardingPage(onComplete: () async {})),
       ),
     );

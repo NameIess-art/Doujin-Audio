@@ -2,13 +2,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/main.dart' as app;
 import 'package:nameless_audio/app/presentation/main_screen.dart';
+import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
 import 'package:nameless_audio/app/presentation/onboarding_page.dart';
 import 'package:nameless_audio/features/player/application/subtitle_overlay_controller.dart';
-import 'package:provider/provider.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -42,7 +42,10 @@ void main() {
     }
 
     final context = tester.element(find.byType(MainScreen));
-    final i18n = Provider.of<AppLanguageProvider>(context, listen: false);
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
 
     for (final label in <String>[
       'nav_library',

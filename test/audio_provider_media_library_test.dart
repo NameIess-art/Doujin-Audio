@@ -894,7 +894,7 @@ void main() {
         ),
       ], notify: false);
 
-      await provider.spawnSession(
+      await provider.playbackFacade.spawnSession(
         provider.trackByPath(secondPath)!,
         autoPlay: false,
       );
@@ -902,11 +902,11 @@ void main() {
       for (var i = 0; i < 50 && session.isLoading; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
-      await provider.setSessionLoopMode(
+      await provider.playbackFacade.setSessionLoopMode(
         session.id,
         SessionLoopMode.crossSequential,
       );
-      await provider.seekSessionToNext(session.id);
+      await provider.playbackFacade.seekSessionToNext(session.id);
 
       expect(session.currentTrackPath, firstPath);
       expect(preparedQueues, isNotEmpty);

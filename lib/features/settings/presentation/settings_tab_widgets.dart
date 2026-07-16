@@ -58,7 +58,10 @@ class _UpdateSettingsTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final busy = checking || downloading;
@@ -134,7 +137,10 @@ class _UpdateSubtitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     if (checking) {
       return Text(
         i18n.tr('checking_updates'),
@@ -302,7 +308,10 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final labelStyle = Theme.of(
       context,
     ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600);
@@ -802,9 +811,12 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = context.watch<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final audioProvider = ref.read(audioProviderFacadeProvider);
+    final settings = ref.read(settingsRepositoryProvider);
     final selected = ref.watch(
       settingsStateProvider.select(
         (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
@@ -820,7 +832,7 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
         if (next.length >= CardInfoField.maxSelected) return;
         next.add(field);
       }
-      audioProvider.setCardInfoFields(next);
+      settings.setCardInfoFields(next);
     }
 
     return SafeArea(

@@ -71,7 +71,7 @@ void main() {
     );
     provider.addTracks(const <MusicTrack>[first, second], persist: false);
 
-    await provider.spawnSessionWithQueue(const <MusicTrack>[
+    await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
       first,
       second,
     ], autoPlay: false);

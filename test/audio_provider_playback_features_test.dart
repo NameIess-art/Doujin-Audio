@@ -83,10 +83,10 @@ void main() {
           });
 
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
       final session = provider.activeSessions.single;
 
-      await provider.setSessionSpeed(session.id, 1.6);
+      await provider.playbackFacade.setSessionSpeed(session.id, 1.6);
 
       expect(setSpeedCalls, 1);
       expect(lastNativeSpeed, closeTo(1.5, 0.001));
@@ -153,7 +153,7 @@ void main() {
           });
 
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
       final session = provider.activeSessions.single;
       session.applyNativeSnapshot(
         NativePlaybackSnapshot(
@@ -181,13 +181,13 @@ void main() {
         ),
       );
 
-      await provider.setSessionSkipSilence(session.id, true);
+      await provider.playbackFacade.setSessionSkipSilence(session.id, true);
       expect(lastEffects?['skipSilenceEnabled'], isTrue);
 
-      await provider.setSessionNoiseReduction(session.id, true);
+      await provider.playbackFacade.setSessionNoiseReduction(session.id, true);
       expect(lastEffects?['noiseReductionEnabled'], isTrue);
 
-      await provider.setSessionEqBandLevel(session.id, 1000, 7);
+      await provider.playbackFacade.setSessionEqBandLevel(session.id, 1000, 7);
       final manualLevels = lastEffects?['eqBandLevels'] as List<Object?>;
       final manualBand = manualLevels.cast<Map<Object?, Object?>>().firstWhere(
         (entry) => entry['frequencyHz'] == 1000,
@@ -197,13 +197,16 @@ void main() {
       final voicePreset = AudioProvider.builtInEqPresets.firstWhere(
         (preset) => preset.id == 'voice_clear',
       );
-      await provider.applySessionEqPreset(session.id, voicePreset);
+      await provider.playbackFacade.applySessionEqPreset(
+        session.id,
+        voicePreset,
+      );
       expect(lastEffects?['eqPresetId'], 'voice_clear');
       expect(lastEffects?['eqEnabled'], isTrue);
       expect(setAudioEffectsCalls, greaterThanOrEqualTo(4));
       expect(session.audioEffects.eqPresetId, 'voice_clear');
 
-      await provider.applySessionEqPreset(
+      await provider.playbackFacade.applySessionEqPreset(
         session.id,
         AudioProvider.builtInEqPresets.first,
       );
@@ -232,13 +235,13 @@ void main() {
             return <String, Object?>{'ok': true, 'value': null};
           });
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
       final session = provider.activeSessions.single;
       for (var i = 0; i < 50 && session.loadedPath == null; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
 
-      await provider.setSessionNoiseReduction(session.id, true);
+      await provider.playbackFacade.setSessionNoiseReduction(session.id, true);
 
       expect(session.audioEffects.noiseReductionEnabled, isFalse);
       final persisted = (await AudioDatabaseRepository(
@@ -265,14 +268,14 @@ void main() {
         isSingle: false,
       );
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
       await Future<void>.delayed(Duration.zero);
       final session = provider.activeSessions.single;
       session
         ..loadedPath = null
         ..state = PlayerState(true, ProcessingState.ready);
 
-      await provider.setSessionSkipSilence(session.id, true);
+      await provider.playbackFacade.setSessionSkipSilence(session.id, true);
 
       expect(playCalls, 1);
       expect(session.audioEffects.skipSilenceEnabled, isTrue);
@@ -322,12 +325,15 @@ void main() {
             });
 
         provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
         final session = provider.activeSessions.single;
 
-        await provider.setSessionSkipSilence(session.id, true);
-        await provider.setSessionNoiseReduction(session.id, true);
-        await provider.setSessionEqEnabled(session.id, true);
+        await provider.playbackFacade.setSessionSkipSilence(session.id, true);
+        await provider.playbackFacade.setSessionNoiseReduction(
+          session.id,
+          true,
+        );
+        await provider.playbackFacade.setSessionEqEnabled(session.id, true);
 
         expect(session.audioEffects.skipSilenceEnabled, isTrue);
         expect(session.audioEffects.noiseReductionEnabled, isTrue);
@@ -476,17 +482,27 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
         final session = provider.activeSessions.single;
 
-        await provider.setSessionVolume(session.id, 1.25);
-        await provider.setSessionSpeed(session.id, 1.6);
-        await provider.setSessionSkipSilence(session.id, true);
-        await provider.setSessionNoiseReduction(session.id, true);
-        await provider.setSessionVolumeNormalization(session.id, true);
-        await provider.setSessionPanning(session.id, -0.4);
-        await provider.setSessionEqBandLevel(session.id, 1000, 2.5);
-        await provider.setSessionChannelSwap(session.id, true);
+        await provider.playbackFacade.setSessionVolume(session.id, 1.25);
+        await provider.playbackFacade.setSessionSpeed(session.id, 1.6);
+        await provider.playbackFacade.setSessionSkipSilence(session.id, true);
+        await provider.playbackFacade.setSessionNoiseReduction(
+          session.id,
+          true,
+        );
+        await provider.playbackFacade.setSessionVolumeNormalization(
+          session.id,
+          true,
+        );
+        await provider.playbackFacade.setSessionPanning(session.id, -0.4);
+        await provider.playbackFacade.setSessionEqBandLevel(
+          session.id,
+          1000,
+          2.5,
+        );
+        await provider.playbackFacade.setSessionChannelSwap(session.id, true);
 
         final prefs = await SharedPreferences.getInstance();
         expect(prefs.getString('playback_settings_v1'), isNull);
@@ -507,7 +523,10 @@ void main() {
         expect(persistedSession.audioEffects.panning, -0.4);
         expect(persistedSession.channelSwapEnabled, isTrue);
 
-        await provider.spawnSession(secondTrack, autoPlay: false);
+        await provider.playbackFacade.spawnSession(
+          secondTrack,
+          autoPlay: false,
+        );
         final secondSession = provider.activeSessions.singleWhere(
           (candidate) => candidate.currentTrackPath == secondTrack.path,
         );
@@ -546,7 +565,10 @@ void main() {
           notify: false,
           persist: false,
         );
-        await restartProvider.spawnSession(track, autoPlay: false);
+        await restartProvider.playbackFacade.spawnSession(
+          track,
+          autoPlay: false,
+        );
 
         final restoredSession = restartProvider.activeSessions.single;
         expect(restoredSession.volume, 1.0);
@@ -622,12 +644,12 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
         final session = provider.activeSessions.single;
         expect(session.state.playing, isFalse);
 
-        await provider.setSessionSkipSilence(session.id, true);
-        await provider.setSessionChannelSwap(session.id, true);
+        await provider.playbackFacade.setSessionSkipSilence(session.id, true);
+        await provider.playbackFacade.setSessionChannelSwap(session.id, true);
 
         final persisted = (await repository.loadAllSessions()).single;
         expect(persisted.audioEffects.skipSilenceEnabled, isFalse);
@@ -810,7 +832,10 @@ void main() {
         expect(secondPrepareCalls, 1);
         expect(secondSession!.loadedPath, secondTrack.path);
 
-        await restoredProvider.setSessionSkipSilence(secondSessionId, true);
+        await restoredProvider.playbackFacade.setSessionSkipSilence(
+          secondSessionId,
+          true,
+        );
 
         expect(secondPrepareCalls, 1);
         expect(setAudioEffectsCalls, greaterThanOrEqualTo(1));
@@ -870,8 +895,8 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.spawnSession(oldTrack, autoPlay: false);
-        await provider.setAutoPlayAddedSessions(false);
+        await provider.playbackFacade.spawnSession(oldTrack, autoPlay: false);
+        await provider.settingsRepository.setAutoPlayAddedSessions(false);
 
         final databaseRepository = AudioDatabaseRepository(
           database: AppDatabase.test(db),
@@ -951,7 +976,7 @@ void main() {
         notify: false,
         persist: false,
       );
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
 
       for (var i = 0; i < 20 && prepareArguments == null; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -985,7 +1010,7 @@ void main() {
             return null;
           });
 
-      await provider.spawnSession(
+      await provider.playbackFacade.spawnSession(
         const MusicTrack(
           path: '/music/keep-playing.mp3',
           displayName: 'Keep Playing',
@@ -1001,7 +1026,7 @@ void main() {
         ..loadedPath = session.currentTrackPath
         ..setOptimisticState(playing: true);
 
-      await provider.dismissNotificationsAfterPauseAll();
+      await provider.notificationFacade.dismissAfterPauseAll();
 
       expect(session.state.playing, isTrue);
       expect(nativeCalls, contains(NativePlaybackMethod.dismissNotifications));
@@ -1015,7 +1040,7 @@ void main() {
     test('startup page is saved with playback settings', () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
 
-      await provider.setStartupPage(StartupPage.playlist);
+      await provider.settingsRepository.setStartupPage(StartupPage.playlist);
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       final prefs = await SharedPreferences.getInstance();
@@ -1028,8 +1053,10 @@ void main() {
     test('DLsite language preference persists follow page selection', () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
 
-      await provider.setDlsiteMetadataLanguage(ContentLanguagePreference.en);
-      await provider.setDlsiteMetadataLanguage(
+      await provider.settingsRepository.setDlsiteMetadataLanguage(
+        ContentLanguagePreference.en,
+      );
+      await provider.settingsRepository.setDlsiteMetadataLanguage(
         ContentLanguagePreference.followPage,
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));

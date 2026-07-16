@@ -5,7 +5,6 @@ import 'package:nameless_audio/core/platform/permission_action_controller.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/features/settings/presentation/app_update_flow.dart';
-import 'package:provider/provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +19,8 @@ void main() {
     var checks = 0;
     final flow = AppUpdateFlow(
       permissionController: permissionController,
+      languageProvider: AppLanguageProvider(),
+      updateService: AppUpdateService(),
       checkLatest: () async {
         checks++;
         return const AppUpdateInfo(
@@ -40,15 +41,12 @@ void main() {
     );
     late BuildContext context;
     await tester.pumpWidget(
-      ChangeNotifierProvider(
-        create: (_) => AppLanguageProvider(),
-        child: MaterialApp(
-          home: Builder(
-            builder: (value) {
-              context = value;
-              return const Scaffold();
-            },
-          ),
+      MaterialApp(
+        home: Builder(
+          builder: (value) {
+            context = value;
+            return const Scaffold();
+          },
         ),
       ),
     );

@@ -19,13 +19,11 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
   bool get _expanded => _overlayEntry != null;
 
   bool _isCross(SessionLoopMode mode) {
-    return mode == SessionLoopMode.crossRandom ||
-        mode == SessionLoopMode.crossSequential;
+    return mode.isCrossFolder;
   }
 
   bool _isShuffle(SessionLoopMode mode) {
-    return mode == SessionLoopMode.crossRandom ||
-        mode == SessionLoopMode.folderRandom;
+    return mode.isShuffle;
   }
 
   SessionLoopMode get _effectiveNonSingleMode {
@@ -121,7 +119,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
 
   Future<void> _toggleSingleLoop() async {
     await _refreshImmediately(
-      widget.provider.toggleSessionSingleLoop(widget.session.id),
+      widget.provider.playbackFacade.toggleSessionSingleLoop(widget.session.id),
     );
   }
 
@@ -139,7 +137,10 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
               ? SessionLoopMode.crossRandom
               : SessionLoopMode.folderRandom);
     await _refreshImmediately(
-      widget.provider.setSessionLoopMode(widget.session.id, nextMode),
+      widget.provider.playbackFacade.setSessionLoopMode(
+        widget.session.id,
+        nextMode,
+      ),
     );
   }
 
@@ -157,7 +158,10 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
               ? SessionLoopMode.crossRandom
               : SessionLoopMode.crossSequential);
     await _refreshImmediately(
-      widget.provider.setSessionLoopMode(widget.session.id, nextMode),
+      widget.provider.playbackFacade.setSessionLoopMode(
+        widget.session.id,
+        nextMode,
+      ),
     );
   }
 

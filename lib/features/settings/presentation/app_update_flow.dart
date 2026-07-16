@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -14,11 +13,17 @@ import '../application/app_update_service.dart';
 class AppUpdateFlow {
   AppUpdateFlow({
     required PermissionActionController permissionController,
+    required AppLanguageProvider languageProvider,
+    required AppUpdateService updateService,
     Future<AppUpdateInfo> Function()? checkLatest,
   }) : _permissionController = permissionController,
-       _checkLatest = checkLatest ?? AppUpdateService.checkLatest;
+       _languageProvider = languageProvider,
+       _updateService = updateService,
+       _checkLatest = checkLatest ?? updateService.checkLatest;
 
   final PermissionActionController _permissionController;
+  final AppLanguageProvider _languageProvider;
+  final AppUpdateService _updateService;
   final Future<AppUpdateInfo> Function() _checkLatest;
 
   Future<void> checkAndPresent({
@@ -28,7 +33,7 @@ class AppUpdateFlow {
     ValueChanged<AppUpdateInfo>? onInfo,
   }) async {
     if (operations.isBusy(UiOperationScope.settingsUpdate)) return;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     AppUpdateInfo info;
     try {
       info = await operations.run<AppUpdateInfo>(
@@ -101,7 +106,7 @@ class AppUpdateFlow {
     UiOperationService operations,
     AppUpdateInfo info,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     final shouldDownload = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -168,15 +173,15 @@ class AppUpdateFlow {
     BuildContext context,
     Future<void> Function() onGranted,
   ) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     return _permissionController.ensureGrantedAndRun(
       context: context,
       title: i18n.tr('install_permission_title'),
       message: i18n.tr('install_permission_message'),
       confirmLabel: i18n.tr('go_settings'),
       cancelLabel: i18n.tr('cancel'),
-      isGranted: AppUpdateService.canInstallUnknownApps,
-      openSettings: AppUpdateService.openInstallPermissionSettings,
+      isGranted: _updateService.canInstallUnknownApps,
+      openSettings: _updateService.openInstallPermissionSettings,
       onGranted: onGranted,
     );
   }
@@ -186,13 +191,13 @@ class AppUpdateFlow {
     UiOperationService operations,
     AppUpdateInfo info,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     File updateFile;
     try {
       updateFile = await operations.run<File>(
         scope: UiOperationScope.settingsUpdate,
         labelKey: 'downloading_update',
-        task: (progress) => AppUpdateService.downloadUpdate(
+        task: (progress) => _updateService.downloadUpdate(
           info,
           onProgress: (value) {
             if (value != null) progress.report(value);
@@ -246,7 +251,7 @@ class AppUpdateFlow {
           TextButton(
             onPressed: () {
               Navigator.of(dialogContext).pop(false);
-              unawaited(AppUpdateService.openReleasePage(info.releaseUrl));
+              unawaited(_updateService.openReleasePage(info.releaseUrl));
             },
             child: Text(i18n.tr('open_release_page')),
           ),
@@ -265,9 +270,9 @@ class AppUpdateFlow {
     UiOperationService operations,
     File updateFile,
   ) async {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = _languageProvider;
     try {
-      final result = await AppUpdateService.installUpdate(updateFile);
+      final result = await _updateService.installUpdate(updateFile);
       if (!context.mounted) return;
       if (result.needsPermission) {
         await _ensureInstallPermission(
@@ -317,7 +322,7 @@ class AppUpdateFlow {
       duration: const Duration(seconds: 8),
       actionLabel: Platform.isWindows ? i18n.tr('open_update_log') : null,
       onAction: Platform.isWindows
-          ? () => unawaited(AppUpdateService.openWindowsUpdateLog())
+          ? () => unawaited(_updateService.openWindowsUpdateLog())
           : null,
     );
   }

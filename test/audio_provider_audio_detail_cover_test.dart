@@ -584,7 +584,7 @@ void main() {
               }
             });
 
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
         await prepareStarted.future;
         final session = provider.activeSessions.single;
 
@@ -603,7 +603,7 @@ void main() {
         releasePrepare.complete();
         await preparationApplied;
 
-        await provider.setSessionChannelSwap(session.id, true);
+        await provider.playbackFacade.setSessionChannelSwap(session.id, true);
 
         expect(session.currentTrackPath, newTrackPath);
         final resolvedTrack = provider.trackByPath(trackFile.path);
@@ -1021,7 +1021,7 @@ void main() {
         isSingle: false,
       );
 
-      provider.warmupPlaybackCoversForTracks(<MusicTrack?>[
+      provider.uiWarmupCoordinator.warmupPlaybackCovers(<MusicTrack?>[
         unresolved,
         duplicate,
         resolved,

@@ -16,7 +16,6 @@ import 'package:nameless_audio/features/player/application/playback_command_runn
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/core/widgets/operation_feedback.dart';
-import 'package:provider/provider.dart' as legacy_provider;
 
 void main() {
   testWidgets('metadata review page shows shell while metadata loads', (
@@ -77,22 +76,14 @@ Widget _buildTestApp({
   required AppLanguageProvider languageProvider,
   required Widget child,
 }) {
+  final themeProvider = ThemeProvider();
   return ProviderScope(
-    overrides: createAudioProviderOverrides(
-      audioProvider: services.audioProvider,
-    ),
-    child: legacy_provider.MultiProvider(
-      providers: [
-        legacy_provider.ChangeNotifierProvider.value(value: languageProvider),
-        legacy_provider.ChangeNotifierProvider.value(
-          value: services.audioProvider,
-        ),
-        legacy_provider.ChangeNotifierProvider<ThemeProvider>(
-          create: (_) => ThemeProvider(),
-        ),
-      ],
-      child: MaterialApp(home: child),
-    ),
+    overrides: [
+      ...createAudioProviderOverrides(audioProvider: services.audioProvider),
+      themeProviderInstanceProvider.overrideWithValue(themeProvider),
+      appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
+    ],
+    child: MaterialApp(home: child),
   );
 }
 

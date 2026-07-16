@@ -1,31 +1,6 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderState on AudioProvider {
-  TimerMode? get timerMode => _timerMode;
-  Duration? get timerDuration => _timerDuration;
-  TimerMode get timerDraftMode => _timerDraftMode;
-  Duration get timerDraftDuration => _timerDraftDuration;
-  bool get timerActive => _timerActive;
-  Duration? get timerRemaining => _timerRemaining;
-  bool get timerConfigured => _timerDuration != null;
-  bool get timerExpired =>
-      timerConfigured &&
-      !_timerActive &&
-      _timerRemaining != null &&
-      _timerRemaining! <= Duration.zero;
-  bool get timerWaitingTrigger =>
-      timerConfigured &&
-      !timerExpired &&
-      !_timerActive &&
-      _timerMode == TimerMode.trigger &&
-      _timerRemaining != null &&
-      _timerRemaining! > Duration.zero;
-  bool get autoResumeEnabled => _autoResumeEnabled;
-  int get autoResumeHour => _autoResumeHour;
-  int get autoResumeMinute => _autoResumeMinute;
-  List<String> get pausedByTimerSessionIds =>
-      List.unmodifiable(_pausedByTimerSessionIds);
-
   String get converterFormat => _converterFormat;
   String get converterBitrate => _converterBitrate;
   bool get multiThreadPlaybackEnabled => _multiThreadPlaybackEnabled;
@@ -168,10 +143,6 @@ extension AudioProviderState on AudioProvider {
 }
 
 extension AudioProviderCoreState on AudioProvider {
-  void _markActiveSessionsDirty() {
-    _playbackService.markActiveSessionsDirty();
-  }
-
   void _markLibraryStructureDirty() {
     _libraryService.markStructureChanged();
     _librarySnapshotCacheService.markStructureChanged();

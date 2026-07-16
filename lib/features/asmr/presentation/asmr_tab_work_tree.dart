@@ -1,32 +1,33 @@
 part of 'asmr_tab.dart';
 
-class _AsmrWorkTreeCard extends StatefulWidget {
+class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
   const _AsmrWorkTreeCard({required this.work, required this.searchQuery});
 
   final AsmrWork work;
   final String searchQuery;
 
   @override
-  State<_AsmrWorkTreeCard> createState() => _AsmrWorkTreeCardState();
+  ConsumerState<_AsmrWorkTreeCard> createState() => _AsmrWorkTreeCardState();
 }
 
-class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
+class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   static const double _rootTileHeight = LibraryLikeCardMetrics.rootTileHeight;
   final ExpansibleController _expansionController = ExpansibleController();
   bool _expanded = false;
 
   Future<void> _playWork(BuildContext context) async {
+    final playback = ref.read(asmrPlaybackCoordinatorProvider);
+    if (playback == null) return;
     await UiOperationService.instance.run<void>(
       scope: UiOperationScope.asmrWork(AsmrOperationKind.play, widget.work.id),
       labelKey: 'loading_dot',
-      task: (_) =>
-          context.read<AsmrPlaybackCoordinator>().playWork(widget.work),
+      task: (_) => playback.playWork(widget.work),
     );
     if (!context.mounted) {
       return;
     }
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     showAppSnackBar(
       context,
       i18n.tr('asmr_added_to_playlist', {'title': widget.work.title}),
@@ -37,8 +38,9 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
   }
 
   Future<void> _toggleFavorite(BuildContext context) async {
-    final controller = context.read<AsmrLibraryController>();
-    final i18n = context.read<AppLanguageProvider>();
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final shouldFavorite = !widget.work.isFavorite;
     final scope = UiOperationScope.asmrWork(
@@ -85,14 +87,13 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
   @override
   Widget build(BuildContext context) {
     final treeState = _expanded
-        ? context.select<AsmrLibraryController, AsmrTrackTreeViewState>(
-            (controller) => controller.trackTreeViewState(widget.work.id),
-          )
+        ? ref.watch(asmrTrackTreeStateProvider(widget.work.id)).valueOrNull
         : null;
     final tree = treeState?.tree;
     final visibleTree = treeState?.visibleTree;
     final isTreeLoading = treeState?.isLoading ?? false;
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
@@ -158,9 +159,17 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
                       widget.work.id,
                     ),
                     labelKey: 'loading_dot',
-                    task: (_) => context
-                        .read<AsmrLibraryController>()
-                        .ensureTrackTree(widget.work),
+                    task: (_) async {
+                      final controller = ref.read(
+                        asmrLibraryControllerProvider,
+                      );
+                      if (controller == null) {
+                        throw StateError(
+                          'ASMR library service is not configured.',
+                        );
+                      }
+                      return controller.ensureTrackTree(widget.work);
+                    },
                   ),
                 );
               }
@@ -192,11 +201,14 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
                         )
                         .isBusy ??
                     false;
-                final i18n = context.watch<AppLanguageProvider>();
-                final fields = context
-                    .select<AudioProvider, List<CardInfoField>>(
-                      (provider) => provider.cardInfoFields,
-                    );
+                final i18n = ref.read(appLanguageProviderInstanceProvider);
+                final fields = ref.watch(
+                  settingsStateProvider.select(
+                    (state) =>
+                        state.valueOrNull?.cardInfoFields ??
+                        CardInfoField.defaults,
+                  ),
+                );
                 return LibraryLikeMetadataWorkCardContent(
                   title: widget.work.title,
                   fields: fields,
@@ -263,7 +275,7 @@ class _AsmrWorkTreeCardState extends State<_AsmrWorkTreeCard> {
   }
 }
 
-class _AsmrTrackTreeNode extends StatefulWidget {
+class _AsmrTrackTreeNode extends ConsumerStatefulWidget {
   const _AsmrTrackTreeNode({
     required this.work,
     required this.node,
@@ -275,10 +287,10 @@ class _AsmrTrackTreeNode extends StatefulWidget {
   final String searchQuery;
 
   @override
-  State<_AsmrTrackTreeNode> createState() => _AsmrTrackTreeNodeState();
+  ConsumerState<_AsmrTrackTreeNode> createState() => _AsmrTrackTreeNodeState();
 }
 
-class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
+class _AsmrTrackTreeNodeState extends ConsumerState<_AsmrTrackTreeNode> {
   static const double _childFolderTileHeight = 44;
   static const double _childFolderTitleBlockHeight = 36;
   final ExpansibleController _expansionController = ExpansibleController();
@@ -367,9 +379,9 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
                           ? null
                           : () => unawaited(_playFolder(context)),
                       visualDensity: VisualDensity.compact,
-                      tooltip: context.watch<AppLanguageProvider>().tr(
-                        'asmr_add_to_playlist',
-                      ),
+                      tooltip: ref
+                          .read(appLanguageProviderInstanceProvider)
+                          .tr('asmr_add_to_playlist'),
                       style: IconButton.styleFrom(
                         foregroundColor: asmrBlue,
                         minimumSize: const Size(40, 44),
@@ -427,8 +439,9 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
   }
 
   Future<void> _playFolder(BuildContext context) async {
-    final controller = context.read<AsmrLibraryController>();
-    final playbackCoordinator = context.read<AsmrPlaybackCoordinator>();
+    final controller = ref.read(asmrLibraryControllerProvider);
+    final playbackCoordinator = ref.read(asmrPlaybackCoordinatorProvider);
+    if (controller == null || playbackCoordinator == null) return;
     final tracks = controller.buildPlayableTracksFromNode(
       widget.work,
       widget.node,
@@ -445,7 +458,7 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
       return;
     }
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     showAppSnackBar(
       context,
       i18n.tr('asmr_added_to_playlist', {'title': widget.node.displayTitle}),
@@ -456,14 +469,14 @@ class _AsmrTrackTreeNodeState extends State<_AsmrTrackTreeNode> {
   }
 }
 
-class _AsmrTrackLeafRow extends StatelessWidget {
+class _AsmrTrackLeafRow extends ConsumerWidget {
   const _AsmrTrackLeafRow({required this.work, required this.node});
 
   final AsmrWork work;
   final AsmrTrackFile node;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     return ColoredBox(
@@ -512,7 +525,7 @@ class _AsmrTrackLeafRow extends StatelessWidget {
                   return IconButton(
                     onPressed: busy
                         ? null
-                        : () => unawaited(_playTrack(context)),
+                        : () => unawaited(_playTrack(context, ref)),
                     style: IconButton.styleFrom(
                       foregroundColor: asmrBlue,
                       minimumSize: const Size(36, 36),
@@ -539,18 +552,20 @@ class _AsmrTrackLeafRow extends StatelessWidget {
     );
   }
 
-  Future<void> _playTrack(BuildContext context) async {
+  Future<void> _playTrack(BuildContext context, WidgetRef ref) async {
+    final playback = ref.read(asmrPlaybackCoordinatorProvider);
+    if (playback == null) return;
     await UiOperationService.instance.run<void>(
       scope: _trackPlayScope(work, node),
       labelKey: 'loading_dot',
-      task: (_) =>
-          context.read<AsmrPlaybackCoordinator>().playTrack(work, node),
+      task: (_) => playback.playTrack(work, node),
     );
     if (!context.mounted) {
       return;
     }
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final i18n = context.read<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     showAppSnackBar(
       context,
       i18n.tr('asmr_added_to_playlist', {'title': node.displayTitle}),

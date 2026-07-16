@@ -15,7 +15,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final provider = ref.read(audioProviderFacadeProvider);
+    final library = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
@@ -65,11 +65,12 @@ class _SessionHeroArtwork extends ConsumerWidget {
                   AsyncLocalCoverImage(
                     future: coverPathFuture,
                     requestKey: sessionId,
-                    initialPath: provider.resolvedPlaybackCoverPathForTrack(
+                    initialPath: library.resolvedPlaybackCoverPathForTrack(
                       track,
                     ),
-                    retryFutureBuilder: () =>
-                        _coverFutureForTrack(provider, track),
+                    retryFutureBuilder: () => track == null
+                        ? Future<String?>.value()
+                        : library.playbackCoverPathFutureForTrack(track),
                     seed: track?.displayName ?? track?.path ?? sessionId,
                     cacheWidth: coverCacheWidth,
                     useDefaultCacheWidth: coverCacheWidth != null,

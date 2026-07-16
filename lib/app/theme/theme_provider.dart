@@ -406,3 +406,43 @@ class ThemeProvider with ChangeNotifier {
     );
   }
 }
+
+final class ThemeState {
+  const ThemeState({
+    required this.themeMode,
+    required this.differentiateAsmrTheme,
+    required this.lightTheme,
+    required this.darkTheme,
+  });
+
+  factory ThemeState.from(ThemeProvider provider) {
+    return ThemeState(
+      themeMode: provider.themeMode,
+      differentiateAsmrTheme: provider.differentiateAsmrTheme,
+      lightTheme: provider.lightTheme,
+      darkTheme: provider.darkTheme,
+    );
+  }
+
+  final ThemeMode themeMode;
+  final bool differentiateAsmrTheme;
+  final ThemeData lightTheme;
+  final ThemeData darkTheme;
+
+  @override
+  bool operator ==(Object other) {
+    return other is ThemeState &&
+        other.themeMode == themeMode &&
+        other.differentiateAsmrTheme == differentiateAsmrTheme &&
+        identical(other.lightTheme, lightTheme) &&
+        identical(other.darkTheme, darkTheme);
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    themeMode,
+    differentiateAsmrTheme,
+    identityHashCode(lightTheme),
+    identityHashCode(darkTheme),
+  );
+}

@@ -21,7 +21,16 @@ import 'app_update_models.dart';
 part 'app_update_github_models.dart';
 
 class AppUpdateService {
-  AppUpdateService._();
+  AppUpdateService({
+    UpdatePlatformService? platform,
+    HttpClient Function()? httpClientFactory,
+    Future<Directory> Function()? temporaryDirectoryProvider,
+    DateTime Function()? clock,
+  }) : _platform = platform ?? UpdatePlatformService(),
+       _httpClientFactory = httpClientFactory ?? (() => HttpClient()),
+       _temporaryDirectoryProvider =
+           temporaryDirectoryProvider ?? getTemporaryDirectory,
+       _clock = clock ?? DateTime.now;
 
   static const String owner = 'NameIess-art';
   static const String repo = 'nameless-audio';
@@ -32,17 +41,20 @@ class AppUpdateService {
   static const String latestReleasePage =
       'https://github.com/$owner/$repo/releases/latest';
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
-  static final UpdatePlatformService _platform = UpdatePlatformService();
-  static String? _activeDownloadIdentity;
-  static Future<File>? _activeDownload;
-  static final Set<void Function(double? progress)> _downloadListeners =
+  final UpdatePlatformService _platform;
+  final HttpClient Function() _httpClientFactory;
+  final Future<Directory> Function() _temporaryDirectoryProvider;
+  final DateTime Function() _clock;
+  String? _activeDownloadIdentity;
+  Future<File>? _activeDownload;
+  final Set<void Function(double? progress)> _downloadListeners =
       <void Function(double? progress)>{};
-  static final Map<String, Future<UpdateInstallResult>> _activeInstalls =
+  final Map<String, Future<UpdateInstallResult>> _activeInstalls =
       <String, Future<UpdateInstallResult>>{};
 
-  static Future<AppUpdateInfo> checkLatest() async {
+  Future<AppUpdateInfo> checkLatest() async {
     final currentVersion = await currentAppVersion();
-    final client = HttpClient();
+    final client = _httpClientFactory();
     try {
       try {
         return await _checkLatestFromApi(client, currentVersion);
@@ -59,7 +71,7 @@ class AppUpdateService {
     }
   }
 
-  static Future<AppUpdateInfo> _checkLatestFromApi(
+  Future<AppUpdateInfo> _checkLatestFromApi(
     HttpClient client,
     AppVersionInfo currentVersion,
   ) async {
@@ -99,7 +111,7 @@ class AppUpdateService {
     );
   }
 
-  static Future<AppUpdateInfo> _checkLatestFromReleasePage(
+  Future<AppUpdateInfo> _checkLatestFromReleasePage(
     HttpClient client,
     AppVersionInfo currentVersion,
   ) async {
@@ -215,7 +227,7 @@ class AppUpdateService {
     return currentIsPrerelease || !version.isPreRelease;
   }
 
-  static Future<String> _resolveLatestReleaseTag(HttpClient client) async {
+  Future<String> _resolveLatestReleaseTag(HttpClient client) async {
     final request = await client.getUrl(Uri.parse(latestReleasePage));
     request.followRedirects = false;
     request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
@@ -235,7 +247,7 @@ class AppUpdateService {
     throw const HttpException('GitHub latest release page request failed.');
   }
 
-  static Future<List<_GitHubAsset>> _fetchExpandedReleaseAssets(
+  Future<List<_GitHubAsset>> _fetchExpandedReleaseAssets(
     HttpClient client,
     String tagName,
   ) async {
@@ -309,7 +321,7 @@ class AppUpdateService {
     );
   }
 
-  static Future<AppVersionInfo> currentAppVersion() async {
+  Future<AppVersionInfo> currentAppVersion() async {
     final result = await _platform.getAppVersion();
     _logNativeFailure('getAppVersion', result);
     final version = result.valueOrNull;
@@ -321,7 +333,7 @@ class AppUpdateService {
           );
   }
 
-  static Future<File> downloadUpdate(
+  Future<File> downloadUpdate(
     AppUpdateInfo info, {
     required void Function(double? progress) onProgress,
   }) async {
@@ -371,11 +383,11 @@ class AppUpdateService {
     }
   }
 
-  static Future<File> _downloadUpdateOnce(
+  Future<File> _downloadUpdateOnce(
     AppUpdateInfo info, {
     required void Function(double? progress) onProgress,
   }) async {
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await _temporaryDirectoryProvider();
     final assetName = info.assetName;
     final assetUrl = info.assetUrl;
     if (assetName == null || assetUrl == null || !info.canDownload) {
@@ -442,7 +454,7 @@ class AppUpdateService {
         throw const FormatException('Update checksum verification failed.');
       }
       await partialFile.rename(file.path);
-      await file.setLastModified(DateTime.now());
+      await file.setLastModified(_clock());
       await AppCacheService.enforceLimit();
       onProgress(1);
       return file;
@@ -460,7 +472,7 @@ class AppUpdateService {
     }
   }
 
-  static Future<String> _downloadExpectedChecksum(
+  Future<String> _downloadExpectedChecksum(
     HttpClient client,
     String checksumUrl,
     String assetName,
@@ -494,21 +506,21 @@ class AppUpdateService {
     return match.group(1)!.toLowerCase();
   }
 
-  static Future<bool> canInstallUnknownApps() async {
+  Future<bool> canInstallUnknownApps() async {
     if (!Platform.isAndroid) return true;
     final result = await _platform.canInstallUnknownApps();
     _logNativeFailure('canInstallUnknownApps', result);
     return result.valueOrNull ?? true;
   }
 
-  static Future<bool> openInstallPermissionSettings() async {
+  Future<bool> openInstallPermissionSettings() async {
     if (!Platform.isAndroid) return false;
     final result = await _platform.openInstallPermissionSettings();
     _logNativeFailure('openInstallPermissionSettings', result);
     return result.valueOrNull ?? false;
   }
 
-  static Future<bool> openReleasePage(String url) async {
+  Future<bool> openReleasePage(String url) async {
     try {
       if (Platform.isAndroid) {
         final result = await _platform.openReleasePage(url);
@@ -531,7 +543,7 @@ class AppUpdateService {
     }
   }
 
-  static Future<UpdateInstallResult> installUpdate(File file) async {
+  Future<UpdateInstallResult> installUpdate(File file) async {
     final installPath = path.normalize(file.absolute.path);
     final active = _activeInstalls[installPath];
     if (active != null) return active;
@@ -545,7 +557,7 @@ class AppUpdateService {
     return future;
   }
 
-  static Future<UpdateInstallResult> _installUpdateOnce(File file) async {
+  Future<UpdateInstallResult> _installUpdateOnce(File file) async {
     if (Platform.isWindows) return _installWindowsZip(file);
     final result = await _platform.installApk(file.path);
     _logNativeFailure('installApk', result);
@@ -579,7 +591,7 @@ class AppUpdateService {
   static String get windowsUpdateLogPath =>
       path.join(Directory.systemTemp.path, 'nameless_audio_windows_update.log');
 
-  static Future<bool> openWindowsUpdateLog() async {
+  Future<bool> openWindowsUpdateLog() async {
     if (!Platform.isWindows) return false;
     try {
       final logFile = File(windowsUpdateLogPath);
@@ -713,7 +725,7 @@ class AppUpdateService {
     return tagName.isEmpty ? null : tagName;
   }
 
-  static Future<UpdateInstallResult> _installWindowsZip(File file) async {
+  Future<UpdateInstallResult> _installWindowsZip(File file) async {
     if (!await file.exists() || await file.length() <= 0) {
       return const UpdateInstallResult(
         ok: false,
@@ -724,7 +736,7 @@ class AppUpdateService {
 
     final exePath = Platform.resolvedExecutable;
     final installDir = File(exePath).parent.path;
-    final tempDir = await getTemporaryDirectory();
+    final tempDir = await _temporaryDirectoryProvider();
     final script = File(
       path.join(
         tempDir.path,
@@ -776,7 +788,7 @@ class AppUpdateService {
     }
   }
 
-  static Future<String?> _waitForWindowsUpdaterReady(File readyFile) async {
+  Future<String?> _waitForWindowsUpdaterReady(File readyFile) async {
     final deadline = DateTime.now().add(const Duration(seconds: 60));
     while (DateTime.now().isBefore(deadline)) {
       if (await readyFile.exists()) {

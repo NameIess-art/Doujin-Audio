@@ -62,16 +62,16 @@ void main() {
         isSingle: true,
       );
 
-      await provider.setAutoPlayAddedSessions(false);
-      await provider.spawnSession(track);
+      await provider.settingsRepository.setAutoPlayAddedSessions(false);
+      await provider.playbackFacade.spawnSession(track);
       for (var i = 0; i < 20 && prepareCalls < 1; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       expect(prepareCalls, 1);
       expect(playCalls, 0);
 
-      await provider.setAutoPlayAddedSessions(true);
-      await provider.spawnSession(track);
+      await provider.settingsRepository.setAutoPlayAddedSessions(true);
+      await provider.playbackFacade.spawnSession(track);
       for (var i = 0; i < 20 && playCalls < 1; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
@@ -82,7 +82,7 @@ void main() {
     test('ASMR.ONE playback cache setting is disabled by default', () async {
       expect(provider.asmrPlaybackCacheEnabled, isFalse);
 
-      await provider.setAsmrPlaybackCacheEnabled(true);
+      await provider.settingsRepository.setAsmrPlaybackCacheEnabled(true);
 
       expect(provider.asmrPlaybackCacheEnabled, isTrue);
       expect(
@@ -98,7 +98,7 @@ void main() {
     });
 
     test('toggling play-pause with unknown id does not throw', () {
-      provider.toggleSessionPlayPause('non_existent_session');
+      provider.playbackFacade.toggleSessionPlayPause('non_existent_session');
       expect(provider.activeSessions, isEmpty);
     });
 
@@ -156,8 +156,8 @@ void main() {
         isSingle: true,
       );
 
-      await provider.spawnSession(firstTrack, autoPlay: false);
-      await provider.spawnSession(secondTrack, autoPlay: false);
+      await provider.playbackFacade.spawnSession(firstTrack, autoPlay: false);
+      await provider.playbackFacade.spawnSession(secondTrack, autoPlay: false);
       for (var i = 0; i < 100; i++) {
         if (provider.activeSessions.length == 2 &&
             provider.activeSessions.every(
@@ -184,7 +184,9 @@ void main() {
         processingState: ProcessingState.ready,
       );
 
-      final toggle = provider.toggleSessionPlayPause(secondSession.id);
+      final toggle = provider.playbackFacade.toggleSessionPlayPause(
+        secondSession.id,
+      );
       expect(firstSession.effectivePlaying, isFalse);
       expect(secondSession.effectivePlaying, isTrue);
       await toggle;
@@ -259,26 +261,30 @@ void main() {
         groupSubtitle: '',
         isSingle: true,
       );
-      await provider.spawnSession(track, autoPlay: false);
+      await provider.playbackFacade.spawnSession(track, autoPlay: false);
       for (var i = 0; i < 100; i++) {
         if (provider.activeSessions.singleOrNull?.loadedPath != null) break;
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
       final session = provider.activeSessions.single;
 
-      final firstPlay = provider.toggleSessionPlayPause(session.id);
+      final firstPlay = provider.playbackFacade.toggleSessionPlayPause(
+        session.id,
+      );
       for (var i = 0; i < 20 && playCalls.isEmpty; i++) {
         await Future<void>.delayed(Duration.zero);
       }
       expect(session.effectivePlaying, isTrue);
 
-      final pause = provider.toggleSessionPlayPause(session.id);
+      final pause = provider.playbackFacade.toggleSessionPlayPause(session.id);
       for (var i = 0; i < 20 && pauseCall == null; i++) {
         await Future<void>.delayed(Duration.zero);
       }
       expect(session.effectivePlaying, isFalse);
 
-      final lastPlay = provider.toggleSessionPlayPause(session.id);
+      final lastPlay = provider.playbackFacade.toggleSessionPlayPause(
+        session.id,
+      );
       for (var i = 0; i < 20 && playCalls.length < 2; i++) {
         await Future<void>.delayed(Duration.zero);
       }
@@ -358,7 +364,7 @@ void main() {
         coordinator.beginInteraction(interactionSource);
         addTearDown(() => coordinator.cancelInteraction(interactionSource));
 
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
         await tester.pump(const Duration(milliseconds: 140));
         expect(notificationSyncCalls, 0);
 
@@ -462,7 +468,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.spawnSessionWithQueue(const <MusicTrack>[
+        await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
           first,
           second,
         ], autoPlay: false);
@@ -474,7 +480,7 @@ void main() {
           NativePlaybackSnapshot.fromMap(snapshot(first.path, playing: true)),
         );
 
-        await provider.switchSessionQueueTrack(session.id, 1);
+        await provider.playbackFacade.switchSessionQueueTrack(session.id, 1);
 
         expect(session.currentTrackPath, first.path);
         expect(session.loadedPath, first.path);
@@ -549,8 +555,8 @@ void main() {
         notify: false,
         persist: false,
       );
-      await provider.spawnSession(first, autoPlay: false);
-      await provider.spawnSession(second, autoPlay: false);
+      await provider.playbackFacade.spawnSession(first, autoPlay: false);
+      await provider.playbackFacade.spawnSession(second, autoPlay: false);
       for (var i = 0; i < 50 && provider.activeSessions.length < 2; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
@@ -560,12 +566,12 @@ void main() {
         session.state = PlayerState(true, ProcessingState.ready);
       }
       final future = DateTime.now().add(const Duration(minutes: 2));
-      provider.setAutoResume(true, future.hour, future.minute);
-      provider.configureTimer(
+      provider.timerFacade.setAutoResume(true, future.hour, future.minute);
+      provider.timerFacade.configureTimer(
         TimerMode.manual,
         const Duration(milliseconds: 20),
       );
-      provider.startCountdown();
+      provider.timerFacade.startCountdown();
 
       await Future<void>.delayed(const Duration(milliseconds: 1200));
 
@@ -638,8 +644,8 @@ void main() {
           notify: false,
           persist: false,
         );
-        await provider.spawnSession(first, autoPlay: false);
-        await provider.spawnSession(second, autoPlay: false);
+        await provider.playbackFacade.spawnSession(first, autoPlay: false);
+        await provider.playbackFacade.spawnSession(second, autoPlay: false);
         final sessions = provider.activeSessions.toList(growable: false);
         failingSessionId = sessions[1].id;
         for (final session in sessions) {
@@ -664,7 +670,7 @@ void main() {
           }),
         );
 
-        await provider.loadTimerRuntimeFromSystem();
+        await provider.timerFacade.loadRuntimeFromSystem();
 
         expect(sessions[0].state.playing, isTrue);
         expect(sessions[1].state.playing, isFalse);
@@ -753,7 +759,7 @@ void main() {
               }
             });
         provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-        await provider.spawnSession(track, autoPlay: false);
+        await provider.playbackFacade.spawnSession(track, autoPlay: false);
 
         final session = provider.activeSessions.single;
         for (var i = 0; i < 20; i++) {
@@ -777,7 +783,7 @@ void main() {
             channelSwapEnabled: false,
           ),
         );
-        await provider.setSessionChannelSwap(session.id, true);
+        await provider.playbackFacade.setSessionChannelSwap(session.id, true);
 
         expect(setAudioEffectsCalls, 1);
         expect(lastChannelSwapEnabled, isTrue);

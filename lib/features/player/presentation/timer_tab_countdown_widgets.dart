@@ -1,8 +1,8 @@
 part of 'timer_tab.dart';
 
-class _CountdownCard extends StatelessWidget {
+class _CountdownCard extends ConsumerWidget {
   const _CountdownCard({
-    required this.provider,
+    required this.timerState,
     required this.timerExpired,
     required this.waitingTrigger,
     required this.fmtDuration,
@@ -11,7 +11,7 @@ class _CountdownCard extends StatelessWidget {
     this.compact = false,
   });
 
-  final AudioProvider provider;
+  final TimerStateSliceData timerState;
   final bool timerExpired;
   final bool waitingTrigger;
   final String Function(Duration) fmtDuration;
@@ -20,9 +20,10 @@ class _CountdownCard extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
-    final remaining = provider.timerRemaining ?? Duration.zero;
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final remaining = timerState.remaining ?? Duration.zero;
 
     final showAutoResumeCountdown = timerExpired && autoResumeAt != null;
 
@@ -125,11 +126,11 @@ class _CountdownCard extends StatelessWidget {
               Builder(
                 builder: (context) {
                   final chips = <Widget>[
-                    if (provider.pausedByTimerSessionIds.isNotEmpty)
+                    if (timerState.pausedByTimerSessionIds.isNotEmpty)
                       _TimerSummaryChip(
                         icon: Icons.pause_circle_outline_rounded,
                         text: i18n.tr('paused_audio_count', {
-                          'count': provider.pausedByTimerSessionIds.length,
+                          'count': timerState.pausedByTimerSessionIds.length,
                         }),
                         foregroundColor: cs.onErrorContainer,
                         backgroundColor: cs.errorContainer,
@@ -170,7 +171,7 @@ class _CountdownCard extends StatelessWidget {
   }
 }
 
-class _DurationPicker extends StatelessWidget {
+class _DurationPicker extends ConsumerWidget {
   const _DurationPicker({
     required this.hours,
     required this.minutes,
@@ -186,8 +187,9 @@ class _DurationPicker extends StatelessWidget {
   final bool showLabels;
 
   @override
-  Widget build(BuildContext context) {
-    final i18n = context.watch<AppLanguageProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {

@@ -17,7 +17,7 @@ import 'package:nameless_audio/features/player/application/audio_state_services.
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_command_runner.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
-import 'package:provider/provider.dart' as legacy_provider;
+import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -109,21 +109,18 @@ Widget buildAudioProviderTestApp({
   UiOperationService? uiOperationService,
   required Widget child,
 }) {
+  final themeProvider = ThemeProvider();
   return ProviderScope(
-    overrides: createAudioProviderOverrides(
-      audioProvider: audioProvider,
-      uiOperationService: uiOperationService,
-    ),
-    child: legacy_provider.MultiProvider(
-      providers: [
-        legacy_provider.ChangeNotifierProvider.value(value: languageProvider),
-        legacy_provider.ChangeNotifierProvider.value(value: audioProvider),
-        legacy_provider.ChangeNotifierProvider<ThemeProvider>(
-          create: (_) => ThemeProvider(),
-        ),
-      ],
-      child: MaterialApp(home: Scaffold(body: child)),
-    ),
+    overrides: [
+      ...createAudioProviderOverrides(
+        audioProvider: audioProvider,
+        uiOperationService: uiOperationService,
+      ),
+      appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+      themeProviderInstanceProvider.overrideWithValue(themeProvider),
+      appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
+    ],
+    child: MaterialApp(home: Scaffold(body: child)),
   );
 }
 
@@ -222,7 +219,7 @@ final class AudioProviderWidgetTestFixture {
   void dispose() => audioProvider.dispose();
 
   Future<void> disposeAfterWarmups() async {
-    await audioProvider.shutdownUiWarmupsForTesting();
+    await audioProvider.uiWarmupCoordinator.shutdown();
     audioProvider.dispose();
   }
 }
@@ -282,7 +279,7 @@ final class AudioProviderTestFixture {
   Future<void> dispose({required AudioProvider currentProvider}) async {
     if (_disposed) return;
     _disposed = true;
-    await currentProvider.shutdownUiWarmupsForTesting();
+    await currentProvider.uiWarmupCoordinator.shutdown();
     currentProvider.dispose();
     await Future<void>.delayed(Duration.zero);
     final messenger =

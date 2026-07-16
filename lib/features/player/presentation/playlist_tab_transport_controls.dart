@@ -134,7 +134,10 @@ class _PlaybackPrimaryControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
     final enabled = session.currentTrackPath.isNotEmpty;
     final track = provider.trackByPath(session.currentTrackPath);
     final isAsmr = track?.remoteMetadataKind == 'asmr.one';
@@ -144,11 +147,14 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     final onPrimaryColor = isAsmr
         ? AppDesignTokens.of(context).onAsmrAccent
         : cs.onPrimary;
-    final hasPrevious = provider.hasSessionAdjacentTrack(
+    final hasPrevious = provider.playbackFacade.hasSessionAdjacentTrack(
       session.id,
       forward: false,
     );
-    final hasNext = provider.hasSessionAdjacentTrack(session.id, forward: true);
+    final hasNext = provider.playbackFacade.hasSessionAdjacentTrack(
+      session.id,
+      forward: true,
+    );
     final canPrevious =
         enabled && (session.position.inSeconds > 3 || hasPrevious);
     final canNext = enabled && hasNext;
@@ -178,7 +184,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
                   );
-                  provider.seekSessionToPrev(session.id);
+                  provider.playbackFacade.seekSessionToPrev(session.id);
                 },
               ),
               _PrimaryTransportButton(
@@ -191,7 +197,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                     AppInteractionFeedbackType.selection,
                   );
                   final newPos = session.position - const Duration(seconds: 5);
-                  provider.seekSession(
+                  provider.playbackFacade.seekSession(
                     session.id,
                     newPos < Duration.zero ? Duration.zero : newPos,
                   );
@@ -214,7 +220,9 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                           AppInteractionFeedback.trigger(
                             AppInteractionFeedbackType.confirmation,
                           );
-                          provider.toggleSessionPlayPause(session.id);
+                          provider.playbackFacade.toggleSessionPlayPause(
+                            session.id,
+                          );
                         }
                       : null,
                   iconSize: playIconSize,
@@ -253,7 +261,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
                   );
-                  provider.seekSession(
+                  provider.playbackFacade.seekSession(
                     session.id,
                     session.position + const Duration(seconds: 5),
                   );
@@ -269,7 +277,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                   AppInteractionFeedback.trigger(
                     AppInteractionFeedbackType.selection,
                   );
-                  provider.seekSessionToNext(session.id);
+                  provider.playbackFacade.seekSessionToNext(session.id);
                 },
               ),
             ],
@@ -314,7 +322,10 @@ class _PlaybackSecondaryControls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
 
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 4, right: 4),

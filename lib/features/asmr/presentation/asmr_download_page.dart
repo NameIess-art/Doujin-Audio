@@ -2,14 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/audio_provider_riverpod.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_download_selection.dart';
-import '../application/asmr_library_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -49,8 +47,11 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             scope: UiOperationScope.asmrDownloadInit,
             labelKey: 'asmr_download_title',
             task: (_) async {
-              final libraryController = context.read<AsmrLibraryController>();
-              final downloadManager = context.read<AsmrDownloadManager>();
+              final libraryController = ref.read(asmrLibraryControllerProvider);
+              final downloadManager = ref.read(asmrDownloadManagerProvider);
+              if (libraryController == null || downloadManager == null) {
+                throw StateError('ASMR services are not configured.');
+              }
               final settings = ref.read(settingsRepositoryProvider);
               final tree = await libraryController.ensureTrackTree(widget.work);
               await downloadManager.initialize();
@@ -84,7 +85,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
       return;
     }
     if (destinationMissing && mounted) {
-      final i18n = context.read<AppLanguageProvider>();
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
       final asmrBlue = AppDesignTokens.of(context).asmrAccent;
       showAppSnackBar(
         context,
@@ -97,9 +98,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   }
 
   Future<void> _chooseDestination() async {
-    final downloadManager = context.read<AsmrDownloadManager>();
+    final downloadManager = ref.read(asmrDownloadManagerProvider);
+    if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final folder = await downloadManager.pickDestinationFolder(
       dialogTitle: i18n.tr('asmr_download_choose_path'),
     );
@@ -124,9 +126,10 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     if (_starting) return;
 
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final downloadManager = context.read<AsmrDownloadManager>();
+    final downloadManager = ref.read(asmrDownloadManagerProvider);
+    if (downloadManager == null) return;
     final settings = ref.read(settingsRepositoryProvider);
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final task = downloadManager.getTask(widget.work.id);
     if (task != null &&
         task.status != AsmrDownloadTaskStatus.completed &&
@@ -229,7 +232,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   @override
   Widget build(BuildContext context) {
     final selection = _selection;
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final selectedLeafCount = selection?.selectedLeafCount() ?? 0;
     final selectedTotalSizeBytes = selection?.selectedTotalSizeBytes() ?? 0;
     final tokens = AppDesignTokens.of(context);
@@ -363,15 +367,18 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   }
 }
 
-class AsmrDownloadTaskPage extends StatelessWidget {
+class AsmrDownloadTaskPage extends ConsumerWidget {
   const AsmrDownloadTaskPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final taskIds = context.select<AsmrDownloadManager, List<int>>(
-      (manager) => manager.taskIds,
-    );
-    final i18n = context.watch<AppLanguageProvider>();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(asmrDownloadStateProvider).valueOrNull;
+    final taskIds =
+        state?.taskIds ??
+        ref.read(asmrDownloadManagerProvider)?.taskIds ??
+        const <int>[];
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
 
     return Scaffold(
@@ -416,20 +423,21 @@ class AsmrDownloadTaskPage extends StatelessWidget {
   }
 }
 
-class _TaskCard extends StatelessWidget {
+class _TaskCard extends ConsumerWidget {
   const _TaskCard({required this.workId});
 
   final int workId;
 
   @override
-  Widget build(BuildContext context) {
-    final task = context.select<AsmrDownloadManager, AsmrDownloadTaskSnapshot?>(
-      (manager) => manager.getTask(workId),
-    );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final task = ref.watch(asmrDownloadTaskProvider(workId));
     if (task == null) return const SizedBox.shrink();
+    final manager = ref.read(asmrDownloadManagerProvider);
+    if (manager == null) return const SizedBox.shrink();
 
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.read<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
 
     return Card(
@@ -482,7 +490,6 @@ class _TaskCard extends StatelessWidget {
                             ? i18n.tr('resume')
                             : i18n.tr('pause'),
                         onPressed: () {
-                          final manager = context.read<AsmrDownloadManager>();
                           if (task.status == AsmrDownloadTaskStatus.paused) {
                             manager.resumeTask(task.work.id);
                           } else {
@@ -502,9 +509,7 @@ class _TaskCard extends StatelessWidget {
                       color: cs.error.withValues(alpha: 0.8),
                       tooltip: i18n.tr('cancel'),
                       onPressed: () async {
-                        await context.read<AsmrDownloadManager>().cancelTask(
-                          task.work.id,
-                        );
+                        await manager.cancelTask(task.work.id);
                         if (!context.mounted) return;
                         showAppSnackBar(
                           context,
@@ -556,7 +561,7 @@ class _TaskCard extends StatelessWidget {
   }
 }
 
-class _DownloadSummaryCard extends StatelessWidget {
+class _DownloadSummaryCard extends ConsumerWidget {
   const _DownloadSummaryCard({
     required this.work,
     required this.selectedLeafCount,
@@ -568,9 +573,10 @@ class _DownloadSummaryCard extends StatelessWidget {
   final int selectedTotalSizeBytes;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -604,7 +610,7 @@ class _DownloadSummaryCard extends StatelessWidget {
   }
 }
 
-class _AsmrDownloadNodeTile extends StatefulWidget {
+class _AsmrDownloadNodeTile extends ConsumerStatefulWidget {
   const _AsmrDownloadNodeTile({
     required this.node,
     required this.depth,
@@ -618,10 +624,11 @@ class _AsmrDownloadNodeTile extends StatefulWidget {
   final VoidCallback onSelectionChanged;
 
   @override
-  State<_AsmrDownloadNodeTile> createState() => _AsmrDownloadNodeTileState();
+  ConsumerState<_AsmrDownloadNodeTile> createState() =>
+      _AsmrDownloadNodeTileState();
 }
 
-class _AsmrDownloadNodeTileState extends State<_AsmrDownloadNodeTile> {
+class _AsmrDownloadNodeTileState extends ConsumerState<_AsmrDownloadNodeTile> {
   static const double _indentWidth = 14;
   static const double _folderRowHeight = 44;
   static const double _fileRowHeight = 46;
@@ -643,7 +650,8 @@ class _AsmrDownloadNodeTileState extends State<_AsmrDownloadNodeTile> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final i18n = context.watch<AppLanguageProvider>();
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final value = widget.selection.stateForPath(widget.node.track.relativePath);
     final indent = _indentWidth * widget.depth;
 

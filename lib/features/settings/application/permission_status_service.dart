@@ -38,6 +38,7 @@ class PermissionStatusService {
     NotificationsPlatformService? notificationsService,
     Future<bool> Function()? overlayCheck,
     Future<bool> Function()? updateInstallCheck,
+    AppUpdateService? appUpdateService,
     bool? isAndroidOverride,
   }) : _powerService = powerService ?? PowerPlatformService(),
        _notificationsService =
@@ -45,7 +46,8 @@ class PermissionStatusService {
        _overlayCheck =
            overlayCheck ?? SubtitleOverlayController.canDrawOverlays,
        _updateInstallCheck =
-           updateInstallCheck ?? AppUpdateService.canInstallUnknownApps,
+           updateInstallCheck ??
+           (appUpdateService ?? AppUpdateService()).canInstallUnknownApps,
        _isAndroidOverride = isAndroidOverride;
 
   final PowerPlatformService _powerService;

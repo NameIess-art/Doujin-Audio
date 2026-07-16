@@ -48,168 +48,6 @@ class _NativePreparationResult {
 }
 
 extension AudioProviderPlaybackSessions on AudioProvider {
-  Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
-    final session = _createSessionForTrack(track);
-    _registerSession(session);
-    _scheduleSessionPersistence();
-    unawaited(
-      _enqueueSessionPreparation(
-        session,
-        nextPath: track.path,
-        autoPlay: autoPlay ?? _autoPlayAddedSessions,
-      ),
-    );
-    _playbackFacade.publishSessionActivated(session.id);
-  }
-
-  Future<void> spawnSessionWithQueue(
-    List<MusicTrack> tracks, {
-    int startIndex = 0,
-    bool? autoPlay,
-    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-  }) async {
-    if (tracks.isEmpty) return;
-    final clampedStartIndex = startIndex.clamp(0, tracks.length - 1);
-    final startTrack = tracks[clampedStartIndex];
-    final session = _createSessionForTrack(
-      startTrack,
-      loopMode: loopMode,
-      customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
-    );
-    _registerSession(session);
-    _scheduleSessionPersistence();
-    unawaited(
-      _enqueueSessionPreparation(
-        session,
-        nextPath: startTrack.path,
-        autoPlay: autoPlay ?? _autoPlayAddedSessions,
-      ),
-    );
-    _playbackFacade.publishSessionActivated(session.id);
-  }
-
-  PlaybackSession _createSessionForTrack(
-    MusicTrack track, {
-    SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-    double? volume,
-    List<MusicTrack>? customQueueTracks,
-  }) {
-    final session = PlaybackSession(
-      id: _nextSessionId(),
-      currentTrackPath: track.path,
-      loopMode: loopMode,
-      nonSingleLoopMode: loopMode == SessionLoopMode.single
-          ? SessionLoopMode.folderSequential
-          : loopMode,
-      volume: (volume ?? 1.0).clamp(0.0, _maxSessionVolume).toDouble(),
-      createdAt: DateTime.now(),
-      state: PlayerState(false, ProcessingState.idle),
-      customQueueTracks: customQueueTracks,
-    );
-    session.speed = 1.0;
-    session.channelSwapEnabled = false;
-    session.audioEffects = AudioEffectsState.flat;
-    return session;
-  }
-
-  void _registerSession(PlaybackSession session) {
-    _playbackService.registerSession(session);
-    _notificationsDismissedWhilePaused = false;
-    _notificationFocusSessionId = session.id;
-    _bindSessionListeners(session);
-    _syncKeepCpuAwake();
-    _syncNotificationState();
-    _notifyPlaybackChanged();
-  }
-
-  Future<void> _enqueueSessionPreparation(
-    PlaybackSession session, {
-    required String nextPath,
-    required bool autoPlay,
-  }) {
-    _playbackService.enqueueSessionPreparation(() async {
-      if (!_sessions.containsKey(session.id)) return;
-      await _prepareAndPlay(session, nextPath: nextPath, autoPlay: autoPlay);
-    });
-    return _sessionPreparationQueue;
-  }
-
-  void _bindSessionListeners(PlaybackSession session) {
-    final stateSub = session.stateStream.listen((state) {
-      if (!_sessions.containsKey(session.id)) return;
-
-      final previousState =
-          session.previousStateBeforeLastStateEvent ?? session.state;
-      session.previousStateBeforeLastStateEvent = null;
-      final previousPlaying = previousState.playing;
-      final previousProcessing = previousState.processingState;
-      session.state = state;
-      final isNewCompletion =
-          previousProcessing != ProcessingState.completed &&
-          state.processingState == ProcessingState.completed;
-      final currentGeneration = session.playbackCommandGeneration;
-      final shouldAutoAdvanceAfterCompletion =
-          isNewCompletion &&
-          !session.isLoading &&
-          !session.isAdvancingAfterCompletion &&
-          session.playbackError == null &&
-          _nextPathFor(session, forward: true) != null &&
-          session.lastHandledCompletionGeneration != currentGeneration;
-      if (shouldAutoAdvanceAfterCompletion) {
-        session.isLoading = true;
-        session.isAdvancingAfterCompletion = true;
-        session.lastHandledCompletionGeneration = currentGeneration;
-      }
-      if (!state.playing &&
-          (state.processingState == ProcessingState.idle ||
-              state.processingState == ProcessingState.completed)) {
-        session.isPlaybackStarting = false;
-      }
-      if (state.processingState != ProcessingState.completed) {
-        session.isAdvancingAfterCompletion = false;
-      }
-      _syncKeepCpuAwake();
-      _syncNotificationState();
-      _notifyPlaybackChanged();
-
-      if (previousPlaying != state.playing ||
-          previousProcessing != state.processingState) {
-        _scheduleSaveSessionState();
-      }
-
-      if (isNewCompletion && shouldAutoAdvanceAfterCompletion) {
-        _handleSessionCompleted(session.id);
-      }
-    });
-    session.subscriptions.add(stateSub);
-
-    final positionSub = session.positionStream.listen((position) {
-      if (!_sessions.containsKey(session.id)) return;
-      session.lastKnownPosition = position;
-      final positionBucket = position.inSeconds ~/ 5;
-      if (positionBucket != session.lastPersistedPositionBucket) {
-        session.lastPersistedPositionBucket = positionBucket;
-        _scheduleSaveSessionState(delay: const Duration(milliseconds: 800));
-      }
-      if (!_isNotificationFocusedSessionId(session.id)) return;
-      final changed = _refreshNotificationSubtitleForSession(
-        session,
-        position: position,
-        syncNotification: false,
-      );
-      if (changed) {
-        _scheduleFocusedNotificationRefresh(session.id, immediate: true);
-      }
-    });
-    session.subscriptions.add(positionSub);
-
-    final durationSub = session.durationStream.listen((_) {
-      if (!_sessions.containsKey(session.id)) return;
-      _scheduleSaveSessionState(delay: const Duration(milliseconds: 1500));
-    });
-    session.subscriptions.add(durationSub);
-  }
-
   Future<bool> _prepareAndPlay(
     PlaybackSession session, {
     required String nextPath,
@@ -347,7 +185,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
         _syncKeepCpuAwake();
         _syncNotificationState();
         if (prepared || preparationFailed) {
-          _scheduleSaveSessionState();
+          _playbackFacade.scheduleSessionStatePersistence();
         }
         if (showLoading || wasLoading) {
           _notifyPlaybackChanged();
@@ -382,7 +220,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     Duration? startPositionOverride,
   }) {
     final logicalPath = PathMatcher.normalize(nextPath);
-    final resolvedPath = _resolveRetargetedPath(nextPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(nextPath);
     final uri =
         PathMatcher.isContentUri(resolvedPath) ||
             PathMatcher.isRemoteUri(resolvedPath)
@@ -446,7 +284,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     } else if (forceStartAtZero) {
       session.setOptimisticPosition(target.startPosition);
     }
-    _markActiveSessionsDirty();
+    _playbackService.markActiveSessionsDirty();
     _notifyPlaybackChanged();
   }
 
@@ -497,7 +335,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
               currentPath: target.resolvedPath,
             ),
         repeatAll: session.loopMode != SessionLoopMode.single,
-        shuffle: _isShuffleMode(session.loopMode),
+        shuffle: session.loopMode.isShuffle,
         candidateUris: target.candidateUris,
       );
       if (!_isSessionLoadCurrent(session, generation)) {
@@ -622,7 +460,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       playedPath: playedPath,
     );
     if (cachedPath == null || cachedPath.isEmpty) return;
-    _rememberRetargetedPath(track.path, cachedPath);
+    _playbackFacade.rememberRetargetedPath(track.path, cachedPath);
   }
 
   List<Map<String, Object?>> _nativePlaybackQueueFor(
@@ -658,7 +496,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     PlaybackSession session, {
     required String currentPath,
   }) {
-    final resolvedCurrentPath = _resolveRetargetedPath(currentPath);
+    final resolvedCurrentPath = _playbackFacade.resolveRetargetedPath(
+      currentPath,
+    );
     final scope = _playbackQueueScopeFor(
       session,
       currentPath: resolvedCurrentPath,
@@ -672,7 +512,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
   }) {
     return _playbackQueueScopeFor(
       session,
-      currentPath: _resolveRetargetedPath(currentPath),
+      currentPath: _playbackFacade.resolveRetargetedPath(currentPath),
     ).paths;
   }
 
@@ -680,7 +520,9 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     PlaybackSession session, {
     required String currentPath,
   }) {
-    final resolvedCurrentPath = _resolveRetargetedPath(currentPath);
+    final resolvedCurrentPath = _playbackFacade.resolveRetargetedPath(
+      currentPath,
+    );
     final currentTrack = trackByPath(resolvedCurrentPath);
     final sessionTrack = _sessionTrackForPath(session, resolvedCurrentPath);
     final queueTracks = session.isPlaybackQueue
@@ -689,7 +531,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     final scopeTrack = queueTracks?.isNotEmpty == true
         ? sessionTrack
         : currentTrack;
-    final crossFolderTrackPaths = _isCrossFolderMode(session.loopMode)
+    final crossFolderTrackPaths = session.loopMode.isCrossFolder
         ? _crossFolderTrackPathsFor(currentTrack)
         : _sortedLibraryTrackPaths;
     return _playbackQueueResolver.resolveScope(
@@ -701,13 +543,13 @@ extension AudioProviderPlaybackSessions on AudioProvider {
       customQueueTracks: queueTracks,
       isPlaybackQueue: session.isPlaybackQueue,
       currentQueueIndex: session.currentQueueIndex,
-      trackPath: (track) => _resolveRetargetedPath(track.path),
+      trackPath: (track) => _playbackFacade.resolveRetargetedPath(track.path),
       folderKeyForTrack: _folderKeyForTrack,
     );
   }
 
   Map<String, Object?> _nativePlaybackQueueItemForPath(String trackPath) {
-    final resolvedTrackPath = _resolveRetargetedPath(trackPath);
+    final resolvedTrackPath = _playbackFacade.resolveRetargetedPath(trackPath);
     final track = _trackForAnyPath(resolvedTrackPath);
     final subtitle = track?.groupTitle;
     final coverPath = resolvedPlaybackCoverPathForTrack(track);
@@ -731,7 +573,7 @@ extension AudioProviderPlaybackSessions on AudioProvider {
   }
 
   MusicTrack? _trackForAnyPath(String trackPath) {
-    final resolvedPath = _resolveRetargetedPath(trackPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
     final libraryTrack = trackByPath(resolvedPath);
     if (libraryTrack != null) {
       return libraryTrack;
@@ -745,28 +587,13 @@ extension AudioProviderPlaybackSessions on AudioProvider {
     return null;
   }
 
-  MusicTrack? _sessionTrackForResolvedPath(
-    PlaybackSession session,
-    String resolvedPath,
-  ) {
-    for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
-      if (PathMatcher.equalsNormalized(
-        _resolveRetargetedPath(track.path),
-        resolvedPath,
-      )) {
-        return track;
-      }
-    }
-    return null;
-  }
-
   MusicTrack? _sessionTrackForPath(PlaybackSession session, String trackPath) {
     final normalizedPath = PathMatcher.normalize(trackPath);
-    final resolvedPath = _resolveRetargetedPath(trackPath);
+    final resolvedPath = _playbackFacade.resolveRetargetedPath(trackPath);
     for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
       if (PathMatcher.equalsNormalized(track.path, normalizedPath) ||
           PathMatcher.equalsNormalized(
-            _resolveRetargetedPath(track.path),
+            _playbackFacade.resolveRetargetedPath(track.path),
             resolvedPath,
           )) {
         return track;

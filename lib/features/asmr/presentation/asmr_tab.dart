@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:provider/provider.dart' hide Consumer;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
@@ -15,7 +14,6 @@ import '../../../app/state/audio_provider_riverpod.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_api_service.dart';
 import '../application/asmr_library_controller.dart';
-import '../application/asmr_playback_coordinator.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -132,13 +130,13 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       if (!mounted) {
         return;
       }
-      final asmrController = context.read<AsmrLibraryController?>();
+      final asmrController = ref.read(asmrLibraryControllerProvider);
       if (asmrController == null) {
         return;
       }
       _measureHeader();
       final defaultLanguage = AsmrContentLanguage.fromAppLanguageName(
-        context.read<AppLanguageProvider>().language.name,
+        ref.read(appLanguageProviderInstanceProvider).language.name,
       );
       unawaited(
         asmrController.initialize(defaultLanguage: defaultLanguage).then((
@@ -214,10 +212,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               category.name,
             ),
             labelKey: 'loading_dot',
-            task: () => context.read<AsmrLibraryController>().loadMoreCategory(
-              category,
-              searchQuery: _searchQuery,
-            ),
+            task: () async {
+              final controller = ref.read(asmrLibraryControllerProvider);
+              if (controller == null) return;
+              await controller.loadMoreCategory(
+                category,
+                searchQuery: _searchQuery,
+              );
+            },
           ),
         );
       },
@@ -249,8 +251,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
-      final globalState = context
-          .read<AsmrLibraryController?>()
+      final globalState = ref
+          .read(asmrLibraryControllerProvider)
           ?.globalViewState;
       final hasControls = globalState != null;
       final measuredHeight =
@@ -264,7 +266,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   Future<void> _ensureCategoryLoaded(AsmrCategoryType category) async {
-    final controller = context.read<AsmrLibraryController>();
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
     final needsRefresh =
         controller.worksFor(category).isEmpty ||
         controller.activeQueryFor(category) != _normalizedSearchQuery;
@@ -290,10 +293,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         category.name,
       ),
       labelKey: 'loading_dot',
-      task: () => context.read<AsmrLibraryController>().refreshCategory(
-        category,
-        searchQuery: _searchQuery,
-      ),
+      task: () async {
+        final controller = ref.read(asmrLibraryControllerProvider);
+        if (controller == null) return;
+        await controller.refreshCategory(category, searchQuery: _searchQuery);
+      },
     );
   }
 
@@ -302,8 +306,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     bool showSnackbar = false,
   }) async {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final controller = context.read<AsmrLibraryController>();
-    final i18n = context.read<AppLanguageProvider>();
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final beforeIds = controller
         .filteredWorksFor(category, searchQuery: _searchQuery)
         .map((work) => work.id)
@@ -383,7 +388,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   Future<T?> _showAsmrPanel<T>({required WidgetBuilder builder}) {
-    final i18n = context.read<AppLanguageProvider>();
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     return showGeneralDialog<T>(
       context: context,
       barrierLabel: i18n.tr('close'),
@@ -400,8 +405,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   Future<void> _showLanguageDialog() async {
-    final controller = context.read<AsmrLibraryController>();
-    final i18n = context.read<AppLanguageProvider>();
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final result = await _showAsmrPanel<ContentLanguagePreference>(
       builder: (context) => _AsmrPanelCard(
         icon: Icons.language_rounded,
@@ -465,23 +471,19 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _measureHeader();
     });
-    final globalState = context
-        .select<AsmrLibraryController?, AsmrLibraryGlobalViewState?>(
-          (controller) => controller?.globalViewState,
-        );
-    final hasDownloadManager = context.select<AsmrDownloadManager?, bool>(
-      (manager) => manager != null,
-    );
+    final globalState = ref.watch(asmrLibraryGlobalStateProvider).valueOrNull;
+    final hasDownloadManager = ref.watch(asmrDownloadManagerProvider) != null;
     final currentCategory = _currentCategory;
-    final currentCategoryState = context
-        .select<AsmrLibraryController?, AsmrCategoryViewState?>(
-          (controller) => controller?.categoryViewState(currentCategory),
-        );
-    final collectedCount = context.select<AsmrLibraryController?, int>(
-      (controller) =>
-          controller?.totalCountFor(AsmrCategoryType.collected) ?? 0,
-    );
-    final i18n = context.watch<AppLanguageProvider>();
+    final currentCategoryState = ref
+        .watch(asmrCategoryStateProvider(currentCategory))
+        .valueOrNull;
+    final collectedCount =
+        ref
+            .read(asmrLibraryControllerProvider)
+            ?.totalCountFor(AsmrCategoryType.collected) ??
+        0;
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     _schedulePageLanguageSync(i18n.language);
     final collectedSubtitle =
         currentCategoryState == null ||
@@ -745,7 +747,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   void _schedulePageLanguageSync(AppLanguage language) {
-    final controller = context.read<AsmrLibraryController?>();
+    final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null ||
         !controller.initialized ||
         controller.pageLanguage == language ||

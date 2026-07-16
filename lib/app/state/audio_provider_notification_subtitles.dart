@@ -1,75 +1,40 @@
 part of 'audio_provider.dart';
 
 extension AudioProviderNotificationSubtitles on AudioProvider {
-  Future<SubtitleTrack?> subtitleTrackForPath(String trackPath) {
-    if (_subtitleTracks.containsKey(trackPath)) {
-      return _subtitleTrackResultFutures.putIfAbsent(
-        trackPath,
-        () => SynchronousFuture<SubtitleTrack?>(_subtitleTracks[trackPath]),
+  Future<SubtitleTrack?> _subtitleTrackForPath(String trackPath) {
+    return _subtitleService.load(trackPath);
+  }
+
+  void _handleSubtitleTrackLoaded(String trackPath, SubtitleTrack? track) {
+    var shouldRefreshNotification = false;
+    for (final session in _sessions.values) {
+      if (session.currentTrackPath != trackPath) continue;
+      final changed = _refreshNotificationSubtitleForSession(
+        session,
+        syncNotification: false,
       );
-    }
-
-    return _subtitleTrackFutures.putIfAbsent(trackPath, () async {
-      try {
-        final track = trackByPath(trackPath);
-        final SubtitleTrack? subtitleTrack;
-        if (trackPath.startsWith('content://')) {
-          subtitleTrack = await _loadContentSubtitleTrack(trackPath);
-        } else if (track?.remoteMetadataKind == 'asmr.one' && track != null) {
-          subtitleTrack = await _loadAsmrSubtitleTrack(track);
-        } else {
-          subtitleTrack = await loadSubtitleTrackForAudio(trackPath);
-        }
-        _subtitleTracks[trackPath] = subtitleTrack;
-        _subtitleTrackResultFutures[trackPath] =
-            SynchronousFuture<SubtitleTrack?>(subtitleTrack);
-
-        // Memory optimization: Simple LRU eviction for subtitle tracks
-        if (_subtitleTracks.length > 20) {
-          final oldestKey = _subtitleTracks.keys.first;
-          _subtitleTracks.remove(oldestKey);
-          unawaited(_subtitleTrackResultFutures.remove(oldestKey));
-        }
-
-        var shouldRefreshNotification = false;
-        for (final session in _sessions.values) {
-          if (session.currentTrackPath != trackPath) continue;
-          final changed = _refreshNotificationSubtitleForSession(
-            session,
-            syncNotification: false,
-          );
-          if (changed && _notificationFocusedSession?.id == session.id) {
-            shouldRefreshNotification = true;
-          }
-        }
-
-        if (shouldRefreshNotification) {
-          _syncNotificationState();
-          _notifyNotificationChanged();
-        } else if (subtitleTrack != null) {
-          _notifyNotificationChanged();
-        }
-        return subtitleTrack;
-      } finally {
-        unawaited(_subtitleTrackFutures.remove(trackPath));
+      if (changed && _notificationFocusedSession?.id == session.id) {
+        shouldRefreshNotification = true;
       }
-    });
+    }
+    if (shouldRefreshNotification) {
+      _syncNotificationState();
+      _notifyNotificationChanged();
+    } else if (track != null) {
+      _notifyNotificationChanged();
+    }
   }
 
-  SubtitleTrack? getSubtitleTrackSync(String trackPath) {
-    return _subtitleTracks[trackPath];
-  }
-
-  String? subtitleTextForTrackAt(
+  String? _subtitleTextForTrackAt(
     String trackPath,
     Duration position, {
     SubtitleTrack? subtitleTrack,
   }) {
-    final resolvedTrack = subtitleTrack;
-    final cue = resolvedTrack?.cueAt(position);
-    if (cue == null) return null;
-    final text = cue.text.trim();
-    return text.isEmpty ? null : text;
+    return _subtitleService.textAt(
+      trackPath,
+      position,
+      subtitleTrack: subtitleTrack,
+    );
   }
 
   String? _notificationSubtitleForSession(PlaybackSession session) {
@@ -91,11 +56,11 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
       : AudioProvider._notificationProgressRefreshInterval;
 
   void _ensureSubtitleTrackLoaded(String trackPath) {
-    if (_subtitleTracks.containsKey(trackPath) ||
-        _subtitleTrackFutures.containsKey(trackPath)) {
+    if (_subtitleService.hasResult(trackPath) ||
+        _subtitleService.isLoading(trackPath)) {
       return;
     }
-    unawaited(subtitleTrackForPath(trackPath));
+    unawaited(_subtitleTrackForPath(trackPath));
   }
 
   bool _refreshNotificationSubtitleForSession(
@@ -105,10 +70,10 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
   }) {
     final trackPath = session.currentTrackPath;
     _ensureSubtitleTrackLoaded(trackPath);
-    final nextText = subtitleTextForTrackAt(
+    final nextText = _subtitleTextForTrackAt(
       trackPath,
       position ?? session.position,
-      subtitleTrack: _subtitleTracks[trackPath],
+      subtitleTrack: _subtitleService.trackSync(trackPath),
     );
     final previousText = _notificationSubtitleTexts[session.id];
     final previousTrackPath = _notificationSubtitleTrackPaths[session.id];
@@ -128,116 +93,5 @@ extension AudioProviderNotificationSubtitles on AudioProvider {
   void _clearNotificationSubtitleForSession(String sessionId) {
     _notificationSubtitleTexts.remove(sessionId);
     _notificationSubtitleTrackPaths.remove(sessionId);
-  }
-
-  Future<SubtitleTrack?> _loadContentSubtitleTrack(String trackPath) async {
-    final track = trackByPath(trackPath);
-    try {
-      final raw = await AudioProvider._fileCacheGateway.resolveTrackSubtitle(
-        path: trackPath,
-        groupKey: track?.groupKey,
-      );
-      if (raw == null) return null;
-      final sourcePath = raw['sourcePath']?.toString();
-      final text = raw['text']?.toString();
-      final extension = raw['extension']?.toString();
-      if (sourcePath == null ||
-          sourcePath.isEmpty ||
-          text == null ||
-          text.isEmpty ||
-          extension == null ||
-          extension.isEmpty) {
-        return null;
-      }
-      return parseSubtitleTrackFromRaw(
-        sourcePath: sourcePath,
-        raw: text,
-        extension: extension,
-      );
-    } on MissingPluginException {
-      return null;
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'content_subtitle_load_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return null;
-    }
-  }
-
-  Future<SubtitleTrack?> _loadAsmrSubtitleTrack(MusicTrack track) async {
-    final metadata = track.remoteMetadata;
-    if (metadata == null) return null;
-    final subtitleUrl = metadata['subtitleUrl']?.toString().trim() ?? '';
-    final subtitleExtension = _resolveAsmrSubtitleExtension(
-      metadata['subtitleExtension']?.toString().trim(),
-      subtitleUrl: subtitleUrl,
-      subtitleSourcePath: metadata['subtitleSourcePath']?.toString(),
-      subtitleTitle: metadata['subtitleTitle']?.toString(),
-    );
-    if (subtitleUrl.isEmpty) {
-      return null;
-    }
-    try {
-      return loadSubtitleTrackFromUrl(
-        url: subtitleUrl,
-        sourcePath:
-            metadata['subtitleSourcePath']?.toString().trim().isNotEmpty == true
-            ? metadata['subtitleSourcePath']!.toString().trim()
-            : metadata['subtitleTitle']?.toString().trim(),
-        extension: subtitleExtension,
-      );
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'asmr_subtitle_load_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return null;
-    }
-  }
-
-  String _resolveAsmrSubtitleExtension(
-    String? metadataExtension, {
-    required String subtitleUrl,
-    String? subtitleSourcePath,
-    String? subtitleTitle,
-  }) {
-    final normalizedMetadataExtension = _normalizedSubtitleExtension(
-      metadataExtension ?? '',
-    );
-    if (normalizedMetadataExtension.isNotEmpty) {
-      return normalizedMetadataExtension;
-    }
-
-    for (final candidate in <String?>[
-      subtitleSourcePath,
-      subtitleTitle,
-      subtitleUrl,
-    ]) {
-      final resolved = _normalizedSubtitleExtension(
-        _subtitleExtensionFromCandidate(candidate),
-      );
-      if (resolved.isNotEmpty) {
-        return resolved;
-      }
-    }
-    return '';
-  }
-
-  String _normalizedSubtitleExtension(String extension) {
-    final trimmed = extension.trim().toLowerCase();
-    if (trimmed.isEmpty) return '';
-    return trimmed.startsWith('.') ? trimmed : '.$trimmed';
-  }
-
-  String _subtitleExtensionFromCandidate(String? candidate) {
-    if (candidate == null) return '';
-    final trimmed = candidate.trim();
-    if (trimmed.isEmpty) return '';
-    final uri = Uri.tryParse(trimmed);
-    final sourcePath = uri != null && uri.hasScheme ? uri.path : trimmed;
-    return path.extension(sourcePath);
   }
 }

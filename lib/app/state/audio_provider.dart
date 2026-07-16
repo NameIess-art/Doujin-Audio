@@ -5,13 +5,13 @@ import 'dart:math';
 
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/widgets/app_feedback.dart';
+import '../application/audio_runtime_coordinator.dart';
+import '../application/audio_ui_warmup_coordinator.dart';
 
 import '../../core/app_language.dart';
 import '../../features/asmr/domain/asmr_download.dart';
@@ -22,7 +22,6 @@ import '../../features/library/domain/library_entry.dart';
 import '../../features/library/domain/library_node.dart';
 import '../../core/media/music_track.dart';
 import '../../features/player/domain/playback_mode.dart';
-import '../../features/player/domain/playback_queue.dart';
 import '../../features/player/application/playback_session.dart';
 import '../../features/player/domain/time_segment_label.dart';
 import '../../core/platform/app_platform.dart';
@@ -38,18 +37,15 @@ import '../../features/asmr/application/asmr_api_service.dart';
 import '../../features/asmr/application/asmr_metadata_service.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/dlsite_metadata_service.dart';
-import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/library/application/library_snapshot_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/library/application/library_scan_models.dart';
-import '../../core/errors/native_result.dart';
 import '../../features/player/application/native_playback_repository.dart';
 import '../../features/player/application/playback_queue_resolver.dart';
 import '../../core/platform/power_platform_service.dart';
 import '../../features/library/application/cover_image_cache_policy.dart';
 import '../../features/player/application/timer_runtime_calculator.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
-import '../../core/ui/warmup_scheduler.dart';
 
 export '../../features/library/domain/library_node.dart';
 export '../../features/library/domain/library_entry.dart';
@@ -73,27 +69,24 @@ import '../../core/media/path_matcher.dart';
 import '../../core/media/path_display.dart';
 import '../../features/player/application/system_media_controls_service.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../core/media/subtitle_parser.dart';
 
-part 'audio_provider_notifications.dart';
 part 'audio_provider_persistence.dart';
 part 'audio_provider_library.dart';
 part 'audio_provider_library_categories.dart';
 part 'audio_provider_playback.dart';
 part 'audio_provider_playback_sessions.dart';
-part 'audio_provider_playback_timer.dart';
 part 'audio_provider_playback_keepalive.dart';
 part 'audio_provider_playback_engine.dart';
 part 'audio_provider_notification_covers.dart';
 part 'audio_provider_notification_sync.dart';
 part 'audio_provider_notification_subtitles.dart';
 part 'audio_provider_persistence_sessions.dart';
-part 'audio_provider_persistence_timer.dart';
 part 'audio_provider_state.dart';
 part 'audio_provider_native_bridge.dart';
-part 'audio_provider_warmup.dart';
 part 'audio_provider_time_segments.dart';
 part 'audio_provider_queues.dart';
 
@@ -103,8 +96,6 @@ const _kSessionOrderKey = 'session_order_v1';
 const _kWatchedFoldersKey = 'watched_folders_v1';
 const _kWatchedLibrariesKey = 'watched_libraries_v1';
 const _kLibraryExclusionsKey = 'library_exclusions_v1';
-const _kTimerSettingsKey = 'timer_settings_v1';
-const _kTimerRuntimeKey = 'timer_runtime_v1';
 const _kConverterSettingsKey = 'converter_settings_v1';
 const _kPlaybackSettingsKey = 'playback_settings_v1';
 
@@ -118,13 +109,14 @@ class AudioProvider with ChangeNotifier {
   static const Duration _unifiedNotificationDebounceInterval = Duration(
     milliseconds: 90,
   );
-  static final FileCachePlatformGateway _fileCacheGateway =
-      FileCachePlatformGateway.instance;
   final LibraryFacade _libraryFacade;
   final PlaybackFacade _playbackFacade;
   final TimerFacade _timerFacade;
   final NotificationFacade _notificationFacade;
   final SettingsRepository _settingsRepository;
+  late final PlaybackSubtitleService _subtitleService;
+  late final AudioRuntimeCoordinator _runtimeCoordinator;
+  late final AudioUiWarmupCoordinator _uiWarmupCoordinator;
   final AppLanguage Function() _pageLanguageResolver;
   final bool _skipDisposePersistence;
   SharedPreferences? _cachedPrefs;
@@ -134,6 +126,9 @@ class AudioProvider with ChangeNotifier {
   TimerFacade get timerFacade => _timerFacade;
   NotificationFacade get notificationFacade => _notificationFacade;
   SettingsRepository get settingsRepository => _settingsRepository;
+  PlaybackSubtitleService get subtitleService => _subtitleService;
+  AudioRuntimeCoordinator get runtimeCoordinator => _runtimeCoordinator;
+  AudioUiWarmupCoordinator get uiWarmupCoordinator => _uiWarmupCoordinator;
 
   PlaybackNotificationService get _notificationService =>
       _notificationFacade.service;
@@ -173,15 +168,6 @@ class AudioProvider with ChangeNotifier {
     '192k',
     '256k',
     '320k',
-  ];
-  static const List<double> playbackSpeedOptions = [
-    0.5,
-    0.75,
-    1.0,
-    1.25,
-    1.5,
-    1.75,
-    2.0,
   ];
   static const List<EqPreset> builtInEqPresets = [
     EqPreset(
@@ -242,29 +228,20 @@ class AudioProvider with ChangeNotifier {
     ),
   ];
 
-  int _sessionSeed = 0;
   bool _isInitialized = false;
   bool _settingsInitialized = false;
   bool _libraryInitialized = false;
   bool _playbackInitialized = false;
-  final Set<String> _deferredVolumeReloadSessionIds = <String>{};
   final Map<String, _TimeSegmentLoopRuntime> _timeSegmentLoopsBySessionId =
       <String, _TimeSegmentLoopRuntime>{};
   final Set<String> _timeSegmentLoopBoundSessionIds = <String>{};
   final Set<String> _timeSegmentLoopSeekPendingSessionIds = <String>{};
   bool _notifyListenersQueued = false;
   bool _isDisposed = false;
-  bool _nativeRuntimeStarted = false;
-  bool _warmupPausedForLifecycle = false;
-  int _transportCommandSequence = 0;
   int _persistenceLoadEpoch = 0;
   Future<void>? _postStartupLibraryMaintenance;
 
   final Random _random = Random();
-
-  StreamSubscription<NativePlaybackSnapshot>? _nativePlaybackSubscription;
-  StreamSubscription<NativePlaybackProgressUpdate>?
-  _nativePlaybackProgressSubscription;
 
   List<MusicTrack> get _library => _libraryService.library;
   Map<String, MusicTrack> get _libraryByPath => _libraryService.libraryByPath;
@@ -335,25 +312,6 @@ class AudioProvider with ChangeNotifier {
   Map<String, PlaybackSession> get _sessions => _playbackService.sessions;
   List<String> get _sessionOrder => _playbackService.sessionOrder;
 
-  Future<void> get _sessionPreparationQueue =>
-      _playbackService.sessionPreparationQueue;
-
-  Timer? get _saveSessionStateTimer => _playbackService.saveSessionStateTimer;
-  set _saveSessionStateTimer(Timer? value) {
-    _playbackService.saveSessionStateTimer = value;
-  }
-
-  Timer? get _saveSessionOrderTimer => _playbackService.saveSessionOrderTimer;
-  set _saveSessionOrderTimer(Timer? value) {
-    _playbackService.saveSessionOrderTimer = value;
-  }
-
-  Map<String, Future<SubtitleTrack?>> get _subtitleTrackFutures =>
-      _notificationStateService.subtitleTrackFutures;
-  Map<String, SubtitleTrack?> get _subtitleTracks =>
-      _notificationStateService.subtitleTracks;
-  Map<String, Future<SubtitleTrack?>> get _subtitleTrackResultFutures =>
-      _notificationStateService.subtitleTrackResultFutures;
   Map<String, String?> get _notificationSubtitleTexts =>
       _notificationStateService.notificationSubtitleTexts;
   Map<String, String> get _notificationSubtitleTrackPaths =>
@@ -411,19 +369,6 @@ class AudioProvider with ChangeNotifier {
       _notificationStateService.notificationsDismissedWhilePaused;
   set _notificationsDismissedWhilePaused(bool value) {
     _notificationStateService.notificationsDismissedWhilePaused = value;
-  }
-
-  Timer? get _deferredWarmupTimer =>
-      _notificationStateService.deferredWarmupTimer;
-  set _deferredWarmupTimer(Timer? value) {
-    _notificationStateService.deferredWarmupTimer = value;
-  }
-
-  WarmupScheduler get _warmupScheduler =>
-      _notificationStateService.warmupScheduler;
-  int get _warmupGeneration => _notificationStateService.warmupGeneration;
-  set _warmupGeneration(int value) {
-    _notificationStateService.warmupGeneration = value;
   }
 
   Timer? get _notificationActionRefreshTimer =>
@@ -503,45 +448,6 @@ class AudioProvider with ChangeNotifier {
   set _keepAliveKeepsForegroundService(bool value) {
     _timerFacade.keepAliveKeepsForegroundService = value;
   }
-
-  TimerMode? get _timerMode => _timerService.timerMode;
-  set _timerMode(TimerMode? value) => _timerService.timerMode = value;
-  Duration? get _timerDuration => _timerService.timerDuration;
-  set _timerDuration(Duration? value) => _timerService.timerDuration = value;
-  bool get _timerActive => _timerService.timerActive;
-  set _timerActive(bool value) => _timerService.timerActive = value;
-  Duration? get _timerRemaining => _timerService.timerRemaining;
-  set _timerRemaining(Duration? value) => _timerService.timerRemaining = value;
-  DateTime? get _timerEndsAt => _timerService.timerEndsAt;
-  set _timerEndsAt(DateTime? value) => _timerService.timerEndsAt = value;
-  Timer? get _countdownTimer => _timerService.countdownTimer;
-  set _countdownTimer(Timer? value) => _timerService.countdownTimer = value;
-  bool get _timerWaitingForPlayback => _timerService.timerWaitingForPlayback;
-  set _timerWaitingForPlayback(bool value) {
-    _timerService.timerWaitingForPlayback = value;
-  }
-
-  TimerMode get _timerDraftMode => _timerService.timerDraftMode;
-  set _timerDraftMode(TimerMode value) => _timerService.timerDraftMode = value;
-  Duration get _timerDraftDuration => _timerService.timerDraftDuration;
-  set _timerDraftDuration(Duration value) {
-    _timerService.timerDraftDuration = value;
-  }
-
-  int get _timerGeneration => _timerService.timerGeneration;
-  set _timerGeneration(int value) => _timerService.timerGeneration = value;
-  List<String> get _pausedByTimerSessionIds =>
-      _timerService.pausedByTimerSessionIds;
-  bool get _autoResumeEnabled => _timerService.autoResumeEnabled;
-  set _autoResumeEnabled(bool value) => _timerService.autoResumeEnabled = value;
-  int get _autoResumeHour => _timerService.autoResumeHour;
-  set _autoResumeHour(int value) => _timerService.autoResumeHour = value;
-  int get _autoResumeMinute => _timerService.autoResumeMinute;
-  set _autoResumeMinute(int value) => _timerService.autoResumeMinute = value;
-  Timer? get _autoResumeTimer => _timerService.autoResumeTimer;
-  set _autoResumeTimer(Timer? value) => _timerService.autoResumeTimer = value;
-  DateTime? get _autoResumeAt => _timerService.autoResumeAt;
-  set _autoResumeAt(DateTime? value) => _timerService.autoResumeAt = value;
 
   factory AudioProvider({
     required LibraryFacade library,
@@ -663,16 +569,159 @@ class AudioProvider with ChangeNotifier {
        _settingsRepository = settings,
        _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh),
        _skipDisposePersistence = skipDisposePersistence {
+    _subtitleService = PlaybackSubtitleService(
+      trackResolver: _libraryFacade.trackByPath,
+      onTrackLoaded: _handleSubtitleTrackLoaded,
+    );
+    _uiWarmupCoordinator = AudioUiWarmupCoordinator(
+      library: _libraryFacade,
+      playback: _playbackFacade,
+      notifications: _notificationFacade,
+      subtitles: _subtitleService,
+    );
     _settingsRepository.attachPersistence(_savePlaybackSettings);
+    _settingsRepository.attachConverterPersistence(_saveConverterSettings);
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
+    _playbackFacade.configurePersistence(enabled: !skipDisposePersistence);
     _libraryFacade.attachTrackRemovalHandler(_handleLibraryTracksRemoved);
     _libraryFacade.attachCoverChangeHandler(() {
-      _markActiveSessionsDirty();
+      _playbackService.markActiveSessionsDirty();
       _syncNotificationState();
       _notifyLibraryAndPlaybackChanged();
     });
-    _playbackFacade.attachSessionLauncher(spawnSessionWithQueue);
+    _playbackFacade.attachSessionDefaults(
+      autoPlayAddedSessions: () => _autoPlayAddedSessions,
+    );
     _playbackFacade.attachSessionStatePersistence(_saveSessionState);
+    _playbackFacade.attachSessionOrderPersistence(_saveSessionOrder);
+    _playbackFacade.attachSessionRuntime(
+      onSessionRegistered: (session) {
+        _notificationsDismissedWhilePaused = false;
+        _notificationFocusSessionId = session.id;
+        _syncKeepCpuAwake();
+        _syncNotificationState();
+        _notifyPlaybackChanged();
+      },
+      onSessionsRemoved: (sessions) {
+        for (final session in sessions) {
+          _forgetTimeSegmentLoopSession(session.id);
+          _clearNotificationSubtitleForSession(session.id);
+          if (_notificationFocusSessionId == session.id) {
+            _notificationFocusSessionId = null;
+          }
+        }
+      },
+      onSessionsReordered: () {
+        _syncNotificationState();
+        _notifyPlaybackChanged();
+        _playbackFacade.scheduleSessionOrderPersistence();
+      },
+      onSessionStateChanged: _notifyPlaybackChanged,
+      onRuntimeStateChanged: () {
+        _syncKeepCpuAwake();
+        _syncNotificationState();
+      },
+      onSessionPositionChanged: (session, position) {
+        if (!_isNotificationFocusedSessionId(session.id)) return;
+        final changed = _refreshNotificationSubtitleForSession(
+          session,
+          position: position,
+          syncNotification: false,
+        );
+        if (!changed) return;
+        _scheduleFocusedNotificationRefresh(session.id, immediate: true);
+      },
+      onSessionCompleted: _handleSessionCompleted,
+      onSessionDurationChanged: (sessionId) {
+        _scheduleFocusedNotificationRefresh(sessionId);
+      },
+      onSessionSettingsChanged: () {
+        _notifyPlaybackChanged();
+        _syncNotificationState();
+      },
+    );
+    _playbackFacade.attachPlaybackQueueSynchronizer(_syncPlaybackQueueSession);
+    _playbackFacade.attachPlaybackCommands(
+      prepareSession: _prepareAndPlay,
+      pauseSession: _pauseSessionPlayback,
+      startSession: _startSessionPlayback,
+      resolveAdvance: (session, {required forward}) =>
+          _nextPathFor(session, forward: forward),
+      hasAdjacent: (session, {required forward}) =>
+          _hasAdjacentPathFor(session, forward: forward),
+    );
+    _playbackFacade.attachLoopModeSynchronizer((session, mode) {
+      return _nativePlaybackRepository.setRepeatOne(
+        session.id,
+        mode == SessionLoopMode.single,
+        queue: _nativePlaybackQueueFor(
+          session,
+          currentPath: session.currentTrackPath,
+        ),
+        queueStartIndex: _nativePlaybackQueueStartIndexFor(
+          session,
+          currentPath: session.currentTrackPath,
+        ),
+        repeatAll: mode != SessionLoopMode.single,
+        shuffle: mode.isShuffle,
+      );
+    });
+    _timerFacade.attachRuntime(
+      hasPlayingSession: () => _hasPlayingSession,
+      sessions: () => _sessions.values,
+      pauseSession: _pauseSessionPlayback,
+      activateAudioSession: _activateAudioSessionForPlayback,
+      resumeSession: (session) =>
+          _startSessionPlayback(session, shouldStartTriggerCountdown: false),
+      onStateChanged: () {
+        _syncKeepCpuAwake();
+        _notifyListeners();
+      },
+      onRuntimeRestored: () {
+        _syncNotificationState();
+        _syncKeepCpuAwake();
+        _notifyListeners();
+      },
+      applyFadeMultiplier: (multiplier) {
+        for (final session in _sessions.values) {
+          if (session.state.playing) {
+            unawaited(
+              _nativePlaybackRepository.setFadeMultiplier(
+                session.id,
+                multiplier,
+              ),
+            );
+          }
+        }
+      },
+    );
+    _notificationFacade.attachRuntime(
+      undismissNotifications: _nativePlaybackRepository.undismissNotifications,
+      onNotificationsRestored: () {
+        _syncNotificationState(immediateUnifiedSync: true);
+        _notifyNotificationChanged();
+      },
+    );
+    _notificationFacade.attachActions(
+      playback: _playbackFacade,
+      resolveSession: _resolveNotificationSession,
+      resolveActionSession: () => _notificationActionSession,
+      resumeSession: _resumeNotificationSession,
+      multiThreadPlaybackEnabled: () => _multiThreadPlaybackEnabled,
+      setFocusSessionId: (sessionId) {
+        _notificationFocusSessionId = sessionId;
+      },
+      notify: _notifyListeners,
+      syncKeepAlive: _syncKeepCpuAwake,
+      syncNotificationState: () {
+        _syncNotificationState(immediateUnifiedSync: true);
+      },
+      hasPlaybackToKeepAlive: () => _hasPlaybackToKeepAlive,
+      clearUnifiedNotifications: _clearUnifiedPlaybackNotificationsOnPlatform,
+      stopPlaybackKeepAlive: _stopPlaybackKeepAliveOnPlatform,
+      preferredSessionId: () => _preferredSingleSessionId,
+      notifyNotificationChanged: _notifyNotificationChanged,
+    );
     _libraryFacade.attachCoverArtworkCacheService(
       () => CoverArtworkCacheService(
         libraryService: _libraryService,
@@ -685,45 +734,38 @@ class AudioProvider with ChangeNotifier {
         },
       ),
     );
-    UiInteractionCoordinator.instance.addListener(
-      _handleWarmupInteractionChanged,
+    _runtimeCoordinator = AudioRuntimeCoordinator(
+      snapshots: _nativePlaybackRepository.snapshots,
+      progressUpdates: _nativePlaybackRepository.progressUpdates,
+      startListening: _nativePlaybackRepository.startListening,
+      stopListening: _nativePlaybackRepository.stopListening,
+      onSnapshot: _handleNativePlaybackSnapshot,
+      onProgress: _playbackFacade.applyNativeProgress,
+      onStart: _loadData,
+      onEnterBackground: syncKeepAliveBeforeBackground,
+      onResumeForeground: () async {
+        syncKeepAliveAfterForegroundResume();
+        _notificationFacade.resyncAfterForegroundResume();
+        await _timerFacade.syncRuntimeFromNative();
+        _timerFacade.retryOverdueAutoResume();
+      },
+      onDispose: _disposeOwnedServices,
     );
-    _syncWarmupPauseState();
     if (startNativeRuntime) {
-      _startNativeRuntime();
+      unawaited(_runtimeCoordinator.start());
     }
     _syncAllStateSlices();
   }
-
-  void _startNativeRuntime() {
-    if (_nativeRuntimeStarted || _isDisposed) return;
-    _nativeRuntimeStarted = true;
-    _nativePlaybackRepository.startListening();
-    _nativePlaybackSubscription = _nativePlaybackRepository.snapshots.listen(
-      _handleNativePlaybackSnapshot,
-    );
-    _nativePlaybackProgressSubscription = _nativePlaybackRepository
-        .progressUpdates
-        .listen(_handleNativePlaybackProgress);
-    _loadData();
-  }
-
-  void startRuntime() => _startNativeRuntime();
 
   @override
   void dispose() {
     _isDisposed = true;
     _persistenceLoadEpoch++;
-    UiInteractionCoordinator.instance.removeListener(
-      _handleWarmupInteractionChanged,
-    );
-    _countdownTimer?.cancel();
-    _autoResumeTimer?.cancel();
-    _saveSessionStateTimer?.cancel();
-    _saveSessionOrderTimer?.cancel();
+    _timerService.countdownTimer?.cancel();
+    _timerService.autoResumeTimer?.cancel();
+    _playbackFacade.cancelScheduledPersistence();
     _scanProgressNotifyTimer?.cancel();
-    _deferredWarmupTimer?.cancel();
-    unawaited(_warmupScheduler.shutdown());
+    unawaited(_uiWarmupCoordinator.shutdown());
     _notificationProgressRefreshTimer?.cancel();
     _unifiedNotificationSyncTimer?.cancel();
     _notificationActionRefreshTimer?.cancel();
@@ -738,13 +780,11 @@ class AudioProvider with ChangeNotifier {
       ),
     );
     unawaited(_deactivateAudioSession());
-    unawaited(_nativePlaybackSubscription?.cancel());
-    unawaited(_nativePlaybackProgressSubscription?.cancel());
-    unawaited(_libraryFacade.dispose());
-    unawaited(_playbackFacade.dispose());
-    unawaited(_timerFacade.dispose());
-    unawaited(_notificationFacade.dispose());
-    unawaited(_settingsRepository.dispose());
+    unawaited(_runtimeCoordinator.dispose());
+    super.dispose();
+  }
+
+  Future<void> _disposeOwnedServices() async {
     for (final session in _sessions.values) {
       session.dispose();
     }
@@ -752,7 +792,11 @@ class AudioProvider with ChangeNotifier {
     _timeSegmentLoopsBySessionId.clear();
     _timeSegmentLoopBoundSessionIds.clear();
     _timeSegmentLoopSeekPendingSessionIds.clear();
-    super.dispose();
+    await _libraryFacade.dispose();
+    await _playbackFacade.dispose();
+    await _timerFacade.dispose();
+    await _notificationFacade.dispose();
+    await _settingsRepository.dispose();
   }
 
   void _notifyListeners() {

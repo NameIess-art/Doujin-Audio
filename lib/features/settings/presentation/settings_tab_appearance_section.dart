@@ -3,7 +3,8 @@ part of 'settings_tab.dart';
 List<Widget> _buildSettingsAppearanceSection({
   required BuildContext context,
   required AppLanguageProvider i18n,
-  required AudioProvider audioProvider,
+  required SettingsRepository settings,
+  required SettingsCommandController settingsController,
   required TextStyle? descStyle,
   required ColorScheme cs,
   required VoidCallback onShowSubtitleWindowSettings,
@@ -22,9 +23,9 @@ List<Widget> _buildSettingsAppearanceSection({
       children: [
         Consumer(
           builder: (context, ref, _) {
-            final themeMode = context.select<ThemeProvider, ThemeMode>(
-              (provider) => provider.themeMode,
-            );
+            final themeMode =
+                ref.watch(themeStateProvider).valueOrNull?.themeMode ??
+                ref.read(themeProviderInstanceProvider).themeMode;
             final modeLabels = <ThemeMode, String>{
               ThemeMode.system: i18n.tr('theme_system'),
               ThemeMode.light: i18n.tr('theme_light'),
@@ -49,7 +50,7 @@ List<Widget> _buildSettingsAppearanceSection({
                 value: themeMode,
                 onChanged: (value) {
                   if (value != null) {
-                    context.read<ThemeProvider>().setThemeMode(value);
+                    ref.read(themeProviderInstanceProvider).setThemeMode(value);
                   }
                 },
                 items: ThemeMode.values
@@ -73,14 +74,17 @@ List<Widget> _buildSettingsAppearanceSection({
         ),
         Consumer(
           builder: (context, ref, _) {
-            final provider = context.watch<ThemeProvider>();
+            final themeState =
+                ref.watch(themeStateProvider).valueOrNull ??
+                ThemeState.from(ref.read(themeProviderInstanceProvider));
+            final provider = ref.read(themeProviderInstanceProvider);
             return SwitchListTile(
               title: Text(i18n.tr('differentiate_asmr_theme')),
               subtitle: Text(
                 i18n.tr('differentiate_asmr_theme_subtitle'),
                 style: descStyle,
               ),
-              value: provider.differentiateAsmrTheme,
+              value: themeState.differentiateAsmrTheme,
               onChanged: (val) => provider.setDifferentiateAsmrTheme(val),
               secondary: Container(
                 width: 38,
@@ -125,7 +129,7 @@ List<Widget> _buildSettingsAppearanceSection({
                 value: ref.watch(coverImageResolutionProvider),
                 onChanged: (value) {
                   if (value != null) {
-                    audioProvider.setCoverImageResolution(value);
+                    settingsController.setCoverImageResolution(value);
                   }
                 },
                 items: CoverImageResolution.values
@@ -159,7 +163,7 @@ List<Widget> _buildSettingsAppearanceSection({
             return SwitchListTile(
               value: style == BottomNavigationStyle.capsule,
               onChanged: (value) {
-                audioProvider.setBottomNavigationStyle(
+                settings.setBottomNavigationStyle(
                   value
                       ? BottomNavigationStyle.capsule
                       : BottomNavigationStyle.bar,
@@ -198,7 +202,7 @@ List<Widget> _buildSettingsAppearanceSection({
             );
             return SwitchListTile(
               value: uiBlurEnabled,
-              onChanged: audioProvider.setUiBlurEffectEnabled,
+              onChanged: settings.setUiBlurEffectEnabled,
               title: Text(i18n.tr('ui_blur_effect')),
               subtitle: Text(
                 i18n.tr('ui_blur_effect_subtitle'),
@@ -232,7 +236,7 @@ List<Widget> _buildSettingsAppearanceSection({
             );
             return SwitchListTile(
               value: blurEnabled,
-              onChanged: audioProvider.setBlurPlayerBackgroundEnabled,
+              onChanged: settings.setBlurPlayerBackgroundEnabled,
               title: Text(i18n.tr('blur_player_background')),
               subtitle: Text(
                 i18n.tr('blur_player_background_subtitle'),
@@ -266,7 +270,7 @@ List<Widget> _buildSettingsAppearanceSection({
             );
             return SwitchListTile(
               value: showPlaybackCard,
-              onChanged: audioProvider.setShowPlaybackCard,
+              onChanged: settings.setShowPlaybackCard,
               title: Text(i18n.tr('show_playback_card')),
               subtitle: Text(
                 i18n.tr('show_playback_card_subtitle'),

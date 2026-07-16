@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'package:nameless_audio/app/application/playback_queue_coordinator.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
@@ -22,12 +23,17 @@ void main() {
 
   late AudioProviderTestFixture fixture;
   late AudioProvider provider;
+  late PlaybackQueueCoordinator queueCoordinator;
   late PlaybackNotificationService notificationService;
   late Database db;
 
   setUp(() async {
     fixture = await AudioProviderTestFixture.create();
     provider = fixture.provider;
+    queueCoordinator = PlaybackQueueCoordinator(
+      library: provider.libraryFacade,
+      playback: provider.playbackFacade,
+    );
     notificationService = fixture.notificationService;
     db = fixture.database;
   });
@@ -58,9 +64,11 @@ void main() {
         isSingle: false,
       );
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      final queueSession = provider.createPlaybackQueue('Queue 1');
+      final queueSession = provider.playbackFacade.createPlaybackQueue(
+        'Queue 1',
+      );
 
-      final addFuture = provider.addTrackToPlaybackQueue(
+      final addFuture = provider.playbackFacade.addTrackToPlaybackQueue(
         queueSession.id,
         track,
       );
@@ -114,17 +122,25 @@ void main() {
           notify: false,
           persist: false,
         );
-        final queueSession = provider.createPlaybackQueue('Queue 1');
+        final queueSession = provider.playbackFacade.createPlaybackQueue(
+          'Queue 1',
+        );
 
-        await provider.addTrackToPlaybackQueue(queueSession.id, track);
-        await provider.addTrackToPlaybackQueue(queueSession.id, track);
-        await provider.seekSessionToNext(queueSession.id);
+        await provider.playbackFacade.addTrackToPlaybackQueue(
+          queueSession.id,
+          track,
+        );
+        await provider.playbackFacade.addTrackToPlaybackQueue(
+          queueSession.id,
+          track,
+        );
+        await provider.playbackFacade.seekSessionToNext(queueSession.id);
 
         expect(preparedQueueIndexes.last, 1);
         expect(queueSession.currentQueueIndex, 1);
 
         queueSession.setOptimisticPosition(const Duration(seconds: 5));
-        await provider.seekSessionToPrev(queueSession.id);
+        await provider.playbackFacade.seekSessionToPrev(queueSession.id);
 
         expect(preparedQueueIndexes.last, 0);
         expect(queueSession.currentQueueIndex, 0);
@@ -146,12 +162,20 @@ void main() {
       );
       provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
 
-      final queueSession = provider.createPlaybackQueue('Queue 1');
+      final queueSession = provider.playbackFacade.createPlaybackQueue(
+        'Queue 1',
+      );
       expect(queueSession.isPlaybackQueue, isTrue);
       expect(queueSession.currentTrackPath, isEmpty);
 
-      await provider.addTrackToPlaybackQueue(queueSession.id, track);
-      await provider.addTrackToPlaybackQueue(queueSession.id, track);
+      await provider.playbackFacade.addTrackToPlaybackQueue(
+        queueSession.id,
+        track,
+      );
+      await provider.playbackFacade.addTrackToPlaybackQueue(
+        queueSession.id,
+        track,
+      );
 
       final updated = provider.sessionById(queueSession.id)!;
       expect(updated.playbackQueue?.entries, hasLength(2));
@@ -164,7 +188,7 @@ void main() {
         isTrue,
       );
 
-      await provider.removePlaybackQueueEntry(
+      await provider.playbackFacade.removePlaybackQueueEntry(
         queueSession.id,
         updated.playbackQueue!.entries.first.id,
       );
@@ -198,9 +222,11 @@ void main() {
           notify: false,
           persist: false,
         );
-        final queueSession = provider.createPlaybackQueue('Queue 1');
+        final queueSession = provider.playbackFacade.createPlaybackQueue(
+          'Queue 1',
+        );
 
-        await provider.addWorkToPlaybackQueue(queueSession.id, selected);
+        await queueCoordinator.addWork(queueSession.id, selected);
 
         final entry = provider
             .sessionById(queueSession.id)!
@@ -235,12 +261,14 @@ void main() {
         notify: false,
         persist: false,
       );
-      final queueSession = provider.createPlaybackQueue('Queue 1');
+      final queueSession = provider.playbackFacade.createPlaybackQueue(
+        'Queue 1',
+      );
       final sourceTrack = provider.library.firstWhere(
         (track) => track.displayName == first.displayName,
       );
 
-      await provider.addWorkToPlaybackQueue(queueSession.id, sourceTrack);
+      await queueCoordinator.addWork(queueSession.id, sourceTrack);
 
       final entry = provider
           .sessionById(queueSession.id)!
@@ -290,8 +318,8 @@ void main() {
           isSingle: false,
         );
 
-        await provider.spawnSession(loopTrack, autoPlay: false);
-        await provider.spawnSessionWithQueue(const <MusicTrack>[
+        await provider.playbackFacade.spawnSession(loopTrack, autoPlay: false);
+        await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
           otherTrack,
           otherNextTrack,
         ], autoPlay: false);
@@ -337,9 +365,12 @@ void main() {
           otherSession.id,
           otherSeekPosition,
         );
-        await provider.seekSession(otherSession.id, otherSeekPosition);
-        await provider.seekSessionToNext(otherSession.id);
-        await provider.seekSessionToPrev(otherSession.id);
+        await provider.playbackFacade.seekSession(
+          otherSession.id,
+          otherSeekPosition,
+        );
+        await provider.playbackFacade.seekSessionToNext(otherSession.id);
+        await provider.playbackFacade.seekSessionToPrev(otherSession.id);
 
         expect(otherSession.currentTrackPath, otherTrack.path);
         expect(
@@ -537,8 +568,8 @@ void main() {
               return <String, Object?>{'ok': true, 'value': null};
             });
 
-        await provider.setAsmrPlaybackCacheEnabled(true);
-        await provider.spawnSessionWithQueue(const <MusicTrack>[
+        await provider.settingsRepository.setAsmrPlaybackCacheEnabled(true);
+        await provider.playbackFacade.spawnSessionWithQueue(const <MusicTrack>[
           firstTrack,
           secondTrack,
         ], autoPlay: false);

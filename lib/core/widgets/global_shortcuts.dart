@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/state/audio_provider_riverpod.dart';
-import '../../app/state/audio_provider.dart';
 
 class TogglePlayPauseIntent extends Intent {
   const TogglePlayPauseIntent();
@@ -23,10 +22,10 @@ class GlobalShortcuts extends ConsumerWidget {
         actions: <Type, Action<Intent>>{
           TogglePlayPauseIntent: CallbackAction<TogglePlayPauseIntent>(
             onInvoke: (TogglePlayPauseIntent intent) {
-              final provider = ref.read(audioProviderFacadeProvider);
+              final playback = ref.read(playbackFacadeProvider);
               final state = ref.read(playbackStateProvider).valueOrNull;
               if (state != null && state.activeSessions.isNotEmpty) {
-                provider.toggleSessionPlayPause(state.activeSessions.first.id);
+                playback.toggleSessionPlayPause(state.activeSessions.first.id);
               }
               return null;
             },

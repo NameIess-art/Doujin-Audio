@@ -45,6 +45,11 @@ final class NotificationFacade {
   NotificationState get state => stateService.slice.state;
   Stream<NotificationState> get states => stateService.slice.stream;
 
+  void refreshState() {
+    _syncNotificationState();
+    _notifyNotificationChanged();
+  }
+
   void attachRuntime({
     required Future<void> Function() undismissNotifications,
     required void Function() onNotificationsRestored,

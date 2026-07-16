@@ -160,7 +160,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       scope: UiOperationScope.settingsAsmrDownloadPath,
       labelKey: 'loading_dot',
       task: (_) => ref
-          .read(audioProviderFacadeProvider)
+          .read(settingsRepositoryProvider)
           .setAsmrDownloadDestinationRoot(folder),
     );
   }

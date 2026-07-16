@@ -184,6 +184,9 @@ class NotificationCoordinatorService {
 
 class SettingsRepository {
   Future<void> Function()? _persist;
+  Future<void> Function()? _persistConverter;
+  static const converterFormats = <String>['mp3', 'flac', 'wav', 'aac', 'ogg'];
+  static const converterBitrates = <String>['128k', '192k', '256k', '320k'];
   String converterFormat = 'mp3';
   String converterBitrate = '320k';
   bool multiThreadPlaybackEnabled = false;
@@ -217,11 +220,42 @@ class SettingsRepository {
     _persist ??= persist;
   }
 
+  void attachConverterPersistence(Future<void> Function() persist) {
+    _persistConverter ??= persist;
+  }
+
+  Future<void> setConverterSettings({String? format, String? bitrate}) async {
+    var changed = false;
+    if (format != null &&
+        converterFormats.contains(format) &&
+        format != converterFormat) {
+      converterFormat = format;
+      changed = true;
+    }
+    if (bitrate != null &&
+        converterBitrates.contains(bitrate) &&
+        bitrate != converterBitrate) {
+      converterBitrate = bitrate;
+      changed = true;
+    }
+    if (!changed) return;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await _persistConverter?.call();
+  }
+
   Future<void> setAsmrDownloadDestinationRoot(String? destinationRoot) async {
     final normalized = destinationRoot?.trim();
     final next = normalized == null || normalized.isEmpty ? null : normalized;
     if (asmrDownloadDestinationRoot == next) return;
     asmrDownloadDestinationRoot = next;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await _persist?.call();
+  }
+
+  Future<void> setCardInfoFields(Iterable<CardInfoField> fields) async {
+    final normalized = CardInfoField.normalize(fields);
+    if (listEquals(cardInfoFields, normalized)) return;
+    cardInfoFields = normalized;
     syncSlice(isInitialized: slice.state.isInitialized);
     await _persist?.call();
   }

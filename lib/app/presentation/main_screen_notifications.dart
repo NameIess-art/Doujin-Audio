@@ -143,7 +143,7 @@ extension _MainScreenNotifications on _MainScreenState {
       return;
     }
     _notificationPermissionCheckDone = true;
-    final provider = ref.read(audioProviderFacadeProvider);
+    final notifications = ref.read(notificationFacadeProvider);
 
     var enabled = await _areNotificationsEnabled();
     if (enabled) return;
@@ -160,7 +160,7 @@ extension _MainScreenNotifications on _MainScreenState {
       enabled = await _areNotificationsEnabled();
       if (!context.mounted) return;
       if (status.isGranted && enabled) {
-        provider.refreshNotificationState();
+        notifications.refreshState();
         _showNotificationPermissionEnabledSnack();
         return;
       }
@@ -194,10 +194,10 @@ extension _MainScreenNotifications on _MainScreenState {
 
   Future<void> _handleNotificationSettingsReturn() async {
     if (!mounted || !Platform.isAndroid) return;
-    final audioProvider = ref.read(audioProviderFacadeProvider);
+    final notifications = ref.read(notificationFacadeProvider);
     final enabled = await _areNotificationsEnabled();
     if (!mounted || !enabled) return;
-    audioProvider.refreshNotificationState();
+    notifications.refreshState();
     _showNotificationPermissionEnabledSnack();
   }
 

@@ -4,6 +4,7 @@ import 'package:nameless_audio/features/asmr/domain/asmr_download.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/features/library/domain/library_entry.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/core/media/card_info_field.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/player/application/playback_session.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
@@ -159,6 +160,46 @@ void main() {
       expect(state.asmrPlaybackCacheEnabled, isFalse);
       repository.syncSlice();
       expect(repository.slice.state.asmrPlaybackCacheEnabled, isFalse);
+    });
+
+    test('converter settings validate, publish, and persist once', () async {
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+      var persistCount = 0;
+      repository.attachConverterPersistence(() async {
+        persistCount++;
+      });
+
+      await repository.setConverterSettings(format: 'flac', bitrate: '192k');
+      await repository.setConverterSettings(format: 'invalid');
+
+      expect(repository.converterFormat, 'flac');
+      expect(repository.converterBitrate, '192k');
+      expect(repository.slice.state.converterFormat, 'flac');
+      expect(repository.slice.state.converterBitrate, '192k');
+      expect(persistCount, 1);
+    });
+
+    test('card info fields normalize, publish, and persist', () async {
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+      var persistCount = 0;
+      repository.attachPersistence(() async {
+        persistCount++;
+      });
+
+      await repository.setCardInfoFields(const <CardInfoField>[
+        CardInfoField.rjCode,
+        CardInfoField.rjCode,
+        CardInfoField.voiceActors,
+      ]);
+
+      expect(repository.cardInfoFields, const <CardInfoField>[
+        CardInfoField.rjCode,
+        CardInfoField.voiceActors,
+      ]);
+      expect(repository.slice.state.cardInfoFields, repository.cardInfoFields);
+      expect(persistCount, 1);
     });
   });
 

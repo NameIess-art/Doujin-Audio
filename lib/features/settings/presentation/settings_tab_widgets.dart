@@ -816,7 +816,7 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final audioProvider = ref.read(audioProviderFacadeProvider);
+    final settings = ref.read(settingsRepositoryProvider);
     final selected = ref.watch(
       settingsStateProvider.select(
         (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
@@ -832,7 +832,7 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
         if (next.length >= CardInfoField.maxSelected) return;
         next.add(field);
       }
-      audioProvider.setCardInfoFields(next);
+      settings.setCardInfoFields(next);
     }
 
     return SafeArea(

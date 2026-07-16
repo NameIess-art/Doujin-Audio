@@ -637,25 +637,6 @@ extension AudioProviderPersistence on AudioProvider {
     }
   }
 
-  void setConverterSettings({String? format, String? bitrate}) {
-    var changed = false;
-    if (format != null &&
-        AudioProvider.converterFormats.contains(format) &&
-        format != _converterFormat) {
-      _converterFormat = format;
-      changed = true;
-    }
-    if (bitrate != null &&
-        AudioProvider.converterBitrates.contains(bitrate) &&
-        bitrate != _converterBitrate) {
-      _converterBitrate = bitrate;
-      changed = true;
-    }
-    if (!changed) return;
-    _notifySettingsChanged();
-    unawaited(_saveConverterSettings());
-  }
-
   Future<void> setMultiThreadPlaybackEnabled(bool enabled) async {
     if (_multiThreadPlaybackEnabled == enabled) return;
     _multiThreadPlaybackEnabled = enabled;
@@ -786,14 +767,6 @@ extension AudioProviderPersistence on AudioProvider {
   ) async {
     if (_dlsiteMetadataLanguagePreference == language) return;
     _dlsiteMetadataLanguagePreference = language;
-    _notifySettingsChanged();
-    unawaited(_savePlaybackSettings());
-  }
-
-  Future<void> setCardInfoFields(Iterable<CardInfoField> fields) async {
-    final normalized = CardInfoField.normalize(fields);
-    if (listEquals(_settingsRepository.cardInfoFields, normalized)) return;
-    _settingsRepository.cardInfoFields = normalized;
     _notifySettingsChanged();
     unawaited(_savePlaybackSettings());
   }

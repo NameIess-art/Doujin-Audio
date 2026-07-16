@@ -22,12 +22,10 @@ class GlobalShortcuts extends ConsumerWidget {
         actions: <Type, Action<Intent>>{
           TogglePlayPauseIntent: CallbackAction<TogglePlayPauseIntent>(
             onInvoke: (TogglePlayPauseIntent intent) {
-              final provider = ref.read(audioProviderFacadeProvider);
+              final playback = ref.read(playbackFacadeProvider);
               final state = ref.read(playbackStateProvider).valueOrNull;
               if (state != null && state.activeSessions.isNotEmpty) {
-                provider.playbackFacade.toggleSessionPlayPause(
-                  state.activeSessions.first.id,
-                );
+                playback.toggleSessionPlayPause(state.activeSessions.first.id);
               }
               return null;
             },

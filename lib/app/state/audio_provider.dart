@@ -590,6 +590,7 @@ class AudioProvider with ChangeNotifier {
        _pageLanguageResolver = pageLanguageResolver ?? (() => AppLanguage.zh),
        _skipDisposePersistence = skipDisposePersistence {
     _settingsRepository.attachPersistence(_savePlaybackSettings);
+    _settingsRepository.attachConverterPersistence(_saveConverterSettings);
     _libraryFacade.configurePersistence(enabled: !skipDisposePersistence);
     _playbackFacade.configurePersistence(enabled: !skipDisposePersistence);
     _libraryFacade.attachTrackRemovalHandler(_handleLibraryTracksRemoved);

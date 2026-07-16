@@ -15,6 +15,25 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   final ExpansibleController _expansionController = ExpansibleController();
   bool _expanded = false;
 
+  Future<void> _loadTrackTree() async {
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
+    final state = controller.trackTreeViewState(widget.work.id);
+    if (state.isLoading || state.tree != null) return;
+    try {
+      await UiOperationService.instance.run<List<AsmrTrackFile>>(
+        scope: UiOperationScope.asmrWork(
+          AsmrOperationKind.trackTree,
+          widget.work.id,
+        ),
+        labelKey: 'loading_dot',
+        task: (_) => controller.ensureTrackTree(widget.work),
+      );
+    } catch (_) {
+      // The controller retains the per-work error for the expanded retry state.
+    }
+  }
+
   Future<void> _playWork(BuildContext context) async {
     final playback = ref.read(asmrPlaybackCoordinatorProvider);
     if (playback == null) return;
@@ -86,12 +105,15 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
 
   @override
   Widget build(BuildContext context) {
+    final controller = ref.read(asmrLibraryControllerProvider);
     final treeState = _expanded
-        ? ref.watch(asmrTrackTreeStateProvider(widget.work.id)).valueOrNull
+        ? ref.watch(asmrTrackTreeStateProvider(widget.work.id)).valueOrNull ??
+              controller?.trackTreeViewState(widget.work.id)
         : null;
     final tree = treeState?.tree;
     final visibleTree = treeState?.visibleTree;
     final isTreeLoading = treeState?.isLoading ?? false;
+    final treeError = treeState?.operationError;
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
@@ -151,27 +173,8 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
               setState(() {
                 _expanded = expanded;
               });
-              if (expanded && tree == null && !isTreeLoading) {
-                unawaited(
-                  UiOperationService.instance.run<List<AsmrTrackFile>>(
-                    scope: UiOperationScope.asmrWork(
-                      AsmrOperationKind.trackTree,
-                      widget.work.id,
-                    ),
-                    labelKey: 'loading_dot',
-                    task: (_) async {
-                      final controller = ref.read(
-                        asmrLibraryControllerProvider,
-                      );
-                      if (controller == null) {
-                        throw StateError(
-                          'ASMR library service is not configured.',
-                        );
-                      }
-                      return controller.ensureTrackTree(widget.work);
-                    },
-                  ),
-                );
+              if (expanded) {
+                unawaited(_loadTrackTree());
               }
             },
             shape: RoundedRectangleBorder(
@@ -237,15 +240,60 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
             ),
             children: _expanded
                 ? [
-                    if (isTreeLoading && visibleTree == null)
+                    if (visibleTree != null && visibleTree.isNotEmpty)
+                      for (final node in visibleTree)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: _AsmrTrackTreeNode(
+                            work: widget.work,
+                            node: node,
+                            searchQuery: widget.searchQuery,
+                          ),
+                        )
+                    else if (treeError != null && tree == null)
                       Padding(
+                        key: ValueKey(
+                          'asmr-track-tree-error-${widget.work.id}',
+                        ),
+                        padding: const EdgeInsets.only(top: 4, bottom: 12),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              i18n.tr('operation_failed_retry'),
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                            const SizedBox(height: 4),
+                            TextButton.icon(
+                              onPressed: isTreeLoading
+                                  ? null
+                                  : () => unawaited(_loadTrackTree()),
+                              icon: const Icon(Icons.refresh_rounded),
+                              label: Text(i18n.tr('retry')),
+                            ),
+                          ],
+                        ),
+                      )
+                    else if (tree == null)
+                      Padding(
+                        key: ValueKey(
+                          'asmr-track-tree-loading-${widget.work.id}',
+                        ),
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         child: Center(
                           child: CircularProgressIndicator(color: asmrBlue),
                         ),
                       )
-                    else if (visibleTree == null || visibleTree.isEmpty)
+                    else
                       Padding(
+                        key: ValueKey(
+                          'asmr-track-tree-empty-${widget.work.id}',
+                        ),
                         padding: const EdgeInsets.only(top: 4, bottom: 12),
                         child: Text(
                           i18n.tr('asmr_empty_track_tree'),
@@ -255,17 +303,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                                 fontWeight: FontWeight.w600,
                               ),
                         ),
-                      )
-                    else
-                      for (final node in visibleTree)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: _AsmrTrackTreeNode(
-                            work: widget.work,
-                            node: node,
-                            searchQuery: widget.searchQuery,
-                          ),
-                        ),
+                      ),
                   ]
                 : const <Widget>[],
           ),

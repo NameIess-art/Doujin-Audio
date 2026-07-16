@@ -94,6 +94,22 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('ASMR initial shell keeps category and search controls visible', (
+    tester,
+  ) async {
+    final harness = await _pumpAppShell(tester, includePlaybackSession: false);
+
+    await _tapAsmrDestination(tester);
+    await _pumpMainScreenAnimations(tester);
+
+    expect(
+      find.text(harness.language.tr('asmr_category_collected')),
+      findsOneWidget,
+    );
+    expect(find.byType(TextField), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Windows settings hides haptic feedback option', (tester) async {
     if (!Platform.isWindows) {
       return;
@@ -840,6 +856,27 @@ Future<void> _tapSettingsDestination(WidgetTester tester) async {
         .call();
   }
   await _waitForMainPage(tester, 3);
+}
+
+Future<void> _tapAsmrDestination(WidgetTester tester) async {
+  final navigationRail = find.byType(NavigationRail);
+  if (navigationRail.evaluate().isNotEmpty) {
+    tester
+        .widget<NavigationRail>(navigationRail)
+        .onDestinationSelected!
+        .call(0);
+  } else {
+    final destination = find.byKey(
+      const ValueKey<String>('main_destination_ASMR.ONE'),
+    );
+    tester
+        .widget<InkResponse>(
+          find.descendant(of: destination, matching: find.byType(InkResponse)),
+        )
+        .onTap!
+        .call();
+  }
+  await _waitForMainPage(tester, 0);
 }
 
 Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {

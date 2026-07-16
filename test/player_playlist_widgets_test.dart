@@ -831,6 +831,47 @@ void main() {
     await tester.pump(const Duration(milliseconds: 120));
   });
 
+  testWidgets('local library playlist shows the work card name', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    const libraryRoot = '/library/Library';
+    const workRoot = '$libraryRoot/Work A';
+    const track = MusicTrack(
+      path: '$workRoot/Disc 1/01.mp3',
+      displayName: '01',
+      groupKey: workRoot,
+      groupTitle: 'Work A',
+      groupSubtitle: workRoot,
+      isSingle: false,
+    );
+    fixture.runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+    fixture.runtimeGraph.library.addTracks(
+      const <MusicTrack>[track],
+      notify: false,
+      persist: false,
+    );
+    final session = fixture.runtimeGraph.playback.createTrackSession(track);
+    fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pump();
+
+    expect(find.text('Work A'), findsOneWidget);
+    expect(find.text('Library'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 120));
+  });
+
   testWidgets(
     'single-file queue cover fills the card and switcher shows an audio entry',
     (WidgetTester tester) async {

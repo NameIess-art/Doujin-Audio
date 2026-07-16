@@ -858,20 +858,17 @@ void main() {
         ),
       ], notify: false);
 
+      final paths = AudioPathCoordinator(
+        library: runtimeGraph.library,
+        playback: runtimeGraph.playback,
+      );
+
       expect(
-        AudioPathCoordinator(
-          library: runtimeGraph.library,
-          playback: runtimeGraph.playback,
-        ).tracksInSameWork(firstPath).map((track) => track.path).toSet(),
+        paths.tracksInSameWork(firstPath).map((track) => track.path).toSet(),
         <String>{firstPath, secondPath},
       );
-      expect(
-        AudioPathCoordinator(
-          library: runtimeGraph.library,
-          playback: runtimeGraph.playback,
-        ).workRootForTrack(firstPath),
-        workRoot,
-      );
+      expect(paths.workRootForTrack(firstPath), workRoot);
+      expect(paths.rootFolderName(firstPath), 'Work A');
     });
 
     test('cross-folder loop stays inside the current work root', () async {

@@ -28,6 +28,27 @@ void main() {
     },
   );
 
+  test(
+    'queue creation and other-detail labels use action-specific copy',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final provider = AppLanguageProvider();
+      await Future<void>.delayed(Duration.zero);
+
+      await provider.setLanguage(AppLanguage.zh);
+      expect(provider.tr('add_playback_queue'), '创建播放队列');
+      expect(provider.tr('asmr_detail_other'), '其他详细');
+
+      await provider.setLanguage(AppLanguage.en);
+      expect(provider.tr('add_playback_queue'), 'Create playback queue');
+      expect(provider.tr('asmr_detail_other'), 'Other details');
+
+      await provider.setLanguage(AppLanguage.ja);
+      expect(provider.tr('add_playback_queue'), '再生キューを作成');
+      expect(provider.tr('asmr_detail_other'), 'その他の詳細');
+    },
+  );
+
   test('content language preference follows or overrides page language', () {
     expect(
       ContentLanguagePreference.followPage.resolve(AppLanguage.ja),

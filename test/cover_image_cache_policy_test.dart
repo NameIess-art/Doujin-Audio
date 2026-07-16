@@ -1,6 +1,6 @@
 import 'package:flutter/painting.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/settings/application/settings_state.dart';
 import 'package:nameless_audio/features/library/application/cover_image_cache_policy.dart';
 
 void main() {

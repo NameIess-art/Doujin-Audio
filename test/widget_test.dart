@@ -17,6 +17,8 @@ import 'package:nameless_audio/features/settings/application/app_preferences.dar
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/library/application/library_service.dart';
+import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';

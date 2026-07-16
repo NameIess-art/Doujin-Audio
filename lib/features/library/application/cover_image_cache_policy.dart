@@ -1,7 +1,7 @@
 import 'package:flutter/painting.dart';
 import 'package:mime/mime.dart';
 
-import '../../player/application/audio_state_services.dart';
+import '../../settings/application/settings_state.dart';
 
 const int maxCoverFileBytes = 8 * 1024 * 1024;
 const Set<String> supportedCoverMimeTypes = <String>{

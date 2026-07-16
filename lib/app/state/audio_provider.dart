@@ -39,7 +39,9 @@ import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/dlsite_metadata_service.dart';
 import '../../features/library/application/library_snapshot_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
+import '../../features/library/application/library_service.dart';
 import '../../features/library/application/library_scan_models.dart';
+import '../../features/library/application/library_state_models.dart';
 import '../../features/player/application/native_playback_repository.dart';
 import '../../features/player/application/playback_queue_resolver.dart';
 import '../../core/platform/power_platform_service.dart';
@@ -59,8 +61,8 @@ export '../../features/player/domain/playback_mode.dart';
 export '../../features/player/domain/playback_queue.dart';
 export '../../features/player/application/playback_session.dart';
 export '../../features/player/domain/time_segment_label.dart';
-export '../../features/player/application/audio_state_services.dart'
-    show StartupPage;
+export '../../features/settings/application/settings_state.dart'
+    show StartupPage, BottomNavigationStyle, CoverImageResolution;
 export '../../features/asmr/domain/asmr_download.dart';
 import '../../features/player/application/native_playback_bridge.dart';
 import '../../features/player/application/playback_notification_service.dart';
@@ -71,6 +73,8 @@ import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/player/application/notification_facade.dart';
+import '../../features/settings/application/settings_repository.dart';
+import '../../features/settings/application/settings_state.dart';
 import '../../core/media/subtitle_parser.dart';
 
 part 'audio_provider_persistence.dart';

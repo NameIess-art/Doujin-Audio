@@ -8,7 +8,7 @@ import '../domain/library_node.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'audio_detail_cache_service.dart';
-import '../../player/application/audio_state_services.dart';
+import 'library_service.dart';
 import 'library_organizer.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 

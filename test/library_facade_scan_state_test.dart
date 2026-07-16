@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/library/application/library_scan_models.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/library/application/library_service.dart';
 
 void main() {
   test('facade owns scan generation and rejects stale progress', () async {

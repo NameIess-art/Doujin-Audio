@@ -8,6 +8,11 @@ import 'package:nameless_audio/core/media/card_info_field.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/player/application/playback_session.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/app/application/audio_state_slice.dart';
+import 'package:nameless_audio/features/library/application/library_service.dart';
+import 'package:nameless_audio/features/library/application/library_state_models.dart';
+import 'package:nameless_audio/features/settings/application/settings_repository.dart';
+import 'package:nameless_audio/features/settings/application/settings_state.dart';
 
 void main() {
   group('AudioStateSlice', () {

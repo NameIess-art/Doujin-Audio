@@ -13,11 +13,13 @@ import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/dlsite_metadata_service.dart';
+import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_command_runner.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
+import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 

@@ -1,9 +1,10 @@
 import '../../library/application/cover_image_cache_policy.dart';
-import '../../player/application/audio_state_services.dart';
 import '../../player/application/notification_facade.dart';
 import '../../player/application/playback_facade.dart';
 import '../../player/application/playback_session.dart';
 import '../../player/domain/audio_effects.dart';
+import 'settings_repository.dart';
+import 'settings_state.dart';
 import 'app_cache_service.dart';
 
 /// Applies settings whose changes require cross-service coordination.

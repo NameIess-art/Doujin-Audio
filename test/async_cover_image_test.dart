@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
+import 'package:nameless_audio/features/settings/application/settings_state.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:shared_preferences/shared_preferences.dart';

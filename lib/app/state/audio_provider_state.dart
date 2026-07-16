@@ -42,7 +42,7 @@ extension AudioProviderState on AudioProvider {
     } else if (_libraryService.slice.state.treeSnapshotRevision !=
         _librarySnapshotCacheService.cardSnapshotRevision) {
       scheduleMicrotask(
-        () => _syncLibraryStateSlice(preserveSliceInitialized: true),
+        _syncLibraryStateSlice,
       );
     }
     return _librarySnapshotCacheService.cards;
@@ -148,7 +148,7 @@ extension AudioProviderCoreState on AudioProvider {
   }) {
     return _librarySnapshotCacheService.treeSnapshot(
       onCommitted: () {
-        _syncLibraryStateSlice(preserveSliceInitialized: true);
+        _syncLibraryStateSlice();
         if (notifyOnCommit) {
           _notifyPresentationListeners();
         }
@@ -161,7 +161,7 @@ extension AudioProviderCoreState on AudioProvider {
   }) {
     return _librarySnapshotCacheService.cardSnapshot(
       onCommitted: () {
-        _syncLibraryStateSlice(preserveSliceInitialized: true);
+        _syncLibraryStateSlice();
         if (notifyOnCommit) {
           _notifyPresentationListeners();
         }

@@ -1,7 +1,7 @@
-part of 'audio_provider.dart';
+part of 'playback_command_coordinator.dart';
 
-extension AudioProviderPersistenceSessions on AudioProvider {
-  Future<void> _restorePersistedPlaybackRuntime(
+extension PlaybackCommandRestore on PlaybackCommandCoordinator {
+  Future<void> _restorePersistedRuntime(
     List<PlaybackSession> restoredSessions, {
     required String? focusedSessionId,
   }) async {
@@ -9,25 +9,20 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       final restoredIds = restoredSessions
           .map((session) => session.id)
           .toList(growable: false);
-      final firstSessionId = focusedSessionId;
 
       for (final id in restoredIds) {
         final session = _sessions[id];
         if (session == null) continue;
 
-        final shouldPrepareNow = id == firstSessionId;
+        final shouldPrepareNow = id == focusedSessionId;
         if (!shouldPrepareNow &&
             !_nativePlaybackRepository.supportsDeferredSessionRegistration) {
           continue;
         }
 
         try {
-          final track = _playbackCommandCoordinator.sessionTrackForPath(
-            session,
-            session.currentTrackPath,
-          );
+          final track = _sessionTrackForPath(session, session.currentTrackPath);
           if (track == null) continue;
-
           final uri =
               track.path.startsWith('content://') ||
                   PathMatcher.isRemoteUri(track.path)
@@ -47,28 +42,24 @@ extension AudioProviderPersistenceSessions on AudioProvider {
               channelSwapEnabled: session.channelSwapEnabled,
             ),
             repeatOne: session.loopMode == SessionLoopMode.single,
-            queue: _playbackCommandCoordinator.nativePlaybackQueueFor(
+            queue: _nativePlaybackQueueFor(
               session,
               currentPath: session.currentTrackPath,
             ),
-            queueStartIndex: _playbackCommandCoordinator
-                .nativePlaybackQueueStartIndexFor(
+            queueStartIndex: _nativePlaybackQueueStartIndexFor(
               session,
               currentPath: session.currentTrackPath,
             ),
             repeatAll: session.loopMode != SessionLoopMode.single,
             shuffle: session.loopMode.isShuffle,
-            candidateUris: _playbackCommandCoordinator
-                .candidatePlaybackUrisForTrack(track),
+            candidateUris: _candidatePlaybackUrisForTrack(track),
             deferPlayerCreation: !shouldPrepareNow,
           );
-          if (!prepareResult.isOk) {
-            continue;
-          }
+          if (!prepareResult.isOk) continue;
           final preparedSnapshot = prepareResult.valueOrNull;
           if (AppPlatform.usesDesktopPlaybackBridge &&
               preparedSnapshot != null) {
-            _playbackCommandCoordinator.handleNativeSnapshot(
+            _handleNativePlaybackSnapshot(
               preparedSnapshot.copyWith(
                 volume: session.volume,
                 speed: session.speed,
@@ -78,14 +69,14 @@ extension AudioProviderPersistenceSessions on AudioProvider {
             );
           }
           session.loadedPath = track.path;
-          _notificationFacade.ensureSubtitleTrackLoaded(track.path);
-          _notificationFacade.refreshSessionSubtitle(
+          _ensureSubtitleTrackLoaded(track.path);
+          _refreshNotificationSubtitleForSession(
             session,
             position: session.lastKnownPosition,
             syncNotification: false,
           );
         } catch (error, stackTrace) {
-          _logAudioProviderPersistenceFailure(error, stackTrace);
+          _logRestoreFailure(error, stackTrace);
         }
       }
 
@@ -94,7 +85,7 @@ extension AudioProviderPersistenceSessions on AudioProvider {
       if (snapshotValue != null) {
         for (final snapshot in snapshotValue.sessions) {
           final session = _sessions[snapshot.sessionId];
-          _playbackCommandCoordinator.handleNativeSnapshot(
+          _handleNativePlaybackSnapshot(
             session == null
                 ? snapshot
                 : snapshot.copyWith(
@@ -106,11 +97,18 @@ extension AudioProviderPersistenceSessions on AudioProvider {
           );
         }
       }
-
-      _notificationFacade.syncPlaybackState();
-      if (_sessions.isNotEmpty) _notifyListeners();
+      _syncNotificationState(immediateUnifiedSync: true);
+      if (_sessions.isNotEmpty) _notifyPlaybackChanged();
     } catch (error, stackTrace) {
-      _logAudioProviderPersistenceFailure(error, stackTrace);
+      _logRestoreFailure(error, stackTrace);
     }
+  }
+
+  void _logRestoreFailure(Object error, StackTrace stackTrace) {
+    AppLogService.error(
+      'playback_runtime_restore_failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 }

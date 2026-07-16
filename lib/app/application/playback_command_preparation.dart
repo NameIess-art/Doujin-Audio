@@ -1,4 +1,4 @@
-part of 'audio_provider.dart';
+part of 'playback_command_coordinator.dart';
 
 class _PlaybackPreparationTarget {
   const _PlaybackPreparationTarget({
@@ -47,7 +47,7 @@ class _NativePreparationResult {
   final String? error;
 }
 
-extension AudioProviderPlaybackSessions on AudioProvider {
+extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   Future<bool> _prepareAndPlay(
     PlaybackSession session, {
     required String nextPath,

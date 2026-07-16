@@ -31,11 +31,11 @@ extension AudioProviderPersistence on AudioProvider {
 
   Future<void> _afterPersistenceReset() async {
     _notificationFocusSessionId = null;
-    _unifiedNotificationSyncKey = null;
-    _unifiedNotificationSyncInFlight = false;
-    _unifiedNotificationSyncPending = false;
-    _queuedNotificationRefreshSessionId = null;
-    _notificationsDismissedWhilePaused = false;
+    _notificationStateService.unifiedNotificationSyncKey = null;
+    _notificationStateService.unifiedNotificationSyncInFlight = false;
+    _notificationStateService.unifiedNotificationSyncPending = false;
+    _notificationStateService.queuedNotificationRefreshSessionId = null;
+    _notificationStateService.notificationsDismissedWhilePaused = false;
     _notificationStateService.notificationActionRefreshPending = false;
     _keepAliveSyncDeferred = false;
     _subtitleService.clear();
@@ -43,7 +43,7 @@ extension AudioProviderPersistence on AudioProvider {
     _notificationSubtitleTrackPaths.clear();
     _clearResolvedCoverPaths();
     try {
-      await _clearUnifiedPlaybackNotificationsOnPlatform();
+      await _notificationFacade.clearUnifiedNotificationsOnPlatform();
     } catch (error, stackTrace) {
       _logAudioProviderPersistenceFailure(error, stackTrace);
     }
@@ -74,7 +74,7 @@ extension AudioProviderPersistence on AudioProvider {
     if (!_multiThreadPlaybackEnabled) {
       await AppLogService.measureAsync(
         'audio_provider_enforce_single_thread_playback',
-        _enforceSingleThreadPlayback,
+        _playbackCommandCoordinator.enforceSingleThreadPlayback,
       );
     }
     await AppLogService.measureAsync(
@@ -82,7 +82,7 @@ extension AudioProviderPersistence on AudioProvider {
       _timerFacade.loadRuntimeFromSystem,
     );
     if (_isDisposed) return;
-    _syncNotificationState(immediateUnifiedSync: true);
+    _notificationFacade.syncPlaybackState(immediateUnifiedSync: true);
   }
 
   Future<void> _onPersistedLoadCompleted() async {
@@ -181,7 +181,7 @@ extension AudioProviderPersistence on AudioProvider {
   Future<void> setNotificationsEnabled(bool enabled) async {
     if (_notificationsEnabled == enabled) return;
     _notificationsEnabled = enabled;
-    _unifiedNotificationSyncKey = null;
+    _notificationStateService.unifiedNotificationSyncKey = null;
     _notifySettingsChanged();
     await _notificationService.setEnabled(enabled);
     // setForegroundEnabled drives the native notification preference. During
@@ -192,7 +192,7 @@ extension AudioProviderPersistence on AudioProvider {
       await _nativePlaybackRepository.setForegroundEnabled(false);
     }
     _syncKeepCpuAwake();
-    _syncNotificationState(immediateUnifiedSync: true);
+    _notificationFacade.syncPlaybackState(immediateUnifiedSync: true);
     _notifySettingsChanged();
     unawaited(_settingsRepository.persist());
   }

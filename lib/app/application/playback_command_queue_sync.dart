@@ -1,6 +1,6 @@
-part of 'audio_provider.dart';
+part of 'playback_command_coordinator.dart';
 
-extension AudioProviderQueues on AudioProvider {
+extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
   Future<void> _syncPlaybackQueueSession(
     PlaybackSession session, {
     bool selectFirst = false,

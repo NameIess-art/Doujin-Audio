@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/app_language.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
@@ -14,25 +14,25 @@ import 'package:path/path.dart' as path;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'support/audio_provider_test_fixture.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
-  AudioProviderTestFixture.initialize();
+  AppRuntimeTestFixture.initialize();
 
-  late AudioProviderTestFixture fixture;
-  late AudioProvider provider;
+  late AppRuntimeTestFixture fixture;
+  late AppRuntimeGraph runtimeGraph;
   late PlaybackNotificationService notificationService;
   late Database db;
 
   setUp(() async {
-    fixture = await AudioProviderTestFixture.create();
-    provider = fixture.provider;
+    fixture = await AppRuntimeTestFixture.create();
+    runtimeGraph = fixture.runtimeGraph;
     notificationService = fixture.notificationService;
     db = fixture.database;
   });
 
   tearDown(() async {
-    await fixture.dispose(currentProvider: provider);
+    await fixture.dispose(currentGraph: runtimeGraph);
   });
 
   group('multi-session playback stability', () {
@@ -82,11 +82,15 @@ void main() {
             }
           });
 
-      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.playbackFacade.spawnSession(track, autoPlay: false);
-      final session = provider.activeSessions.single;
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      await runtimeGraph.playback.spawnSession(track, autoPlay: false);
+      final session = runtimeGraph.playback.service.activeSessions.single;
 
-      await provider.playbackFacade.setSessionSpeed(session.id, 1.6);
+      await runtimeGraph.playback.setSessionSpeed(session.id, 1.6);
 
       expect(setSpeedCalls, 1);
       expect(lastNativeSpeed, closeTo(1.5, 0.001));
@@ -152,9 +156,13 @@ void main() {
             }
           });
 
-      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.playbackFacade.spawnSession(track, autoPlay: false);
-      final session = provider.activeSessions.single;
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      await runtimeGraph.playback.spawnSession(track, autoPlay: false);
+      final session = runtimeGraph.playback.service.activeSessions.single;
       session.applyNativeSnapshot(
         NativePlaybackSnapshot(
           sessionId: session.id,
@@ -181,13 +189,13 @@ void main() {
         ),
       );
 
-      await provider.playbackFacade.setSessionSkipSilence(session.id, true);
+      await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
       expect(lastEffects?['skipSilenceEnabled'], isTrue);
 
-      await provider.playbackFacade.setSessionNoiseReduction(session.id, true);
+      await runtimeGraph.playback.setSessionNoiseReduction(session.id, true);
       expect(lastEffects?['noiseReductionEnabled'], isTrue);
 
-      await provider.playbackFacade.setSessionEqBandLevel(session.id, 1000, 7);
+      await runtimeGraph.playback.setSessionEqBandLevel(session.id, 1000, 7);
       final manualLevels = lastEffects?['eqBandLevels'] as List<Object?>;
       final manualBand = manualLevels.cast<Map<Object?, Object?>>().firstWhere(
         (entry) => entry['frequencyHz'] == 1000,
@@ -197,16 +205,13 @@ void main() {
       final voicePreset = builtInEqPresets.firstWhere(
         (preset) => preset.id == 'voice_clear',
       );
-      await provider.playbackFacade.applySessionEqPreset(
-        session.id,
-        voicePreset,
-      );
+      await runtimeGraph.playback.applySessionEqPreset(session.id, voicePreset);
       expect(lastEffects?['eqPresetId'], 'voice_clear');
       expect(lastEffects?['eqEnabled'], isTrue);
       expect(setAudioEffectsCalls, greaterThanOrEqualTo(4));
       expect(session.audioEffects.eqPresetId, 'voice_clear');
 
-      await provider.playbackFacade.applySessionEqPreset(
+      await runtimeGraph.playback.applySessionEqPreset(
         session.id,
         builtInEqPresets.first,
       );
@@ -216,7 +221,7 @@ void main() {
     });
 
     test('failed audio effect update restores state and persistence', () async {
-      provider.playbackFacade.configurePersistence(enabled: true);
+      runtimeGraph.playback.configurePersistence(enabled: true);
       const track = MusicTrack(
         path: 'https://example.com/effects-rollback.mp3',
         displayName: 'track',
@@ -235,14 +240,18 @@ void main() {
             }
             return <String, Object?>{'ok': true, 'value': null};
           });
-      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.playbackFacade.spawnSession(track, autoPlay: false);
-      final session = provider.activeSessions.single;
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      await runtimeGraph.playback.spawnSession(track, autoPlay: false);
+      final session = runtimeGraph.playback.service.activeSessions.single;
       for (var i = 0; i < 50 && session.loadedPath == null; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
 
-      await provider.playbackFacade.setSessionNoiseReduction(session.id, true);
+      await runtimeGraph.playback.setSessionNoiseReduction(session.id, true);
 
       expect(session.audioEffects.noiseReductionEnabled, isFalse);
       final persisted = (await AudioDatabaseRepository(
@@ -268,15 +277,19 @@ void main() {
         groupSubtitle: 'Music',
         isSingle: false,
       );
-      provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-      await provider.playbackFacade.spawnSession(track, autoPlay: false);
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      await runtimeGraph.playback.spawnSession(track, autoPlay: false);
       await Future<void>.delayed(Duration.zero);
-      final session = provider.activeSessions.single;
+      final session = runtimeGraph.playback.service.activeSessions.single;
       session
         ..loadedPath = null
         ..state = PlayerState(true, ProcessingState.ready);
 
-      await provider.playbackFacade.setSessionSkipSilence(session.id, true);
+      await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
 
       expect(playCalls, 1);
       expect(session.audioEffects.skipSilenceEnabled, isTrue);
@@ -325,16 +338,17 @@ void main() {
               }
             });
 
-        provider.addTracks(<MusicTrack>[track], notify: false, persist: false);
-        await provider.playbackFacade.spawnSession(track, autoPlay: false);
-        final session = provider.activeSessions.single;
-
-        await provider.playbackFacade.setSessionSkipSilence(session.id, true);
-        await provider.playbackFacade.setSessionNoiseReduction(
-          session.id,
-          true,
+        runtimeGraph.library.addTracks(
+          <MusicTrack>[track],
+          notify: false,
+          persist: false,
         );
-        await provider.playbackFacade.setSessionEqEnabled(session.id, true);
+        await runtimeGraph.playback.spawnSession(track, autoPlay: false);
+        final session = runtimeGraph.playback.service.activeSessions.single;
+
+        await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
+        await runtimeGraph.playback.setSessionNoiseReduction(session.id, true);
+        await runtimeGraph.playback.setSessionEqEnabled(session.id, true);
 
         expect(session.audioEffects.skipSilenceEnabled, isTrue);
         expect(session.audioEffects.noiseReductionEnabled, isTrue);
@@ -345,7 +359,7 @@ void main() {
     test(
       'console settings stay scoped to their session and do not become defaults',
       () async {
-        provider.playbackFacade.configurePersistence(enabled: true);
+        runtimeGraph.playback.configurePersistence(enabled: true);
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         const track = MusicTrack(
           path: 'https://example.com/remembered-console.mp3',
@@ -479,32 +493,29 @@ void main() {
               }
             });
 
-        provider.addTracks(
+        runtimeGraph.library.addTracks(
           <MusicTrack>[track, secondTrack],
           notify: false,
           persist: false,
         );
-        await provider.playbackFacade.spawnSession(track, autoPlay: false);
-        final session = provider.activeSessions.single;
+        await runtimeGraph.playback.spawnSession(track, autoPlay: false);
+        final session = runtimeGraph.playback.service.activeSessions.single;
 
-        await provider.playbackFacade.setSessionVolume(session.id, 1.25);
-        await provider.playbackFacade.setSessionSpeed(session.id, 1.6);
-        await provider.playbackFacade.setSessionSkipSilence(session.id, true);
-        await provider.playbackFacade.setSessionNoiseReduction(
+        await runtimeGraph.playback.setSessionVolume(session.id, 1.25);
+        await runtimeGraph.playback.setSessionSpeed(session.id, 1.6);
+        await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
+        await runtimeGraph.playback.setSessionNoiseReduction(session.id, true);
+        await runtimeGraph.playback.setSessionVolumeNormalization(
           session.id,
           true,
         );
-        await provider.playbackFacade.setSessionVolumeNormalization(
-          session.id,
-          true,
-        );
-        await provider.playbackFacade.setSessionPanning(session.id, -0.4);
-        await provider.playbackFacade.setSessionEqBandLevel(
+        await runtimeGraph.playback.setSessionPanning(session.id, -0.4);
+        await runtimeGraph.playback.setSessionEqBandLevel(
           session.id,
           1000,
           2.5,
         );
-        await provider.playbackFacade.setSessionChannelSwap(session.id, true);
+        await runtimeGraph.playback.setSessionChannelSwap(session.id, true);
 
         final prefs = await SharedPreferences.getInstance();
         expect(prefs.getString('playback_settings_v1'), isNull);
@@ -525,13 +536,11 @@ void main() {
         expect(persistedSession.audioEffects.panning, -0.4);
         expect(persistedSession.channelSwapEnabled, isTrue);
 
-        await provider.playbackFacade.spawnSession(
-          secondTrack,
-          autoPlay: false,
-        );
-        final secondSession = provider.activeSessions.singleWhere(
-          (candidate) => candidate.currentTrackPath == secondTrack.path,
-        );
+        await runtimeGraph.playback.spawnSession(secondTrack, autoPlay: false);
+        final secondSession = runtimeGraph.playback.service.activeSessions
+            .singleWhere(
+              (candidate) => candidate.currentTrackPath == secondTrack.path,
+            );
         expect(secondSession.volume, 1.0);
         expect(secondSession.speed, 1.0);
         expect(secondSession.audioEffects, AudioEffectsState.flat);
@@ -550,7 +559,7 @@ void main() {
         );
         addTearDown(() => restartDb.close());
         await AppDatabase.createSchemaForTest(restartDb);
-        final restartProvider = AudioProvider.test(
+        final restartGraph = createTestRuntimeGraph(
           notificationService: notificationService,
           audioDatabaseRepository: AudioDatabaseRepository(
             database: AppDatabase.test(restartDb),
@@ -558,21 +567,19 @@ void main() {
           skipPersistence: false,
           startRuntime: true,
         );
-        addTearDown(restartProvider.dispose);
-        await restartProvider.playbackStateStream.firstWhere(
+        addTearDown(restartGraph.runtime.dispose);
+        await restartGraph.playback.states.firstWhere(
           (state) => state.isInitialized,
         );
-        restartProvider.addTracks(
+        restartGraph.library.addTracks(
           <MusicTrack>[track],
           notify: false,
           persist: false,
         );
-        await restartProvider.playbackFacade.spawnSession(
-          track,
-          autoPlay: false,
-        );
+        await restartGraph.playback.spawnSession(track, autoPlay: false);
 
-        final restoredSession = restartProvider.activeSessions.single;
+        final restoredSession =
+            restartGraph.playback.service.activeSessions.single;
         expect(restoredSession.volume, 1.0);
         expect(restoredSession.speed, 1.0);
         expect(restoredSession.audioEffects, AudioEffectsState.flat);
@@ -583,7 +590,7 @@ void main() {
     test(
       'failed paused console updates roll back and stay rolled back after restart',
       () async {
-        provider.playbackFacade.configurePersistence(enabled: true);
+        runtimeGraph.playback.configurePersistence(enabled: true);
         SharedPreferences.setMockInitialValues(const <String, Object>{});
         const track = MusicTrack(
           path: 'https://example.com/paused-console.mp3',
@@ -642,35 +649,35 @@ void main() {
               }
             });
 
-        provider.addTracks(
+        runtimeGraph.library.addTracks(
           const <MusicTrack>[track],
           notify: false,
           persist: false,
         );
-        await provider.playbackFacade.spawnSession(track, autoPlay: false);
-        final session = provider.activeSessions.single;
+        await runtimeGraph.playback.spawnSession(track, autoPlay: false);
+        final session = runtimeGraph.playback.service.activeSessions.single;
         expect(session.state.playing, isFalse);
 
-        await provider.playbackFacade.setSessionSkipSilence(session.id, true);
-        await provider.playbackFacade.setSessionChannelSwap(session.id, true);
+        await runtimeGraph.playback.setSessionSkipSilence(session.id, true);
+        await runtimeGraph.playback.setSessionChannelSwap(session.id, true);
 
         final persisted = (await repository.loadAllSessions()).single;
         expect(persisted.audioEffects.skipSilenceEnabled, isFalse);
         expect(persisted.channelSwapEnabled, isFalse);
 
-        provider.dispose();
+        await runtimeGraph.runtime.dispose();
         notificationService = PlaybackNotificationService();
-        provider = AudioProvider.test(
+        runtimeGraph = createTestRuntimeGraph(
           notificationService: notificationService,
           audioDatabaseRepository: repository,
           skipPersistence: false,
           startRuntime: true,
         );
-        await provider.playbackStateStream.firstWhere(
+        await runtimeGraph.playback.states.firstWhere(
           (state) => state.isInitialized,
         );
 
-        final restored = provider.activeSessions.single;
+        final restored = runtimeGraph.playback.service.activeSessions.single;
         expect(restored.state.playing, isFalse);
         expect(restored.audioEffects.skipSilenceEnabled, isFalse);
         expect(restored.channelSwapEnabled, isFalse);
@@ -815,27 +822,31 @@ void main() {
               }
             });
 
-        final restoredProvider = AudioProvider.test(
+        final restoredGraph = createTestRuntimeGraph(
           notificationService: notificationService,
           audioDatabaseRepository: restoredRepository,
           skipPersistence: false,
           startRuntime: true,
         );
-        addTearDown(restoredProvider.dispose);
+        addTearDown(restoredGraph.runtime.dispose);
 
         for (var i = 0; i < 100; i++) {
-          if (restoredProvider.activeSessions.length == 2) break;
+          if (restoredGraph.playback.service.activeSessions.length == 2) {
+            break;
+          }
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
 
-        final secondSession = restoredProvider.sessionById(secondSessionId);
+        final secondSession = restoredGraph.playback.sessionById(
+          secondSessionId,
+        );
         expect(secondSession, isNotNull);
         expect(firstDeferredPlayerCreation, isFalse);
         expect(secondDeferredPlayerCreation, isTrue);
         expect(secondPrepareCalls, 1);
         expect(secondSession!.loadedPath, secondTrack.path);
 
-        await restoredProvider.playbackFacade.setSessionSkipSilence(
+        await restoredGraph.playback.setSessionSkipSilence(
           secondSessionId,
           true,
         );
@@ -893,13 +904,13 @@ void main() {
               }
             });
 
-        provider.addTracks(
+        runtimeGraph.library.addTracks(
           <MusicTrack>[oldTrack],
           notify: false,
           persist: false,
         );
-        await provider.playbackFacade.spawnSession(oldTrack, autoPlay: false);
-        await provider.settingsRepository.setAutoPlayAddedSessions(false);
+        await runtimeGraph.playback.spawnSession(oldTrack, autoPlay: false);
+        await runtimeGraph.settings.setAutoPlayAddedSessions(false);
 
         final databaseRepository = AudioDatabaseRepository(
           database: AppDatabase.test(db),
@@ -930,22 +941,26 @@ void main() {
           json.encode(<String>['restored']),
         );
 
-        final coverGenerationBeforeReload = provider.coverGeneration;
-        await provider.persistenceCoordinator.reloadPersistedState();
+        final coverGenerationBeforeReload =
+            runtimeGraph.library.coverArtworkCacheService.generation;
+        await runtimeGraph.persistence.reloadPersistedState();
 
         expect(clearAllCalls, greaterThanOrEqualTo(1));
         expect(
-          provider.coverGeneration,
+          runtimeGraph.library.coverArtworkCacheService.generation,
           greaterThan(coverGenerationBeforeReload),
         );
-        expect(provider.trackByPath(oldTrack.path), isNull);
-        expect(provider.trackByPath(restoredTrack.path), isNotNull);
-        expect(provider.watchedFolders, <String>['restored']);
-        expect(provider.autoPlayAddedSessions, isTrue);
-        expect(provider.activeSessions, hasLength(1));
-        expect(provider.activeSessions.single.id, restoredSessionId);
+        expect(runtimeGraph.library.trackByPath(oldTrack.path), isNull);
+        expect(runtimeGraph.library.trackByPath(restoredTrack.path), isNotNull);
+        expect(runtimeGraph.library.watchedFolders, <String>['restored']);
+        expect(runtimeGraph.settings.autoPlayAddedSessions, isTrue);
+        expect(runtimeGraph.playback.service.activeSessions, hasLength(1));
         expect(
-          provider.activeSessions.single.currentTrackPath,
+          runtimeGraph.playback.service.activeSessions.single.id,
+          restoredSessionId,
+        );
+        expect(
+          runtimeGraph.playback.service.activeSessions.single.currentTrackPath,
           restoredTrack.path,
         );
         expect(preparedPaths, contains(restoredTrack.path));
@@ -974,12 +989,12 @@ void main() {
         remoteCoverUrl: 'https://example.com/cover.jpg',
         remoteMetadataKind: 'asmr.one',
       );
-      provider.addTracks(
+      runtimeGraph.library.addTracks(
         const <MusicTrack>[track],
         notify: false,
         persist: false,
       );
-      await provider.playbackFacade.spawnSession(track, autoPlay: false);
+      await runtimeGraph.playback.spawnSession(track, autoPlay: false);
 
       for (var i = 0; i < 20 && prepareArguments == null; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -1013,7 +1028,7 @@ void main() {
             return null;
           });
 
-      await provider.playbackFacade.spawnSession(
+      await runtimeGraph.playback.spawnSession(
         const MusicTrack(
           path: '/music/keep-playing.mp3',
           displayName: 'Keep Playing',
@@ -1024,12 +1039,12 @@ void main() {
         ),
         autoPlay: false,
       );
-      final session = provider.activeSessions.single;
+      final session = runtimeGraph.playback.service.activeSessions.single;
       session
         ..loadedPath = session.currentTrackPath
         ..setOptimisticState(playing: true);
 
-      await provider.notificationFacade.dismissAfterPauseAll();
+      await runtimeGraph.notifications.dismissAfterPauseAll();
 
       expect(session.state.playing, isTrue);
       expect(nativeCalls, contains(NativePlaybackMethod.dismissNotifications));
@@ -1043,7 +1058,7 @@ void main() {
     test('startup page is saved with playback settings', () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
 
-      await provider.settingsRepository.setStartupPage(StartupPage.playlist);
+      await runtimeGraph.settings.setStartupPage(StartupPage.playlist);
       await Future<void>.delayed(const Duration(milliseconds: 20));
 
       final prefs = await SharedPreferences.getInstance();
@@ -1056,10 +1071,10 @@ void main() {
     test('DLsite language preference persists follow page selection', () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
 
-      await provider.settingsRepository.setDlsiteMetadataLanguage(
+      await runtimeGraph.settings.setDlsiteMetadataLanguage(
         ContentLanguagePreference.en,
       );
-      await provider.settingsRepository.setDlsiteMetadataLanguage(
+      await runtimeGraph.settings.setDlsiteMetadataLanguage(
         ContentLanguagePreference.followPage,
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));

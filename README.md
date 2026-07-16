@@ -116,8 +116,8 @@ Android 应用内自动更新始终下载 universal APK 并交给系统安装器
 
 ## 代码结构
 
-- `lib/app`：应用壳、主页面、本地化、主题，以及仅作旧 API 门面的
-  `AudioProvider`；Riverpod 直接投影 Library / Playback / Timer /
+- `lib/app`：应用壳、主页面、本地化、主题和显式运行时装配；Riverpod
+  直接投影 Library / Playback / Timer /
   Notification / Settings 五个状态所有者，并由 presentation controller
   管理滚动与轮播定位。
 - `lib/core`：错误、日志、平台网关、SQLite 持久化、共享媒体对象和通用组件。

@@ -1,26 +1,24 @@
 # Architecture Notes
 
-Nameless Audio keeps `AudioProvider` as the only compatibility `ChangeNotifier`
-facade. New presentation state reads go through Riverpod projections of the
-owning facades; legacy commands can still be forwarded through `AudioProvider`.
-Platform playback remains behind the existing native playback bridge and
-notification services.
+Nameless Audio composes its runtime from explicit feature owners. Presentation
+state reads go through Riverpod immutable projections, while commands target
+the owning facade or coordinator. Platform playback remains behind the existing
+native playback bridge and notification services.
 
 State ownership is intentionally split by responsibility:
 
-- `AudioProvider` is constructed from exactly `LibraryFacade`,
-  `PlaybackFacade`, `TimerFacade`, `NotificationFacade`, and
-  `SettingsRepository`. It coalesces legacy listener notifications in one
-  microtask and suppresses them after disposal.
+- `createAppRuntimeGraph` wires `LibraryFacade`, `PlaybackFacade`,
+  `TimerFacade`, `NotificationFacade`, and `SettingsRepository` to the command,
+  keep-alive, persistence, warmup, and lifecycle coordinators without owning a
+  second mutable state copy.
 - Riverpod exposes those five high-level dependencies, their immutable state
   slices, and derived UI projections. Database/native repositories, command
   runners, and mutable services are not UI-level providers.
 - `LibraryService`, `PlaybackSessionService`, `TimerService`,
   `NotificationCoordinatorService`, and `SettingsRepository` remain the sole
-  mutable owners of their respective state during the progressive extraction.
+  mutable owners of their respective state.
 - `MainScreenController` owns scroll-to-top presentation signals and
-  `PlaylistUiController` owns carousel positioning. Neither state is stored in
-  `AudioProvider`.
+  `PlaylistUiController` owns carousel positioning.
 
 Playback notifications use `PlaybackNotificationService` and
 `NotificationsPlatformService` on the Dart side, with routing and rendering
@@ -33,14 +31,12 @@ Current platform responsibility boundaries include:
 - `LibraryScannerService`: scan generation, rollback, merge, and catalog writes. It reads and writes the catalog only through `LibraryCatalogReader` / `LibraryCatalogWriter` and returns typed outcomes instead of localized UI messages.
 - `LibraryScanDataSource`: permission requests, file/folder selection, local file-system enumeration, and native local/SAF scanning.
 - `LibraryScanRules`: pure duplicate, nested-directory, path-overlap, and standalone-folder promotion rules.
-- `LibraryFacade.catalog`: the catalog port used by scanning presentation. Its
-  temporary compatibility command bridge owns no state and will disappear as
-  the remaining library mutations move into `LibraryFacade`.
+- `LibraryFacade.catalog`: the catalog port used by scanning presentation.
 - `AsmrRemoteCatalogService`: loads category/search pages, recommendations, details, and track trees without owning controller cache or UI state.
 - `AsmrAccountSyncService`: owns session recovery, local favorite/history transactions, outbox draining, and remote merge rules. Auth epoch changes cancel stale writes.
 - `AsmrPlaybackCoordinator`: resolves an ASMR work or track queue and launches
   it through `PlaybackFacadeSessionLauncher`, without coupling
-  `AsmrLibraryController` to `AudioProvider`.
+  `AsmrLibraryController` to the application runtime graph.
 - `AsmrPreferencesStore`: instance-scoped ASMR persistence backed by an injected `AppDatabase`.
 - `LibraryEntryEditorService`: local/SAF disk snapshots used by library editing; presentation only applies the typed snapshot to the existing facade.
 - `DataSupportFileService` and `DiagnosticReportExporter`: picker, temporary-file, backup, and diagnostic-export lifecycles kept outside presentation.
@@ -77,7 +73,7 @@ extend the matching handler instead of growing `MainActivity`.
 
 Production Dart ownership is reflected directly by the directory tree:
 
-- `lib/app`: bootstrap-facing presentation, localization, theme, the compatibility `AudioProvider` facade, and Riverpod projections.
+- `lib/app`: bootstrap-facing presentation, localization, theme, explicit runtime composition, and Riverpod projections.
 - `lib/core`: errors, logging, media primitives, persistence, platform gateways, shared UI operation/interaction scheduling, and feature-neutral widgets.
 - `lib/features/<feature>/{domain,application,presentation}`: library, player, ASMR, settings, data support, and video conversion code.
 
@@ -100,11 +96,11 @@ runtime objects, and is not exported from player domain. Feature domain code is
 kept free of Flutter, player SDK, application, and presentation imports by
 `test/architecture_boundaries_test.dart`.
 
-Large screen and compatibility-provider files may use same-library `part` files
-only while extracted code still depends on private compatibility state. New
-business behavior belongs in an owning facade/service, and replaced parts must
-be deleted rather than retained in parallel. `SettingsTab` keeps lifecycle and
-flow composition in its main file while its sections remain private builders.
+Large screens may use same-library `part` files for private widget boundaries.
+Business behavior belongs in an owning facade/service, and replaced
+implementations must be deleted rather than retained in parallel. `SettingsTab`
+keeps lifecycle and flow composition in its main file while its sections remain
+private builders.
 
 Player-only carousel and progress widgets live in player presentation instead of `core/widgets`. Playlist controls are grouped into transport, time-segment, audio-feature/equalizer, and speed-control parts. Audio-detail cover, field, and fetch-dialog widgets remain private same-library parts.
 

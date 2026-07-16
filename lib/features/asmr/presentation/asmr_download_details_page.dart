@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../app/state/audio_provider_riverpod.dart';
+import '../../../app/state/app_runtime_providers.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_manager.dart';
 import '../../../app/theme/app_design_tokens.dart';

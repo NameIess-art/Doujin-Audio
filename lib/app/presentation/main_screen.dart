@@ -10,12 +10,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import '../localization/app_language_provider.dart';
-import '../state/audio_provider.dart';
-import '../state/audio_provider_riverpod.dart';
+import '../state/app_runtime_providers.dart';
 import '../state/subtitle_settings_provider.dart';
 import '../../features/settings/application/app_preferences.dart';
+import '../../features/settings/application/settings_state.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/playback_session.dart';
+import '../../features/player/domain/playback_mode.dart';
 import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../core/platform/notifications_platform_service.dart';
 import '../../core/platform/permission_action_controller.dart';

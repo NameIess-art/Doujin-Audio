@@ -4,12 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
-import 'package:nameless_audio/app/state/audio_provider_riverpod.dart';
+import 'support/runtime_test_models.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/library/application/dlsite_metadata_service.dart';
@@ -18,6 +17,7 @@ import 'package:nameless_audio/features/player/application/playback_command_runn
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/core/widgets/operation_feedback.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
   testWidgets('metadata review page shows shell while metadata loads', (
@@ -81,7 +81,19 @@ Widget _buildTestApp({
   final themeProvider = ThemeProvider();
   return ProviderScope(
     overrides: [
-      ...createAudioProviderOverrides(audioProvider: services.audioProvider),
+      ...createAppRuntimeOverrides(
+        persistence: services.runtimeGraph.persistence,
+        runtime: services.runtimeGraph.runtime,
+        warmup: services.runtimeGraph.warmup,
+        playbackCommands: services.runtimeGraph.playbackCommands,
+        keepAlive: services.runtimeGraph.keepAlive,
+        library: services.runtimeGraph.library,
+        playback: services.runtimeGraph.playback,
+        subtitles: services.runtimeGraph.subtitles,
+        timer: services.runtimeGraph.timer,
+        notifications: services.runtimeGraph.notifications,
+        settings: services.runtimeGraph.settings,
+      ),
       themeProviderInstanceProvider.overrideWithValue(themeProvider),
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
     ],
@@ -94,7 +106,7 @@ class _TestServices {
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
   }) {
-    audioProvider = AudioProvider.test(
+    runtimeGraph = createTestRuntimeGraph(
       notificationService: notificationService,
       audioDatabaseRepository: audioDatabaseRepository,
       nativePlaybackRepository: nativePlaybackRepository,
@@ -117,10 +129,10 @@ class _TestServices {
   final timerService = TimerService();
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
-  late final AudioProvider audioProvider;
+  late final AppRuntimeGraph runtimeGraph;
 
   void dispose() {
-    audioProvider.dispose();
+    unawaited(runtimeGraph.runtime.dispose());
   }
 }
 

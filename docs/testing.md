@@ -129,13 +129,14 @@ feedback copy, permissions, update/backup result flows, or documentation
 encoding. The manual performance process remains observational and is recorded
 in [`docs/release-quality.md`](release-quality.md).
 
-The former large provider integration suite is organized by responsibility and
-shares `test/support/audio_provider_test_fixture.dart` for SQLite schema 3,
-platform-channel cleanup, provider disposal, widget hosting, and pump helpers:
+The runtime owner suites are organized by responsibility and share
+`test/support/app_runtime_test_fixture.dart` for SQLite schema 3,
+platform-channel cleanup, ordered runtime disposal, widget hosting, and pump
+helpers:
 
 ```bash
-flutter test --concurrency=1 test/audio_provider_playback_race_test.dart test/audio_provider_playback_features_test.dart
-flutter test --concurrency=1 test/audio_provider_queue_test.dart test/audio_provider_media_library_test.dart test/audio_provider_audio_detail_cover_test.dart
+flutter test --concurrency=1 test/playback_command_coordinator_race_test.dart test/playback_facade_features_test.dart
+flutter test --concurrency=1 test/playback_queue_coordinator_test.dart test/library_facade_test.dart test/library_audio_detail_cover_test.dart
 ```
 
 Update parsing and selection remain focused in

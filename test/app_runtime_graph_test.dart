@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'package:nameless_audio/app/application/app_runtime_graph.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
@@ -22,21 +22,20 @@ void main() {
         service: PlaybackNotificationService(),
       );
       final settings = SettingsRepository();
-      final provider = AudioProvider(
+      final runtimeGraph = createAppRuntimeGraph(
         library: library,
         playback: playback,
         timer: timer,
-        notification: notification,
+        notifications: notification,
         settings: settings,
-        deferRuntimeStart: true,
       );
-      addTearDown(provider.dispose);
+      addTearDown(runtimeGraph.runtime.dispose);
 
-      expect(provider.libraryFacade, same(library));
-      expect(provider.playbackFacade, same(playback));
-      expect(provider.timerFacade, same(timer));
-      expect(provider.notificationFacade, same(notification));
-      expect(provider.settingsRepository, same(settings));
+      expect(runtimeGraph.library, same(library));
+      expect(runtimeGraph.playback, same(playback));
+      expect(runtimeGraph.timer, same(timer));
+      expect(runtimeGraph.notifications, same(notification));
+      expect(runtimeGraph.settings, same(settings));
     },
   );
 }

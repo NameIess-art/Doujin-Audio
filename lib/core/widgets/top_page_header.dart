@@ -4,7 +4,7 @@ import 'dart:ui' as dart_ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../app/state/audio_provider_riverpod.dart';
+import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'marquee_text.dart';

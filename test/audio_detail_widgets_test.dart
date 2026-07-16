@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/features/library/presentation/audio_detail_sheet.dart';
 import 'package:nameless_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 import 'package:nameless_audio/features/library/presentation/dlsite_metadata_review_page.dart';
@@ -11,7 +11,7 @@ import 'package:nameless_audio/features/asmr/application/asmr_metadata_service.d
 import 'package:nameless_audio/features/library/application/dlsite_metadata_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'support/audio_provider_test_fixture.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 class _FakeDlsiteMetadataService extends DlsiteMetadataService {
   @override
@@ -67,38 +67,38 @@ class _FakeAsmrMetadataService extends AsmrMetadataService {
 }
 
 void main() {
-  AudioProviderTestFixture.initialize();
+  AppRuntimeTestFixture.initialize();
   late Database testDatabase;
 
   setUpAll(() async {
-    testDatabase = await AudioProviderTestFixture.installSharedDatabase();
+    testDatabase = await AppRuntimeTestFixture.installSharedDatabase();
   });
 
   tearDownAll(() async {
-    await AudioProviderTestFixture.disposeSharedDatabase(testDatabase);
+    await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
   testWidgets(
     'batch metadata page defaults to missing works and shows counts',
     (WidgetTester tester) async {
-      final fixture = AudioProviderWidgetTestFixture();
+      final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
-      final audioProvider = fixture.audioProvider;
+      final runtimeGraph = fixture.runtimeGraph;
       final audioDatabaseRepository = fixture.audioDatabaseRepository;
       final nativePlaybackRepository = fixture.nativePlaybackRepository;
       const playbackCommandRunner =
-          AudioProviderWidgetTestFixture.playbackCommandRunner;
+          AppRuntimeWidgetTestFixture.playbackCommandRunner;
       final libraryService = fixture.libraryService;
       final playbackService = fixture.playbackService;
       final timerService = fixture.timerService;
       final notificationCoordinatorService =
           fixture.notificationCoordinatorService;
-      final settingsRepository = fixture.settingsRepository;
+      final settingsRepository = fixture.settings;
       final languageProvider = fixture.languageProvider;
 
       await tester.pumpWidget(
-        buildAudioProviderTestApp(
-          audioProvider: audioProvider,
+        buildAppRuntimeTestApp(
+          runtimeGraph: runtimeGraph,
           audioDatabaseRepository: audioDatabaseRepository,
           nativePlaybackRepository: nativePlaybackRepository,
           playbackCommandRunner: playbackCommandRunner,
@@ -188,27 +188,27 @@ void main() {
   testWidgets('metadata review batch mode shows progress and skip action', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture(
+    final fixture = AppRuntimeWidgetTestFixture(
       dlsiteMetadataService: _FakeDlsiteMetadataService(),
       asmrMetadataService: _FakeAsmrMetadataService(),
     );
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -270,15 +270,15 @@ void main() {
   test(
     'preferred title metadata fills missing ASMR fields from DLsite',
     () async {
-      final fixture = AudioProviderWidgetTestFixture(
+      final fixture = AppRuntimeWidgetTestFixture(
         dlsiteMetadataService: _FakeDlsiteMetadataService(),
         asmrMetadataService: _FakeAsmrMetadataService(),
       );
       addTearDown(fixture.dispose);
-      final audioProvider = fixture.audioProvider;
+      final runtimeGraph = fixture.runtimeGraph;
 
       final metadata =
-          (await audioProvider.libraryFacade.searchPreferredMetadataByTitles(
+          (await runtimeGraph.library.searchPreferredMetadataByTitles(
             const <String>['Work'],
             language: AppLanguage.zh,
           )).single;
@@ -298,19 +298,19 @@ void main() {
   testWidgets(
     'clearing a manual folder duration shows the calculated track total',
     (WidgetTester tester) async {
-      final fixture = AudioProviderWidgetTestFixture();
+      final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
-      final audioProvider = fixture.audioProvider;
+      final runtimeGraph = fixture.runtimeGraph;
       final audioDatabaseRepository = fixture.audioDatabaseRepository;
       final nativePlaybackRepository = fixture.nativePlaybackRepository;
       const playbackCommandRunner =
-          AudioProviderWidgetTestFixture.playbackCommandRunner;
+          AppRuntimeWidgetTestFixture.playbackCommandRunner;
       final libraryService = fixture.libraryService;
       final playbackService = fixture.playbackService;
       final timerService = fixture.timerService;
       final notificationCoordinatorService =
           fixture.notificationCoordinatorService;
-      final settingsRepository = fixture.settingsRepository;
+      final settingsRepository = fixture.settings;
       final languageProvider = fixture.languageProvider;
 
       const folderPath = r'C:\library\Work';
@@ -318,8 +318,8 @@ void main() {
         targetType: AudioDetailTargetType.libraryRootFolder,
         targetPath: folderPath,
       );
-      audioProvider.addWatchedFolder(folderPath, notify: false);
-      audioProvider.addTracks(
+      runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+      runtimeGraph.library.addTracks(
         const <MusicTrack>[
           MusicTrack(
             path: r'C:\library\Work\01.mp3',
@@ -344,7 +344,7 @@ void main() {
         persist: false,
       );
       await tester.runAsync(
-        () => audioProvider.libraryFacade.saveAudioDetail(
+        () => runtimeGraph.library.saveAudioDetail(
           AudioDetail.empty(
             target,
           ).copyWith(duration: const Duration(minutes: 9)),
@@ -352,8 +352,8 @@ void main() {
       );
 
       await tester.pumpWidget(
-        buildAudioProviderTestApp(
-          audioProvider: audioProvider,
+        buildAppRuntimeTestApp(
+          runtimeGraph: runtimeGraph,
           audioDatabaseRepository: audioDatabaseRepository,
           nativePlaybackRepository: nativePlaybackRepository,
           playbackCommandRunner: playbackCommandRunner,
@@ -366,7 +366,7 @@ void main() {
           child: const AudioDetailSheet(target: target),
         ),
       );
-      await pumpUntilLibraryTreeReady(tester, audioProvider);
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 50)),
       );
@@ -405,7 +405,7 @@ void main() {
       }
 
       final saved = await tester.runAsync(
-        () => audioProvider.libraryFacade.loadAudioDetail(target),
+        () => runtimeGraph.library.loadAudioDetail(target),
       );
       expect(saved?.detail.duration, isNull);
       expect(
@@ -423,31 +423,29 @@ void main() {
   testWidgets('audio detail renders before automatic duration completes', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
     final target = AudioDetailTarget.libraryRootFolder('/library/Work');
     await tester.runAsync(
-      () => audioProvider.libraryFacade.saveAudioDetail(
-        AudioDetail.empty(target),
-      ),
+      () => runtimeGraph.library.saveAudioDetail(AudioDetail.empty(target)),
     );
     final durationCompleter = Completer<Duration?>();
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -491,19 +489,19 @@ void main() {
   testWidgets('audio detail fetch opens metadata scope page', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
 
     const target = AudioDetailTarget(
@@ -511,14 +509,12 @@ void main() {
       targetPath: '/library/Work',
     );
     await tester.runAsync(
-      () => audioProvider.libraryFacade.saveAudioDetail(
-        AudioDetail.empty(target),
-      ),
+      () => runtimeGraph.library.saveAudioDetail(AudioDetail.empty(target)),
     );
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,

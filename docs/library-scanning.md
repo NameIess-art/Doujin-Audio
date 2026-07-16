@@ -7,7 +7,6 @@ LibraryTab
   -> LibraryScanDataSource
   -> FileCachePlatformGateway / file-system isolate
   -> LibraryFacade.catalog
-  -> temporary compatibility command bridge
   -> LibraryService + database repository
 ```
 
@@ -30,13 +29,11 @@ decode native payloads without depending back on a feature application layer.
 temporary imports, native local/SAF calls, and the isolate-backed local scan.
 `LibraryScanRules` is pure Dart and owns duplicate/nested/overlap decisions.
 
-`LibraryScannerService` does not depend on the concrete `AudioProvider` type.
-It uses `LibraryCatalogReader` for immutable snapshots and
+`LibraryScannerService` depends only on the catalog ports. It uses
+`LibraryCatalogReader` for immutable snapshots and
 `LibraryCatalogWriter` for scan generations, staged batches, and persistence
-commands. Presentation obtains that port from `LibraryFacade`; it never watches
-the complete `AudioProvider`. The temporary compatibility command bridge does
-not store a second writable library, and `LibraryService` remains the only
-mutable catalog owner.
+commands. Presentation obtains that port directly from `LibraryFacade`, and
+`LibraryService` remains the only mutable catalog owner.
 
 Every scan receives a generation. Chunk results are applied only while that
 generation remains active. Cancellation invalidates the generation, native

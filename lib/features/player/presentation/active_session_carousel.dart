@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../app/localization/app_language_provider.dart';
-import '../../../app/state/audio_provider_riverpod.dart';
+import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/music_track.dart';

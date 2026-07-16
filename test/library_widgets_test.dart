@@ -3,9 +3,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/features/library/presentation/library_tab.dart';
-import 'package:nameless_audio/features/library/application/library_scan_models.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/content_bound_reorder_area.dart';
@@ -13,44 +12,44 @@ import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'support/audio_provider_test_fixture.dart';
+import 'support/app_runtime_test_fixture.dart';
 
 void main() {
-  AudioProviderTestFixture.initialize();
+  AppRuntimeTestFixture.initialize();
   late Database testDatabase;
 
   setUpAll(() async {
-    testDatabase = await AudioProviderTestFixture.installSharedDatabase();
+    testDatabase = await AppRuntimeTestFixture.installSharedDatabase();
   });
 
   tearDownAll(() async {
-    await AudioProviderTestFixture.disposeSharedDatabase(testDatabase);
+    await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
   testWidgets('top page header tolerates transient multiple scroll positions', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
     final controller = ScrollController();
 
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -77,19 +76,19 @@ void main() {
   testWidgets('top page header expands after reverse scroll away from top', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
     final controller = ScrollController();
     var additionalChildBuilds = 0;
@@ -97,8 +96,8 @@ void main() {
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -164,7 +163,7 @@ void main() {
   testWidgets('unloaded library reuses ASMR-style skeleton cards', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
 
     await tester.pumpWidget(fixture.build(const LibraryTab()));
@@ -182,22 +181,22 @@ void main() {
   testWidgets('library tab search submits asynchronously and removes misses', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
 
-    audioProvider.addTracks(
+    runtimeGraph.library.addTracks(
       [
         testMusicTrack(
           name: 'Soft Rain',
@@ -220,8 +219,8 @@ void main() {
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -237,13 +236,14 @@ void main() {
     await tester.pump();
     await pumpUntilLibraryTreeReady(
       tester,
-      audioProvider,
+      runtimeGraph.library,
       waitForCategorySnapshot: true,
     );
     libraryService.syncSlice(
       isInitialized: true,
       detailRevision: 0,
-      treeSnapshotRevision: audioProvider.libraryTreeSnapshotRevision,
+      treeSnapshotRevision:
+          runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -251,7 +251,7 @@ void main() {
     expect(find.byType(ReorderableListView), findsNothing);
     expect(find.byKey(const ValueKey('locked_library_list')), findsOneWidget);
 
-    await audioProvider.settingsRepository.setCardPositionsLocked(false);
+    await runtimeGraph.settings.setCardPositionsLocked(false);
     await tester.pump();
     expect(find.byType(ReorderableListView), findsOneWidget);
 
@@ -275,8 +275,8 @@ void main() {
 
     expect(find.byType(TextField), findsOneWidget);
 
-    final scanGeneration = audioProvider.tryBeginScan(source: 'Music');
-    audioProvider.setScanProgress(
+    final scanGeneration = runtimeGraph.library.tryBeginScan(source: 'Music');
+    runtimeGraph.library.setScanProgress(
       generation: scanGeneration,
       stage: FolderScanStage.enumerating,
       processed: 120,
@@ -304,7 +304,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    audioProvider.finishScan(scanGeneration);
+    runtimeGraph.library.finishScan(scanGeneration);
     await tester.pump();
 
     await tester.enterText(find.byType(TextField), 'ocean');
@@ -367,22 +367,22 @@ void main() {
   testWidgets(
     'library tab shows localized empty state when search has no matches',
     (WidgetTester tester) async {
-      final fixture = AudioProviderWidgetTestFixture();
+      final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
-      final audioProvider = fixture.audioProvider;
+      final runtimeGraph = fixture.runtimeGraph;
       final audioDatabaseRepository = fixture.audioDatabaseRepository;
       final nativePlaybackRepository = fixture.nativePlaybackRepository;
       const playbackCommandRunner =
-          AudioProviderWidgetTestFixture.playbackCommandRunner;
+          AppRuntimeWidgetTestFixture.playbackCommandRunner;
       final libraryService = fixture.libraryService;
       final playbackService = fixture.playbackService;
       final timerService = fixture.timerService;
       final notificationCoordinatorService =
           fixture.notificationCoordinatorService;
-      final settingsRepository = fixture.settingsRepository;
+      final settingsRepository = fixture.settings;
       final languageProvider = fixture.languageProvider;
 
-      audioProvider.addTracks(
+      runtimeGraph.library.addTracks(
         [
           testMusicTrack(
             name: 'Soft Rain',
@@ -397,8 +397,8 @@ void main() {
       libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
       await tester.pumpWidget(
-        buildAudioProviderTestApp(
-          audioProvider: audioProvider,
+        buildAppRuntimeTestApp(
+          runtimeGraph: runtimeGraph,
           audioDatabaseRepository: audioDatabaseRepository,
           nativePlaybackRepository: nativePlaybackRepository,
           playbackCommandRunner: playbackCommandRunner,
@@ -414,7 +414,10 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
 
-      expect(audioProvider.libraryTreeSnapshotRevision, -1);
+      expect(
+        runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
+        -1,
+      );
 
       await tester.enterText(find.byType(TextField), 'forest');
       await tester.pump(const Duration(milliseconds: 260));
@@ -428,7 +431,7 @@ void main() {
         findsOneWidget,
       );
       expect(
-        audioProvider.libraryTreeSnapshotRevision,
+        runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
         libraryService.structureRevision,
       );
     },
@@ -437,28 +440,28 @@ void main() {
   testWidgets('library more menu opens formal library management only', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
 
     const libraryRoot = '/library/root';
     const childFolder = '/library/root/child';
     const standaloneFolder = '/library/standalone';
-    audioProvider.addWatchedLibrary(libraryRoot, notify: false);
-    audioProvider.addWatchedFolder(childFolder, notify: false);
-    audioProvider.addWatchedFolder(standaloneFolder, notify: false);
-    audioProvider.recordLibraryEntriesForTracks(
+    runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+    runtimeGraph.library.addWatchedFolder(childFolder, notify: false);
+    runtimeGraph.library.addWatchedFolder(standaloneFolder, notify: false);
+    runtimeGraph.library.recordLibraryEntriesForTracks(
       standaloneFolder,
       const <MusicTrack>[],
       persist: false,
@@ -466,8 +469,8 @@ void main() {
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -507,19 +510,19 @@ void main() {
   testWidgets('library edit keeps restored content folder visible', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
 
     const libraryRoot =
@@ -530,15 +533,15 @@ void main() {
     const trackPath =
         'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2FWorkA%2FDisc1%2F01.mp3';
 
-    audioProvider.addWatchedLibrary(libraryRoot, notify: false);
-    audioProvider.addWatchedFolder(childFolder, notify: false);
-    audioProvider.recordLibraryEntriesForTracks(
+    runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+    runtimeGraph.library.addWatchedFolder(childFolder, notify: false);
+    runtimeGraph.library.recordLibraryEntriesForTracks(
       libraryRoot,
       const <MusicTrack>[],
       folderPaths: const <String>[childFolder],
       persist: false,
     );
-    audioProvider.addTracks(
+    runtimeGraph.library.addTracks(
       [
         testMusicTrack(
           name: '01',
@@ -553,8 +556,8 @@ void main() {
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -617,19 +620,19 @@ void main() {
   testWidgets('library edit keeps decoded content track name after exclusion', (
     WidgetTester tester,
   ) async {
-    final fixture = AudioProviderWidgetTestFixture();
+    final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    final audioProvider = fixture.audioProvider;
+    final runtimeGraph = fixture.runtimeGraph;
     final audioDatabaseRepository = fixture.audioDatabaseRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
-        AudioProviderWidgetTestFixture.playbackCommandRunner;
+        AppRuntimeWidgetTestFixture.playbackCommandRunner;
     final libraryService = fixture.libraryService;
     final playbackService = fixture.playbackService;
     final timerService = fixture.timerService;
     final notificationCoordinatorService =
         fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settingsRepository;
+    final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
 
     const libraryRoot =
@@ -637,8 +640,8 @@ void main() {
     const trackPath =
         'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2F%E3%82%8C%E3%81%84%E3%81%8D%E3%82%89%E8%80%B3%E8%88%90%E3%82%81.mp3';
 
-    audioProvider.addWatchedLibrary(libraryRoot, notify: false);
-    audioProvider.addTracks(
+    runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
+    runtimeGraph.library.addTracks(
       [
         testMusicTrack(
           name: 'れいきら耳舐め',
@@ -653,8 +656,8 @@ void main() {
     libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
     await tester.pumpWidget(
-      buildAudioProviderTestApp(
-        audioProvider: audioProvider,
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
         audioDatabaseRepository: audioDatabaseRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
@@ -684,7 +687,7 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 20));
 
-    expect(audioProvider.trackByPath(trackPath)?.displayName, 'れいきら耳舐め');
+    expect(runtimeGraph.library.trackByPath(trackPath)?.displayName, 'れいきら耳舐め');
     expect(find.text('れいきら耳舐め'), findsOneWidget);
     expect(find.textContaining('primary%3A'), findsNothing);
     expect(find.text(languageProvider.tr('exclude')), findsOneWidget);

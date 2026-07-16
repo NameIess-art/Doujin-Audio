@@ -120,14 +120,8 @@ extension NotificationFacadeSync on NotificationFacade {
         album: track?.groupSubtitle,
         thumbnail: coverPath ?? track?.remoteCoverUrl,
         playing: mainSession.state.playing,
-        hasPrevious: _playbackCommands.hasAdjacent(
-          mainSession,
-          forward: false,
-        ),
-        hasNext: _playbackCommands.hasAdjacent(
-          mainSession,
-          forward: true,
-        ),
+        hasPrevious: _playbackCommands.hasAdjacent(mainSession, forward: false),
+        hasNext: _playbackCommands.hasAdjacent(mainSession, forward: true),
         position: mainSession.position,
         duration: duration == Duration.zero ? null : duration,
       ),
@@ -315,10 +309,7 @@ extension NotificationFacadeSync on NotificationFacade {
               session,
               forward: false,
             ),
-            'hasNext': _playbackCommands.hasAdjacent(
-              session,
-              forward: true,
-            ),
+            'hasNext': _playbackCommands.hasAdjacent(session, forward: true),
           };
         })
         .toList(growable: false);

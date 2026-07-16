@@ -820,6 +820,50 @@ void main() {
       );
     });
 
+    test(
+      'removing a library mutates its whole subtree before cleanup',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'library_remove_batch_',
+        );
+        addTearDown(() async {
+          if (await root.exists()) await root.delete(recursive: true);
+        });
+        final workPath = path.join(root.path, 'work');
+        final trackPath = path.join(workPath, '01.mp3');
+        final track = MusicTrack(
+          path: trackPath,
+          displayName: '01',
+          groupKey: workPath,
+          groupTitle: 'work',
+          groupSubtitle: workPath,
+          isSingle: false,
+        );
+        runtimeGraph.library
+          ..addWatchedLibrary(root.path, notify: false)
+          ..addWatchedFolder(workPath, notify: false)
+          ..recordLibraryEntriesForTracks(
+            root.path,
+            <MusicTrack>[track],
+            folderPaths: <String>[workPath],
+            persist: false,
+          )
+          ..addTracks(<MusicTrack>[track], notify: false, persist: false);
+
+        final removal = runtimeGraph.library.removeLibrary(root.path);
+
+        expect(runtimeGraph.library.watchedLibraries, isEmpty);
+        expect(runtimeGraph.library.watchedFolders, isEmpty);
+        expect(runtimeGraph.library.trackByPath(trackPath), isNull);
+        expect(
+          runtimeGraph.library.libraryEntriesForLibrary(root.path),
+          isEmpty,
+        );
+        await removal;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      },
+    );
+
     test('same work uses a first-level folder inside the audio library', () {
       const libraryRoot = 'C:\\Audio\\Library';
       const workRoot = '$libraryRoot\\Work A';
@@ -1084,12 +1128,13 @@ void main() {
         true,
       );
 
-      expect(runtimeGraph.library.trackByPath(trackPath), isNull);
       expect(runtimeGraph.library.hasLibraryExclusions(folder.path), isTrue);
       expect(
         runtimeGraph.library.isLibraryPathExcluded(folder.path, trackPath),
         isTrue,
       );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(runtimeGraph.library.trackByPath(trackPath), isNull);
 
       if (!runtimeGraph.library.isLibraryPathExcluded(folder.path, trackPath)) {
         runtimeGraph.library.addOrReplaceTracks(<MusicTrack>[

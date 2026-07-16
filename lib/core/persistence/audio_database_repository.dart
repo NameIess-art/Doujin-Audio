@@ -100,6 +100,10 @@ class AudioDatabaseRepository {
     return _database.deleteAudioDetail(target);
   }
 
+  Future<void> deleteAudioDetails(Iterable<AudioDetailTarget> targets) {
+    return _database.deleteAudioDetails(targets);
+  }
+
   Future<String?> loadAppSetting(String key) {
     return _database.loadAppSetting(key);
   }

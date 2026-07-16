@@ -294,7 +294,7 @@ class LibraryService {
         false;
   }
 
-  bool setLibraryFolderExcluded(
+  ({bool changed, List<String> affectedEntryPaths}) setLibraryFolderExcluded(
     String libraryPath,
     String folderPath,
     bool excluded, {
@@ -309,7 +309,9 @@ class LibraryService {
     final changed = excluded
         ? folders.add(normalizedFolderPath)
         : _removePathsWithin(folders, normalizedFolderPath);
-    if (!changed) return false;
+    if (!changed) {
+      return (changed: false, affectedEntryPaths: const <String>[]);
+    }
     if (!excluded) {
       excludedLibraryTracks[normalizedLibraryPath]?.removeWhere(
         (trackPath) => PathMatcher.isWithinOrEqualNormalized(
@@ -318,17 +320,17 @@ class LibraryService {
         ),
       );
     }
-    setLibraryEntriesSubtreeState(
+    final affectedEntryPaths = setLibraryEntriesSubtreeState(
       normalizedLibraryPath,
       normalizedFolderPath,
       excluded ? LibraryEntryState.excluded : LibraryEntryState.active,
     );
-    markStructureChanged();
+    if (affectedEntryPaths.isEmpty) markStructureChanged();
     onPersist?.call();
-    return true;
+    return (changed: true, affectedEntryPaths: affectedEntryPaths);
   }
 
-  bool setLibraryTrackExcluded(
+  ({bool changed, List<String> affectedEntryPaths}) setLibraryTrackExcluded(
     String libraryPath,
     String trackPath,
     bool excluded, {
@@ -341,20 +343,27 @@ class LibraryService {
       () => <String>{},
     );
     if (excluded && isLibraryPathInheritedExcluded(libraryPath, trackPath)) {
-      return false;
+      return (changed: false, affectedEntryPaths: const <String>[]);
     }
     final changed = excluded
         ? tracks.add(normalizedTrackPath)
         : tracks.remove(normalizedTrackPath);
-    if (!changed) return false;
-    setLibraryEntryState(
+    if (!changed) {
+      return (changed: false, affectedEntryPaths: const <String>[]);
+    }
+    final entryChanged = setLibraryEntryState(
       normalizedLibraryPath,
       normalizedTrackPath,
       excluded ? LibraryEntryState.excluded : LibraryEntryState.active,
     );
-    markStructureChanged();
+    if (!entryChanged) markStructureChanged();
     onPersist?.call();
-    return true;
+    return (
+      changed: true,
+      affectedEntryPaths: entryChanged
+          ? <String>[normalizedTrackPath]
+          : const <String>[],
+    );
   }
 
   bool _removePathsWithin(Set<String> paths, String parentPath) {
@@ -481,8 +490,6 @@ class LibraryService {
     final entries = libraryEntriesByLibrary[normalizedLibraryPath];
     if (entries == null) return const <String>[];
     final changedPaths = <String>[];
-    // Iterating entries.values while updating existing keys (not adding/removing)
-    // is safe in Dart's LinkedHashMap.
     for (final entry in entries.values) {
       if (!PathMatcher.isWithinOrEqualNormalized(
         entry.path,
@@ -491,8 +498,11 @@ class LibraryService {
         continue;
       }
       if (entry.state == state) continue;
-      entries[entry.path] = entry.copyWith(state: state);
       changedPaths.add(entry.path);
+    }
+    for (final entryPath in changedPaths) {
+      final entry = entries[entryPath];
+      if (entry != null) entries[entryPath] = entry.copyWith(state: state);
     }
     if (changedPaths.isNotEmpty) {
       markStructureChanged();
@@ -918,26 +928,12 @@ class LibraryService {
     );
   }
 
-  Future<void> removeLibrary(
+  ({bool changed, List<String> removedFolderPaths}) removeLibrary(
     String libraryPath, {
-    required Future<void> Function(String folderPath) removeFolder,
+    VoidCallback? onSaveWatchedFolders,
     VoidCallback? onSaveWatchedLibraries,
     VoidCallback? onSaveLibraryExclusions,
   }) {
-    return _removeLibraryInternal(
-      libraryPath,
-      removeFolder: removeFolder,
-      onSaveWatchedLibraries: onSaveWatchedLibraries,
-      onSaveLibraryExclusions: onSaveLibraryExclusions,
-    );
-  }
-
-  Future<void> _removeLibraryInternal(
-    String libraryPath, {
-    required Future<void> Function(String folderPath) removeFolder,
-    VoidCallback? onSaveWatchedLibraries,
-    VoidCallback? onSaveLibraryExclusions,
-  }) async {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final childFolders = watchedFolders
         .where(
@@ -947,9 +943,22 @@ class LibraryService {
           ),
         )
         .toList(growable: false);
-    for (final folderPath in childFolders) {
-      await removeFolder(folderPath);
-    }
+    final watchedLibraryCount = watchedLibraries.length;
+    final hadFolderExclusions = excludedLibraryFolders.containsKey(
+      normalizedLibraryPath,
+    );
+    final hadTrackExclusions = excludedLibraryTracks.containsKey(
+      normalizedLibraryPath,
+    );
+    final hadEntries = libraryEntriesByLibrary.containsKey(
+      normalizedLibraryPath,
+    );
+    watchedFolders.removeWhere(
+      (folderPath) => PathMatcher.isWithinOrEqualNormalized(
+        PathMatcher.normalize(folderPath),
+        normalizedLibraryPath,
+      ),
+    );
     watchedLibraries.removeWhere(
       (pathValue) =>
           PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
@@ -966,10 +975,21 @@ class LibraryService {
       (pathValue, _) =>
           PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
     );
+    final changed =
+        childFolders.isNotEmpty ||
+        watchedLibraries.length != watchedLibraryCount ||
+        hadFolderExclusions ||
+        hadTrackExclusions ||
+        hadEntries;
+    if (!changed) {
+      return (changed: false, removedFolderPaths: const <String>[]);
+    }
     syncLibraryNodeOrder(persist: false);
     markStructureChanged();
+    onSaveWatchedFolders?.call();
     onSaveWatchedLibraries?.call();
     onSaveLibraryExclusions?.call();
+    return (changed: true, removedFolderPaths: childFolders);
   }
 
   void syncSlice({

@@ -8,6 +8,11 @@ import 'package:nameless_audio/features/player/application/subtitle_overlay_cont
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('overlay permission is only requested on Android', () {
+    expect(shouldRequestSubtitleOverlayPermission(isAndroid: true), isTrue);
+    expect(shouldRequestSubtitleOverlayPermission(isAndroid: false), isFalse);
+  });
+
   test(
     'delayed stop is cancellable and uses the injected platform gateway',
     () async {

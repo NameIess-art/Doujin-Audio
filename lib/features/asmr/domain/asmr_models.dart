@@ -612,6 +612,9 @@ List<AsmrTrackFile> sortAsmrTrackTreeNaturally(Iterable<AsmrTrackFile> nodes) {
     );
   }).toList();
   sorted.sort((left, right) {
+    if (left.isFolder != right.isFolder) {
+      return left.isFolder ? -1 : 1;
+    }
     final titleResult = compareNatural(left.title, right.title);
     if (titleResult != 0) return titleResult;
     return compareNatural(left.relativePath, right.relativePath);

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <utility>
 
 #include <flutter/standard_method_codec.h>
 
@@ -81,6 +82,14 @@ const wchar_t* ResolveFontFamily(const std::wstring& family) {
   return family.c_str();
 }
 
+flutter::EncodableValue SuccessEnvelope(
+    flutter::EncodableValue value = flutter::EncodableValue()) {
+  flutter::EncodableMap envelope;
+  envelope[flutter::EncodableValue("ok")] = flutter::EncodableValue(true);
+  envelope[flutter::EncodableValue("value")] = std::move(value);
+  return flutter::EncodableValue(envelope);
+}
+
 }  // namespace
 
 SubtitleOverlayWindow::SubtitleOverlayWindow(
@@ -115,21 +124,21 @@ void SubtitleOverlayWindow::HandleMethodCall(
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   const auto& method = call.method_name();
   if (method == "canDrawOverlays") {
-    result->Success(flutter::EncodableValue(window_ != nullptr));
+    result->Success(SuccessEnvelope(flutter::EncodableValue(window_ != nullptr)));
     return;
   }
   if (method == "openOverlaySettings") {
-    result->Success(flutter::EncodableValue(true));
+    result->Success(SuccessEnvelope(flutter::EncodableValue(true)));
     return;
   }
   if (method == "startOverlay") {
     Show();
-    result->Success();
+    result->Success(SuccessEnvelope());
     return;
   }
   if (method == "stopOverlay") {
     Hide();
-    result->Success();
+    result->Success(SuccessEnvelope());
     return;
   }
 
@@ -144,13 +153,13 @@ void SubtitleOverlayWindow::HandleMethodCall(
       text_ = Utf8ToWide(*text);
       Render();
     }
-    result->Success();
+    result->Success(SuccessEnvelope());
     return;
   }
   if (method == "updateStyle") {
     UpdateStyle(*arguments);
     Render();
-    result->Success();
+    result->Success(SuccessEnvelope());
     return;
   }
   result->NotImplemented();

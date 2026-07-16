@@ -248,6 +248,45 @@ void registerAsmrControllerStateTests({
     },
   );
 
+  test('ASMR track tree groups folders before naturally sorted files', () {
+    final sorted = sortAsmrTrackTreeNaturally(<AsmrTrackFile>[
+      _trackFile('10. track.mp3', '10. track.mp3'),
+      _trackFolder('10_folder', '10_folder'),
+      _trackFile('2. track.mp3', '2. track.mp3'),
+      _trackFolder('2_folder', '2_folder'),
+      _trackFile('01. track.mp3', '01. track.mp3'),
+      _trackFolder(
+        '01_folder',
+        '01_folder',
+        children: <AsmrTrackFile>[
+          _trackFile('11. nested.mp3', '01_folder/11. nested.mp3'),
+          _trackFolder('11_nested', '01_folder/11_nested'),
+          _trackFile('3. nested.mp3', '01_folder/3. nested.mp3'),
+          _trackFolder('3_nested', '01_folder/3_nested'),
+          _trackFile('02. nested.mp3', '01_folder/02. nested.mp3'),
+          _trackFolder('02_nested', '01_folder/02_nested'),
+        ],
+      ),
+    ]);
+
+    expect(sorted.map((node) => node.title), <String>[
+      '01_folder',
+      '2_folder',
+      '10_folder',
+      '01. track.mp3',
+      '2. track.mp3',
+      '10. track.mp3',
+    ]);
+    expect(sorted.first.children.map((node) => node.title), <String>[
+      '02_nested',
+      '3_nested',
+      '11_nested',
+      '02. nested.mp3',
+      '3. nested.mp3',
+      '11. nested.mp3',
+    ]);
+  });
+
   test(
     'ASMR playback prefers signed API media endpoints over raw URLs',
     () async {

@@ -18,6 +18,7 @@ import '../../../app/state/subtitle_settings_provider.dart';
 import '../application/playback_facade.dart';
 import '../../settings/application/settings_state.dart';
 import '../application/playback_session.dart';
+import '../application/subtitle_overlay_controller.dart';
 import '../application/playback_time_segment_service.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';

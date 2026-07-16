@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart' as media;
@@ -50,6 +51,55 @@ const Duration _windowsLoadRetryDelay = Duration(milliseconds: 400);
 typedef DartMpvCommandRunner =
     Future<void> Function(media.Player player, List<String> command);
 typedef DartMpvFilterStateReader = Future<String> Function(media.Player player);
+typedef DartPlaybackUriResolver = Future<Uri> Function(Uri uri);
+
+const Set<String> _asmrMediaApiHosts = <String>{
+  'api.asmr.one',
+  'api.asmr-100.com',
+  'api.asmr-200.com',
+  'api.asmr-300.com',
+};
+const Duration _asmrRedirectTimeout = Duration(seconds: 8);
+
+bool _isAsmrMediaApiUri(Uri uri) {
+  return (uri.scheme == 'http' || uri.scheme == 'https') &&
+      _asmrMediaApiHosts.contains(uri.host.toLowerCase()) &&
+      uri.path.startsWith('/api/media/stream/');
+}
+
+Future<Uri> _defaultPlaybackUriResolver(Uri uri) async {
+  if (!_isAsmrMediaApiUri(uri)) return uri;
+  return _resolvePlaybackRedirect(uri);
+}
+
+Future<Uri> _resolvePlaybackRedirect(Uri uri) async {
+  final client = HttpClient()..connectionTimeout = _asmrRedirectTimeout;
+  try {
+    final request = await client.headUrl(uri).timeout(_asmrRedirectTimeout);
+    request.followRedirects = true;
+    request.maxRedirects = 5;
+    final response = await request.close().timeout(_asmrRedirectTimeout);
+    await response.drain<void>().timeout(_asmrRedirectTimeout);
+    if (response.statusCode < HttpStatus.ok ||
+        response.statusCode >= HttpStatus.badRequest) {
+      throw HttpException(
+        'ASMR media redirect returned HTTP ${response.statusCode}.',
+        uri: uri,
+      );
+    }
+    return response.redirects.fold<Uri>(
+      uri,
+      (current, redirect) => current.resolveUri(redirect.location),
+    );
+  } finally {
+    client.close(force: true);
+  }
+}
+
+@visibleForTesting
+Future<Uri> resolveDartPlaybackRedirectForTest(Uri uri) {
+  return _resolvePlaybackRedirect(uri);
+}
 
 Future<void> _defaultMpvCommandRunner(
   media.Player player,
@@ -94,10 +144,12 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
     @visibleForTesting media.Player Function()? playerFactory,
     @visibleForTesting DartMpvCommandRunner? mpvCommandRunner,
     @visibleForTesting DartMpvFilterStateReader? mpvFilterStateReader,
+    @visibleForTesting DartPlaybackUriResolver? uriResolver,
   }) : _playerFactory = playerFactory ?? media.Player.new,
        _mpvCommandRunner = mpvCommandRunner ?? _defaultMpvCommandRunner,
        _mpvFilterStateReader =
-           mpvFilterStateReader ?? _defaultMpvFilterStateReader {
+           mpvFilterStateReader ?? _defaultMpvFilterStateReader,
+       _uriResolver = uriResolver ?? _defaultPlaybackUriResolver {
     if (playerFactory == null) {
       _ensureMediaKitInitialized();
     }
@@ -115,6 +167,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   final media.Player Function() _playerFactory;
   final DartMpvCommandRunner _mpvCommandRunner;
   final DartMpvFilterStateReader _mpvFilterStateReader;
+  final DartPlaybackUriResolver _uriResolver;
   final StreamController<NativePlaybackSnapshot> _snapshots =
       StreamController<NativePlaybackSnapshot>.broadcast();
   String? _focusedSessionId;
@@ -187,6 +240,7 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
           player: _playerFactory(),
           mpvCommandRunner: _mpvCommandRunner,
           mpvFilterStateReader: _mpvFilterStateReader,
+          uriResolver: _uriResolver,
         ),
       );
       _focusedSessionId = sessionId;
@@ -501,6 +555,7 @@ class _DartPlaybackSession {
     required this.player,
     required this.mpvCommandRunner,
     required this.mpvFilterStateReader,
+    required this.uriResolver,
   }) {
     void bind<T>(Stream<T> stream, void Function(T value) update) {
       subscriptions.add(
@@ -597,6 +652,7 @@ class _DartPlaybackSession {
   final media.Player player;
   final DartMpvCommandRunner mpvCommandRunner;
   final DartMpvFilterStateReader mpvFilterStateReader;
+  final DartPlaybackUriResolver uriResolver;
   final List<StreamSubscription<dynamic>> subscriptions = [];
   _DartPlaybackItem? item;
   List<Uri> candidateUris = const <Uri>[];
@@ -900,10 +956,8 @@ class _DartPlaybackSession {
       completed = false;
       _hasPlayedCurrentSource = false;
       try {
-        await player.open(
-          media.Media(candidateUris[index].toString()),
-          play: false,
-        );
+        final resolvedUri = await uriResolver(candidateUris[index]);
+        await player.open(media.Media(resolvedUri.toString()), play: false);
         await _applyVolume();
         await player.setRate(speed);
         await _applyManagedAudioFilters();

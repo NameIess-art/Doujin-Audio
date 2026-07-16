@@ -5,6 +5,10 @@ import '../../../core/platform/subtitle_overlay_platform_service.dart';
 typedef SubtitleOverlayStopTimerFactory =
     Timer Function(Duration duration, void Function() callback);
 
+bool shouldRequestSubtitleOverlayPermission({required bool isAndroid}) {
+  return isAndroid;
+}
+
 final class SubtitleOverlayController {
   SubtitleOverlayController({
     SubtitleOverlayPlatformService? platform,

@@ -1,6 +1,6 @@
-part of 'audio_provider.dart';
+part of 'playback_command_coordinator.dart';
 
-extension AudioProviderPlaybackEngine on AudioProvider {
+extension PlaybackCommandTransport on PlaybackCommandCoordinator {
   bool _isSessionCommandCurrent(
     PlaybackSession session,
     PlaybackCommandToken token,
@@ -23,9 +23,10 @@ extension AudioProviderPlaybackEngine on AudioProvider {
           _sessions.containsKey(session.id) &&
           session.playbackCommandGeneration == generation,
     );
-    _notificationsDismissedWhilePaused = false;
+    _notificationFacade.stateService.notificationsDismissedWhilePaused =
+        false;
     unawaited(_nativePlaybackRepository.undismissNotifications());
-    _notificationFocusSessionId = session.id;
+    _notificationFacade.stateService.notificationFocusSessionId = session.id;
     session.beginTransportCommand(commandId: generation, playing: true);
     final exclusivelyPausedSessions = !_multiThreadPlaybackEnabled
         ? _sessions.values
@@ -165,7 +166,8 @@ extension AudioProviderPlaybackEngine on AudioProvider {
           (session) => session.id != keepSessionId && session.state.playing,
         )
         .toList(growable: false);
-    _notificationFocusSessionId = keepSessionId;
+    _notificationFacade.stateService.notificationFocusSessionId =
+        keepSessionId;
     if (sessionsToPause.isEmpty) {
       _syncNotificationState();
       return;
@@ -182,7 +184,8 @@ extension AudioProviderPlaybackEngine on AudioProvider {
         (session) => _nativePlaybackRepository.pause(session.id),
       ),
     );
-    _notificationFocusSessionId = keepSessionId;
+    _notificationFacade.stateService.notificationFocusSessionId =
+        keepSessionId;
     _syncKeepCpuAwake();
     _syncNotificationState();
   }

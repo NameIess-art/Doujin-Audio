@@ -5,14 +5,17 @@ extension AudioProviderNotificationCovers on AudioProvider {
     if (session.isLoading || session.state.playing) return;
     _notificationFocusSessionId = session.id;
     if (session.state.processingState == ProcessingState.completed) {
-      await _prepareAndPlay(
+      await _playbackCommandCoordinator.prepareAndPlay(
         session,
         nextPath: session.currentTrackPath,
         forceStartAtZero: true,
       );
       return;
     }
-    await _startSessionPlayback(session, shouldStartTriggerCountdown: true);
+    await _playbackCommandCoordinator.startSession(
+      session,
+      shouldStartTriggerCountdown: true,
+    );
   }
 
   String _notificationTitleForSession(PlaybackSession session) {

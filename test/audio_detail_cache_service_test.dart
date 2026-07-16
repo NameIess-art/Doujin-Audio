@@ -116,6 +116,11 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   }
 
   @override
+  Future<void> deleteMany(Iterable<AudioDetailTarget> targets) async {
+    deleteCount += targets.length;
+  }
+
+  @override
   Future<AudioDetailSaveResult?> prefillRjCodeFromText(
     AudioDetailTarget target,
     String text,

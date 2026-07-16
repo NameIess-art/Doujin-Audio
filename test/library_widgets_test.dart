@@ -592,6 +592,15 @@ void main() {
 
     expect(find.text('WorkA', findRichText: true), findsOneWidget);
     expect(find.text(languageProvider.tr('restore')), findsOneWidget);
+    expect(find.text(languageProvider.tr('excluded')), findsNothing);
+    expect(
+      tester
+          .widget<TextButton>(
+            find.widgetWithText(TextButton, languageProvider.tr('restore')),
+          )
+          .style,
+      isNull,
+    );
 
     await tester.tap(find.text('WorkA', findRichText: true).first);
     await tester.pump();
@@ -617,9 +626,11 @@ void main() {
     expect(find.text(languageProvider.tr('exclude')), findsWidgets);
   });
 
-  testWidgets('library edit keeps decoded content track name after exclusion', (
+  testWidgets('library edit keeps excluded tracks compact on a narrow screen', (
     WidgetTester tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
@@ -637,15 +648,24 @@ void main() {
 
     const libraryRoot =
         'content://com.android.externalstorage.documents/tree/primary%3AASMR';
-    const trackPath =
+    const firstTrackPath =
         'content://com.android.externalstorage.documents/tree/primary%3AASMR/document/primary%3AASMR%2F%E3%82%8C%E3%81%84%E3%81%8D%E3%82%89%E8%80%B3%E8%88%90%E3%82%81.mp3';
+    const secondTrackPath = '$libraryRoot::second-track.mp3';
+    const firstTitle = '#羊娘めめ 20260326 nico 【限定ASMR｜睡眠導入】';
+    const secondTitle = '陽向葵ゆか_2026_05_09_【全編無料_両耳舐めコラボ】';
 
     runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
     runtimeGraph.library.addTracks(
       [
         testMusicTrack(
-          name: 'れいきら耳舐め',
-          path: trackPath,
+          name: firstTitle,
+          path: firstTrackPath,
+          groupKey: libraryRoot,
+          groupTitle: 'ASMR',
+        ),
+        testMusicTrack(
+          name: secondTitle,
+          path: secondTrackPath,
           groupKey: libraryRoot,
           groupTitle: 'ASMR',
         ),
@@ -673,23 +693,67 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
+    final surfacePaths = <String>[firstTrackPath, secondTrackPath];
+    final initialSurfaceHeights = <String, double>{
+      for (final path in surfacePaths)
+        path: tester
+            .getSize(find.byKey(ValueKey('library-edit-track-surface:$path')))
+            .height,
+    };
+
     await tester.tap(
       find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
     );
     await tester.pump();
 
-    expect(find.text('れいきら耳舐め'), findsOneWidget);
-    expect(find.textContaining('primary%3A'), findsNothing);
-    expect(find.text(languageProvider.tr('restore')), findsOneWidget);
-
     await tester.tap(
-      find.widgetWithText(TextButton, languageProvider.tr('restore')).first,
+      find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
     );
-    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pump();
 
-    expect(runtimeGraph.library.trackByPath(trackPath)?.displayName, 'れいきら耳舐め');
-    expect(find.text('れいきら耳舐め'), findsOneWidget);
+    expect(find.text(firstTitle), findsOneWidget);
+    expect(find.text(secondTitle), findsOneWidget);
     expect(find.textContaining('primary%3A'), findsNothing);
-    expect(find.text(languageProvider.tr('exclude')), findsOneWidget);
+    expect(find.text(languageProvider.tr('restore')), findsNWidgets(2));
+    expect(find.text(languageProvider.tr('excluded')), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    final tileRects = <Rect>[];
+    for (final title in <String>[firstTitle, secondTitle]) {
+      final tileFinder = find.ancestor(
+        of: find.text(title),
+        matching: find.byType(ListTile),
+      );
+      final restoreFinder = find.descendant(
+        of: tileFinder,
+        matching: find.widgetWithText(
+          TextButton,
+          languageProvider.tr('restore'),
+        ),
+      );
+      expect(tileFinder, findsOneWidget);
+      expect(restoreFinder, findsOneWidget);
+      expect(tester.widget<ListTile>(tileFinder).isThreeLine, isNot(isTrue));
+      expect(tester.widget<ListTile>(tileFinder).subtitle, isNull);
+      expect(tester.widget<TextButton>(restoreFinder).style, isNull);
+
+      final path = title == firstTitle ? firstTrackPath : secondTrackPath;
+      final surfaceFinder = find.byKey(
+        ValueKey('library-edit-track-surface:$path'),
+      );
+      expect(surfaceFinder, findsOneWidget);
+
+      final tileRect = tester.getRect(surfaceFinder);
+      final titleRect = tester.getRect(find.text(title));
+      final restoreRect = tester.getRect(restoreFinder);
+      expect(tileRect.height, initialSurfaceHeights[path]);
+      expect(titleRect.right, lessThanOrEqualTo(restoreRect.left));
+      expect(restoreRect.right, lessThanOrEqualTo(tileRect.right));
+      expect(restoreRect.bottom, lessThanOrEqualTo(tileRect.bottom));
+      tileRects.add(tileRect);
+    }
+    tileRects.sort((first, second) => first.top.compareTo(second.top));
+    expect(tileRects.first.bottom, lessThanOrEqualTo(tileRects.last.top));
+    expect(tester.takeException(), isNull);
   });
 }

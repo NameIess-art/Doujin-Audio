@@ -89,6 +89,30 @@ extension AppDatabaseAudioDetails on AppDatabase {
     });
   }
 
+  Future<void> deleteAudioDetails(Iterable<AudioDetailTarget> targets) async {
+    final uniqueTargets = <String, AudioDetailTarget>{};
+    for (final target in targets) {
+      final normalizedPath = PathMatcher.normalize(target.targetPath);
+      uniqueTargets['${target.targetType.dbValue}\x1F$normalizedPath'] =
+          AudioDetailTarget(
+            targetType: target.targetType,
+            targetPath: normalizedPath,
+          );
+    }
+    if (uniqueTargets.isEmpty) return;
+    await _runDatabaseWrite((db) async {
+      final batch = db.batch();
+      for (final target in uniqueTargets.values) {
+        batch.delete(
+          'audio_details',
+          where: 'target_type = ? AND target_path = ?',
+          whereArgs: [target.targetType.dbValue, target.targetPath],
+        );
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
   // ---- Time segment labels ----
 
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {

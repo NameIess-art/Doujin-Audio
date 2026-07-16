@@ -237,7 +237,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
   @override
   Widget build(BuildContext context) {
-    final provider = ref.read(audioProviderFacadeProvider);
+    final playback = ref.read(playbackFacadeProvider);
+    final paths = ref.read(audioPathCoordinatorProvider);
     final detailState = ref.watch(sessionDetailUiProvider(_currentSessionId));
     final sessionIds = detailState.sessionOrder.sessionIds;
 
@@ -339,11 +340,11 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                 child: Builder(
                   key: ValueKey(_currentSessionId),
                   builder: (context) {
-                    final pageSession = provider.sessionById(_currentSessionId);
+                    final pageSession = playback.sessionById(_currentSessionId);
                     if (pageSession == null) {
                       return const SizedBox.shrink();
                     }
-                    final detailTrack = provider.trackByPath(
+                    final detailTrack = paths.trackByPath(
                       pageSession.currentTrackPath,
                     );
                     final coverPathFuture = _coverFutureForTrack(
@@ -353,7 +354,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
                     return _SessionDetailScaffold(
                       session: pageSession,
-                      provider: provider,
                       coverPathFuture: coverPathFuture,
                       dismissAnimation: _dismissController,
                       segmentPanelExpandedNotifier:
@@ -475,7 +475,6 @@ class _SessionDetailBackdrop extends StatelessWidget {
 
 class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final PlaybackSession session;
-  final AudioProvider provider;
   final Future<String?> coverPathFuture;
   final Animation<double> dismissAnimation;
   final VoidCallback onClose;
@@ -489,7 +488,6 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
 
   const _SessionDetailScaffold({
     required this.session,
-    required this.provider,
     required this.coverPathFuture,
     required this.onClose,
     this.onHorizontalDragUpdate,
@@ -556,8 +554,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
       message: i18n.tr('overlay_permission_message'),
       confirmLabel: i18n.tr('go_settings'),
       cancelLabel: i18n.tr('cancel'),
-      isGranted: SubtitleOverlayController.canDrawOverlays,
-      openSettings: SubtitleOverlayController.openOverlaySettings,
+      isGranted: ref.read(subtitleOverlayControllerProvider).canDrawOverlays,
+      openSettings: ref
+          .read(subtitleOverlayControllerProvider)
+          .openOverlaySettings,
       onGranted: () async {
         notifier.toggleGlobalSubtitles(sessionId);
       },
@@ -663,7 +663,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
-    final provider = widget.provider;
+    final paths = ref.read(audioPathCoordinatorProvider);
+    final library = ref.read(libraryFacadeProvider);
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
     final onHorizontalDragUpdate = widget.onHorizontalDragUpdate;
@@ -673,7 +674,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final onVerticalDragEnd = widget.onVerticalDragEnd;
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
-    final track = provider.trackByPath(session.currentTrackPath);
+    final track = paths.trackByPath(session.currentTrackPath);
     final detailTheme = _sessionDetailThemeForTrack(context, track);
     final cs = detailTheme.colorScheme;
     final coverCacheWidth = coverCacheWidthForResolution(
@@ -785,7 +786,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         child: AsyncCoverImage(
                           future: coverPathFuture,
                           requestKey: session.id,
-                          initialPath: provider
+                          initialPath: library
                               .resolvedPlaybackCoverPathForTrack(track),
                           retryFutureBuilder: () => _coverFutureForTrack(
                             ref.read(libraryFacadeProvider),
@@ -926,7 +927,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               final isLandscape =
                                   MediaQuery.orientationOf(context) ==
                                   Orientation.landscape;
-                              final resolvedCoverPath = provider
+                              final resolvedCoverPath = library
                                   .resolvedPlaybackCoverPathForTrack(track);
                               final useArtworkConsole =
                                   track?.isSingle == true &&
@@ -989,7 +990,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               return _SessionDetailContent(
                                 key: _detailContentKey,
                                 session: session,
-                                provider: provider,
                                 segmentPanelExpandedNotifier:
                                     widget.segmentPanelExpandedNotifier,
                                 isLandscape: isLandscape,

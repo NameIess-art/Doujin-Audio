@@ -1,10 +1,10 @@
 part of 'playlist_tab.dart';
 
 class _AudioFeaturesPage extends ConsumerWidget {
-  const _AudioFeaturesPage({required this.session, required this.provider});
+  const _AudioFeaturesPage({required this.session, required this.playback});
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,9 +28,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(
-              provider.playbackFacade.setSessionSkipSilence(session.id, value),
-            );
+            unawaited(playback.setSessionSkipSilence(session.id, value));
           },
         ),
         const SizedBox(height: 10),
@@ -43,12 +41,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(
-              provider.playbackFacade.setSessionNoiseReduction(
-                session.id,
-                value,
-              ),
-            );
+            unawaited(playback.setSessionNoiseReduction(session.id, value));
           },
         ),
         const SizedBox(height: 10),
@@ -62,10 +55,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
               AppInteractionFeedbackType.selection,
             );
             unawaited(
-              provider.playbackFacade.setSessionVolumeNormalization(
-                session.id,
-                value,
-              ),
+              playback.setSessionVolumeNormalization(session.id, value),
             );
           },
         ),
@@ -79,9 +69,7 @@ class _AudioFeaturesPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(
-              provider.playbackFacade.setSessionChannelSwap(session.id, value),
-            );
+            unawaited(playback.setSessionChannelSwap(session.id, value));
           },
         ),
       ],
@@ -145,10 +133,10 @@ class _FeatureSwitchTile extends StatelessWidget {
 }
 
 class _VolumeBalancePage extends ConsumerWidget {
-  const _VolumeBalancePage({required this.session, required this.provider});
+  const _VolumeBalancePage({required this.session, required this.playback});
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -201,10 +189,7 @@ class _VolumeBalancePage extends ConsumerWidget {
                       UiInteractionCoordinator.instance.scheduleThrottledCommit(
                         key: 'session_panning:${session.id}',
                         commit: () => unawaited(
-                          provider.playbackFacade.setSessionPanning(
-                            session.id,
-                            value,
-                          ),
+                          playback.setSessionPanning(session.id, value),
                         ),
                       );
                     },
@@ -214,7 +199,7 @@ class _VolumeBalancePage extends ConsumerWidget {
                         'session_panning:${session.id}',
                       );
                       unawaited(
-                        provider.playbackFacade.setSessionPanning(
+                        playback.setSessionPanning(
                           session.id,
                           value.abs() < 0.1 ? 0.0 : value,
                         ),
@@ -245,12 +230,7 @@ class _VolumeBalancePage extends ConsumerWidget {
                         UiInteractionCoordinator.instance.cancelThrottledCommit(
                           'session_panning:${session.id}',
                         );
-                        unawaited(
-                          provider.playbackFacade.setSessionPanning(
-                            session.id,
-                            0.0,
-                          ),
-                        );
+                        unawaited(playback.setSessionPanning(session.id, 0.0));
                       },
                 child: Text(i18n.tr('restore_default')),
               ),
@@ -263,10 +243,10 @@ class _VolumeBalancePage extends ConsumerWidget {
 }
 
 class _EqualizerPage extends ConsumerWidget {
-  const _EqualizerPage({required this.session, required this.provider});
+  const _EqualizerPage({required this.session, required this.playback});
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -279,10 +259,10 @@ class _EqualizerPage extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final presets = [
-      ...AudioProvider.builtInEqPresets,
-      ...provider.customEqPresets,
-    ];
+    final customPresets =
+        ref.watch(settingsStateProvider).valueOrNull?.customEqPresets ??
+        ref.read(settingsRepositoryProvider).customEqPresets;
+    final presets = <EqPreset>[...builtInEqPresets, ...customPresets];
     final selectedPresetId = effects.eqPresetId;
     final hasAdjustedEqBands = effects.eqBandLevels.values.any(
       (gainDb) => gainDb.abs() >= 0.001,
@@ -307,9 +287,7 @@ class _EqualizerPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(
-              provider.playbackFacade.setSessionEqEnabled(session.id, value),
-            );
+            unawaited(playback.setSessionEqEnabled(session.id, value));
           },
         ),
         UnifiedDropdownButtonFormField<String>(
@@ -339,9 +317,7 @@ class _EqualizerPage extends ConsumerWidget {
             AppInteractionFeedback.trigger(
               AppInteractionFeedbackType.selection,
             );
-            unawaited(
-              provider.playbackFacade.applySessionEqPreset(session.id, preset),
-            );
+            unawaited(playback.applySessionEqPreset(session.id, preset));
           },
         ),
         const SizedBox(height: 12),
@@ -372,7 +348,7 @@ class _EqualizerPage extends ConsumerWidget {
                       UiInteractionCoordinator.instance.scheduleThrottledCommit(
                         key: 'session_eq:${session.id}:${band.frequencyHz}',
                         commit: () => unawaited(
-                          provider.playbackFacade.setSessionEqBandLevel(
+                          playback.setSessionEqBandLevel(
                             session.id,
                             band.frequencyHz,
                             nextValue,
@@ -387,7 +363,7 @@ class _EqualizerPage extends ConsumerWidget {
                   'session_eq:${session.id}:${band.frequencyHz}',
                 );
                 unawaited(
-                  provider.playbackFacade.setSessionEqBandLevel(
+                  playback.setSessionEqBandLevel(
                     session.id,
                     band.frequencyHz,
                     value,
@@ -406,12 +382,9 @@ class _EqualizerPage extends ConsumerWidget {
                   style: _sessionDetailResetButtonStyle,
                   onPressed: hasAdjustedEqBands
                       ? () {
-                          final flat = AudioProvider.builtInEqPresets.first;
+                          final flat = builtInEqPresets.first;
                           unawaited(
-                            provider.playbackFacade.applySessionEqPreset(
-                              session.id,
-                              flat,
-                            ),
+                            playback.applySessionEqPreset(session.id, flat),
                           );
                         }
                       : null,
@@ -428,7 +401,7 @@ class _EqualizerPage extends ConsumerWidget {
                   onPressed: hasAdjustedEqBands
                       ? () => _showSavePresetDialog(
                           context,
-                          provider: provider,
+                          commands: ref.read(settingsCommandControllerProvider),
                           session: session,
                         )
                       : null,
@@ -444,7 +417,7 @@ class _EqualizerPage extends ConsumerWidget {
 
   Future<void> _showSavePresetDialog(
     BuildContext context, {
-    required AudioProvider provider,
+    required SettingsCommandController commands,
     required PlaybackSession session,
   }) async {
     final i18n = ProviderScope.containerOf(
@@ -490,7 +463,7 @@ class _EqualizerPage extends ConsumerWidget {
     );
     controller.dispose();
     if (name == null || name.trim().isEmpty) return;
-    unawaited(provider.saveCustomEqPreset(name, session));
+    unawaited(commands.saveCustomEqPreset(name, session));
   }
 }
 

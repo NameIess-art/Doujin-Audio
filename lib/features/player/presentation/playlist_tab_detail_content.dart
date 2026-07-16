@@ -1,10 +1,9 @@
 part of 'playlist_tab.dart';
 
-class _SessionDetailContent extends StatefulWidget {
+class _SessionDetailContent extends ConsumerStatefulWidget {
   const _SessionDetailContent({
     super.key,
     required this.session,
-    required this.provider,
     this.segmentPanelExpandedNotifier,
     this.isLandscape = false,
     this.artworkWidget,
@@ -20,7 +19,6 @@ class _SessionDetailContent extends StatefulWidget {
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final bool isLandscape;
   final Widget? artworkWidget;
@@ -35,10 +33,11 @@ class _SessionDetailContent extends StatefulWidget {
   final VoidCallback? onShowAudioDetail;
 
   @override
-  State<_SessionDetailContent> createState() => _SessionDetailContentState();
+  ConsumerState<_SessionDetailContent> createState() =>
+      _SessionDetailContentState();
 }
 
-class _SessionDetailContentState extends State<_SessionDetailContent> {
+class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   late final TextEditingController _segmentNameController;
   bool _wasPlaying = false;
   bool _segmentPanelExpanded = false;
@@ -55,6 +54,11 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
   bool _savingSegment = false;
   bool _segmentSaveQueued = false;
   int _segmentDraftGeneration = 0;
+
+  PlaybackFacade get _playback => ref.read(playbackFacadeProvider);
+  AudioPathCoordinator get _paths => ref.read(audioPathCoordinatorProvider);
+  PlaybackTimeSegmentService get _timeSegments =>
+      ref.read(playbackTimeSegmentServiceProvider);
 
   bool get isSegmentPanelExpanded => _segmentPanelExpanded;
 
@@ -107,10 +111,10 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
   }
 
   void _syncSegmentTrack() {
-    final track = widget.provider.trackByPath(widget.session.currentTrackPath);
+    final track = _paths.trackByPath(widget.session.currentTrackPath);
     final nextKey = track == null
         ? PathMatcher.normalize(widget.session.currentTrackPath)
-        : widget.provider.timeSegmentTrackKeyForTrack(track);
+        : _timeSegments.trackKeyForTrack(track);
     if (nextKey == _segmentTrackKey) return;
     _segmentTrackKey = nextKey;
     _segmentDraftGeneration++;
@@ -127,7 +131,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     setState(() {
       _segmentLoading = true;
     });
-    final labels = await widget.provider.loadTimeSegmentLabels(trackKey);
+    final labels = await _timeSegments.loadLabels(trackKey);
     if (!mounted || _segmentTrackKey != trackKey) return;
     final selected = labels
         .where((label) => label.id == _selectedSegmentId)
@@ -198,7 +202,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       _selectedSegmentId = null;
       _draftStart = null;
       _draftEnd = null;
-      _draftColorValue = widget.provider.nextTimeSegmentColor(_segmentLabels);
+      _draftColorValue = _timeSegments.nextColor(_segmentLabels);
       _setSegmentNameText('');
       _segmentPanelExpanded = true;
       _segmentEditorVisible = true;
@@ -208,21 +212,18 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
   void _toggleSelectedSegmentLoop() {
     final selected = _selectedSegment;
     if (selected == null) return;
-    widget.provider.toggleTimeSegmentLoop(
-      sessionId: widget.session.id,
-      label: selected,
-    );
+    _timeSegments.toggleLoop(sessionId: widget.session.id, label: selected);
     setState(() {});
   }
 
   void _handleSegmentManualSeek(Duration position) {
-    widget.provider.handleTimeSegmentManualSeek(widget.session.id, position);
+    _timeSegments.handleManualSeek(widget.session.id, position);
   }
 
   void _setDraftStartToCurrent() {
     setState(() {
       _draftStart = _clampToDuration(widget.session.position);
-      _draftColorValue ??= widget.provider.nextTimeSegmentColor(_segmentLabels);
+      _draftColorValue ??= _timeSegments.nextColor(_segmentLabels);
     });
     unawaited(_trySaveSegmentDraft());
   }
@@ -230,7 +231,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
   void _setDraftEndToCurrent() {
     setState(() {
       _draftEnd = _clampToDuration(widget.session.position);
-      _draftColorValue ??= widget.provider.nextTimeSegmentColor(_segmentLabels);
+      _draftColorValue ??= _timeSegments.nextColor(_segmentLabels);
     });
     unawaited(_trySaveSegmentDraft());
   }
@@ -254,7 +255,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       } else {
         _draftEnd = _clampToDuration(next);
       }
-      _draftColorValue ??= widget.provider.nextTimeSegmentColor(_segmentLabels);
+      _draftColorValue ??= _timeSegments.nextColor(_segmentLabels);
     });
     unawaited(_trySaveSegmentDraft());
   }
@@ -283,7 +284,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           : _segmentLabels
                 .where((label) => label.id == _selectedSegmentId)
                 .firstOrNull;
-      final label = widget.provider.buildTimeSegmentLabel(
+      final label = _timeSegments.buildLabel(
         trackKey: trackKey,
         name: name,
         start: start,
@@ -291,10 +292,10 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         colorValue:
             existing?.colorValue ??
             _draftColorValue ??
-            widget.provider.nextTimeSegmentColor(_segmentLabels),
+            _timeSegments.nextColor(_segmentLabels),
         existing: existing,
       );
-      await widget.provider.saveTimeSegmentLabel(label);
+      await _timeSegments.saveLabel(label);
       if (!mounted || _segmentTrackKey != trackKey) return;
       setState(() {
         if (_segmentDraftGeneration == draftGeneration) {
@@ -339,7 +340,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       icon: Icons.sell_rounded,
     );
     if (!confirmed || !mounted) return;
-    await widget.provider.deleteTimeSegmentLabel(selected.id);
+    await _timeSegments.deleteLabel(selected.id);
     if (!mounted) return;
     final trackKey = _segmentTrackKey;
     if (trackKey == null) return;
@@ -350,15 +351,17 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final provider = widget.provider;
     final session = widget.session;
+    final playback = _playback;
+    final paths = _paths;
+    final timeSegments = _timeSegments;
 
     final isPlaying = session.effectivePlaying;
     if (_wasPlaying != isPlaying) {
       _wasPlaying = isPlaying;
     }
 
-    final track = provider.trackByPath(session.currentTrackPath);
+    final track = paths.trackByPath(session.currentTrackPath);
     final displayName =
         track?.displayName ??
         path.basenameWithoutExtension(session.currentTrackPath);
@@ -366,7 +369,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final rootFolderName = provider.getRootFolderName(session.currentTrackPath);
+    final rootFolderName = paths.rootFolderName(session.currentTrackPath);
     final folderName = rootFolderName.isNotEmpty
         ? rootFolderName
         : (track != null && !track.isSingle && track.groupTitle.isNotEmpty)
@@ -376,14 +379,15 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         : i18n.tr('imported_files');
     final hasSiblings = session.isPlaybackQueue
         ? session.playbackQueue!.expandedTracks.isNotEmpty
-        : provider.tracksInSameWork(session.currentTrackPath).length > 1;
+        : paths.tracksInSameWork(session.currentTrackPath).length > 1;
     final selectedSegmentId = _segmentPanelExpanded ? _selectedSegmentId : null;
 
     Widget buildProgressBar() {
       return _ProgressBar(
         key: ValueKey('progress_${session.id}'),
         session: session,
-        provider: provider,
+        playback: playback,
+        paths: paths,
         timeSegmentLabels: _segmentLabels,
         selectedSegmentId: selectedSegmentId,
         onManualSeek: _handleSegmentManualSeek,
@@ -394,7 +398,8 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       return _TransportPlaybackControlPanel(
         key: ValueKey(widget.isLandscape ? 'controls_landscape' : 'controls'),
         session: session,
-        provider: provider,
+        playback: playback,
+        paths: paths,
         hasSiblings: hasSiblings,
         segmentPanelExpanded: _segmentPanelExpanded || widget.useArtworkConsole,
         hasSubtitle: widget.hasSubtitle,
@@ -415,7 +420,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
 
     final artworkConsole = widget.useArtworkConsole
         ? _buildSegmentPanel(
-            provider: provider,
+            playback: playback,
             session: session,
             key: const ValueKey('segments_pinned_artwork'),
             expandToParent: true,
@@ -470,7 +475,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
               },
               child: _segmentPanelExpanded
                   ? _buildSegmentPanel(
-                      provider: provider,
+                      playback: playback,
                       session: session,
                       key: const ValueKey('segments'),
                     )
@@ -531,7 +536,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                                           'segments_landscape',
                                         ),
                                         session: session,
-                                        provider: provider,
+                                        playback: playback,
                                         labels: _segmentLabels,
                                         selectedId: _selectedSegmentId,
                                         showEditor: _segmentEditorVisible,
@@ -540,8 +545,8 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                                         draftStart: _draftStart,
                                         draftEnd: _draftEnd,
                                         draftColorValue: _draftColorValue,
-                                        loopSegmentId: provider
-                                            .timeSegmentLoopLabelIdForSession(
+                                        loopSegmentId: timeSegments
+                                            .loopLabelIdForSession(
                                               session.id,
                                               trackKey: _segmentTrackKey,
                                             ),
@@ -605,7 +610,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
   }
 
   Widget _buildSegmentPanel({
-    required AudioProvider provider,
+    required PlaybackFacade playback,
     required PlaybackSession session,
     required Key key,
     bool expandToParent = false,
@@ -613,7 +618,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     return _TimeSegmentPanel(
       key: key,
       session: session,
-      provider: provider,
+      playback: playback,
       labels: _segmentLabels,
       selectedId: _selectedSegmentId,
       showEditor: _segmentEditorVisible,
@@ -622,7 +627,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
       draftStart: _draftStart,
       draftEnd: _draftEnd,
       draftColorValue: _draftColorValue,
-      loopSegmentId: provider.timeSegmentLoopLabelIdForSession(
+      loopSegmentId: _timeSegments.loopLabelIdForSession(
         session.id,
         trackKey: _segmentTrackKey,
       ),
@@ -647,13 +652,11 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
     final tracks = orderTracksForSessionSwitcher(
       widget.session.isPlaybackQueue
           ? widget.session.playbackQueue!.expandedTracks
-          : widget.provider.tracksForSessionSwitcher(widget.session.id),
+          : _paths.tracksForSessionSwitcher(widget.session.id),
       preserveQueueOrder: widget.session.isPlaybackQueue,
     );
     if (tracks.isEmpty) return;
-    final workRoot = widget.provider.workRootForTrack(
-      widget.session.currentTrackPath,
-    );
+    final workRoot = _paths.workRootForTrack(widget.session.currentTrackPath);
     AppBottomSheet.show<void>(
       context: context,
       builder: (ctx) {
@@ -688,12 +691,12 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
                   );
                   Navigator.of(ctx).pop();
                   if (widget.session.isPlaybackQueue) {
-                    widget.provider.playbackFacade.switchSessionQueueTrack(
+                    _playback.switchSessionQueueTrack(
                       widget.session.id,
                       node.queueIndex,
                     );
                   } else {
-                    widget.provider.playbackFacade.switchSessionTrack(
+                    _playback.switchSessionTrack(
                       widget.session.id,
                       node.track!.path,
                     );
@@ -726,7 +729,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
         final isAsmrEntry = firstTrack?.remoteMetadataKind == 'asmr.one';
         final fallbackRoot = firstTrack == null
             ? null
-            : widget.provider.workRootForTrack(firstTrack.path);
+            : _paths.workRootForTrack(firstTrack.path);
         final groupRoot = firstTrack?.groupKey.trim();
         final entryWorkRoot =
             entry.workRootPath ??
@@ -754,7 +757,7 @@ class _SessionDetailContentState extends State<_SessionDetailContent> {
           root.children.add(parent);
         }
         for (final track in entry.tracks) {
-          final latestTrack = widget.provider.trackByPath(track.path);
+          final latestTrack = _paths.trackByPath(track.path);
           final displayTrack =
               latestTrack != null && latestTrack.duration > Duration.zero
               ? latestTrack

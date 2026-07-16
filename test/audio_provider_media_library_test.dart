@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/audio_provider.dart';
+import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
@@ -837,10 +838,19 @@ void main() {
       ], notify: false);
 
       expect(
-        provider.tracksInSameWork(firstPath).map((track) => track.path).toSet(),
+        AudioPathCoordinator(
+          library: provider.libraryFacade,
+          playback: provider.playbackFacade,
+        ).tracksInSameWork(firstPath).map((track) => track.path).toSet(),
         <String>{firstPath, secondPath},
       );
-      expect(provider.workRootForTrack(firstPath), workRoot);
+      expect(
+        AudioPathCoordinator(
+          library: provider.libraryFacade,
+          playback: provider.playbackFacade,
+        ).workRootForTrack(firstPath),
+        workRoot,
+      );
     });
 
     test('cross-folder loop stays inside the current work root', () async {

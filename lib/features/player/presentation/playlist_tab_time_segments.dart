@@ -4,7 +4,7 @@ class _TimeSegmentPanel extends StatefulWidget {
   const _TimeSegmentPanel({
     super.key,
     required this.session,
-    required this.provider,
+    required this.playback,
     required this.labels,
     required this.selectedId,
     required this.showEditor,
@@ -27,7 +27,7 @@ class _TimeSegmentPanel extends StatefulWidget {
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
   final List<TimeSegmentLabel> labels;
   final String? selectedId;
   final bool showEditor;
@@ -146,16 +146,16 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                 children: [
                   _EqualizerPage(
                     session: widget.session,
-                    provider: widget.provider,
+                    playback: widget.playback,
                   ),
                   _AudioFeaturesPage(
                     session: widget.session,
-                    provider: widget.provider,
+                    playback: widget.playback,
                   ),
                   _SpeedWheelPage(
                     key: ValueKey<String>('speed_${widget.session.id}'),
                     session: widget.session,
-                    provider: widget.provider,
+                    playback: widget.playback,
                   ),
                   _buildSegmentPage(
                     context,
@@ -165,7 +165,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                   ),
                   _VolumeBalancePage(
                     session: widget.session,
-                    provider: widget.provider,
+                    playback: widget.playback,
                   ),
                 ],
               ),

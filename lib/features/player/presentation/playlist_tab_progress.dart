@@ -15,14 +15,16 @@ class _ProgressBar extends StatelessWidget {
   const _ProgressBar({
     super.key,
     required this.session,
-    required this.provider,
+    required this.playback,
+    required this.paths,
     this.timeSegmentLabels = const <TimeSegmentLabel>[],
     this.selectedSegmentId,
     this.onManualSeek,
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
+  final AudioPathCoordinator paths;
   final List<TimeSegmentLabel> timeSegmentLabels;
   final String? selectedSegmentId;
   final ValueChanged<Duration>? onManualSeek;
@@ -30,7 +32,7 @@ class _ProgressBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final track = provider.trackByPath(session.currentTrackPath);
+    final track = paths.trackByPath(session.currentTrackPath);
     final isAsmr = track?.remoteMetadataKind == 'asmr.one';
     final primaryColor = isAsmr
         ? AppDesignTokens.of(context).asmrAccent
@@ -43,7 +45,7 @@ class _ProgressBar extends StatelessWidget {
     );
     return _ProgressSliderAndTimecodes(
       session: session,
-      provider: provider,
+      playback: playback,
       primaryColor: primaryColor,
       staticLayer: staticLayer,
       timeSegmentLabels: timeSegmentLabels,
@@ -56,7 +58,7 @@ class _ProgressBar extends StatelessWidget {
 class _ProgressSliderAndTimecodes extends StatefulWidget {
   const _ProgressSliderAndTimecodes({
     required this.session,
-    required this.provider,
+    required this.playback,
     required this.primaryColor,
     required this.staticLayer,
     required this.timeSegmentLabels,
@@ -65,7 +67,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
   });
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
   final Color primaryColor;
   final Widget staticLayer;
   final List<TimeSegmentLabel> timeSegmentLabels;
@@ -314,7 +316,7 @@ class _ProgressSliderAndTimecodesState
     _clearTooltip();
     _publishProgressValue(force: true);
     widget.onManualSeek?.call(position);
-    widget.provider.playbackFacade.seekSession(widget.session.id, position);
+    widget.playback.seekSession(widget.session.id, position);
     _positionGate.tickerModeEnabled = _tickerModeEnabled;
   }
 

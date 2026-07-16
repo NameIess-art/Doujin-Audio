@@ -1,10 +1,10 @@
 part of 'playlist_tab.dart';
 
 class _ExpandableLoopOptions extends StatefulWidget {
-  const _ExpandableLoopOptions({required this.session, required this.provider});
+  const _ExpandableLoopOptions({required this.session, required this.playback});
 
   final PlaybackSession session;
-  final AudioProvider provider;
+  final PlaybackFacade playback;
 
   @override
   State<_ExpandableLoopOptions> createState() => _ExpandableLoopOptionsState();
@@ -119,7 +119,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
 
   Future<void> _toggleSingleLoop() async {
     await _refreshImmediately(
-      widget.provider.playbackFacade.toggleSessionSingleLoop(widget.session.id),
+      widget.playback.toggleSessionSingleLoop(widget.session.id),
     );
   }
 
@@ -137,10 +137,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
               ? SessionLoopMode.crossRandom
               : SessionLoopMode.folderRandom);
     await _refreshImmediately(
-      widget.provider.playbackFacade.setSessionLoopMode(
-        widget.session.id,
-        nextMode,
-      ),
+      widget.playback.setSessionLoopMode(widget.session.id, nextMode),
     );
   }
 
@@ -158,10 +155,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
               ? SessionLoopMode.crossRandom
               : SessionLoopMode.crossSequential);
     await _refreshImmediately(
-      widget.provider.playbackFacade.setSessionLoopMode(
-        widget.session.id,
-        nextMode,
-      ),
+      widget.playback.setSessionLoopMode(widget.session.id, nextMode),
     );
   }
 

@@ -940,36 +940,18 @@ final class PlaybackFacade {
     await setSessionLoopMode(sessionId, nextMode);
   }
 
-  Future<void> setSessionChannelSwap(String sessionId, bool enabled) async {
+  Future<void> setSessionChannelSwap(String sessionId, bool enabled) {
     final session = service.sessions[sessionId];
-    if (session == null) return;
+    if (session == null) return Future<void>.value();
     if (session.channelSwapEnabled == enabled) {
-      await flushSessionStatePersistence();
-      return;
+      return session.audioEffectsSyncFuture ?? flushSessionStatePersistence();
     }
-    final previous = session.channelSwapEnabled;
-    session.channelSwapEnabled = enabled;
-    service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-
-    final response = await _syncSessionAudioEffects(session);
-    if (response.isFailure) {
-      session.channelSwapEnabled = previous;
-      service.markActiveSessionsDirty();
-      _onSessionStateChanged?.call();
-      AppLogService.warning(
-        'PlaybackFacade.setSessionChannelSwap error: '
-        '${response.errorOrNull}',
-      );
-      await flushSessionStatePersistence();
-      return;
-    }
-    _applyAudioEffectsSnapshot(
+    return _queueSessionAudioEffectsSync(
       session,
-      response,
-      fallbackAudioEffects: session.audioEffects,
+      audioEffects: session.audioEffects,
+      channelSwapEnabled: enabled,
+      errorLabel: 'setSessionChannelSwap',
     );
-    await flushSessionStatePersistence();
   }
 
   Future<void> setSessionSkipSilence(String sessionId, bool enabled) {
@@ -1041,6 +1023,7 @@ final class PlaybackFacade {
 
   Future<NativeResult<NativePlaybackSnapshot>> _syncSessionAudioEffects(
     PlaybackSession session,
+    NativeAudioEffects audioEffects,
   ) async {
     final shouldKeepPlaying = session.effectivePlaying;
     final loadedPath = session.loadedPath;
@@ -1070,10 +1053,7 @@ final class PlaybackFacade {
     }
     var response = await nativeRepository.setAudioEffects(
       session.id,
-      NativeAudioEffects(
-        state: session.audioEffects,
-        channelSwapEnabled: session.channelSwapEnabled,
-      ),
+      audioEffects,
     );
     if (response.isOk ||
         needsPrepare ||
@@ -1094,13 +1074,7 @@ final class PlaybackFacade {
         !service.sessions.containsKey(session.id)) {
       return response;
     }
-    response = await nativeRepository.setAudioEffects(
-      session.id,
-      NativeAudioEffects(
-        state: session.audioEffects,
-        channelSwapEnabled: session.channelSwapEnabled,
-      ),
-    );
+    response = await nativeRepository.setAudioEffects(session.id, audioEffects);
     return response;
   }
 
@@ -1108,54 +1082,120 @@ final class PlaybackFacade {
     String sessionId,
     AudioEffectsState Function(AudioEffectsState state) update, {
     required String errorLabel,
-  }) async {
+  }) {
     final session = service.sessions[sessionId];
-    if (session == null) return;
-    final previous = session.audioEffects;
-    final next = update(previous);
-    session.audioEffects = next;
-    service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-
-    final response = await _syncSessionAudioEffects(session);
-    if (response.isFailure) {
-      session.audioEffects = previous;
-      service.markActiveSessionsDirty();
-      _onSessionStateChanged?.call();
-      AppLogService.warning(
-        'PlaybackFacade.$errorLabel error: ${response.errorOrNull}',
-      );
-      await flushSessionStatePersistence();
-      return;
-    }
-    _applyAudioEffectsSnapshot(session, response, fallbackAudioEffects: next);
-    await flushSessionStatePersistence();
+    if (session == null) return Future<void>.value();
+    return _queueSessionAudioEffectsSync(
+      session,
+      audioEffects: update(session.audioEffects),
+      channelSwapEnabled: session.channelSwapEnabled,
+      errorLabel: errorLabel,
+    );
   }
 
-  void _applyAudioEffectsSnapshot(
-    PlaybackSession session,
-    NativeResult<NativePlaybackSnapshot> response, {
-    AudioEffectsState? fallbackAudioEffects,
+  Future<void> _queueSessionAudioEffectsSync(
+    PlaybackSession session, {
+    required AudioEffectsState audioEffects,
+    required bool channelSwapEnabled,
+    required String errorLabel,
   }) {
-    final snapshot = response.valueOrNull;
-    if (snapshot == null) return;
-    if (snapshot.hasAudioEffectsPayload) {
-      final shouldKeepFallback =
-          fallbackAudioEffects != null &&
-          fallbackAudioEffects != AudioEffectsState.flat &&
-          snapshot.audioEffects == AudioEffectsState.flat;
-      session.audioEffects = shouldKeepFallback
-          ? fallbackAudioEffects
-          : snapshot.audioEffects;
-    } else if (fallbackAudioEffects != null) {
-      session.audioEffects = fallbackAudioEffects;
+    if (!session.hasPendingAudioEffectsSync) {
+      session.confirmedNativeAudioEffects = NativeAudioEffects(
+        state: session.audioEffects,
+        channelSwapEnabled: session.channelSwapEnabled,
+      );
     }
-    session.eqCapabilities = snapshot.eqCapabilities;
-    if (snapshot.hasChannelSwapPayload) {
-      session.channelSwapEnabled = snapshot.channelSwapEnabled;
-    }
+    session
+      ..pendingNativeAudioEffects = NativeAudioEffects(
+        state: audioEffects,
+        channelSwapEnabled: channelSwapEnabled,
+      )
+      ..audioEffects = audioEffects
+      ..channelSwapEnabled = channelSwapEnabled
+      ..audioEffectsSyncRevision += 1
+      ..audioEffectsSyncErrorLabel = errorLabel;
     service.markActiveSessionsDirty();
     _onSessionStateChanged?.call();
+
+    final activeDrain = session.audioEffectsSyncFuture;
+    if (activeDrain != null) return activeDrain;
+
+    final completer = Completer<void>();
+    session.audioEffectsSyncFuture = completer.future;
+    unawaited(() async {
+      try {
+        await _drainSessionAudioEffectsSync(session);
+        completer.complete();
+      } catch (error, stackTrace) {
+        completer.completeError(error, stackTrace);
+      } finally {
+        if (identical(session.audioEffectsSyncFuture, completer.future)) {
+          session.audioEffectsSyncFuture = null;
+        }
+      }
+    }());
+    return completer.future;
+  }
+
+  Future<void> _drainSessionAudioEffectsSync(PlaybackSession session) async {
+    while (identical(service.sessions[session.id], session)) {
+      final revision = session.audioEffectsSyncRevision;
+      final desiredAudioEffects = session.pendingNativeAudioEffects;
+      if (desiredAudioEffects == null) return;
+      final errorLabel = session.audioEffectsSyncErrorLabel;
+
+      final response = await _syncSessionAudioEffects(
+        session,
+        desiredAudioEffects,
+      );
+      if (!identical(service.sessions[session.id], session)) return;
+
+      if (response.isOk) {
+        final snapshot = response.valueOrNull;
+        session.confirmedNativeAudioEffects = NativeAudioEffects(
+          state: _resolvedAudioEffects(
+            snapshot,
+            fallbackAudioEffects: desiredAudioEffects.state,
+          ),
+          channelSwapEnabled: snapshot?.hasChannelSwapPayload ?? false
+              ? snapshot!.channelSwapEnabled
+              : desiredAudioEffects.channelSwapEnabled,
+        );
+        if (snapshot != null) session.eqCapabilities = snapshot.eqCapabilities;
+      } else {
+        AppLogService.warning(
+          'PlaybackFacade.$errorLabel error: '
+          '${response.errorOrNull}',
+        );
+      }
+
+      if (revision != session.audioEffectsSyncRevision) continue;
+      final confirmed = session.confirmedNativeAudioEffects!;
+      session
+        ..audioEffects = confirmed.state
+        ..channelSwapEnabled = confirmed.channelSwapEnabled;
+      service.markActiveSessionsDirty();
+      _onSessionStateChanged?.call();
+
+      await flushSessionStatePersistence();
+      if (!identical(service.sessions[session.id], session)) return;
+      if (revision != session.audioEffectsSyncRevision) continue;
+      session.pendingNativeAudioEffects = null;
+      return;
+    }
+  }
+
+  AudioEffectsState _resolvedAudioEffects(
+    NativePlaybackSnapshot? snapshot, {
+    required AudioEffectsState fallbackAudioEffects,
+  }) {
+    if (snapshot == null || !snapshot.hasAudioEffectsPayload) {
+      return fallbackAudioEffects;
+    }
+    final shouldKeepFallback =
+        fallbackAudioEffects != AudioEffectsState.flat &&
+        snapshot.audioEffects == AudioEffectsState.flat;
+    return shouldKeepFallback ? fallbackAudioEffects : snapshot.audioEffects;
   }
 
   Map<int, double> _mapPresetToSessionBands(String sessionId, EqPreset preset) {

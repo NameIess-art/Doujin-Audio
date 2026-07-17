@@ -60,6 +60,11 @@ class PlaybackSession {
   Duration bufferedPosition = Duration.zero;
   double speed = 1.0;
   AudioEffectsState audioEffects = AudioEffectsState.flat;
+  NativeAudioEffects? pendingNativeAudioEffects;
+  NativeAudioEffects? confirmedNativeAudioEffects;
+  int audioEffectsSyncRevision = 0;
+  Future<void>? audioEffectsSyncFuture;
+  String audioEffectsSyncErrorLabel = 'setAudioEffects';
   EqCapabilities eqCapabilities = EqCapabilities.unsupported;
   double nativeBoostGain = 1.0;
   int lastPersistedPositionBucket = 0;
@@ -74,6 +79,7 @@ class PlaybackSession {
       _bufferedPositionController.stream;
   Duration get position => lastKnownPosition;
   bool get effectivePlaying => pendingPlayingIntent ?? state.playing;
+  bool get hasPendingAudioEffectsSync => pendingNativeAudioEffects != null;
 
   bool applyNativeSnapshot(NativePlaybackSnapshot snapshot) {
     if (snapshot.sessionId != id) return false;
@@ -139,12 +145,12 @@ class PlaybackSession {
     if ((speed - snapshot.speed).abs() >= 0.001) {
       speed = snapshot.speed;
     }
-    if (snapshot.hasAudioEffectsPayload) {
+    if (!hasPendingAudioEffectsSync && snapshot.hasAudioEffectsPayload) {
       audioEffects = snapshot.audioEffects;
     }
     eqCapabilities = snapshot.eqCapabilities;
     nativeBoostGain = snapshot.boostGain;
-    if (snapshot.hasChannelSwapPayload) {
+    if (!hasPendingAudioEffectsSync && snapshot.hasChannelSwapPayload) {
       channelSwapEnabled = snapshot.channelSwapEnabled;
     }
     if (snapshot.uri != null && loadedPath == null) {

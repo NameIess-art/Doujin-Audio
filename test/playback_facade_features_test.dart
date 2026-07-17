@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -34,6 +35,28 @@ void main() {
   tearDown(() async {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
+
+  Future<PlaybackSession> addAudioEffectsSession(String trackPath) async {
+    final track = MusicTrack(
+      path: trackPath,
+      displayName: path.basename(trackPath),
+      groupKey: 'effects-race',
+      groupTitle: 'Effects race',
+      groupSubtitle: 'Effects race',
+      isSingle: false,
+    );
+    runtimeGraph.library.addTracks(
+      <MusicTrack>[track],
+      notify: false,
+      persist: false,
+    );
+    await runtimeGraph.playback.spawnSession(track, autoPlay: false);
+    final session = runtimeGraph.playback.service.activeSessions.singleWhere(
+      (candidate) => candidate.currentTrackPath == trackPath,
+    );
+    session.loadedPath = trackPath;
+    return session;
+  }
 
   group('multi-session playback stability', () {
     test('setSessionSpeed snaps to fixed options and calls native', () async {
@@ -218,6 +241,196 @@ void main() {
       expect(session.audioEffects.eqPresetId, 'flat');
       expect(session.audioEffects.eqEnabled, isTrue);
       expect(session.audioEffects.eqBandLevels, isEmpty);
+    });
+
+    test(
+      'same-session audio effects serialize and send the latest full state',
+      () async {
+        final native = _ControlledAudioEffectsNative();
+        native.install();
+        final session = await addAudioEffectsSession(
+          'https://example.com/effects-race.mp3',
+        );
+
+        final noiseFuture = runtimeGraph.playback.setSessionNoiseReduction(
+          session.id,
+          true,
+        );
+        await native.waitForCallCount(1);
+        final channelFuture = runtimeGraph.playback.setSessionChannelSwap(
+          session.id,
+          true,
+        );
+        final panningFuture = runtimeGraph.playback.setSessionPanning(
+          session.id,
+          0.6,
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(native.maxActiveCalls, 1);
+        expect(native.calls, hasLength(1));
+        expect(session.audioEffects.noiseReductionEnabled, isTrue);
+        expect(session.audioEffects.panning, 0.6);
+        expect(session.channelSwapEnabled, isTrue);
+
+        session.applyNativeSnapshot(
+          _nativeSnapshot(
+            session,
+            audioEffects: AudioEffectsState.flat,
+            channelSwapEnabled: false,
+          ),
+        );
+        expect(session.audioEffects.noiseReductionEnabled, isTrue);
+        expect(session.audioEffects.panning, 0.6);
+        expect(session.channelSwapEnabled, isTrue);
+
+        native.completeSuccess(0);
+        await native.waitForCallCount(2);
+        final latestPayload = native.calls[1].effects;
+        expect(latestPayload['noiseReductionEnabled'], isTrue);
+        expect(latestPayload['panning'], 0.6);
+        expect(latestPayload['channelSwapEnabled'], isTrue);
+        native.completeSuccess(1);
+
+        await Future.wait(<Future<void>>[
+          noiseFuture,
+          channelFuture,
+          panningFuture,
+        ]);
+        expect(native.maxActiveCalls, 1);
+      },
+    );
+
+    test('stale failure does not roll back a newer optimistic state', () async {
+      final native = _ControlledAudioEffectsNative();
+      native.install();
+      final session = await addAudioEffectsSession(
+        'https://example.com/effects-stale-failure.mp3',
+      );
+
+      final noiseFuture = runtimeGraph.playback.setSessionNoiseReduction(
+        session.id,
+        true,
+      );
+      await native.waitForCallCount(1);
+      final eqFuture = runtimeGraph.playback.setSessionEqEnabled(
+        session.id,
+        true,
+      );
+
+      native.completeFailure(0);
+      await native.waitForCallCount(2);
+      native.completeFailure(1);
+      await native.waitForCallCount(3);
+      expect(session.audioEffects.noiseReductionEnabled, isTrue);
+      expect(session.audioEffects.eqEnabled, isTrue);
+
+      native.completeSuccess(2);
+      await Future.wait(<Future<void>>[noiseFuture, eqFuture]);
+      expect(session.audioEffects.noiseReductionEnabled, isTrue);
+      expect(session.audioEffects.eqEnabled, isTrue);
+    });
+
+    test(
+      'latest failure rolls back to the most recent confirmed state',
+      () async {
+        runtimeGraph.playback.configurePersistence(enabled: true);
+        final native = _ControlledAudioEffectsNative();
+        native.install();
+        final session = await addAudioEffectsSession(
+          'https://example.com/effects-latest-failure.mp3',
+        );
+
+        final confirmedFuture = runtimeGraph.playback.setSessionNoiseReduction(
+          session.id,
+          true,
+        );
+        await native.waitForCallCount(1);
+        native.completeSuccess(0);
+        await confirmedFuture;
+
+        final panningFuture = runtimeGraph.playback.setSessionPanning(
+          session.id,
+          0.4,
+        );
+        await native.waitForCallCount(2);
+        final channelFuture = runtimeGraph.playback.setSessionChannelSwap(
+          session.id,
+          true,
+        );
+        native.completeSuccess(1);
+        await native.waitForCallCount(3);
+        native.completeFailure(2);
+        await native.waitForCallCount(4);
+        native.completeFailure(3);
+        await Future.wait(<Future<void>>[panningFuture, channelFuture]);
+
+        expect(session.audioEffects.noiseReductionEnabled, isTrue);
+        expect(session.audioEffects.panning, 0.4);
+        expect(session.channelSwapEnabled, isFalse);
+        final persisted = (await AudioDatabaseRepository(
+          database: AppDatabase.test(db),
+        ).loadAllSessions()).singleWhere((entry) => entry.id == session.id);
+        expect(persisted.audioEffects.noiseReductionEnabled, isTrue);
+        expect(persisted.audioEffects.panning, 0.4);
+        expect(persisted.channelSwapEnabled, isFalse);
+      },
+    );
+
+    test('different sessions synchronize audio effects concurrently', () async {
+      final native = _ControlledAudioEffectsNative();
+      native.install();
+      final first = await addAudioEffectsSession(
+        'https://example.com/effects-session-a.mp3',
+      );
+      final second = await addAudioEffectsSession(
+        'https://example.com/effects-session-b.mp3',
+      );
+
+      final firstFuture = runtimeGraph.playback.setSessionNoiseReduction(
+        first.id,
+        true,
+      );
+      final secondFuture = runtimeGraph.playback.setSessionEqEnabled(
+        second.id,
+        true,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(first.id, isNot(second.id));
+      expect(native.calls, hasLength(2));
+      expect(native.activeCalls, 2);
+      expect(native.maxActiveCalls, 2);
+      native.completeSuccess(0);
+      native.completeSuccess(1);
+      await Future.wait(<Future<void>>[firstFuture, secondFuture]);
+    });
+
+    test('removed session ignores a pending audio-effects response', () async {
+      final native = _ControlledAudioEffectsNative();
+      native.install();
+      final session = await addAudioEffectsSession(
+        'https://example.com/effects-removed-session.mp3',
+      );
+
+      final updateFuture = runtimeGraph.playback.setSessionNoiseReduction(
+        session.id,
+        true,
+      );
+      await native.waitForCallCount(1);
+      await runtimeGraph.playback.removeSession(session.id);
+      native.completeSuccess(
+        0,
+        audioEffects: AudioEffectsState.flat,
+        channelSwapEnabled: false,
+      );
+      await updateFuture;
+
+      expect(
+        runtimeGraph.playback.service.sessions,
+        isNot(contains(session.id)),
+      );
+      expect(session.audioEffects.noiseReductionEnabled, isTrue);
     });
 
     test('failed audio effect update restores state and persistence', () async {
@@ -1132,4 +1345,119 @@ void main() {
       );
     });
   });
+}
+
+NativePlaybackSnapshot _nativeSnapshot(
+  PlaybackSession session, {
+  required AudioEffectsState audioEffects,
+  required bool channelSwapEnabled,
+}) {
+  return NativePlaybackSnapshot(
+    sessionId: session.id,
+    path: session.currentTrackPath,
+    playing: false,
+    playWhenReady: false,
+    processingState: 'ready',
+    position: Duration.zero,
+    bufferedPosition: Duration.zero,
+    volume: 1,
+    boostGain: 1,
+    channelSwapEnabled: channelSwapEnabled,
+    audioEffects: audioEffects,
+  );
+}
+
+class _ControlledAudioEffectsCall {
+  _ControlledAudioEffectsCall(this.arguments);
+
+  final Map<Object?, Object?> arguments;
+  final Completer<Object?> response = Completer<Object?>();
+
+  Map<Object?, Object?> get effects =>
+      arguments['effects']! as Map<Object?, Object?>;
+}
+
+class _ControlledAudioEffectsNative {
+  final List<_ControlledAudioEffectsCall> calls =
+      <_ControlledAudioEffectsCall>[];
+  Completer<void>? _callAdded;
+  int activeCalls = 0;
+  int maxActiveCalls = 0;
+
+  void install() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+          if (call.method != NativePlaybackMethod.setAudioEffects) {
+            return <String, Object?>{'ok': true, 'value': null};
+          }
+          final pending = _ControlledAudioEffectsCall(
+            call.arguments! as Map<Object?, Object?>,
+          );
+          calls.add(pending);
+          activeCalls++;
+          if (activeCalls > maxActiveCalls) maxActiveCalls = activeCalls;
+          _callAdded?.complete();
+          _callAdded = null;
+          try {
+            return await pending.response.future;
+          } finally {
+            activeCalls--;
+          }
+        });
+  }
+
+  Future<void> waitForCallCount(int count) async {
+    while (calls.length < count) {
+      final signal = Completer<void>();
+      _callAdded = signal;
+      if (calls.length >= count) {
+        _callAdded = null;
+        return;
+      }
+      await signal.future;
+    }
+  }
+
+  void completeSuccess(
+    int index, {
+    AudioEffectsState? audioEffects,
+    bool? channelSwapEnabled,
+  }) {
+    final call = calls[index];
+    final effects =
+        audioEffects?.toPlatformMap(
+          channelSwapEnabled:
+              channelSwapEnabled ??
+              call.effects['channelSwapEnabled'] as bool? ??
+              false,
+        ) ??
+        call.effects;
+    call.response.complete(<String, Object?>{
+      'ok': true,
+      'value': <String, Object?>{
+        'sessionId': call.arguments['sessionId'] as String,
+        'path': call.arguments['path'] as String?,
+        'playing': false,
+        'playWhenReady': false,
+        'processingState': 'ready',
+        'positionMs': 0,
+        'bufferedPositionMs': 0,
+        'volume': 1.0,
+        'speed': 1.0,
+        'boostGain': 1.0,
+        'channelSwap':
+            channelSwapEnabled ??
+            effects['channelSwapEnabled'] as bool? ??
+            false,
+        'audioEffects': effects,
+      },
+    });
+  }
+
+  void completeFailure(int index) {
+    calls[index].response.complete(<String, Object?>{
+      'ok': false,
+      'error': 'injected audio-effects rejection',
+    });
+  }
 }

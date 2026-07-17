@@ -72,6 +72,45 @@ class UnifiedPlaybackNotificationRoutingTest {
     }
 
     @Test
+    fun `live foreground update preserves every multi session notification`() {
+        val first = UnifiedPlaybackNotificationItem(
+            id = "first",
+            title = "First",
+            subtitle = "Album",
+            artPath = "/covers/first.jpg",
+            playing = false,
+            hasPrevious = false,
+            hasNext = true
+        )
+        val second = UnifiedPlaybackNotificationItem(
+            id = "second",
+            title = "Second",
+            subtitle = null,
+            artPath = "/covers/second.jpg",
+            playing = true,
+            hasPrevious = true,
+            hasNext = false
+        )
+
+        val updated = mergeLiveMultiSessionNotificationItems(
+            items = listOf(first, second),
+            liveItem = first.copy(
+                title = "First (Playing)",
+                subtitle = null,
+                artPath = null,
+                playing = true
+            )
+        )
+
+        assertEquals(listOf("first", "second"), updated.map { it.id })
+        assertEquals("First (Playing)", updated.first().title)
+        assertEquals("Album", updated.first().subtitle)
+        assertEquals("/covers/first.jpg", updated.first().artPath)
+        assertTrue(updated.first().playing)
+        assertEquals(second, updated.last())
+    }
+
+    @Test
     fun `foreground notification resolves a persisted active session after service restart`() {
         val sessionId = resolveNotificationSessionId(
             requestedSessionId = "",

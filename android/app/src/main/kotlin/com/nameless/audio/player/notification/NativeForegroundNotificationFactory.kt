@@ -16,6 +16,7 @@ internal class NativeForegroundNotificationFactory(
     private val channelId: String
 ) {
     fun buildPlaybackNotification(
+        sessionId: String,
         title: String,
         subtitle: String?,
         mediaSession: MediaSession?,
@@ -23,6 +24,21 @@ internal class NativeForegroundNotificationFactory(
         hasPrevious: Boolean,
         hasNext: Boolean
     ): Notification {
+        UnifiedPlaybackNotificationController
+            .buildLiveMultiSessionForegroundNotification(
+                context = context,
+                liveItem = UnifiedPlaybackNotificationItem(
+                    id = sessionId,
+                    title = title,
+                    subtitle = subtitle,
+                    artPath = null,
+                    playing = playing,
+                    hasPrevious = hasPrevious,
+                    hasNext = hasNext
+                )
+            )
+            ?.let { return it }
+
         val builder = baseBuilder()
             .setContentTitle(title.ifBlank { context.getString(R.string.app_name) })
             .setContentText(

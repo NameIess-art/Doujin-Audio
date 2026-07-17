@@ -50,6 +50,20 @@ internal data class UnifiedPlaybackNotificationItem(
     val hasNext: Boolean
 )
 
+internal fun mergeLiveMultiSessionNotificationItems(
+    items: List<UnifiedPlaybackNotificationItem>,
+    liveItem: UnifiedPlaybackNotificationItem
+): List<UnifiedPlaybackNotificationItem> {
+    val existing = items.firstOrNull { it.id == liveItem.id } ?: return items
+    val mergedLiveItem = liveItem.copy(
+        subtitle = liveItem.subtitle ?: existing.subtitle,
+        artPath = liveItem.artPath ?: existing.artPath
+    )
+    return items.map { item ->
+        if (item.id == mergedLiveItem.id) mergedLiveItem else item
+    }
+}
+
 internal data class NotificationTransportActionSpec(
     val command: NotificationCommand,
     val iconResource: Int,
@@ -151,6 +165,39 @@ internal object UnifiedPlaybackNotificationController {
     private val lastNotifyTimestampsMs = mutableMapOf<Int, Long>()
     @Volatile
     var dismissPending = false
+
+    @Synchronized
+    fun buildLiveMultiSessionForegroundNotification(
+        context: Context,
+        liveItem: UnifiedPlaybackNotificationItem
+    ): android.app.Notification? {
+        if (dismissPending) return null
+        val request = latestSyncRequest ?: return null
+        if (request.mode != "multi" || request.items.size < 2) return null
+        if (request.items.none { it.id == liveItem.id }) return null
+
+        val mergedItems = mergeLiveMultiSessionNotificationItems(
+            items = request.items,
+            liveItem = liveItem
+        )
+        val mergedLiveItem = mergedItems.first { it.id == liveItem.id }
+        val summaryLines = mergedItems.map(UnifiedPlaybackNotificationItem::title)
+        latestSyncRequest = request.copy(
+            mainSessionId = mergedLiveItem.id,
+            items = mergedItems,
+            summaryLines = summaryLines
+        )
+        activeItemsById.clear()
+        mergedItems.forEach { item -> activeItemsById[item.id] = item }
+
+        return buildMultiSessionNotification(
+            context = context,
+            mainItem = mergedLiveItem,
+            items = mergedItems,
+            summaryText = request.summaryText,
+            summaryLines = summaryLines
+        )
+    }
 
     private fun isNotifyThrottled(notificationId: Int, item: UnifiedPlaybackNotificationItem? = null): Boolean {
         if (item != null) {

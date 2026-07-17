@@ -386,6 +386,7 @@ class NativePlaybackService : MediaSessionService() {
                         this@NativePlaybackService,
                         FOREGROUND_NOTIFICATION_ID,
                         foregroundNotificationFactory.buildPlaybackNotification(
+                            sessionId = foregroundSession.sessionId,
                             title = foregroundSession.title,
                             subtitle = foregroundSession.subtitle,
                             mediaSession = ensureFocusedMediaSession(),

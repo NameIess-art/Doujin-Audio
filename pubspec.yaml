@@ -61,6 +61,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/lottie/empty_library.json
+    - android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
   fonts:
     - family: Outfit
       fonts:

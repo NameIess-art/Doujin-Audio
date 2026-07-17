@@ -40,6 +40,7 @@ class AppUpdateService {
       'https://api.github.com/repos/$owner/$repo/releases?per_page=30';
   static const String latestReleasePage =
       'https://github.com/$owner/$repo/releases/latest';
+  static const String repositoryPage = 'https://github.com/$owner/$repo';
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
   final UpdatePlatformService _platform;
   final HttpClient Function() _httpClientFactory;

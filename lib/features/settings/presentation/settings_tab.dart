@@ -26,11 +26,13 @@ import '../../../core/widgets/subtitle_window_visual.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../../data_support/presentation/data_support_page.dart';
 import '../../asmr/domain/asmr_download.dart';
 import 'permission_status_page.dart';
 import 'app_update_flow.dart';
+import 'about_page.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
 
 part 'settings_tab_actions.dart';
@@ -40,6 +42,7 @@ part 'settings_tab_playback_section.dart';
 part 'settings_tab_asmr_section.dart';
 part 'settings_tab_data_section.dart';
 part 'settings_tab_update_section.dart';
+part 'settings_tab_about_section.dart';
 part 'settings_tab_widgets.dart';
 
 class SettingsTab extends ConsumerStatefulWidget {
@@ -125,6 +128,14 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     AppBottomSheet.show<void>(
       context: context,
       builder: (_) => const DataSupportPage(),
+    );
+  }
+
+  void _openAboutPage() {
+    Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        child: AboutPage(versionFuture: _appVersionFuture),
+      ),
     );
   }
 
@@ -257,6 +268,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                         currentVersion: _appVersionFuture,
                         onOpenPermissionCenter: _openPermissionCenter,
                         onCheckForUpdates: () => _checkForUpdates(context),
+                      ),
+                      ..._buildSettingsAboutSection(
+                        i18n: i18n,
+                        descStyle: descStyle,
+                        onOpenAbout: _openAboutPage,
                       ),
                       const SizedBox(height: 24),
                     ],

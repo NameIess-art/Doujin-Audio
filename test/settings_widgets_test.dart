@@ -7,6 +7,7 @@ import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/settings/presentation/settings_tab.dart';
+import 'package:nameless_audio/features/settings/presentation/about_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -42,7 +43,7 @@ void main() {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
-  testWidgets('settings renders six sections in order with critical entries', (
+  testWidgets('settings renders sections in order with critical entries', (
     tester,
   ) async {
     final harness = AppRuntimeWidgetTestFixture();
@@ -113,6 +114,15 @@ void main() {
       find.textContaining(i18n.tr('current_version_label', {'version': ''})),
       findsOneWidget,
     );
+
+    final aboutTile = tester.widget<ListTile>(
+      find.widgetWithText(ListTile, i18n.tr('about')).last,
+    );
+    expect(aboutTile.onTap, isNotNull);
+    await _scrollTo(tester, scrollable, find.text(i18n.tr('about')).last);
+    await tester.tap(find.widgetWithText(ListTile, i18n.tr('about')).last);
+    await tester.pumpAndSettle();
+    expect(find.byType(AboutPage), findsOneWidget);
   });
 
   testWidgets('card info settings enforce the selected field limit', (

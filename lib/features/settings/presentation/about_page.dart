@@ -1,0 +1,269 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_design_tokens.dart';
+import '../../../app/theme/app_styles.dart';
+import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/top_page_header.dart';
+import '../application/app_update_service.dart';
+
+const _aboutIconAsset =
+    'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png';
+
+class AboutPage extends ConsumerWidget {
+  const AboutPage({super.key, required this.versionFuture});
+
+  final Future<AppVersionInfo> versionFuture;
+
+  static const _repositoryUrl = AppUpdateService.repositoryPage;
+
+  Future<void> _openRepository(BuildContext context, WidgetRef ref) async {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final opened = await ref
+        .read(appUpdateServiceProvider)
+        .openReleasePage(_repositoryUrl);
+    if (!context.mounted || opened) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('about_wiki_open_failed'),
+      tone: AppFeedbackTone.warning,
+      icon: Icons.open_in_new_rounded,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final tokens = AppDesignTokens.of(context);
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+
+    return Scaffold(
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: ListView(
+              padding: EdgeInsets.fromLTRB(
+                tokens.pageHorizontalPadding,
+                104,
+                tokens.pageHorizontalPadding,
+                bottomInset + AppSpacing.xl,
+              ),
+              children: [
+                _AboutCard(
+                  children: [
+                    const _AboutIdentity(),
+                    const SizedBox(height: AppSpacing.lg),
+                    _AboutVersionTile(versionFuture: versionFuture),
+                    const SizedBox(height: AppSpacing.xs),
+                    _AboutLinkTile(
+                      icon: Icons.code_rounded,
+                      title: i18n.tr('about_source_code'),
+                      subtitle: i18n.tr('about_source_code_subtitle'),
+                      onTap: () => unawaited(_openRepository(context, ref)),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    _AboutLinkTile(
+                      icon: Icons.menu_book_outlined,
+                      title: i18n.tr('about_wiki'),
+                      subtitle: i18n.tr('about_wiki_subtitle'),
+                      onTap: () => unawaited(_openRepository(context, ref)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: AppSpacing.lg),
+                _AboutCard(
+                  children: [
+                    ListTile(
+                      leading: const _AboutIconContainer(
+                        icon: Icons.person_outline_rounded,
+                      ),
+                      title: Text(i18n.tr('about_author')),
+                      subtitle: const Text('NameIess-art'),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.xs),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.xs,
+                      ),
+                      child: OutlinedButton.icon(
+                        onPressed: null,
+                        icon: const Icon(Icons.favorite_border_rounded),
+                        label: Text(i18n.tr('about_reward')),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              leading: const BackButton(),
+              title: i18n.tr('about'),
+              padding: const EdgeInsets.fromLTRB(8, 6, 16, 0),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AboutCard extends StatelessWidget {
+  const _AboutCard({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(tokens.radiusCard),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
+          width: 0.5,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.all(AppSpacing.sm),
+      child: Column(children: children),
+    );
+  }
+}
+
+class _AboutIdentity extends StatelessWidget {
+  const _AboutIdentity();
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.card),
+            child: Image.asset(
+              _aboutIconAsset,
+              width: 84,
+              height: 84,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => Container(
+                width: 84,
+                height: 84,
+                color: cs.primaryContainer,
+                alignment: Alignment.center,
+                child: Icon(
+                  Icons.graphic_eq_rounded,
+                  size: 48,
+                  color: cs.onPrimaryContainer,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: AppSpacing.md),
+          Flexible(
+            child: Text(
+              i18n.tr('app_title'),
+              style: Theme.of(
+                context,
+              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AboutLinkTile extends StatelessWidget {
+  const _AboutLinkTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: _AboutIconContainer(icon: icon),
+      title: Text(title),
+      subtitle: Text(subtitle),
+      trailing: const Icon(Icons.open_in_new_rounded),
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+    );
+  }
+}
+
+class _AboutVersionTile extends StatelessWidget {
+  const _AboutVersionTile({required this.versionFuture});
+
+  final Future<AppVersionInfo> versionFuture;
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    return ListTile(
+      leading: const _AboutIconContainer(icon: Icons.info_outline_rounded),
+      title: Text(i18n.tr('about_version')),
+      subtitle: FutureBuilder<AppVersionInfo>(
+        future: versionFuture,
+        builder: (context, snapshot) => Text(
+          snapshot.data?.versionName ?? '...',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
+    );
+  }
+}
+
+class _AboutIconContainer extends StatelessWidget {
+  const _AboutIconContainer({required this.icon});
+
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
+    return Container(
+      width: tokens.iconContainerSize,
+      height: tokens.iconContainerSize,
+      decoration: BoxDecoration(
+        color: cs.primaryContainer,
+        borderRadius: BorderRadius.circular(tokens.radiusSmall),
+      ),
+      alignment: Alignment.center,
+      child: Icon(icon, color: cs.onPrimaryContainer),
+    );
+  }
+}

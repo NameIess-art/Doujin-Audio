@@ -39,6 +39,31 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `enabling equalizer for a paused deferred session creates a player`() {
+        assertEquals(
+            true,
+            shouldEnsurePlayerForAudioEffects(
+                effects = NativeAudioEffects(eqEnabled = true),
+                hasPlayer = false
+            )
+        )
+        assertEquals(
+            false,
+            shouldEnsurePlayerForAudioEffects(
+                effects = NativeAudioEffects(eqEnabled = true),
+                hasPlayer = true
+            )
+        )
+        assertEquals(
+            false,
+            shouldEnsurePlayerForAudioEffects(
+                effects = NativeAudioEffects(),
+                hasPlayer = false
+            )
+        )
+    }
+
+    @Test
     fun `audio effects sync only when audio session id changes`() {
         assertEquals(true, shouldSyncAudioSessionState(C.AUDIO_SESSION_ID_UNSET, 42))
         assertEquals(false, shouldSyncAudioSessionState(42, 42))

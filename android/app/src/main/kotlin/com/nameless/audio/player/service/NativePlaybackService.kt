@@ -71,6 +71,19 @@ internal fun idlePlaybackSessionIdsToRelease(
         .toSet()
 }
 
+internal fun shouldEnsurePlayerForAudioEffects(
+    effects: NativeAudioEffects,
+    hasPlayer: Boolean
+): Boolean {
+    if (hasPlayer) return false
+    return effects.skipSilenceEnabled ||
+        effects.noiseReductionEnabled ||
+        effects.eqEnabled ||
+        effects.volumeNormalizationEnabled ||
+        effects.panning != 0f ||
+        effects.channelSwapEnabled
+}
+
 @Suppress("DEPRECATION")
 private fun Bundle.rawExtra(key: String): Any? = get(key)
 
@@ -904,6 +917,9 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         val previousChannelSwap = session.channelSwapEnabled
         session.applyAudioEffects(effects)
+        if (shouldEnsurePlayerForAudioEffects(effects, session.hasPlayer())) {
+            session.ensurePlayer()
+        }
         if (previousChannelSwap != session.channelSwapEnabled) {
             session.reprepareCurrentMediaItem()
         }

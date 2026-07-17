@@ -114,6 +114,7 @@ const Map<String, String> appLanguageJa = {
   'asmr_more': 'その他',
   'asmr_account_menu': 'アカウント',
   'asmr_account_title': 'ASMR.ONE アカウント',
+  'asmr_account_restoring': 'アカウント情報を復元しています…',
   'asmr_login_title': 'ログイン',
   'asmr_login_account': 'アカウント',
   'asmr_login_password': 'パスワード',

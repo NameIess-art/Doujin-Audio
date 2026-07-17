@@ -159,6 +159,7 @@ void registerAsmrRemoteCatalogTests({
       expect(controller.initialized, isTrue);
       expect(auth.restoreCount, 1);
       expect(controller.isAsmrAccountLoggedIn, isFalse);
+      expect(controller.authViewState.isRestoring, isTrue);
 
       await controller.refreshCategory(AsmrCategoryType.release);
 
@@ -174,6 +175,7 @@ void registerAsmrRemoteCatalogTests({
       await controller.restoreAsmrAccountSession();
 
       expect(controller.isAsmrAccountLoggedIn, isTrue);
+      expect(controller.authViewState.isRestoring, isFalse);
     },
   );
 

@@ -170,11 +170,13 @@ class AsmrTrackTreeViewState {
 class AsmrAuthViewState {
   const AsmrAuthViewState({
     required this.isLoggedIn,
+    required this.isRestoring,
     required this.userName,
     required this.revision,
   });
 
   final bool isLoggedIn;
+  final bool isRestoring;
   final String userName;
   final int revision;
 }
@@ -401,6 +403,7 @@ class AsmrLibraryController extends ChangeNotifier
 
   AsmrAuthViewState get authViewState => AsmrAuthViewState(
     isLoggedIn: isAsmrAccountLoggedIn,
+    isRestoring: !_initialized || _authRestoreTask != null,
     userName: asmrAccountName,
     revision: _globalRevision,
   );
@@ -548,9 +551,13 @@ class AsmrLibraryController extends ChangeNotifier
     task = _restoreAsmrAccountSessionInternal().whenComplete(() {
       if (identical(_authRestoreTask, task)) {
         _authRestoreTask = null;
+        _bumpGlobalRevision();
+        _commitPresentation('asmr_auth_restore_complete', notifyListeners);
       }
     });
     _authRestoreTask = task;
+    _bumpGlobalRevision();
+    _commitPresentation('asmr_auth_restore_start', notifyListeners);
     return task;
   }
 

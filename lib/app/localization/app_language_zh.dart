@@ -114,6 +114,7 @@ const Map<String, String> appLanguageZh = {
   'asmr_more': '更多',
   'asmr_account_menu': '账号',
   'asmr_account_title': 'ASMR.ONE 账号',
+  'asmr_account_restoring': '正在恢复账号信息…',
   'asmr_login_title': '登录',
   'asmr_login_account': '账号',
   'asmr_login_password': '密码',

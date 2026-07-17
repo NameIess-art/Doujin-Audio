@@ -420,7 +420,12 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final authState =
         ref.watch(asmrAuthStateProvider).valueOrNull ??
-        const AsmrAuthViewState(isLoggedIn: false, userName: '', revision: 0);
+        const AsmrAuthViewState(
+          isLoggedIn: false,
+          isRestoring: true,
+          userName: '',
+          revision: 0,
+        );
     final syncState =
         ref.watch(asmrSyncStateProvider).valueOrNull ??
         const AsmrSyncViewState(
@@ -431,6 +436,34 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
           revision: 0,
         );
     final syncing = syncState.phase == AsmrSyncPhase.syncing || _submitting;
+
+    if (authState.isRestoring) {
+      return _AsmrPanelCard(
+        icon: Icons.account_circle_rounded,
+        title: i18n.tr('asmr_account_title'),
+        actions: [
+          _AsmrPanelAction(
+            label: i18n.tr('close'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2.4),
+              ),
+              const SizedBox(width: 12),
+              Flexible(child: Text(i18n.tr('asmr_account_restoring'))),
+            ],
+          ),
+        ),
+      );
+    }
 
     if (!authState.isLoggedIn) {
       final canLogin =

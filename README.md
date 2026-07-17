@@ -6,6 +6,8 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的跨平台
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
+如果 Nameless Audio 对你有帮助，欢迎通过[爱发电](https://ifdian.net/a/nameIess)自愿支持项目的开发与维护。赞助不解锁付费功能，应用主要功能会继续免费提供。
+
 ## 下载
 
 > **升级提示：**从不兼容的旧版本升级时，必须先卸载旧版本再重新安装。卸载会清除应用数据，建议先在“数据支持”中导出 `.nalbackup` 备份。具体兼容要求以对应 Release 说明为准。

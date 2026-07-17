@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -9,6 +10,7 @@ import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
+import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -820,49 +822,196 @@ void main() {
       );
     });
 
-    test(
-      'removing a library mutates its whole subtree before cleanup',
-      () async {
-        final root = await Directory.systemTemp.createTemp(
-          'library_remove_batch_',
-        );
-        addTearDown(() async {
-          if (await root.exists()) await root.delete(recursive: true);
-        });
-        final workPath = path.join(root.path, 'work');
-        final trackPath = path.join(workPath, '01.mp3');
-        final track = MusicTrack(
-          path: trackPath,
-          displayName: '01',
-          groupKey: workPath,
-          groupTitle: 'work',
-          groupSubtitle: workPath,
-          isSingle: false,
-        );
-        runtimeGraph.library
-          ..addWatchedLibrary(root.path, notify: false)
-          ..addWatchedFolder(workPath, notify: false)
-          ..recordLibraryEntriesForTracks(
-            root.path,
-            <MusicTrack>[track],
-            folderPaths: <String>[workPath],
-            persist: false,
-          )
-          ..addTracks(<MusicTrack>[track], notify: false, persist: false);
+    test('track removal waits for its persistent cleanup', () async {
+      await runtimeGraph.runtime.dispose();
+      final repository = _BlockingDeletionAudioDatabaseRepository(
+        AppDatabase.test(db),
+      );
+      addTearDown(repository.releaseAndWait);
+      runtimeGraph = createTestRuntimeGraph(
+        notificationService: notificationService,
+        audioDatabaseRepository: repository,
+        skipPersistence: false,
+      );
 
-        final removal = runtimeGraph.library.removeLibrary(root.path);
+      const track = MusicTrack(
+        path: '/library/work/01.mp3',
+        displayName: '01',
+        groupKey: '/library/work',
+        groupTitle: 'work',
+        groupSubtitle: '/library/work',
+        isSingle: false,
+      );
+      runtimeGraph.library.addTracks(
+        const <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      await repository.upsertTracks(const <MusicTrack>[track]);
 
-        expect(runtimeGraph.library.watchedLibraries, isEmpty);
-        expect(runtimeGraph.library.watchedFolders, isEmpty);
-        expect(runtimeGraph.library.trackByPath(trackPath), isNull);
-        expect(
-          runtimeGraph.library.libraryEntriesForLibrary(root.path),
-          isEmpty,
-        );
-        await removal;
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      },
-    );
+      final removal = runtimeGraph.library.removeTrackFromLibrary(track.path);
+      var completed = false;
+      unawaited(removal.then((_) => completed = true));
+      await repository.trackDeletionStarted;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(runtimeGraph.library.trackByPath(track.path), isNull);
+      expect(completed, isFalse);
+
+      repository.releaseTrackDeletion();
+      await removal;
+
+      expect(await db.query('tracks'), isEmpty);
+      expect(
+        json.decode((await AppPreferences.getString('group_order_v1'))!),
+        <Object?>[],
+      );
+      expect(
+        json.decode((await AppPreferences.getString('library_node_order_v1'))!),
+        <Object?>[],
+      );
+    });
+
+    test('folder removal waits for all persistent cleanup', () async {
+      await runtimeGraph.runtime.dispose();
+      final repository = _BlockingDeletionAudioDatabaseRepository(
+        AppDatabase.test(db),
+      );
+      addTearDown(repository.releaseAndWait);
+      runtimeGraph = createTestRuntimeGraph(
+        notificationService: notificationService,
+        audioDatabaseRepository: repository,
+        skipPersistence: false,
+      );
+
+      const folderPath = '/library/work';
+      const track = MusicTrack(
+        path: '$folderPath/01.mp3',
+        displayName: '01',
+        groupKey: folderPath,
+        groupTitle: 'work',
+        groupSubtitle: folderPath,
+        isSingle: false,
+      );
+      final detailTarget = AudioDetailTarget.libraryRootFolder(folderPath);
+      runtimeGraph.library
+        ..addWatchedFolder(folderPath, notify: false)
+        ..recordLibraryEntriesForTracks(folderPath, const <MusicTrack>[
+          track,
+        ], persist: false)
+        ..addTracks(const <MusicTrack>[track], notify: false, persist: false);
+      await repository.upsertTracks(const <MusicTrack>[track]);
+      await repository.upsertLibraryEntries(
+        runtimeGraph.library.libraryEntriesForLibrary(folderPath),
+      );
+      await runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(detailTarget),
+      );
+
+      final removal = runtimeGraph.library.removeFolderFromLibrary(folderPath);
+      var completed = false;
+      unawaited(removal.then((_) => completed = true));
+      await repository.trackDeletionStarted;
+      await repository.libraryEntryDeletionCompleted;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(runtimeGraph.library.trackByPath(track.path), isNull);
+      expect(runtimeGraph.library.watchedFolders, isEmpty);
+      expect(completed, isFalse);
+
+      repository.releaseTrackDeletion();
+      await removal;
+
+      expect(await db.query('tracks'), isEmpty);
+      expect(await db.query('library_entries'), isEmpty);
+      expect(await db.query('audio_details'), isEmpty);
+      expect(
+        json.decode((await AppPreferences.getString('watched_folders_v1'))!),
+        <Object?>[],
+      );
+    });
+
+    test('library removal waits for its whole persistent cleanup', () async {
+      await runtimeGraph.runtime.dispose();
+      final repository = _BlockingDeletionAudioDatabaseRepository(
+        AppDatabase.test(db),
+      );
+      addTearDown(repository.releaseAndWait);
+      runtimeGraph = createTestRuntimeGraph(
+        notificationService: notificationService,
+        audioDatabaseRepository: repository,
+        skipPersistence: false,
+      );
+
+      const libraryPath = '/library';
+      const workPath = '$libraryPath/work';
+      const excludedPath = '$libraryPath/excluded';
+      const track = MusicTrack(
+        path: '$workPath/01.mp3',
+        displayName: '01',
+        groupKey: workPath,
+        groupTitle: 'work',
+        groupSubtitle: workPath,
+        isSingle: false,
+      );
+      final rootDetail = AudioDetailTarget.libraryRootFolder(libraryPath);
+      final workDetail = AudioDetailTarget.libraryRootFolder(workPath);
+      runtimeGraph.library
+        ..addWatchedLibrary(libraryPath, notify: false)
+        ..addWatchedFolder(workPath, notify: false)
+        ..setLibraryFolderExcluded(libraryPath, excludedPath, true)
+        ..recordLibraryEntriesForTracks(
+          libraryPath,
+          const <MusicTrack>[track],
+          folderPaths: const <String>[workPath],
+          persist: false,
+        )
+        ..addTracks(const <MusicTrack>[track], notify: false, persist: false);
+      await repository.upsertTracks(const <MusicTrack>[track]);
+      await repository.upsertLibraryEntries(
+        runtimeGraph.library.libraryEntriesForLibrary(libraryPath),
+      );
+      await runtimeGraph.library.saveAudioDetail(AudioDetail.empty(rootDetail));
+      await runtimeGraph.library.saveAudioDetail(AudioDetail.empty(workDetail));
+
+      final removal = runtimeGraph.library.removeLibrary(libraryPath);
+      var completed = false;
+      unawaited(removal.then((_) => completed = true));
+      await repository.trackDeletionStarted;
+      await Future<void>.delayed(Duration.zero);
+
+      expect(runtimeGraph.library.watchedLibraries, isEmpty);
+      expect(runtimeGraph.library.watchedFolders, isEmpty);
+      expect(runtimeGraph.library.trackByPath(track.path), isNull);
+      expect(
+        runtimeGraph.library.libraryEntriesForLibrary(libraryPath),
+        isEmpty,
+      );
+      expect(completed, isFalse);
+
+      repository.releaseTrackDeletion();
+      await removal;
+
+      expect(await db.query('tracks'), isEmpty);
+      expect(await db.query('library_entries'), isEmpty);
+      expect(await db.query('audio_details'), isEmpty);
+      expect(
+        json.decode((await AppPreferences.getString('watched_folders_v1'))!),
+        <Object?>[],
+      );
+      expect(
+        json.decode((await AppPreferences.getString('watched_libraries_v1'))!),
+        <Object?>[],
+      );
+      expect(
+        json.decode((await AppPreferences.getString('library_exclusions_v1'))!)
+            as Map<String, Object?>,
+        <String, Object?>{
+          'folders': <String, Object?>{},
+          'tracks': <String, Object?>{},
+        },
+      );
+    });
 
     test('same work uses a first-level folder inside the audio library', () {
       const libraryRoot = 'C:\\Audio\\Library';
@@ -1176,4 +1325,54 @@ class _CountingAudioDatabaseRepository extends AudioDatabaseRepository {
 
   @override
   Future<void> saveAllSessions(List<PersistedSession> sessions) async {}
+}
+
+class _BlockingDeletionAudioDatabaseRepository extends AudioDatabaseRepository {
+  _BlockingDeletionAudioDatabaseRepository(AppDatabase database)
+    : super(database: database);
+
+  final Completer<void> _trackDeletionStarted = Completer<void>();
+  final Completer<void> _releaseTrackDeletion = Completer<void>();
+  final Completer<void> _trackDeletionCompleted = Completer<void>();
+  final Completer<void> _libraryEntryDeletionCompleted = Completer<void>();
+
+  Future<void> get trackDeletionStarted => _trackDeletionStarted.future;
+  Future<void> get libraryEntryDeletionCompleted =>
+      _libraryEntryDeletionCompleted.future;
+
+  void releaseTrackDeletion() {
+    if (!_releaseTrackDeletion.isCompleted) {
+      _releaseTrackDeletion.complete();
+    }
+  }
+
+  Future<void> releaseAndWait() async {
+    releaseTrackDeletion();
+    if (_trackDeletionStarted.isCompleted) {
+      await _trackDeletionCompleted.future;
+    }
+  }
+
+  @override
+  Future<void> deleteTracks(List<String> paths) async {
+    if (!_trackDeletionStarted.isCompleted) {
+      _trackDeletionStarted.complete();
+    }
+    await _releaseTrackDeletion.future;
+    try {
+      await super.deleteTracks(paths);
+    } finally {
+      if (!_trackDeletionCompleted.isCompleted) {
+        _trackDeletionCompleted.complete();
+      }
+    }
+  }
+
+  @override
+  Future<void> deleteLibraryEntriesForLibrary(String libraryPath) async {
+    await super.deleteLibraryEntriesForLibrary(libraryPath);
+    if (!_libraryEntryDeletionCompleted.isCompleted) {
+      _libraryEntryDeletionCompleted.complete();
+    }
+  }
 }

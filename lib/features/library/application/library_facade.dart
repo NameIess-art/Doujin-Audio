@@ -1087,19 +1087,24 @@ final class LibraryFacade implements LibraryCatalog {
     _syncStateSlice();
   }
 
-  List<String> removeTracksMatching(bool Function(MusicTrack track) test) {
+  List<String> removeTracksMatching(
+    bool Function(MusicTrack track) test, {
+    bool persist = true,
+  }) {
     final mutation = service.removeTracksWhere(test);
     final removedPaths = mutation.tracks
         .map((track) => track.path)
         .toList(growable: false);
     if (removedPaths.isEmpty) return const <String>[];
     _trackRemovalHandler?.call(removedPaths);
-    if (_persistenceEnabled) {
+    if (persist && _persistenceEnabled) {
       unawaited(databaseRepository.deleteTracks(removedPaths));
     }
     if (!mutation.batched) {
       _markLibraryStructureChanged();
-      if (_persistenceEnabled) unawaited(_saveLibraryNodeOrder());
+      if (persist && _persistenceEnabled) {
+        unawaited(_saveLibraryNodeOrder());
+      }
     }
     return removedPaths;
   }
@@ -1214,11 +1219,16 @@ final class LibraryFacade implements LibraryCatalog {
     if (removedTrack == null) return;
     final removedPaths = removeTracksMatching(
       (track) => PathMatcher.equalsNormalized(track.path, trackPath),
+      persist: false,
     );
     if (removedPaths.isEmpty) return;
     service.syncGroupOrderFromLibrary();
     if (_persistenceEnabled) {
-      unawaited(_saveGroupOrder());
+      await Future.wait(<Future<void>>[
+        databaseRepository.deleteTracks(removedPaths),
+        _saveGroupOrder(),
+        _saveLibraryNodeOrder(),
+      ]);
     }
   }
 
@@ -1231,62 +1241,77 @@ final class LibraryFacade implements LibraryCatalog {
       (track) =>
           PathMatcher.isWithinOrEqual(track.path, normalizedFolderPath) ||
           PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
+      persist: false,
     );
     if (removedPaths.isEmpty && !wasWatched) return;
 
-    await deleteAudioDetail(
-      AudioDetailTarget.libraryRootFolder(normalizedFolderPath),
+    final removedWatchedFolder = service.removeWatchedFolder(
+      normalizedFolderPath,
     );
     service
-      ..removeWatchedFolder(
-        normalizedFolderPath,
-        onPersist: () => unawaited(_saveWatchedFolders()),
-      )
       ..libraryEntriesByLibrary.remove(normalizedFolderPath)
       ..syncGroupOrderFromLibrary()
       ..syncLibraryNodeOrder(persist: false);
     _markLibraryStructureChanged();
+    final persistenceTasks = <Future<void>>[
+      deleteAudioDetail(
+        AudioDetailTarget.libraryRootFolder(normalizedFolderPath),
+      ),
+    ];
     if (_persistenceEnabled) {
-      await databaseRepository.deleteLibraryEntriesForLibrary(folderPath);
-      unawaited(_saveGroupOrder());
-      unawaited(_saveLibraryNodeOrder());
+      if (removedPaths.isNotEmpty) {
+        persistenceTasks.add(databaseRepository.deleteTracks(removedPaths));
+      }
+      persistenceTasks.add(
+        databaseRepository.deleteLibraryEntriesForLibrary(normalizedFolderPath),
+      );
+      if (removedWatchedFolder) {
+        persistenceTasks.add(_saveWatchedFolders());
+      }
+      persistenceTasks
+        ..add(_saveGroupOrder())
+        ..add(_saveLibraryNodeOrder());
     }
+    await Future.wait(persistenceTasks);
   }
 
-  Future<void> removeLibrary(String libraryPath) {
+  Future<void> removeLibrary(String libraryPath) async {
     if (isScanning) cancelScan();
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     beginLibraryBatch();
-    final removal = service.removeLibrary(
-      normalizedLibraryPath,
-      onSaveWatchedFolders: () {
-        if (_persistenceEnabled) unawaited(_saveWatchedFolders());
-      },
-      onSaveWatchedLibraries: () {
-        if (_persistenceEnabled) unawaited(_saveWatchedLibraries());
-      },
-      onSaveLibraryExclusions: () {
-        if (_persistenceEnabled) unawaited(_saveLibraryExclusions());
-      },
-    );
+    final removal = service.removeLibrary(normalizedLibraryPath);
     final removedTrackPaths = removeTracksMatching(
       (track) =>
           PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath) ||
           PathMatcher.isWithinOrEqual(track.groupKey, normalizedLibraryPath),
+      persist: false,
     );
     final changed = removal.changed || removedTrackPaths.isNotEmpty;
     if (changed) _syncStateSlice();
-    unawaited(endLibraryBatch(waitForPersistence: false));
 
     final detailTargets = <AudioDetailTarget>{
       AudioDetailTarget.libraryRootFolder(normalizedLibraryPath),
       for (final folderPath in removal.removedFolderPaths)
         AudioDetailTarget.libraryRootFolder(folderPath),
     };
-    unawaited(
+    final persistenceTasks = <Future<void>>[
+      endLibraryBatch(),
       _deleteRemovedLibraryPersistence(normalizedLibraryPath, detailTargets),
-    );
-    return Future<void>.value();
+    ];
+    if (_persistenceEnabled) {
+      if (removedTrackPaths.isNotEmpty) {
+        persistenceTasks.add(
+          databaseRepository.deleteTracks(removedTrackPaths),
+        );
+      }
+      if (removal.changed) {
+        persistenceTasks
+          ..add(_saveWatchedFolders())
+          ..add(_saveWatchedLibraries())
+          ..add(_saveLibraryExclusions());
+      }
+    }
+    await Future.wait(persistenceTasks);
   }
 
   Future<void> _deleteRemovedLibraryPersistence(

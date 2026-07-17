@@ -23,6 +23,7 @@ void main() {
       'about_wiki_open_failed',
       'about_author',
       'about_reward',
+      'about_reward_open_failed',
     ];
 
     for (final key in requiredKeys) {

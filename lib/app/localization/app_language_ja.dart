@@ -519,6 +519,7 @@ const Map<String, String> appLanguageJa = {
   'about_wiki_open_failed': 'GitHub のプロジェクトページを開けませんでした。',
   'about_author': '作者',
   'about_reward': '応援する',
+  'about_reward_open_failed': '愛発電の支援ページを開けませんでした。',
   'language': '言語',
   'language_subtitle': '表示言語を切り替え',
   'startup_page': 'アプリ起動時のページ',

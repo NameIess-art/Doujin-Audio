@@ -579,6 +579,7 @@ const Map<String, String> appLanguageEn = {
   'about_wiki_open_failed': 'Could not open the GitHub project page.',
   'about_author': 'Author',
   'about_reward': 'Reward',
+  'about_reward_open_failed': 'Could not open the Afdian sponsorship page.',
   'language': 'Language',
   'language_subtitle': 'Switch UI language',
   'startup_page': 'Page shown on app launch',

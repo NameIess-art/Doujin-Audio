@@ -506,6 +506,7 @@ const Map<String, String> appLanguageZh = {
   'about_wiki_open_failed': '无法打开 GitHub 项目页面。',
   'about_author': '作者',
   'about_reward': '打赏',
+  'about_reward_open_failed': '无法打开爱发电打赏页面。',
   'language': '语言',
   'language_subtitle': '切换界面语言',
   'startup_page': '打开应用时页面',

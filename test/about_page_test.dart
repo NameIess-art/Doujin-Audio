@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/settings/application/app_update_models.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/features/settings/presentation/about_page.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -34,6 +36,10 @@ void main() {
       expect(find.text(i18n.tr('about_wiki')), findsOneWidget);
       expect(find.text(i18n.tr('about_author')), findsOneWidget);
       expect(find.text(i18n.tr('about_reward')), findsOneWidget);
+      final rewardButton = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, i18n.tr('about_reward')),
+      );
+      expect(rewardButton.onPressed, isNotNull);
       expect(find.text('NameIess-art'), findsOneWidget);
       expect(find.byType(BackButton), findsOneWidget);
 
@@ -49,4 +55,86 @@ void main() {
       expect(wikiY, lessThan(authorY));
     },
   );
+
+  testWidgets('reward opens the Afdian custom sponsorship order page', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    final updateService = _FakeAppUpdateService(openResult: true);
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        ProviderScope(
+          overrides: [
+            appUpdateServiceProvider.overrideWithValue(updateService),
+          ],
+          child: AboutPage(
+            versionFuture: Future.value(
+              const AppVersionInfo(versionName: '1.2.3', buildNumber: 123),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final rewardFinder = find.text(harness.languageProvider.tr('about_reward'));
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    await tester.tap(rewardFinder);
+    await tester.pump();
+
+    expect(
+      updateService.openedUrl,
+      'https://ifdian.net/order/create?user_id='
+      'c6acfc3a646d11f0ae8a5254001e7c00',
+    );
+  });
+
+  testWidgets('reward shows a warning when the sponsorship page cannot open', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    final updateService = _FakeAppUpdateService(openResult: false);
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        ProviderScope(
+          overrides: [
+            appUpdateServiceProvider.overrideWithValue(updateService),
+          ],
+          child: AboutPage(
+            versionFuture: Future.value(
+              const AppVersionInfo(versionName: '1.2.3', buildNumber: 123),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final i18n = harness.languageProvider;
+    final rewardFinder = find.text(i18n.tr('about_reward'));
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pumpAndSettle();
+    await tester.tap(rewardFinder);
+    await tester.pump();
+
+    expect(find.text(i18n.tr('about_reward_open_failed')), findsOneWidget);
+  });
+}
+
+final class _FakeAppUpdateService extends AppUpdateService {
+  _FakeAppUpdateService({required this.openResult});
+
+  final bool openResult;
+  String? openedUrl;
+
+  @override
+  Future<bool> openReleasePage(String url) async {
+    openedUrl = url;
+    return openResult;
+  }
 }

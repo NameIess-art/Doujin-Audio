@@ -19,6 +19,8 @@ class AboutPage extends ConsumerWidget {
   final Future<AppVersionInfo> versionFuture;
 
   static const _repositoryUrl = AppUpdateService.repositoryPage;
+  static const _sponsorUrl =
+      'https://ifdian.net/order/create?user_id=c6acfc3a646d11f0ae8a5254001e7c00';
 
   Future<void> _openRepository(BuildContext context, WidgetRef ref) async {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
@@ -29,6 +31,20 @@ class AboutPage extends ConsumerWidget {
     showAppSnackBar(
       context,
       i18n.tr('about_wiki_open_failed'),
+      tone: AppFeedbackTone.warning,
+      icon: Icons.open_in_new_rounded,
+    );
+  }
+
+  Future<void> _openSponsor(BuildContext context, WidgetRef ref) async {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final opened = await ref
+        .read(appUpdateServiceProvider)
+        .openReleasePage(_sponsorUrl);
+    if (!context.mounted || opened) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('about_reward_open_failed'),
       tone: AppFeedbackTone.warning,
       icon: Icons.open_in_new_rounded,
     );
@@ -92,7 +108,7 @@ class AboutPage extends ConsumerWidget {
                         horizontal: AppSpacing.xs,
                       ),
                       child: OutlinedButton.icon(
-                        onPressed: null,
+                        onPressed: () => unawaited(_openSponsor(context, ref)),
                         icon: const Icon(Icons.favorite_border_rounded),
                         label: Text(i18n.tr('about_reward')),
                       ),

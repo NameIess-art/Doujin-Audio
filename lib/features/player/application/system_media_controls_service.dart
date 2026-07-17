@@ -22,6 +22,18 @@ class SystemMediaControlsCallbacks {
   final FutureOr<void> Function(String sessionId, Duration position)? onSeek;
 }
 
+final class _SystemMediaControlsSyncRequest {
+  const _SystemMediaControlsSyncRequest({
+    required this.revision,
+    required this.state,
+    required this.callbacks,
+  });
+
+  final int revision;
+  final SystemMediaControlState? state;
+  final SystemMediaControlsCallbacks? callbacks;
+}
+
 @immutable
 class SystemMediaControlState {
   const SystemMediaControlState({
@@ -153,8 +165,14 @@ class SystemMediaControlsService {
   StreamSubscription<PressedButton>? _buttonSubscription;
   SystemMediaControlsCallbacks? _callbacks;
   SystemMediaControlState? _lastState;
+  _SystemMediaControlsSyncRequest? _desiredRequest;
+  Future<void>? _drainFuture;
+  Future<void>? _disposeFuture;
+  int _revision = 0;
+  int _processedRevision = 0;
   bool _initialized = false;
   bool _enabled = false;
+  bool _disposed = false;
 
   static SmtcController _defaultControllerFactory(
     SystemMediaControlState state,
@@ -176,29 +194,138 @@ class SystemMediaControlsService {
   Future<void> sync(
     SystemMediaControlState? state,
     SystemMediaControlsCallbacks callbacks,
-  ) async {
-    _callbacks = callbacks;
-    if (!_isWindows()) return;
-    if (state == null || state.sessionId.isEmpty) {
-      await clear();
+  ) {
+    if (!_isWindows() || _disposed) return Future<void>.value();
+    final normalizedState = state == null || state.sessionId.isEmpty
+        ? null
+        : state;
+    return _enqueue(
+      normalizedState,
+      normalizedState == null ? null : callbacks,
+    );
+  }
+
+  Future<void> clear() {
+    if (!_isWindows() || _disposed) return Future<void>.value();
+    return _enqueue(null, null);
+  }
+
+  Future<void> dispose() {
+    final existing = _disposeFuture;
+    if (existing != null) return existing;
+
+    _disposed = true;
+    _revision++;
+    _desiredRequest = null;
+    _callbacks = null;
+    _lastState = null;
+    final completer = Completer<void>();
+    _disposeFuture = completer.future;
+    unawaited(
+      _disposeAfterDrain().then(
+        (_) => completer.complete(),
+        onError: completer.completeError,
+      ),
+    );
+    return completer.future;
+  }
+
+  Future<void> _disposeAfterDrain() async {
+    await _drainFuture;
+    await _buttonSubscription?.cancel();
+    _buttonSubscription = null;
+    final controller = _controller;
+    _controller = null;
+    _enabled = false;
+    if (controller == null) return;
+    try {
+      try {
+        await controller.disableSmtc();
+      } finally {
+        await controller.dispose();
+      }
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'system_media_controls_dispose_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  Future<void> _enqueue(
+    SystemMediaControlState? state,
+    SystemMediaControlsCallbacks? callbacks,
+  ) {
+    final revision = ++_revision;
+    if (state?.sessionId != _lastState?.sessionId) {
+      _callbacks = null;
+    }
+    _desiredRequest = _SystemMediaControlsSyncRequest(
+      revision: revision,
+      state: state,
+      callbacks: callbacks,
+    );
+    final existing = _drainFuture;
+    if (existing != null) return existing;
+
+    final completer = Completer<void>();
+    _drainFuture = completer.future;
+    unawaited(_runDrain(completer));
+    return completer.future;
+  }
+
+  Future<void> _runDrain(Completer<void> completer) async {
+    try {
+      while (!_disposed) {
+        final request = _desiredRequest;
+        if (request == null || request.revision <= _processedRevision) break;
+        await _applyRequest(request);
+        _processedRevision = request.revision;
+      }
+      _drainFuture = null;
+      completer.complete();
+    } catch (error, stackTrace) {
+      _drainFuture = null;
+      AppLogService.warning(
+        'system_media_controls_drain_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      completer.complete();
+    }
+  }
+
+  Future<void> _applyRequest(_SystemMediaControlsSyncRequest request) async {
+    final state = request.state;
+    if (state == null) {
+      await _applyClear(request);
       return;
     }
-    if (_lastState == state && _enabled) return;
+    if (_lastState == state && _enabled) {
+      if (_isCurrent(request)) _callbacks = request.callbacks;
+      return;
+    }
 
     try {
-      await _ensureController(state);
-      final controller = _controller;
-      if (controller == null) return;
+      final controller = await _ensureController(request, state);
+      if (controller == null || !_isCurrent(request)) return;
       if (!_enabled) {
         await controller.enableSmtc();
         _enabled = true;
+        if (!_isCurrent(request)) return;
       }
       await controller.updateConfig(_configFor(state));
+      if (!_isCurrent(request)) return;
       await controller.updateMetadata(_metadataFor(state));
+      if (!_isCurrent(request)) return;
       await controller.updateTimeline(_timelineFor(state));
+      if (!_isCurrent(request)) return;
       await controller.setPlaybackStatus(
         state.playing ? PlaybackStatus.playing : PlaybackStatus.paused,
       );
+      if (!_isCurrent(request)) return;
+      _callbacks = request.callbacks;
       _lastState = state;
     } catch (error, stackTrace) {
       AppLogService.warning(
@@ -209,15 +336,25 @@ class SystemMediaControlsService {
     }
   }
 
-  Future<void> clear() async {
+  Future<void> _applyClear(_SystemMediaControlsSyncRequest request) async {
     final controller = _controller;
-    _lastState = null;
-    if (controller == null || !_enabled) return;
+    if (controller == null || !_enabled) {
+      if (_isCurrent(request)) {
+        _callbacks = null;
+        _lastState = null;
+      }
+      return;
+    }
     try {
       await controller.setPlaybackStatus(PlaybackStatus.stopped);
+      if (!_isCurrent(request)) return;
       await controller.clearMetadata();
+      if (!_isCurrent(request)) return;
       await controller.disableSmtc();
       _enabled = false;
+      if (!_isCurrent(request)) return;
+      _callbacks = null;
+      _lastState = null;
     } catch (error, stackTrace) {
       AppLogService.warning(
         'system_media_controls_clear_failed',
@@ -227,33 +364,21 @@ class SystemMediaControlsService {
     }
   }
 
-  Future<void> dispose() async {
-    await _buttonSubscription?.cancel();
-    _buttonSubscription = null;
-    _callbacks = null;
-    _lastState = null;
-    final controller = _controller;
-    _controller = null;
-    _enabled = false;
-    if (controller == null) return;
-    try {
-      await controller.disableSmtc();
-      await controller.dispose();
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'system_media_controls_dispose_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
+  bool _isCurrent(_SystemMediaControlsSyncRequest request) {
+    return !_disposed && _desiredRequest?.revision == request.revision;
   }
 
-  Future<void> _ensureController(SystemMediaControlState state) async {
+  Future<SmtcController?> _ensureController(
+    _SystemMediaControlsSyncRequest request,
+    SystemMediaControlState state,
+  ) async {
     if (!_initialized) {
       await _initialize();
       _initialized = true;
     }
-    if (_controller != null) return;
+    if (!_isCurrent(request)) return null;
+    final existing = _controller;
+    if (existing != null) return existing;
     final controller = _controllerFactory(state);
     _controller = controller;
     _enabled = true;
@@ -267,6 +392,7 @@ class SystemMediaControlsService {
         );
       },
     );
+    return controller;
   }
 
   void _handleButton(PressedButton button) {

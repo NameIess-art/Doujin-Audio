@@ -116,6 +116,197 @@ void main() {
     expect(controller.clearMetadataCalls, 1);
     expect(controller.disableCalls, 1);
   });
+
+  test('rapid sync requests are serialized and latest state wins', () async {
+    final metadataGate = Completer<void>();
+    final callbackSessions = <String>[];
+    _BlockingSmtcController? controller;
+    final service = SystemMediaControlsService(
+      isWindows: () => true,
+      initialize: () async {},
+      controllerFactory: (_) {
+        final created = _BlockingSmtcController(metadataGate: metadataGate);
+        controller = created;
+        return created;
+      },
+    );
+
+    final first = service.sync(
+      _state('session-a', 'Track A'),
+      _callbacksRecording(callbackSessions),
+    );
+    await _waitFor(() => controller?.metadata.length == 1);
+    final second = service.sync(
+      _state('session-b', 'Track B'),
+      _callbacksRecording(callbackSessions),
+    );
+    await Future<void>.delayed(Duration.zero);
+    final activeController = controller!;
+    final updatesBeforeRelease = activeController.metadata.length;
+    expect(identical(first, second), isTrue);
+    metadataGate.complete();
+    await Future.wait(<Future<void>>[first, second]);
+
+    expect(updatesBeforeRelease, 1);
+    expect(activeController.metadata.map((item) => item.title), <String>[
+      'Track A',
+      'Track B',
+    ]);
+    expect(activeController.maxConcurrentMetadataUpdates, 1);
+    expect(activeController.statuses, <PlaybackStatus>[PlaybackStatus.playing]);
+    expect(service.lastState?.sessionId, 'session-b');
+    activeController.addButton(PressedButton.play);
+    await Future<void>.delayed(Duration.zero);
+    expect(callbackSessions, <String>['session-b']);
+  });
+
+  test('clear supersedes an older blocked sync', () async {
+    final metadataGate = Completer<void>();
+    _BlockingSmtcController? controller;
+    final service = SystemMediaControlsService(
+      isWindows: () => true,
+      initialize: () async {},
+      controllerFactory: (_) {
+        final created = _BlockingSmtcController(metadataGate: metadataGate);
+        controller = created;
+        return created;
+      },
+    );
+
+    final syncFuture = service.sync(
+      _state('session-a', 'Track A'),
+      _noopCallbacks,
+    );
+    await _waitFor(() => controller?.metadata.length == 1);
+    final clearFuture = service.clear();
+    metadataGate.complete();
+
+    await Future.wait(<Future<void>>[syncFuture, clearFuture]);
+
+    final activeController = controller!;
+    expect(activeController.statuses.last, PlaybackStatus.stopped);
+    expect(activeController.clearMetadataCalls, 1);
+    expect(activeController.disableCalls, 1);
+    expect(service.lastState, isNull);
+  });
+
+  test('a stale sync failure does not block the latest state', () async {
+    final metadataGate = Completer<void>();
+    _BlockingSmtcController? controller;
+    final service = SystemMediaControlsService(
+      isWindows: () => true,
+      initialize: () async {},
+      controllerFactory: (_) {
+        final created = _BlockingSmtcController(
+          metadataGate: metadataGate,
+          failingTitles: const <String>{'Track A'},
+        );
+        controller = created;
+        return created;
+      },
+    );
+
+    final first = service.sync(_state('session-a', 'Track A'), _noopCallbacks);
+    await _waitFor(() => controller?.metadata.length == 1);
+    final second = service.sync(_state('session-b', 'Track B'), _noopCallbacks);
+    metadataGate.complete();
+
+    await Future.wait(<Future<void>>[first, second]);
+
+    expect(service.lastState?.sessionId, 'session-b');
+    expect(controller?.statuses, <PlaybackStatus>[PlaybackStatus.playing]);
+  });
+
+  test('dispose during initialization does not create a controller', () async {
+    final initializeGate = Completer<void>();
+    var controllerFactoryCalls = 0;
+    final service = SystemMediaControlsService(
+      isWindows: () => true,
+      initialize: () => initializeGate.future,
+      controllerFactory: (_) {
+        controllerFactoryCalls++;
+        return _FakeSmtcController();
+      },
+    );
+
+    final syncFuture = service.sync(
+      _state('session-a', 'Track A'),
+      _noopCallbacks,
+    );
+    await Future<void>.delayed(Duration.zero);
+    final disposeFuture = service.dispose();
+    initializeGate.complete();
+
+    await Future.wait(<Future<void>>[syncFuture, disposeFuture]);
+
+    expect(controllerFactoryCalls, 0);
+    await service.sync(_state('session-b', 'Track B'), _noopCallbacks);
+    expect(controllerFactoryCalls, 0);
+  });
+
+  test(
+    'dispose waits for an active update and disposes exactly once',
+    () async {
+      final metadataGate = Completer<void>();
+      _BlockingSmtcController? controller;
+      final service = SystemMediaControlsService(
+        isWindows: () => true,
+        initialize: () async {},
+        controllerFactory: (_) {
+          final created = _BlockingSmtcController(metadataGate: metadataGate);
+          controller = created;
+          return created;
+        },
+      );
+
+      final syncFuture = service.sync(
+        _state('session-a', 'Track A'),
+        _noopCallbacks,
+      );
+      await _waitFor(() => controller?.metadata.length == 1);
+      var disposeCompleted = false;
+      final disposeFuture = service.dispose().whenComplete(
+        () => disposeCompleted = true,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(disposeCompleted, isFalse);
+      metadataGate.complete();
+      await Future.wait(<Future<void>>[syncFuture, disposeFuture]);
+
+      final activeController = controller!;
+      expect(activeController.disposeCalls, 1);
+      expect(activeController.disableCalls, 1);
+      await service.dispose();
+      expect(activeController.disposeCalls, 1);
+    },
+  );
+}
+
+SystemMediaControlState _state(String sessionId, String title) {
+  return SystemMediaControlState(
+    sessionId: sessionId,
+    title: title,
+    playing: true,
+    hasPrevious: false,
+    hasNext: false,
+  );
+}
+
+SystemMediaControlsCallbacks _callbacksRecording(List<String> sessions) {
+  return SystemMediaControlsCallbacks(
+    onToggle: sessions.add,
+    onPrevious: sessions.add,
+    onNext: sessions.add,
+  );
+}
+
+Future<void> _waitFor(bool Function() condition) async {
+  for (var i = 0; i < 50; i++) {
+    if (condition()) return;
+    await Future<void>.delayed(Duration.zero);
+  }
+  fail('Timed out waiting for condition.');
 }
 
 const _noopCallbacks = SystemMediaControlsCallbacks(
@@ -182,5 +373,31 @@ class _FakeSmtcController implements SmtcController {
   @override
   Future<void> updateTimeline(PlaybackTimeline timeline) async {
     timelines.add(timeline);
+  }
+}
+
+class _BlockingSmtcController extends _FakeSmtcController {
+  _BlockingSmtcController({
+    required this.metadataGate,
+    this.failingTitles = const <String>{},
+  });
+
+  final Completer<void> metadataGate;
+  final Set<String> failingTitles;
+  var concurrentMetadataUpdates = 0;
+  var maxConcurrentMetadataUpdates = 0;
+
+  @override
+  Future<void> updateMetadata(MusicMetadata metadata) async {
+    this.metadata.add(metadata);
+    concurrentMetadataUpdates++;
+    if (concurrentMetadataUpdates > maxConcurrentMetadataUpdates) {
+      maxConcurrentMetadataUpdates = concurrentMetadataUpdates;
+    }
+    await metadataGate.future;
+    concurrentMetadataUpdates--;
+    if (failingTitles.contains(metadata.title)) {
+      throw StateError('metadata update failed for ${metadata.title}');
+    }
   }
 }

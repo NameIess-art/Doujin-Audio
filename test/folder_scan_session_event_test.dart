@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/features/library/application/library_scan_data_source.dart';
 import 'package:nameless_audio/features/library/application/library_scanner_isolate.dart';
 import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
 import 'package:nameless_audio/core/media/path_matcher.dart';
@@ -167,5 +168,38 @@ void main() {
 
     expect(payload['failureCount'], 1);
     expect(payload['discoveredPaths'], isEmpty);
+  });
+
+  test('desktop filesystem scans stream bounded chunks', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'nameless_audio_chunked_scan_',
+    );
+    try {
+      for (var index = 0; index < 250; index++) {
+        await File(
+          '${root.path}${Platform.pathSeparator}track_$index.mp3',
+        ).writeAsBytes(const <int>[]);
+      }
+      final chunkSizes = <int>[];
+      var scannedTrackCount = 0;
+      final dataSource = PlatformLibraryScanDataSource(isAndroid: () => false);
+
+      final result = await dataSource.scanFileSystemFolderChunked(root.path, (
+        chunk,
+      ) {
+        chunkSizes.add(chunk.tracks.length);
+        scannedTrackCount += chunk.tracks.length;
+        return true;
+      });
+
+      expect(chunkSizes, isNotEmpty);
+      expect(chunkSizes.every((size) => size <= 120), isTrue);
+      expect(scannedTrackCount, 250);
+      expect(result.tracks, isEmpty);
+      expect(result.paths, hasLength(250));
+      expect(result.isComplete, isTrue);
+    } finally {
+      await root.delete(recursive: true);
+    }
   });
 }

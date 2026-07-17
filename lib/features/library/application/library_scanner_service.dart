@@ -154,45 +154,41 @@ class LibraryScannerService {
     var wasCancelled = false;
     final deferredCleanupChunks = <LibraryRefreshChunk>[];
 
-    Future<void> applyFolderResult(LibraryRefreshFolderResult result) async {
-      if (!provider.isScanGenerationActive(generation) ||
-          !batchOpen ||
-          result.chunks.isEmpty) {
-        return;
+    Future<bool> applyRefreshChunk(LibraryRefreshChunk chunk) async {
+      if (!provider.isScanGenerationActive(generation) || !batchOpen) {
+        return false;
       }
       if (!batchStarted) {
         provider.beginStagedLibraryRefresh();
         batchStarted = true;
       }
-      for (final chunk in result.chunks) {
-        if (!provider.isScanGenerationActive(generation) || !batchOpen) break;
-        if (chunk.removeWatchedFolders.isNotEmpty ||
-            chunk.addWatchedFolders.isNotEmpty ||
-            chunk.removeTrackPaths.isNotEmpty ||
-            chunk.removeEntryPaths.isNotEmpty) {
-          deferredCleanupChunks.add(chunk);
-        }
-        totalAdded += provider.applyStagedLibraryRefreshChunk(
-          sourceFolderPath: chunk.sourceFolderPath,
-          libraryRoot: chunk.libraryRoot,
-          tracks: chunk.tracks,
-          folderPaths: chunk.folderPaths,
-        );
-        chunkDuplicateCount += chunk.duplicateCount;
-        chunkFailureCount += chunk.failureCount;
-        chunkIndex++;
-        provider.setScanProgress(
-          currentFolder: chunk.progressLabel,
-          foundCount: totalAdded,
-          duplicateCount: chunkDuplicateCount,
-          failureCount: chunkFailureCount,
-          generation: generation,
-        );
-        if (chunkIndex % 2 == 0) {
-          await Future<void>.delayed(Duration.zero);
-          batchOpen = provider.isScanGenerationActive(generation);
-        }
+      if (chunk.removeWatchedFolders.isNotEmpty ||
+          chunk.addWatchedFolders.isNotEmpty ||
+          chunk.removeTrackPaths.isNotEmpty ||
+          chunk.removeEntryPaths.isNotEmpty) {
+        deferredCleanupChunks.add(chunk);
       }
+      totalAdded += provider.applyStagedLibraryRefreshChunk(
+        sourceFolderPath: chunk.sourceFolderPath,
+        libraryRoot: chunk.libraryRoot,
+        tracks: chunk.tracks,
+        folderPaths: chunk.folderPaths,
+      );
+      chunkDuplicateCount += chunk.duplicateCount;
+      chunkFailureCount += chunk.failureCount;
+      chunkIndex++;
+      provider.setScanProgress(
+        currentFolder: chunk.progressLabel,
+        foundCount: totalAdded,
+        duplicateCount: chunkDuplicateCount,
+        failureCount: chunkFailureCount,
+        generation: generation,
+      );
+      if (chunkIndex % 2 == 0) {
+        await Future<void>.delayed(Duration.zero);
+        batchOpen = provider.isScanGenerationActive(generation);
+      }
+      return provider.isScanGenerationActive(generation) && batchOpen;
     }
 
     try {
@@ -206,13 +202,12 @@ class LibraryScannerService {
             (folderPath) =>
                 PathMatcher.isWithinOrEqual(folderPath, libraryRoot),
           );
-          await applyFolderResult(
-            await _scanLibraryRootForRefresh(
-              libraryRoot: libraryRoot,
-              provider: provider,
-              labels: labels,
-              generation: generation,
-            ),
+          await _scanLibraryRootForRefresh(
+            libraryRoot: libraryRoot,
+            provider: provider,
+            labels: labels,
+            generation: generation,
+            onChunk: applyRefreshChunk,
           );
         }
 
@@ -227,17 +222,16 @@ class LibraryScannerService {
             (root) => PathMatcher.isWithinOrEqual(folderPath, root),
             orElse: () => '',
           );
-          await applyFolderResult(
-            await _scanWatchedFolderForRefresh(
-              folderPath: folderPath,
-              effectiveLibraryRoot: libraryRoot.isEmpty
-                  ? folderPath
-                  : libraryRoot,
-              provider: provider,
-              labels: labels,
-              progressPrefix: '[$processedFolders/$totalFolders]',
-              generation: generation,
-            ),
+          await _scanWatchedFolderForRefresh(
+            folderPath: folderPath,
+            effectiveLibraryRoot: libraryRoot.isEmpty
+                ? folderPath
+                : libraryRoot,
+            provider: provider,
+            labels: labels,
+            progressPrefix: '[$processedFolders/$totalFolders]',
+            generation: generation,
+            onChunk: applyRefreshChunk,
           );
         }
       } finally {
@@ -288,11 +282,12 @@ class LibraryScannerService {
     );
   }
 
-  Future<LibraryRefreshFolderResult> _scanLibraryRootForRefresh({
+  Future<void> _scanLibraryRootForRefresh({
     required String libraryRoot,
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
     required int generation,
+    required Future<bool> Function(LibraryRefreshChunk chunk) onChunk,
   }) async {
     final childFolderResult = await _listImmediateChildFoldersResult(
       libraryRoot,
@@ -304,7 +299,7 @@ class LibraryScannerService {
               !provider.isLibraryPathExcluded(libraryRoot, folderPath),
         )
         .toList(growable: false);
-    return _scanFolderForRefresh(
+    await _scanFolderForRefresh(
       sourceFolderPath: libraryRoot,
       libraryRoot: libraryRoot,
       provider: provider,
@@ -316,28 +311,31 @@ class LibraryScannerService {
       additionalFailureCount: childFolderResult.complete ? 0 : 1,
       progressPrefix: '',
       generation: generation,
+      onChunk: onChunk,
     );
   }
 
-  Future<LibraryRefreshFolderResult> _scanWatchedFolderForRefresh({
+  Future<void> _scanWatchedFolderForRefresh({
     required String folderPath,
     required String effectiveLibraryRoot,
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
     required String progressPrefix,
     required int generation,
-  }) {
-    return _scanFolderForRefresh(
+    required Future<bool> Function(LibraryRefreshChunk chunk) onChunk,
+  }) async {
+    await _scanFolderForRefresh(
       sourceFolderPath: folderPath,
       libraryRoot: effectiveLibraryRoot,
       provider: provider,
       labels: labels,
       progressPrefix: progressPrefix,
       generation: generation,
+      onChunk: onChunk,
     );
   }
 
-  Future<LibraryRefreshFolderResult> _scanFolderForRefresh({
+  Future<void> _scanFolderForRefresh({
     required String sourceFolderPath,
     required String libraryRoot,
     required LibraryCatalog provider,
@@ -349,169 +347,216 @@ class LibraryScannerService {
     int additionalFailureCount = 0,
     required String progressPrefix,
     required int generation,
+    required Future<bool> Function(LibraryRefreshChunk chunk) onChunk,
   }) async {
-    final nativeScan = await _scanFolderViaNative(sourceFolderPath);
-    if (nativeScan.ok) {
-      return _buildFolderRefreshResult(
-        sourceFolderPath: sourceFolderPath,
-        libraryRoot: libraryRoot,
-        provider: provider,
-        labels: labels,
-        scannedTracks: nativeScan.tracks,
-        retainedTrackPaths: nativeScan.paths,
-        retainedEntryPaths: nativeScan.paths,
-        folderPaths: folderPaths,
-        removeWatchedFolders: removeWatchedFolders,
-        addWatchedFolders: addWatchedFolders,
-        promoteRootTracksToSingles: promoteRootTracksToSingles,
-        allowRemoval: nativeScan.isComplete && additionalFailureCount == 0,
-        failureCount: nativeScan.failureCount + additionalFailureCount,
-        progressPrefix: progressPrefix,
-        generation: generation,
+    final mergeContext = LibraryScanMergeContext(
+      provider: provider,
+      libraryRoot: libraryRoot,
+    );
+    final retainedTrackPaths = <String>{};
+    final retainedEntryPaths = <String>{};
+    final allFolderPaths = LinkedHashSet<String>.from(folderPaths);
+    retainedEntryPaths.addAll(allFolderPaths.map(PathMatcher.normalize));
+    var processedTracks = 0;
+
+    Future<bool> mergeChunk(FolderScanChunk chunk) async {
+      if (!provider.isScanGenerationActive(generation)) return false;
+      retainedTrackPaths.addAll(chunk.paths.map(PathMatcher.normalize));
+      for (final track in chunk.tracks) {
+        retainedTrackPaths.add(PathMatcher.normalize(track.path));
+      }
+      allFolderPaths.addAll(chunk.folders);
+      retainedEntryPaths
+        ..addAll(retainedTrackPaths)
+        ..addAll(chunk.folders.map(PathMatcher.normalize));
+      if (chunk.tracks.isEmpty) {
+        return provider.isScanGenerationActive(generation);
+      }
+
+      final existingTracks = <MusicTrack>[];
+      final existingPaths = <String>{};
+      for (final scannedTrack in chunk.tracks) {
+        final existing = provider.trackByPath(scannedTrack.path);
+        if (existing != null &&
+            existingPaths.add(PathMatcher.normalize(existing.path))) {
+          existingTracks.add(existing);
+        }
+      }
+      final result = await compute(
+        processScannedTracksInIsolate,
+        ScanMergeIsolatePayload(
+          scannedTracks: chunk.tracks,
+          library: existingTracks,
+          libraryRoot: libraryRoot,
+          promoteRootTracksToSingles: promoteRootTracksToSingles,
+          i18nImportedFiles: labels.importedFiles,
+          i18nManuallySelectedFiles: labels.manuallySelectedFiles,
+          exclusionMatcher: mergeContext.exclusionMatcher,
+        ),
+      );
+      if (!provider.isScanGenerationActive(generation)) return false;
+      processedTracks += chunk.tracks.length;
+      return onChunk(
+        LibraryRefreshChunk(
+          sourceFolderPath: sourceFolderPath,
+          libraryRoot: libraryRoot,
+          tracks: result.trackBatch,
+          progressLabel: [
+            if (progressPrefix.isNotEmpty) progressPrefix,
+            '[$processedTracks]',
+            _displaySourceName(sourceFolderPath),
+          ].join(' '),
+          duplicateCount: result.duplicatesCount,
+        ),
       );
     }
 
-    if (nativeScan.notSupported ||
-        !PathMatcher.isContentUri(sourceFolderPath)) {
-      final payload = await _dataSource.scanFileSystemFolder(sourceFolderPath);
-      if (!provider.isScanGenerationActive(generation)) {
-        return LibraryRefreshFolderResult(
-          sourceFolderPath: sourceFolderPath,
-          libraryRoot: libraryRoot,
+    var scanResult = await _dataSource.scanFolderChunked(
+      sourceFolderPath,
+      mergeChunk,
+      onProgress: (event) {
+        if (!provider.isScanGenerationActive(generation)) return;
+        provider.setScanProgress(
+          generation: generation,
+          stage: event.stage,
+          processed: event.processed,
+          total: event.total,
+        );
+      },
+    );
+    if (scanResult.notSupported) {
+      if (PathMatcher.isContentUri(sourceFolderPath)) {
+        final legacyScan = await _scanFolderViaNative(sourceFolderPath);
+        if (!legacyScan.ok) {
+          scanResult = legacyScan;
+        } else {
+          if (!await mergeChunk(
+            FolderScanChunk(tracks: legacyScan.tracks, paths: legacyScan.paths),
+          )) {
+            return;
+          }
+          scanResult = NativeScanResult.success(
+            const <ScannedTrack>[],
+            legacyScan.paths,
+            failureCount: legacyScan.failureCount,
+            completenessKnown: legacyScan.completenessKnown,
+            wasCancelled: legacyScan.wasCancelled,
+          );
+        }
+      } else {
+        scanResult = await _dataSource.scanFileSystemFolderChunked(
+          sourceFolderPath,
+          mergeChunk,
         );
       }
-      final scannedTracks =
-          ((payload['tracks'] as List<Object?>?) ?? const <Object?>[])
-              .whereType<Map<Object?, Object?>>()
-              .map(ScannedTrack.fromPayload)
-              .toList(growable: false);
-      final discoveredPaths = stringSetFromPayload(payload['discoveredPaths']);
-      final discoveredFolders =
-          ((payload['folderPaths'] as List<Object?>?) ?? const <Object?>[])
-              .whereType<String>()
-              .toList(growable: false);
-      final allFolderPaths = LinkedHashSet<String>.from(folderPaths)
-        ..addAll(discoveredFolders);
-      final failureCount =
-          ((payload['failureCount'] as int?) ?? 0) + additionalFailureCount;
-      final retainedEntryPaths = <String>{
-        ...discoveredPaths,
-        ...allFolderPaths,
-      };
-      return _buildFolderRefreshResult(
-        sourceFolderPath: sourceFolderPath,
-        libraryRoot: libraryRoot,
-        provider: provider,
-        labels: labels,
-        scannedTracks: scannedTracks,
-        retainedTrackPaths: discoveredPaths,
-        retainedEntryPaths: retainedEntryPaths,
-        folderPaths: allFolderPaths.toList(growable: false),
-        removeWatchedFolders: removeWatchedFolders,
-        addWatchedFolders: addWatchedFolders,
-        promoteRootTracksToSingles: promoteRootTracksToSingles,
-        allowRemoval: failureCount == 0,
-        failureCount: failureCount,
-        progressPrefix: progressPrefix,
-        generation: generation,
-      );
+    }
+    if (!provider.isScanGenerationActive(generation) ||
+        scanResult.wasCancelled) {
+      return;
     }
 
     final label = [
       if (progressPrefix.isNotEmpty) progressPrefix,
       _displaySourceName(sourceFolderPath),
     ].join(' ');
-    return LibraryRefreshFolderResult(
-      sourceFolderPath: sourceFolderPath,
-      libraryRoot: libraryRoot,
-      chunks: <LibraryRefreshChunk>[
+    if (!scanResult.ok) {
+      AppLogService.warning(
+        'library_refresh_scan_failed source=$sourceFolderPath '
+        'code=${scanResult.errorCode}',
+        error: scanResult.errorMessage,
+      );
+      await onChunk(
         LibraryRefreshChunk(
           sourceFolderPath: sourceFolderPath,
           libraryRoot: libraryRoot,
           progressLabel: label,
           failureCount: 1 + additionalFailureCount,
         ),
-      ],
-      failureCount: 1 + additionalFailureCount,
+      );
+      return;
+    }
+
+    retainedTrackPaths.addAll(scanResult.paths.map(PathMatcher.normalize));
+    retainedEntryPaths.addAll(retainedTrackPaths);
+    final allowRemoval = scanResult.isComplete && additionalFailureCount == 0;
+    final removals = await _findRefreshRemovalPaths(
+      sourceFolderPath: sourceFolderPath,
+      provider: provider,
+      entrySnapshot: mergeContext.entrySnapshot,
+      retainedTrackPaths: retainedTrackPaths,
+      retainedEntryPaths: retainedEntryPaths,
+      allowRemoval: allowRemoval,
+      generation: generation,
+    );
+    if (!provider.isScanGenerationActive(generation)) return;
+    await onChunk(
+      LibraryRefreshChunk(
+        sourceFolderPath: sourceFolderPath,
+        libraryRoot: libraryRoot,
+        folderPaths: allFolderPaths.toList(growable: false),
+        removeWatchedFolders: allowRemoval
+            ? removeWatchedFolders
+            : const <String>[],
+        addWatchedFolders: addWatchedFolders,
+        removeTrackPaths: removals.trackPaths,
+        removeEntryPaths: removals.entryPaths,
+        progressLabel: label,
+        failureCount: scanResult.failureCount + additionalFailureCount,
+      ),
     );
   }
 
-  Future<LibraryRefreshFolderResult> _buildFolderRefreshResult({
+  Future<({List<String> trackPaths, List<String> entryPaths})>
+  _findRefreshRemovalPaths({
     required String sourceFolderPath,
-    required String libraryRoot,
-    required LibraryCatalog provider,
-    required LibraryScanLabels labels,
-    required List<ScannedTrack> scannedTracks,
+    required LibraryCatalogReader provider,
+    required LibraryEntrySnapshot entrySnapshot,
     required Set<String> retainedTrackPaths,
     required Set<String> retainedEntryPaths,
-    required List<String> folderPaths,
-    required List<String> removeWatchedFolders,
-    required List<String> addWatchedFolders,
-    required bool promoteRootTracksToSingles,
     required bool allowRemoval,
-    required String progressPrefix,
     required int generation,
-    int failureCount = 0,
   }) async {
-    final mergeContext = LibraryScanMergeContext(
-      provider: provider,
-      libraryRoot: libraryRoot,
-    );
-    final payload = ScanMergeIsolatePayload(
-      scannedTracks: scannedTracks,
-      library: provider.library,
-      libraryRoot: libraryRoot,
-      promoteRootTracksToSingles: promoteRootTracksToSingles,
-      i18nImportedFiles: labels.importedFiles,
-      i18nManuallySelectedFiles: labels.manuallySelectedFiles,
-      exclusionMatcher: mergeContext.exclusionMatcher,
-      sourceFolderPath: sourceFolderPath,
-      allowRemoval: allowRemoval,
-      retainedTrackPaths: retainedTrackPaths,
-      retainedEntryPaths: retainedEntryPaths,
-      entrySnapshot: mergeContext.entrySnapshot,
-    );
-    final result = await compute(processScannedTracksInIsolate, payload);
-    if (!provider.isScanGenerationActive(generation)) {
-      return LibraryRefreshFolderResult(
-        sourceFolderPath: sourceFolderPath,
-        libraryRoot: libraryRoot,
-      );
+    if (!allowRemoval || retainedTrackPaths.isEmpty) {
+      return (trackPaths: const <String>[], entryPaths: const <String>[]);
+    }
+    final normalizedSource = PathMatcher.normalize(sourceFolderPath);
+    final retainedTrackIndex = PathMembershipIndex(retainedTrackPaths);
+    final removedTrackPaths = <String>[];
+    var processed = 0;
+    for (final track in provider.library) {
+      if (PathMatcher.isWithinOrEqualNormalized(track.path, normalizedSource) &&
+          !retainedTrackIndex.containsEquivalent(track.path)) {
+        removedTrackPaths.add(track.path);
+      }
+      if (++processed % 200 == 0) {
+        await Future<void>.delayed(Duration.zero);
+        if (!provider.isScanGenerationActive(generation)) {
+          return (trackPaths: const <String>[], entryPaths: const <String>[]);
+        }
+      }
     }
 
-    final existingPaths = provider.library
-        .map((track) => PathMatcher.normalize(track.path))
-        .toSet();
-    final addedCount = result.trackBatch.fold<int>(
-      0,
-      (sum, track) =>
-          sum +
-          (existingPaths.contains(PathMatcher.normalize(track.path)) ? 0 : 1),
-    );
-    final chunks = buildLibraryRefreshChunks(
-      sourceFolderPath: sourceFolderPath,
-      libraryRoot: libraryRoot,
-      sourceLabel: _displaySourceName(sourceFolderPath),
-      tracks: result.trackBatch,
-      folderPaths: folderPaths,
-      removeWatchedFolders: allowRemoval
-          ? removeWatchedFolders
-          : const <String>[],
-      addWatchedFolders: addWatchedFolders,
-      removeTrackPaths: result.removedTrackPaths,
-      removeEntryPaths: result.removedEntryPaths,
-      duplicateCount: result.duplicatesCount,
-      failureCount: failureCount,
-      progressPrefix: progressPrefix,
-    );
-    return LibraryRefreshFolderResult(
-      sourceFolderPath: sourceFolderPath,
-      libraryRoot: libraryRoot,
-      chunks: chunks,
-      addedCount: addedCount,
-      duplicateCount: result.duplicatesCount,
-      failureCount: failureCount,
-    );
+    final retainedEntryIndex = PathMembershipIndex(retainedEntryPaths);
+    final removedEntryPaths = <String>[];
+    for (final entry in entrySnapshot.entriesByPath.values) {
+      if (!PathMatcher.isWithinOrEqualNormalized(
+        entry.path,
+        normalizedSource,
+      )) {
+        continue;
+      }
+      final retained = entry.isFolder
+          ? retainedEntryIndex.containsDescendantOrEqual(entry.path)
+          : retainedEntryIndex.containsEquivalent(entry.path);
+      if (!retained) removedEntryPaths.add(entry.path);
+      if (++processed % 200 == 0) {
+        await Future<void>.delayed(Duration.zero);
+        if (!provider.isScanGenerationActive(generation)) {
+          return (trackPaths: const <String>[], entryPaths: const <String>[]);
+        }
+      }
+    }
+    return (trackPaths: removedTrackPaths, entryPaths: removedEntryPaths);
   }
 
   Future<int> _mergeScannedTracksIncrementally({
@@ -536,9 +581,19 @@ class LibraryScannerService {
         ? null
         : LibraryScanMergeContext(provider: provider, libraryRoot: libraryRoot);
 
+    final existingTracks = <MusicTrack>[];
+    final existingPaths = <String>{};
+    for (final scannedTrack in scannedTracks) {
+      final existing = provider.trackByPath(scannedTrack.path);
+      if (existing != null &&
+          existingPaths.add(PathMatcher.normalize(existing.path))) {
+        existingTracks.add(existing);
+      }
+    }
+
     final payload = ScanMergeIsolatePayload(
       scannedTracks: scannedTracks,
-      library: provider.library,
+      library: existingTracks,
       libraryRoot: libraryRoot,
       promoteRootTracksToSingles: promoteRootTracksToSingles,
       i18nImportedFiles: labels.importedFiles,
@@ -634,125 +689,65 @@ class LibraryScannerService {
       );
       return 0;
     }
-    final payload = await _dataSource.scanFileSystemFolder(folderPath);
-    if (!isActive()) return 0;
-
-    final scannedTracks =
-        ((payload['tracks'] as List<Object?>?) ?? const <Object?>[])
-            .whereType<Map<Object?, Object?>>()
-            .map(ScannedTrack.fromPayload)
-            .toList(growable: false);
-    final discoveredPaths = stringSetFromPayload(payload['discoveredPaths']);
-    final discoveredFolders =
-        ((payload['folderPaths'] as List<Object?>?) ?? const <Object?>[])
-            .whereType<String>()
-            .toList(growable: false);
-
     final baseFoundCount = provider.scanFoundCount;
-    final baseDuplicateCount = provider.scanDuplicateCount;
     final baseFailureCount = provider.scanFailureCount;
     var added = 0;
-    final failures = (payload['failureCount'] as int?) ?? 0;
+    final discoveredFolders = <String>{};
     final mergeContext = libraryRoot == null
         ? null
         : LibraryScanMergeContext(provider: provider, libraryRoot: libraryRoot);
-
-    if (libraryRoot != null && discoveredFolders.isNotEmpty) {
-      provider.recordLibraryEntriesForTracks(
-        libraryRoot,
-        const <MusicTrack>[],
-        folderPaths: discoveredFolders,
-        exclusionMatcher: mergeContext?.exclusionMatcher,
-        entrySnapshot: mergeContext?.entrySnapshot,
-      );
-    }
-
-    final isolatePayload = ScanMergeIsolatePayload(
-      scannedTracks: scannedTracks,
-      library: provider.library,
-      libraryRoot: libraryRoot,
-      promoteRootTracksToSingles: promoteRootTracksToSingles,
-      i18nImportedFiles: labels.importedFiles,
-      i18nManuallySelectedFiles: labels.manuallySelectedFiles,
-      exclusionMatcher: mergeContext?.exclusionMatcher,
-    );
-
-    final result = await compute(processScannedTracksInIsolate, isolatePayload);
-
-    if (!isActive()) return 0;
-
-    final trackBatch = result.trackBatch;
-    final entryBatch = result.entryBatch;
-    final duplicates = result.duplicatesCount;
-
-    if (libraryRoot != null && entryBatch.isNotEmpty) {
-      provider.recordLibraryEntriesForTracks(
-        libraryRoot,
-        entryBatch,
-        exclusionMatcher: mergeContext?.exclusionMatcher,
-        entrySnapshot: mergeContext?.entrySnapshot,
-      );
-    }
-
-    if (trackBatch.isNotEmpty) {
-      const chunkSize = 200;
-      final stopwatch = Stopwatch()..start();
-      for (var i = 0; i < trackBatch.length; i += chunkSize) {
-        if (!isActive()) break;
-        final end = (i + chunkSize < trackBatch.length)
-            ? i + chunkSize
-            : trackBatch.length;
-        final chunk = trackBatch.sublist(i, end);
-
-        final before = provider.library.length;
-        provider.addOrReplaceTracks(chunk, notify: false);
-        added += provider.library.length - before;
-
-        provider.setScanProgress(
-          currentFolder:
-              '[$end/${scannedTracks.length}] ${_displaySourceName(folderPath)}',
-          foundCount: baseFoundCount + added,
-          duplicateCount: baseDuplicateCount + duplicates,
-          failureCount: baseFailureCount + failures,
-          generation: generation,
-          stage: FolderScanStage.merging,
-        );
-
-        if (onChunkCommitted != null) {
-          final keepGoing = await onChunkCommitted();
-          if (!keepGoing) break;
-        } else if (stopwatch.elapsedMilliseconds > 10) {
-          await Future<void>.delayed(Duration.zero);
-          stopwatch.reset();
+    final scanResult = await _dataSource.scanFileSystemFolderChunked(
+      folderPath,
+      (chunk) async {
+        if (!isActive()) return false;
+        discoveredFolders.addAll(chunk.folders);
+        if (libraryRoot != null && chunk.folders.isNotEmpty) {
+          provider.recordLibraryEntriesForTracks(
+            libraryRoot,
+            const <MusicTrack>[],
+            folderPaths: chunk.folders,
+            exclusionMatcher: mergeContext?.exclusionMatcher,
+            entrySnapshot: mergeContext?.entrySnapshot,
+          );
         }
-      }
-    } else {
-      provider.setScanProgress(
-        currentFolder:
-            '[${scannedTracks.length}/${scannedTracks.length}] ${_displaySourceName(folderPath)}',
-        foundCount: baseFoundCount,
-        duplicateCount: baseDuplicateCount + duplicates,
-        failureCount: baseFailureCount + failures,
-        generation: generation,
-        stage: FolderScanStage.merging,
+        added += await _mergeScannedTracksIncrementally(
+          sourceFolderPath: folderPath,
+          provider: provider,
+          scannedTracks: chunk.tracks,
+          libraryRoot: libraryRoot,
+          promoteRootTracksToSingles: promoteRootTracksToSingles,
+          labels: labels,
+          onChunkCommitted: onChunkCommitted,
+          generation: generation,
+        );
+        return isActive();
+      },
+    );
+    if (!isActive()) return added;
+    final failures = scanResult.ok ? scanResult.failureCount : 1;
+    provider.setScanProgress(
+      foundCount: baseFoundCount + added,
+      failureCount: baseFailureCount + failures,
+      generation: generation,
+    );
+    if (!scanResult.ok) {
+      AppLogService.warning(
+        'library_filesystem_scan_failed source=$folderPath '
+        'code=${scanResult.errorCode}',
+        error: scanResult.errorMessage,
       );
+      return added;
     }
 
-    if (isActive() && failures == 0) {
-      provider.removeTracksDeletedFromFolder(folderPath, discoveredPaths);
+    if (scanResult.isComplete) {
+      provider.removeTracksDeletedFromFolder(folderPath, scanResult.paths);
       if (libraryRoot != null) {
         provider.removeLibraryEntriesDeletedFromFolder(
           libraryRoot,
           folderPath,
-          <String>{...discoveredPaths, ...discoveredFolders},
+          <String>{...scanResult.paths, ...discoveredFolders},
         );
       }
-      provider.setScanProgress(
-        foundCount: baseFoundCount + added,
-        duplicateCount: baseDuplicateCount + duplicates,
-        failureCount: baseFailureCount + failures,
-        generation: generation,
-      );
     }
     return added;
   }

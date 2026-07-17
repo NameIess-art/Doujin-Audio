@@ -1,8 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:nameless_audio/core/media/path_matcher.dart';
 import 'package:nameless_audio/features/library/application/library_catalog.dart';
 import 'package:nameless_audio/features/library/application/library_scan_data_source.dart';
 import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
+import 'package:nameless_audio/features/library/application/library_state_models.dart';
+import 'package:nameless_audio/features/library/domain/library_entry.dart';
 
 void main() {
   const labels = LibraryScanLabels(
@@ -30,6 +35,431 @@ void main() {
       expect(catalog.finishCount, 1);
     },
   );
+
+  test(
+    'refresh consumes native chunks without calling the full scan API',
+    () async {
+      final removed = _musicTrack('C:/music/removed.mp3');
+      final catalog = _RefreshCatalog(
+        watchedFolders: <String>['C:/music'],
+        initialTracks: <MusicTrack>[removed],
+      );
+      final dataSource = _ChunkedRefreshDataSource(
+        catalog: catalog,
+        chunks: <FolderScanChunk>[
+          FolderScanChunk(
+            tracks: <ScannedTrack>[_scannedTrack('C:/music/one.mp3')],
+            paths: <String>{PathMatcher.normalize('C:/music/one.mp3')},
+          ),
+          FolderScanChunk(
+            tracks: <ScannedTrack>[_scannedTrack('C:/music/two.mp3')],
+            paths: <String>{PathMatcher.normalize('C:/music/two.mp3')},
+          ),
+        ],
+        terminalPaths: <String>{
+          PathMatcher.normalize('C:/music/one.mp3'),
+          PathMatcher.normalize('C:/music/two.mp3'),
+        },
+      );
+      final scanner = LibraryScannerService(dataSource: dataSource);
+
+      final outcome = await scanner.refreshWatchedFolders(
+        provider: catalog,
+        labels: labels,
+      );
+
+      expect(outcome.code, LibraryScanOutcomeCode.refreshAdded);
+      expect(outcome.addedCount, 2);
+      expect(dataSource.chunkedScanCalls, 1);
+      expect(dataSource.fullScanCalls, 0);
+      expect(dataSource.filesystemScanCalls, 0);
+      expect(dataSource.firstChunkWasCommittedBeforeSecond, isTrue);
+      expect(catalog.library, hasLength(2));
+      expect(catalog.removedTrackPaths, <String>[removed.path]);
+    },
+  );
+
+  test('incomplete refresh keeps tracks missing from the scan', () async {
+    final existing = _musicTrack('C:/music/existing.mp3');
+    final catalog = _RefreshCatalog(
+      watchedFolders: <String>['C:/music'],
+      initialTracks: <MusicTrack>[existing],
+    );
+    final dataSource = _ChunkedRefreshDataSource(
+      catalog: catalog,
+      terminalFailureCount: 1,
+    );
+
+    await LibraryScannerService(
+      dataSource: dataSource,
+    ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+    expect(catalog.library, <MusicTrack>[existing]);
+    expect(catalog.removedTrackPaths, isEmpty);
+    expect(catalog.scanFailureCount, 1);
+  });
+
+  test('content URI refresh retains the legacy full-scan fallback', () async {
+    const root = 'content://library/tree';
+    final catalog = _RefreshCatalog(watchedFolders: <String>[root]);
+    final dataSource = _ChunkedRefreshDataSource(
+      catalog: catalog,
+      nativeChunkingSupported: false,
+      legacyResult: NativeScanResult.success(
+        <ScannedTrack>[_scannedTrack('$root/one.mp3')],
+        <String>{PathMatcher.normalize('$root/one.mp3')},
+        completenessKnown: true,
+      ),
+    );
+
+    await LibraryScannerService(
+      dataSource: dataSource,
+    ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+    expect(dataSource.fullScanCalls, 1);
+    expect(dataSource.filesystemScanCalls, 0);
+    expect(catalog.library, hasLength(1));
+  });
+
+  test(
+    'generation cancellation stops chunks and rolls back additions',
+    () async {
+      final existing = _musicTrack('C:/music/existing.mp3');
+      final catalog = _RefreshCatalog(
+        watchedFolders: <String>['C:/music'],
+        initialTracks: <MusicTrack>[existing],
+        cancelAfterFirstTrackChunk: true,
+      );
+      final dataSource = _ChunkedRefreshDataSource(
+        catalog: catalog,
+        chunks: <FolderScanChunk>[
+          FolderScanChunk(
+            tracks: <ScannedTrack>[_scannedTrack('C:/music/one.mp3')],
+            paths: <String>{PathMatcher.normalize('C:/music/one.mp3')},
+          ),
+          FolderScanChunk(
+            tracks: <ScannedTrack>[_scannedTrack('C:/music/two.mp3')],
+            paths: <String>{PathMatcher.normalize('C:/music/two.mp3')},
+          ),
+        ],
+        terminalPaths: <String>{
+          PathMatcher.normalize('C:/music/one.mp3'),
+          PathMatcher.normalize('C:/music/two.mp3'),
+        },
+      );
+
+      final outcome = await LibraryScannerService(
+        dataSource: dataSource,
+      ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+      expect(outcome.code, LibraryScanOutcomeCode.cancelled);
+      expect(dataSource.deliveredChunks, 1);
+      expect(catalog.library, <MusicTrack>[existing]);
+    },
+  );
+}
+
+ScannedTrack _scannedTrack(String path) {
+  final parent = path.substring(0, path.lastIndexOf('/'));
+  return ScannedTrack(
+    path: path,
+    groupKey: parent,
+    groupTitle: 'music',
+    groupSubtitle: parent,
+    isSingle: false,
+    isVideo: false,
+  );
+}
+
+MusicTrack _musicTrack(String path) {
+  final parent = path.substring(0, path.lastIndexOf('/'));
+  return MusicTrack(
+    path: path,
+    displayName: 'existing',
+    groupKey: parent,
+    groupTitle: 'music',
+    groupSubtitle: parent,
+    isSingle: false,
+  );
+}
+
+class _ChunkedRefreshDataSource implements LibraryScanDataSource {
+  _ChunkedRefreshDataSource({
+    required this.catalog,
+    this.chunks = const <FolderScanChunk>[],
+    this.terminalPaths = const <String>{},
+    this.terminalFailureCount = 0,
+    this.nativeChunkingSupported = true,
+    this.legacyResult = const NativeScanResult.failed(
+      code: 'unexpected_full_scan',
+    ),
+  });
+
+  final _RefreshCatalog catalog;
+  final List<FolderScanChunk> chunks;
+  final Set<String> terminalPaths;
+  final int terminalFailureCount;
+  final bool nativeChunkingSupported;
+  final NativeScanResult legacyResult;
+  var chunkedScanCalls = 0;
+  var fullScanCalls = 0;
+  var filesystemScanCalls = 0;
+  var deliveredChunks = 0;
+  var firstChunkWasCommittedBeforeSecond = false;
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    return true;
+  }
+
+  @override
+  Future<NativeScanResult> scanFolder(String folderPath) async {
+    fullScanCalls++;
+    return legacyResult;
+  }
+
+  @override
+  Future<NativeScanResult> scanFolderChunked(
+    String folderPath,
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk, {
+    FutureOr<void> Function(FolderScanSessionEvent event)? onProgress,
+  }) async {
+    chunkedScanCalls++;
+    if (!nativeChunkingSupported) {
+      return const NativeScanResult.notSupported();
+    }
+    return _deliverChunks(onChunk);
+  }
+
+  @override
+  Future<NativeScanResult> scanFileSystemFolderChunked(
+    String folderPath,
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk,
+  ) {
+    filesystemScanCalls++;
+    return _deliverChunks(onChunk);
+  }
+
+  Future<NativeScanResult> _deliverChunks(
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk,
+  ) async {
+    final deliveredPaths = <String>{};
+    for (var index = 0; index < chunks.length; index++) {
+      final keepGoing = await onChunk(chunks[index]);
+      deliveredChunks++;
+      deliveredPaths.addAll(chunks[index].paths);
+      if (index == 0 && chunks.length > 1) {
+        firstChunkWasCommittedBeforeSecond = catalog.library.any(
+          (track) => PathMatcher.equalsNormalized(
+            track.path,
+            chunks.first.tracks.first.path,
+          ),
+        );
+      }
+      if (!keepGoing) {
+        return NativeScanResult.success(
+          const <ScannedTrack>[],
+          deliveredPaths,
+          completenessKnown: true,
+          wasCancelled: true,
+        );
+      }
+    }
+    return NativeScanResult.success(
+      const <ScannedTrack>[],
+      terminalPaths,
+      failureCount: terminalFailureCount,
+      completenessKnown: true,
+    );
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _RefreshCatalog implements LibraryCatalog {
+  _RefreshCatalog({
+    required List<String> watchedFolders,
+    List<MusicTrack> initialTracks = const <MusicTrack>[],
+    this.cancelAfterFirstTrackChunk = false,
+  }) : watchedFolders = List<String>.of(watchedFolders),
+       library = List<MusicTrack>.of(initialTracks);
+
+  @override
+  final List<MusicTrack> library;
+
+  @override
+  final List<String> watchedFolders;
+
+  @override
+  final List<String> watchedLibraries = <String>[];
+  final bool cancelAfterFirstTrackChunk;
+
+  @override
+  bool isScanning = false;
+
+  @override
+  int scanFoundCount = 0;
+
+  @override
+  int scanDuplicateCount = 0;
+
+  @override
+  int scanFailureCount = 0;
+
+  final removedTrackPaths = <String>[];
+  int _generation = 0;
+  var _appliedTrackChunks = 0;
+
+  @override
+  int tryBeginScan({required String source, bool background = false}) {
+    isScanning = true;
+    return _generation = 1;
+  }
+
+  @override
+  bool isScanGenerationActive(int generation) {
+    return isScanning && generation == _generation;
+  }
+
+  @override
+  void finishScan(int generation) {
+    if (generation != _generation) return;
+    isScanning = false;
+    _generation = 0;
+  }
+
+  @override
+  MusicTrack? trackByPath(String trackPath) {
+    for (final track in library) {
+      if (PathMatcher.equalsNormalized(track.path, trackPath)) return track;
+    }
+    return null;
+  }
+
+  @override
+  List<LibraryEntry> libraryEntriesForLibrary(String libraryPath) {
+    return const <LibraryEntry>[];
+  }
+
+  @override
+  LibraryEntrySnapshot libraryEntrySnapshotForLibrary(String libraryPath) {
+    return LibraryEntrySnapshot(libraryPath: libraryPath);
+  }
+
+  @override
+  LibraryExclusionMatcher libraryExclusionMatcherForLibrary(
+    String libraryPath,
+  ) {
+    return LibraryExclusionMatcher(libraryPath: libraryPath);
+  }
+
+  @override
+  bool isLibraryPathExcluded(String libraryPath, String entityPath) => false;
+
+  @override
+  void beginStagedLibraryRefresh() {}
+
+  @override
+  Future<void> finishStagedLibraryRefresh({
+    bool waitForPersistence = false,
+  }) async {}
+
+  @override
+  int applyStagedLibraryRefreshChunk({
+    required String sourceFolderPath,
+    required String libraryRoot,
+    List<MusicTrack> tracks = const <MusicTrack>[],
+    Iterable<String> folderPaths = const <String>[],
+    Iterable<String> removeWatchedFolders = const <String>[],
+    Iterable<String> addWatchedFolders = const <String>[],
+    Iterable<String> removeTrackPaths = const <String>[],
+    Iterable<String> removeEntryPaths = const <String>[],
+    bool persist = true,
+  }) {
+    final before = library.length;
+    for (final track in tracks) {
+      library.removeWhere(
+        (existing) => PathMatcher.equalsNormalized(existing.path, track.path),
+      );
+      library.add(track);
+    }
+    if (tracks.isNotEmpty &&
+        cancelAfterFirstTrackChunk &&
+        ++_appliedTrackChunks == 1) {
+      isScanning = false;
+    }
+    final pathsToRemove = removeTrackPaths.toList(growable: false);
+    removedTrackPaths.addAll(pathsToRemove);
+    library.removeWhere(
+      (track) => pathsToRemove.any(
+        (trackPath) => PathMatcher.equalsNormalized(track.path, trackPath),
+      ),
+    );
+    for (final folder in removeWatchedFolders) {
+      watchedFolders.removeWhere(
+        (candidate) => PathMatcher.equalsNormalized(candidate, folder),
+      );
+    }
+    for (final folder in addWatchedFolders) {
+      if (!watchedFolders.any(
+        (candidate) => PathMatcher.equalsNormalized(candidate, folder),
+      )) {
+        watchedFolders.add(folder);
+      }
+    }
+    return library.length - before;
+  }
+
+  @override
+  void setScanProgress({
+    String? currentFolder,
+    int? foundCount,
+    int? duplicateCount,
+    int? failureCount,
+    int? generation,
+    FolderScanStage? stage,
+    int? processed,
+    int? total,
+  }) {
+    scanFoundCount = foundCount ?? scanFoundCount;
+    scanDuplicateCount = duplicateCount ?? scanDuplicateCount;
+    scanFailureCount = failureCount ?? scanFailureCount;
+  }
+
+  @override
+  void beginLibraryBatch() {}
+
+  @override
+  Future<void> endLibraryBatch({
+    bool notify = true,
+    bool waitForPersistence = true,
+  }) async {}
+
+  @override
+  void removeTracksByPath(Iterable<String> trackPaths) {
+    final paths = trackPaths.toList(growable: false);
+    library.removeWhere(
+      (track) => paths.any(
+        (candidate) => PathMatcher.equalsNormalized(candidate, track.path),
+      ),
+    );
+  }
+
+  @override
+  void removeLibraryEntriesByPaths(
+    String libraryPath,
+    Iterable<String> entryPaths,
+  ) {}
+
+  @override
+  Future<void> prefillAudioDetailRjCodeFromText(
+    String folderPath,
+    String displayName,
+  ) async {}
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 class _PickedFilesDataSource implements LibraryScanDataSource {

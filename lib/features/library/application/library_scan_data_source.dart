@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import 'library_scan_models.dart';
 import '../../../core/media/media_file_support.dart';
@@ -36,7 +37,10 @@ abstract interface class LibraryScanDataSource {
 
   Future<List<PickedAudioFile>?> pickAudioFiles({required String dialogTitle});
 
-  Future<Map<String, Object?>> scanFileSystemFolder(String folderPath);
+  Future<NativeScanResult> scanFileSystemFolderChunked(
+    String folderPath,
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk,
+  );
 }
 
 class PlatformLibraryScanDataSource implements LibraryScanDataSource {
@@ -175,8 +179,109 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
   }
 
   @override
-  Future<Map<String, Object?>> scanFileSystemFolder(String folderPath) {
-    return Isolate.run(() => scanFileSystemFolderPayload(folderPath));
+  Future<NativeScanResult> scanFileSystemFolderChunked(
+    String folderPath,
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk,
+  ) async {
+    const chunkSize = 120;
+    final receivePort = ReceivePort();
+    Isolate? worker;
+    final discoveredPaths = <String>{};
+    try {
+      worker = await Isolate.spawn<List<Object?>>(
+        _scanFileSystemFolderWorker,
+        <Object?>[folderPath, receivePort.sendPort, chunkSize],
+        onError: receivePort.sendPort,
+        onExit: receivePort.sendPort,
+      );
+      await for (final message in receivePort) {
+        if (message == null) {
+          return const NativeScanResult.failed(
+            code: 'filesystem_scan_ended',
+            message: 'Filesystem scan isolate ended without a terminal event.',
+          );
+        }
+        if (message is List) {
+          return NativeScanResult.failed(
+            code: 'filesystem_scan_error',
+            message: message.isEmpty ? null : message.first.toString(),
+          );
+        }
+        if (message is! Map) continue;
+        final payload = message.cast<Object?, Object?>();
+        switch (payload['type']) {
+          case 'chunk':
+            final tracks = <ScannedTrack>[];
+            final chunkPaths = <String>{};
+            final rawTracks = payload['tracks'];
+            if (rawTracks is Iterable) {
+              for (final rawTrack in rawTracks) {
+                if (rawTrack is! Map) continue;
+                final scanned = ScannedTrack.fromPayload(
+                  rawTrack.cast<Object?, Object?>(),
+                );
+                final normalizedPath = PathMatcher.normalize(scanned.path);
+                if (normalizedPath.isEmpty ||
+                    !discoveredPaths.add(normalizedPath)) {
+                  continue;
+                }
+                tracks.add(scanned);
+                chunkPaths.add(normalizedPath);
+              }
+            }
+            final folders = (payload['folders'] as Iterable? ?? const [])
+                .whereType<String>()
+                .map(path.normalize)
+                .toList(growable: false);
+            if (tracks.isEmpty && folders.isEmpty) continue;
+            final keepGoing = await onChunk(
+              FolderScanChunk(
+                tracks: List<ScannedTrack>.unmodifiable(tracks),
+                paths: Set<String>.unmodifiable(chunkPaths),
+                folders: List<String>.unmodifiable(folders),
+              ),
+            );
+            if (!keepGoing) {
+              return NativeScanResult.success(
+                const <ScannedTrack>[],
+                Set<String>.unmodifiable(discoveredPaths),
+                completenessKnown: true,
+                wasCancelled: true,
+              );
+            }
+            continue;
+          case 'done':
+            return NativeScanResult.success(
+              const <ScannedTrack>[],
+              Set<String>.unmodifiable(discoveredPaths),
+              failureCount: (payload['failureCount'] as num?)?.toInt() ?? 0,
+              completenessKnown: true,
+            );
+          case 'error':
+            return NativeScanResult.failed(
+              code: 'filesystem_scan_error',
+              message: payload['message']?.toString(),
+            );
+        }
+      }
+      return const NativeScanResult.failed(
+        code: 'filesystem_scan_ended',
+        message: 'Filesystem scan isolate ended without a terminal event.',
+      );
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'filesystem_library_scan_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return NativeScanResult.failed(
+        code: 'filesystem_scan_error',
+        message: error.toString(),
+      );
+    } finally {
+      receivePort.close();
+      worker?.kill(priority: Isolate.immediate);
+    }
   }
 
   Future<Directory> _persistentImportDirectory() async {
@@ -221,23 +326,63 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
   }
 }
 
-Map<String, Object?> scanFileSystemFolderPayload(String folderPath) {
+void _scanFileSystemFolderWorker(List<Object?> arguments) {
+  final folderPath = arguments[0]! as String;
+  final sendPort = arguments[1]! as SendPort;
+  final chunkSize = arguments[2]! as int;
+  try {
+    final failureCount = _enumerateFileSystemFolderChunks(
+      folderPath,
+      chunkSize: chunkSize,
+      emit: (tracks, folders) {
+        sendPort.send(<String, Object?>{
+          'type': 'chunk',
+          'tracks': tracks,
+          'folders': folders,
+        });
+      },
+    );
+    sendPort.send(<String, Object?>{
+      'type': 'done',
+      'failureCount': failureCount,
+    });
+  } catch (error) {
+    sendPort.send(<String, Object?>{
+      'type': 'error',
+      'message': error.toString(),
+    });
+  }
+}
+
+int _enumerateFileSystemFolderChunks(
+  String folderPath, {
+  required int chunkSize,
+  required void Function(
+    List<Map<String, Object?>> tracks,
+    List<String> folders,
+  )
+  emit,
+}) {
   final folder = Directory(folderPath);
   final normalizedRoot = path.normalize(folderPath);
   if (!folder.existsSync()) {
-    return const <String, Object?>{
-      'tracks': <Object?>[],
-      'folderPaths': <Object?>[],
-      'discoveredPaths': <String>{},
-      'failureCount': 1,
-    };
+    return 1;
   }
 
   final pendingDirs = Queue<Directory>()..add(folder);
-  final folderPaths = <String>[];
-  final tracks = <Map<String, Object?>>[];
-  final seenPaths = <String>{};
+  final folderBuffer = <String>[];
+  final trackBuffer = <Map<String, Object?>>[];
   var failures = 0;
+
+  void flush() {
+    if (trackBuffer.isEmpty && folderBuffer.isEmpty) return;
+    emit(
+      List<Map<String, Object?>>.of(trackBuffer),
+      List<String>.of(folderBuffer),
+    );
+    trackBuffer.clear();
+    folderBuffer.clear();
+  }
 
   while (pendingDirs.isNotEmpty) {
     final currentDir = pendingDirs.removeFirst();
@@ -253,15 +398,14 @@ Map<String, Object?> scanFileSystemFolderPayload(String folderPath) {
       if (entity is Directory) {
         final directoryPath = path.normalize(entity.path);
         pendingDirs.add(Directory(directoryPath));
-        folderPaths.add(directoryPath);
+        folderBuffer.add(directoryPath);
+        if (trackBuffer.length + folderBuffer.length >= chunkSize) flush();
         continue;
       }
       if (entity is! File) continue;
 
       final absolutePath = path.normalize(entity.path);
-      if (!isSupportedMediaFile(absolutePath) || !seenPaths.add(absolutePath)) {
-        continue;
-      }
+      if (!isSupportedMediaFile(absolutePath)) continue;
 
       FileStat? fileStat;
       try {
@@ -293,7 +437,7 @@ Map<String, Object?> scanFileSystemFolderPayload(String folderPath) {
         groupTitle = folderName.isEmpty ? parentFolder : folderName;
       }
 
-      tracks.add(<String, Object?>{
+      trackBuffer.add(<String, Object?>{
         'path': absolutePath,
         'displayName': path.basenameWithoutExtension(absolutePath),
         'groupKey': groupKey,
@@ -305,18 +449,36 @@ Map<String, Object?> scanFileSystemFolderPayload(String folderPath) {
         'fileSizeBytes': fileStat?.size,
         'modifiedAtMs': fileStat?.modified.millisecondsSinceEpoch,
       });
+      if (trackBuffer.length + folderBuffer.length >= chunkSize) flush();
     }
   }
-
-  return <String, Object?>{
-    'tracks': tracks,
-    'folderPaths': folderPaths,
-    'discoveredPaths': Set<String>.unmodifiable(seenPaths),
-    'failureCount': failures,
-  };
+  flush();
+  return failures;
 }
 
 @visibleForTesting
 Map<String, Object?> scanFileSystemFolderPayloadForTest(String folderPath) {
-  return scanFileSystemFolderPayload(folderPath);
+  final tracks = <Map<String, Object?>>[];
+  final folderPaths = <String>[];
+  final discoveredPaths = <String>{};
+  final failureCount = _enumerateFileSystemFolderChunks(
+    folderPath,
+    chunkSize: 120,
+    emit: (chunkTracks, chunkFolders) {
+      tracks.addAll(chunkTracks);
+      folderPaths.addAll(chunkFolders);
+      discoveredPaths.addAll(
+        chunkTracks
+            .map((track) => track['path'])
+            .whereType<String>()
+            .map(PathMatcher.normalize),
+      );
+    },
+  );
+  return <String, Object?>{
+    'tracks': tracks,
+    'folderPaths': folderPaths,
+    'discoveredPaths': Set<String>.unmodifiable(discoveredPaths),
+    'failureCount': failureCount,
+  };
 }

@@ -29,9 +29,16 @@ class DlsiteMetadataService {
   }) : _httpClient = httpClient ?? HttpClient(),
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
-       _requestTimeout = requestTimeout;
+       _requestTimeout = requestTimeout {
+    try {
+      _httpClient.connectionTimeout = requestTimeout;
+    } catch (_) {
+      // Test doubles and platform clients may not expose socket settings.
+    }
+  }
 
   static const int _maxRequestAttempts = 2;
+  static const int _maxCoverBytes = 5 * 1024 * 1024;
   static const List<String> _productSites = <String>[
     'maniax',
     'home',
@@ -211,20 +218,33 @@ class DlsiteMetadataService {
     final uri = Uri.parse(coverUrl);
     final extension = _coverExtension(uri);
     final fileName = 'dlsite_${rjCode.toUpperCase()}_cover$extension';
-    final request = await _httpClient.getUrl(uri);
+    final request = await _httpClient.getUrl(uri).timeout(_requestTimeout);
     _applyHeaders(request, language);
-    final response = await request.close();
+    final response = await request.close().timeout(_requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw DlsiteMetadataException(
         'Cover download failed: ${response.statusCode}',
       );
     }
+    if (response.contentLength > _maxCoverBytes) {
+      throw const DlsiteMetadataException('Cover response is too large');
+    }
 
     if (PathMatcher.isContentUri(folderPath)) {
-      final bytes = await response.fold<List<int>>(
-        <int>[],
-        (buffer, chunk) => buffer..addAll(chunk),
-      );
+      final bytes = <int>[];
+      try {
+        await for (final chunk in response.timeout(_requestTimeout)) {
+          if (bytes.length + chunk.length > _maxCoverBytes) {
+            throw const DlsiteMetadataException('Cover response is too large');
+          }
+          bytes.addAll(chunk);
+        }
+      } on TimeoutException {
+        throw const DlsiteMetadataException(
+          'Cover download timed out',
+          isNetworkFailure: true,
+        );
+      }
       final mimeType =
           response.headers.contentType?.mimeType ?? _coverMimeType(extension);
       final savedPath = await _fileCacheGateway.writeFileBytesToFolder(
@@ -240,8 +260,31 @@ class DlsiteMetadataService {
     }
 
     final destination = File(path.join(folderPath, fileName));
-    await response.pipe(destination.openWrite());
-    return destination.path;
+    final sink = destination.openWrite();
+    var received = 0;
+    var completed = false;
+    try {
+      await for (final chunk in response.timeout(_requestTimeout)) {
+        received += chunk.length;
+        if (received > _maxCoverBytes) {
+          throw const DlsiteMetadataException('Cover response is too large');
+        }
+        sink.add(chunk);
+      }
+      await sink.flush();
+      completed = true;
+      return destination.path;
+    } on TimeoutException {
+      throw const DlsiteMetadataException(
+        'Cover download timed out',
+        isNetworkFailure: true,
+      );
+    } finally {
+      await sink.close();
+      if (!completed && await destination.exists()) {
+        await destination.delete();
+      }
+    }
   }
 
   Future<String> _get(Uri uri, {required AppLanguage language}) async {

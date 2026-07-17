@@ -57,27 +57,27 @@ void main() {
     },
   );
 
-  test('safe restore replaces secure ASMR credentials', () async {
-    SharedPreferences.setMockInitialValues(const <String, Object>{});
-    await AppPreferences.init();
-    final store = _FakeTokenStore(
-      token: 'old-token',
-      name: 'old-name',
-      password: 'old-password',
-    );
+  test(
+    'safe restore ignores secure ASMR credentials from old backups',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final store = _FakeTokenStore(
+        token: 'old-token',
+        name: 'old-name',
+        password: 'old-password',
+      );
 
-    await AppPreferences.restoreSafeValues(const <String, Object?>{
-      'asmr_one_name_v1': 'new-name',
-      'asmr_one_pass_v1': 'new-password',
-      'asmr_one_jwt_token_v1': 'new-token',
-    }, tokenStore: store);
+      await AppPreferences.restoreSafeValues(const <String, Object?>{
+        'asmr_one_name_v1': 'new-name',
+        'asmr_one_pass_v1': 'new-password',
+        'asmr_one_jwt_token_v1': 'new-token',
+      }, tokenStore: store);
 
-    expect(await store.readToken(), 'new-token');
-    expect(await store.readCredentials(), <String, String>{
-      'name': 'new-name',
-      'password': 'new-password',
-    });
-  });
+      expect(await store.readToken(), isNull);
+      expect(await store.readCredentials(), isNull);
+    },
+  );
 }
 
 class _FakeTokenStore implements AsmrTokenStore {

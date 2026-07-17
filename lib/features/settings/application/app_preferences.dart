@@ -115,18 +115,6 @@ class AppPreferences {
       }
     }
 
-    // Also include ASMR.ONE credentials and token (if any) because they are now in secure storage
-    final tokenStore = SecureAsmrTokenStore();
-    final credentials = await tokenStore.readCredentials();
-    if (credentials != null) {
-      values['asmr_one_name_v1'] = credentials['name']!;
-      values['asmr_one_pass_v1'] = credentials['password']!;
-    }
-    final token = await tokenStore.readToken();
-    if (token != null) {
-      values['asmr_one_jwt_token_v1'] = token;
-    }
-
     return values;
   }
 
@@ -146,52 +134,31 @@ class AppPreferences {
     final resolvedTokenStore = tokenStore ?? SecureAsmrTokenStore();
     await resolvedTokenStore.clearToken();
     await resolvedTokenStore.clearCredentials();
-    String? asmrName, asmrPass, asmrToken;
-
     for (final entry in values.entries) {
-      if (entry.key == 'asmr_one_name_v1') {
-        asmrName = entry.value as String?;
-      } else if (entry.key == 'asmr_one_pass_v1') {
-        asmrPass = entry.value as String?;
-      } else if (entry.key == 'asmr_one_jwt_token_v1') {
-        asmrToken = entry.value as String?;
-      } else {
-        if (_isSensitiveKey(entry.key)) continue;
-        final value = entry.value;
-        if (value is String) {
-          await prefs.setString(entry.key, value);
-        } else if (value is bool) {
-          await prefs.setBool(entry.key, value);
-        } else if (value is int) {
-          await prefs.setInt(entry.key, value);
-        } else if (value is double) {
-          await prefs.setDouble(entry.key, value);
-        } else if (value is List<dynamic>) {
-          await prefs.setStringList(
-            entry.key,
-            value.whereType<String>().toList(growable: false),
-          );
-        }
+      if (_isSensitiveKey(entry.key)) continue;
+      final value = entry.value;
+      if (value is String) {
+        await prefs.setString(entry.key, value);
+      } else if (value is bool) {
+        await prefs.setBool(entry.key, value);
+      } else if (value is int) {
+        await prefs.setInt(entry.key, value);
+      } else if (value is double) {
+        await prefs.setDouble(entry.key, value);
+      } else if (value is List<dynamic>) {
+        await prefs.setStringList(
+          entry.key,
+          value.whereType<String>().toList(growable: false),
+        );
       }
-    }
-
-    if (asmrName != null && asmrPass != null) {
-      await resolvedTokenStore.writeCredentials(asmrName, asmrPass);
-    }
-    if (asmrToken != null) {
-      await resolvedTokenStore.writeToken(asmrToken);
     }
   }
 
   static bool _isSensitiveKey(String key) {
     final normalized = key.toLowerCase();
 
-    // User requested to include ASMR.ONE credentials in the data backup.
-    if (normalized == 'asmr_one_name_v1' || normalized == 'asmr_one_pass_v1') {
-      return false;
-    }
-
-    return normalized.contains('token') ||
+    return normalized == 'asmr_one_name_v1' ||
+        normalized.contains('token') ||
         normalized.contains('password') ||
         normalized.contains('passwd') ||
         normalized.contains('credential') ||

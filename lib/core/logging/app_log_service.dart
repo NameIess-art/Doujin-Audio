@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -13,6 +14,10 @@ abstract final class AppLogService {
   static DebugPrintCallback? _previousDebugPrint;
   static bool _initialized = false;
   static String? _logDirectoryPath;
+  static int _bytesSinceRotation = 0;
+  static bool _rotationScheduled = false;
+  static Future<void> _rotationTask = Future<void>.value();
+  static final List<String> _pendingWrites = <String>[];
 
   static String? get logDirectoryPath => _logDirectoryPath;
   static bool get _performanceLoggingEnabled => kDebugMode || kProfileMode;
@@ -30,6 +35,7 @@ abstract final class AppLogService {
       final logFile = File(path.join(logDir.path, _logFileName));
       await _rotateIfNeeded(logFile);
       _sink = logFile.openWrite(mode: FileMode.append);
+      _bytesSinceRotation = await logFile.length();
       _write('INFO', 'logging_started directory=${logDir.path}');
     } catch (error, stackTrace) {
       _previousDebugPrint?.call(
@@ -147,7 +153,49 @@ abstract final class AppLogService {
 
   static void _write(String level, String message) {
     final timestamp = DateTime.now().toIso8601String();
-    _sink?.writeln('$timestamp [$level] ${sanitize(message)}');
+    final line = '$timestamp [$level] ${sanitize(message)}';
+    final sink = _sink;
+    if (sink == null) {
+      if (_pendingWrites.length < 128) _pendingWrites.add(line);
+      return;
+    }
+    sink.writeln(line);
+    _bytesSinceRotation += utf8.encode('$line\n').length;
+    if (_bytesSinceRotation > _maxLogBytes && !_rotationScheduled) {
+      _rotationScheduled = true;
+      _rotationTask = _rotationTask.then((_) => _rotateRuntime());
+    }
+  }
+
+  static Future<void> _rotateRuntime() async {
+    try {
+      final directory = _logDirectoryPath;
+      if (directory == null) return;
+      final logFile = File(path.join(directory, _logFileName));
+      final sink = _sink;
+      _sink = null;
+      await sink?.flush();
+      await sink?.close();
+      await _rotateIfNeeded(logFile);
+      _sink = logFile.openWrite(mode: FileMode.append);
+      _bytesSinceRotation = await logFile.length();
+      final pending = List<String>.from(_pendingWrites);
+      _pendingWrites.clear();
+      for (final line in pending) {
+        _sink!.writeln(line);
+        _bytesSinceRotation += utf8.encode('$line\n').length;
+      }
+    } catch (error, stackTrace) {
+      _previousDebugPrint?.call(
+        'AppLogService runtime rotation failed: $error\n$stackTrace',
+      );
+      if (_sink == null && _logDirectoryPath != null) {
+        final logFile = File(path.join(_logDirectoryPath!, _logFileName));
+        _sink = logFile.openWrite(mode: FileMode.append);
+      }
+    } finally {
+      _rotationScheduled = false;
+    }
   }
 
   static String sanitize(String message) {

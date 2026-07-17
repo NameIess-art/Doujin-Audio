@@ -783,7 +783,11 @@ final class PlaybackFacade {
 
   Future<void> seekSession(String sessionId, Duration position) async {
     final session = service.sessions[sessionId];
-    if (session == null) return;
+    if (session == null ||
+        session.isDisposed ||
+        !identical(service.sessions[session.id], session)) {
+      return;
+    }
     session.setOptimisticPosition(position);
     session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
     _onSessionPositionChanged?.call(session, position);
@@ -1235,7 +1239,11 @@ final class PlaybackFacade {
     bool notify = true,
   }) async {
     final session = service.sessions[sessionId];
-    if (session == null) return;
+    if (session == null ||
+        session.isDisposed ||
+        !identical(service.sessions[session.id], session)) {
+      return;
+    }
     final nextVolume = volume.clamp(0.0, maxSessionVolume);
     final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
       session.id,
@@ -1243,6 +1251,7 @@ final class PlaybackFacade {
     if ((session.volume - nextVolume).abs() < 0.001) {
       if (persist && hasDeferredReload) {
         await nativeRepository.setVolume(session.id, session.volume);
+        if (!_isCurrentSession(session)) return;
         _deferredVolumeReloadSessionIds.remove(session.id);
       }
       if (persist) await flushSessionStatePersistence();
@@ -1263,6 +1272,7 @@ final class PlaybackFacade {
       session.volume,
       reloadSource: persist,
     );
+    if (!_isCurrentSession(session)) return;
     if (persist) await flushSessionStatePersistence();
   }
 
@@ -1273,7 +1283,11 @@ final class PlaybackFacade {
     bool notify = true,
   }) async {
     final session = service.sessions[sessionId];
-    if (session == null) return;
+    if (session == null ||
+        session.isDisposed ||
+        !identical(service.sessions[session.id], session)) {
+      return;
+    }
     final nextSpeed = nearestPlaybackSpeed(speed);
     if ((session.speed - nextSpeed).abs() < 0.001) {
       if (persist) await flushSessionStatePersistence();
@@ -1284,6 +1298,7 @@ final class PlaybackFacade {
     service.markActiveSessionsDirty();
     if (notify) _onSessionSettingsChanged?.call();
     final response = await nativeRepository.setSpeed(session.id, nextSpeed);
+    if (!_isCurrentSession(session)) return;
     if (response.isFailure) {
       session.speed = previous;
       service.markActiveSessionsDirty();
@@ -1294,6 +1309,12 @@ final class PlaybackFacade {
       return;
     }
     if (persist) await flushSessionStatePersistence();
+  }
+
+  bool _isCurrentSession(PlaybackSession? session) {
+    return session != null &&
+        !session.isDisposed &&
+        identical(service.sessions[session.id], session);
   }
 
   double nearestPlaybackSpeed(double speed) {

@@ -106,6 +106,20 @@ class NativePlaybackForegroundCoordinatorTest {
     }
 
     @Test
+    fun `watchdog stops when playback becomes idle`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost()
+        val coordinator = coordinator(host, environment)
+        coordinator.startOrUpdate()
+        coordinator.ensureWatchdog()
+
+        host.hasPlaybackToKeepAlive = false
+        environment.runFirst(4_000L)
+
+        assertTrue(environment.tasks.isEmpty())
+    }
+
+    @Test
     fun `task removal preserves active sessions and stops empty service`() {
         val environment = FakeForegroundEnvironment()
         val host = FakeForegroundHost()

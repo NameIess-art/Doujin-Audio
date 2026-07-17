@@ -7,6 +7,11 @@ import '../domain/asmr_models.dart';
 class AsmrApiService {
   AsmrApiService({HttpClient? httpClient, Uri? baseUri})
     : _httpClient = httpClient ?? HttpClient() {
+    try {
+      _httpClient.connectionTimeout = _requestTimeout;
+    } catch (_) {
+      // Test doubles and platform clients may not expose socket settings.
+    }
     if (baseUri != null) {
       _candidateDomains = [baseUri.toString(), ...defaultDomains];
     } else {
@@ -66,6 +71,7 @@ class AsmrApiService {
   }
 
   static const String _acceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
+  static const Duration _requestTimeout = Duration(seconds: 15);
 
   Future<AsmrAuthSession> login({
     required String name,
@@ -303,7 +309,9 @@ class AsmrApiService {
       final uri = baseUri.replace(path: path, queryParameters: queryParameters);
 
       try {
-        final request = await _httpClient.openUrl(method, uri);
+        final request = await _httpClient
+            .openUrl(method, uri)
+            .timeout(_requestTimeout);
         request.headers.set(HttpHeaders.acceptHeader, 'application/json');
         request.headers.set(HttpHeaders.acceptLanguageHeader, _acceptLanguage);
         request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
@@ -313,8 +321,10 @@ class AsmrApiService {
         if (body != null) {
           request.add(utf8.encode(json.encode(body)));
         }
-        final response = await request.close();
-        final responseBody = await utf8.decodeStream(response);
+        final response = await request.close().timeout(_requestTimeout);
+        final responseBody = await utf8
+            .decodeStream(response)
+            .timeout(const Duration(seconds: 30));
         if (response.statusCode >= 500 && response.statusCode <= 599) {
           throw AsmrApiException(
             'ASMR API server error (${response.statusCode}).',

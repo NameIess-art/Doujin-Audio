@@ -39,6 +39,43 @@ void main() {
     expect(client.getUrlCalls, 2);
   });
 
+  test(
+    'rejects oversized cover responses before writing a cache file',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final directory = await Directory.systemTemp.createTemp('dlsite_cover_');
+      final subscription = server.listen((request) async {
+        request.response.add(List<int>.filled(5 * 1024 * 1024 + 1, 1));
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+
+      final service = DlsiteMetadataService(
+        requestTimeout: const Duration(seconds: 1),
+      );
+
+      await expectLater(
+        service.downloadCover(
+          coverUrl: 'http://${server.address.address}:${server.port}/cover.jpg',
+          folderPath: directory.path,
+          rjCode: 'RJ01014447',
+        ),
+        throwsA(
+          isA<DlsiteMetadataException>().having(
+            (error) => error.message,
+            'message',
+            'Cover response is too large',
+          ),
+        ),
+      );
+      expect(directory.listSync().whereType<File>(), isEmpty);
+    },
+  );
+
   test('parses DLsite product json into editable metadata', () {
     final metadata = DlsiteMetadata.fromProductJson({
       'workno': 'RJ01014447',

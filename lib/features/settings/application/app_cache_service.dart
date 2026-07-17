@@ -273,8 +273,6 @@ class AppCacheService {
         }
       }
     }
-    if (files.length <= 1) return;
-
     final entries = <_CacheFileEntry>[];
     var totalBytes = 0;
     for (final file in files) {
@@ -293,13 +291,11 @@ class AppCacheService {
 
     final trimTargetBytes = applicationCacheTrimTargetBytes(maxBytes);
     entries.sort((a, b) => a.modified.compareTo(b.modified));
-    var remainingFiles = entries.length;
     for (final entry in entries) {
-      if (totalBytes <= trimTargetBytes || remainingFiles <= 1) break;
+      if (totalBytes <= trimTargetBytes) break;
       try {
         await entry.file.delete();
         totalBytes -= entry.size;
-        remainingFiles -= 1;
       } catch (_) {
         // Cache eviction is best effort; a locked file can be retried later.
       }

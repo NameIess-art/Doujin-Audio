@@ -131,4 +131,43 @@ void main() {
       lessThanOrEqualTo(4),
     );
   });
+
+  test('enforces cache limit when one file alone is oversized', () async {
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    final tempDirectory = await Directory.systemTemp.createTemp(
+      'single_oversized_cache_',
+    );
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'getTemporaryDirectory') {
+            return tempDirectory.path;
+          }
+          return null;
+        });
+    addTearDown(() async {
+      await AppCacheService.setMaxCacheBytes(
+        AppCacheService.defaultMaxCacheBytes,
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      if (await tempDirectory.exists()) {
+        await tempDirectory.delete(recursive: true);
+      }
+    });
+
+    await AppCacheService.setMaxCacheBytes(5);
+    final cacheDirectory = Directory(
+      '${tempDirectory.path}${Platform.pathSeparator}video_frames',
+    );
+    await cacheDirectory.create(recursive: true);
+    final oversized = File(
+      '${cacheDirectory.path}${Platform.pathSeparator}oversized.jpg',
+    );
+    await oversized.writeAsBytes(List<int>.filled(12, 1));
+
+    await AppCacheService.enforceLimit();
+
+    expect(await oversized.exists(), isFalse);
+    expect(await AppCacheService.estimateDartCacheBytes(), 0);
+  });
 }

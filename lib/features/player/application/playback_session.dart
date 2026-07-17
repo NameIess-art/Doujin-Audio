@@ -71,6 +71,7 @@ class PlaybackSession {
   PlayerState state;
   String? playbackError;
   PlayerState? previousStateBeforeLastStateEvent;
+  bool isDisposed = false;
 
   Stream<PlayerState> get stateStream => _stateController.stream;
   Stream<Duration> get positionStream => _positionController.stream;
@@ -82,6 +83,7 @@ class PlaybackSession {
   bool get hasPendingAudioEffectsSync => pendingNativeAudioEffects != null;
 
   bool applyNativeSnapshot(NativePlaybackSnapshot snapshot) {
+    if (isDisposed) return false;
     if (snapshot.sessionId != id) return false;
     final snapshotCommandId = snapshot.transportCommandId;
     if (snapshotCommandId != null && snapshotCommandId < transportCommandId) {
@@ -176,6 +178,7 @@ class PlaybackSession {
   }
 
   void applyNativeProgress(NativePlaybackProgressUpdate progress) {
+    if (isDisposed) return;
     if (progress.sessionId != id) return;
     if (lastKnownPosition != progress.position) {
       lastKnownPosition = progress.position;
@@ -192,6 +195,7 @@ class PlaybackSession {
   }
 
   void setOptimisticState({bool? playing, ProcessingState? processingState}) {
+    if (isDisposed) return;
     final nextState = PlayerState(
       playing ?? state.playing,
       processingState ?? state.processingState,
@@ -203,17 +207,20 @@ class PlaybackSession {
   }
 
   void setOptimisticPosition(Duration position) {
+    if (isDisposed) return;
     lastKnownPosition = position;
     _positionController.add(position);
   }
 
   void setOptimisticDuration(Duration? nextDuration) {
+    if (isDisposed) return;
     if (duration == nextDuration) return;
     duration = nextDuration;
     _durationController.add(duration);
   }
 
   void resetStreamsForNewTrack() {
+    if (isDisposed) return;
     lastKnownPosition = Duration.zero;
     _positionController.add(Duration.zero);
     duration = null;
@@ -223,6 +230,8 @@ class PlaybackSession {
   }
 
   void dispose() {
+    if (isDisposed) return;
+    isDisposed = true;
     for (final subscription in subscriptions) {
       subscription.cancel();
     }

@@ -32,6 +32,7 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
 import java.util.UUID
 
 internal fun shouldPublishProgressHeartbeat(
@@ -158,6 +159,10 @@ class NativePlaybackService : MediaSessionService() {
     private val fileCacheOperations by lazy { FileCacheOperations(applicationContext) }
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val restoreExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "NativePlaybackRestore").apply { isDaemon = true }
+    }
+    private var restoreGeneration = 0L
     private val progressPublisher by lazy {
         NativePlaybackProgressPublisher(
             mainHandler = mainHandler,
@@ -657,6 +662,8 @@ class NativePlaybackService : MediaSessionService() {
                 "wakeLockHeld=${playbackWakeLock.isHeld()}"
         )
         stateListeners.clear()
+        restoreGeneration += 1
+        restoreExecutor.shutdownNow()
         mainHandler.removeCallbacks(positionTicker)
         progressPublisher.shutdown()
         statePersistence.shutdown()
@@ -1454,8 +1461,21 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun restorePersistedPlaybackAfterServiceRestart() {
-        val storedSessions = NativePlaybackStateStore.loadSessions(this)
-            .filter { it.playing || it.playWhenReady }
+        val generation = ++restoreGeneration
+        restoreExecutor.execute {
+            val storedSessions = NativePlaybackStateStore.loadSessions(applicationContext)
+                .filter { it.playing || it.playWhenReady }
+            mainHandler.post {
+                if (generation != restoreGeneration) return@post
+                restorePersistedPlaybackOnMain(storedSessions, generation)
+            }
+        }
+    }
+
+    private fun restorePersistedPlaybackOnMain(
+        storedSessions: List<StoredNativePlaybackSession>,
+        generation: Long
+    ) {
         if (storedSessions.isEmpty()) {
             logInfo("sticky_restore_skip no_active_sessions")
             return
@@ -1465,30 +1485,44 @@ class NativePlaybackService : MediaSessionService() {
         foregroundCoordinator.startBootstrap()
         notificationsDismissed = false
         playbackSuspended = false
+        val restoredSessionIds = mutableListOf<String>()
 
-        val restoredSessionIds = sessionRestorer.restore(
-            storedSessions = storedSessions,
-            autoPlay = { stored -> stored.playWhenReady || stored.playing }
-        )
+        fun restoreNext(index: Int) {
+            if (generation != restoreGeneration) return
+            if (index >= storedSessions.size) {
+                if (restoredSessionIds.isEmpty()) {
+                    logInfo("sticky_restore_skip restore_failed")
+                    releaseWakeLock()
+                    foregroundCoordinator.stop(
+                        reason = "sticky_restore_failed",
+                        removeNotification = true
+                    )
+                    return
+                }
 
-        if (restoredSessionIds.isEmpty()) {
-            logInfo("sticky_restore_skip restore_failed")
-            releaseWakeLock()
-            foregroundCoordinator.stop(
-                reason = "sticky_restore_failed",
-                removeNotification = true
+                restoredSessionIds.forEach(::markPlaybackIntended)
+                evictPlayersIfNeeded()
+                restoredSessionIds.forEach(::publishSessionState)
+                ensureTicker()
+                ensureStatePersistenceTicker()
+                persistSessionStateNow()
+                syncForegroundState()
+                logInfo(
+                    "sticky_restore_complete restored=${restoredSessionIds.size} " +
+                        "queueItems=${storedSessions.sumOf { it.queue.size }}"
+                )
+                return
+            }
+
+            val stored = storedSessions[index]
+            restoredSessionIds += sessionRestorer.restore(
+                storedSessions = listOf(stored),
+                autoPlay = { it.playWhenReady || it.playing }
             )
-            return
+            mainHandler.post { restoreNext(index + 1) }
         }
 
-        restoredSessionIds.forEach(::markPlaybackIntended)
-        evictPlayersIfNeeded()
-        restoredSessionIds.forEach(::publishSessionState)
-        ensureTicker()
-        ensureStatePersistenceTicker()
-        persistSessionStateNow()
-        syncForegroundState()
-        logInfo("sticky_restore_complete restored=${restoredSessionIds.size}")
+        restoreNext(0)
     }
 
     private fun restorePersistedSessionsForTimer(sessionIds: List<String>) {

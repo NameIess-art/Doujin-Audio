@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/core/errors/native_result.dart';
@@ -145,6 +147,40 @@ void main() {
     expect(removed, <String>[first.id, second.id]);
     expect(stateChanges, 4);
     expect(runtimeChanges, 3);
+  });
+
+  test('session removal wins over an in-flight speed command', () async {
+    final library = LibraryFacade.create();
+    final native = _RecordingNativePlaybackRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('racing');
+    var settingsChanges = 0;
+    playback.attachSessionRuntime(
+      onSessionRegistered: (_) {},
+      onSessionsRemoved: (_) {},
+      onSessionsReordered: () {},
+      onSessionStateChanged: () {},
+      onSessionSettingsChanged: () => settingsChanges++,
+    );
+    playback.registerSession(session);
+    final gate = Completer<NativeResult<NativePlaybackSnapshot>>();
+    native.speedGate = gate;
+
+    final speedChange = playback.setSessionSpeed(session.id, 1.5);
+    await Future<void>.delayed(Duration.zero);
+    await playback.removeSession(session.id);
+    gate.complete(const NativeSuccess<NativePlaybackSnapshot>());
+    await speedChange;
+
+    expect(session.isDisposed, isTrue);
+    expect(playback.sessionById(session.id), isNull);
+    expect(settingsChanges, 1);
+
+    await playback.dispose();
+    await library.dispose();
   });
 
   test('PlaybackFacade owns transport command decisions', () async {
@@ -587,6 +623,7 @@ final class _RecordingNativePlaybackRepository
   final List<(double, bool)> volumeUpdates = <(double, bool)>[];
   final List<double> speedUpdates = <double>[];
   bool failSpeed = false;
+  Completer<NativeResult<NativePlaybackSnapshot>>? speedGate;
   int audioEffectsCalls = 0;
   bool failAudioEffects = false;
 
@@ -633,6 +670,8 @@ final class _RecordingNativePlaybackRepository
     double speed,
   ) async {
     speedUpdates.add(speed);
+    final gate = speedGate;
+    if (gate != null) return gate.future;
     if (failSpeed) {
       return const NativeFailure<NativePlaybackSnapshot>('speed failed');
     }

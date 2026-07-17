@@ -764,7 +764,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
       if (plannedFiles.isNotEmpty) {
         final client = HttpClient()
-          ..maxConnectionsPerHost = _maxConcurrentFilesPerTask;
+          ..maxConnectionsPerHost = _maxConcurrentFilesPerTask
+          ..connectionTimeout = const Duration(seconds: 15);
         _activeHttpClients[workId] = client;
         var nextFileIndex = 0;
         var stopWorkers = false;
@@ -1085,8 +1086,12 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     var received = 0;
     try {
+      const requestTimeout = Duration(seconds: 15);
+      const downloadIdleTimeout = Duration(seconds: 30);
       _throwIfCancelled(workId);
-      final request = await client.getUrl(Uri.parse(item.url));
+      final request = await client
+          .getUrl(Uri.parse(item.url))
+          .timeout(requestTimeout);
       request.headers.set(
         HttpHeaders.userAgentHeader,
         'Nameless Audio downloader',
@@ -1094,14 +1099,14 @@ class AsmrDownloadManager extends ChangeNotifier {
       for (final header in asmrMediaRequestHeadersForUrl(item.url).entries) {
         request.headers.set(header.key, header.value);
       }
-      final response = await request.close();
+      final response = await request.close().timeout(requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
 
       final sink = tempFile.openWrite();
       try {
-        await for (final chunk in response) {
+        await for (final chunk in response.timeout(downloadIdleTimeout)) {
           _throwIfCancelled(workId);
           received += chunk.length;
           sink.add(chunk);

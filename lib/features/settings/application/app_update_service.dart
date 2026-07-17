@@ -42,6 +42,8 @@ class AppUpdateService {
       'https://github.com/$owner/$repo/releases/latest';
   static const String repositoryPage = 'https://github.com/$owner/$repo';
   static const String releasesPage = 'https://github.com/$owner/$repo/releases';
+  static const Duration _requestTimeout = Duration(seconds: 15);
+  static const Duration _downloadIdleTimeout = Duration(seconds: 30);
   final UpdatePlatformService _platform;
   final HttpClient Function() _httpClientFactory;
   final Future<Directory> Function() _temporaryDirectoryProvider;
@@ -56,6 +58,11 @@ class AppUpdateService {
   Future<AppUpdateInfo> checkLatest() async {
     final currentVersion = await currentAppVersion();
     final client = _httpClientFactory();
+    try {
+      client.connectionTimeout = _requestTimeout;
+    } catch (_) {
+      // Test doubles and platform clients may not expose socket settings.
+    }
     try {
       try {
         return await _checkLatestFromApi(client, currentVersion);
@@ -76,14 +83,19 @@ class AppUpdateService {
     HttpClient client,
     AppVersionInfo currentVersion,
   ) async {
-    final request = await client.getUrl(Uri.parse(releasesApi));
+    final request = await client
+        .getUrl(Uri.parse(releasesApi))
+        .timeout(_requestTimeout);
     request.headers.set(
       HttpHeaders.acceptHeader,
       'application/vnd.github+json',
     );
     request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
-    final response = await request.close();
-    final body = await response.transform(utf8.decoder).join();
+    final response = await request.close().timeout(_requestTimeout);
+    final body = await response
+        .transform(utf8.decoder)
+        .join()
+        .timeout(_downloadIdleTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const HttpException('GitHub release request failed.');
     }
@@ -229,11 +241,16 @@ class AppUpdateService {
   }
 
   Future<String> _resolveLatestReleaseTag(HttpClient client) async {
-    final request = await client.getUrl(Uri.parse(latestReleasePage));
+    final request = await client
+        .getUrl(Uri.parse(latestReleasePage))
+        .timeout(_requestTimeout);
     request.followRedirects = false;
     request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
-    final response = await request.close();
-    final body = await response.transform(utf8.decoder).join();
+    final response = await request.close().timeout(_requestTimeout);
+    final body = await response
+        .transform(utf8.decoder)
+        .join()
+        .timeout(_downloadIdleTimeout);
     final location = response.headers.value(HttpHeaders.locationHeader);
     if (location != null && location.isNotEmpty) {
       final tagName = _tagNameFromReleaseUri(
@@ -253,10 +270,13 @@ class AppUpdateService {
     String tagName,
   ) async {
     final uri = Uri.parse('$releasesPage/expanded_assets/$tagName');
-    final request = await client.getUrl(uri);
+    final request = await client.getUrl(uri).timeout(_requestTimeout);
     request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
-    final response = await request.close();
-    final body = await response.transform(utf8.decoder).join();
+    final response = await request.close().timeout(_requestTimeout);
+    final body = await response
+        .transform(utf8.decoder)
+        .join()
+        .timeout(_downloadIdleTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const HttpException('GitHub release asset page request failed.');
     }
@@ -404,7 +424,12 @@ class AppUpdateService {
       file.path,
       partialFile.path,
     ]);
-    final client = HttpClient();
+    final client = _httpClientFactory();
+    try {
+      client.connectionTimeout = _requestTimeout;
+    } catch (_) {
+      // Test doubles and platform clients may not expose socket settings.
+    }
     try {
       if (await file.exists()) {
         await file.delete();
@@ -423,12 +448,14 @@ class AppUpdateService {
         checksumUrl,
         assetName,
       );
-      final request = await client.getUrl(Uri.parse(assetUrl));
+      final request = await client
+          .getUrl(Uri.parse(assetUrl))
+          .timeout(_requestTimeout);
       request.headers.set(
         HttpHeaders.userAgentHeader,
         'Nameless Audio updater',
       );
-      final response = await request.close();
+      final response = await request.close().timeout(_requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw const HttpException('Update download failed.');
       }
@@ -437,7 +464,7 @@ class AppUpdateService {
       var received = 0;
       final sink = partialFile.openWrite();
       try {
-        await for (final chunk in response) {
+        await for (final chunk in response.timeout(_downloadIdleTimeout)) {
           received += chunk.length;
           sink.add(chunk);
           if (total > 0) {
@@ -478,10 +505,15 @@ class AppUpdateService {
     String checksumUrl,
     String assetName,
   ) async {
-    final request = await client.getUrl(Uri.parse(checksumUrl));
+    final request = await client
+        .getUrl(Uri.parse(checksumUrl))
+        .timeout(_requestTimeout);
     request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
-    final response = await request.close();
-    final body = await response.transform(utf8.decoder).join();
+    final response = await request.close().timeout(_requestTimeout);
+    final body = await response
+        .transform(utf8.decoder)
+        .join()
+        .timeout(_downloadIdleTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw const HttpException('Update checksum download failed.');
     }

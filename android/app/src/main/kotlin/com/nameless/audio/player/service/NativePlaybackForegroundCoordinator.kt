@@ -58,8 +58,10 @@ internal class NativePlaybackForegroundCoordinator(
             if (host.hasPlaybackToKeepAlive) {
                 host.onWatchdog()
                 startOrUpdate(forceRefresh = true)
+                environment.postDelayed(this, watchdogIntervalMs)
+            } else {
+                stopWatchdog()
             }
-            environment.postDelayed(this, watchdogIntervalMs)
         }
     }
 
@@ -71,6 +73,7 @@ internal class NativePlaybackForegroundCoordinator(
             ensureWatchdog()
         } else if (host.foregroundSuppressed) {
             cancelGrace()
+            stopWatchdog()
             host.onSuppressedIdle()
         } else {
             scheduleGrace()

@@ -161,6 +161,7 @@ internal class NativePlaybackRecoveryController(
     private val attempts = mutableMapOf<String, Int>()
     private val retryTasks = mutableMapOf<String, Runnable>()
     private val expiryTasks = mutableMapOf<String, Runnable>()
+    private var triggerInProgress = false
     private val startedAt = mutableMapOf<String, Long>()
     private var listening = false
 
@@ -221,11 +222,20 @@ internal class NativePlaybackRecoveryController(
     }
 
     fun trigger(reason: String) {
-        if (pending.isNotEmpty()) {
-            host.logInfo("playback_recovery_trigger trigger=$reason pending=${pending.size}")
-            pending.toList().forEach { retry(it, reason) }
+        if (triggerInProgress) {
+            host.logInfo("playback_recovery_trigger_skipped_reentrant trigger=$reason")
+            return
         }
-        recoverIntendedPlayback(reason)
+        triggerInProgress = true
+        try {
+            if (pending.isNotEmpty()) {
+                host.logInfo("playback_recovery_trigger trigger=$reason pending=${pending.size}")
+                pending.toList().forEach { retry(it, reason) }
+            }
+            recoverIntendedPlayback(reason)
+        } finally {
+            triggerInProgress = false
+        }
     }
 
     fun shouldKeepAlive(): Boolean = intended.any { sessionId ->

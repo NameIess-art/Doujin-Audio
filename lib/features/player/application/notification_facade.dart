@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 
-import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/media/subtitle_parser.dart';
@@ -81,7 +80,6 @@ final class NotificationFacade {
   void Function() _syncKeepAlive = _noop;
   bool Function() _hasPlaybackToKeepAliveResolver = _alwaysFalse;
   Future<void> Function() _clearUnifiedNotifications = _noopAsync;
-  Future<void> Function() _stopPlaybackKeepAlive = _noopAsync;
   String? Function() _preferredSessionId = _noSessionId;
   void Function() _notifyNotificationChanged = _noop;
   NotificationTrackResolver _trackByPath = _noTrack;
@@ -190,8 +188,6 @@ final class NotificationFacade {
       _resumeNotificationSession(session);
   Future<void> clearUnifiedNotificationsOnPlatform() =>
       _clearUnifiedPlaybackNotificationsOnPlatform();
-  Future<void> stopPlaybackKeepAliveOnPlatform() =>
-      _stopPlaybackKeepAliveOnPlatform();
   bool isActiveCoverKey(String key) => _isActiveCoverKey(key);
   void ensureSubtitleTrackLoaded(String trackPath) =>
       _ensureSubtitleTrackLoaded(trackPath);
@@ -215,8 +211,7 @@ final class NotificationFacade {
       ..unifiedNotificationSyncPending = false
       ..queuedNotificationRefreshSessionId = null
       ..notificationsDismissedWhilePaused = false
-      ..notificationActionRefreshPending = false
-      ..keepAliveSyncDeferred = false;
+      ..notificationActionRefreshPending = false;
     stateService.notificationSubtitleTexts.clear();
     stateService.notificationSubtitleTrackPaths.clear();
     _subtitleService.clear();
@@ -262,7 +257,6 @@ final class NotificationFacade {
     required void Function() syncKeepAlive,
     required bool Function() hasPlaybackToKeepAlive,
     required Future<void> Function() clearUnifiedNotifications,
-    required Future<void> Function() stopPlaybackKeepAlive,
     required String? Function() preferredSessionId,
     required void Function() notifyNotificationChanged,
   }) {
@@ -276,7 +270,6 @@ final class NotificationFacade {
     _syncKeepAlive = syncKeepAlive;
     _hasPlaybackToKeepAliveResolver = hasPlaybackToKeepAlive;
     _clearUnifiedNotifications = clearUnifiedNotifications;
-    _stopPlaybackKeepAlive = stopPlaybackKeepAlive;
     _preferredSessionId = preferredSessionId;
     _notifyNotificationChanged = notifyNotificationChanged;
   }
@@ -420,7 +413,6 @@ final class NotificationFacade {
       return;
     }
     await _clearUnifiedNotifications();
-    await _stopPlaybackKeepAlive();
     await playback.pauseAllSessions();
     _setFocusSessionId(_preferredSessionId());
     _syncKeepAlive();
@@ -431,7 +423,6 @@ final class NotificationFacade {
     return stateService.guardNotificationAction(
       action,
       notify: _notify,
-      flushKeepAliveSync: _syncKeepAlive,
       syncNotificationState: () =>
           _syncNotificationState(immediateUnifiedSync: true),
     );

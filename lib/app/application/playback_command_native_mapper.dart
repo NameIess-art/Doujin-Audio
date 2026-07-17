@@ -53,7 +53,6 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
       }
     }
     if (application.playbackIntentChanged) {
-      _syncKeepCpuAwake();
       _notifyPlaybackChanged();
     }
   }

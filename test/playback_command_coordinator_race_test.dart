@@ -40,6 +40,190 @@ void main() {
       expect(runtimeGraph.playback.service.activeSessions, isEmpty);
     });
 
+    test(
+      'runtime restore keeps a surviving native session authoritative',
+      () async {
+        const track = MusicTrack(
+          path: '/music/native-survives.mp3',
+          displayName: 'Native Survives',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        final session = PlaybackSession(
+          id: 'native-survives',
+          currentTrackPath: track.path,
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.folderSequential,
+          volume: 0.4,
+          createdAt: DateTime(2026),
+          state: PlayerState(false, ProcessingState.idle),
+          customQueueTracks: const <MusicTrack>[track],
+        );
+        runtimeGraph.playback.service.sessions[session.id] = session;
+        runtimeGraph.playback.service.markActiveSessionsDirty();
+        var prepareCalls = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                prepareCalls++;
+              }
+              if (call.method == NativePlaybackMethod.snapshot) {
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'focusedSessionId': session.id,
+                    'sessions': <Object?>[
+                      <String, Object?>{
+                        'sessionId': session.id,
+                        'path': track.path,
+                        'playing': true,
+                        'playWhenReady': true,
+                        'processingState': 'ready',
+                        'positionMs': 42000,
+                        'bufferedPositionMs': 50000,
+                        'volume': 0.8,
+                        'speed': 1.25,
+                        'boostGain': 1.0,
+                        'channelSwap': false,
+                        'queueIndex': 0,
+                      },
+                    ],
+                  },
+                };
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        await runtimeGraph.playbackCommands.restorePersistedRuntime(
+          <PlaybackSession>[session],
+          focusedSessionId: session.id,
+        );
+
+        expect(prepareCalls, 0);
+        expect(session.state.playing, isTrue);
+        expect(session.position, const Duration(seconds: 42));
+        expect(session.volume, 0.8);
+        expect(session.speed, 1.25);
+        expect(
+          runtimeGraph.notifications.stateService.notificationFocusSessionId,
+          session.id,
+        );
+      },
+    );
+
+    test(
+      'runtime restore prepares sessions missing from native snapshot',
+      () async {
+        const track = MusicTrack(
+          path: '/music/native-missing.mp3',
+          displayName: 'Native Missing',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        final session = PlaybackSession(
+          id: 'native-missing',
+          currentTrackPath: track.path,
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.folderSequential,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: PlayerState(false, ProcessingState.idle),
+          customQueueTracks: const <MusicTrack>[track],
+        );
+        runtimeGraph.playback.service.sessions[session.id] = session;
+        runtimeGraph.playback.service.markActiveSessionsDirty();
+        var prepareCalls = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.snapshot) {
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{'sessions': const <Object?>[]},
+                };
+              }
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                prepareCalls++;
+                final arguments = call.arguments as Map<Object?, Object?>;
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': session.id,
+                    'path': track.path,
+                    'uri': arguments['uri'],
+                    'playing': false,
+                    'playWhenReady': false,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'volume': 1.0,
+                    'boostGain': 1.0,
+                    'channelSwap': false,
+                  },
+                };
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        await runtimeGraph.playbackCommands.restorePersistedRuntime(
+          <PlaybackSession>[session],
+          focusedSessionId: session.id,
+        );
+
+        expect(prepareCalls, 1);
+        expect(session.loadedPath, track.path);
+      },
+    );
+
+    test(
+      'runtime restore does not prepare when native snapshot is unavailable',
+      () async {
+        const track = MusicTrack(
+          path: '/music/native-snapshot-unavailable.mp3',
+          displayName: 'Native Snapshot Unavailable',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        final session = PlaybackSession(
+          id: 'native-snapshot-unavailable',
+          currentTrackPath: track.path,
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.folderSequential,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: PlayerState(false, ProcessingState.idle),
+          customQueueTracks: const <MusicTrack>[track],
+        );
+        runtimeGraph.playback.service.sessions[session.id] = session;
+        runtimeGraph.playback.service.markActiveSessionsDirty();
+        var prepareCalls = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                prepareCalls++;
+              }
+              return <String, Object?>{
+                'ok': false,
+                'errorCode': 'service_unavailable',
+                'error': 'Native playback service is not ready.',
+              };
+            });
+
+        await runtimeGraph.playbackCommands.restorePersistedRuntime(
+          <PlaybackSession>[session],
+          focusedSessionId: session.id,
+        );
+
+        expect(prepareCalls, 0);
+        expect(session.loadedPath, isNull);
+      },
+    );
+
     test('added sessions follow the auto-play setting', () async {
       var prepareCalls = 0;
       var playCalls = 0;

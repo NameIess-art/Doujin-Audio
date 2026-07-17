@@ -46,7 +46,7 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    test('sends keep-awake and timer alarm payloads', () async {
+    test('sends timer alarm payloads', () async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (call) async {
             calls.add(call);
@@ -57,13 +57,6 @@ void main() {
         isAndroidOverride: true,
       );
 
-      await service.setKeepCpuAwake(
-        enabled: true,
-        hasActivePlayback: true,
-        hasActiveTimer: false,
-        usesUnifiedPlaybackNotifications: true,
-        keepForegroundServiceAlive: true,
-      );
       await service.syncPlaybackTimerAlarms(
         timerMode: 1,
         timerDurationMs: 30,
@@ -78,10 +71,8 @@ void main() {
       );
 
       expect(calls.map((call) => call.method), [
-        PowerMethod.setKeepCpuAwake,
         PowerMethod.syncPlaybackTimerAlarms,
       ]);
-      expect(calls.first.arguments, containsPair('enabled', true));
       expect(calls.last.arguments, containsPair('pausedSessionIds', ['s1']));
       expect(calls.last.arguments, containsPair('generation', 2));
     });

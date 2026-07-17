@@ -137,6 +137,8 @@ internal class NativePlaybackSession(
     var artUri: String? = null
     var volume: Float = 1f
     var fadeMultiplier: Float = 1f
+    var focusDuckMultiplier: Float = 1f
+        private set
     var speed: Float = 1f
     var repeatOne: Boolean = false
     var repeatAll: Boolean = false
@@ -328,6 +330,11 @@ internal class NativePlaybackSession(
         playerOrNull()?.let(::applyVolumeToPlayer)
     }
 
+    fun applyFocusDuckMultiplier(multiplier: Float) {
+        focusDuckMultiplier = multiplier.coerceIn(0f, 1f)
+        playerOrNull()?.let(::applyVolumeToPlayer)
+    }
+
     fun applySpeed(speed: Float) {
         this.speed = normalizeSpeed(speed)
         playerOrNull()?.let(::applySpeedToPlayer)
@@ -346,7 +353,11 @@ internal class NativePlaybackSession(
     private fun applyVolumeToPlayer(player: ExoPlayer) {
         val normalizedVolume = PlaybackVolumeMapper.normalize(volume)
         this.volume = normalizedVolume
-        player.volume = PlaybackVolumeMapper.playerVolume(normalizedVolume) * fadeMultiplier
+        player.volume = effectiveNativePlaybackVolume(
+            playerVolume = PlaybackVolumeMapper.playerVolume(normalizedVolume),
+            fadeMultiplier = fadeMultiplier,
+            focusDuckMultiplier = focusDuckMultiplier
+        )
         audioEffects.syncLoudnessEnhancer(player.audioSessionId, volume)
     }
 
@@ -537,8 +548,23 @@ internal class NativePlaybackSession(
             subtitle.orEmpty(),
             playing,
             playWhenReady,
-            repeatOne
+            repeatOne,
+            hasPreviousMediaItem(),
+            hasNextMediaItem()
         ).joinToString("|")
+    }
+
+    fun hasPreviousMediaItem(): Boolean {
+        val player = _player
+        if (player != null) return player.hasPreviousMediaItem()
+        return currentQueueIndexFor(queue) > 0
+    }
+
+    fun hasNextMediaItem(): Boolean {
+        val player = _player
+        if (player != null) return player.hasNextMediaItem()
+        val currentIndex = currentQueueIndexFor(queue)
+        return queue.isNotEmpty() && currentIndex < queue.lastIndex
     }
 
     fun syncCurrentMediaItemFromPlayer() {
@@ -605,6 +631,14 @@ internal class NativePlaybackSession(
     private fun eqCapabilitiesSnapshot(): Map<String, Any?> =
         audioEffects.eqCapabilitiesSnapshot()
 }
+
+internal fun effectiveNativePlaybackVolume(
+    playerVolume: Float,
+    fadeMultiplier: Float,
+    focusDuckMultiplier: Float
+): Float = playerVolume.coerceAtLeast(0f) *
+    fadeMultiplier.coerceIn(0f, 1f) *
+    focusDuckMultiplier.coerceIn(0f, 1f)
 
 internal interface NativePlaybackSessionSnapshotSource {
     fun currentAudioSessionId(): Int

@@ -10,7 +10,6 @@ class NotificationCoordinatorService {
   bool unifiedNotificationSyncInFlight = false;
   bool unifiedNotificationSyncPending = false;
   bool notificationActionRefreshPending = false;
-  bool keepAliveSyncDeferred = false;
   String? queuedNotificationRefreshSessionId;
   bool notificationsDismissedWhilePaused = false;
   Timer? notificationActionRefreshTimer;
@@ -87,7 +86,6 @@ class NotificationCoordinatorService {
 
   void beginNotificationAction({
     required VoidCallback notify,
-    required VoidCallback flushKeepAliveSync,
     required VoidCallback syncNotificationState,
   }) {
     unifiedNotificationSyncKey = null;
@@ -103,10 +101,6 @@ class NotificationCoordinatorService {
       if (notificationActionRefreshPending) {
         AppLogService.warning('notification_action_guard_timed_out');
         notificationActionRefreshPending = false;
-        if (keepAliveSyncDeferred) {
-          keepAliveSyncDeferred = false;
-          flushKeepAliveSync();
-        }
         syncNotificationState();
         notify();
       }
@@ -116,12 +110,10 @@ class NotificationCoordinatorService {
   Future<void> guardNotificationAction(
     Future<void> Function() action, {
     required VoidCallback notify,
-    required VoidCallback flushKeepAliveSync,
     required VoidCallback syncNotificationState,
   }) async {
     beginNotificationAction(
       notify: notify,
-      flushKeepAliveSync: flushKeepAliveSync,
       syncNotificationState: syncNotificationState,
     );
     try {
@@ -129,7 +121,6 @@ class NotificationCoordinatorService {
     } finally {
       scheduleNotificationActionRefresh(
         notify: notify,
-        flushKeepAliveSync: flushKeepAliveSync,
         syncNotificationState: syncNotificationState,
       );
     }
@@ -137,7 +128,6 @@ class NotificationCoordinatorService {
 
   void scheduleNotificationActionRefresh({
     required VoidCallback notify,
-    required VoidCallback flushKeepAliveSync,
     required VoidCallback syncNotificationState,
   }) {
     notificationActionGuardTimeout?.cancel();
@@ -148,10 +138,6 @@ class NotificationCoordinatorService {
       () {
         notificationActionRefreshTimer = null;
         notificationActionRefreshPending = false;
-        if (keepAliveSyncDeferred) {
-          keepAliveSyncDeferred = false;
-          flushKeepAliveSync();
-        }
         syncNotificationState();
         notify();
       },

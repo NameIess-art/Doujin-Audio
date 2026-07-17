@@ -370,7 +370,6 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   int _subscriptionGeneration = 0;
   Future<void> _attachSerial = Future<void>.value();
   bool _attachQueued = false;
-  static const int _maxReconnectAttempts = 5;
 
   @override
   Stream<NativePlaybackSnapshot> get snapshots => _controller.stream;
@@ -481,12 +480,13 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
 
   void _scheduleReconnect(int generation) {
     if (!_listeningEnabled) return;
-    if (_reconnectAttempt >= _maxReconnectAttempts) return;
-    _reconnectAttempt++;
-    final delay = Duration(milliseconds: 200 * _reconnectAttempt);
+    final delay = Duration(
+      milliseconds: nativePlaybackReconnectDelayMs(_reconnectAttempt),
+    );
+    if (_reconnectAttempt < 5) _reconnectAttempt++;
     AppLogService.warning(
       'native_playback_reconnecting delayMs=${delay.inMilliseconds} '
-      'attempt=$_reconnectAttempt max=$_maxReconnectAttempts',
+      'attempt=$_reconnectAttempt',
     );
     _reconnectTimer?.cancel();
     _reconnectTimer = Timer(delay, () {
@@ -503,7 +503,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   Future<void> stopListening() async {
     _listeningEnabled = false;
     _subscriptionGeneration++;
-    _reconnectAttempt = _maxReconnectAttempts;
+    _reconnectAttempt = 0;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     await _attachSerial;
@@ -786,4 +786,11 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       return NativeFailure<T>(error.toString());
     }
   }
+}
+
+int nativePlaybackReconnectDelayMs(int attempt) {
+  const delays = <int>[200, 400, 800, 1600, 3200, 5000];
+  if (attempt <= 0) return delays.first;
+  if (attempt >= delays.length) return delays.last;
+  return delays[attempt];
 }

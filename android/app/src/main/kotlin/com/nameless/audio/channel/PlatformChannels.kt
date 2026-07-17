@@ -43,8 +43,6 @@ internal object PowerMethods {
     const val OPEN_BATTERY_OPTIMIZATION_SETTINGS = "openBatteryOptimizationSettings"
     const val OPEN_EXACT_ALARM_SETTINGS = "openExactAlarmSettings"
     const val OPEN_MANAGE_ALL_FILES_ACCESS_SETTINGS = "openManageAllFilesAccessSettings"
-    const val SET_KEEP_CPU_AWAKE = "setKeepCpuAwake"
-    const val STOP_PLAYBACK_KEEP_ALIVE = "stopPlaybackKeepAlive"
     const val SYNC_PLAYBACK_TIMER_ALARMS = "syncPlaybackTimerAlarms"
 }
 

@@ -61,6 +61,7 @@ final class AudioRuntimeCoordinator {
 
   Future<void> resumeForeground() async {
     if (!_started || _disposed) return;
+    _startListening();
     await _onResumeForeground();
   }
 

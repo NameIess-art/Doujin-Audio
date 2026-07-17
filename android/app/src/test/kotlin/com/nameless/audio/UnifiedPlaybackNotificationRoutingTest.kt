@@ -52,6 +52,26 @@ class UnifiedPlaybackNotificationRoutingTest {
     }
 
     @Test
+    fun `compact actions only reference actions that were added`() {
+        assertEquals(
+            listOf(0),
+            notificationCompactActionIndices(hasPrevious = false, hasNext = false)
+        )
+        assertEquals(
+            listOf(0, 1),
+            notificationCompactActionIndices(hasPrevious = true, hasNext = false)
+        )
+        assertEquals(
+            listOf(0, 1),
+            notificationCompactActionIndices(hasPrevious = false, hasNext = true)
+        )
+        assertEquals(
+            listOf(0, 1, 2),
+            notificationCompactActionIndices(hasPrevious = true, hasNext = true)
+        )
+    }
+
+    @Test
     fun `foreground notification resolves a persisted active session after service restart`() {
         val sessionId = resolveNotificationSessionId(
             requestedSessionId = "",

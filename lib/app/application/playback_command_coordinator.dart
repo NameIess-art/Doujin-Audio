@@ -102,7 +102,6 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
   List<PlaybackSession> get activeSessions =>
       _playbackFacade.service.activeSessions;
 
-  void _syncKeepCpuAwake() => _keepAliveCoordinator.sync();
   Future<bool> _activateAudioSessionForPlayback() =>
       _keepAliveCoordinator.activateAudioSession();
   void _notifyPlaybackChanged() => _notifyPlaybackChangedCallback();
@@ -252,4 +251,6 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
     restoredSessions,
     focusedSessionId: focusedSessionId,
   );
+
+  Future<void> reconcileNativeRuntime() => _reconcileNativeRuntime();
 }

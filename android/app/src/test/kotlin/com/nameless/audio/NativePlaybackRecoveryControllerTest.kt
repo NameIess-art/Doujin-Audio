@@ -12,6 +12,19 @@ import org.junit.Test
 
 class NativePlaybackRecoveryControllerTest {
     @Test
+    fun foregroundSyncCannotReenterAnActiveRecoveryTrigger() {
+        val environment = FakeRecoveryEnvironment()
+        val host = FakeRecoveryHost()
+        val controller = NativePlaybackRecoveryController(host, environment, recoveryWindowMs = 60_000L)
+        host.onRequestAudioFocus = { controller.trigger("foreground_sync") }
+        controller.markIntended("player")
+
+        controller.trigger("network_available")
+
+        assertEquals(1, host.requestAudioFocusCalls)
+    }
+
+    @Test
     fun recoverableErrorSchedulesRetryAndExpiryThenDisposesListeners() {
         val environment = FakeRecoveryEnvironment()
         val host = FakeRecoveryHost()
@@ -95,16 +108,30 @@ private class FakeRecoveryEnvironment : NativePlaybackRecoveryEnvironment {
     }
 }
 
-private class FakeRecoveryHost : NativePlaybackRecoveryHost {
-    override fun session(sessionId: String): NativePlaybackSession? = null
-    override fun requestAudioFocus(): Boolean = true
+private class FakeRecoveryHost(
+    private val playbackSession: NativePlaybackSession? = null
+) : NativePlaybackRecoveryHost {
+    var syncForegroundCalls = 0
+    var onSyncForeground: () -> Unit = {}
+    var requestAudioFocusCalls = 0
+    var onRequestAudioFocus: () -> Unit = {}
+
+    override fun session(sessionId: String): NativePlaybackSession? = playbackSession
+    override fun requestAudioFocus(): Boolean {
+        requestAudioFocusCalls += 1
+        onRequestAudioFocus()
+        return true
+    }
     override fun focusSession(sessionId: String) = Unit
     override fun ensurePlayer(session: NativePlaybackSession): ExoPlayer = error("unused")
     override fun publishSession(sessionId: String) = Unit
     override fun publishAllSessions() = Unit
     override fun persistNow() = Unit
     override fun schedulePersist() = Unit
-    override fun syncForeground() = Unit
+    override fun syncForeground() {
+        syncForegroundCalls += 1
+        onSyncForeground()
+    }
     override fun logInfo(message: String, session: NativePlaybackSession?) = Unit
     override fun logWarn(
         message: String,

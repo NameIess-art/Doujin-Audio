@@ -60,9 +60,7 @@ abstract final class NativePlaybackMethod {
 // Method names — power
 // ---------------------------------------------------------------------------
 abstract final class PowerMethod {
-  static const String stopPlaybackKeepAlive = 'stopPlaybackKeepAlive';
   static const String syncPlaybackTimerAlarms = 'syncPlaybackTimerAlarms';
-  static const String setKeepCpuAwake = 'setKeepCpuAwake';
   static const String canManageAllFilesAccess = 'canManageAllFilesAccess';
   static const String openManageAllFilesAccessSettings =
       'openManageAllFilesAccessSettings';

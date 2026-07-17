@@ -6,15 +6,29 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
     required String? focusedSessionId,
   }) async {
     try {
+      final initialNativeRuntime = await _applyNativeRuntimeSnapshot(
+        syncUi: false,
+      );
+      if (initialNativeRuntime == null) return;
+      final nativeSessionIds =
+          initialNativeRuntime.sessions
+              .map((snapshot) => snapshot.sessionId)
+              .toSet();
+      final nativeFocusedSessionId = initialNativeRuntime.focusedSessionId;
+      final effectiveFocusedSessionId =
+          nativeFocusedSessionId != null &&
+              _sessions.containsKey(nativeFocusedSessionId)
+          ? nativeFocusedSessionId
+          : focusedSessionId;
       final restoredIds = restoredSessions
           .map((session) => session.id)
           .toList(growable: false);
 
       for (final id in restoredIds) {
         final session = _sessions[id];
-        if (session == null) continue;
+        if (session == null || nativeSessionIds.contains(id)) continue;
 
-        final shouldPrepareNow = id == focusedSessionId;
+        final shouldPrepareNow = id == effectiveFocusedSessionId;
         if (!shouldPrepareNow &&
             !_nativePlaybackRepository.supportsDeferredSessionRegistration) {
           continue;
@@ -57,16 +71,8 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
           );
           if (!prepareResult.isOk) continue;
           final preparedSnapshot = prepareResult.valueOrNull;
-          if (AppPlatform.usesDesktopPlaybackBridge &&
-              preparedSnapshot != null) {
-            _handleNativePlaybackSnapshot(
-              preparedSnapshot.copyWith(
-                volume: session.volume,
-                speed: session.speed,
-                audioEffects: session.audioEffects,
-                channelSwapEnabled: session.channelSwapEnabled,
-              ),
-            );
+          if (preparedSnapshot != null) {
+            _handleNativePlaybackSnapshot(preparedSnapshot);
           }
           session.loadedPath = track.path;
           _ensureSubtitleTrackLoaded(track.path);
@@ -80,28 +86,50 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
         }
       }
 
-      final snapshotResponse = await _nativePlaybackRepository.snapshot();
-      final snapshotValue = snapshotResponse.valueOrNull;
-      if (snapshotValue != null) {
-        for (final snapshot in snapshotValue.sessions) {
-          final session = _sessions[snapshot.sessionId];
-          _handleNativePlaybackSnapshot(
-            session == null
-                ? snapshot
-                : snapshot.copyWith(
-                    volume: session.volume,
-                    speed: session.speed,
-                    audioEffects: session.audioEffects,
-                    channelSwapEnabled: session.channelSwapEnabled,
-                  ),
-          );
-        }
-      }
+      await _applyNativeRuntimeSnapshot(syncUi: false);
       _syncNotificationState(immediateUnifiedSync: true);
       if (_sessions.isNotEmpty) _notifyPlaybackChanged();
     } catch (error, stackTrace) {
       _logRestoreFailure(error, stackTrace);
     }
+  }
+
+  Future<void> _reconcileNativeRuntime() async {
+    await _applyNativeRuntimeSnapshot(syncUi: true);
+  }
+
+  Future<NativePlaybackBundleSnapshot?> _applyNativeRuntimeSnapshot({
+    required bool syncUi,
+  }) async {
+    final response = await _nativePlaybackRepository.snapshot();
+    final bundle = response.valueOrNull;
+    if (bundle == null) {
+      AppLogService.warning(
+        'native_playback_snapshot_failed '
+        'code=${response.errorCodeOrNull} error=${response.errorOrNull}',
+      );
+      return null;
+    }
+    for (final snapshot in bundle.sessions) {
+      if (!_sessions.containsKey(snapshot.sessionId)) {
+        AppLogService.warning(
+          'native_playback_unmatched_session_preserved '
+          'sessionId=${snapshot.sessionId}',
+        );
+        continue;
+      }
+      _handleNativePlaybackSnapshot(snapshot);
+    }
+    final focusedSessionId = bundle.focusedSessionId;
+    if (focusedSessionId != null && _sessions.containsKey(focusedSessionId)) {
+      _notificationFacade.stateService.notificationFocusSessionId =
+          focusedSessionId;
+    }
+    if (syncUi) {
+      _syncNotificationState(immediateUnifiedSync: true);
+      if (_sessions.isNotEmpty) _notifyPlaybackChanged();
+    }
+    return bundle;
   }
 
   void _logRestoreFailure(Object error, StackTrace stackTrace) {

@@ -343,4 +343,20 @@ void main() {
       await bridge.stopListening();
     }
   });
+
+  test(
+    'EventChannel reconnect uses capped exponential delays indefinitely',
+    () {
+      expect(List<int>.generate(8, nativePlaybackReconnectDelayMs), <int>[
+        200,
+        400,
+        800,
+        1600,
+        3200,
+        5000,
+        5000,
+        5000,
+      ]);
+    },
+  );
 }

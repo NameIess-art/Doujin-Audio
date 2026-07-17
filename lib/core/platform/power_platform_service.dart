@@ -72,26 +72,6 @@ class PowerPlatformService {
 
   bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
 
-  Future<void> setKeepCpuAwake({
-    required bool enabled,
-    required bool hasActivePlayback,
-    required bool hasActiveTimer,
-    required bool usesUnifiedPlaybackNotifications,
-    required bool keepForegroundServiceAlive,
-  }) async {
-    await _invokeBestEffort<void>(PowerMethod.setKeepCpuAwake, {
-      'enabled': enabled,
-      'hasActivePlayback': hasActivePlayback,
-      'hasActiveTimer': hasActiveTimer,
-      'usesUnifiedPlaybackNotifications': usesUnifiedPlaybackNotifications,
-      'keepForegroundServiceAlive': keepForegroundServiceAlive,
-    });
-  }
-
-  Future<void> stopPlaybackKeepAlive() async {
-    await _invokeBestEffort<void>(PowerMethod.stopPlaybackKeepAlive);
-  }
-
   Future<void> syncPlaybackTimerAlarms({
     required int? timerMode,
     required int? timerDurationMs,

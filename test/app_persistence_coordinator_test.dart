@@ -58,8 +58,6 @@ void main() {
     );
     final keepAlive = PlaybackKeepAliveCoordinator(
       playback: playback,
-      timer: timer,
-      notifications: notifications,
       settings: settings,
       enterBackgroundWarmup: warmup.enterBackground,
       resumeForegroundWarmup: warmup.resumeForeground,
@@ -100,7 +98,6 @@ void main() {
       hasPlaybackToKeepAlive: () => false,
       clearUnifiedNotifications:
           notifications.clearUnifiedNotificationsOnPlatform,
-      stopPlaybackKeepAlive: notifications.stopPlaybackKeepAliveOnPlatform,
       preferredSessionId: () => commands.preferredSingleSessionId,
       notifyNotificationChanged: () {},
     );

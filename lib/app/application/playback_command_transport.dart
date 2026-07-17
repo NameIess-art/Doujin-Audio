@@ -41,7 +41,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         playing: false,
       );
     }
-    _syncKeepCpuAwake();
     _notifyPlaybackChanged();
 
     unawaited(
@@ -69,7 +68,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         for (final pausedSession in exclusivelyPausedSessions) {
           pausedSession.failTransportCommand(generation);
         }
-        _syncKeepCpuAwake();
         _notifyPlaybackChanged();
         return false;
       } else {
@@ -84,7 +82,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         for (final pausedSession in exclusivelyPausedSessions) {
           pausedSession.failTransportCommand(generation);
         }
-        _syncKeepCpuAwake();
         _notifyPlaybackChanged();
       }
       AppLogService.error(
@@ -98,7 +95,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     if (!_isSessionCommandCurrent(session, token)) {
       return false;
     }
-    _syncKeepCpuAwake();
     if (shouldStartTriggerCountdown) {
       _timerFacade.maybeStartTriggerCountdown();
     }
@@ -116,7 +112,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           session.playbackCommandGeneration == generation,
     );
     session.beginTransportCommand(commandId: generation, playing: false);
-    _syncKeepCpuAwake();
     _notifyPlaybackChanged();
     try {
       final pauseResult = await _nativePlaybackRepository.pause(
@@ -126,7 +121,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       if (!_isSessionCommandCurrent(session, token)) return false;
       if (!pauseResult.isOk) {
         session.failTransportCommand(generation);
-        _syncKeepCpuAwake();
         _notifyPlaybackChanged();
         return false;
       }
@@ -138,7 +132,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     } catch (error, stackTrace) {
       if (_isSessionCommandCurrent(session, token)) {
         session.failTransportCommand(generation);
-        _syncKeepCpuAwake();
         _notifyPlaybackChanged();
       }
       AppLogService.error(
@@ -174,7 +167,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     for (final session in sessionsToPause) {
       session.setOptimisticState(playing: false);
     }
-    _syncKeepCpuAwake();
     _syncNotificationState();
     _notifyPlaybackChanged();
     await Future.wait(
@@ -183,7 +175,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
       ),
     );
     _notificationFacade.stateService.notificationFocusSessionId = keepSessionId;
-    _syncKeepCpuAwake();
     _syncNotificationState();
   }
 
@@ -203,7 +194,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     if (nextTarget == null) {
       session.isAdvancingAfterCompletion = false;
       session.isLoading = false;
-      _syncKeepCpuAwake();
       _syncNotificationState();
       return;
     }
@@ -211,7 +201,6 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     final completionGeneration = session.playbackCommandGeneration;
     session.isLoading = true;
     session.isAdvancingAfterCompletion = true;
-    _syncKeepCpuAwake();
     _syncNotificationState();
 
     if (nextTarget.path == session.currentTrackPath &&

@@ -28,17 +28,75 @@ class NativePlaybackFocusRecoveryPolicyTest {
 
     @Test
     fun `duckable focus loss keeps playback running`() {
-        assertFalse(
-            shouldPauseForAudioFocusChange(
-                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK
-            )
+        assertEquals(
+            NativeAudioFocusAction.DUCK,
+            nativeAudioFocusAction(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK)
         )
     }
 
     @Test
     fun `transient focus loss pauses until focus returns`() {
+        assertEquals(
+            NativeAudioFocusAction.PAUSE_AND_RESUME_ON_GAIN,
+            nativeAudioFocusAction(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+        )
+    }
+
+    @Test
+    fun `permanent focus loss pauses without auto resume`() {
+        assertEquals(
+            NativeAudioFocusAction.PAUSE_AND_CLEAR_INTENT,
+            nativeAudioFocusAction(AudioManager.AUDIOFOCUS_LOSS)
+        )
+        assertEquals(
+            NativeAudioFocusAction.RESTORE,
+            nativeAudioFocusAction(AudioManager.AUDIOFOCUS_GAIN)
+        )
+    }
+
+    @Test
+    fun `duck upgraded to transient loss restores volume before gain`() {
+        val ducked = nativeFocusDuckMultiplierAfterAction(
+            currentMultiplier = 1f,
+            action = NativeAudioFocusAction.DUCK
+        )
+        val paused = nativeFocusDuckMultiplierAfterAction(
+            currentMultiplier = ducked,
+            action = NativeAudioFocusAction.PAUSE_AND_RESUME_ON_GAIN
+        )
+        val gained = nativeFocusDuckMultiplierAfterAction(
+            currentMultiplier = paused,
+            action = NativeAudioFocusAction.RESTORE
+        )
+
+        assertEquals(0.2f, ducked, 0.001f)
+        assertEquals(1f, paused, 0.001f)
+        assertEquals(1f, gained, 0.001f)
+    }
+
+    @Test
+    fun `last user pause clears stale focus interruption before later play`() {
         assertTrue(
-            shouldPauseForAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+            shouldClearAudioFocusInterruptionState(hasPlaybackToKeepAlive = false)
+        )
+        assertFalse(
+            shouldClearAudioFocusInterruptionState(hasPlaybackToKeepAlive = true)
+        )
+    }
+
+    @Test
+    fun `becoming noisy clears playback intent`() {
+        assertTrue(
+            shouldClearPlaybackIntentForPlayWhenReadyChange(
+                playWhenReady = false,
+                reason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY
+            )
+        )
+        assertFalse(
+            shouldClearPlaybackIntentForPlayWhenReadyChange(
+                playWhenReady = false,
+                reason = Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS
+            )
         )
     }
 

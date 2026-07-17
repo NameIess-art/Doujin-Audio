@@ -65,7 +65,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     if (showLoading) {
       session.isLoading = true;
     }
-    _syncKeepCpuAwake();
     if (showLoading && !wasLoading) {
       _notifyPlaybackChanged();
     }
@@ -182,7 +181,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         session.pendingNativeTrackPath = null;
         session.isLoading = false;
         session.isAdvancingAfterCompletion = false;
-        _syncKeepCpuAwake();
         _syncNotificationState();
         if (prepared || preparationFailed) {
           _playbackFacade.scheduleSessionStatePersistence();
@@ -202,7 +200,6 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       return _startSessionPlayback(session, shouldStartTriggerCountdown: true);
     } else {
       _syncNotificationState();
-      _syncKeepCpuAwake();
     }
     return prepared;
   }

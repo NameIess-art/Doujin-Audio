@@ -706,11 +706,6 @@ final class TimerFacade {
 
   void _changed() => _onStateChanged();
 
-  bool keepAliveHasPlayback = false;
-  bool keepAliveHasTimer = false;
-  bool keepAliveUsesUnifiedNotifications = false;
-  bool keepAliveKeepsForegroundService = false;
-
   Future<void> dispose() async {
     service.countdownTimer?.cancel();
     service.autoResumeTimer?.cancel();

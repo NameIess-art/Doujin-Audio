@@ -19,14 +19,10 @@ internal class NativeForegroundNotificationFactory(
         title: String,
         subtitle: String?,
         mediaSession: MediaSession?,
-        allowRichSummary: Boolean,
-        playing: Boolean
+        playing: Boolean,
+        hasPrevious: Boolean,
+        hasNext: Boolean
     ): Notification {
-        if (allowRichSummary) {
-            UnifiedPlaybackNotificationController.lastRichSummaryNotification?.let {
-                return it
-            }
-        }
         val builder = baseBuilder()
             .setContentTitle(title.ifBlank { context.getString(R.string.app_name) })
             .setContentText(
@@ -44,11 +40,13 @@ internal class NativeForegroundNotificationFactory(
             builder = builder,
             context = context,
             playing = playing,
-            hasPrevious = true,
-            hasNext = true,
+            hasPrevious = hasPrevious,
+            hasNext = hasNext,
             buildIntent = ::buildControlIntent
         )
-        mediaStyle?.setShowActionsInCompactView(0, 1, 2)
+        mediaStyle?.setShowActionsInCompactView(
+            *notificationCompactActionIndices(hasPrevious, hasNext).toIntArray()
+        )
 
         if (mediaStyle != null) {
             builder.setStyle(mediaStyle)

@@ -50,7 +50,7 @@ void main() {
     await coordinator.enterBackground();
     await coordinator.resumeForeground();
 
-    expect(listeningStarts, 1);
+    expect(listeningStarts, 2);
     expect(starts, 1);
     expect(receivedSnapshots, <String>['session']);
     expect(receivedProgress, <Duration>[const Duration(seconds: 3)]);

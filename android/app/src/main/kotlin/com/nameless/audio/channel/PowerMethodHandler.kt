@@ -59,16 +59,6 @@ internal class PowerMethodHandler(
         val envelope = ChannelEnvelopeResult(result)
         try {
             when (call.method) {
-            PowerMethods.SET_KEEP_CPU_AWAKE -> {
-                val arguments = call.argumentReader()
-                arguments.requiredBoolean("enabled")
-                arguments.requiredBoolean("hasActivePlayback")
-                arguments.requiredBoolean("hasActiveTimer")
-                arguments.requiredBoolean("usesUnifiedPlaybackNotifications")
-                arguments.requiredBoolean("keepForegroundServiceAlive")
-                envelope.success(null)
-            }
-            PowerMethods.STOP_PLAYBACK_KEEP_ALIVE -> envelope.success(null)
             PowerMethods.CAN_MANAGE_ALL_FILES_ACCESS -> envelope.success(canManageAllFilesAccess())
             PowerMethods.OPEN_MANAGE_ALL_FILES_ACCESS_SETTINGS ->
                 envelope.success(openManageAllFilesAccessSettings())

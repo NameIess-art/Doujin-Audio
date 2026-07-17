@@ -184,6 +184,28 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `focus duck multiplier is independent from user volume and fade`() {
+        assertEquals(
+            0.1f,
+            effectiveNativePlaybackVolume(
+                playerVolume = 1f,
+                fadeMultiplier = 0.5f,
+                focusDuckMultiplier = 0.2f
+            ),
+            0.001f
+        )
+        assertEquals(
+            0.5f,
+            effectiveNativePlaybackVolume(
+                playerVolume = 1f,
+                fadeMultiplier = 0.5f,
+                focusDuckMultiplier = 1f
+            ),
+            0.001f
+        )
+    }
+
+    @Test
     fun `skip silence responds to short low level gaps`() {
         assertEquals(250_000L, STRICT_SKIP_SILENCE_MIN_DURATION_US)
         assertEquals(32.toShort(), STRICT_SKIP_SILENCE_THRESHOLD_LEVEL)

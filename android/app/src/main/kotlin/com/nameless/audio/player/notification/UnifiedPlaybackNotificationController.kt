@@ -88,6 +88,15 @@ internal fun notificationTransportActionSpecs(
     }
 }
 
+internal fun notificationCompactActionIndices(
+    hasPrevious: Boolean,
+    hasNext: Boolean
+): List<Int> {
+    val actionCount =
+        1 + (if (hasPrevious) 1 else 0) + (if (hasNext) 1 else 0)
+    return List(actionCount) { it }
+}
+
 internal fun addNotificationTransportActions(
     builder: NotificationCompat.Builder,
     context: Context,
@@ -140,7 +149,6 @@ internal object UnifiedPlaybackNotificationController {
     private var lastSummarySignature: String? = null
     private var lastStyleVariant: String? = null
     private val lastNotifyTimestampsMs = mutableMapOf<Int, Long>()
-    var lastRichSummaryNotification: android.app.Notification? = null
     @Volatile
     var dismissPending = false
 
@@ -177,7 +185,6 @@ internal object UnifiedPlaybackNotificationController {
         activeItemsById.clear()
         lastSummarySignature = null
         lastStyleVariant = null
-        lastRichSummaryNotification = null
         lastNotifyTimestampsMs.clear()
         dismissPending = false
     }
@@ -314,7 +321,6 @@ internal object UnifiedPlaybackNotificationController {
             if (item.artPath == forceArtworkPath || !isNotifyThrottled(notificationId, item)) {
                 val notification = buildSingleSessionNotification(context, item)
                 manager.notify(notificationId, notification)
-                lastRichSummaryNotification = notification
                 markNotified(notificationId)
             }
         }
@@ -394,7 +400,6 @@ internal object UnifiedPlaybackNotificationController {
                     notification
                 )
                 markNotified(summaryNotificationId)
-                lastRichSummaryNotification = notification
             }
         }
 
@@ -588,20 +593,12 @@ internal object UnifiedPlaybackNotificationController {
         )
     }
 
-    private fun compactActionIndicesFor(item: UnifiedPlaybackNotificationItem): List<Int> {
-        val indices = mutableListOf<Int>()
-        var actionIndex = 0
-        if (item.hasPrevious) {
-            indices.add(actionIndex)
-            actionIndex += 1
-        }
-        indices.add(actionIndex)
-        actionIndex += 1
-        if (item.hasNext) {
-            indices.add(actionIndex)
-        }
-        return indices
-    }
+    private fun compactActionIndicesFor(
+        item: UnifiedPlaybackNotificationItem
+    ): List<Int> = notificationCompactActionIndices(
+        hasPrevious = item.hasPrevious,
+        hasNext = item.hasNext
+    )
 
     @Synchronized
     fun clear(context: Context) {
@@ -609,7 +606,6 @@ internal object UnifiedPlaybackNotificationController {
         latestSyncRequest = null
         artworkLoader?.clear()
         dismissPending = false
-        lastRichSummaryNotification = null
         val manager = NotificationManagerCompat.from(context)
         val previousIds = buildSet {
             addAll(activeNotificationIds)

@@ -79,7 +79,6 @@ void main() {
       syncKeepAlive: () {},
       hasPlaybackToKeepAlive: () => true,
       clearUnifiedNotifications: () async {},
-      stopPlaybackKeepAlive: () async {},
       preferredSessionId: () => session.id,
       notifyNotificationChanged: () {},
     );
@@ -120,7 +119,6 @@ void main() {
         syncKeepAlive: () => keepAliveSyncCount++,
         hasPlaybackToKeepAlive: () => false,
         clearUnifiedNotifications: () async => clearCount++,
-        stopPlaybackKeepAlive: () async {},
         preferredSessionId: () => null,
         notifyNotificationChanged: () {},
       );

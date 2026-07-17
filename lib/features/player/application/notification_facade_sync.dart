@@ -46,18 +46,6 @@ extension NotificationFacadeSync on NotificationFacade {
     await _notificationService.clearUnifiedNotifications();
   }
 
-  Future<void> _stopPlaybackKeepAliveOnPlatform() async {
-    try {
-      await _stopPlaybackKeepAlive();
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'stop_playback_keep_alive_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-  }
-
   void _syncNotificationState({bool immediateUnifiedSync = false}) {
     if (!_synchronizationAttached) return;
     unawaited(_syncSystemMediaControlsState());

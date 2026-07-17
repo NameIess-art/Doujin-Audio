@@ -5,22 +5,35 @@ import com.nameless.audio.player.service.*
 import com.nameless.audio.player.session.NativeAudioEffects
 
 import android.content.Context
-import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.util.UUID
 
 class NativePlaybackBridge(
     private val context: Context
 ) : MethodChannel.MethodCallHandler, EventChannel.StreamHandler {
     private var events: EventChannel.EventSink? = null
     private var listening = false
+    private var disposed = false
     private var attachedService: NativePlaybackService? = null
-    private val listenerId = "flutter"
+    private val listenerId = "flutter-${UUID.randomUUID()}"
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val pendingCalls = linkedSetOf<PendingServiceCall>()
+    private var pendingEventAttachment: PendingEventAttachment? = null
+
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (disposed) {
+            result.success(serviceUnavailable(call.method))
+            return
+        }
+        if (!isSupportedNativePlaybackMethod(call.method)) {
+            result.notImplemented()
+            return
+        }
         var prepareArguments: NativePrepareSessionArguments? = null
         var repeatArguments: NativeRepeatOneArguments? = null
         var audioEffectsSessionId: String? = null
@@ -55,89 +68,87 @@ class NativePlaybackBridge(
             )
             return
         }
-        val service = ensureService(
-            requireForegroundBootstrap = call.requiresForegroundBootstrap(prepareArguments)
-        )
-        attachEventListenerIfNeeded(service)
-        val response = try {
+        val dispatch: (NativePlaybackService) -> Map<String, Any?> = { service ->
             when (call.method) {
-                NativePlaybackMethods.PREPARE_SESSION -> service?.prepareSession(prepareArguments!!)
-                    ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.PLAY -> service?.play(
+                NativePlaybackMethods.PREPARE_SESSION -> service.prepareSession(prepareArguments!!)
+                NativePlaybackMethods.PLAY -> service.play(
                     call.requiredString("sessionId"),
                     call.requiredLong("transportCommandId"),
                     call.argument<Boolean>("exclusive") ?: false
                 )
-                    ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.PAUSE -> service?.pause(
+                NativePlaybackMethods.PAUSE -> service.pause(
                     call.requiredString("sessionId"),
                     call.requiredLong("transportCommandId")
                 )
-                    ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.STOP -> service?.stop(call.requiredString("sessionId"))
-                    ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.SEEK -> service?.seek(
+                NativePlaybackMethods.STOP -> service.stop(call.requiredString("sessionId"))
+                NativePlaybackMethods.SEEK -> service.seek(
                     call.requiredString("sessionId"),
                     call.requiredLong("positionMs")
-                ) ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.SET_VOLUME -> service?.setVolume(
+                )
+                NativePlaybackMethods.SET_VOLUME -> service.setVolume(
                     call.requiredString("sessionId"),
                     call.requiredDouble("volume").toFloat()
-                ) ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.SET_SPEED -> service?.setSpeed(
+                )
+                NativePlaybackMethods.SET_SPEED -> service.setSpeed(
                     call.requiredString("sessionId"),
                     call.requiredDouble("speed").toFloat()
-                ) ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.SET_FADE_MULTIPLIER -> service?.setFadeMultiplier(
+                )
+                NativePlaybackMethods.SET_FADE_MULTIPLIER -> service.setFadeMultiplier(
                     call.requiredString("sessionId"),
                     call.requiredDouble("multiplier").toFloat()
-                ) ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.SET_REPEAT_ONE -> service?.setRepeatOne(repeatArguments!!)
-                    ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.SET_AUDIO_EFFECTS -> service?.setAudioEffects(
+                )
+                NativePlaybackMethods.SET_REPEAT_ONE -> service.setRepeatOne(repeatArguments!!)
+                NativePlaybackMethods.SET_AUDIO_EFFECTS -> service.setAudioEffects(
                     audioEffectsSessionId!!,
                     audioEffects!!
-                ) ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.REMOVE_SESSION -> service?.removeSession(call.requiredString("sessionId"))
-                    ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.PAUSE_ALL -> service?.pauseAll()
-                    ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.CLEAR_ALL -> service?.clearAll()
-                    ?: channelSuccess(null)
-                NativePlaybackMethods.SET_FOREGROUND_ENABLED -> service?.setForegroundEnabled(
+                )
+                NativePlaybackMethods.REMOVE_SESSION -> service.removeSession(call.requiredString("sessionId"))
+                NativePlaybackMethods.PAUSE_ALL -> service.pauseAll()
+                NativePlaybackMethods.CLEAR_ALL -> service.clearAll()
+                NativePlaybackMethods.SET_FOREGROUND_ENABLED -> service.setForegroundEnabled(
                     call.argument<Boolean>("enabled") ?: true
-                ) ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.DISMISS_NOTIFICATIONS -> service?.dismissNotifications()
-                    ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.UNDISMISS_NOTIFICATIONS -> service?.undismissNotifications()
-                    ?: serviceUnavailable(call.method)
-                NativePlaybackMethods.SNAPSHOT -> service?.snapshot()
-                    ?: channelSuccess(mapOf("sessions" to emptyList<Map<String, Any?>>()))
-                else -> {
-                    result.notImplemented()
-                    return
-                }
+                )
+                NativePlaybackMethods.DISMISS_NOTIFICATIONS -> service.dismissNotifications()
+                NativePlaybackMethods.UNDISMISS_NOTIFICATIONS -> service.undismissNotifications()
+                NativePlaybackMethods.SNAPSHOT -> service.snapshot()
+                else -> error("Unsupported native playback method: ${call.method}")
             }
-        } catch (error: IllegalArgumentException) {
-            channelFailure(
-                code = ChannelErrorCodes.INVALID_ARGUMENT,
-                message = error.message ?: "Invalid arguments.",
-                details = mapOf("method" to call.method)
-            )
         }
-        result.success(response)
+        val pendingCall = PendingServiceCall(
+            call = call,
+            result = result,
+            requireForegroundBootstrap = call.requiresForegroundBootstrap(prepareArguments),
+            dispatch = dispatch
+        )
+        pendingCalls += pendingCall
+        pendingCall.run()
     }
 
     override fun onListen(arguments: Any?, eventSink: EventChannel.EventSink?) {
+        if (disposed || eventSink == null) return
         listening = true
         events = eventSink
-        attachEventListenerIfNeeded(ensureService())
-        mainHandler.postDelayed({ if (listening) attachEventListenerIfNeeded(ensureService()) }, 80L)
-        mainHandler.postDelayed({ if (listening) attachEventListenerIfNeeded(ensureService()) }, 240L)
+        pendingEventAttachment?.cancel()
+        val attachment = PendingEventAttachment(eventSink)
+        pendingEventAttachment = attachment
+        attachment.run()
     }
 
     override fun onCancel(arguments: Any?) {
         listening = false
+        pendingEventAttachment?.cancel()
+        attachedService?.removeStateListener(listenerId)
+        attachedService = null
+        events = null
+    }
+
+    fun dispose() {
+        if (disposed) return
+        disposed = true
+        listening = false
+        pendingEventAttachment?.cancel()
+        pendingCalls.toList().forEach(PendingServiceCall::cancel)
+        mainHandler.removeCallbacksAndMessages(null)
         attachedService?.removeStateListener(listenerId)
         attachedService = null
         events = null
@@ -149,25 +160,157 @@ class NativePlaybackBridge(
         return NativePlaybackService.ensureStarted(
             context,
             requireForegroundBootstrap = requireForegroundBootstrap
-        ).also { service ->
-            if (service == null && listening) {
-                mainHandler.postDelayed(
-                    { if (listening) attachEventListenerIfNeeded(NativePlaybackService.controller()) },
-                    80L
-                )
-            }
-        }
+        )
     }
 
     private fun attachEventListenerIfNeeded(service: NativePlaybackService?) {
-        if (!listening || service == null || attachedService === service) return
+        if (disposed || !listening || service == null) return
+        if (attachedService === service) {
+            pendingEventAttachment?.complete()
+            return
+        }
         attachedService?.removeStateListener(listenerId)
         attachedService = service
         service.addStateListener(listenerId) { snapshot ->
             events?.success(snapshot)
         }
+        service.settleForegroundAfterBridgeAttach()
+        pendingEventAttachment?.complete()
+    }
+
+    private inner class PendingEventAttachment(
+        private val eventSink: EventChannel.EventSink
+    ) : Runnable {
+        private val startedAtMs = SystemClock.elapsedRealtime()
+        private var serviceStartRequested = false
+        private var completed = false
+
+        override fun run() {
+            if (completed || disposed || !listening || events !== eventSink) {
+                cancel()
+                return
+            }
+            val service = if (serviceStartRequested) {
+                NativePlaybackService.controller()
+            } else {
+                serviceStartRequested = true
+                ensureService()
+            }
+            if (service != null) {
+                attachEventListenerIfNeeded(service)
+                return
+            }
+            if (SystemClock.elapsedRealtime() - startedAtMs >= SERVICE_READY_TIMEOUT_MS) {
+                complete()
+                if (!disposed && listening && events === eventSink) {
+                    eventSink.error(
+                        ChannelErrorCodes.SERVICE_UNAVAILABLE,
+                        "Native playback service is not ready.",
+                        null
+                    )
+                }
+                return
+            }
+            mainHandler.postDelayed(this, SERVICE_READY_RETRY_DELAY_MS)
+        }
+
+        fun cancel() {
+            complete()
+        }
+
+        fun complete() {
+            if (completed) return
+            completed = true
+            mainHandler.removeCallbacks(this)
+            if (pendingEventAttachment === this) {
+                pendingEventAttachment = null
+            }
+        }
+    }
+
+    private inner class PendingServiceCall(
+        private val call: MethodCall,
+        private val result: MethodChannel.Result,
+        private val requireForegroundBootstrap: Boolean,
+        private val dispatch: (NativePlaybackService) -> Map<String, Any?>
+    ) : Runnable {
+        private val startedAtMs = SystemClock.elapsedRealtime()
+        private var completed = false
+        private var serviceStartRequested = false
+
+        override fun run() {
+            if (completed) return
+            if (disposed) {
+                cancel()
+                return
+            }
+            val service = if (serviceStartRequested) {
+                NativePlaybackService.controller()
+            } else {
+                serviceStartRequested = true
+                ensureService(requireForegroundBootstrap)
+            }
+            if (service != null) {
+                attachEventListenerIfNeeded(service)
+                val response = try {
+                    dispatch(service)
+                } catch (error: IllegalArgumentException) {
+                    channelFailure(
+                        code = ChannelErrorCodes.INVALID_ARGUMENT,
+                        message = error.message ?: "Invalid arguments.",
+                        details = mapOf("method" to call.method)
+                    )
+                }
+                complete(response)
+                return
+            }
+            val elapsedMs = SystemClock.elapsedRealtime() - startedAtMs
+            if (elapsedMs >= SERVICE_READY_TIMEOUT_MS) {
+                complete(serviceUnavailable(call.method))
+                return
+            }
+            mainHandler.postDelayed(this, SERVICE_READY_RETRY_DELAY_MS)
+        }
+
+        fun cancel() {
+            mainHandler.removeCallbacks(this)
+            complete(serviceUnavailable(call.method))
+        }
+
+        private fun complete(response: Map<String, Any?>) {
+            if (completed) return
+            completed = true
+            mainHandler.removeCallbacks(this)
+            pendingCalls.remove(this)
+            result.success(response)
+        }
+    }
+
+    private companion object {
+        const val SERVICE_READY_RETRY_DELAY_MS = 50L
+        const val SERVICE_READY_TIMEOUT_MS = 2_000L
     }
 }
+
+internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method in setOf(
+    NativePlaybackMethods.PREPARE_SESSION,
+    NativePlaybackMethods.PLAY,
+    NativePlaybackMethods.PAUSE,
+    NativePlaybackMethods.STOP,
+    NativePlaybackMethods.SEEK,
+    NativePlaybackMethods.SET_VOLUME,
+    NativePlaybackMethods.SET_SPEED,
+    NativePlaybackMethods.SET_FADE_MULTIPLIER,
+    NativePlaybackMethods.SET_REPEAT_ONE,
+    NativePlaybackMethods.SET_AUDIO_EFFECTS,
+    NativePlaybackMethods.REMOVE_SESSION,
+    NativePlaybackMethods.PAUSE_ALL,
+    NativePlaybackMethods.CLEAR_ALL,
+    NativePlaybackMethods.SET_FOREGROUND_ENABLED,
+    NativePlaybackMethods.DISMISS_NOTIFICATIONS,
+    NativePlaybackMethods.UNDISMISS_NOTIFICATIONS,
+    NativePlaybackMethods.SNAPSHOT
+)
 
 internal fun validatePlaybackArgumentsBeforeService(call: MethodCall) {
     val arguments = call.argumentReader()

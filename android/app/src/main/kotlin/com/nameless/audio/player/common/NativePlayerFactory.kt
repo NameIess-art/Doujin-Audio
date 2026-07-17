@@ -90,6 +90,7 @@ internal class NativePlayerFactory(
         return ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             .setWakeMode(nativePlaybackWakeMode())
+            .setHandleAudioBecomingNoisy(true)
             .build()
             .also { player ->
                 player.setAudioAttributes(

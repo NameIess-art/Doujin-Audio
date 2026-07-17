@@ -28,7 +28,6 @@ class SettingsRepository {
   List<EqPreset> customEqPresets = const <EqPreset>[];
   int maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
   bool asmrPlaybackCacheEnabled = false;
-  bool keepCpuAwake = false;
   bool recordPlaybackProgress = true;
   bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;
@@ -300,7 +299,6 @@ class SettingsRepository {
     customEqPresets = const <EqPreset>[];
     maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
     asmrPlaybackCacheEnabled = false;
-    keepCpuAwake = false;
     recordPlaybackProgress = true;
     blurPlayerBackgroundEnabled = true;
     uiBlurEffectEnabled = true;

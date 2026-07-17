@@ -53,8 +53,6 @@ AppRuntimeGraph createAppRuntimeGraph({
   );
   final keepAlive = PlaybackKeepAliveCoordinator(
     playback: playback,
-    timer: timer,
-    notifications: notifications,
     settings: settings,
     enterBackgroundWarmup: warmup.enterBackground,
     resumeForegroundWarmup: warmup.resumeForeground,
@@ -275,7 +273,6 @@ AppRuntimeGraph createAppRuntimeGraph({
     hasPlaybackToKeepAlive: () => keepAlive.hasPlaybackToKeepAlive,
     clearUnifiedNotifications:
         notifications.clearUnifiedNotificationsOnPlatform,
-    stopPlaybackKeepAlive: notifications.stopPlaybackKeepAliveOnPlatform,
     preferredSessionId: () => playbackCommands.preferredSingleSessionId,
     notifyNotificationChanged: syncPlaybackState,
   );
@@ -321,6 +318,7 @@ AppRuntimeGraph createAppRuntimeGraph({
     onEnterBackground: keepAlive.enterBackground,
     onResumeForeground: () async {
       keepAlive.resumeForeground();
+      await playbackCommands.reconcileNativeRuntime();
       notifications.resyncAfterForegroundResume();
       await timer.syncRuntimeFromNative();
       timer.retryOverdueAutoResume();

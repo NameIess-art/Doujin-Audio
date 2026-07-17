@@ -11,6 +11,12 @@ import org.junit.Test
 
 class NativePlaybackCommandPayloadsTest {
     @Test
+    fun `bridge rejects unknown methods before starting service`() {
+        assertTrue(isSupportedNativePlaybackMethod(NativePlaybackMethods.SNAPSHOT))
+        assertFalse(isSupportedNativePlaybackMethod("unknownPlaybackMethod"))
+    }
+
+    @Test
     fun `simple playback commands are validated before service startup`() {
         validatePlaybackArgumentsBeforeService(
             MethodCall(

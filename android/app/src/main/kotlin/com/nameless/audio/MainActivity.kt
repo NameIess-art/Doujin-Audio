@@ -23,6 +23,9 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     private var notificationsMethodChannel: MethodChannel? = null
+    private var nativePlaybackMethodChannel: MethodChannel? = null
+    private var nativePlaybackEventChannel: EventChannel? = null
+    private var nativePlaybackBridge: NativePlaybackBridge? = null
     private var fileCacheMethodChannel: MethodChannel? = null
     private var fileCacheMethodHandler: FileCacheMethodHandler? = null
     private var fileCacheTaskExecutor: FileCacheTaskExecutor? = null
@@ -38,11 +41,17 @@ class MainActivity : FlutterFragmentActivity() {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
 
+        disposeNativePlaybackBridge()
         val nativePlaybackBridge = NativePlaybackBridge(applicationContext)
-        MethodChannel(messenger, PlatformChannelNames.NATIVE_PLAYBACK)
-            .setMethodCallHandler(nativePlaybackBridge)
-        EventChannel(messenger, PlatformChannelNames.NATIVE_PLAYBACK_EVENTS)
-            .setStreamHandler(nativePlaybackBridge)
+        this.nativePlaybackBridge = nativePlaybackBridge
+        nativePlaybackMethodChannel = MethodChannel(
+            messenger,
+            PlatformChannelNames.NATIVE_PLAYBACK
+        ).also { it.setMethodCallHandler(nativePlaybackBridge) }
+        nativePlaybackEventChannel = EventChannel(
+            messenger,
+            PlatformChannelNames.NATIVE_PLAYBACK_EVENTS
+        ).also { it.setStreamHandler(nativePlaybackBridge) }
 
         MethodChannel(messenger, PlatformChannelNames.POWER)
             .setMethodCallHandler(PowerMethodHandler(this))
@@ -113,7 +122,13 @@ class MainActivity : FlutterFragmentActivity() {
         deliverNotificationSessionIntent(intent)
     }
 
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        disposeNativePlaybackBridge()
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+
     override fun onDestroy() {
+        disposeNativePlaybackBridge()
         notificationsMethodChannel = null
         fileCacheMethodChannel?.setMethodCallHandler(null)
         fileCacheMethodChannel = null
@@ -129,6 +144,15 @@ class MainActivity : FlutterFragmentActivity() {
         fileCacheScanStreamHandler = null
         subtitleOverlayCoordinator.dispose()
         super.onDestroy()
+    }
+
+    private fun disposeNativePlaybackBridge() {
+        nativePlaybackMethodChannel?.setMethodCallHandler(null)
+        nativePlaybackMethodChannel = null
+        nativePlaybackEventChannel?.setStreamHandler(null)
+        nativePlaybackEventChannel = null
+        nativePlaybackBridge?.dispose()
+        nativePlaybackBridge = null
     }
 
     private fun capturePendingNotificationSession(intent: Intent?) {

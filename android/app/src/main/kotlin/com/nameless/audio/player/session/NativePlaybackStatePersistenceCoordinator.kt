@@ -5,18 +5,71 @@ import android.os.Handler
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
-internal class NativePlaybackStatePersistenceCoordinator(
+internal interface NativePlaybackStatePersistenceEnvironment {
+    fun postDelayed(runnable: Runnable, delayMs: Long)
+    fun removeCallbacks(runnable: Runnable)
+    fun execute(task: () -> Unit)
+    fun saveSessions(sessions: List<StoredNativePlaybackSession>)
+    fun clearSessions()
+    fun shutdown()
+}
+
+private class AndroidNativePlaybackStatePersistenceEnvironment(
     context: Context,
-    private val mainHandler: Handler,
+    private val mainHandler: Handler
+) : NativePlaybackStatePersistenceEnvironment {
+    private val appContext = context.applicationContext
+    private val executor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "NativePlaybackStateStore").apply { isDaemon = true }
+    }
+
+    override fun postDelayed(runnable: Runnable, delayMs: Long) {
+        mainHandler.postDelayed(runnable, delayMs)
+    }
+
+    override fun removeCallbacks(runnable: Runnable) {
+        mainHandler.removeCallbacks(runnable)
+    }
+
+    override fun execute(task: () -> Unit) {
+        executor.execute { task() }
+    }
+
+    override fun saveSessions(sessions: List<StoredNativePlaybackSession>) {
+        NativePlaybackStateStore.saveSessions(appContext, sessions)
+    }
+
+    override fun clearSessions() {
+        NativePlaybackStateStore.clearSessions(appContext)
+    }
+
+    override fun shutdown() {
+        executor.shutdown()
+    }
+}
+
+internal class NativePlaybackStatePersistenceCoordinator(
+    private val environment: NativePlaybackStatePersistenceEnvironment,
     private val intervalMs: Long,
     private val debounceMs: Long,
     private val hasSessions: () -> Boolean,
     private val storedSessions: () -> List<StoredNativePlaybackSession>
 ) {
-    private val appContext = context.applicationContext
-    private val executor = Executors.newSingleThreadExecutor { runnable ->
-        Thread(runnable, "NativePlaybackStateStore").apply { isDaemon = true }
-    }
+    constructor(
+        context: Context,
+        mainHandler: Handler,
+        intervalMs: Long,
+        debounceMs: Long,
+        hasSessions: () -> Boolean,
+        storedSessions: () -> List<StoredNativePlaybackSession>
+    ) : this(
+        environment = AndroidNativePlaybackStatePersistenceEnvironment(context, mainHandler),
+        intervalMs = intervalMs,
+        debounceMs = debounceMs,
+        hasSessions = hasSessions,
+        storedSessions = storedSessions
+    )
+
     private val generation = AtomicLong(0L)
     private var tickerScheduled = false
     private var pendingDebounce = false
@@ -28,7 +81,7 @@ internal class NativePlaybackStatePersistenceCoordinator(
                 tickerScheduled = false
                 return
             }
-            mainHandler.postDelayed(this, intervalMs)
+            environment.postDelayed(this, intervalMs)
         }
     }
 
@@ -40,24 +93,24 @@ internal class NativePlaybackStatePersistenceCoordinator(
     fun ensureTicker() {
         if (tickerScheduled || !hasSessions()) return
         tickerScheduled = true
-        mainHandler.postDelayed(ticker, intervalMs)
+        environment.postDelayed(ticker, intervalMs)
     }
 
     fun stopTicker() {
         if (!tickerScheduled) return
-        mainHandler.removeCallbacks(ticker)
+        environment.removeCallbacks(ticker)
         tickerScheduled = false
     }
 
     fun schedulePersist() {
-        mainHandler.removeCallbacks(debouncedPersist)
+        environment.removeCallbacks(debouncedPersist)
         pendingDebounce = true
-        mainHandler.postDelayed(debouncedPersist, debounceMs)
+        environment.postDelayed(debouncedPersist, debounceMs)
     }
 
     fun cancelScheduledPersist() {
         if (!pendingDebounce) return
-        mainHandler.removeCallbacks(debouncedPersist)
+        environment.removeCallbacks(debouncedPersist)
         pendingDebounce = false
     }
 
@@ -65,25 +118,25 @@ internal class NativePlaybackStatePersistenceCoordinator(
         cancelScheduledPersist()
         val saveGeneration = generation.incrementAndGet()
         if (!hasSessions()) {
-            executor.execute {
+            environment.execute {
                 if (saveGeneration == generation.get()) {
-                    NativePlaybackStateStore.clearSessions(appContext)
+                    environment.clearSessions()
                 }
             }
             return
         }
 
         val snapshots = storedSessions()
-        executor.execute {
+        environment.execute {
             if (saveGeneration == generation.get()) {
-                NativePlaybackStateStore.saveSessions(appContext, snapshots)
+                environment.saveSessions(snapshots)
             }
         }
     }
 
     fun shutdown() {
         stopTicker()
-        cancelScheduledPersist()
-        executor.shutdown()
+        persistNow()
+        environment.shutdown()
     }
 }

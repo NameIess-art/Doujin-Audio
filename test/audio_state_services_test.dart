@@ -505,6 +505,30 @@ void main() {
       ]);
     });
 
+    test('addWatchedFolder persists once when node order changes', () {
+      final service = LibraryService();
+      addTearDown(service.dispose);
+      var persistCount = 0;
+      service.library.add(
+        track('/music/album/01.mp3', groupKey: '/music/album'),
+      );
+
+      expect(
+        service.addWatchedFolder('/music', onPersist: () => persistCount++),
+        isTrue,
+      );
+
+      expect(service.watchedFolders, <String>['/music']);
+      expect(service.libraryNodeOrder, <String>['/music']);
+      expect(persistCount, 1);
+
+      expect(
+        service.addWatchedFolder('/music', onPersist: () => persistCount++),
+        isFalse,
+      );
+      expect(persistCount, 1);
+    });
+
     test('watched SAF folders dedupe equivalent tree and document uris', () {
       final service = LibraryService();
       addTearDown(service.dispose);

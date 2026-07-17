@@ -126,7 +126,7 @@ class LibraryService {
       return false;
     }
     watchedFolders.add(folderPath);
-    syncLibraryNodeOrder(onPersist: onPersist);
+    syncLibraryNodeOrder(persist: false);
     markStructureChanged();
     onPersist?.call();
     return true;

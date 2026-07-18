@@ -710,6 +710,75 @@ void main() {
       }
     },
   );
+
+  test(
+    'dispose cancels active downloads and does not start queued work',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_dispose_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final releaseResponses = Completer<void>();
+      var requestCount = 0;
+      unawaited(
+        server.forEach((request) async {
+          requestCount++;
+          request.response.contentLength = 1024;
+          request.response.add(List<int>.filled(128, requestCount));
+          try {
+            await releaseResponses.future;
+            await request.response.close();
+          } catch (_) {
+            // Forced client shutdown is the behavior under test.
+          }
+        }),
+      );
+      final manager = _manager();
+      var notificationCount = 0;
+      manager.addListener(() => notificationCount++);
+      try {
+        final downloadUrl =
+            'http://${server.address.host}:${server.port}/track.mp3';
+        for (var workId = 1; workId <= 4; workId++) {
+          await manager.startDownload(
+            work: _work(id: workId),
+            selectedRoots: <AsmrTrackFile>[
+              _file(downloadUrl: downloadUrl, size: 1024),
+            ],
+            destinationRoot: tempDir.path,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          );
+        }
+        final deadline = DateTime.now().add(const Duration(seconds: 5));
+        while (requestCount < 3 && DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        expect(requestCount, 3);
+
+        manager.dispose();
+        final notificationsAtDispose = notificationCount;
+        releaseResponses.complete();
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+
+        expect(requestCount, 3);
+        expect(notificationCount, notificationsAtDispose);
+        for (var workId = 1; workId <= 4; workId++) {
+          final sourceId = workId == 1 ? 'RJ123456' : 'RJ12345$workId';
+          final title = workId == 1 ? 'Work' : 'Work $workId';
+          final output = File(
+            '${tempDir.path}${Platform.pathSeparator}'
+            '$sourceId - $title'
+            '${Platform.pathSeparator}track.mp3',
+          );
+          expect(await output.exists(), isFalse);
+        }
+      } finally {
+        if (!releaseResponses.isCompleted) releaseResponses.complete();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
 }
 
 AsmrDownloadManager _manager() {
@@ -746,16 +815,17 @@ Future<void> _waitForTaskStatus(
 }
 
 AsmrWork _work({
+  int id = 1,
   DateTime? releaseDate,
   Duration duration = Duration.zero,
   int dlCount = 0,
   double rating = 0,
 }) {
   return AsmrWork(
-    id: 1,
-    title: 'Work',
+    id: id,
+    title: id == 1 ? 'Work' : 'Work $id',
     circleName: 'Circle',
-    sourceId: 'RJ123456',
+    sourceId: id == 1 ? 'RJ123456' : 'RJ12345$id',
     sourceType: 'asmr',
     sourceUrl: '',
     coverUrl: '',

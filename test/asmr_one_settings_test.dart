@@ -12,6 +12,7 @@ import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_api_service.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_account_sync_service.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_auth_service.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
@@ -387,6 +388,24 @@ class _MemoryAsmrTokenStore implements AsmrTokenStore {
   @override
   Future<void> writeCredentials(String username, String password) async {
     credentials = <String, String>{'name': username, 'password': password};
+  }
+}
+
+class _BlockingAsmrPreferencesStore extends AsmrPreferencesStore {
+  _BlockingAsmrPreferencesStore({required super.database});
+
+  final Completer<void> saveStarted = Completer<void>();
+  final Completer<void> releaseSave = Completer<void>();
+
+  @override
+  Future<void> saveWorkListAndSyncOperations(
+    String listType,
+    List<AsmrWork> works,
+    List<AsmrSyncOperation> operations,
+  ) async {
+    if (!saveStarted.isCompleted) saveStarted.complete();
+    await releaseSave.future;
+    await super.saveWorkListAndSyncOperations(listType, works, operations);
   }
 }
 

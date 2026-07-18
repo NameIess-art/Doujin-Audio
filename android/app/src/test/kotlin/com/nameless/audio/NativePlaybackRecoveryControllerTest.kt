@@ -151,6 +151,25 @@ class NativePlaybackRecoveryControllerTest {
         assertFalse(environment.listening)
         assertFalse(controller.isIntended("player"))
     }
+
+    @Test
+    fun `clearing playback intent cancels a health-only scheduled task`() {
+        val environment = FakeRecoveryEnvironment()
+        val controller = NativePlaybackRecoveryController(
+            FakeRecoveryHost(),
+            environment,
+            recoveryWindowMs = 60_000L
+        )
+        controller.markIntended("prepare-failed")
+
+        assertTrue(controller.isIntended("prepare-failed"))
+        assertTrue(environment.delays.contains(15_000L))
+
+        controller.clear("prepare-failed")
+
+        assertFalse(controller.isIntended("prepare-failed"))
+        assertTrue(environment.tasks.isEmpty())
+    }
 }
 
 private class FakeRecoveryEnvironment : NativePlaybackRecoveryEnvironment {

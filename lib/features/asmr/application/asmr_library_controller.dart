@@ -1322,7 +1322,9 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> _toggleFavoriteNow(AsmrWork work) async {
+    final mutationAuthEpoch = _authEpoch;
     final snapshot = await _accountSyncService.toggleFavorite(work);
+    if (mutationAuthEpoch != _authEpoch) return;
     _applyAccountSnapshot(snapshot);
     final shouldFavorite = _favoriteIds.contains(work.id);
     final updatedWork = work.copyWith(isFavorite: shouldFavorite);
@@ -1369,7 +1371,10 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> _recordHistoryNow(AsmrWork work) async {
-    _applyAccountSnapshot(await _accountSyncService.recordHistory(work));
+    final mutationAuthEpoch = _authEpoch;
+    final snapshot = await _accountSyncService.recordHistory(work);
+    if (mutationAuthEpoch != _authEpoch) return;
+    _applyAccountSnapshot(snapshot);
     _bumpGlobalRevision();
     if (isAsmrAccountLoggedIn) {
       unawaited(syncAsmrAccount());

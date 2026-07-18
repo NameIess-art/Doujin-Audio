@@ -511,6 +511,95 @@ void main() {
       expect(session.state.playing, isTrue);
     });
 
+    test(
+      'stale prepare cannot target a replacement session with the same id',
+      () async {
+        const oldTrack = MusicTrack(
+          path: '/music/old-session.mp3',
+          displayName: 'Old session',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        const replacementTrack = MusicTrack(
+          path: '/music/replacement-session.mp3',
+          displayName: 'Replacement session',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        );
+        final prepareStarted = Completer<void>();
+        final releasePrepare = Completer<void>();
+        var playCalls = 0;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              final arguments = call.arguments as Map<Object?, Object?>?;
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                if (!prepareStarted.isCompleted) prepareStarted.complete();
+                await releasePrepare.future;
+                return <String, Object?>{
+                  'ok': true,
+                  'value': <String, Object?>{
+                    'sessionId': arguments?['sessionId'] as String,
+                    'path': arguments?['path'] as String,
+                    'uri': arguments?['uri'] as String,
+                    'playing': false,
+                    'playWhenReady': false,
+                    'processingState': 'ready',
+                    'positionMs': 0,
+                    'bufferedPositionMs': 0,
+                    'volume': 1.0,
+                    'channelSwap': false,
+                  },
+                };
+              }
+              if (call.method == NativePlaybackMethod.play) playCalls++;
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        final oldSession = PlaybackSession(
+          id: 'reused-session-id',
+          currentTrackPath: oldTrack.path,
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.folderSequential,
+          volume: 1,
+          createdAt: DateTime(2026),
+          state: PlayerState(false, ProcessingState.idle),
+          customQueueTracks: const <MusicTrack>[oldTrack],
+        );
+        runtimeGraph.playback.registerSession(oldSession);
+
+        final prepareFuture = runtimeGraph.playbackCommands.prepareAndPlay(
+          oldSession,
+          nextPath: oldTrack.path,
+        );
+        await prepareStarted.future;
+        final resetFuture = runtimeGraph.playback.resetForBackupRestore();
+        expect(oldSession.isDisposed, isTrue);
+        final replacementSession = PlaybackSession(
+          id: oldSession.id,
+          currentTrackPath: replacementTrack.path,
+          loopMode: SessionLoopMode.single,
+          nonSingleLoopMode: SessionLoopMode.folderSequential,
+          volume: 1,
+          createdAt: DateTime(2026, 1, 2),
+          state: PlayerState(false, ProcessingState.idle),
+          customQueueTracks: const <MusicTrack>[replacementTrack],
+        );
+        runtimeGraph.playback.registerSession(replacementSession);
+
+        releasePrepare.complete();
+
+        expect(await prepareFuture, isFalse);
+        await resetFuture;
+        expect(playCalls, 0);
+        expect(replacementSession.currentTrackPath, replacementTrack.path);
+        expect(replacementSession.loadedPath, isNull);
+        expect(replacementSession.isLoading, isFalse);
+      },
+    );
+
     testWidgets(
       'defers playback notification sync while scrolling interaction is active',
       (tester) async {

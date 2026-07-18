@@ -637,6 +637,81 @@ void registerAsmrAccountSyncTests({
     },
   );
 
+  test(
+    'logout waits for a favorite mutation and remains authoritative',
+    () async {
+      await resetPrefs();
+      final blockingPreferences = _BlockingAsmrPreferencesStore(
+        database: AppDatabase.instance,
+      );
+      final api = _FakeAsmrApiService();
+      final tokenStore = _MemoryAsmrTokenStore();
+      final service = AsmrAccountSyncService(
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        apiService: api,
+        preferencesStore: blockingPreferences,
+      );
+      await service.initialize();
+      await service.login('alice', 'password');
+
+      final favorite = _work(id: 404, title: 'Queued favorite');
+      final favoriteFuture = service.toggleFavorite(favorite);
+      await blockingPreferences.saveStarted.future;
+      var logoutCompleted = false;
+      final logoutFuture = service.logout().then((snapshot) {
+        logoutCompleted = true;
+        return snapshot;
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      expect(logoutCompleted, isFalse);
+      blockingPreferences.releaseSave.complete();
+      await favoriteFuture;
+      final snapshot = await logoutFuture;
+
+      expect(snapshot.session, isNull);
+      expect(snapshot.favoriteIds, contains(favorite.id));
+      expect(tokenStore.token, isNull);
+    },
+  );
+
+  test(
+    'auth epoch suppresses stale favorite completion and old-token sync',
+    () async {
+      await resetPrefs();
+      final blockingPreferences = _BlockingAsmrPreferencesStore(
+        database: AppDatabase.instance,
+      );
+      final api = _FakeAsmrApiService();
+      final controller = AsmrLibraryController(
+        preferencesStore: blockingPreferences,
+        apiService: api,
+        authService: AsmrAuthService(
+          apiService: api,
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      await controller.loginAsmrAccount('alice', 'password');
+      api.reviewPutTokens.clear();
+
+      final favoriteFuture = controller.toggleFavorite(
+        _work(id: 405, title: 'Stale favorite'),
+      );
+      await blockingPreferences.saveStarted.future;
+      final logoutFuture = controller.logoutAsmrAccount();
+      blockingPreferences.releaseSave.complete();
+      await Future.wait<void>(<Future<void>>[favoriteFuture, logoutFuture]);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(controller.isAsmrAccountLoggedIn, isFalse);
+      expect(api.reviewPutTokens, isEmpty);
+    },
+  );
+
   test('a new account does not reuse an old account sync task', () async {
     await resetPrefs();
     final oldSyncStarted = Completer<void>();

@@ -5,7 +5,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     PlaybackSession session,
     PlaybackCommandToken token,
   ) {
-    return _sessions.containsKey(session.id) &&
+    return _isRegisteredSession(session) &&
         session.playbackCommandGeneration == token.generation &&
         token.isCurrent;
   }
@@ -14,13 +14,13 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     PlaybackSession session, {
     required bool shouldStartTriggerCountdown,
   }) async {
-    if (!_sessions.containsKey(session.id)) return false;
+    if (!_isRegisteredSession(session)) return false;
     final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
       generation: generation,
       isCurrent: () =>
-          _sessions.containsKey(session.id) &&
+          _isRegisteredSession(session) &&
           session.playbackCommandGeneration == generation,
     );
     _notificationFacade.stateService.notificationsDismissedWhilePaused = false;
@@ -102,13 +102,13 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
   }
 
   Future<bool> _pauseSessionPlayback(PlaybackSession session) async {
-    if (!_sessions.containsKey(session.id)) return false;
+    if (!_isRegisteredSession(session)) return false;
     final generation = _playbackFacade.nextTransportCommandId();
     final token = _playbackCommandRunner.start(
       sessionId: session.id,
       generation: generation,
       isCurrent: () =>
-          _sessions.containsKey(session.id) &&
+          _isRegisteredSession(session) &&
           session.playbackCommandGeneration == generation,
     );
     session.beginTransportCommand(commandId: generation, playing: false);
@@ -208,13 +208,13 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
             nextTarget.queueIndex == session.currentQueueIndex)) {
       try {
         await _nativePlaybackRepository.seek(session.id, Duration.zero);
-        if (!_sessions.containsKey(session.id) ||
+        if (!_isRegisteredSession(session) ||
             session.playbackCommandGeneration != completionGeneration) {
           return;
         }
         session.setOptimisticPosition(Duration.zero);
       } finally {
-        if (_sessions.containsKey(session.id) &&
+        if (_isRegisteredSession(session) &&
             session.playbackCommandGeneration == completionGeneration) {
           session.isLoading = false;
           session.isAdvancingAfterCompletion = false;
@@ -222,7 +222,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           _notifyPlaybackChanged();
         }
       }
-      if (_sessions.containsKey(session.id) &&
+      if (_isRegisteredSession(session) &&
           session.playbackCommandGeneration == completionGeneration) {
         await _startSessionPlayback(
           session,
@@ -235,7 +235,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         nextPath: nextTarget.path,
         targetQueueIndex: nextTarget.queueIndex,
       );
-      if (_sessions.containsKey(session.id)) {
+      if (_isRegisteredSession(session)) {
         session.isAdvancingAfterCompletion = false;
       }
     }

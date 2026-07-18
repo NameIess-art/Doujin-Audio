@@ -123,34 +123,110 @@ class AppPreferences {
     AsmrTokenStore? tokenStore,
   }) async {
     final prefs = await _prefs;
-    for (final key in prefs.getKeys()) {
-      final normalizedKey = key.toLowerCase();
-      if (!_isSensitiveKey(key) ||
-          (normalizedKey.startsWith('asmr_') &&
-              normalizedKey.contains('token'))) {
-        await prefs.remove(key);
-      }
-    }
+    final previousValues = <String, Object>{
+      for (final key in prefs.getKeys())
+        if (prefs.get(key) case final Object value) key: value,
+    };
     final resolvedTokenStore = tokenStore ?? SecureAsmrTokenStore();
-    await resolvedTokenStore.clearToken();
-    await resolvedTokenStore.clearCredentials();
-    for (final entry in values.entries) {
-      if (_isSensitiveKey(entry.key)) continue;
-      final value = entry.value;
-      if (value is String) {
-        await prefs.setString(entry.key, value);
-      } else if (value is bool) {
-        await prefs.setBool(entry.key, value);
-      } else if (value is int) {
-        await prefs.setInt(entry.key, value);
-      } else if (value is double) {
-        await prefs.setDouble(entry.key, value);
-      } else if (value is List<dynamic>) {
-        await prefs.setStringList(
-          entry.key,
-          value.whereType<String>().toList(growable: false),
+    final previousToken = await resolvedTokenStore.readToken();
+    final previousCredentials = await resolvedTokenStore.readCredentials();
+
+    try {
+      for (final key in prefs.getKeys()) {
+        final normalizedKey = key.toLowerCase();
+        if (!_isSensitiveKey(key) ||
+            (normalizedKey.startsWith('asmr_') &&
+                normalizedKey.contains('token'))) {
+          if (!await prefs.remove(key)) {
+            throw StateError('Failed to remove preference: $key');
+          }
+        }
+      }
+      for (final entry in values.entries) {
+        if (_isSensitiveKey(entry.key)) continue;
+        final written = await _writeValue(prefs, entry.key, entry.value);
+        if (written == false) {
+          throw StateError('Failed to restore preference: ${entry.key}');
+        }
+      }
+      await resolvedTokenStore.clearToken();
+      await resolvedTokenStore.clearCredentials();
+    } catch (error, stackTrace) {
+      await _rollbackRestore(
+        prefs,
+        previousValues,
+        resolvedTokenStore,
+        previousToken,
+        previousCredentials,
+      );
+      Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  static Future<bool?> _writeValue(
+    SharedPreferences prefs,
+    String key,
+    Object? value,
+  ) {
+    if (value is String) return prefs.setString(key, value);
+    if (value is bool) return prefs.setBool(key, value);
+    if (value is int) return prefs.setInt(key, value);
+    if (value is double) return prefs.setDouble(key, value);
+    if (value is List<dynamic>) {
+      return prefs.setStringList(
+        key,
+        value.whereType<String>().toList(growable: false),
+      );
+    }
+    return Future<bool?>.value();
+  }
+
+  static Future<void> _rollbackRestore(
+    SharedPreferences prefs,
+    Map<String, Object> previousValues,
+    AsmrTokenStore tokenStore,
+    String? previousToken,
+    Map<String, String>? previousCredentials,
+  ) async {
+    try {
+      if (!await prefs.clear()) {
+        throw StateError('Failed to clear preferences during rollback.');
+      }
+      for (final entry in previousValues.entries) {
+        if (await _writeValue(prefs, entry.key, entry.value) != true) {
+          throw StateError(
+            'Failed to restore preference during rollback: ${entry.key}',
+          );
+        }
+      }
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'preferences_restore_values_rollback_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    try {
+      if (previousToken == null) {
+        await tokenStore.clearToken();
+      } else {
+        await tokenStore.writeToken(previousToken);
+      }
+      if (previousCredentials == null) {
+        await tokenStore.clearCredentials();
+      } else {
+        await tokenStore.writeCredentials(
+          previousCredentials['name'] ?? '',
+          previousCredentials['password'] ?? '',
         );
       }
+    } catch (error, stackTrace) {
+      AppLogService.error(
+        'preferences_restore_credentials_rollback_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
     }
   }
 

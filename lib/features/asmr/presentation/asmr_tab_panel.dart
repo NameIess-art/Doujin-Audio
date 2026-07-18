@@ -349,20 +349,38 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
     if (_submitting) {
       return;
     }
-    setState(() => _submitting = true);
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
-    await controller.logoutAsmrAccount();
-    if (!mounted) {
-      return;
+    setState(() => _submitting = true);
+    try {
+      await controller.logoutAsmrAccount();
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(
+        context,
+        ref.read(appLanguageProviderInstanceProvider).tr('asmr_logout_success'),
+        icon: Icons.logout_rounded,
+        iconColor: _accountAccentColor(context),
+      );
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      showAppSnackBar(
+        context,
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+        iconColor: _accountAccentColor(context),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
     }
-    setState(() => _submitting = false);
-    showAppSnackBar(
-      context,
-      ref.read(appLanguageProviderInstanceProvider).tr('asmr_logout_success'),
-      icon: Icons.logout_rounded,
-      iconColor: _accountAccentColor(context),
-    );
   }
 
   @override

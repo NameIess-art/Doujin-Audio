@@ -87,6 +87,8 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
       _playbackFacade.nativeRepository;
   PlaybackCommandRunner get _playbackCommandRunner =>
       _playbackFacade.commandRunner;
+  bool _isRegisteredSession(PlaybackSession session) =>
+      !session.isDisposed && identical(_sessions[session.id], session);
   bool get _multiThreadPlaybackEnabled =>
       _settingsRepository.multiThreadPlaybackEnabled;
   List<String> get _sortedLibraryTrackPaths =>

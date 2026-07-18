@@ -56,7 +56,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     bool showLoading = true,
     int? targetQueueIndex,
   }) async {
-    if (!_sessions.containsKey(session.id)) return false;
+    if (!_isRegisteredSession(session)) return false;
 
     session.loadGeneration++;
     final generation = session.loadGeneration;
@@ -176,7 +176,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         session.playbackError = e.toString();
       }
     } finally {
-      if (_sessions.containsKey(session.id) &&
+      if (_isRegisteredSession(session) &&
           session.loadGeneration == generation) {
         session.pendingNativeTrackPath = null;
         session.isLoading = false;
@@ -191,7 +191,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       }
     }
 
-    if (!_sessions.containsKey(session.id) ||
+    if (!_isRegisteredSession(session) ||
         session.loadGeneration != generation) {
       return false;
     }
@@ -205,7 +205,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
   }
 
   bool _isSessionLoadCurrent(PlaybackSession session, int generation) {
-    return _sessions.containsKey(session.id) &&
+    return _isRegisteredSession(session) &&
         session.loadGeneration == generation;
   }
 

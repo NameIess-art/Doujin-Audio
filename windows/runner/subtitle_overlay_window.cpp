@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <utility>
+#include <variant>
 
 #include <flutter/standard_method_codec.h>
 
@@ -66,13 +67,34 @@ const T* ValueFor(const flutter::EncodableMap& map, const char* key) {
 }
 
 double NumberFor(const flutter::EncodableMap& map, const char* key,
-                 double fallback) {
+                  double fallback) {
   if (const auto* value = ValueFor<double>(map, key)) return *value;
   if (const auto* value = ValueFor<int32_t>(map, key)) return *value;
   if (const auto* value = ValueFor<int64_t>(map, key)) {
     return static_cast<double>(*value);
   }
   return fallback;
+}
+
+bool IsNumber(const flutter::EncodableValue& value) {
+  if (const auto* number = std::get_if<double>(&value)) {
+    return std::isfinite(*number);
+  }
+  return std::holds_alternative<int32_t>(value) ||
+         std::holds_alternative<int64_t>(value);
+}
+
+bool HasValidOptionalString(const flutter::EncodableMap& map,
+                            const char* key) {
+  const auto iterator = map.find(flutter::EncodableValue(key));
+  return iterator == map.end() ||
+         std::holds_alternative<std::string>(iterator->second);
+}
+
+bool HasValidOptionalNumber(const flutter::EncodableMap& map,
+                            const char* key) {
+  const auto iterator = map.find(flutter::EncodableValue(key));
+  return iterator == map.end() || IsNumber(iterator->second);
 }
 
 const wchar_t* ResolveFontFamily(const std::wstring& family) {
@@ -142,21 +164,40 @@ void SubtitleOverlayWindow::HandleMethodCall(
     return;
   }
 
-  const auto* arguments =
-      std::get_if<flutter::EncodableMap>(call.arguments());
-  if (arguments == nullptr) {
-    result->Error("invalid_arguments", "Expected an argument map.");
-    return;
-  }
   if (method == "updateSubtitle") {
-    if (const auto* text = ValueFor<std::string>(*arguments, "text")) {
-      text_ = Utf8ToWide(*text);
-      Render();
+    const auto* arguments =
+        std::get_if<flutter::EncodableMap>(call.arguments());
+    if (arguments == nullptr) {
+      result->Error("invalid_argument", "Expected an argument map.");
+      return;
     }
+    const auto* text = ValueFor<std::string>(*arguments, "text");
+    if (text == nullptr) {
+      result->Error("invalid_argument",
+                    "Missing or invalid string argument: text");
+      return;
+    }
+    text_ = Utf8ToWide(*text);
+    Render();
     result->Success(SuccessEnvelope());
     return;
   }
   if (method == "updateStyle") {
+    const auto* arguments =
+        std::get_if<flutter::EncodableMap>(call.arguments());
+    if (arguments == nullptr) {
+      result->Error("invalid_argument", "Expected an argument map.");
+      return;
+    }
+    if (!HasValidOptionalNumber(*arguments, "fontSize") ||
+        !HasValidOptionalNumber(*arguments, "borderDepth") ||
+        !HasValidOptionalNumber(*arguments, "backgroundOpacity") ||
+        !HasValidOptionalString(*arguments, "fontFamily") ||
+        !HasValidOptionalString(*arguments, "textColor") ||
+        !HasValidOptionalString(*arguments, "backgroundColor")) {
+      result->Error("invalid_argument", "Invalid subtitle style argument.");
+      return;
+    }
     UpdateStyle(*arguments);
     Render();
     result->Success(SuccessEnvelope());

@@ -397,6 +397,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   static const int _maxConcurrentFilesPerTask = 3;
 
   bool _initialized = false;
+  bool _disposed = false;
   Timer? _deferredProgressNotifyTimer;
   DateTime? _lastProgressNotifyAt;
   int _lastProgressNotifyBytes = 0;
@@ -463,7 +464,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
-    if (_initialized) return;
+    if (_initialized || _disposed) return;
     _initialized = true;
     _notifyTaskChanged();
   }
@@ -581,6 +582,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   Future<void> resumeTask(int workId) async {
+    if (_disposed) return;
     final task = _tasks[workId];
     if (task == null || task.status != AsmrDownloadTaskStatus.paused) {
       return;
@@ -603,6 +605,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     required String destinationRoot,
     required AsmrDownloadConflictPolicy conflictPolicy,
   }) async {
+    if (_disposed) return;
     final normalizedDestination = destinationRoot.trim();
     if (normalizedDestination.isEmpty) {
       throw ArgumentError.value(destinationRoot, 'destinationRoot');
@@ -612,6 +615,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
 
     await initialize();
+    if (_disposed) return;
 
     final workId = work.id;
     final existingTask = _tasks[workId];
@@ -629,6 +633,10 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
     final workRootPath = _joinFolderPath(normalizedDestination, workFolderName);
     _workRootExistedBeforeTask[workId] = await _pathExists(workRootPath);
+    if (_disposed) {
+      _workRootExistedBeforeTask.remove(workId);
+      return;
+    }
     final backup = _buildBackupDetail(work, workRootPath);
     final backupJson = const JsonEncoder.withIndent(
       '  ',
@@ -670,6 +678,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   void _processQueue() {
+    if (_disposed) return;
     while (_activeTasks.length < _maxConcurrentDownloads && _queue.isNotEmpty) {
       final workId = _queue.removeAt(0);
       _activeTasks.add(workId);
@@ -678,6 +687,10 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   Future<void> _runTask(int workId) async {
+    if (_disposed) {
+      _activeTasks.remove(workId);
+      return;
+    }
     final taskSnapshot = _tasks[workId];
     if (taskSnapshot == null) {
       _activeTasks.remove(workId);
@@ -849,6 +862,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         }
       }
 
+      _throwIfCancelled(workId);
       final finalDownloadedBytes = failed > 0
           ? downloadedBytes
           : _tasks[workId]!.totalBytes;
@@ -868,7 +882,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       _notifyTaskChanged();
     } on _DownloadCancelled {
       final currentTask = _tasks[workId];
-      if (currentTask != null) {
+      if (!_disposed && currentTask != null) {
         if (_pauseRequested[workId] == true) {
           _tasks[workId] = currentTask.copyWith(
             status: AsmrDownloadTaskStatus.paused,
@@ -883,13 +897,15 @@ class AsmrDownloadManager extends ChangeNotifier {
         _notifyTaskChanged();
       }
     } catch (error, stackTrace) {
-      AppLogService.error(
-        'asmr_download_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
       final currentTask = _tasks[workId];
-      if (currentTask != null) {
+      if (!_disposed) {
+        AppLogService.error(
+          'asmr_download_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+      if (!_disposed && currentTask != null) {
         _tasks[workId] = currentTask.copyWith(
           status: AsmrDownloadTaskStatus.failed,
           error: error.toString(),
@@ -915,8 +931,10 @@ class AsmrDownloadManager extends ChangeNotifier {
       _activeTasks.remove(workId);
       _liveDownloadedBytes.remove(workId);
       _liveFileDownloadedBytes.remove(workId);
-      AppCacheService.scheduleEnforce();
-      _processQueue();
+      if (!_disposed) {
+        AppCacheService.scheduleEnforce();
+        _processQueue();
+      }
     }
   }
 
@@ -1322,6 +1340,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   void _notifyTaskChanged() {
+    if (_disposed) return;
     _deferredProgressNotifyTimer?.cancel();
     _deferredProgressNotifyTimer = null;
     _publishLiveProgress();
@@ -1337,6 +1356,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   void _notifyProgressChanged() {
+    if (_disposed) return;
     final now = DateTime.now();
     final elapsed = _lastProgressNotifyAt == null
         ? _progressNotifyMinInterval
@@ -1383,6 +1403,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     int chunkLength,
     int fileDownloadedBytes,
   ) {
+    if (_disposed) return;
     final task = _tasks[workId];
     if (task == null || chunkLength <= 0) return;
     _liveDownloadedBytes.update(
@@ -1413,20 +1434,27 @@ class AsmrDownloadManager extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
+    _disposed = true;
     _deferredProgressNotifyTimer?.cancel();
+    _deferredProgressNotifyTimer = null;
+    _queue.clear();
+    for (final workId in _activeTasks) {
+      _cancelRequested[workId] = true;
+    }
     for (final client in _activeHttpClients.values) {
       client.close(force: true);
     }
     _activeHttpClients.clear();
-    _workRootExistedBeforeTask.clear();
-    _createdOutputPaths.clear();
     _liveDownloadedBytes.clear();
     _liveFileDownloadedBytes.clear();
     super.dispose();
   }
 
   void _throwIfCancelled(int workId) {
-    if (_cancelRequested[workId] == true || _pauseRequested[workId] == true) {
+    if (_disposed ||
+        _cancelRequested[workId] == true ||
+        _pauseRequested[workId] == true) {
       throw const _DownloadCancelled();
     }
   }

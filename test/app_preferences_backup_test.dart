@@ -74,23 +74,68 @@ void main() {
         'asmr_one_jwt_token_v1': 'new-token',
       }, tokenStore: store);
 
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getString('asmr_one_pass_v1'), 'new-password');
       expect(await store.readToken(), isNull);
       expect(await store.readCredentials(), isNull);
     },
   );
+
+  test('failed safe restore rolls preferences and credentials back', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'language': 'en',
+      'themeMode': 'dark',
+      'asmr_one_pass_v1': 'plain-password',
+    });
+    await AppPreferences.init();
+    final store = _FakeTokenStore(
+      token: 'old-token',
+      name: 'old-name',
+      password: 'old-password',
+      failNextCredentialClear: true,
+    );
+
+    await expectLater(
+      AppPreferences.restoreSafeValues(const <String, Object?>{
+        'language': 'zh',
+        'themeMode': 'light',
+      }, tokenStore: store),
+      throwsStateError,
+    );
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('language'), 'en');
+    expect(preferences.getString('themeMode'), 'dark');
+    expect(preferences.getString('asmr_one_pass_v1'), 'plain-password');
+    expect(await store.readToken(), 'old-token');
+    expect(await store.readCredentials(), const <String, String>{
+      'name': 'old-name',
+      'password': 'old-password',
+    });
+  });
 }
 
 class _FakeTokenStore implements AsmrTokenStore {
-  _FakeTokenStore({this.token, this.name, this.password});
+  _FakeTokenStore({
+    this.token,
+    this.name,
+    this.password,
+    this.failNextCredentialClear = false,
+  });
 
   String? token;
   String? name;
   String? password;
+  bool failNextCredentialClear;
 
   @override
   Future<void> clearCredentials() async {
     name = null;
     password = null;
+    if (failNextCredentialClear) {
+      failNextCredentialClear = false;
+      throw StateError('credential clear failed');
+    }
   }
 
   @override

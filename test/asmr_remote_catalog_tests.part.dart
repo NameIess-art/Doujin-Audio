@@ -155,6 +155,7 @@ void registerAsmrRemoteCatalogTests({
       );
 
       await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      await Future<void>.delayed(Duration.zero);
 
       expect(controller.initialized, isTrue);
       expect(auth.restoreCount, 1);

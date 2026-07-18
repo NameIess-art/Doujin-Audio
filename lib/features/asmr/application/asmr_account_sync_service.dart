@@ -101,28 +101,34 @@ class AsmrAccountSyncService {
     return _snapshot;
   }
 
-  Future<AsmrAccountSnapshot> restoreSession() async {
-    final session = await _authService.restoreSession();
-    _snapshot = _snapshot.copyWith(
-      session: session,
-      clearSession: session == null,
-    );
-    return _snapshot;
+  Future<AsmrAccountSnapshot> restoreSession() {
+    return _serialize(() async {
+      final session = await _authService.restoreSession();
+      _snapshot = _snapshot.copyWith(
+        session: session,
+        clearSession: session == null,
+      );
+      return _snapshot;
+    });
   }
 
-  Future<AsmrAccountSnapshot> login(String name, String password) async {
-    final session = await _authService.login(name.trim(), password);
-    _snapshot = _snapshot.copyWith(session: session);
-    return _snapshot;
+  Future<AsmrAccountSnapshot> login(String name, String password) {
+    return _serialize(() async {
+      final session = await _authService.login(name.trim(), password);
+      _snapshot = _snapshot.copyWith(session: session);
+      return _snapshot;
+    });
   }
 
-  Future<AsmrAccountSnapshot> logout() async {
-    await _authService.logout();
-    _snapshot = _snapshot.copyWith(
-      clearSession: true,
-      remoteProgressByWorkId: const <int, String>{},
-    );
-    return _snapshot;
+  Future<AsmrAccountSnapshot> logout() {
+    return _serialize(() async {
+      await _authService.logout();
+      _snapshot = _snapshot.copyWith(
+        clearSession: true,
+        remoteProgressByWorkId: const <int, String>{},
+      );
+      return _snapshot;
+    });
   }
 
   Future<AsmrAccountSnapshot> toggleFavorite(AsmrWork work) {

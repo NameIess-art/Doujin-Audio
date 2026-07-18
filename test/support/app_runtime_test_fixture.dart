@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    show Override, ProviderScope;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/application/app_runtime_graph.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
@@ -204,6 +205,7 @@ Widget buildAppRuntimeTestApp({
   required SettingsRepository settingsRepository,
   required AppLanguageProvider languageProvider,
   UiOperationService? uiOperationService,
+  List<Override> overrides = const <Override>[],
   required Widget child,
 }) {
   final themeProvider = ThemeProvider();
@@ -226,6 +228,7 @@ Widget buildAppRuntimeTestApp({
       appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
       themeProviderInstanceProvider.overrideWithValue(themeProvider),
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
+      ...overrides,
     ],
     child: MaterialApp(home: Scaffold(body: child)),
   );
@@ -296,20 +299,22 @@ final class AppRuntimeWidgetTestFixture {
 
   SettingsRepository get settings => settingsRepository;
 
-  Widget build(Widget child) => buildAppRuntimeTestApp(
-    runtimeGraph: runtimeGraph,
-    audioDatabaseRepository: audioDatabaseRepository,
-    nativePlaybackRepository: nativePlaybackRepository,
-    playbackCommandRunner: playbackCommandRunner,
-    libraryService: libraryService,
-    playbackService: playbackService,
-    timerService: timerService,
-    notificationCoordinatorService: notificationCoordinatorService,
-    settingsRepository: settingsRepository,
-    uiOperationService: uiOperationService,
-    languageProvider: languageProvider,
-    child: child,
-  );
+  Widget build(Widget child, {List<Override> overrides = const <Override>[]}) =>
+      buildAppRuntimeTestApp(
+        runtimeGraph: runtimeGraph,
+        audioDatabaseRepository: audioDatabaseRepository,
+        nativePlaybackRepository: nativePlaybackRepository,
+        playbackCommandRunner: playbackCommandRunner,
+        libraryService: libraryService,
+        playbackService: playbackService,
+        timerService: timerService,
+        notificationCoordinatorService: notificationCoordinatorService,
+        settingsRepository: settingsRepository,
+        uiOperationService: uiOperationService,
+        languageProvider: languageProvider,
+        overrides: overrides,
+        child: child,
+      );
 
   void dispose() {
     languageProvider.dispose();

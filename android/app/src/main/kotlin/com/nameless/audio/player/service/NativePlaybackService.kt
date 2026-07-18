@@ -742,6 +742,7 @@ class NativePlaybackService : MediaSessionService() {
         } catch (e: Exception) {
             sessions.remove(sessionId)
             nativeSession.release()
+            clearPlaybackIntent(sessionId)
             if (focusedSessionId == sessionId) {
                 focusedSessionId = sessions.keys.firstOrNull()
                 updateMediaSessionPlayer()

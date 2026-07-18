@@ -24,6 +24,7 @@ class AsmrLibraryGlobalViewState {
     required this.lastError,
     required this.visibleCategories,
     required this.contentLanguage,
+    required this.contentLanguagePreference,
     required this.revision,
   });
 
@@ -31,6 +32,7 @@ class AsmrLibraryGlobalViewState {
   final Object? lastError;
   final List<AsmrCategoryType> visibleCategories;
   final AsmrContentLanguage contentLanguage;
+  final ContentLanguagePreference contentLanguagePreference;
   final int revision;
 
   @override
@@ -40,6 +42,7 @@ class AsmrLibraryGlobalViewState {
         lastError == other.lastError &&
         listEquals(visibleCategories, other.visibleCategories) &&
         contentLanguage == other.contentLanguage &&
+        contentLanguagePreference == other.contentLanguagePreference &&
         revision == other.revision;
   }
 
@@ -49,6 +52,7 @@ class AsmrLibraryGlobalViewState {
     lastError,
     Object.hashAll(visibleCategories),
     contentLanguage,
+    contentLanguagePreference,
     revision,
   );
 }
@@ -398,6 +402,7 @@ class AsmrLibraryController extends ChangeNotifier
     lastError: _lastError,
     visibleCategories: _visibleCategories,
     contentLanguage: _contentLanguage,
+    contentLanguagePreference: _contentLanguagePreference,
     revision: _globalRevision,
   );
 

@@ -312,6 +312,7 @@ final class AppRuntimeWidgetTestFixture {
   );
 
   void dispose() {
+    languageProvider.dispose();
     unawaited(runtimeGraph.runtime.dispose());
   }
 
@@ -341,7 +342,8 @@ final class AppRuntimeTestFixture {
   bool _disposed = false;
 
   static void initialize() {
-    TestWidgetsFlutterBinding.ensureInitialized();
+    final binding = TestWidgetsFlutterBinding.ensureInitialized();
+    binding.platformDispatcher.localesTestValue = const <Locale>[Locale('zh')];
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;

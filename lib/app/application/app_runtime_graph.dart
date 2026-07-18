@@ -42,7 +42,7 @@ AppRuntimeGraph createAppRuntimeGraph({
 }) {
   final audioPaths = AudioPathCoordinator(library: library, playback: playback);
   final subtitles = PlaybackSubtitleService(
-    trackResolver: library.trackByPath,
+    trackResolver: audioPaths.trackByPath,
     onTrackLoaded: notifications.handleSubtitleTrackLoaded,
   );
   final warmup = AudioUiWarmupCoordinator(

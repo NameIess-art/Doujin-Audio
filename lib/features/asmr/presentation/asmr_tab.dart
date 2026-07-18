@@ -30,7 +30,6 @@ import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
-import '../../../core/widgets/unified_popup_menu.dart';
 
 import 'asmr_download_page.dart';
 import 'asmr_work_detail_sheet.dart';
@@ -404,41 +403,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     );
   }
 
-  Future<void> _showLanguageDialog() async {
-    final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller == null) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final result = await _showAsmrPanel<ContentLanguagePreference>(
-      builder: (context) => _AsmrPanelCard(
-        icon: Icons.language_rounded,
-        title: i18n.tr('asmr_language_title'),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final preference in ContentLanguagePreference.values)
-              _AsmrSelectionTile(
-                label: i18n.tr(_asmrLanguageLabelKey(preference)),
-                selected: controller.contentLanguagePreference == preference,
-                onTap: () => Navigator.of(context).pop(preference),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (!mounted || result == null) {
-      return;
-    }
-    await _runAsmrOperation<void>(
-      scope: const UiOperationScope('asmr:language'),
-      labelKey: 'loading_dot',
-      task: () => controller.setContentLanguagePreference(result),
-    );
-    if (!mounted) {
-      return;
-    }
-    unawaited(_refreshCurrentCategory());
-  }
-
   Future<void> _showAccountDialog() {
     return _showAsmrPanel<void>(
       builder: (context) => const _AsmrAccountPanel(),
@@ -732,10 +696,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                     ),
                   if (hasDownloadManager)
                     const _AsmrDownloadProgressInlineButton(),
-                  _AsmrMoreMenuButton(
-                    onAccount: _showAccountDialog,
-                    onLanguage: _showLanguageDialog,
-                  ),
+                  _AsmrAccountButton(onPressed: _showAccountDialog),
                 ],
               ),
             ),

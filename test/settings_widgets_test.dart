@@ -3,28 +3,15 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/settings/presentation/settings_tab.dart';
 import 'package:nameless_audio/features/settings/presentation/about_page.dart';
+import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
-
-Future<void> _scrollTo(
-  WidgetTester tester,
-  ScrollableState scrollable,
-  Finder finder,
-) async {
-  await tester.scrollUntilVisible(
-    finder,
-    250,
-    scrollable: find.byWidget(scrollable.widget),
-  );
-  await tester.pumpAndSettle();
-}
 
 void main() {
   AppRuntimeTestFixture.initialize();
@@ -43,84 +30,97 @@ void main() {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
 
-  testWidgets('settings renders sections in order with critical entries', (
-    tester,
-  ) async {
+  testWidgets('settings opens categorized secondary pages', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
     await tester.pumpWidget(harness.build(const SettingsTab()));
     await tester.pump();
 
     final i18n = harness.languageProvider;
-    expect(find.text(i18n.tr('dlsite_metadata_language')), findsOneWidget);
-    expect(find.text(i18n.tr('follow_page_language')), findsOneWidget);
-    expect(
-      harness.settingsRepository.dlsiteMetadataLanguage,
-      ContentLanguagePreference.followPage,
-    );
-    expect(
-      harness.settingsRepository.dlsiteMetadataLanguage.resolve(
-        harness.languageProvider.language,
-      ),
-      AppLanguage.zh,
-    );
-    await i18n.setLanguage(AppLanguage.en);
-    await tester.pumpAndSettle();
-    expect(
-      harness.settingsRepository.dlsiteMetadataLanguage.resolve(
-        harness.languageProvider.language,
-      ),
-      AppLanguage.en,
-    );
-    expect(find.text(i18n.tr('startup_page')), findsOneWidget);
-    final scrollableFinder = find
-        .descendant(
-          of: find.byType(SettingsTab),
-          matching: find.byType(Scrollable),
-        )
-        .first;
-    final scrollable = tester.state<ScrollableState>(scrollableFinder);
-    final sections = <String, String>{
-      'section_general': 'startup_page',
-      'section_appearance': 'dark_mode',
-      'section_playback': 'auto_play_added_sessions',
-      'section_asmr_download': 'asmr_download_path_setting',
-      'section_data_storage': 'data_and_support',
-      'section_system_updates': 'check_updates',
-    };
-    var previousOffset = -1.0;
-
-    for (final entry in sections.entries) {
-      final header = find.text(i18n.tr(entry.key));
-      await _scrollTo(tester, scrollable, header);
-      expect(header, findsOneWidget);
-      expect(find.text(i18n.tr(entry.value)), findsOneWidget);
-      expect(scrollable.position.pixels, greaterThanOrEqualTo(previousOffset));
-      previousOffset = scrollable.position.pixels;
+    for (final key in [
+      'section_language',
+      'section_common',
+      'section_appearance',
+      'section_playback',
+      'section_asmr_download',
+      'section_data_storage',
+      'section_updates_permissions',
+      'about',
+    ]) {
+      expect(find.text(i18n.tr(key)), findsOneWidget);
     }
 
-    expect(find.text(i18n.tr('data_and_support')), findsOneWidget);
+    await tester.tap(find.text(i18n.tr('section_language')));
+    await tester.pumpAndSettle();
+    expect(find.text(i18n.tr('language')), findsAtLeastNWidgets(1));
+    expect(find.text(i18n.tr('interface_language')), findsOneWidget);
+    expect(find.text(i18n.tr('follow_system')), findsOneWidget);
+    expect(find.text(i18n.tr('dlsite_metadata_language')), findsOneWidget);
+    expect(find.text(i18n.tr('asmr_page_language')), findsOneWidget);
     expect(
-      find.text(i18n.tr('permission_center')),
+      find.text(i18n.tr('follow_interface_language')),
+      findsAtLeastNWidgets(1),
+    );
+    final categoryHeader = find.byType(TopPageHeader);
+    final firstLanguageTile = find.widgetWithText(
+      ListTile,
+      i18n.tr('interface_language'),
+    );
+    final languageTileWidget = tester.widget<ListTile>(firstLanguageTile);
+    expect(languageTileWidget.leading, isA<Icon>());
+    expect((languageTileWidget.leading! as Icon).size, 30);
+    final languageTileHeight = tester.getSize(firstLanguageTile).height;
+    expect(languageTileHeight, greaterThanOrEqualTo(58));
+    expect(languageTileHeight, lessThan(68));
+    final languageTileContext = tester.element(firstLanguageTile);
+    final languageTileTheme = ListTileTheme.of(languageTileContext);
+    expect(languageTileTheme.minTileHeight, 58);
+    expect(
+      languageTileTheme.titleTextStyle?.fontSize,
+      closeTo(58 * 18 / 68, 0.001),
+    );
+    expect(
+      languageTileTheme.subtitleTextStyle?.fontSize,
+      closeTo(58 * 15 / 68, 0.001),
+    );
+    expect(
+      Theme.of(languageTileContext).textTheme.titleMedium?.fontSize,
+      closeTo(58 * 18 / 68, 0.001),
+    );
+    expect(
+      tester.getTopLeft(firstLanguageTile).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(categoryHeader).dy),
+    );
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(i18n.tr('section_common')));
+    await tester.pumpAndSettle();
+    expect(find.text(i18n.tr('startup_page')), findsOneWidget);
+    expect(
+      find.text(i18n.tr('haptic_feedback_enabled')),
       Platform.isWindows ? findsNothing : findsOneWidget,
     );
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
 
-    final updateTile = tester.widget<ListTile>(
-      find.widgetWithText(ListTile, i18n.tr('check_updates')),
-    );
-    expect(updateTile.onTap, isNotNull);
-    expect(find.text(i18n.tr('auto_check_updates')), findsOneWidget);
+    final updatesCategory = find.text(i18n.tr('section_updates_permissions'));
+    await tester.ensureVisible(updatesCategory);
+    await tester.pumpAndSettle();
+    await tester.tap(updatesCategory);
+    await tester.pumpAndSettle();
+    expect(find.text(i18n.tr('check_updates')), findsOneWidget);
     expect(
       find.textContaining(i18n.tr('current_version_label', {'version': ''})),
       findsOneWidget,
     );
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
 
-    final aboutTile = tester.widget<ListTile>(
-      find.widgetWithText(ListTile, i18n.tr('about')).last,
-    );
-    expect(aboutTile.onTap, isNotNull);
-    await _scrollTo(tester, scrollable, find.text(i18n.tr('about')).last);
-    await tester.tap(find.widgetWithText(ListTile, i18n.tr('about')).last);
+    final aboutCategory = find.text(i18n.tr('about'));
+    await tester.ensureVisible(aboutCategory);
+    await tester.pumpAndSettle();
+    await tester.tap(aboutCategory);
     await tester.pumpAndSettle();
     expect(find.byType(AboutPage), findsOneWidget);
   });
@@ -134,15 +134,8 @@ void main() {
     await tester.pump();
 
     final i18n = harness.languageProvider;
-    final scrollableFinder = find
-        .descendant(
-          of: find.byType(SettingsTab),
-          matching: find.byType(Scrollable),
-        )
-        .first;
-    final scrollable = tester.state<ScrollableState>(scrollableFinder);
-    final bottomNavigationStyle = find.text(i18n.tr('bottom_navigation_style'));
-    await _scrollTo(tester, scrollable, bottomNavigationStyle);
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
     final bottomNavigationStyleTile = find.widgetWithText(
       SwitchListTile,
       i18n.tr('bottom_navigation_style'),
@@ -159,8 +152,6 @@ void main() {
       BottomNavigationStyle.bar,
     );
 
-    final cardInfo = find.text(i18n.tr('card_info_display'));
-    await _scrollTo(tester, scrollable, cardInfo);
     final cardInfoTile = find.widgetWithText(
       ListTile,
       i18n.tr('card_info_display'),
@@ -223,15 +214,11 @@ void main() {
     await tester.pump();
 
     final i18n = harness.languageProvider;
-    final scrollableFinder = find
-        .descendant(
-          of: find.byType(SettingsTab),
-          matching: find.byType(Scrollable),
-        )
-        .first;
-    final scrollable = tester.state<ScrollableState>(scrollableFinder);
-    final updateLabel = find.text(i18n.tr('check_updates'));
-    await _scrollTo(tester, scrollable, updateLabel);
+    final updatesCategory = find.text(i18n.tr('section_updates_permissions'));
+    await tester.ensureVisible(updatesCategory);
+    await tester.pumpAndSettle();
+    await tester.tap(updatesCategory);
+    await tester.pumpAndSettle();
 
     final checkingCompleter = Completer<void>();
     final checking = harness.uiOperationService.run<void>(

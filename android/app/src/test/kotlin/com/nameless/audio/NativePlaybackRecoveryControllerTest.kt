@@ -4,6 +4,7 @@ import com.nameless.audio.player.recovery.*
 import com.nameless.audio.player.session.*
 
 import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,6 +12,55 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativePlaybackRecoveryControllerTest {
+    @Test
+    fun `health checks isolate a stalled session from progressing sessions`() {
+        val environment = FakeRecoveryEnvironment()
+        val host = FakeRecoveryHost()
+        var stalledRecovered = false
+        host.onHealthSample = { sessionId, nowMs ->
+            NativePlaybackHealthSample(
+                sessionId = sessionId,
+                positionMs = if (sessionId == "healthy" || stalledRecovered) {
+                    nowMs
+                } else {
+                    1_000L
+                },
+                bufferedPositionMs = 5_000L,
+                durationMs = 120_000L,
+                mediaItemIndex = 0,
+                playbackState = Player.STATE_READY,
+                playWhenReady = true,
+                isPlaying = sessionId == "healthy" || stalledRecovered,
+                playbackSuppressionReason = Player.PLAYBACK_SUPPRESSION_REASON_NONE,
+                hasPlayerError = false,
+                capturedElapsedRealtimeMs = nowMs
+            )
+        }
+        val controller = NativePlaybackRecoveryController(
+            host = host,
+            environment = environment,
+            recoveryWindowMs = 60_000L,
+            healthCheckIntervalMs = 15_000L
+        )
+        controller.markIntended("stalled")
+        controller.markIntended("healthy")
+
+        environment.runFirst(15_000L)
+        environment.runFirst(15_000L)
+        environment.runFirst(15_000L)
+
+        assertTrue(controller.isPending("stalled"))
+        assertFalse(controller.isPending("healthy"))
+        assertTrue(environment.delays.contains(2_000L))
+
+        stalledRecovered = true
+        environment.runFirst(15_000L)
+
+        assertFalse(controller.isPending("stalled"))
+        assertTrue(controller.isIntended("stalled"))
+        assertFalse(environment.delays.contains(2_000L))
+    }
+
     @Test
     fun foregroundSyncCannotReenterAnActiveRecoveryTrigger() {
         val environment = FakeRecoveryEnvironment()
@@ -42,13 +92,40 @@ class NativePlaybackRecoveryControllerTest {
         assertTrue(controller.isIntended("player"))
         assertTrue(controller.isPending("player"))
         assertTrue(environment.listening)
-        assertEquals(listOf(2_000L, 60_000L), environment.delays.sorted())
+        assertEquals(listOf(2_000L, 15_000L, 60_000L), environment.delays.sorted())
 
         environment.runFirst(2_000L)
 
         assertFalse(controller.isIntended("player"))
         assertFalse(controller.isPending("player"))
         assertFalse(environment.listening)
+    }
+
+    @Test
+    fun `recovery window switches mode without clearing playback intent`() {
+        val environment = FakeRecoveryEnvironment()
+        val controller = NativePlaybackRecoveryController(
+            FakeRecoveryHost(),
+            environment,
+            recoveryWindowMs = 60_000L
+        )
+        controller.markIntended("player")
+        controller.onPlayerError(
+            sessionId = "player",
+            recoverable = true,
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
+            errorMessage = "network",
+            causeDescription = null
+        )
+
+        environment.runFirst(60_000L)
+
+        assertTrue(controller.isIntended("player"))
+        assertTrue(controller.isPending("player"))
+        assertTrue(environment.listening)
+        assertTrue(environment.delays.contains(2_000L))
+        controller.clear("player")
+        assertTrue(environment.tasks.isEmpty())
     }
 
     @Test
@@ -109,14 +186,21 @@ private class FakeRecoveryEnvironment : NativePlaybackRecoveryEnvironment {
 }
 
 private class FakeRecoveryHost(
-    private val playbackSession: NativePlaybackSession? = null
+    playbackSession: NativePlaybackSession? = null,
+    private val playbackSessions: Map<String, NativePlaybackSession> =
+        playbackSession?.let { mapOf(it.sessionId to it) }.orEmpty()
 ) : NativePlaybackRecoveryHost {
     var syncForegroundCalls = 0
     var onSyncForeground: () -> Unit = {}
     var requestAudioFocusCalls = 0
     var onRequestAudioFocus: () -> Unit = {}
+    var onHealthSample: (String, Long) -> NativePlaybackHealthSample? = { _, _ -> null }
 
-    override fun session(sessionId: String): NativePlaybackSession? = playbackSession
+    override fun session(sessionId: String): NativePlaybackSession? = playbackSessions[sessionId]
+    override fun healthSample(
+        sessionId: String,
+        nowElapsedRealtimeMs: Long
+    ): NativePlaybackHealthSample? = onHealthSample(sessionId, nowElapsedRealtimeMs)
     override fun requestAudioFocus(): Boolean {
         requestAudioFocusCalls += 1
         onRequestAudioFocus()

@@ -194,15 +194,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     final velocity = details.primaryVelocity ?? 0;
     final shouldDismiss = _dismissController.value >= (1 / 3) || velocity > 500;
     if (shouldDismiss) {
-      ref
-          .read(playlistUiControllerProvider)
-          .requestCarouselSnap(_currentSessionId);
-      _beginDismissInteraction();
-      await _animateDismissToEnd(velocity: velocity);
-      _endDismissInteraction();
-      if (mounted) {
-        await navigator.maybePop();
-      }
+      await _dismissAndPop(velocity: velocity, navigator: navigator);
       return;
     }
     if (_dismissController.value <= 0.001) {
@@ -215,24 +207,51 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   }
 
   Future<void> _animateDismissToEnd({double velocity = 0}) {
-    final remaining = (1 - _dismissController.value).clamp(0.0, 1.0);
-    final velocityFactor = (velocity.abs() / 2200).clamp(0.0, 1.0);
-    final durationMs = lerpDouble(300, 200, velocityFactor)! * remaining;
-    return _dismissController.animateTo(
-      1,
-      duration: Duration(milliseconds: durationMs.round().clamp(180, 320)),
-      curve: Curves.easeOutCubic,
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _dismissController.value = 1;
+      return Future<void>.value();
+    }
+    final normalizedVelocity = (velocity / MediaQuery.sizeOf(context).height)
+        .clamp(-4.0, 4.0);
+    return _dismissController.animateWith(
+      SpringSimulation(
+        const SpringDescription(mass: 1, stiffness: 420, damping: 34),
+        _dismissController.value,
+        1,
+        normalizedVelocity,
+      ),
     );
   }
 
   Future<void> _animateDismissBack() {
-    final progress = _dismissController.value.clamp(0.0, 1.0);
-    final durationMs = lerpDouble(120, 220, progress)!;
-    return _dismissController.animateBack(
-      0,
-      duration: Duration(milliseconds: durationMs.round().clamp(120, 240)),
-      curve: Curves.easeOutQuart,
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _dismissController.value = 0;
+      return Future<void>.value();
+    }
+    return _dismissController.animateWith(
+      SpringSimulation(
+        const SpringDescription(mass: 1, stiffness: 420, damping: 34),
+        _dismissController.value,
+        0,
+        0,
+      ),
     );
+  }
+
+  Future<void> _dismissAndPop({
+    double velocity = 0,
+    required NavigatorState navigator,
+  }) async {
+    ref
+        .read(playlistUiControllerProvider)
+        .requestCarouselSnap(_currentSessionId);
+    _beginDismissInteraction();
+    try {
+      await _animateDismissToEnd(velocity: velocity);
+    } finally {
+      _endDismissInteraction();
+    }
+    if (mounted) await navigator.maybePop();
   }
 
   @override
@@ -276,9 +295,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             _contentEnterController.value.clamp(0.0, 1.0),
           );
           final enterProgress = Curves.easeOutCubic.transform(rawEnterProgress);
-          final dismissProgress = Curves.easeOutCubic.transform(
-            _dismissController.value.clamp(0.0, 1.0),
-          );
+          final dismissProgress = _dismissController.value.clamp(0.0, 1.0);
           final dragDistance =
               MediaQuery.sizeOf(context).height * dismissProgress;
           final enterOffset =
@@ -306,7 +323,16 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   heightFactor: 1.0,
                   child: Transform.translate(
                     offset: Offset(0, enterOffset + dragDistance),
-                    child: child!,
+                    child: Transform.scale(
+                      scale: 1 - (0.03 * revealProgress),
+                      alignment: Alignment.topCenter,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(24 * revealProgress),
+                        ),
+                        child: child!,
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -344,17 +370,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                     coverPathFuture: coverPathFuture,
                     dismissAnimation: _dismissController,
                     segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
-                    onClose: () async {
-                      ref
-                          .read(playlistUiControllerProvider)
-                          .requestCarouselSnap(_currentSessionId);
-                      _beginDismissInteraction();
-                      await _animateDismissToEnd();
-                      _endDismissInteraction();
-                      if (context.mounted) {
-                        await Navigator.of(context).maybePop();
-                      }
-                    },
+                    onClose: () =>
+                        _dismissAndPop(navigator: Navigator.of(context)),
                     onHorizontalDragUpdate: isWindows
                         ? null
                         : (details) {
@@ -701,14 +718,12 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
             final detailFullyOpen = widget.dismissAnimation.value <= 0.01;
 
-            if (!_isDismissGesture && delta > 0 && !panelExpanded) {
-              _segmentPanelDragDelta += delta;
-              if (_segmentPanelDragDelta > 24) {
-                _isDismissGesture = true;
-                final dismissDelta = _segmentPanelDragDelta;
-                _segmentPanelDragDelta = 0;
-                onVerticalDragUpdate?.call(dismissDelta);
-              }
+            if (!_isDismissGesture &&
+                delta > 0 &&
+                !panelExpanded &&
+                detailFullyOpen) {
+              _isDismissGesture = true;
+              onVerticalDragUpdate?.call(delta);
               return;
             }
 

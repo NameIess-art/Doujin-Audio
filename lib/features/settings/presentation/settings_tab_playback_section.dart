@@ -4,11 +4,9 @@ List<Widget> _buildSettingsPlaybackSection({
   required AppLanguageProvider i18n,
   required SettingsRepository settings,
   required SettingsCommandController settingsController,
-  required TextStyle? descStyle,
   required ColorScheme cs,
 }) {
   return <Widget>[
-    _SectionHeader(title: i18n.tr('section_playback')),
     _SettingsGroupCard(
       children: [
         Consumer(
@@ -22,21 +20,9 @@ List<Widget> _buildSettingsPlaybackSection({
               value: autoPlay,
               onChanged: settings.setAutoPlayAddedSessions,
               title: Text(i18n.tr('auto_play_added_sessions')),
-              subtitle: Text(
-                i18n.tr('auto_play_added_sessions_subtitle'),
-                style: descStyle,
-              ),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.tertiaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.playlist_play_rounded,
-                  color: cs.onTertiaryContainer,
-                ),
+              secondary: _settingsIcon(
+                Icons.playlist_play_rounded,
+                cs.tertiary,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -56,22 +42,7 @@ List<Widget> _buildSettingsPlaybackSection({
               value: asmrPlaybackCacheEnabled,
               onChanged: settings.setAsmrPlaybackCacheEnabled,
               title: Text(i18n.tr('asmr_playback_cache')),
-              subtitle: Text(
-                i18n.tr('asmr_playback_cache_subtitle'),
-                style: descStyle,
-              ),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.tertiaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.cached_rounded,
-                  color: cs.onTertiaryContainer,
-                ),
-              ),
+              secondary: _settingsIcon(Icons.cached_rounded, cs.tertiary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -90,22 +61,7 @@ List<Widget> _buildSettingsPlaybackSection({
               value: recordProgress,
               onChanged: settings.setRecordPlaybackProgress,
               title: Text(i18n.tr('record_playback_progress')),
-              subtitle: Text(
-                i18n.tr('record_playback_progress_subtitle'),
-                style: descStyle,
-              ),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.tertiaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.restore_rounded,
-                  color: cs.onTertiaryContainer,
-                ),
-              ),
+              secondary: _settingsIcon(Icons.restore_rounded, cs.tertiary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -131,21 +87,9 @@ List<Widget> _buildSettingsPlaybackSection({
                 }
               },
               title: Text(i18n.tr('multi_thread_playback')),
-              subtitle: Text(
-                i18n.tr('multi_thread_playback_subtitle'),
-                style: descStyle,
-              ),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.tertiaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.multitrack_audio_rounded,
-                  color: cs.onTertiaryContainer,
-                ),
+              secondary: _settingsIcon(
+                Icons.multitrack_audio_rounded,
+                cs.tertiary,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(

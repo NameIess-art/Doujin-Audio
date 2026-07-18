@@ -256,8 +256,8 @@ class NativePlaybackFocusRecoveryPolicyTest {
         assertEquals(30_000L, playbackRecoveryDelayMs(2, 0L, 0L))
         assertEquals(120_000L, playbackRecoveryDelayMs(3, 0L, 0L))
         assertEquals(240_000L, playbackRecoveryDelayMs(4, 0L, 0L))
-        assertEquals(480_000L, playbackRecoveryDelayMs(5, 0L, 0L))
-        assertNull(playbackRecoveryDelayMs(6, 0L, 0L))
+        assertEquals(300_000L, playbackRecoveryDelayMs(5, 0L, 0L))
+        assertEquals(300_000L, playbackRecoveryDelayMs(6, 0L, 0L))
     }
 
     @Test

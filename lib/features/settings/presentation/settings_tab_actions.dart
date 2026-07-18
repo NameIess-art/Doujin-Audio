@@ -47,7 +47,9 @@ extension _SettingsTabActions on _SettingsTabState {
       context: context,
       operations: ref.read(uiOperationServiceProvider),
       onInfo: (info) {
-        if (mounted) _setLocalState(() => _lastUpdateInfo = info);
+        if (mounted) {
+          _updateInfoNotifier.value = info;
+        }
       },
     );
   }

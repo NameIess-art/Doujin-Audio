@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -10,9 +11,11 @@ void main() {
     'background transparency and boosted volume copy are localized',
     () async {
       final provider = AppLanguageProvider();
+      addTearDown(provider.dispose);
 
       await provider.setLanguage(AppLanguage.zh);
       expect(provider.tr('background_transparency'), '背景透明度');
+      expect(provider.tr('haptic_feedback_enabled'), '交互震动效果');
       expect(provider.tr('volume_range_hint'), '0-200');
 
       await provider.setLanguage(AppLanguage.ja);
@@ -33,6 +36,7 @@ void main() {
     () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final provider = AppLanguageProvider();
+      addTearDown(provider.dispose);
       await Future<void>.delayed(Duration.zero);
 
       await provider.setLanguage(AppLanguage.zh);
@@ -48,6 +52,73 @@ void main() {
       expect(provider.tr('asmr_detail_other'), 'その他の詳細');
     },
   );
+
+  testWidgets('interface language defaults to and persists follow system', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('ja'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    final provider = AppLanguageProvider();
+    addTearDown(provider.dispose);
+    await tester.pump();
+
+    expect(provider.preference, AppLanguagePreference.system);
+    expect(provider.language, AppLanguage.ja);
+
+    await provider.setLanguage(AppLanguage.en);
+    expect(provider.preference, AppLanguagePreference.en);
+    expect(provider.language, AppLanguage.en);
+
+    await provider.setLanguagePreference(AppLanguagePreference.system);
+    expect(provider.preference, AppLanguagePreference.system);
+    expect(provider.language, AppLanguage.ja);
+    expect(
+      (await SharedPreferences.getInstance()).getString('app_language'),
+      'system',
+    );
+  });
+
+  testWidgets('follow system reacts to locale changes', (tester) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('en'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    final provider = AppLanguageProvider();
+    addTearDown(provider.dispose);
+    await tester.pump();
+    expect(provider.language, AppLanguage.en);
+
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('zh'),
+    ];
+    await tester.pump();
+    expect(provider.language, AppLanguage.zh);
+  });
+
+  testWidgets('stored explicit interface language remains compatible', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'app_language': 'en',
+    });
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('ja'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    final provider = AppLanguageProvider();
+    addTearDown(provider.dispose);
+    await tester.pump();
+
+    expect(provider.preference, AppLanguagePreference.en);
+    expect(provider.language, AppLanguage.en);
+  });
 
   test('content language preference follows or overrides page language', () {
     expect(

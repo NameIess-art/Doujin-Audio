@@ -59,9 +59,9 @@ private val playbackRecoveryOffsetsMs = longArrayOf(
     8_000L,
     30_000L,
     2 * 60 * 1000L,
-    4 * 60 * 1000L,
-    8 * 60 * 1000L
+    4 * 60 * 1000L
 )
+private const val PLAYBACK_RECOVERY_LOW_FREQUENCY_INTERVAL_MS = 5 * 60 * 1000L
 
 internal fun idlePlaybackSessionIdsToRelease(
     focusedSessionId: String?,
@@ -845,6 +845,7 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Session not found")
         session.lastUsedMs = System.currentTimeMillis()
         focusSession(sessionId)
+        playbackRecovery.resetHealth(sessionId, "skip_next", cancelRecovery = true)
         ensureFocusedPlayer(session).seekToNextMediaItem()
         evictPlayersIfNeeded()
         publishSessionState(sessionId)
@@ -857,6 +858,7 @@ class NativePlaybackService : MediaSessionService() {
         val session = sessions[sessionId] ?: return errorResult("Session not found")
         session.lastUsedMs = System.currentTimeMillis()
         focusSession(sessionId)
+        playbackRecovery.resetHealth(sessionId, "skip_previous", cancelRecovery = true)
         ensureFocusedPlayer(session).seekToPreviousMediaItem()
         evictPlayersIfNeeded()
         publishSessionState(sessionId)
@@ -933,6 +935,7 @@ class NativePlaybackService : MediaSessionService() {
 
     fun seek(sessionId: String, positionMs: Long): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        playbackRecovery.resetHealth(sessionId, "seek", cancelRecovery = true)
         session.ensurePlayer().seekTo(positionMs.coerceAtLeast(0L))
         publishSessionState(sessionId)
         schedulePersistSessionState()
@@ -1228,6 +1231,7 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun handleMediaItemTransition(sessionId: String, reason: Int) {
         sessions[sessionId]?.syncCurrentMediaItemFromPlayer()
+        playbackRecovery.resetHealth(sessionId, "media_item_transition")
         logInfo(
             "player_media_item_transition reason=$reason",
             sessions[sessionId]
@@ -1837,8 +1841,9 @@ internal fun playbackRecoveryDelayMs(
     attempt: Int,
     recoveryStartedElapsedRealtimeMs: Long,
     nowElapsedRealtimeMs: Long
-): Long? {
-    val offsetMs = playbackRecoveryOffsetsMs.getOrNull(attempt) ?: return null
+): Long {
+    val offsetMs = playbackRecoveryOffsetsMs.getOrNull(attempt)
+        ?: return PLAYBACK_RECOVERY_LOW_FREQUENCY_INTERVAL_MS
     return (recoveryStartedElapsedRealtimeMs + offsetMs - nowElapsedRealtimeMs)
         .coerceAtLeast(0L)
 }

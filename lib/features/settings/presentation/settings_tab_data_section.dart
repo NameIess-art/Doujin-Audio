@@ -11,34 +11,17 @@ const List<int> _settingsCacheLimitOptions = <int>[
 List<Widget> _buildSettingsDataSection({
   required AppLanguageProvider i18n,
   required SettingsCommandController settingsController,
-  required TextStyle? descStyle,
   required ColorScheme cs,
   required VoidCallback onOpenDataAndSupport,
   required VoidCallback onClearApplicationCache,
 }) {
   return <Widget>[
-    _SectionHeader(title: i18n.tr('section_data_storage')),
     _SettingsGroupCard(
       children: [
         ListTile(
           onTap: onOpenDataAndSupport,
           title: Text(i18n.tr('data_and_support')),
-          subtitle: Text(
-            i18n.tr('data_and_support_subtitle'),
-            style: descStyle,
-          ),
-          leading: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: cs.secondaryContainer,
-              borderRadius: AppRadius.borderMedium,
-            ),
-            child: Icon(
-              Icons.health_and_safety_rounded,
-              color: cs.onSecondaryContainer,
-            ),
-          ),
+          leading: _settingsIcon(Icons.health_and_safety_rounded, cs.secondary),
           trailing: Icon(
             Icons.chevron_right_rounded,
             size: 20,
@@ -61,24 +44,8 @@ List<Widget> _buildSettingsDataSection({
               );
               return ListTile(
                 title: Text(i18n.tr('max_cache_size')),
-                subtitle: Text(
-                  i18n.tr('max_cache_size_subtitle', {
-                    'size': AppCacheService.formatBytes(maxCacheBytes),
-                  }),
-                  style: descStyle,
-                ),
-                leading: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: cs.primaryContainer,
-                    borderRadius: AppRadius.borderMedium,
-                  ),
-                  child: Icon(
-                    Icons.storage_rounded,
-                    color: cs.onPrimaryContainer,
-                  ),
-                ),
+                subtitle: Text(AppCacheService.formatBytes(maxCacheBytes)),
+                leading: _settingsIcon(Icons.storage_rounded, cs.primary),
                 trailing: UnifiedDropdownButton<int>(
                   value: _settingsCacheLimitOptions.contains(maxCacheBytes)
                       ? maxCacheBytes
@@ -115,21 +82,9 @@ List<Widget> _buildSettingsDataSection({
               return ListTile(
                 onTap: cacheOperation.isBusy ? null : onClearApplicationCache,
                 title: Text(i18n.tr('clear_app_cache')),
-                subtitle: Text(
-                  i18n.tr('clear_app_cache_subtitle'),
-                  style: descStyle,
-                ),
-                leading: Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: cs.primaryContainer,
-                    borderRadius: AppRadius.borderMedium,
-                  ),
-                  child: Icon(
-                    Icons.cleaning_services_rounded,
-                    color: cs.onPrimaryContainer,
-                  ),
+                leading: _settingsIcon(
+                  Icons.cleaning_services_rounded,
+                  cs.primary,
                 ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 8,

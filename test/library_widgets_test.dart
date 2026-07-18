@@ -248,6 +248,14 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
+    expect(
+      find.text(
+        '${languageProvider.tr('work_count', {'count': 2})} · '
+        '${languageProvider.tr('audio_count', {'count': 2})}',
+      ),
+      findsOneWidget,
+    );
+
     expect(find.byType(ReorderableListView), findsNothing);
     expect(find.byKey(const ValueKey('locked_library_list')), findsOneWidget);
 

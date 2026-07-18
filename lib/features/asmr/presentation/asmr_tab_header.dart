@@ -239,51 +239,22 @@ class _AsmrCategoryButton extends StatelessWidget {
   }
 }
 
-class _AsmrMoreMenuButton extends ConsumerWidget {
-  const _AsmrMoreMenuButton({
-    required this.onAccount,
-    required this.onLanguage,
-  });
+class _AsmrAccountButton extends ConsumerWidget {
+  const _AsmrAccountButton({required this.onPressed});
 
-  final VoidCallback onAccount;
-  final VoidCallback onLanguage;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    return UnifiedPopupMenuButton<_AsmrMoreAction>(
-      icon: Icons.more_horiz_rounded,
-      tooltip: i18n.tr('asmr_more'),
-      menuWidth: 220,
-      selectAfterDismiss: false,
-      entries: [
-        UnifiedMenuEntry<_AsmrMoreAction>.action(
-          value: _AsmrMoreAction.account,
-          icon: Icons.account_circle_rounded,
-          label: i18n.tr('asmr_account_menu'),
-        ),
-        UnifiedMenuEntry<_AsmrMoreAction>.action(
-          value: _AsmrMoreAction.language,
-          icon: Icons.language_rounded,
-          label: i18n.tr('asmr_language_title'),
-        ),
-      ],
-      onSelected: (value) {
-        switch (value) {
-          case _AsmrMoreAction.account:
-            onAccount();
-            break;
-          case _AsmrMoreAction.language:
-            onLanguage();
-            break;
-        }
-      },
+    return IconButton(
+      onPressed: onPressed,
+      icon: const Icon(Icons.account_circle_rounded),
+      tooltip: i18n.tr('asmr_account_menu'),
     );
   }
 }
-
-enum _AsmrMoreAction { account, language }
 
 String _asmrCategoryLabelKey(AsmrCategoryType category) {
   return switch (category) {
@@ -295,14 +266,5 @@ String _asmrCategoryLabelKey(AsmrCategoryType category) {
     AsmrCategoryType.release => 'asmr_category_release',
     AsmrCategoryType.favorites => 'asmr_category_favorites',
     AsmrCategoryType.history => 'asmr_category_history',
-  };
-}
-
-String _asmrLanguageLabelKey(ContentLanguagePreference preference) {
-  return switch (preference) {
-    ContentLanguagePreference.followPage => 'follow_page_language',
-    ContentLanguagePreference.zh => 'asmr_language_zh',
-    ContentLanguagePreference.ja => 'asmr_language_ja',
-    ContentLanguagePreference.en => 'asmr_language_en',
   };
 }

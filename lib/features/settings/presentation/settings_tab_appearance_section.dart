@@ -5,7 +5,6 @@ List<Widget> _buildSettingsAppearanceSection({
   required AppLanguageProvider i18n,
   required SettingsRepository settings,
   required SettingsCommandController settingsController,
-  required TextStyle? descStyle,
   required ColorScheme cs,
   required VoidCallback onShowSubtitleWindowSettings,
   required VoidCallback onShowCardInfoFieldsSettings,
@@ -18,7 +17,6 @@ List<Widget> _buildSettingsAppearanceSection({
   };
 
   return <Widget>[
-    _SectionHeader(title: i18n.tr('section_appearance')),
     _SettingsGroupCard(
       children: [
         Consumer(
@@ -33,19 +31,7 @@ List<Widget> _buildSettingsAppearanceSection({
             };
             return ListTile(
               title: Text(i18n.tr('dark_mode')),
-              subtitle: Text(i18n.tr('dark_mode_subtitle'), style: descStyle),
-              leading: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.dark_mode_rounded,
-                  color: cs.onSecondaryContainer,
-                ),
-              ),
+              leading: _settingsIcon(Icons.dark_mode_rounded, cs.secondary),
               trailing: UnifiedDropdownButton<ThemeMode>(
                 value: themeMode,
                 onChanged: (value) {
@@ -80,24 +66,9 @@ List<Widget> _buildSettingsAppearanceSection({
             final provider = ref.read(themeProviderInstanceProvider);
             return SwitchListTile(
               title: Text(i18n.tr('differentiate_asmr_theme')),
-              subtitle: Text(
-                i18n.tr('differentiate_asmr_theme_subtitle'),
-                style: descStyle,
-              ),
               value: themeState.differentiateAsmrTheme,
               onChanged: (val) => provider.setDifferentiateAsmrTheme(val),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.palette_rounded,
-                  color: cs.onSecondaryContainer,
-                ),
-              ),
+              secondary: _settingsIcon(Icons.palette_rounded, cs.secondary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -107,21 +78,9 @@ List<Widget> _buildSettingsAppearanceSection({
         ),
         ListTile(
           title: Text(i18n.tr('cover_image_resolution')),
-          subtitle: Text(
-            i18n.tr('cover_image_resolution_subtitle'),
-            style: descStyle,
-          ),
-          leading: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: cs.secondaryContainer,
-              borderRadius: AppRadius.borderMedium,
-            ),
-            child: Icon(
-              Icons.photo_size_select_large_rounded,
-              color: cs.onSecondaryContainer,
-            ),
+          leading: _settingsIcon(
+            Icons.photo_size_select_large_rounded,
+            cs.secondary,
           ),
           trailing: Consumer(
             builder: (context, ref, _) {
@@ -170,22 +129,7 @@ List<Widget> _buildSettingsAppearanceSection({
                 );
               },
               title: Text(i18n.tr('bottom_navigation_style')),
-              subtitle: Text(
-                i18n.tr('bottom_navigation_style_subtitle'),
-                style: descStyle,
-              ),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.space_bar_rounded,
-                  color: cs.onSecondaryContainer,
-                ),
-              ),
+              secondary: _settingsIcon(Icons.space_bar_rounded, cs.secondary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -204,22 +148,7 @@ List<Widget> _buildSettingsAppearanceSection({
               value: uiBlurEnabled,
               onChanged: settings.setUiBlurEffectEnabled,
               title: Text(i18n.tr('ui_blur_effect')),
-              subtitle: Text(
-                i18n.tr('ui_blur_effect_subtitle'),
-                style: descStyle,
-              ),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.blur_linear_rounded,
-                  color: cs.onSecondaryContainer,
-                ),
-              ),
+              secondary: _settingsIcon(Icons.blur_linear_rounded, cs.secondary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -238,22 +167,7 @@ List<Widget> _buildSettingsAppearanceSection({
               value: blurEnabled,
               onChanged: settings.setBlurPlayerBackgroundEnabled,
               title: Text(i18n.tr('blur_player_background')),
-              subtitle: Text(
-                i18n.tr('blur_player_background_subtitle'),
-                style: descStyle,
-              ),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.blur_on_rounded,
-                  color: cs.onSecondaryContainer,
-                ),
-              ),
+              secondary: _settingsIcon(Icons.blur_on_rounded, cs.secondary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -272,21 +186,9 @@ List<Widget> _buildSettingsAppearanceSection({
               value: showPlaybackCard,
               onChanged: settings.setShowPlaybackCard,
               title: Text(i18n.tr('show_playback_card')),
-              subtitle: Text(
-                i18n.tr('show_playback_card_subtitle'),
-                style: descStyle,
-              ),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.play_circle_outline_rounded,
-                  color: cs.onSecondaryContainer,
-                ),
+              secondary: _settingsIcon(
+                Icons.play_circle_outline_rounded,
+                cs.secondary,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -309,19 +211,8 @@ List<Widget> _buildSettingsAppearanceSection({
                       .join('\uFF0C');
             return ListTile(
               title: Text(i18n.tr('card_info_display')),
-              subtitle: Text(summary, style: descStyle),
-              leading: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.badge_rounded,
-                  color: cs.onSecondaryContainer,
-                ),
-              ),
+              subtitle: Text(summary),
+              leading: _settingsIcon(Icons.badge_rounded, cs.secondary),
               trailing: Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
@@ -337,22 +228,7 @@ List<Widget> _buildSettingsAppearanceSection({
         ),
         ListTile(
           title: Text(i18n.tr('subtitle_window_settings')),
-          subtitle: Text(
-            i18n.tr('subtitle_window_settings_subtitle'),
-            style: descStyle,
-          ),
-          leading: Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: cs.secondaryContainer,
-              borderRadius: AppRadius.borderMedium,
-            ),
-            child: Icon(
-              Icons.subtitles_rounded,
-              color: cs.onSecondaryContainer,
-            ),
-          ),
+          leading: _settingsIcon(Icons.subtitles_rounded, cs.secondary),
           trailing: Icon(
             Icons.chevron_right_rounded,
             size: 20,

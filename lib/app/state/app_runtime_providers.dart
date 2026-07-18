@@ -150,15 +150,14 @@ final asmrCategoryStateProvider =
 final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
   final controller = ref.watch(asmrLibraryControllerProvider);
   if (controller == null) return Stream.value(null);
-  final states = StreamController<AsmrAuthViewState?>.broadcast(sync: true);
-  void emit() => states.add(controller.authViewState);
-  controller.addListener(emit);
-  emit();
-  ref.onDispose(() {
-    controller.removeListener(emit);
-    states.close();
+  return Stream<AsmrAuthViewState?>.multi((events) {
+    void emit() => events.add(controller.authViewState);
+    controller.addListener(emit);
+    events.onCancel = () {
+      controller.removeListener(emit);
+    };
+    emit();
   });
-  return states.stream;
 });
 
 final asmrTrackTreeStateProvider =
@@ -181,15 +180,14 @@ final asmrTrackTreeStateProvider =
 final asmrSyncStateProvider = StreamProvider<AsmrSyncViewState?>((ref) {
   final controller = ref.watch(asmrLibraryControllerProvider);
   if (controller == null) return Stream.value(null);
-  final states = StreamController<AsmrSyncViewState?>.broadcast(sync: true);
-  void emit() => states.add(controller.syncViewState);
-  controller.addListener(emit);
-  emit();
-  ref.onDispose(() {
-    controller.removeListener(emit);
-    states.close();
+  return Stream<AsmrSyncViewState?>.multi((events) {
+    void emit() => events.add(controller.syncViewState);
+    controller.addListener(emit);
+    events.onCancel = () {
+      controller.removeListener(emit);
+    };
+    emit();
   });
-  return states.stream;
 });
 
 final asmrPlaybackCoordinatorProvider = Provider<AsmrPlaybackCoordinator?>(

@@ -3,7 +3,6 @@ part of 'settings_tab.dart';
 List<Widget> _buildSettingsUpdateSection({
   required AppLanguageProvider i18n,
   required SettingsRepository settings,
-  required TextStyle? descStyle,
   required ColorScheme cs,
   required AppUpdateInfo? updateInfo,
   required Future<AppVersionInfo> currentVersion,
@@ -11,28 +10,15 @@ List<Widget> _buildSettingsUpdateSection({
   required VoidCallback onCheckForUpdates,
 }) {
   return <Widget>[
-    _SectionHeader(title: i18n.tr('section_system_updates')),
     _SettingsGroupCard(
       children: [
         if (!Platform.isWindows) ...[
           ListTile(
             onTap: onOpenPermissionCenter,
             title: Text(i18n.tr('permission_center')),
-            subtitle: Text(
-              i18n.tr('permission_center_subtitle'),
-              style: descStyle,
-            ),
-            leading: Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                color: cs.secondaryContainer,
-                borderRadius: AppRadius.borderMedium,
-              ),
-              child: Icon(
-                Icons.admin_panel_settings_rounded,
-                color: cs.onSecondaryContainer,
-              ),
+            leading: _settingsIcon(
+              Icons.admin_panel_settings_rounded,
+              cs.secondary,
             ),
             trailing: Icon(
               Icons.chevron_right_rounded,
@@ -59,7 +45,7 @@ List<Widget> _buildSettingsUpdateSection({
               progress: updateOperation.progress,
               updateInfo: updateInfo,
               currentVersion: currentVersion,
-              textStyle: descStyle,
+              textStyle: null,
               onCheck: onCheckForUpdates,
             );
           },
@@ -75,22 +61,7 @@ List<Widget> _buildSettingsUpdateSection({
               value: autoCheckUpdates,
               onChanged: settings.setAutoCheckUpdates,
               title: Text(i18n.tr('auto_check_updates')),
-              subtitle: Text(
-                i18n.tr('auto_check_updates_subtitle'),
-                style: descStyle,
-              ),
-              secondary: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.secondaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.update_rounded,
-                  color: cs.onSecondaryContainer,
-                ),
-              ),
+              secondary: _settingsIcon(Icons.update_rounded, cs.secondary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,

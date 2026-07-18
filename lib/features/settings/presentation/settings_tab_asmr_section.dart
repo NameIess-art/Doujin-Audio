@@ -3,12 +3,10 @@ part of 'settings_tab.dart';
 List<Widget> _buildSettingsAsmrSection({
   required AppLanguageProvider i18n,
   required SettingsRepository settings,
-  required TextStyle? descStyle,
   required ColorScheme cs,
   required VoidCallback onChooseAsmrDownloadDestination,
 }) {
   return <Widget>[
-    _SectionHeader(title: i18n.tr('section_asmr_download')),
     _SettingsGroupCard(
       children: [
         Consumer(
@@ -32,20 +30,8 @@ List<Widget> _buildSettingsAsmrSection({
                     : PathDisplay.displayPathFor(destinationRoot),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: descStyle,
               ),
-              leading: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.tertiaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.folder_rounded,
-                  color: cs.onTertiaryContainer,
-                ),
-              ),
+              leading: _settingsIcon(Icons.folder_rounded, cs.tertiary),
               trailing: IconButton.filledTonal(
                 onPressed: asmrDownloadPathOperation.isBusy
                     ? null
@@ -84,22 +70,7 @@ List<Widget> _buildSettingsAsmrSection({
             };
             return ListTile(
               title: Text(i18n.tr('asmr_download_conflict_setting')),
-              subtitle: Text(
-                i18n.tr('asmr_download_conflict_setting_subtitle'),
-                style: descStyle,
-              ),
-              leading: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: cs.tertiaryContainer,
-                  borderRadius: AppRadius.borderMedium,
-                ),
-                child: Icon(
-                  Icons.rule_folder_rounded,
-                  color: cs.onTertiaryContainer,
-                ),
-              ),
+              leading: _settingsIcon(Icons.rule_folder_rounded, cs.tertiary),
               trailing: UnifiedDropdownButton<AsmrDownloadConflictPolicy>(
                 value: conflictPolicy,
                 onChanged: (value) {

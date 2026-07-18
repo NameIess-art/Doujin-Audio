@@ -1,5 +1,46 @@
 part of 'settings_tab.dart';
 
+const double _settingsTileHeight = 58;
+const double _settingsTileReferenceHeight = 68;
+const double _settingsTileTitleFontSize =
+    _settingsTileHeight * 18 / _settingsTileReferenceHeight;
+const double _settingsTileSubtitleFontSize =
+    _settingsTileHeight * 15 / _settingsTileReferenceHeight;
+
+class _SettingsTileTheme extends StatelessWidget {
+  const _SettingsTileTheme({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final titleTextStyle = theme.textTheme.titleMedium?.copyWith(
+      fontSize: _settingsTileTitleFontSize,
+    );
+    final subtitleTextStyle = theme.textTheme.bodyMedium?.copyWith(
+      fontSize: _settingsTileSubtitleFontSize,
+    );
+
+    return Theme(
+      data: theme.copyWith(
+        textTheme: theme.textTheme.copyWith(
+          titleMedium: titleTextStyle,
+          bodyMedium: subtitleTextStyle,
+        ),
+      ),
+      child: ListTileTheme.merge(
+        visualDensity: const VisualDensity(horizontal: -1),
+        minTileHeight: _settingsTileHeight,
+        minVerticalPadding: 8,
+        titleTextStyle: titleTextStyle,
+        subtitleTextStyle: subtitleTextStyle,
+        child: child,
+      ),
+    );
+  }
+}
+
 class _SettingsGroupCard extends StatelessWidget {
   const _SettingsGroupCard({required this.children});
 
@@ -14,24 +55,29 @@ class _SettingsGroupCard extends StatelessWidget {
     for (int i = 0; i < children.length; i++) {
       separatedChildren.add(children[i]);
       if (i < children.length - 1) {
-        separatedChildren.add(const SizedBox(height: 4));
+        separatedChildren.add(const SizedBox(height: 8));
       }
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
-          width: 0.5,
+    return Material(
+      type: MaterialType.transparency,
+      child: Container(
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: cs.outlineVariant.withValues(
+              alpha: tokens.subtleBorderAlpha,
+            ),
+            width: 0.5,
+          ),
         ),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: separatedChildren,
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: separatedChildren,
+        ),
       ),
     );
   }
@@ -68,18 +114,7 @@ class _UpdateSettingsTile extends StatelessWidget {
 
     return ListTile(
       onTap: busy ? null : onCheck,
-      leading: Container(
-        width: tokens.iconContainerSize,
-        height: tokens.iconContainerSize,
-        decoration: BoxDecoration(
-          color: cs.primaryContainer,
-          borderRadius: BorderRadius.circular(tokens.radiusSmall),
-        ),
-        child: Icon(
-          Icons.system_update_alt_rounded,
-          color: cs.onPrimaryContainer,
-        ),
-      ),
+      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.primary),
       title: Text(
         i18n.tr('check_updates'),
         maxLines: 1,
@@ -191,30 +226,6 @@ class _UpdateSubtitle extends StatelessWidget {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
         style: textStyle,
-      ),
-    );
-  }
-}
-
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-      child: Align(
-        alignment: Alignment.centerLeft,
-        child: Text(
-          title,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            color: cs.primary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
       ),
     );
   }

@@ -9,14 +9,39 @@ import 'app_language_zh.dart';
 
 export '../../core/app_language.dart';
 
+enum AppLanguagePreference {
+  system,
+  zh,
+  ja,
+  en;
+
+  AppLanguage? get explicitLanguage => switch (this) {
+    AppLanguagePreference.system => null,
+    AppLanguagePreference.zh => AppLanguage.zh,
+    AppLanguagePreference.ja => AppLanguage.ja,
+    AppLanguagePreference.en => AppLanguage.en,
+  };
+
+  static AppLanguagePreference fromLanguage(AppLanguage language) =>
+      switch (language) {
+        AppLanguage.zh => AppLanguagePreference.zh,
+        AppLanguage.ja => AppLanguagePreference.ja,
+        AppLanguage.en => AppLanguagePreference.en,
+      };
+}
+
 @immutable
 class AppLanguageState {
-  const AppLanguageState({required this.language});
+  const AppLanguageState({required this.preference, required this.language});
 
   factory AppLanguageState.from(AppLanguageProvider provider) {
-    return AppLanguageState(language: provider.language);
+    return AppLanguageState(
+      preference: provider.preference,
+      language: provider.language,
+    );
   }
 
+  final AppLanguagePreference preference;
   final AppLanguage language;
 
   Locale get locale => switch (language) {
@@ -27,22 +52,31 @@ class AppLanguageState {
 
   @override
   bool operator ==(Object other) =>
-      other is AppLanguageState && other.language == language;
+      other is AppLanguageState &&
+      other.preference == preference &&
+      other.language == language;
 
   @override
-  int get hashCode => language.hashCode;
+  int get hashCode => Object.hash(preference, language);
 }
 
-class AppLanguageProvider with ChangeNotifier {
+class AppLanguageProvider with ChangeNotifier, WidgetsBindingObserver {
   static const _prefsKey = 'app_language';
 
   static const supportedLocales = [Locale('zh'), Locale('ja'), Locale('en')];
 
-  AppLanguage _language = AppLanguage.zh;
+  AppLanguagePreference _preference = AppLanguagePreference.system;
+  late AppLanguage _language;
+  int _preferenceRevision = 0;
+  bool _disposed = false;
 
   AppLanguageProvider() {
+    _language = _resolveSystemLanguage();
+    WidgetsBinding.instance.addObserver(this);
     _loadLanguage();
   }
+
+  AppLanguagePreference get preference => _preference;
 
   AppLanguage get language => _language;
 
@@ -69,19 +103,66 @@ class AppLanguageProvider with ChangeNotifier {
   }
 
   Future<void> setLanguage(AppLanguage language) async {
-    if (_language == language) return;
-    _language = language;
-    notifyListeners();
-    await AppPreferences.setString(_prefsKey, language.name);
+    await setLanguagePreference(AppLanguagePreference.fromLanguage(language));
+  }
+
+  Future<void> setLanguagePreference(AppLanguagePreference preference) async {
+    final language = preference.explicitLanguage ?? _resolveSystemLanguage();
+    _preferenceRevision++;
+    if (_preference != preference || _language != language) {
+      _preference = preference;
+      _language = language;
+      notifyListeners();
+    }
+    await AppPreferences.setString(_prefsKey, preference.name);
   }
 
   Future<void> _loadLanguage() async {
+    final revision = _preferenceRevision;
     final raw = await AppPreferences.getString(_prefsKey);
-    final match = AppLanguage.values.where((e) => e.name == raw);
-    if (match.isNotEmpty) {
-      _language = match.first;
-      notifyListeners();
+    if (_disposed || revision != _preferenceRevision) return;
+    final preference = AppLanguagePreference.values.firstWhere(
+      (value) => value.name == raw,
+      orElse: () => AppLanguagePreference.system,
+    );
+    final language = preference.explicitLanguage ?? _resolveSystemLanguage();
+    if (_preference == preference && _language == language) return;
+    _preference = preference;
+    _language = language;
+    notifyListeners();
+  }
+
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    if (_disposed || _preference != AppLanguagePreference.system) return;
+    final language = _resolveSystemLanguage(locales);
+    if (_language == language) return;
+    _language = language;
+    notifyListeners();
+  }
+
+  AppLanguage _resolveSystemLanguage([List<Locale>? locales]) {
+    final systemLocales =
+        locales ?? WidgetsBinding.instance.platformDispatcher.locales;
+    for (final locale in systemLocales) {
+      switch (locale.languageCode.toLowerCase()) {
+        case 'zh':
+          return AppLanguage.zh;
+        case 'ja':
+          return AppLanguage.ja;
+        case 'en':
+          return AppLanguage.en;
+      }
     }
+    return AppLanguage.zh;
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _preferenceRevision++;
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
   String tr(String key, [Map<String, Object?> params = const {}]) {

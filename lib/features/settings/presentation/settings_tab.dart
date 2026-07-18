@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -30,6 +31,7 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../../data_support/presentation/data_support_page.dart';
 import '../../asmr/domain/asmr_download.dart';
+import '../../asmr/presentation/asmr_language_labels.dart';
 import 'permission_status_page.dart';
 import 'app_update_flow.dart';
 import 'about_page.dart';
@@ -42,7 +44,6 @@ part 'settings_tab_playback_section.dart';
 part 'settings_tab_asmr_section.dart';
 part 'settings_tab_data_section.dart';
 part 'settings_tab_update_section.dart';
-part 'settings_tab_about_section.dart';
 part 'settings_tab_widgets.dart';
 
 class SettingsTab extends ConsumerStatefulWidget {
@@ -57,7 +58,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         WidgetsBindingObserver,
         AutomaticKeepAliveClientMixin,
         MainTabStateMixin<SettingsTab> {
-  AppUpdateInfo? _lastUpdateInfo;
+  final ValueNotifier<AppUpdateInfo?> _updateInfoNotifier =
+      ValueNotifier<AppUpdateInfo?>(null);
   late Future<AppVersionInfo> _appVersionFuture;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
@@ -81,8 +83,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   @override
   bool get wantKeepAlive => true;
 
-  void _setLocalState(VoidCallback fn) => setState(fn);
-
   Future<T> _runSettingsOperation<T>({
     required UiOperationScope scope,
     required String labelKey,
@@ -105,6 +105,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void dispose() {
     disposeTabState();
     _scrollController.dispose();
+    _updateInfoNotifier.dispose();
     _permissionActionController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -187,15 +188,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final settings = ref.read(settingsRepositoryProvider);
-    final settingsController = ref.read(settingsCommandControllerProvider);
     final bottomInset = MobileOverlayInset.of(context);
-    final cs = Theme.of(context).colorScheme;
-    final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
-      fontSize: 11,
-      height: 1.25,
-      color: cs.onSurfaceVariant,
-    );
 
     return ScrollActivityGate(
       child: Stack(
@@ -212,68 +205,15 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               padding: EdgeInsets.fromLTRB(16, 80 + 4, 16, bottomInset + 24),
               clipBehavior: Clip.none,
               children: [
-                ListTileTheme.merge(
-                  dense: true,
-                  visualDensity: VisualDensity.compact,
+                _SettingsTileTheme(
                   child: Column(
                     children: [
-                      ..._buildSettingsGeneralSection(
-                        i18n: i18n,
-                        settings: settings,
-                        descStyle: descStyle,
-                        cs: cs,
-                      ),
-                      ..._buildSettingsAppearanceSection(
-                        context: context,
-                        i18n: i18n,
-                        settings: settings,
-                        settingsController: settingsController,
-                        descStyle: descStyle,
-                        cs: cs,
-                        onShowSubtitleWindowSettings: () =>
-                            _showSubtitleWindowSettings(context),
-                        onShowCardInfoFieldsSettings: () =>
-                            _showCardInfoFieldsSettings(context),
-                      ),
-                      ..._buildSettingsPlaybackSection(
-                        i18n: i18n,
-                        settings: settings,
-                        settingsController: settingsController,
-                        descStyle: descStyle,
-                        cs: cs,
-                      ),
-                      ..._buildSettingsAsmrSection(
-                        i18n: i18n,
-                        settings: settings,
-                        descStyle: descStyle,
-                        cs: cs,
-                        onChooseAsmrDownloadDestination:
-                            _chooseAsmrDownloadDestination,
-                      ),
-                      ..._buildSettingsDataSection(
-                        i18n: i18n,
-                        settingsController: settingsController,
-                        descStyle: descStyle,
-                        cs: cs,
-                        onOpenDataAndSupport: _openDataAndSupport,
-                        onClearApplicationCache: () =>
-                            _clearApplicationCache(context),
-                      ),
-                      ..._buildSettingsUpdateSection(
-                        i18n: i18n,
-                        settings: settings,
-                        descStyle: descStyle,
-                        cs: cs,
-                        updateInfo: _lastUpdateInfo,
-                        currentVersion: _appVersionFuture,
-                        onOpenPermissionCenter: _openPermissionCenter,
-                        onCheckForUpdates: () => _checkForUpdates(context),
-                      ),
-                      ..._buildSettingsAboutSection(
-                        i18n: i18n,
-                        descStyle: descStyle,
-                        onOpenAbout: _openAboutPage,
-                      ),
+                      for (final category in _SettingsCategory.values)
+                        _SettingsCategoryTile(
+                          category: category,
+                          i18n: i18n,
+                          onTap: () => _openSettingsCategory(category),
+                        ),
                       const SizedBox(height: 24),
                     ],
                   ),
@@ -296,6 +236,209 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
           ),
         ],
       ),
+    );
+  }
+
+  void _openSettingsCategory(_SettingsCategory category) {
+    if (category == _SettingsCategory.about) {
+      _openAboutPage();
+      return;
+    }
+    Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        child: _SettingsCategoryPage(
+          category: category,
+          updateInfoListenable: _updateInfoNotifier,
+          currentVersion: _appVersionFuture,
+          onShowSubtitleWindowSettings: () =>
+              _showSubtitleWindowSettings(context),
+          onShowCardInfoFieldsSettings: () =>
+              _showCardInfoFieldsSettings(context),
+          onChooseAsmrDownloadDestination: _chooseAsmrDownloadDestination,
+          onOpenDataAndSupport: _openDataAndSupport,
+          onClearApplicationCache: () => _clearApplicationCache(context),
+          onOpenPermissionCenter: _openPermissionCenter,
+          onCheckForUpdates: () => _checkForUpdates(context),
+        ),
+      ),
+    );
+  }
+}
+
+enum _SettingsCategory {
+  language('section_language', Icons.language_rounded),
+  common('section_common', Icons.tune_rounded),
+  appearance('section_appearance', Icons.palette_outlined),
+  playback('section_playback', Icons.play_circle_outline_rounded),
+  asmrDownload('section_asmr_download', Icons.download_rounded),
+  dataStorage('section_data_storage', Icons.storage_rounded),
+  updatesPermissions(
+    'section_updates_permissions',
+    Icons.system_update_alt_rounded,
+  ),
+  about('about', Icons.info_outline_rounded);
+
+  const _SettingsCategory(this.labelKey, this.icon);
+
+  final String labelKey;
+  final IconData icon;
+}
+
+class _SettingsCategoryTile extends StatelessWidget {
+  const _SettingsCategoryTile({
+    required this.category,
+    required this.i18n,
+    required this.onTap,
+  });
+
+  final _SettingsCategory category;
+  final AppLanguageProvider i18n;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: _SettingsGroupCard(
+        children: [
+          ListTile(
+            onTap: onTap,
+            leading: _settingsIcon(category.icon, cs.primary),
+            title: Text(i18n.tr(category.labelKey)),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: cs.onSurfaceVariant,
+            ),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsCategoryPage extends ConsumerWidget {
+  const _SettingsCategoryPage({
+    required this.category,
+    required this.updateInfoListenable,
+    required this.currentVersion,
+    required this.onShowSubtitleWindowSettings,
+    required this.onShowCardInfoFieldsSettings,
+    required this.onChooseAsmrDownloadDestination,
+    required this.onOpenDataAndSupport,
+    required this.onClearApplicationCache,
+    required this.onOpenPermissionCenter,
+    required this.onCheckForUpdates,
+  }) : assert(category != _SettingsCategory.about);
+
+  final _SettingsCategory category;
+  final ValueListenable<AppUpdateInfo?> updateInfoListenable;
+  final Future<AppVersionInfo> currentVersion;
+  final VoidCallback onShowSubtitleWindowSettings;
+  final VoidCallback onShowCardInfoFieldsSettings;
+  final VoidCallback onChooseAsmrDownloadDestination;
+  final VoidCallback onOpenDataAndSupport;
+  final VoidCallback onClearApplicationCache;
+  final VoidCallback onOpenPermissionCenter;
+  final VoidCallback onCheckForUpdates;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final settings = ref.read(settingsRepositoryProvider);
+    final settingsController = ref.read(settingsCommandControllerProvider);
+    final cs = Theme.of(context).colorScheme;
+
+    Widget content() {
+      return ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        children: [
+          _SettingsTileTheme(
+            child: Column(
+              children: switch (category) {
+                _SettingsCategory.language => _buildSettingsLanguageSection(
+                  i18n: i18n,
+                  settings: settings,
+                  cs: cs,
+                ),
+                _SettingsCategory.common => _buildSettingsGeneralSection(
+                  i18n: i18n,
+                  settings: settings,
+                  cs: cs,
+                ),
+                _SettingsCategory.appearance => _buildSettingsAppearanceSection(
+                  context: context,
+                  i18n: i18n,
+                  settings: settings,
+                  settingsController: settingsController,
+                  cs: cs,
+                  onShowSubtitleWindowSettings: onShowSubtitleWindowSettings,
+                  onShowCardInfoFieldsSettings: onShowCardInfoFieldsSettings,
+                ),
+                _SettingsCategory.playback => _buildSettingsPlaybackSection(
+                  i18n: i18n,
+                  settings: settings,
+                  settingsController: settingsController,
+                  cs: cs,
+                ),
+                _SettingsCategory.asmrDownload => _buildSettingsAsmrSection(
+                  i18n: i18n,
+                  settings: settings,
+                  cs: cs,
+                  onChooseAsmrDownloadDestination:
+                      onChooseAsmrDownloadDestination,
+                ),
+                _SettingsCategory.dataStorage => _buildSettingsDataSection(
+                  i18n: i18n,
+                  settingsController: settingsController,
+                  cs: cs,
+                  onOpenDataAndSupport: onOpenDataAndSupport,
+                  onClearApplicationCache: onClearApplicationCache,
+                ),
+                _SettingsCategory.updatesPermissions => [
+                  ValueListenableBuilder<AppUpdateInfo?>(
+                    valueListenable: updateInfoListenable,
+                    builder: (context, updateInfo, _) => Column(
+                      children: _buildSettingsUpdateSection(
+                        i18n: i18n,
+                        settings: settings,
+                        cs: cs,
+                        updateInfo: updateInfo,
+                        currentVersion: currentVersion,
+                        onOpenPermissionCenter: onOpenPermissionCenter,
+                        onCheckForUpdates: onCheckForUpdates,
+                      ),
+                    ),
+                  ),
+                ],
+                _SettingsCategory.about => const <Widget>[],
+              },
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      children: [
+        TopPageHeader(
+          icon: category.icon,
+          title: i18n.tr(category.labelKey),
+          leading: IconButton(
+            onPressed: () => Navigator.of(context).maybePop(),
+            icon: const Icon(Icons.arrow_back_rounded),
+            tooltip: i18n.tr('back'),
+          ),
+          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+          bottomSpacing: 16,
+        ),
+        Expanded(child: content()),
+      ],
     );
   }
 }

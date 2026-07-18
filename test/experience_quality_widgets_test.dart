@@ -329,11 +329,11 @@ void main() {
   test('settings, feedback, and recovery labels stay available', () {
     for (final table in [appLanguageZh, appLanguageEn]) {
       for (final key in [
-        'section_general',
+        'section_common',
         'section_appearance',
         'section_playback',
         'section_data_storage',
-        'section_system_updates',
+        'section_updates_permissions',
         'permission_center',
         'data_and_support',
         'no_audio_files',

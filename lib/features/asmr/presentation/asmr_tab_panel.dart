@@ -247,55 +247,6 @@ class _AsmrPanelAction extends StatelessWidget {
   }
 }
 
-class _AsmrSelectionTile extends StatelessWidget {
-  const _AsmrSelectionTile({
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Material(
-      color: selected
-          ? cs.primaryContainer.withValues(alpha: 0.72)
-          : Colors.transparent,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                selected ? Icons.check_circle_rounded : Icons.circle_outlined,
-                size: 20,
-                color: selected ? cs.primary : cs.onSurfaceVariant,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                    color: selected ? cs.onPrimaryContainer : cs.onSurface,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _AsmrAccountPanel extends ConsumerStatefulWidget {
   const _AsmrAccountPanel();
 

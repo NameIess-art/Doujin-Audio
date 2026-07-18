@@ -545,13 +545,6 @@ void main() {
           primaryDelta: 48,
         ),
       );
-      dismissGesture.onVerticalDragUpdate!(
-        DragUpdateDetails(
-          globalPosition: Offset.zero,
-          delta: const Offset(0, 48),
-          primaryDelta: 48,
-        ),
-      );
       await tester.pump();
 
       expect(detailRoute.opaque, isFalse);
@@ -676,7 +669,9 @@ void main() {
 
     expect(detailFinder, findsNothing);
     expect(tester.takeException(), isNull);
+    await tester.pumpAndSettle();
     await _settleSessionDetailAsyncWork(tester);
+    await tester.pump(const Duration(milliseconds: 220));
     await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = previousPlatform;
   });

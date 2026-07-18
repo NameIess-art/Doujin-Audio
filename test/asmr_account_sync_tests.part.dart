@@ -44,6 +44,46 @@ void registerAsmrAccountSyncTests({
   );
 
   test(
+    'ASMR auth provider emits completed state when first watched after restore',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(emptyCheckSessionUserName: true);
+      final tokenStore = _MemoryAsmrTokenStore();
+      await tokenStore.writeToken('cached-token');
+      await tokenStore.writeCredentials('alice', 'password');
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        apiService: api,
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.zh);
+      await controller.restoreAsmrAccountSession();
+      expect(controller.authViewState.isRestoring, isFalse);
+      expect(controller.authViewState.isLoggedIn, isTrue);
+      expect(controller.authViewState.userName, 'alice');
+
+      final container = ProviderContainer(
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final state = await container
+          .read(asmrAuthStateProvider.future)
+          .timeout(const Duration(milliseconds: 200));
+
+      expect(state, isNotNull);
+      expect(state!.isRestoring, isFalse);
+      expect(state.isLoggedIn, isTrue);
+      expect(state.userName, 'alice');
+    },
+  );
+
+  test(
     'ASMR account sync maps favorites to marked review progress and retries',
     () async {
       await resetPrefs();

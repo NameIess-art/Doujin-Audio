@@ -571,6 +571,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listStateRawTree = _readOrWatch(
       libraryListUiProvider.select((s) => s.rawTree),
     );
+    final libraryHeaderWorkCount = listStateRawTree.length;
     final listStateStructureRevision = _readOrWatch(
       libraryListUiProvider.select((s) => s.structureRevision),
     );
@@ -1040,9 +1041,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 key: headerKey,
                 icon: Icons.library_music_rounded,
                 title: i18n.tr('music_library'),
-                subtitle: i18n.tr('audio_count', {
-                  'count': libraryHeaderAudioCount,
-                }),
+                subtitle:
+                    '${i18n.tr('work_count', {'count': libraryHeaderWorkCount})} · '
+                    '${i18n.tr('audio_count', {'count': libraryHeaderAudioCount})}',
                 subtitleFontSize: 11,
                 fitSubtitleToWidth: true,
                 collapseController: _scrollController,

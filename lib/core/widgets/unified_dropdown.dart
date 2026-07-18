@@ -5,6 +5,7 @@ const double _dropdownRadius = 12;
 List<DropdownMenuItem<T>> _alignItems<T>(
   List<DropdownMenuItem<T>> items,
   AlignmentGeometry alignment,
+  bool multilineItems,
 ) {
   return items.map((item) {
     return DropdownMenuItem<T>(
@@ -13,7 +14,12 @@ List<DropdownMenuItem<T>> _alignItems<T>(
       onTap: item.onTap,
       enabled: item.enabled,
       alignment: alignment,
-      child: item.child,
+      child: multilineItems
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: item.child,
+            )
+          : item.child,
     );
   }).toList();
 }
@@ -28,6 +34,7 @@ class UnifiedDropdownButton<T> extends StatelessWidget {
     this.isDense = false,
     this.alignment = AlignmentDirectional.centerEnd,
     this.menuMaxHeight,
+    this.multilineItems = false,
   });
 
   final T value;
@@ -37,18 +44,20 @@ class UnifiedDropdownButton<T> extends StatelessWidget {
   final bool isDense;
   final AlignmentGeometry alignment;
   final double? menuMaxHeight;
+  final bool multilineItems;
 
   @override
   Widget build(BuildContext context) {
     return DropdownButtonHideUnderline(
       child: DropdownButton<T>(
         value: value,
-        items: _alignItems(items, alignment),
+        items: _alignItems(items, alignment, multilineItems),
         onChanged: onChanged,
         isExpanded: isExpanded,
         isDense: isDense,
         alignment: alignment,
         menuMaxHeight: menuMaxHeight,
+        itemHeight: multilineItems ? null : kMinInteractiveDimension,
         dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
         borderRadius: BorderRadius.circular(_dropdownRadius),
       ),
@@ -65,6 +74,7 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
     required this.decoration,
     this.alignment = AlignmentDirectional.centerEnd,
     this.menuMaxHeight,
+    this.multilineItems = false,
   });
 
   final T? initialValue;
@@ -73,16 +83,18 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
   final InputDecoration decoration;
   final AlignmentGeometry alignment;
   final double? menuMaxHeight;
+  final bool multilineItems;
 
   @override
   Widget build(BuildContext context) {
     return DropdownButtonFormField<T>(
       initialValue: initialValue,
-      items: _alignItems(items, alignment),
+      items: _alignItems(items, alignment, multilineItems),
       onChanged: onChanged,
       decoration: decoration,
       alignment: alignment,
       menuMaxHeight: menuMaxHeight,
+      itemHeight: multilineItems ? null : kMinInteractiveDimension,
       dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(_dropdownRadius),
     );

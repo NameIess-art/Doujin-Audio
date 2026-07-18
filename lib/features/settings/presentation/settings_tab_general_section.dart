@@ -1,6 +1,7 @@
 part of 'settings_tab.dart';
 
 List<Widget> _buildSettingsLanguageSection({
+  required BuildContext context,
   required AppLanguageProvider i18n,
   required SettingsRepository settings,
   required ColorScheme cs,
@@ -9,31 +10,26 @@ List<Widget> _buildSettingsLanguageSection({
     _SettingsGroupCard(
       children: [
         ListTile(
-          title: Text(i18n.tr('interface_language')),
+          title: _settingsTitle(i18n.tr('interface_language')),
           leading: _settingsIcon(Icons.language_rounded, cs.primary),
-          trailing: SizedBox(
-            width: 136,
-            child: UnifiedDropdownButton<AppLanguagePreference>(
-              isExpanded: true,
-              value: i18n.preference,
-              onChanged: (value) {
-                if (value != null) i18n.setLanguagePreference(value);
-              },
-              items: AppLanguagePreference.values
-                  .map(
-                    (preference) => DropdownMenuItem<AppLanguagePreference>(
-                      value: preference,
-                      child: Text(
-                        preference.explicitLanguage == null
-                            ? i18n.tr('follow_system')
-                            : i18n.languageName(preference.explicitLanguage!),
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
+          trailing: _settingsDropdown<AppLanguagePreference>(
+            context,
+            value: i18n.preference,
+            onChanged: (value) {
+              if (value != null) i18n.setLanguagePreference(value);
+            },
+            items: AppLanguagePreference.values
+                .map(
+                  (preference) => DropdownMenuItem<AppLanguagePreference>(
+                    value: preference,
+                    child: _settingsDropdownText(
+                      preference.explicitLanguage == null
+                          ? i18n.tr('follow_system')
+                          : i18n.languageName(preference.explicitLanguage!),
                     ),
-                  )
-                  .toList(),
-            ),
+                  ),
+                )
+                .toList(),
           ),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 8,
@@ -50,9 +46,10 @@ List<Widget> _buildSettingsLanguageSection({
               ),
             );
             return ListTile(
-              title: Text(i18n.tr('dlsite_metadata_language')),
+              title: _settingsTitle(i18n.tr('dlsite_metadata_language')),
               leading: _settingsIcon(Icons.public_rounded, cs.primary),
-              trailing: UnifiedDropdownButton<ContentLanguagePreference>(
+              trailing: _settingsDropdown<ContentLanguagePreference>(
+                context,
                 value: dlsiteLanguage,
                 onChanged: (value) {
                   if (value != null) settings.setDlsiteMetadataLanguage(value);
@@ -61,11 +58,10 @@ List<Widget> _buildSettingsLanguageSection({
                   final language = preference.explicitLanguage;
                   return DropdownMenuItem<ContentLanguagePreference>(
                     value: preference,
-                    child: Text(
+                    child: _settingsDropdownText(
                       language == null
                           ? i18n.tr('follow_interface_language')
                           : i18n.languageName(language),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   );
                 }).toList(),
@@ -88,9 +84,10 @@ List<Widget> _buildSettingsLanguageSection({
             );
             final controller = ref.read(asmrLibraryControllerProvider);
             return ListTile(
-              title: Text(i18n.tr('asmr_page_language')),
+              title: _settingsTitle(i18n.tr('asmr_page_language')),
               leading: _settingsIcon(Icons.public_rounded, cs.primary),
-              trailing: UnifiedDropdownButton<ContentLanguagePreference>(
+              trailing: _settingsDropdown<ContentLanguagePreference>(
+                context,
                 value: preference,
                 onChanged: controller == null
                     ? null
@@ -105,9 +102,8 @@ List<Widget> _buildSettingsLanguageSection({
                     .map(
                       (value) => DropdownMenuItem<ContentLanguagePreference>(
                         value: value,
-                        child: Text(
+                        child: _settingsDropdownText(
                           i18n.tr(asmrLanguageLabelKey(value)),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
                     )
@@ -143,9 +139,10 @@ List<Widget> _buildSettingsGeneralSection({
               ),
             );
             return ListTile(
-              title: Text(i18n.tr('startup_page')),
+              title: _settingsTitle(i18n.tr('startup_page')),
               leading: _settingsIcon(Icons.home_rounded, cs.primary),
-              trailing: UnifiedDropdownButton<StartupPage>(
+              trailing: _settingsDropdown<StartupPage>(
+                context,
                 value: startupPage,
                 onChanged: (value) {
                   if (value != null) settings.setStartupPage(value);
@@ -154,9 +151,8 @@ List<Widget> _buildSettingsGeneralSection({
                     .map(
                       (page) => DropdownMenuItem<StartupPage>(
                         value: page,
-                        child: Text(
+                        child: _settingsDropdownText(
                           i18n.tr('startup_page_${page.name}'),
-                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
                     )
@@ -179,9 +175,12 @@ List<Widget> _buildSettingsGeneralSection({
               ),
             );
             return ListTile(
-              title: Text(i18n.tr('startup_playback_restore_behavior')),
+              title: _settingsTitle(
+                i18n.tr('startup_playback_restore_behavior'),
+              ),
               leading: _settingsIcon(Icons.restore_rounded, cs.primary),
-              trailing: UnifiedDropdownButton<StartupPlaybackRestoreBehavior>(
+              trailing: _settingsDropdown<StartupPlaybackRestoreBehavior>(
+                context,
                 value: behavior,
                 onChanged: (value) {
                   if (value != null) {
@@ -193,11 +192,8 @@ List<Widget> _buildSettingsGeneralSection({
                       (value) =>
                           DropdownMenuItem<StartupPlaybackRestoreBehavior>(
                             value: value,
-                            child: Text(
+                            child: _settingsDropdownText(
                               i18n.tr('startup_playback_restore_${value.name}'),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                              ),
                             ),
                           ),
                     )
@@ -218,7 +214,7 @@ List<Widget> _buildSettingsGeneralSection({
               ),
             );
             return SwitchListTile(
-              title: Text(i18n.tr('allow_duplicate_works')),
+              title: _settingsTitle(i18n.tr('allow_duplicate_works')),
               value: enabled,
               onChanged: settings.setAllowDuplicateWorks,
               secondary: _settingsIcon(Icons.copy_all_rounded, cs.primary),
@@ -237,7 +233,7 @@ List<Widget> _buildSettingsGeneralSection({
               ),
             );
             return SwitchListTile(
-              title: Text(i18n.tr('reduce_animations')),
+              title: _settingsTitle(i18n.tr('reduce_animations')),
               value: enabled,
               onChanged: settings.setReduceAnimations,
               secondary: _settingsIcon(Icons.animation_rounded, cs.primary),
@@ -257,7 +253,7 @@ List<Widget> _buildSettingsGeneralSection({
                 ),
               );
               return SwitchListTile(
-                title: Text(i18n.tr('haptic_feedback_enabled')),
+                title: _settingsTitle(i18n.tr('haptic_feedback_enabled')),
                 value: enabled,
                 onChanged: settings.setHapticFeedbackEnabled,
                 secondary: _settingsIcon(Icons.vibration_rounded, cs.primary),

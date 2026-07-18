@@ -15,7 +15,7 @@ List<Widget> _buildSettingsUpdateSection({
         if (!Platform.isWindows) ...[
           ListTile(
             onTap: onOpenPermissionCenter,
-            title: Text(i18n.tr('permission_center')),
+            title: _settingsTitle(i18n.tr('permission_center')),
             leading: _settingsIcon(
               Icons.admin_panel_settings_rounded,
               cs.secondary,
@@ -60,7 +60,7 @@ List<Widget> _buildSettingsUpdateSection({
             return SwitchListTile(
               value: autoCheckUpdates,
               onChanged: settings.setAutoCheckUpdates,
-              title: Text(i18n.tr('auto_check_updates')),
+              title: _settingsTitle(i18n.tr('auto_check_updates')),
               secondary: _settingsIcon(Icons.update_rounded, cs.secondary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(

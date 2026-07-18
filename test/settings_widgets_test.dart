@@ -167,6 +167,46 @@ void main() {
     expect(find.byType(AboutPage), findsOneWidget);
   });
 
+  testWidgets('settings titles and choices wrap on narrow screens', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_common')));
+    await tester.pumpAndSettle();
+
+    final restoreTileFinder = find.widgetWithText(
+      ListTile,
+      i18n.tr('startup_playback_restore_behavior'),
+    );
+    final restoreTile = tester.widget<ListTile>(restoreTileFinder);
+    final title = restoreTile.title! as Text;
+    expect(title.softWrap, isTrue);
+    expect(title.overflow, TextOverflow.visible);
+    expect(tester.getSize(restoreTileFinder).height, greaterThan(58));
+
+    final dropdownFinder = find.byType(
+      DropdownButton<StartupPlaybackRestoreBehavior>,
+    );
+    final dropdown = tester
+        .widget<DropdownButton<StartupPlaybackRestoreBehavior>>(dropdownFinder);
+    expect(dropdown.isExpanded, isTrue);
+    expect(dropdown.itemHeight, isNull);
+
+    final optionPadding = dropdown.items!.first.child as Padding;
+    final optionText = optionPadding.child! as Text;
+    expect(optionText.maxLines, 2);
+    expect(optionText.softWrap, isTrue);
+    expect(optionText.overflow, TextOverflow.visible);
+  });
+
   testWidgets('card info settings enforce the selected field limit', (
     tester,
   ) async {

@@ -334,7 +334,6 @@ class _SessionListCard extends ConsumerWidget {
       key: ValueKey(sessionId),
       margin: const EdgeInsets.only(bottom: 6),
       shape: cardShape,
-      color: activeColor,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
       onRemove: () => _confirmRemoveSession(context),

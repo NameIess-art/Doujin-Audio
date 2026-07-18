@@ -305,7 +305,7 @@ class _SettingsCategoryTile extends StatelessWidget {
           ListTile(
             onTap: onTap,
             leading: _settingsIcon(category.icon, cs.primary),
-            title: Text(i18n.tr(category.labelKey)),
+            title: _settingsTitle(i18n.tr(category.labelKey)),
             trailing: Icon(
               Icons.chevron_right_rounded,
               color: cs.onSurfaceVariant,
@@ -362,6 +362,7 @@ class _SettingsCategoryPage extends ConsumerWidget {
             child: Column(
               children: switch (category) {
                 _SettingsCategory.language => _buildSettingsLanguageSection(
+                  context: context,
                   i18n: i18n,
                   settings: settings,
                   cs: cs,

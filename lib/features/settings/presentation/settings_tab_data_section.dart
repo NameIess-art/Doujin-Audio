@@ -20,7 +20,7 @@ List<Widget> _buildSettingsDataSection({
       children: [
         ListTile(
           onTap: onOpenDataAndSupport,
-          title: Text(i18n.tr('data_and_support')),
+          title: _settingsTitle(i18n.tr('data_and_support')),
           leading: _settingsIcon(Icons.health_and_safety_rounded, cs.secondary),
           trailing: Icon(
             Icons.chevron_right_rounded,
@@ -43,10 +43,14 @@ List<Widget> _buildSettingsDataSection({
                 ),
               );
               return ListTile(
-                title: Text(i18n.tr('max_cache_size')),
-                subtitle: Text(AppCacheService.formatBytes(maxCacheBytes)),
+                title: _settingsTitle(i18n.tr('max_cache_size')),
+                subtitle: Text(
+                  AppCacheService.formatBytes(maxCacheBytes),
+                  softWrap: true,
+                ),
                 leading: _settingsIcon(Icons.storage_rounded, cs.primary),
-                trailing: UnifiedDropdownButton<int>(
+                trailing: _settingsDropdown<int>(
+                  context,
                   value: _settingsCacheLimitOptions.contains(maxCacheBytes)
                       ? maxCacheBytes
                       : AppCacheService.defaultMaxCacheBytes,
@@ -59,9 +63,8 @@ List<Widget> _buildSettingsDataSection({
                       .map(
                         (value) => DropdownMenuItem<int>(
                           value: value,
-                          child: Text(
+                          child: _settingsDropdownText(
                             AppCacheService.formatBytes(value),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
                       )
@@ -81,7 +84,7 @@ List<Widget> _buildSettingsDataSection({
               );
               return ListTile(
                 onTap: cacheOperation.isBusy ? null : onClearApplicationCache,
-                title: Text(i18n.tr('clear_app_cache')),
+                title: _settingsTitle(i18n.tr('clear_app_cache')),
                 leading: _settingsIcon(
                   Icons.cleaning_services_rounded,
                   cs.primary,

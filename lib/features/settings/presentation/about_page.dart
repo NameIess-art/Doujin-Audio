@@ -192,7 +192,6 @@ class _AboutIdentity extends StatelessWidget {
         bottom: AppSpacing.md,
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.start,
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(AppRadius.card),
@@ -219,9 +218,9 @@ class _AboutIdentity extends StatelessWidget {
             child: Text(
               i18n.tr('app_title'),
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 32,
-                  ),
+                fontWeight: FontWeight.w900,
+                fontSize: 32,
+              ),
             ),
           ),
         ],
@@ -277,8 +276,8 @@ class _AboutVersionTile extends StatelessWidget {
         future: versionFuture,
         builder: (context, snapshot) => Text(
           snapshot.data?.versionName ?? '...',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+          softWrap: true,
+          textAlign: TextAlign.end,
           style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
       ),

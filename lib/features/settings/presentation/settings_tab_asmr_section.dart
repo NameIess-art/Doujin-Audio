@@ -23,13 +23,12 @@ List<Widget> _buildSettingsAsmrSection({
             );
             return ListTile(
               onTap: onChooseAsmrDownloadDestination,
-              title: Text(i18n.tr('asmr_download_path_setting')),
+              title: _settingsTitle(i18n.tr('asmr_download_path_setting')),
               subtitle: Text(
                 destinationRoot == null || destinationRoot.trim().isEmpty
                     ? i18n.tr('asmr_download_path_not_set')
                     : PathDisplay.displayPathFor(destinationRoot),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+                softWrap: true,
               ),
               leading: _settingsIcon(Icons.folder_rounded, cs.tertiary),
               trailing: IconButton.filledTonal(
@@ -69,9 +68,10 @@ List<Widget> _buildSettingsAsmrSection({
               ),
             };
             return ListTile(
-              title: Text(i18n.tr('asmr_download_conflict_setting')),
+              title: _settingsTitle(i18n.tr('asmr_download_conflict_setting')),
               leading: _settingsIcon(Icons.rule_folder_rounded, cs.tertiary),
-              trailing: UnifiedDropdownButton<AsmrDownloadConflictPolicy>(
+              trailing: _settingsDropdown<AsmrDownloadConflictPolicy>(
+                context,
                 value: conflictPolicy,
                 onChanged: (value) {
                   if (value != null) {
@@ -82,10 +82,7 @@ List<Widget> _buildSettingsAsmrSection({
                     .map(
                       (value) => DropdownMenuItem<AsmrDownloadConflictPolicy>(
                         value: value,
-                        child: Text(
-                          conflictLabels[value]!,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
+                        child: _settingsDropdownText(conflictLabels[value]!),
                       ),
                     )
                     .toList(),

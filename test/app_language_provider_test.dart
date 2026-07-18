@@ -15,7 +15,7 @@ void main() {
 
       await provider.setLanguage(AppLanguage.zh);
       expect(provider.tr('background_transparency'), '背景透明度');
-      expect(provider.tr('haptic_feedback_enabled'), '交互震动效果');
+      expect(provider.tr('haptic_feedback_enabled'), '操作震动');
       expect(provider.tr('volume_range_hint'), '0-200');
 
       await provider.setLanguage(AppLanguage.ja);

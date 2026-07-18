@@ -17,6 +17,7 @@ import 'package:nameless_audio/features/library/application/cover_artwork_cache_
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/duration_overlay.dart';
+import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -938,6 +939,12 @@ void main() {
 
     expect(find.text('Work A'), findsOneWidget);
     expect(find.text('Library'), findsNothing);
+    final swipeCard = tester.widget<SwipeRevealCard>(
+      find.byType(SwipeRevealCard),
+    );
+    expect(swipeCard.color, isNull);
+    expect(swipeCard.primaryActionIcon, Icons.delete_outline_rounded);
+    expect(swipeCard.destructive, isTrue);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 120));

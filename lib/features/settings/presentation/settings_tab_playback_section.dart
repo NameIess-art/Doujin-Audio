@@ -19,7 +19,7 @@ List<Widget> _buildSettingsPlaybackSection({
             return SwitchListTile(
               value: autoPlay,
               onChanged: settings.setAutoPlayAddedSessions,
-              title: Text(i18n.tr('auto_play_added_sessions')),
+              title: _settingsTitle(i18n.tr('auto_play_added_sessions')),
               secondary: _settingsIcon(
                 Icons.playlist_play_rounded,
                 cs.tertiary,
@@ -41,7 +41,7 @@ List<Widget> _buildSettingsPlaybackSection({
             return SwitchListTile(
               value: asmrPlaybackCacheEnabled,
               onChanged: settings.setAsmrPlaybackCacheEnabled,
-              title: Text(i18n.tr('asmr_playback_cache')),
+              title: _settingsTitle(i18n.tr('asmr_playback_cache')),
               secondary: _settingsIcon(Icons.cached_rounded, cs.tertiary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -60,7 +60,7 @@ List<Widget> _buildSettingsPlaybackSection({
             return SwitchListTile(
               value: recordProgress,
               onChanged: settings.setRecordPlaybackProgress,
-              title: Text(i18n.tr('record_playback_progress')),
+              title: _settingsTitle(i18n.tr('record_playback_progress')),
               secondary: _settingsIcon(Icons.restore_rounded, cs.tertiary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -86,7 +86,7 @@ List<Widget> _buildSettingsPlaybackSection({
                       .turnOffAllSubtitles();
                 }
               },
-              title: Text(i18n.tr('multi_thread_playback')),
+              title: _settingsTitle(i18n.tr('multi_thread_playback')),
               secondary: _settingsIcon(
                 Icons.multitrack_audio_rounded,
                 cs.tertiary,
@@ -109,9 +109,12 @@ List<Widget> _buildSettingsPlaybackSection({
                 ),
               );
               return ListTile(
-                title: Text(i18n.tr('audio_device_disconnect_behavior')),
+                title: _settingsTitle(
+                  i18n.tr('audio_device_disconnect_behavior'),
+                ),
                 leading: _settingsIcon(Icons.headset_off_rounded, cs.tertiary),
-                trailing: UnifiedDropdownButton<AudioDeviceDisconnectBehavior>(
+                trailing: _settingsDropdown<AudioDeviceDisconnectBehavior>(
+                  context,
                   value: behavior,
                   onChanged: (value) {
                     if (value != null) {
@@ -122,15 +125,15 @@ List<Widget> _buildSettingsPlaybackSection({
                   },
                   items: AudioDeviceDisconnectBehavior.values
                       .map(
-                        (
-                          value,
-                        ) => DropdownMenuItem<AudioDeviceDisconnectBehavior>(
-                          value: value,
-                          child: Text(
-                            i18n.tr('audio_device_disconnect_${value.name}'),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
+                        (value) =>
+                            DropdownMenuItem<AudioDeviceDisconnectBehavior>(
+                              value: value,
+                              child: _settingsDropdownText(
+                                i18n.tr(
+                                  'audio_device_disconnect_${value.name}',
+                                ),
+                              ),
+                            ),
                       )
                       .toList(),
                 ),
@@ -151,9 +154,12 @@ List<Widget> _buildSettingsPlaybackSection({
                 ),
               );
               return ListTile(
-                title: Text(i18n.tr('transient_audio_focus_loss_behavior')),
+                title: _settingsTitle(
+                  i18n.tr('transient_audio_focus_loss_behavior'),
+                ),
                 leading: _settingsIcon(Icons.volume_down_rounded, cs.tertiary),
-                trailing: UnifiedDropdownButton<TransientAudioFocusLossBehavior>(
+                trailing: _settingsDropdown<TransientAudioFocusLossBehavior>(
+                  context,
                   value: behavior,
                   onChanged: (value) {
                     if (value != null) {
@@ -164,15 +170,15 @@ List<Widget> _buildSettingsPlaybackSection({
                   },
                   items: TransientAudioFocusLossBehavior.values
                       .map(
-                        (
-                          value,
-                        ) => DropdownMenuItem<TransientAudioFocusLossBehavior>(
-                          value: value,
-                          child: Text(
-                            i18n.tr('transient_audio_focus_loss_${value.name}'),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
+                        (value) =>
+                            DropdownMenuItem<TransientAudioFocusLossBehavior>(
+                              value: value,
+                              child: _settingsDropdownText(
+                                i18n.tr(
+                                  'transient_audio_focus_loss_${value.name}',
+                                ),
+                              ),
+                            ),
                       )
                       .toList(),
                 ),
@@ -193,12 +199,13 @@ List<Widget> _buildSettingsPlaybackSection({
                 ),
               );
               return ListTile(
-                title: Text(i18n.tr('interruption_resume_behavior')),
+                title: _settingsTitle(i18n.tr('interruption_resume_behavior')),
                 leading: _settingsIcon(
                   Icons.phone_in_talk_rounded,
                   cs.tertiary,
                 ),
-                trailing: UnifiedDropdownButton<InterruptionResumeBehavior>(
+                trailing: _settingsDropdown<InterruptionResumeBehavior>(
+                  context,
                   value: behavior,
                   onChanged: (value) {
                     if (value != null) {
@@ -209,9 +216,8 @@ List<Widget> _buildSettingsPlaybackSection({
                       .map(
                         (value) => DropdownMenuItem<InterruptionResumeBehavior>(
                           value: value,
-                          child: Text(
+                          child: _settingsDropdownText(
                             i18n.tr('interruption_resume_${value.name}'),
-                            style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                         ),
                       )

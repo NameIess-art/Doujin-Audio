@@ -30,9 +30,10 @@ List<Widget> _buildSettingsAppearanceSection({
               ThemeMode.dark: i18n.tr('theme_dark'),
             };
             return ListTile(
-              title: Text(i18n.tr('dark_mode')),
+              title: _settingsTitle(i18n.tr('dark_mode')),
               leading: _settingsIcon(Icons.dark_mode_rounded, cs.secondary),
-              trailing: UnifiedDropdownButton<ThemeMode>(
+              trailing: _settingsDropdown<ThemeMode>(
+                context,
                 value: themeMode,
                 onChanged: (value) {
                   if (value != null) {
@@ -43,10 +44,7 @@ List<Widget> _buildSettingsAppearanceSection({
                     .map(
                       (mode) => DropdownMenuItem<ThemeMode>(
                         value: mode,
-                        child: Text(
-                          modeLabels[mode]!,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
+                        child: _settingsDropdownText(modeLabels[mode]!),
                       ),
                     )
                     .toList(),
@@ -65,7 +63,7 @@ List<Widget> _buildSettingsAppearanceSection({
                 ThemeState.from(ref.read(themeProviderInstanceProvider));
             final provider = ref.read(themeProviderInstanceProvider);
             return SwitchListTile(
-              title: Text(i18n.tr('differentiate_asmr_theme')),
+              title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
               value: themeState.differentiateAsmrTheme,
               onChanged: (val) => provider.setDifferentiateAsmrTheme(val),
               secondary: _settingsIcon(Icons.palette_rounded, cs.secondary),
@@ -77,14 +75,15 @@ List<Widget> _buildSettingsAppearanceSection({
           },
         ),
         ListTile(
-          title: Text(i18n.tr('cover_image_resolution')),
+          title: _settingsTitle(i18n.tr('cover_image_resolution')),
           leading: _settingsIcon(
             Icons.photo_size_select_large_rounded,
             cs.secondary,
           ),
           trailing: Consumer(
             builder: (context, ref, _) {
-              return UnifiedDropdownButton<CoverImageResolution>(
+              return _settingsDropdown<CoverImageResolution>(
+                context,
                 value: ref.watch(coverImageResolutionProvider),
                 onChanged: (value) {
                   if (value != null) {
@@ -95,9 +94,8 @@ List<Widget> _buildSettingsAppearanceSection({
                     .map(
                       (value) => DropdownMenuItem<CoverImageResolution>(
                         value: value,
-                        child: Text(
+                        child: _settingsDropdownText(
                           coverResolutionLabels[value]!,
-                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
                     )
@@ -128,7 +126,7 @@ List<Widget> _buildSettingsAppearanceSection({
                       : BottomNavigationStyle.bar,
                 );
               },
-              title: Text(i18n.tr('bottom_navigation_style')),
+              title: _settingsTitle(i18n.tr('bottom_navigation_style')),
               secondary: _settingsIcon(Icons.space_bar_rounded, cs.secondary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -147,7 +145,7 @@ List<Widget> _buildSettingsAppearanceSection({
             return SwitchListTile(
               value: uiBlurEnabled,
               onChanged: settings.setUiBlurEffectEnabled,
-              title: Text(i18n.tr('ui_blur_effect')),
+              title: _settingsTitle(i18n.tr('ui_blur_effect')),
               secondary: _settingsIcon(Icons.blur_linear_rounded, cs.secondary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -166,7 +164,7 @@ List<Widget> _buildSettingsAppearanceSection({
             return SwitchListTile(
               value: blurEnabled,
               onChanged: settings.setBlurPlayerBackgroundEnabled,
-              title: Text(i18n.tr('blur_player_background')),
+              title: _settingsTitle(i18n.tr('blur_player_background')),
               secondary: _settingsIcon(Icons.blur_on_rounded, cs.secondary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -185,7 +183,7 @@ List<Widget> _buildSettingsAppearanceSection({
             return SwitchListTile(
               value: showPlaybackCard,
               onChanged: settings.setShowPlaybackCard,
-              title: Text(i18n.tr('show_playback_card')),
+              title: _settingsTitle(i18n.tr('show_playback_card')),
               secondary: _settingsIcon(
                 Icons.play_circle_outline_rounded,
                 cs.secondary,
@@ -210,8 +208,8 @@ List<Widget> _buildSettingsAppearanceSection({
                       .map((field) => _cardInfoFieldLabel(i18n, field))
                       .join('\uFF0C');
             return ListTile(
-              title: Text(i18n.tr('card_info_display')),
-              subtitle: Text(summary),
+              title: _settingsTitle(i18n.tr('card_info_display')),
+              subtitle: Text(summary, softWrap: true),
               leading: _settingsIcon(Icons.badge_rounded, cs.secondary),
               trailing: Icon(
                 Icons.chevron_right_rounded,
@@ -227,7 +225,7 @@ List<Widget> _buildSettingsAppearanceSection({
           },
         ),
         ListTile(
-          title: Text(i18n.tr('subtitle_window_settings')),
+          title: _settingsTitle(i18n.tr('subtitle_window_settings')),
           leading: _settingsIcon(Icons.subtitles_rounded, cs.secondary),
           trailing: Icon(
             Icons.chevron_right_rounded,

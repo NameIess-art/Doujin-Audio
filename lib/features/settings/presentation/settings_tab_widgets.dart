@@ -6,6 +6,48 @@ const double _settingsTileTitleFontSize =
     _settingsTileHeight * 18 / _settingsTileReferenceHeight;
 const double _settingsTileSubtitleFontSize =
     _settingsTileHeight * 15 / _settingsTileReferenceHeight;
+const double _settingsDropdownMinWidth = 128;
+const double _settingsDropdownMaxWidth = 180;
+
+Widget _settingsTitle(String text) {
+  return Text(text, softWrap: true, overflow: TextOverflow.visible);
+}
+
+Widget _settingsDropdownText(
+  String text, {
+  TextStyle? style,
+  TextAlign textAlign = TextAlign.end,
+}) {
+  return Text(
+    text,
+    maxLines: 2,
+    softWrap: true,
+    overflow: TextOverflow.visible,
+    textAlign: textAlign,
+    style: style ?? const TextStyle(fontWeight: FontWeight.w700),
+  );
+}
+
+Widget _settingsDropdown<T>(
+  BuildContext context, {
+  required T value,
+  required List<DropdownMenuItem<T>> items,
+  required ValueChanged<T?>? onChanged,
+}) {
+  final width = (MediaQuery.sizeOf(context).width * 0.4)
+      .clamp(_settingsDropdownMinWidth, _settingsDropdownMaxWidth)
+      .toDouble();
+  return SizedBox(
+    width: width,
+    child: UnifiedDropdownButton<T>(
+      value: value,
+      items: items,
+      onChanged: onChanged,
+      isExpanded: true,
+      multilineItems: true,
+    ),
+  );
+}
 
 class _SettingsTileTheme extends StatelessWidget {
   const _SettingsTileTheme({required this.child});
@@ -115,11 +157,7 @@ class _UpdateSettingsTile extends StatelessWidget {
     return ListTile(
       onTap: busy ? null : onCheck,
       leading: _settingsIcon(Icons.system_update_alt_rounded, cs.primary),
-      title: Text(
-        i18n.tr('check_updates'),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
+      title: _settingsTitle(i18n.tr('check_updates')),
       subtitle: _UpdateSubtitle(
         checking: checking,
         downloading: downloading,
@@ -179,8 +217,7 @@ class _UpdateSubtitle extends StatelessWidget {
     if (checking) {
       return Text(
         i18n.tr('checking_updates'),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+        softWrap: true,
         style: textStyle,
       );
     }
@@ -192,8 +229,7 @@ class _UpdateSubtitle extends StatelessWidget {
         children: [
           Text(
             i18n.tr('downloading_update', {'percent': percent}),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+            softWrap: true,
             style: textStyle,
           ),
           const SizedBox(height: 8),
@@ -212,8 +248,7 @@ class _UpdateSubtitle extends StatelessWidget {
       };
       return Text(
         i18n.tr(key, {'version': info.latestVersionName}),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+        softWrap: true,
         style: textStyle,
       );
     }
@@ -223,8 +258,7 @@ class _UpdateSubtitle extends StatelessWidget {
         i18n.tr('current_version_label', {
           'version': snapshot.data?.versionName ?? '...',
         }),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+        softWrap: true,
         style: textStyle,
       ),
     );
@@ -382,6 +416,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                                     value: settings.fontFamily,
                                     isDense: true,
                                     isExpanded: true,
+                                    multilineItems: true,
                                     alignment: AlignmentDirectional.centerStart,
                                     items: List.generate(_fontFamilies.length, (
                                       i,
@@ -391,8 +426,9 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                                           : _fontFamilies[i];
                                       return DropdownMenuItem(
                                         value: _fontFamilies[i],
-                                        child: Text(
+                                        child: _settingsDropdownText(
                                           label,
+                                          textAlign: TextAlign.start,
                                           style: TextStyle(
                                             fontFamily: _fontFamilies[i].isEmpty
                                                 ? null
@@ -878,7 +914,7 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
                         selected.length < CardInfoField.maxSelected
                     ? (_) => toggle(field)
                     : null,
-                title: Text(_cardInfoFieldLabel(i18n, field)),
+                title: _settingsTitle(_cardInfoFieldLabel(i18n, field)),
                 dense: true,
                 contentPadding: EdgeInsets.zero,
               ),

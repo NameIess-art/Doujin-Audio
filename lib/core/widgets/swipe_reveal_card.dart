@@ -366,11 +366,8 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         ? widget.secondaryActionTooltip ?? widget.removeTooltip
         : widget.removeTooltip;
     Widget buildClosedContent(BuildContext context) {
-      final content = DecoratedBox(
-        decoration: ShapeDecoration(
-          color: widget.closedColor ?? cs.surface,
-          shape: widget.shape,
-        ),
+      final content = ColoredBox(
+        color: widget.closedColor ?? cs.surface,
         child: Stack(
           children: [
             IgnorePointer(ignoring: _isOpen, child: widget.child),

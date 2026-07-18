@@ -357,6 +357,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     return SwipeRevealCard(
       margin: const EdgeInsets.only(bottom: 6.0),
       shape: cardShape,
+      closedColor: cs.surfaceContainerLow,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio_folder'),
       secondaryActionLabel: i18n.tr('audio_detail'),

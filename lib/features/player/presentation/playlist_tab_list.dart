@@ -43,9 +43,6 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
             decoration: BoxDecoration(
               color: cs.surfaceContainerLow,
               borderRadius: AppRadius.borderCard,
-              border: Border.all(
-                color: cs.outlineVariant.withValues(alpha: 0.32),
-              ),
             ),
             child: ShimmerLoader(
               child: Row(
@@ -323,17 +320,14 @@ class _SessionListCard extends ConsumerWidget {
 
     final cardShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
-      side: BorderSide(
-        color: isPlaying
-            ? activeColor.withValues(alpha: isDark ? 0.34 : 0.28)
-            : cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
-      ),
     );
+    final itemColor = isPlaying ? cs.surfaceContainerHigh : baseBgColor;
 
     return SwipeRevealCard(
       key: ValueKey(sessionId),
       margin: const EdgeInsets.only(bottom: 6),
       shape: cardShape,
+      closedColor: itemColor,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
       onRemove: () => _confirmRemoveSession(context),
@@ -345,7 +339,7 @@ class _SessionListCard extends ConsumerWidget {
             margin: EdgeInsets.zero,
             clipBehavior: Clip.antiAlias,
             shape: cardShape,
-            color: isPlaying ? cs.surfaceContainerHigh : baseBgColor,
+            color: itemColor,
             elevation: 0,
             shadowColor: Colors.transparent,
             child: DecoratedBox(

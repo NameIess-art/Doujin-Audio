@@ -38,14 +38,25 @@ void main() {
       ),
     );
 
-    final closedSurface = tester.widgetList<DecoratedBox>(
+    final closedSurface = tester.widgetList<ColoredBox>(
       find.byWidgetPredicate((widget) {
-        if (widget is! DecoratedBox) return false;
-        final decoration = widget.decoration;
-        return decoration is ShapeDecoration && decoration.color == Colors.red;
+        return widget is ColoredBox && widget.color == Colors.red;
       }),
     );
     expect(closedSurface, isNotEmpty);
+    expect(
+      find.byWidgetPredicate((widget) {
+        if (widget is! DecoratedBox) return false;
+        final decoration = widget.decoration;
+        if (decoration is! ShapeDecoration || decoration.color != Colors.red) {
+          return false;
+        }
+        final shape = decoration.shape;
+        return shape is RoundedRectangleBorder && shape.side != BorderSide.none;
+      }),
+      findsNothing,
+      reason: 'The reveal backing must not repaint the child card border.',
+    );
     expect(find.byType(TweenAnimationBuilder<double>), findsNothing);
   });
 

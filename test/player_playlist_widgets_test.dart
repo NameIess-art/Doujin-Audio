@@ -255,6 +255,12 @@ void main() {
           key.value.startsWith('playlist_skeleton_card_');
     });
     expect(skeletonCards, findsAtLeastNWidgets(5));
+    final firstSkeleton = tester.widget<Container>(skeletonCards.first);
+    expect(
+      (firstSkeleton.decoration! as BoxDecoration).border,
+      isNull,
+      reason: 'Playlist loading items should match the borderless list style.',
+    );
     expect(
       tester.getTopLeft(skeletonCards.first).dy,
       greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TopPageHeader)).dy),
@@ -943,6 +949,7 @@ void main() {
       find.byType(SwipeRevealCard),
     );
     expect(swipeCard.color, isNull);
+    expect((swipeCard.shape as RoundedRectangleBorder).side, BorderSide.none);
     expect(swipeCard.primaryActionIcon, Icons.delete_outline_rounded);
     expect(swipeCard.destructive, isTrue);
 

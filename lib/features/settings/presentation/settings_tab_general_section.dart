@@ -128,6 +128,7 @@ List<Widget> _buildSettingsLanguageSection({
 List<Widget> _buildSettingsGeneralSection({
   required AppLanguageProvider i18n,
   required SettingsRepository settings,
+  required SettingsCommandController settingsController,
   required ColorScheme cs,
 }) {
   return <Widget>[
@@ -161,6 +162,85 @@ List<Widget> _buildSettingsGeneralSection({
                     )
                     .toList(),
               ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final behavior = ref.watch(
+              settingsStateProvider.select(
+                (state) =>
+                    state.valueOrNull?.startupPlaybackRestoreBehavior ??
+                    StartupPlaybackRestoreBehavior.resume,
+              ),
+            );
+            return ListTile(
+              title: Text(i18n.tr('startup_playback_restore_behavior')),
+              leading: _settingsIcon(Icons.restore_rounded, cs.primary),
+              trailing: UnifiedDropdownButton<StartupPlaybackRestoreBehavior>(
+                value: behavior,
+                onChanged: (value) {
+                  if (value != null) {
+                    settingsController.setStartupPlaybackRestoreBehavior(value);
+                  }
+                },
+                items: StartupPlaybackRestoreBehavior.values
+                    .map(
+                      (value) =>
+                          DropdownMenuItem<StartupPlaybackRestoreBehavior>(
+                            value: value,
+                            child: Text(
+                              i18n.tr('startup_playback_restore_${value.name}'),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                    )
+                    .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final enabled = ref.watch(
+              settingsStateProvider.select(
+                (state) => state.valueOrNull?.allowDuplicateWorks ?? false,
+              ),
+            );
+            return SwitchListTile(
+              title: Text(i18n.tr('allow_duplicate_works')),
+              value: enabled,
+              onChanged: settings.setAllowDuplicateWorks,
+              secondary: _settingsIcon(Icons.copy_all_rounded, cs.primary),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final enabled = ref.watch(
+              settingsStateProvider.select(
+                (state) => state.valueOrNull?.reduceAnimations ?? false,
+              ),
+            );
+            return SwitchListTile(
+              title: Text(i18n.tr('reduce_animations')),
+              value: enabled,
+              onChanged: settings.setReduceAnimations,
+              secondary: _settingsIcon(Icons.animation_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 8,
                 vertical: 2,

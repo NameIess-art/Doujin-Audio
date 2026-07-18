@@ -836,6 +836,7 @@ void main() {
         notify: false,
         persist: false,
       );
+      await runtimeGraph.settings.setAllowDuplicateWorks(true);
       await runtimeGraph.playback.spawnSession(first, autoPlay: false);
       await runtimeGraph.playback.spawnSession(second, autoPlay: false);
       for (
@@ -931,6 +932,7 @@ void main() {
           notify: false,
           persist: false,
         );
+        await runtimeGraph.settings.setAllowDuplicateWorks(true);
         await runtimeGraph.playback.spawnSession(first, autoPlay: false);
         await runtimeGraph.playback.spawnSession(second, autoPlay: false);
         final sessions = runtimeGraph.playback.service.activeSessions.toList(

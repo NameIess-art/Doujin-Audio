@@ -442,6 +442,16 @@ class DartPlaybackBridge implements NativePlaybackBridgeBase {
   }
 
   @override
+  Future<NativeResult<void>> setPlaybackBehavior({
+    required bool pauseOnAudioDeviceDisconnect,
+    required bool pauseOnTransientAudioFocusLoss,
+    required bool resumeAfterTransientAudioFocusGain,
+    required bool resumePlaybackOnStartupRestore,
+  }) async {
+    return const NativeSuccess();
+  }
+
+  @override
   Future<NativeResult<void>> dismissNotifications() async {
     return const NativeSuccess();
   }

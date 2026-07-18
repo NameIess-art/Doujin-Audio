@@ -64,12 +64,56 @@ data class StoredPlaybackTimerRuntimeState(
             autoResumeAtMs != null
 }
 
+data class StoredPlaybackBehavior(
+    val pauseOnAudioDeviceDisconnect: Boolean = true,
+    val pauseOnTransientAudioFocusLoss: Boolean = false,
+    val resumeAfterTransientAudioFocusGain: Boolean = true,
+    val resumePlaybackOnStartupRestore: Boolean = true
+)
+
 object NativePlaybackStateStore {
     private const val preferencesName = "audio_player_native_playback_state"
     private const val keySessions = "sessions"
     private const val keyPausedSessionIds = "paused_session_ids"
     private const val keyTimerCandidateSessionIds = "timer_candidate_session_ids"
     private const val keyTimerRuntimeState = "timer_runtime_state_v3"
+    private const val keyPlaybackBehavior = "playback_behavior_v1"
+
+    fun savePlaybackBehavior(context: Context, behavior: StoredPlaybackBehavior) {
+        val encoded = JSONObject()
+            .put("pauseOnAudioDeviceDisconnect", behavior.pauseOnAudioDeviceDisconnect)
+            .put("pauseOnTransientAudioFocusLoss", behavior.pauseOnTransientAudioFocusLoss)
+            .put(
+                "resumeAfterTransientAudioFocusGain",
+                behavior.resumeAfterTransientAudioFocusGain
+            )
+            .put("resumePlaybackOnStartupRestore", behavior.resumePlaybackOnStartupRestore)
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .putString(keyPlaybackBehavior, encoded.toString())
+            .apply()
+    }
+
+    fun loadPlaybackBehavior(context: Context): StoredPlaybackBehavior {
+        val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .getString(keyPlaybackBehavior, null)
+            ?: return StoredPlaybackBehavior()
+        return try {
+            val json = JSONObject(raw)
+            StoredPlaybackBehavior(
+                pauseOnAudioDeviceDisconnect =
+                    json.optBoolean("pauseOnAudioDeviceDisconnect", true),
+                pauseOnTransientAudioFocusLoss =
+                    json.optBoolean("pauseOnTransientAudioFocusLoss", false),
+                resumeAfterTransientAudioFocusGain =
+                    json.optBoolean("resumeAfterTransientAudioFocusGain", true),
+                resumePlaybackOnStartupRestore =
+                    json.optBoolean("resumePlaybackOnStartupRestore", true)
+            )
+        } catch (_: Exception) {
+            StoredPlaybackBehavior()
+        }
+    }
 
     fun saveSessions(
         context: Context,

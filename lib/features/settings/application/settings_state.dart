@@ -11,6 +11,14 @@ enum BottomNavigationStyle { capsule, bar }
 
 enum CoverImageResolution { memorySaver, balanced, high, original }
 
+enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
+
+enum TransientAudioFocusLossBehavior { duck, pause }
+
+enum InterruptionResumeBehavior { stayPaused, resume }
+
+enum StartupPlaybackRestoreBehavior { resume, pause }
+
 @immutable
 class SettingsState {
   const SettingsState({
@@ -36,6 +44,12 @@ class SettingsState {
     this.coverImageResolution = CoverImageResolution.balanced,
     this.asmrDownloadDestinationRoot,
     this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
+    this.audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.pause,
+    this.transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck,
+    this.interruptionResumeBehavior = InterruptionResumeBehavior.resume,
+    this.startupPlaybackRestoreBehavior = StartupPlaybackRestoreBehavior.resume,
+    this.allowDuplicateWorks = false,
+    this.reduceAnimations = false,
     this.isInitialized = false,
   });
 
@@ -61,6 +75,12 @@ class SettingsState {
   final CoverImageResolution coverImageResolution;
   final String? asmrDownloadDestinationRoot;
   final AsmrDownloadConflictPolicy asmrDownloadConflictPolicy;
+  final AudioDeviceDisconnectBehavior audioDeviceDisconnectBehavior;
+  final TransientAudioFocusLossBehavior transientAudioFocusLossBehavior;
+  final InterruptionResumeBehavior interruptionResumeBehavior;
+  final StartupPlaybackRestoreBehavior startupPlaybackRestoreBehavior;
+  final bool allowDuplicateWorks;
+  final bool reduceAnimations;
   final bool isInitialized;
 
   @override
@@ -88,6 +108,14 @@ class SettingsState {
         other.coverImageResolution == coverImageResolution &&
         other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
         other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy &&
+        other.audioDeviceDisconnectBehavior == audioDeviceDisconnectBehavior &&
+        other.transientAudioFocusLossBehavior ==
+            transientAudioFocusLossBehavior &&
+        other.interruptionResumeBehavior == interruptionResumeBehavior &&
+        other.startupPlaybackRestoreBehavior ==
+            startupPlaybackRestoreBehavior &&
+        other.allowDuplicateWorks == allowDuplicateWorks &&
+        other.reduceAnimations == reduceAnimations &&
         other.isInitialized == isInitialized;
   }
 
@@ -115,6 +143,12 @@ class SettingsState {
     coverImageResolution,
     asmrDownloadDestinationRoot,
     asmrDownloadConflictPolicy,
+    audioDeviceDisconnectBehavior,
+    transientAudioFocusLossBehavior,
+    interruptionResumeBehavior,
+    startupPlaybackRestoreBehavior,
+    allowDuplicateWorks,
+    reduceAnimations,
     isInitialized,
   ]);
 }

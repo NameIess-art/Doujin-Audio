@@ -41,6 +41,31 @@ class NativePlaybackCommandPayloadsTest {
     }
 
     @Test
+    fun `playback behavior requires a complete boolean payload`() {
+        validatePlaybackArgumentsBeforeService(
+            MethodCall(
+                NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR,
+                mapOf(
+                    "pauseOnAudioDeviceDisconnect" to true,
+                    "pauseOnTransientAudioFocusLoss" to false,
+                    "resumeAfterTransientAudioFocusGain" to true,
+                    "resumePlaybackOnStartupRestore" to false
+                )
+            )
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `playback behavior rejects missing values before service startup`() {
+        validatePlaybackArgumentsBeforeService(
+            MethodCall(
+                NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR,
+                mapOf("pauseOnAudioDeviceDisconnect" to true)
+            )
+        )
+    }
+
+    @Test
     fun `queue parser accepts fully typed items`() {
         val queue = NativePlaybackCommandPayloads.parseQueue(
             listOf(

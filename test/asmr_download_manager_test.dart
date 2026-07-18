@@ -152,9 +152,122 @@ void main() {
 
       expect(notifications, hasLength(3));
       expect(notifications.last?.status, AsmrDownloadTaskStatus.completed);
+      expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.completed);
+      expect(manager.taskIds, isEmpty);
+      expect(manager.buttonViewState.visible, isFalse);
+      expect(manager.taskShellViewState.hasTask, isFalse);
       manager.dispose();
     },
   );
+
+  test('completed tasks leave active tasks visible in the task UI', () {
+    final manager = _manager();
+    final startedAt = DateTime(2026);
+    manager.debugSetCurrentTaskForTesting(
+      AsmrDownloadTaskSnapshot(
+        work: _work(),
+        destinationRoot: 'C:\\Downloads',
+        workFolderName: 'Work',
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        status: AsmrDownloadTaskStatus.completed,
+        totalFiles: 1,
+        completedFiles: 1,
+        skippedFiles: 0,
+        failedFiles: 0,
+        totalBytes: 1024,
+        downloadedBytes: 1024,
+        startedAt: startedAt,
+      ),
+    );
+    manager.debugSetCurrentTaskForTesting(
+      AsmrDownloadTaskSnapshot(
+        work: _work(id: 2),
+        destinationRoot: 'C:\\Downloads',
+        workFolderName: 'Work 2',
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        status: AsmrDownloadTaskStatus.downloading,
+        totalFiles: 1,
+        completedFiles: 0,
+        skippedFiles: 0,
+        failedFiles: 0,
+        totalBytes: 2048,
+        downloadedBytes: 512,
+        startedAt: startedAt,
+      ),
+    );
+
+    expect(manager.taskIds, <int>[2]);
+    expect(manager.buttonViewState.visible, isTrue);
+    expect(manager.buttonViewState.progress, 0.25);
+    expect(manager.taskShellViewState.hasTask, isTrue);
+    manager.dispose();
+  });
+
+  test('only the latest completed task snapshot is retained', () {
+    final manager = _manager();
+    final startedAt = DateTime(2026);
+
+    AsmrDownloadTaskSnapshot completedTask(int workId) {
+      return AsmrDownloadTaskSnapshot(
+        work: _work(id: workId),
+        destinationRoot: 'C:\\Downloads',
+        workFolderName: 'Work $workId',
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        status: AsmrDownloadTaskStatus.completed,
+        totalFiles: 1,
+        completedFiles: 1,
+        skippedFiles: 0,
+        failedFiles: 0,
+        totalBytes: 1024,
+        downloadedBytes: 1024,
+        startedAt: startedAt,
+      );
+    }
+
+    manager.debugSetCurrentTaskForTesting(completedTask(1));
+    manager.debugSetCurrentTaskForTesting(completedTask(2));
+
+    expect(manager.getTask(1), isNull);
+    expect(manager.getTask(2)?.status, AsmrDownloadTaskStatus.completed);
+    expect(manager.tasks, hasLength(1));
+    expect(manager.taskIds, isEmpty);
+    manager.dispose();
+  });
+
+  test('all non-completed task statuses remain visible', () {
+    const visibleStatuses = <AsmrDownloadTaskStatus>[
+      AsmrDownloadTaskStatus.idle,
+      AsmrDownloadTaskStatus.preparing,
+      AsmrDownloadTaskStatus.downloading,
+      AsmrDownloadTaskStatus.paused,
+      AsmrDownloadTaskStatus.failed,
+    ];
+
+    for (final status in visibleStatuses) {
+      final manager = _manager();
+      manager.debugSetCurrentTaskForTesting(
+        AsmrDownloadTaskSnapshot(
+          work: _work(),
+          destinationRoot: 'C:\\Downloads',
+          workFolderName: 'Work',
+          conflictPolicy: AsmrDownloadConflictPolicy.skip,
+          status: status,
+          totalFiles: 1,
+          completedFiles: 0,
+          skippedFiles: 0,
+          failedFiles: status == AsmrDownloadTaskStatus.failed ? 1 : 0,
+          totalBytes: 1024,
+          downloadedBytes: 0,
+          startedAt: DateTime(2026),
+        ),
+      );
+
+      expect(manager.taskIds, <int>[1], reason: '$status');
+      expect(manager.buttonViewState.visible, isTrue, reason: '$status');
+      expect(manager.taskShellViewState.hasTask, isTrue, reason: '$status');
+      manager.dispose();
+    }
+  });
 
   test(
     'download chunks only publish immutable snapshots at the throttle',

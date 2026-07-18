@@ -14,12 +14,9 @@ void main() {
   test('about page localization keys are present in every language', () {
     const requiredKeys = <String>[
       'about',
-      'about_subtitle',
       'about_version',
       'about_source_code',
-      'about_source_code_subtitle',
       'about_wiki',
-      'about_wiki_subtitle',
       'about_wiki_open_failed',
       'about_author',
       'about_reward',

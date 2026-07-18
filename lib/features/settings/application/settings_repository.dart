@@ -38,6 +38,16 @@ class SettingsRepository {
   String? asmrDownloadDestinationRoot;
   AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
       AsmrDownloadConflictPolicy.overwrite;
+  AudioDeviceDisconnectBehavior audioDeviceDisconnectBehavior =
+      AudioDeviceDisconnectBehavior.pause;
+  TransientAudioFocusLossBehavior transientAudioFocusLossBehavior =
+      TransientAudioFocusLossBehavior.duck;
+  InterruptionResumeBehavior interruptionResumeBehavior =
+      InterruptionResumeBehavior.resume;
+  StartupPlaybackRestoreBehavior startupPlaybackRestoreBehavior =
+      StartupPlaybackRestoreBehavior.resume;
+  bool allowDuplicateWorks = false;
+  bool reduceAnimations = false;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
     const SettingsState(),
   );
@@ -86,6 +96,28 @@ class SettingsRepository {
         (value) => value.name == playback['asmrDownloadConflictPolicy'],
         orElse: () => AsmrDownloadConflictPolicy.overwrite,
       );
+      audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.values
+          .firstWhere(
+            (value) => value.name == playback['audioDeviceDisconnectBehavior'],
+            orElse: () => AudioDeviceDisconnectBehavior.pause,
+          );
+      transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.values
+          .firstWhere(
+            (value) =>
+                value.name == playback['transientAudioFocusLossBehavior'],
+            orElse: () => TransientAudioFocusLossBehavior.duck,
+          );
+      interruptionResumeBehavior = InterruptionResumeBehavior.values.firstWhere(
+        (value) => value.name == playback['interruptionResumeBehavior'],
+        orElse: () => InterruptionResumeBehavior.resume,
+      );
+      startupPlaybackRestoreBehavior = StartupPlaybackRestoreBehavior.values
+          .firstWhere(
+            (value) => value.name == playback['startupPlaybackRestoreBehavior'],
+            orElse: () => StartupPlaybackRestoreBehavior.resume,
+          );
+      allowDuplicateWorks = playback['allowDuplicateWorks'] as bool? ?? false;
+      reduceAnimations = playback['reduceAnimations'] as bool? ?? false;
       dlsiteMetadataLanguage = ContentLanguagePreference.fromName(
         playback['dlsiteMetadataLanguage'],
       );
@@ -146,6 +178,12 @@ class SettingsRepository {
           .map((preset) => preset.toJson())
           .toList(growable: false),
       'maxCacheBytes': maxCacheBytes,
+      'audioDeviceDisconnectBehavior': audioDeviceDisconnectBehavior.name,
+      'transientAudioFocusLossBehavior': transientAudioFocusLossBehavior.name,
+      'interruptionResumeBehavior': interruptionResumeBehavior.name,
+      'startupPlaybackRestoreBehavior': startupPlaybackRestoreBehavior.name,
+      'allowDuplicateWorks': allowDuplicateWorks,
+      'reduceAnimations': reduceAnimations,
     });
   }
 
@@ -275,6 +313,44 @@ class SettingsRepository {
     update: () => asmrDownloadConflictPolicy = policy,
   );
 
+  Future<void> setAudioDeviceDisconnectBehavior(
+    AudioDeviceDisconnectBehavior behavior,
+  ) => _setValue(
+    unchanged: audioDeviceDisconnectBehavior == behavior,
+    update: () => audioDeviceDisconnectBehavior = behavior,
+  );
+
+  Future<void> setTransientAudioFocusLossBehavior(
+    TransientAudioFocusLossBehavior behavior,
+  ) => _setValue(
+    unchanged: transientAudioFocusLossBehavior == behavior,
+    update: () => transientAudioFocusLossBehavior = behavior,
+  );
+
+  Future<void> setInterruptionResumeBehavior(
+    InterruptionResumeBehavior behavior,
+  ) => _setValue(
+    unchanged: interruptionResumeBehavior == behavior,
+    update: () => interruptionResumeBehavior = behavior,
+  );
+
+  Future<void> setStartupPlaybackRestoreBehavior(
+    StartupPlaybackRestoreBehavior behavior,
+  ) => _setValue(
+    unchanged: startupPlaybackRestoreBehavior == behavior,
+    update: () => startupPlaybackRestoreBehavior = behavior,
+  );
+
+  Future<void> setAllowDuplicateWorks(bool enabled) => _setValue(
+    unchanged: allowDuplicateWorks == enabled,
+    update: () => allowDuplicateWorks = enabled,
+  );
+
+  Future<void> setReduceAnimations(bool enabled) => _setValue(
+    unchanged: reduceAnimations == enabled,
+    update: () => reduceAnimations = enabled,
+  );
+
   Future<void> _setValue({
     required bool unchanged,
     required void Function() update,
@@ -308,6 +384,12 @@ class SettingsRepository {
     coverImageResolution = CoverImageResolution.balanced;
     asmrDownloadDestinationRoot = null;
     asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
+    audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.pause;
+    transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck;
+    interruptionResumeBehavior = InterruptionResumeBehavior.resume;
+    startupPlaybackRestoreBehavior = StartupPlaybackRestoreBehavior.resume;
+    allowDuplicateWorks = false;
+    reduceAnimations = false;
   }
 
   String? _optionalString(Object? value) {
@@ -349,6 +431,12 @@ class SettingsRepository {
         coverImageResolution: coverImageResolution,
         asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
         asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,
+        audioDeviceDisconnectBehavior: audioDeviceDisconnectBehavior,
+        transientAudioFocusLossBehavior: transientAudioFocusLossBehavior,
+        interruptionResumeBehavior: interruptionResumeBehavior,
+        startupPlaybackRestoreBehavior: startupPlaybackRestoreBehavior,
+        allowDuplicateWorks: allowDuplicateWorks,
+        reduceAnimations: reduceAnimations,
         isInitialized: isInitialized,
       ),
     );

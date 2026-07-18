@@ -336,6 +336,13 @@ abstract interface class NativePlaybackBridgeBase {
 
   Future<NativeResult<void>> setForegroundEnabled(bool enabled);
 
+  Future<NativeResult<void>> setPlaybackBehavior({
+    required bool pauseOnAudioDeviceDisconnect,
+    required bool pauseOnTransientAudioFocusLoss,
+    required bool resumeAfterTransientAudioFocusGain,
+    required bool resumePlaybackOnStartupRestore,
+  });
+
   Future<NativeResult<void>> dismissNotifications();
 
   Future<NativeResult<void>> undismissNotifications();
@@ -697,6 +704,21 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
   Future<NativeResult<void>> setForegroundEnabled(bool enabled) {
     return _invokeVoid(NativePlaybackMethod.setForegroundEnabled, {
       'enabled': enabled,
+    });
+  }
+
+  @override
+  Future<NativeResult<void>> setPlaybackBehavior({
+    required bool pauseOnAudioDeviceDisconnect,
+    required bool pauseOnTransientAudioFocusLoss,
+    required bool resumeAfterTransientAudioFocusGain,
+    required bool resumePlaybackOnStartupRestore,
+  }) {
+    return _invokeVoid(NativePlaybackMethod.setPlaybackBehavior, {
+      'pauseOnAudioDeviceDisconnect': pauseOnAudioDeviceDisconnect,
+      'pauseOnTransientAudioFocusLoss': pauseOnTransientAudioFocusLoss,
+      'resumeAfterTransientAudioFocusGain': resumeAfterTransientAudioFocusGain,
+      'resumePlaybackOnStartupRestore': resumePlaybackOnStartupRestore,
     });
   }
 

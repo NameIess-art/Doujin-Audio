@@ -108,6 +108,19 @@ class NativePlaybackBridge(
                 NativePlaybackMethods.SET_FOREGROUND_ENABLED -> service.setForegroundEnabled(
                     call.argument<Boolean>("enabled") ?: true
                 )
+                NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR -> {
+                    val reader = call.argumentReader()
+                    service.setPlaybackBehavior(
+                        pauseOnAudioDeviceDisconnect =
+                            reader.requiredBoolean("pauseOnAudioDeviceDisconnect"),
+                        pauseOnTransientAudioFocusLoss =
+                            reader.requiredBoolean("pauseOnTransientAudioFocusLoss"),
+                        resumeAfterTransientAudioFocusGain =
+                            reader.requiredBoolean("resumeAfterTransientAudioFocusGain"),
+                        resumePlaybackOnStartupRestore =
+                            reader.requiredBoolean("resumePlaybackOnStartupRestore")
+                    )
+                }
                 NativePlaybackMethods.DISMISS_NOTIFICATIONS -> service.dismissNotifications()
                 NativePlaybackMethods.UNDISMISS_NOTIFICATIONS -> service.undismissNotifications()
                 NativePlaybackMethods.SNAPSHOT -> service.snapshot()
@@ -307,6 +320,7 @@ internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method i
     NativePlaybackMethods.PAUSE_ALL,
     NativePlaybackMethods.CLEAR_ALL,
     NativePlaybackMethods.SET_FOREGROUND_ENABLED,
+    NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR,
     NativePlaybackMethods.DISMISS_NOTIFICATIONS,
     NativePlaybackMethods.UNDISMISS_NOTIFICATIONS,
     NativePlaybackMethods.SNAPSHOT
@@ -357,6 +371,12 @@ internal fun validatePlaybackArgumentsBeforeService(call: MethodCall) {
             requireFiniteInRange("multiplier", 0.0..1.0)
         }
         NativePlaybackMethods.SET_FOREGROUND_ENABLED -> arguments.requiredBoolean("enabled")
+        NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR -> {
+            arguments.requiredBoolean("pauseOnAudioDeviceDisconnect")
+            arguments.requiredBoolean("pauseOnTransientAudioFocusLoss")
+            arguments.requiredBoolean("resumeAfterTransientAudioFocusGain")
+            arguments.requiredBoolean("resumePlaybackOnStartupRestore")
+        }
     }
 }
 

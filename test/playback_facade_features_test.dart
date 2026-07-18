@@ -58,6 +58,55 @@ void main() {
     return session;
   }
 
+  group('duplicate work sessions', () {
+    const first = MusicTrack(
+      path: 'https://example.com/work/01.mp3',
+      displayName: '01',
+      groupKey: 'work-42',
+      groupTitle: 'Work 42',
+      groupSubtitle: 'Work 42',
+      isSingle: false,
+    );
+    const second = MusicTrack(
+      path: 'https://example.com/work/02.mp3',
+      displayName: '02',
+      groupKey: 'work-42',
+      groupTitle: 'Work 42',
+      groupSubtitle: 'Work 42',
+      isSingle: false,
+    );
+
+    setUp(() {
+      runtimeGraph.library.addTracks(
+        const <MusicTrack>[first, second],
+        notify: false,
+        persist: false,
+      );
+    });
+
+    test('new audio replaces an existing session from the same work', () async {
+      await runtimeGraph.playback.spawnSession(first, autoPlay: false);
+      await runtimeGraph.playback.spawnSession(second, autoPlay: false);
+      await runtimeGraph.playback.service.sessionPreparationQueue;
+
+      expect(runtimeGraph.playback.service.activeSessions, hasLength(1));
+      expect(
+        runtimeGraph.playback.service.activeSessions.single.currentTrackPath,
+        second.path,
+      );
+    });
+
+    test('duplicate works can be explicitly allowed', () async {
+      await runtimeGraph.settings.setAllowDuplicateWorks(true);
+
+      await runtimeGraph.playback.spawnSession(first, autoPlay: false);
+      await runtimeGraph.playback.spawnSession(second, autoPlay: false);
+      await runtimeGraph.playback.service.sessionPreparationQueue;
+
+      expect(runtimeGraph.playback.service.activeSessions, hasLength(2));
+    });
+  });
+
   group('multi-session playback stability', () {
     test('setSessionSpeed snaps to fixed options and calls native', () async {
       var setSpeedCalls = 0;
@@ -378,6 +427,7 @@ void main() {
     );
 
     test('different sessions synchronize audio effects concurrently', () async {
+      await runtimeGraph.settings.setAllowDuplicateWorks(true);
       final native = _ControlledAudioEffectsNative();
       native.install();
       final first = await addAudioEffectsSession(

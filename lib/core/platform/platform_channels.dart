@@ -51,6 +51,7 @@ abstract final class NativePlaybackMethod {
   static const String pauseAll = 'pauseAll';
   static const String clearAll = 'clearAll';
   static const String setForegroundEnabled = 'setForegroundEnabled';
+  static const String setPlaybackBehavior = 'setPlaybackBehavior';
   static const String dismissNotifications = 'dismissNotifications';
   static const String undismissNotifications = 'undismissNotifications';
   static const String snapshot = 'snapshot';

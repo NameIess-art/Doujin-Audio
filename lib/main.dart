@@ -230,6 +230,11 @@ class MusicPlayerApp extends ConsumerWidget {
     final languageState =
         ref.watch(appLanguageStateProvider).valueOrNull ??
         AppLanguageState.from(languageProvider);
+    final reduceAnimations = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.valueOrNull?.reduceAnimations ?? false,
+      ),
+    );
     return MaterialApp(
       title: languageProvider.tr('app_title'),
       debugShowCheckedModeBanner: false,
@@ -252,9 +257,15 @@ class MusicPlayerApp extends ConsumerWidget {
         ),
       ),
       builder: (context, child) {
-        return TooltipVisibility(
-          visible: false,
-          child: child ?? const SizedBox(),
+        final mediaQuery = MediaQuery.of(context);
+        return MediaQuery(
+          data: mediaQuery.copyWith(
+            disableAnimations: reduceAnimations || mediaQuery.disableAnimations,
+          ),
+          child: TooltipVisibility(
+            visible: false,
+            child: child ?? const SizedBox(),
+          ),
         );
       },
       home: const OnboardingGate(child: GlobalShortcuts(child: MainScreen())),

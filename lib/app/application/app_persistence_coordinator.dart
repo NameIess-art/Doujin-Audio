@@ -7,6 +7,7 @@ import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/settings/application/settings_repository.dart';
+import '../../features/settings/application/settings_state.dart';
 import 'audio_ui_warmup_coordinator.dart';
 import 'persisted_state_reloader.dart';
 import 'playback_command_coordinator.dart';
@@ -57,6 +58,24 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
       AppInteractionFeedback.hapticFeedbackEnabled =
           _settings.hapticFeedbackEnabled;
       applyCoverImageCachePolicy(_settings.coverImageResolution);
+      await _playback.nativeRepository.setPlaybackBehavior(
+        pauseOnAudioDeviceDisconnect:
+            _settings.audioDeviceDisconnectBehavior ==
+            AudioDeviceDisconnectBehavior.pause,
+        pauseOnTransientAudioFocusLoss:
+            _settings.transientAudioFocusLossBehavior ==
+            TransientAudioFocusLossBehavior.pause,
+        resumeAfterTransientAudioFocusGain:
+            _settings.interruptionResumeBehavior ==
+            InterruptionResumeBehavior.resume,
+        resumePlaybackOnStartupRestore:
+            _settings.startupPlaybackRestoreBehavior ==
+            StartupPlaybackRestoreBehavior.resume,
+      );
+      if (_settings.startupPlaybackRestoreBehavior ==
+          StartupPlaybackRestoreBehavior.pause) {
+        await _playback.nativeRepository.pauseAll();
+      }
 
       await Future.wait<void>(<Future<void>>[
         _library.loadPersistedState(),

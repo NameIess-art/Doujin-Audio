@@ -409,7 +409,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   bool get hasLiveTask => _activeTasks.isNotEmpty || _queue.isNotEmpty;
 
   AsmrDownloadButtonViewState get buttonViewState {
-    if (_tasks.isEmpty) {
+    if (_taskIdsSnapshot.isEmpty) {
       return const AsmrDownloadButtonViewState(visible: false, progress: null);
     }
     int totalBytes = 0;
@@ -429,7 +429,7 @@ class AsmrDownloadManager extends ChangeNotifier {
 
   AsmrDownloadTaskShellViewState get taskShellViewState =>
       AsmrDownloadTaskShellViewState(
-        hasTask: _tasks.isNotEmpty,
+        hasTask: _taskIdsSnapshot.isNotEmpty,
         isActive: hasLiveTask,
       );
 
@@ -440,6 +440,9 @@ class AsmrDownloadManager extends ChangeNotifier {
   }) {
     if (task != null) {
       _tasks[task.work.id] = task;
+      if (task.status == AsmrDownloadTaskStatus.completed) {
+        _retainOnlyLatestCompletedTask(task.work.id);
+      }
     }
     if (progressOnly) {
       _notifyProgressChanged();
@@ -879,6 +882,9 @@ class AsmrDownloadManager extends ChangeNotifier {
         fileDownloadedBytes: fileDownloadedBytes,
         message: failed > 0 ? 'completed_with_failures' : 'completed',
       );
+      if (failed == 0) {
+        _retainOnlyLatestCompletedTask(workId);
+      }
       _notifyTaskChanged();
     } on _DownloadCancelled {
       final currentTask = _tasks[workId];
@@ -931,6 +937,10 @@ class AsmrDownloadManager extends ChangeNotifier {
       _activeTasks.remove(workId);
       _liveDownloadedBytes.remove(workId);
       _liveFileDownloadedBytes.remove(workId);
+      if (_tasks[workId]?.status == AsmrDownloadTaskStatus.completed) {
+        _workRootExistedBeforeTask.remove(workId);
+        _createdOutputPaths.remove(workId);
+      }
       if (!_disposed) {
         AppCacheService.scheduleEnforce();
         _processQueue();
@@ -1346,9 +1356,30 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   void _refreshTaskIdsSnapshot() {
-    final taskIds = _tasks.keys.toList(growable: false);
+    final taskIds = _tasks.entries
+        .where(
+          (entry) => entry.value.status != AsmrDownloadTaskStatus.completed,
+        )
+        .map((entry) => entry.key)
+        .toList(growable: false);
     if (listEquals(taskIds, _taskIdsSnapshot)) return;
     _taskIdsSnapshot = List<int>.unmodifiable(taskIds);
+  }
+
+  void _retainOnlyLatestCompletedTask(int workId) {
+    final obsoleteTaskIds = _tasks.entries
+        .where(
+          (entry) =>
+              entry.key != workId &&
+              entry.value.status == AsmrDownloadTaskStatus.completed,
+        )
+        .map((entry) => entry.key)
+        .toList(growable: false);
+    for (final obsoleteWorkId in obsoleteTaskIds) {
+      _tasks.remove(obsoleteWorkId);
+      _workRootExistedBeforeTask.remove(obsoleteWorkId);
+      _createdOutputPaths.remove(obsoleteWorkId);
+    }
   }
 
   void _notifyProgressChanged() {

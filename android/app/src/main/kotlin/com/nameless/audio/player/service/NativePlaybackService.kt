@@ -12,7 +12,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.media.AudioManager
 import android.os.Build
@@ -465,8 +467,19 @@ class NativePlaybackService : MediaSessionService() {
     private var focusDuckActive = false
     private val pendingAudioFocusResumeSessionIds = linkedSetOf<String>()
     private var attemptedStickyPlaybackRestore = false
+    private var playbackBehavior = StoredPlaybackBehavior()
+    private var audioDeviceDisconnectReceiverRegistered = false
+    private val audioDeviceDisconnectReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            handleAudioDeviceDisconnected()
+        }
+    }
     private fun handleAudioFocusChange(change: Int) {
-        val action = nativeAudioFocusAction(change)
+        val action = nativeAudioFocusAction(
+            change,
+            pauseOnDuck = playbackBehavior.pauseOnTransientAudioFocusLoss
+        )
         when (action) {
             NativeAudioFocusAction.PAUSE_AND_CLEAR_INTENT -> {
                 transientAudioFocusLossActive = false
@@ -521,7 +534,15 @@ class NativePlaybackService : MediaSessionService() {
                     applyFocusDuckAction(action)
                     publishAllSessionStates()
                 }
-                if (resumePendingAudioFocusSessionsIfPossible("audio_focus_gain") || restoredDuckVolume) {
+                val resumed = if (playbackBehavior.resumeAfterTransientAudioFocusGain) {
+                    resumePendingAudioFocusSessionsIfPossible("audio_focus_gain")
+                } else {
+                    val pausedSessionIds = pendingAudioFocusResumeSessionIds.toList()
+                    pendingAudioFocusResumeSessionIds.clear()
+                    pausedSessionIds.forEach(::clearPlaybackIntent)
+                    pausedSessionIds.isNotEmpty()
+                }
+                if (resumed || restoredDuckVolume) {
                     schedulePersistSessionState()
                     syncForegroundState()
                 }
@@ -568,6 +589,14 @@ class NativePlaybackService : MediaSessionService() {
     }
     override fun onCreate() {
         super.onCreate()
+        playbackBehavior = NativePlaybackStateStore.loadPlaybackBehavior(this)
+        ContextCompat.registerReceiver(
+            this,
+            audioDeviceDisconnectReceiver,
+            IntentFilter(AudioManager.ACTION_AUDIO_BECOMING_NOISY),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        audioDeviceDisconnectReceiverRegistered = true
         ensurePlaybackChannel()
         instance = this
         logInfo("on_create")
@@ -663,6 +692,10 @@ class NativePlaybackService : MediaSessionService() {
         )
         stateListeners.clear()
         restoreGeneration += 1
+        if (audioDeviceDisconnectReceiverRegistered) {
+            unregisterReceiver(audioDeviceDisconnectReceiver)
+            audioDeviceDisconnectReceiverRegistered = false
+        }
         restoreExecutor.shutdownNow()
         mainHandler.removeCallbacks(positionTicker)
         progressPublisher.shutdown()
@@ -1094,6 +1127,22 @@ class NativePlaybackService : MediaSessionService() {
         return response
     }
 
+    fun setPlaybackBehavior(
+        pauseOnAudioDeviceDisconnect: Boolean,
+        pauseOnTransientAudioFocusLoss: Boolean,
+        resumeAfterTransientAudioFocusGain: Boolean,
+        resumePlaybackOnStartupRestore: Boolean
+    ): Map<String, Any?> {
+        playbackBehavior = StoredPlaybackBehavior(
+            pauseOnAudioDeviceDisconnect = pauseOnAudioDeviceDisconnect,
+            pauseOnTransientAudioFocusLoss = pauseOnTransientAudioFocusLoss,
+            resumeAfterTransientAudioFocusGain = resumeAfterTransientAudioFocusGain,
+            resumePlaybackOnStartupRestore = resumePlaybackOnStartupRestore
+        )
+        NativePlaybackStateStore.savePlaybackBehavior(this, playbackBehavior)
+        return okResult(null)
+    }
+
     fun setForegroundEnabled(enabled: Boolean): Map<String, Any?> {
         foregroundSuppressed = !enabled
         if (!enabled) {
@@ -1431,6 +1480,28 @@ class NativePlaybackService : MediaSessionService() {
         }
         foregroundCoordinator.sync()
     }
+
+    private fun handleAudioDeviceDisconnected() {
+        if (!playbackBehavior.pauseOnAudioDeviceDisconnect) {
+            logInfo("audio_device_disconnect_continue")
+            return
+        }
+        transientAudioFocusLossActive = false
+        focusDuckActive = false
+        pendingAudioFocusResumeSessionIds.clear()
+        playbackRecovery.clearAll()
+        sessions.values.forEach { session ->
+            val player = session.playerOrNull()
+            if (player != null && (player.isPlaying || player.playWhenReady)) {
+                clearPlaybackIntent(session.sessionId)
+                session.applyFocusDuckMultiplier(1f)
+                player.pause()
+            }
+        }
+        publishAllSessionStates()
+        persistSessionStateNow()
+        syncForegroundState()
+    }
     private fun stopForegroundCompat(removeNotification: Boolean) {
         val behavior = if (removeNotification) {
             STOP_FOREGROUND_REMOVE
@@ -1505,7 +1576,9 @@ class NativePlaybackService : MediaSessionService() {
                     return
                 }
 
-                restoredSessionIds.forEach(::markPlaybackIntended)
+                if (playbackBehavior.resumePlaybackOnStartupRestore) {
+                    restoredSessionIds.forEach(::markPlaybackIntended)
+                }
                 evictPlayersIfNeeded()
                 restoredSessionIds.forEach(::publishSessionState)
                 ensureTicker()
@@ -1522,7 +1595,10 @@ class NativePlaybackService : MediaSessionService() {
             val stored = storedSessions[index]
             restoredSessionIds += sessionRestorer.restore(
                 storedSessions = listOf(stored),
-                autoPlay = { it.playWhenReady || it.playing }
+                autoPlay = {
+                    playbackBehavior.resumePlaybackOnStartupRestore &&
+                        (it.playWhenReady || it.playing)
+                }
             )
             mainHandler.post { restoreNext(index + 1) }
         }
@@ -1758,11 +1834,18 @@ internal enum class NativeAudioFocusAction {
     NONE
 }
 
-internal fun nativeAudioFocusAction(change: Int): NativeAudioFocusAction = when (change) {
+internal fun nativeAudioFocusAction(
+    change: Int,
+    pauseOnDuck: Boolean = false
+): NativeAudioFocusAction = when (change) {
     AudioManager.AUDIOFOCUS_LOSS -> NativeAudioFocusAction.PAUSE_AND_CLEAR_INTENT
     AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ->
         NativeAudioFocusAction.PAUSE_AND_RESUME_ON_GAIN
-    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> NativeAudioFocusAction.DUCK
+    AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> if (pauseOnDuck) {
+        NativeAudioFocusAction.PAUSE_AND_RESUME_ON_GAIN
+    } else {
+        NativeAudioFocusAction.DUCK
+    }
     AudioManager.AUDIOFOCUS_GAIN -> NativeAudioFocusAction.RESTORE
     else -> NativeAudioFocusAction.NONE
 }

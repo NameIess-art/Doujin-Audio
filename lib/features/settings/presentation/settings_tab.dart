@@ -369,6 +369,7 @@ class _SettingsCategoryPage extends ConsumerWidget {
                 _SettingsCategory.common => _buildSettingsGeneralSection(
                   i18n: i18n,
                   settings: settings,
+                  settingsController: settingsController,
                   cs: cs,
                 ),
                 _SettingsCategory.appearance => _buildSettingsAppearanceSection(

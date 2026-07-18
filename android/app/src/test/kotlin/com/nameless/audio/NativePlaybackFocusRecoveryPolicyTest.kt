@@ -35,6 +35,17 @@ class NativePlaybackFocusRecoveryPolicyTest {
     }
 
     @Test
+    fun `duckable focus loss can be configured to pause`() {
+        assertEquals(
+            NativeAudioFocusAction.PAUSE_AND_RESUME_ON_GAIN,
+            nativeAudioFocusAction(
+                AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK,
+                pauseOnDuck = true
+            )
+        )
+    }
+
+    @Test
     fun `transient focus loss pauses until focus returns`() {
         assertEquals(
             NativeAudioFocusAction.PAUSE_AND_RESUME_ON_GAIN,

@@ -62,6 +62,16 @@ void main() {
           'coverImageResolution': CoverImageResolution.high.name,
           'asmrDownloadDestinationRoot': '/backup/asmr',
           'asmrDownloadConflictPolicy': AsmrDownloadConflictPolicy.skip.name,
+          'audioDeviceDisconnectBehavior':
+              AudioDeviceDisconnectBehavior.continuePlayback.name,
+          'transientAudioFocusLossBehavior':
+              TransientAudioFocusLossBehavior.pause.name,
+          'interruptionResumeBehavior':
+              InterruptionResumeBehavior.stayPaused.name,
+          'startupPlaybackRestoreBehavior':
+              StartupPlaybackRestoreBehavior.pause.name,
+          'allowDuplicateWorks': true,
+          'reduceAnimations': true,
           'dlsiteMetadataLanguage': ContentLanguagePreference.en.name,
           'cardPositionsLocked': false,
           'maxCacheBytes': 256 * 1024 * 1024,
@@ -86,6 +96,24 @@ void main() {
         repository.asmrDownloadConflictPolicy,
         AsmrDownloadConflictPolicy.skip,
       );
+      expect(
+        repository.audioDeviceDisconnectBehavior,
+        AudioDeviceDisconnectBehavior.continuePlayback,
+      );
+      expect(
+        repository.transientAudioFocusLossBehavior,
+        TransientAudioFocusLossBehavior.pause,
+      );
+      expect(
+        repository.interruptionResumeBehavior,
+        InterruptionResumeBehavior.stayPaused,
+      );
+      expect(
+        repository.startupPlaybackRestoreBehavior,
+        StartupPlaybackRestoreBehavior.pause,
+      );
+      expect(repository.allowDuplicateWorks, isTrue);
+      expect(repository.reduceAnimations, isTrue);
       expect(repository.converterFormat, 'flac');
       expect(repository.converterBitrate, '192k');
     });
@@ -109,6 +137,14 @@ void main() {
         ..asmrPlaybackCacheEnabled = true
         ..asmrDownloadDestinationRoot = '/downloads/asmr'
         ..asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.skip
+        ..audioDeviceDisconnectBehavior =
+            AudioDeviceDisconnectBehavior.continuePlayback
+        ..transientAudioFocusLossBehavior =
+            TransientAudioFocusLossBehavior.pause
+        ..interruptionResumeBehavior = InterruptionResumeBehavior.stayPaused
+        ..startupPlaybackRestoreBehavior = StartupPlaybackRestoreBehavior.pause
+        ..allowDuplicateWorks = true
+        ..reduceAnimations = true
         ..maxCacheBytes = 500 * 1024 * 1024;
       repository.syncSlice();
 
@@ -173,8 +209,61 @@ void main() {
               (state) => state.maxCacheBytes,
               'max cache',
               500 * 1024 * 1024,
+            )
+            .having(
+              (state) => state.audioDeviceDisconnectBehavior,
+              'audio disconnect',
+              AudioDeviceDisconnectBehavior.continuePlayback,
+            )
+            .having(
+              (state) => state.transientAudioFocusLossBehavior,
+              'transient focus',
+              TransientAudioFocusLossBehavior.pause,
+            )
+            .having(
+              (state) => state.interruptionResumeBehavior,
+              'interruption resume',
+              InterruptionResumeBehavior.stayPaused,
+            )
+            .having(
+              (state) => state.startupPlaybackRestoreBehavior,
+              'startup restore',
+              StartupPlaybackRestoreBehavior.pause,
+            )
+            .having(
+              (state) => state.allowDuplicateWorks,
+              'duplicate works',
+              isTrue,
+            )
+            .having(
+              (state) => state.reduceAnimations,
+              'reduce animations',
+              isTrue,
             ),
       );
+    });
+
+    test('new playback behavior settings preserve current defaults', () {
+      const state = SettingsState();
+
+      expect(
+        state.audioDeviceDisconnectBehavior,
+        AudioDeviceDisconnectBehavior.pause,
+      );
+      expect(
+        state.transientAudioFocusLossBehavior,
+        TransientAudioFocusLossBehavior.duck,
+      );
+      expect(
+        state.interruptionResumeBehavior,
+        InterruptionResumeBehavior.resume,
+      );
+      expect(
+        state.startupPlaybackRestoreBehavior,
+        StartupPlaybackRestoreBehavior.resume,
+      );
+      expect(state.allowDuplicateWorks, isFalse);
+      expect(state.reduceAnimations, isFalse);
     });
 
     test('ASMR.ONE download conflict policy defaults to overwrite', () {

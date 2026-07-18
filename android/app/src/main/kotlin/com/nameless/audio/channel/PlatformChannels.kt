@@ -26,6 +26,7 @@ internal object NativePlaybackMethods {
     const val PAUSE_ALL = "pauseAll"
     const val CLEAR_ALL = "clearAll"
     const val SET_FOREGROUND_ENABLED = "setForegroundEnabled"
+    const val SET_PLAYBACK_BEHAVIOR = "setPlaybackBehavior"
     const val DISMISS_NOTIFICATIONS = "dismissNotifications"
     const val UNDISMISS_NOTIFICATIONS = "undismissNotifications"
     const val SNAPSHOT = "snapshot"

@@ -138,6 +138,7 @@ AppRuntimeGraph createAppRuntimeGraph({
   });
   playback.attachSessionDefaults(
     autoPlayAddedSessions: () => settings.autoPlayAddedSessions,
+    allowDuplicateWorks: () => settings.allowDuplicateWorks,
   );
   playback.attachPersistenceRuntime(
     trackByPath: library.trackByPath,

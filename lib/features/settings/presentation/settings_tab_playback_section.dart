@@ -98,6 +98,133 @@ List<Widget> _buildSettingsPlaybackSection({
             );
           },
         ),
+        if (Platform.isAndroid) ...[
+          Consumer(
+            builder: (context, ref, _) {
+              final behavior = ref.watch(
+                settingsStateProvider.select(
+                  (state) =>
+                      state.valueOrNull?.audioDeviceDisconnectBehavior ??
+                      AudioDeviceDisconnectBehavior.pause,
+                ),
+              );
+              return ListTile(
+                title: Text(i18n.tr('audio_device_disconnect_behavior')),
+                leading: _settingsIcon(Icons.headset_off_rounded, cs.tertiary),
+                trailing: UnifiedDropdownButton<AudioDeviceDisconnectBehavior>(
+                  value: behavior,
+                  onChanged: (value) {
+                    if (value != null) {
+                      settingsController.setAudioDeviceDisconnectBehavior(
+                        value,
+                      );
+                    }
+                  },
+                  items: AudioDeviceDisconnectBehavior.values
+                      .map(
+                        (
+                          value,
+                        ) => DropdownMenuItem<AudioDeviceDisconnectBehavior>(
+                          value: value,
+                          child: Text(
+                            i18n.tr('audio_device_disconnect_${value.name}'),
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+              );
+            },
+          ),
+          Consumer(
+            builder: (context, ref, _) {
+              final behavior = ref.watch(
+                settingsStateProvider.select(
+                  (state) =>
+                      state.valueOrNull?.transientAudioFocusLossBehavior ??
+                      TransientAudioFocusLossBehavior.duck,
+                ),
+              );
+              return ListTile(
+                title: Text(i18n.tr('transient_audio_focus_loss_behavior')),
+                leading: _settingsIcon(Icons.volume_down_rounded, cs.tertiary),
+                trailing: UnifiedDropdownButton<TransientAudioFocusLossBehavior>(
+                  value: behavior,
+                  onChanged: (value) {
+                    if (value != null) {
+                      settingsController.setTransientAudioFocusLossBehavior(
+                        value,
+                      );
+                    }
+                  },
+                  items: TransientAudioFocusLossBehavior.values
+                      .map(
+                        (
+                          value,
+                        ) => DropdownMenuItem<TransientAudioFocusLossBehavior>(
+                          value: value,
+                          child: Text(
+                            i18n.tr('transient_audio_focus_loss_${value.name}'),
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+              );
+            },
+          ),
+          Consumer(
+            builder: (context, ref, _) {
+              final behavior = ref.watch(
+                settingsStateProvider.select(
+                  (state) =>
+                      state.valueOrNull?.interruptionResumeBehavior ??
+                      InterruptionResumeBehavior.resume,
+                ),
+              );
+              return ListTile(
+                title: Text(i18n.tr('interruption_resume_behavior')),
+                leading: _settingsIcon(
+                  Icons.phone_in_talk_rounded,
+                  cs.tertiary,
+                ),
+                trailing: UnifiedDropdownButton<InterruptionResumeBehavior>(
+                  value: behavior,
+                  onChanged: (value) {
+                    if (value != null) {
+                      settingsController.setInterruptionResumeBehavior(value);
+                    }
+                  },
+                  items: InterruptionResumeBehavior.values
+                      .map(
+                        (value) => DropdownMenuItem<InterruptionResumeBehavior>(
+                          value: value,
+                          child: Text(
+                            i18n.tr('interruption_resume_${value.name}'),
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 2,
+                ),
+              );
+            },
+          ),
+        ],
       ],
     ),
   ];

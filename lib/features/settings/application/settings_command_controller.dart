@@ -47,6 +47,55 @@ final class SettingsCommandController {
     await _settings.setMaxCacheBytes(normalized);
   }
 
+  Future<void> setAudioDeviceDisconnectBehavior(
+    AudioDeviceDisconnectBehavior behavior,
+  ) async {
+    if (_settings.audioDeviceDisconnectBehavior == behavior) return;
+    await _settings.setAudioDeviceDisconnectBehavior(behavior);
+    await syncNativePlaybackBehavior();
+  }
+
+  Future<void> setTransientAudioFocusLossBehavior(
+    TransientAudioFocusLossBehavior behavior,
+  ) async {
+    if (_settings.transientAudioFocusLossBehavior == behavior) return;
+    await _settings.setTransientAudioFocusLossBehavior(behavior);
+    await syncNativePlaybackBehavior();
+  }
+
+  Future<void> setInterruptionResumeBehavior(
+    InterruptionResumeBehavior behavior,
+  ) async {
+    if (_settings.interruptionResumeBehavior == behavior) return;
+    await _settings.setInterruptionResumeBehavior(behavior);
+    await syncNativePlaybackBehavior();
+  }
+
+  Future<void> setStartupPlaybackRestoreBehavior(
+    StartupPlaybackRestoreBehavior behavior,
+  ) async {
+    if (_settings.startupPlaybackRestoreBehavior == behavior) return;
+    await _settings.setStartupPlaybackRestoreBehavior(behavior);
+    await syncNativePlaybackBehavior();
+  }
+
+  Future<void> syncNativePlaybackBehavior() async {
+    await _playback.nativeRepository.setPlaybackBehavior(
+      pauseOnAudioDeviceDisconnect:
+          _settings.audioDeviceDisconnectBehavior ==
+          AudioDeviceDisconnectBehavior.pause,
+      pauseOnTransientAudioFocusLoss:
+          _settings.transientAudioFocusLossBehavior ==
+          TransientAudioFocusLossBehavior.pause,
+      resumeAfterTransientAudioFocusGain:
+          _settings.interruptionResumeBehavior ==
+          InterruptionResumeBehavior.resume,
+      resumePlaybackOnStartupRestore:
+          _settings.startupPlaybackRestoreBehavior ==
+          StartupPlaybackRestoreBehavior.resume,
+    );
+  }
+
   Future<void> saveCustomEqPreset(
     String name,
     PlaybackSession session, {

@@ -98,8 +98,50 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(i18n.tr('startup_page')), findsOneWidget);
     expect(
+      find.text(i18n.tr('startup_playback_restore_behavior')),
+      findsOneWidget,
+    );
+    expect(find.text(i18n.tr('allow_duplicate_works')), findsOneWidget);
+    expect(find.text(i18n.tr('reduce_animations')), findsOneWidget);
+    expect(
+      tester
+          .widget<SwitchListTile>(
+            find.widgetWithText(
+              SwitchListTile,
+              i18n.tr('allow_duplicate_works'),
+            ),
+          )
+          .subtitle,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<SwitchListTile>(
+            find.widgetWithText(SwitchListTile, i18n.tr('reduce_animations')),
+          )
+          .subtitle,
+      isNull,
+    );
+    expect(
       find.text(i18n.tr('haptic_feedback_enabled')),
       Platform.isWindows ? findsNothing : findsOneWidget,
+    );
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(i18n.tr('section_playback')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text(i18n.tr('audio_device_disconnect_behavior')),
+      Platform.isAndroid ? findsOneWidget : findsNothing,
+    );
+    expect(
+      find.text(i18n.tr('transient_audio_focus_loss_behavior')),
+      Platform.isAndroid ? findsOneWidget : findsNothing,
+    );
+    expect(
+      find.text(i18n.tr('interruption_resume_behavior')),
+      Platform.isAndroid ? findsOneWidget : findsNothing,
     );
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();

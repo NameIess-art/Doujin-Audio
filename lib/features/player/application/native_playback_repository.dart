@@ -165,6 +165,20 @@ class NativePlaybackRepository {
     return _bridge.setForegroundEnabled(enabled);
   }
 
+  Future<NativeResult<void>> setPlaybackBehavior({
+    required bool pauseOnAudioDeviceDisconnect,
+    required bool pauseOnTransientAudioFocusLoss,
+    required bool resumeAfterTransientAudioFocusGain,
+    required bool resumePlaybackOnStartupRestore,
+  }) {
+    return _bridge.setPlaybackBehavior(
+      pauseOnAudioDeviceDisconnect: pauseOnAudioDeviceDisconnect,
+      pauseOnTransientAudioFocusLoss: pauseOnTransientAudioFocusLoss,
+      resumeAfterTransientAudioFocusGain: resumeAfterTransientAudioFocusGain,
+      resumePlaybackOnStartupRestore: resumePlaybackOnStartupRestore,
+    );
+  }
+
   Future<NativeResult<void>> dismissNotifications() {
     return _bridge.dismissNotifications();
   }

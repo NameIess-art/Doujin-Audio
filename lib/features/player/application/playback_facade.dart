@@ -63,6 +63,7 @@ typedef PlaybackHistoryUpdater =
     });
 
 bool _defaultAutoPlayAddedSessions() => true;
+bool _defaultAllowDuplicateWorks() => false;
 
 /// Owns playback sessions and the platform playback runtime.
 final class PlaybackFacade {
@@ -126,6 +127,7 @@ final class PlaybackFacade {
   PlaybackAdjacentResolver? _hasAdjacent;
   PlaybackLoopModeSynchronizer? _synchronizeLoopMode;
   bool Function() _autoPlayAddedSessions = _defaultAutoPlayAddedSessions;
+  bool Function() _allowDuplicateWorks = _defaultAllowDuplicateWorks;
   bool _sessionObserversAttached = false;
   final Map<String, String> _retargetedPathAliases = <String, String>{};
   final Random _random = Random();
@@ -292,8 +294,12 @@ final class PlaybackFacade {
     _sessionActivations.add(sessionId);
   }
 
-  void attachSessionDefaults({required bool Function() autoPlayAddedSessions}) {
+  void attachSessionDefaults({
+    required bool Function() autoPlayAddedSessions,
+    required bool Function() allowDuplicateWorks,
+  }) {
     _autoPlayAddedSessions = autoPlayAddedSessions;
+    _allowDuplicateWorks = allowDuplicateWorks;
   }
 
   void attachPersistenceRuntime({
@@ -1611,6 +1617,10 @@ final class PlaybackFacade {
   }
 
   Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
+    final matchingSessionIds = _matchingWorkSessionIds(track);
+    if (matchingSessionIds.isNotEmpty) {
+      await removeSessions(matchingSessionIds);
+    }
     final session = createTrackSession(track);
     unawaited(
       _enqueueSessionPreparation(
@@ -1631,6 +1641,10 @@ final class PlaybackFacade {
     if (tracks.isEmpty) return;
     final clampedStartIndex = startIndex.clamp(0, tracks.length - 1);
     final startTrack = tracks[clampedStartIndex];
+    final matchingSessionIds = _matchingWorkSessionIds(startTrack);
+    if (matchingSessionIds.isNotEmpty) {
+      await removeSessions(matchingSessionIds);
+    }
     final session = createTrackSession(
       startTrack,
       loopMode: loopMode,
@@ -1644,6 +1658,37 @@ final class PlaybackFacade {
       ),
     );
     publishSessionActivated(session.id);
+  }
+
+  List<String> _matchingWorkSessionIds(MusicTrack incomingTrack) {
+    if (_allowDuplicateWorks()) return const <String>[];
+    final incomingKey = _workKey(incomingTrack);
+    return service.sessions.values
+        .where((session) {
+          final representative = _representativeTrack(session);
+          return representative != null &&
+              _workKey(representative) == incomingKey;
+        })
+        .map((session) => session.id)
+        .toList(growable: false);
+  }
+
+  MusicTrack? _representativeTrack(PlaybackSession session) {
+    final queueTracks = session.customQueueTracks;
+    if (queueTracks != null && queueTracks.isNotEmpty) {
+      return queueTracks.first;
+    }
+    return _persistedTrackResolver?.call(session.currentTrackPath);
+  }
+
+  String _workKey(MusicTrack track) {
+    if (track.isSingle || track.groupKey == '__single_files__') {
+      return 'track:${PathMatcher.normalize(track.path)}';
+    }
+    final groupKey = PathMatcher.normalize(track.groupKey);
+    return groupKey.isEmpty
+        ? 'track:${PathMatcher.normalize(track.path)}'
+        : 'group:$groupKey';
   }
 
   Future<void> _enqueueSessionPreparation(

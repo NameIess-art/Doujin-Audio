@@ -455,6 +455,56 @@ void main() {
   });
 
   test(
+    'skip preserves an existing wrong-sized local file without a network request',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_skip_existing_',
+      );
+      final workDir = Directory('${tempDir.path}${Platform.pathSeparator}Work');
+      await workDir.create(recursive: true);
+      final target = File('${workDir.path}${Platform.pathSeparator}Track.mp3');
+      await target.writeAsBytes(<int>[1, 2, 3], flush: true);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requestCount = 0;
+      unawaited(
+        server.forEach((request) async {
+          requestCount++;
+          request.response.add(List<int>.filled(256, 7));
+          await request.response.close();
+        }),
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              size: 256,
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        final task = manager.getTask(1);
+        expect(requestCount, 0);
+        expect(await target.readAsBytes(), <int>[1, 2, 3]);
+        expect(await File('${target.path}.nameless.part').exists(), isFalse);
+        expect(task?.skippedFiles, 1);
+        expect(task?.fileDownloadedBytes['Track.mp3'], 256);
+        expect(task?.downloadedBytes, task?.totalBytes);
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
     'local replacement recovers an interrupted backup and cleans artifacts',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(

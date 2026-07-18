@@ -630,6 +630,7 @@ void main() {
             database: AppDatabase.test(db),
           ),
         );
+        runtimeGraph.playback.configurePersistence(enabled: false);
         const track = MusicTrack(
           path: '/music/notification-scroll.mp3',
           displayName: 'Notification Scroll',
@@ -653,6 +654,7 @@ void main() {
         await tester.pump();
 
         expect(notificationSyncCalls, 1);
+        await tester.runAsync(runtimeGraph.runtime.dispose);
       },
     );
 

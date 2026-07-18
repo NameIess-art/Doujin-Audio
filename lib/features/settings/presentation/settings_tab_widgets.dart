@@ -20,7 +20,6 @@ Widget _settingsDropdownText(
 }) {
   return Text(
     text,
-    maxLines: 2,
     softWrap: true,
     overflow: TextOverflow.visible,
     textAlign: textAlign,
@@ -34,8 +33,15 @@ Widget _settingsDropdown<T>(
   required List<DropdownMenuItem<T>> items,
   required ValueChanged<T?>? onChanged,
 }) {
-  final width = (MediaQuery.sizeOf(context).width * 0.4)
-      .clamp(_settingsDropdownMinWidth, _settingsDropdownMaxWidth)
+  final mediaQuery = MediaQuery.of(context);
+  final screenWidth = mediaQuery.size.width;
+  final textScale = mediaQuery.textScaler.scale(1);
+  final minWidth = screenWidth < 360 ? 112.0 : _settingsDropdownMinWidth;
+  final maxWidth = (screenWidth * 0.52)
+      .clamp(minWidth, _settingsDropdownMaxWidth + 40)
+      .toDouble();
+  final width = (screenWidth * (textScale >= 2 ? 0.48 : 0.4))
+      .clamp(minWidth, maxWidth)
       .toDouble();
   return SizedBox(
     width: width,
@@ -156,7 +162,7 @@ class _UpdateSettingsTile extends StatelessWidget {
 
     return ListTile(
       onTap: busy ? null : onCheck,
-      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.primary),
+      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.onSurface),
       title: _settingsTitle(i18n.tr('check_updates')),
       subtitle: _UpdateSubtitle(
         checking: checking,

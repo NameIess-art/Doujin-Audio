@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
@@ -7,6 +9,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const channel = MethodChannel('test/file_cache_gateway');
+  const scanEvents = EventChannel('test/file_cache_gateway/scan_events');
   final messenger =
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   late FileCachePlatformGateway gateway;
@@ -19,11 +22,16 @@ void main() {
 
   setUp(() {
     calls = <MethodCall>[];
-    gateway = FileCachePlatformGateway(channel: channel, isAndroid: () => true);
+    gateway = FileCachePlatformGateway(
+      channel: channel,
+      scanEvents: scanEvents,
+      isAndroid: () => true,
+    );
   });
 
   tearDown(() {
     messenger.setMockMethodCallHandler(channel, null);
+    messenger.setMockStreamHandler(scanEvents, null);
   });
 
   test('typed document operations preserve the platform payload', () async {
@@ -218,4 +226,120 @@ void main() {
       );
     },
   );
+
+  test(
+    'chunked scan fails and releases the active task when events close',
+    () async {
+      messenger.setMockStreamHandler(
+        scanEvents,
+        MockStreamHandler.inline(onListen: (_, _) {}),
+      );
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return success(true);
+      });
+
+      final firstScan = gateway.scanFolderChunked('/music', (_) => true);
+      await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 1);
+      await messenger.handlePlatformMessage(scanEvents.name, null, null);
+      final firstResult = await firstScan;
+
+      expect(firstResult.errorCode, 'scan_event_closed');
+      expect(
+        calls.where((call) => call.method == FileCacheMethod.cancelFolderScan),
+        hasLength(1),
+      );
+
+      final secondScan = gateway.scanFolderChunked('/music', (_) => true);
+      await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 2);
+      await messenger.handlePlatformMessage(scanEvents.name, null, null);
+      expect((await secondScan).errorCode, 'scan_event_closed');
+    },
+  );
+
+  test('collected scan fails when its event stream closes', () async {
+    messenger.setMockStreamHandler(
+      scanEvents,
+      MockStreamHandler.inline(onListen: (_, _) {}),
+    );
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success(true);
+    });
+
+    final scan = gateway.scanFolder('/music');
+    await _waitForMethodCall(calls, FileCacheMethod.startFolderScan, 1);
+    await messenger.handlePlatformMessage(scanEvents.name, null, null);
+
+    expect((await scan).errorCode, 'scan_event_closed');
+    expect(
+      calls.where((call) => call.method == FileCacheMethod.cancelFolderScan),
+      hasLength(1),
+    );
+  });
+
+  testWidgets(
+    'chunked scan times out after 120 seconds without a valid event',
+    (tester) async {
+      messenger.setMockStreamHandler(
+        scanEvents,
+        MockStreamHandler.inline(onListen: (_, _) {}),
+      );
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return success(true);
+      });
+
+      final scan = gateway.scanFolderChunked('/music', (_) => true);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 121));
+      await tester.pump();
+      expect(
+        calls.where((call) => call.method == FileCacheMethod.cancelFolderScan),
+        hasLength(1),
+      );
+      final result = await _pumpFuture(tester, scan);
+
+      expect(result.errorCode, 'scan_timeout');
+      expect(
+        calls.where((call) => call.method == FileCacheMethod.cancelFolderScan),
+        hasLength(1),
+      );
+    },
+  );
+}
+
+Future<void> _waitForMethodCall(
+  List<MethodCall> calls,
+  String method,
+  int count,
+) async {
+  while (calls.where((call) => call.method == method).length < count) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
+Future<T> _pumpFuture<T>(WidgetTester tester, Future<T> future) async {
+  T? value;
+  Object? error;
+  StackTrace? stackTrace;
+  var completed = false;
+  unawaited(
+    future.then(
+      (result) {
+        value = result;
+        completed = true;
+      },
+      onError: (Object caught, StackTrace caughtStackTrace) {
+        error = caught;
+        stackTrace = caughtStackTrace;
+        completed = true;
+      },
+    ),
+  );
+  while (!completed) {
+    await tester.pump();
+  }
+  if (error != null) Error.throwWithStackTrace(error!, stackTrace!);
+  return value as T;
 }

@@ -18,6 +18,18 @@ import '../../../core/media/path_matcher.dart';
 
 typedef LibraryChildFolderListing = ({List<String> folders, bool complete});
 
+bool _hasRequiredAndroidMediaReadPermissions({
+  required bool legacyStorageGranted,
+  required bool audioGranted,
+  required bool videosGranted,
+}) {
+  return legacyStorageGranted || (audioGranted && videosGranted);
+}
+
+bool _isGrantedOrLimited(PermissionStatus status) {
+  return status.isGranted || status.isLimited;
+}
+
 abstract interface class LibraryScanDataSource {
   Future<bool> ensureReadPermissionForSources(Iterable<String> sources);
 
@@ -69,8 +81,16 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
       Permission.videos,
       Permission.storage,
     ].request();
-    return statuses.values.any(
-      (status) => status.isGranted || status.isLimited,
+    return _hasRequiredAndroidMediaReadPermissions(
+      legacyStorageGranted: _isGrantedOrLimited(
+        statuses[Permission.storage] ?? PermissionStatus.denied,
+      ),
+      audioGranted: _isGrantedOrLimited(
+        statuses[Permission.audio] ?? PermissionStatus.denied,
+      ),
+      videosGranted: _isGrantedOrLimited(
+        statuses[Permission.videos] ?? PermissionStatus.denied,
+      ),
     );
   }
 

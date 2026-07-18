@@ -301,11 +301,8 @@ class _ActionCard extends StatelessWidget {
         leading: Container(
           width: tokens.iconContainerSize,
           height: tokens.iconContainerSize,
-          decoration: BoxDecoration(
-            color: cs.primaryContainer,
-            borderRadius: BorderRadius.circular(tokens.radiusSmall),
-          ),
-          child: Icon(icon, color: cs.primary, size: 20),
+          alignment: Alignment.center,
+          child: Icon(icon, color: cs.onSurface, size: 20),
         ),
         title: Text(
           title,

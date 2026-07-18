@@ -511,6 +511,89 @@ void main() {
     },
   );
 
+  test(
+    'position buckets upsert playback state without rewriting all sessions',
+    () async {
+      final database = _RecordingAudioDatabaseRepository();
+      final library = LibraryFacade.create(databaseRepository: database);
+      final playback = PlaybackFacade.create(
+        databaseRepository: library.databaseRepository,
+      );
+      final session = _session('incremental-position');
+      const track = MusicTrack(
+        path: '/tracks/incremental-position.mp3',
+        displayName: 'Incremental',
+        groupKey: '/tracks',
+        groupTitle: 'Tracks',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      addTearDown(() async {
+        session.dispose();
+        await playback.dispose();
+        await library.dispose();
+      });
+      playback
+        ..registerSession(session)
+        ..observeSession(session)
+        ..attachPersistenceRuntime(
+          trackByPath: (_) => track,
+          recordPlaybackProgress: () => true,
+          restoreRuntime: (_, {required focusedSessionId}) async {},
+          updatePlaybackHistory:
+              ({
+                required trackPath,
+                required position,
+                required now,
+                required updatePlayedAt,
+              }) => track.copyWith(
+                lastPlayedPosition: position,
+                lastPlayedAt: updatePlayedAt ? now : null,
+              ),
+          onFocusChanged: (_) {},
+        );
+
+      session.setOptimisticPosition(const Duration(seconds: 6));
+      await Future<void>.delayed(const Duration(milliseconds: 900));
+
+      expect(database.sessionStateUpserts, 1);
+      expect(database.sessionSaves, 0);
+      expect(database.lastPlaybackState?.id, session.id);
+      expect(database.lastPlaybackState?.positionMs, 6000);
+      expect(database.trackUpserts, 1);
+      expect(
+        database.lastTrack?.lastPlayedPosition,
+        const Duration(seconds: 6),
+      );
+    },
+  );
+
+  test('a full session save supersedes a pending position upsert', () async {
+    final database = _RecordingAudioDatabaseRepository();
+    final library = LibraryFacade.create(databaseRepository: database);
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+    );
+    final session = _session('full-supersedes-position');
+    addTearDown(() async {
+      session.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback
+      ..registerSession(session)
+      ..observeSession(session);
+
+    session.setOptimisticPosition(const Duration(seconds: 6));
+    playback.scheduleSessionStatePersistence(
+      delay: const Duration(milliseconds: 5),
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 850));
+
+    expect(database.sessionSaves, 1);
+    expect(database.sessionStateUpserts, 0);
+  });
+
   test('PlaybackFacade owns queue metadata and track snapshots', () async {
     final library = LibraryFacade.create();
     final playback = PlaybackFacade.create(
@@ -589,11 +672,27 @@ void main() {
 
 final class _RecordingAudioDatabaseRepository extends AudioDatabaseRepository {
   int sessionSaves = 0;
+  int sessionStateUpserts = 0;
+  int trackUpserts = 0;
   int orderSaves = 0;
+  PersistedSession? lastPlaybackState;
+  MusicTrack? lastTrack;
 
   @override
   Future<void> saveAllSessions(List<PersistedSession> sessions) async {
     sessionSaves++;
+  }
+
+  @override
+  Future<void> upsertSessionPlaybackState(PersistedSession session) async {
+    sessionStateUpserts++;
+    lastPlaybackState = session;
+  }
+
+  @override
+  Future<void> upsertTracks(List<MusicTrack> tracks) async {
+    trackUpserts++;
+    lastTrack = tracks.single;
   }
 
   @override

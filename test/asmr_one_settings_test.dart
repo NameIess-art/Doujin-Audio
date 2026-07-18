@@ -69,6 +69,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     this.largeRecommendationPool = false,
     this.recommendationPageCount = 2,
     this.recommendationWorks,
+    this.worksByToken = const <String, List<AsmrWork>>{},
     this.trackTree = const <AsmrTrackFile>[],
     List<AsmrReviewRecord> remoteReviewRecords = const <AsmrReviewRecord>[],
     this.failPutReviewCount = 0,
@@ -83,6 +84,7 @@ class _FakeAsmrApiService extends AsmrApiService {
 
   final List<String> fetchWorkOrders = <String>[];
   final List<String> fetchWorkRequests = <String>[];
+  final List<String?> fetchWorkTokens = <String?>[];
   final List<String> searchKeywords = <String>[];
   final List<String> reviewPuts = <String>[];
   final List<int> deletedReviewWorkIds = <int>[];
@@ -92,6 +94,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   final bool largeRecommendationPool;
   final int recommendationPageCount;
   final List<AsmrWork>? recommendationWorks;
+  final Map<String, List<AsmrWork>> worksByToken;
   final List<AsmrTrackFile> trackTree;
   final List<AsmrReviewRecord> remoteReviewRecords;
   final Set<String> failingFetchOrders;
@@ -163,6 +166,7 @@ class _FakeAsmrApiService extends AsmrApiService {
     calls.add('works:$order:$sort:$page');
     fetchWorkOrders.add('$order:$sort');
     fetchWorkRequests.add(request);
+    fetchWorkTokens.add(token);
     if (transientFetchFailuresRemaining > 0) {
       transientFetchFailuresRemaining--;
       return Future<AsmrWorkPage>.error(
@@ -182,11 +186,17 @@ class _FakeAsmrApiService extends AsmrApiService {
           order: order,
           page: page,
           pageSize: pageSize,
+          token: token,
         );
       }();
     }
     return SynchronousFuture<AsmrWorkPage>(
-      _buildFetchWorksPage(order: order, page: page, pageSize: pageSize),
+      _buildFetchWorksPage(
+        order: order,
+        page: page,
+        pageSize: pageSize,
+        token: token,
+      ),
     );
   }
 
@@ -194,7 +204,17 @@ class _FakeAsmrApiService extends AsmrApiService {
     required String order,
     required int page,
     required int pageSize,
+    required String? token,
   }) {
+    final tokenWorks = worksByToken[token ?? ''];
+    if (tokenWorks != null) {
+      return AsmrWorkPage(
+        works: tokenWorks,
+        currentPage: page,
+        pageSize: pageSize,
+        totalCount: tokenWorks.length,
+      );
+    }
     final explicitWorks = recommendationWorks;
     if (explicitWorks != null) {
       return AsmrWorkPage(

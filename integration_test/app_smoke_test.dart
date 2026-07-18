@@ -2,11 +2,9 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:nameless_audio/main.dart' as app;
 import 'package:nameless_audio/app/presentation/main_screen.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/app/presentation/onboarding_page.dart';
 import 'package:nameless_audio/features/player/application/subtitle_overlay_controller.dart';
 
@@ -43,19 +41,21 @@ void main() {
       await overlay.dispose();
     }
 
-    final context = tester.element(find.byType(MainScreen));
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-
-    for (final label in <String>[
-      'nav_library',
-      'nav_sessions',
-      'nav_settings',
+    for (final icons in <(IconData, IconData)>[
+      (Icons.library_music_outlined, Icons.library_music_rounded),
+      (Icons.graphic_eq_outlined, Icons.graphic_eq_rounded),
+      (Icons.tune_outlined, Icons.tune_rounded),
     ]) {
-      await tester.tap(find.text(i18n.tr(label)).last);
+      final unselected = find.byIcon(icons.$1);
+      final destination = unselected.evaluate().isNotEmpty
+          ? unselected
+          : find.byIcon(icons.$2);
+      expect(destination, findsOneWidget);
+      await tester.tap(destination);
       await tester.pumpAndSettle();
     }
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
   });
 }

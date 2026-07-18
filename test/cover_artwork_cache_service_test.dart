@@ -1155,6 +1155,76 @@ void main() {
     cache.invalidateAll();
     expect(cache.generation, 3);
   });
+
+  test(
+    'manual folder cover is not overwritten by an older automatic lookup',
+    () async {
+      const folder = 'content://library/work';
+      const automaticCover = 'content://covers/automatic.jpg';
+      const manualCover = 'content://covers/manual.jpg';
+      final discovery = Completer<List<String>>();
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: const <String, String>{},
+        discoveredImages: (_) => discovery.future,
+      );
+      final details = _MemoryAudioDetailCacheService();
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService(),
+        fileCacheGateway: gateway,
+        audioDetailCacheService: details,
+      );
+
+      final automaticLookup = cache.futureForFolder(folder);
+      await Future<void>.delayed(Duration.zero);
+      await cache.setFolderCoverSelection(
+        folder,
+        manualCover,
+        newlySaved: true,
+      );
+      discovery.complete(const <String>[automaticCover]);
+
+      expect(await automaticLookup, manualCover);
+      expect(cache.resolvedForFolder(folder), manualCover);
+      expect(
+        await details.loadCardCoverPath(
+          AudioDetailTarget.libraryRootFolder(folder),
+        ),
+        manualCover,
+      );
+    },
+  );
+
+  test(
+    'filesystem image discovery reuses one index per library root',
+    () async {
+      final root = await Directory.systemTemp.createTemp('cover_root_index_');
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final child = Directory('${root.path}${Platform.pathSeparator}child');
+      await child.create();
+      final first = File('${child.path}${Platform.pathSeparator}first.jpg');
+      await first.writeAsBytes(const <int>[1]);
+      final library = LibraryService()..watchedLibraries.add(root.path);
+      final cache = CoverArtworkCacheService(libraryService: library);
+
+      expect(await cache.discoverCoverCandidatesInFolder(root.path), <String>[
+        first.path,
+      ]);
+      final second = File('${child.path}${Platform.pathSeparator}second.png');
+      await second.writeAsBytes(const <int>[2]);
+
+      expect(await cache.discoverCoverCandidatesInFolder(child.path), <String>[
+        first.path,
+      ]);
+
+      cache.invalidateFolder(child.path);
+      expect(await cache.discoverCoverCandidatesInFolder(child.path), <String>[
+        first.path,
+        second.path,
+      ]);
+    },
+  );
 }
 
 Future<File> _temporaryCoverFile(String prefix) async {
@@ -1171,10 +1241,12 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
   _FakeFileCachePlatformGateway({
     required this.coversByPath,
     this.videoFramesByPath = const <String, String>{},
+    this.discoveredImages,
   });
 
   final Map<String, String> coversByPath;
   final Map<String, String> videoFramesByPath;
+  final Future<List<String>> Function(String path)? discoveredImages;
   final List<String> resolveTrackCoverPaths = <String>[];
   final List<String?> resolveTrackCoverGroupKeys = <String?>[];
 
@@ -1194,7 +1266,7 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
     required String path,
     String? groupKey,
     String? rootFolder,
-  }) async => const <String>[];
+  }) async => discoveredImages?.call(path) ?? const <String>[];
 
   @override
   Future<String?> resolveVideoFrame({required String path, int? modifiedAtMs}) {

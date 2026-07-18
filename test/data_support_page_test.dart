@@ -51,6 +51,16 @@ void main() {
       );
       await tester.pump();
 
+      final firstCard = find.byKey(cardKeys.first);
+      final firstCardContext = tester.element(firstCard);
+      final firstCardIcon = tester.widget<Icon>(
+        find.descendant(of: firstCard, matching: find.byType(Icon)).first,
+      );
+      expect(
+        firstCardIcon.color,
+        Theme.of(firstCardContext).colorScheme.onSurface,
+      );
+
       final cardElements = <Key, Element>{};
       final inkElements = <Key, Element>{};
       final cardOffsets = <Key, Offset>{};

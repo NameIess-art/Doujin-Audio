@@ -7,10 +7,81 @@ import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.util.ArrayDeque
+
+internal data class MediaStoreFolderQuery(
+    val selection: String?,
+    val selectionArgs: List<String>,
+    val directoryFilter: String
+)
+
+internal fun mediaStoreFolderQuery(
+    sdkInt: Int,
+    folder: String,
+    primaryExternalStorageRoot: String
+): MediaStoreFolderQuery {
+    val normalizedFolder = normalizeMediaStorePath(folder)
+    if (sdkInt >= Build.VERSION_CODES.Q) {
+        val normalizedRoot = normalizeMediaStorePath(primaryExternalStorageRoot)
+        val relativeFolder = when {
+            normalizedFolder.equals(normalizedRoot, ignoreCase = true) -> ""
+            normalizedRoot.isNotEmpty() && normalizedFolder.startsWith(
+                "$normalizedRoot/",
+                ignoreCase = true
+            ) -> normalizedFolder.substring(normalizedRoot.length + 1)
+            else -> normalizedFolder.trimStart('/')
+        }.trim('/')
+        if (relativeFolder.isEmpty()) {
+            return MediaStoreFolderQuery(
+                selection = null,
+                selectionArgs = emptyList(),
+                directoryFilter = ""
+            )
+        }
+        val exactPath = "$relativeFolder/"
+        val descendantPath = "${escapeSqlLikeArgument(relativeFolder)}/%"
+        return MediaStoreFolderQuery(
+            selection = "${MediaStore.Files.FileColumns.RELATIVE_PATH} = ? OR " +
+                "${MediaStore.Files.FileColumns.RELATIVE_PATH} LIKE ? ESCAPE '\\'",
+            selectionArgs = listOf(exactPath, descendantPath),
+            directoryFilter = relativeFolder
+        )
+    }
+
+    if (normalizedFolder.isEmpty()) {
+        return MediaStoreFolderQuery(
+            selection = null,
+            selectionArgs = emptyList(),
+            directoryFilter = ""
+        )
+    }
+    @Suppress("DEPRECATION")
+    return MediaStoreFolderQuery(
+        selection = "${MediaStore.Files.FileColumns.DATA} LIKE ? ESCAPE '\\'",
+        selectionArgs = listOf("${escapeSqlLikeArgument(normalizedFolder)}/%"),
+        directoryFilter = normalizedFolder
+    )
+}
+
+internal fun mediaStoreDirectoryMatches(directory: String, folder: String): Boolean {
+    if (folder.isBlank()) return true
+    val normalizedDirectory = normalizeMediaStorePath(directory)
+    val normalizedFolder = normalizeMediaStorePath(folder)
+    return normalizedDirectory.equals(normalizedFolder, ignoreCase = true) ||
+        normalizedDirectory.startsWith("$normalizedFolder/", ignoreCase = true)
+}
+
+private fun normalizeMediaStorePath(value: String): String =
+    value.trim().replace('\\', '/').trimEnd('/')
+
+private fun escapeSqlLikeArgument(value: String): String = value
+    .replace("\\", "\\\\")
+    .replace("%", "\\%")
+    .replace("_", "\\_")
 
 internal class FolderScanOperations(
     private val context: Context,
@@ -180,9 +251,19 @@ internal class FolderScanOperations(
             @Suppress("DEPRECATION")
             projection.add(MediaStore.Files.FileColumns.DATA)
         }
-        val normalizedFolder = folder.trim().replace('\\', '/').trimEnd('/')
+        val folderQuery = mediaStoreFolderQuery(
+            sdkInt = Build.VERSION.SDK_INT,
+            folder = folder,
+            primaryExternalStorageRoot = Environment.getExternalStorageDirectory().absolutePath
+        )
         return try {
-            resolver.query(collection, projection.toTypedArray(), null, null, null)?.use { cursor ->
+            resolver.query(
+                collection,
+                projection.toTypedArray(),
+                folderQuery.selection,
+                folderQuery.selectionArgs.takeIf { it.isNotEmpty() }?.toTypedArray(),
+                null
+            )?.use { cursor ->
                 val idIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns._ID)
                 val nameIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.DISPLAY_NAME)
                 val mimeIndex = cursor.getColumnIndexOrThrow(MediaStore.Files.FileColumns.MIME_TYPE)
@@ -205,10 +286,7 @@ internal class FolderScanOperations(
                     } else {
                         File(storedPath).parent.orEmpty().replace('\\', '/')
                     }
-                    if (normalizedFolder.isNotBlank() &&
-                        !directory.equals(normalizedFolder, ignoreCase = true) &&
-                        !directory.startsWith("$normalizedFolder/", ignoreCase = true)
-                    ) continue
+                    if (!mediaStoreDirectoryMatches(directory, folderQuery.directoryFilter)) continue
                     val path = ContentUris.withAppendedId(collection, cursor.getLong(idIndex)).toString()
                     val groupTitle = directory.substringAfterLast('/').ifBlank { "Media" }
                     remember(
@@ -216,7 +294,7 @@ internal class FolderScanOperations(
                         ScannedTrack(
                             path = path,
                             title = media.title,
-                            groupKey = directory.ifBlank { normalizedFolder },
+                            groupKey = directory.ifBlank { folderQuery.directoryFilter },
                             groupTitle = groupTitle,
                             groupSubtitle = directory.ifBlank { groupTitle },
                             isVideo = media.isVideo,

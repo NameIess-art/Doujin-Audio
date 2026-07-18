@@ -67,15 +67,57 @@ class NativePlaybackStatePersistenceCoordinatorTest {
         assertTrue(environment.savedSessions.isEmpty())
     }
 
+    @Test
+    fun `ticker runs only while playback is active and flushes when playback pauses`() {
+        val environment = FakeStatePersistenceEnvironment()
+        var active = false
+        var snapshots = listOf(storedSession(positionMs = 120L))
+        val coordinator = coordinator(
+            environment,
+            hasActivePlayback = { active },
+            storedSessions = { snapshots }
+        )
+
+        coordinator.ensureTicker()
+        assertTrue(environment.delayedTasks.isEmpty())
+
+        active = true
+        coordinator.onPlaybackActivityChanged()
+        assertEquals(listOf(10_000L), environment.delayedTasks.values.toList())
+
+        snapshots = listOf(storedSession(positionMs = 840L))
+        active = false
+        coordinator.onPlaybackActivityChanged()
+        environment.runBackgroundTasks()
+
+        assertTrue(environment.delayedTasks.isEmpty())
+        assertEquals(listOf(snapshots), environment.savedSessions)
+    }
+
+    @Test
+    fun `identical snapshots are not written repeatedly`() {
+        val environment = FakeStatePersistenceEnvironment()
+        val snapshots = listOf(storedSession(positionMs = 1_240L))
+        val coordinator = coordinator(environment, storedSessions = { snapshots })
+
+        coordinator.persistNow()
+        coordinator.persistNow()
+        environment.runBackgroundTasks()
+
+        assertEquals(listOf(snapshots), environment.savedSessions)
+    }
+
     private fun coordinator(
         environment: FakeStatePersistenceEnvironment,
         hasSessions: () -> Boolean = { true },
+        hasActivePlayback: () -> Boolean = { true },
         storedSessions: () -> List<StoredNativePlaybackSession>
     ) = NativePlaybackStatePersistenceCoordinator(
         environment = environment,
         intervalMs = 10_000L,
         debounceMs = 800L,
         hasSessions = hasSessions,
+        hasActivePlayback = hasActivePlayback,
         storedSessions = storedSessions
     )
 }

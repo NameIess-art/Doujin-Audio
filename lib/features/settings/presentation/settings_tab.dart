@@ -202,7 +202,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               controller: _scrollController,
               // Offset top padding since Positioned already shifts it.
               // Expand internal padding by 80px to match the expanded Positioned bounds.
-              padding: EdgeInsets.fromLTRB(16, 80 + 4, 16, bottomInset + 24),
+              padding: EdgeInsets.fromLTRB(16, 80 + 4, 16, bottomInset),
               clipBehavior: Clip.none,
               children: [
                 _SettingsTileTheme(
@@ -214,7 +214,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                           i18n: i18n,
                           onTap: () => _openSettingsCategory(category),
                         ),
-                      const SizedBox(height: 24),
                     ],
                   ),
                 ),
@@ -304,7 +303,7 @@ class _SettingsCategoryTile extends StatelessWidget {
         children: [
           ListTile(
             onTap: onTap,
-            leading: _settingsIcon(category.icon, cs.primary),
+            leading: _settingsIcon(category.icon, cs.onSurface),
             title: _settingsTitle(i18n.tr(category.labelKey)),
             trailing: Icon(
               Icons.chevron_right_rounded,
@@ -426,21 +425,24 @@ class _SettingsCategoryPage extends ConsumerWidget {
       );
     }
 
-    return Column(
-      children: [
-        TopPageHeader(
-          icon: category.icon,
-          title: i18n.tr(category.labelKey),
-          leading: IconButton(
-            onPressed: () => Navigator.of(context).maybePop(),
-            icon: const Icon(Icons.arrow_back_rounded),
-            tooltip: i18n.tr('back'),
+    return Scaffold(
+      backgroundColor: cs.surface,
+      body: Column(
+        children: [
+          TopPageHeader(
+            icon: category.icon,
+            title: i18n.tr(category.labelKey),
+            leading: IconButton(
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.arrow_back_rounded),
+              tooltip: i18n.tr('back'),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+            bottomSpacing: 16,
           ),
-          padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-          bottomSpacing: 16,
-        ),
-        Expanded(child: content()),
-      ],
+          Expanded(child: content()),
+        ],
+      ),
     );
   }
 }

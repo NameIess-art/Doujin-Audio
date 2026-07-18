@@ -22,7 +22,7 @@ List<Widget> _buildSettingsPlaybackSection({
               title: _settingsTitle(i18n.tr('auto_play_added_sessions')),
               secondary: _settingsIcon(
                 Icons.playlist_play_rounded,
-                cs.tertiary,
+                cs.onSurface,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -42,7 +42,7 @@ List<Widget> _buildSettingsPlaybackSection({
               value: asmrPlaybackCacheEnabled,
               onChanged: settings.setAsmrPlaybackCacheEnabled,
               title: _settingsTitle(i18n.tr('asmr_playback_cache')),
-              secondary: _settingsIcon(Icons.cached_rounded, cs.tertiary),
+              secondary: _settingsIcon(Icons.cached_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -61,7 +61,7 @@ List<Widget> _buildSettingsPlaybackSection({
               value: recordProgress,
               onChanged: settings.setRecordPlaybackProgress,
               title: _settingsTitle(i18n.tr('record_playback_progress')),
-              secondary: _settingsIcon(Icons.restore_rounded, cs.tertiary),
+              secondary: _settingsIcon(Icons.restore_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -89,7 +89,7 @@ List<Widget> _buildSettingsPlaybackSection({
               title: _settingsTitle(i18n.tr('multi_thread_playback')),
               secondary: _settingsIcon(
                 Icons.multitrack_audio_rounded,
-                cs.tertiary,
+                cs.onSurface,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -112,7 +112,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 title: _settingsTitle(
                   i18n.tr('audio_device_disconnect_behavior'),
                 ),
-                leading: _settingsIcon(Icons.headset_off_rounded, cs.tertiary),
+                leading: _settingsIcon(Icons.headset_off_rounded, cs.onSurface),
                 trailing: _settingsDropdown<AudioDeviceDisconnectBehavior>(
                   context,
                   value: behavior,
@@ -157,7 +157,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 title: _settingsTitle(
                   i18n.tr('transient_audio_focus_loss_behavior'),
                 ),
-                leading: _settingsIcon(Icons.volume_down_rounded, cs.tertiary),
+                leading: _settingsIcon(Icons.volume_down_rounded, cs.onSurface),
                 trailing: _settingsDropdown<TransientAudioFocusLossBehavior>(
                   context,
                   value: behavior,
@@ -202,7 +202,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 title: _settingsTitle(i18n.tr('interruption_resume_behavior')),
                 leading: _settingsIcon(
                   Icons.phone_in_talk_rounded,
-                  cs.tertiary,
+                  cs.onSurface,
                 ),
                 trailing: _settingsDropdown<InterruptionResumeBehavior>(
                   context,

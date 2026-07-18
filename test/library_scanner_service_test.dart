@@ -128,7 +128,7 @@ void main() {
       final catalog = _RefreshCatalog(
         watchedFolders: <String>['C:/music'],
         initialTracks: <MusicTrack>[existing],
-        cancelAfterFirstTrackChunk: true,
+        cancelAfterTrackChunk: 2,
       );
       final dataSource = _ChunkedRefreshDataSource(
         catalog: catalog,
@@ -140,6 +140,10 @@ void main() {
           FolderScanChunk(
             tracks: <ScannedTrack>[_scannedTrack('C:/music/two.mp3')],
             paths: <String>{PathMatcher.normalize('C:/music/two.mp3')},
+          ),
+          FolderScanChunk(
+            tracks: <ScannedTrack>[_scannedTrack('C:/music/three.mp3')],
+            paths: <String>{PathMatcher.normalize('C:/music/three.mp3')},
           ),
         ],
         terminalPaths: <String>{
@@ -153,8 +157,14 @@ void main() {
       ).refreshWatchedFolders(provider: catalog, labels: labels);
 
       expect(outcome.code, LibraryScanOutcomeCode.cancelled);
-      expect(dataSource.deliveredChunks, 1);
+      expect(dataSource.deliveredChunks, 2);
       expect(catalog.library, <MusicTrack>[existing]);
+      expect(catalog.stagedBatchDepth, 0);
+      expect(catalog.stagedBatchBeginCount, 1);
+      expect(catalog.stagedBatchFinishCount, 1);
+      expect(catalog.rollbackBatchDepth, 0);
+      expect(catalog.rollbackBatchBeginCount, 1);
+      expect(catalog.rollbackBatchEndCount, 1);
     },
   );
 }
@@ -281,7 +291,7 @@ class _RefreshCatalog implements LibraryCatalog {
   _RefreshCatalog({
     required List<String> watchedFolders,
     List<MusicTrack> initialTracks = const <MusicTrack>[],
-    this.cancelAfterFirstTrackChunk = false,
+    this.cancelAfterTrackChunk,
   }) : watchedFolders = List<String>.of(watchedFolders),
        library = List<MusicTrack>.of(initialTracks);
 
@@ -293,7 +303,7 @@ class _RefreshCatalog implements LibraryCatalog {
 
   @override
   final List<String> watchedLibraries = <String>[];
-  final bool cancelAfterFirstTrackChunk;
+  final int? cancelAfterTrackChunk;
 
   @override
   bool isScanning = false;
@@ -310,6 +320,12 @@ class _RefreshCatalog implements LibraryCatalog {
   final removedTrackPaths = <String>[];
   int _generation = 0;
   var _appliedTrackChunks = 0;
+  var stagedBatchDepth = 0;
+  var stagedBatchBeginCount = 0;
+  var stagedBatchFinishCount = 0;
+  var rollbackBatchDepth = 0;
+  var rollbackBatchBeginCount = 0;
+  var rollbackBatchEndCount = 0;
 
   @override
   int tryBeginScan({required String source, bool background = false}) {
@@ -358,12 +374,18 @@ class _RefreshCatalog implements LibraryCatalog {
   bool isLibraryPathExcluded(String libraryPath, String entityPath) => false;
 
   @override
-  void beginStagedLibraryRefresh() {}
+  void beginStagedLibraryRefresh() {
+    stagedBatchDepth++;
+    stagedBatchBeginCount++;
+  }
 
   @override
   Future<void> finishStagedLibraryRefresh({
     bool waitForPersistence = false,
-  }) async {}
+  }) async {
+    stagedBatchDepth--;
+    stagedBatchFinishCount++;
+  }
 
   @override
   int applyStagedLibraryRefreshChunk({
@@ -385,8 +407,8 @@ class _RefreshCatalog implements LibraryCatalog {
       library.add(track);
     }
     if (tracks.isNotEmpty &&
-        cancelAfterFirstTrackChunk &&
-        ++_appliedTrackChunks == 1) {
+        cancelAfterTrackChunk != null &&
+        ++_appliedTrackChunks == cancelAfterTrackChunk) {
       isScanning = false;
     }
     final pathsToRemove = removeTrackPaths.toList(growable: false);
@@ -428,13 +450,19 @@ class _RefreshCatalog implements LibraryCatalog {
   }
 
   @override
-  void beginLibraryBatch() {}
+  void beginLibraryBatch() {
+    rollbackBatchDepth++;
+    rollbackBatchBeginCount++;
+  }
 
   @override
   Future<void> endLibraryBatch({
     bool notify = true,
     bool waitForPersistence = true,
-  }) async {}
+  }) async {
+    rollbackBatchDepth--;
+    rollbackBatchEndCount++;
+  }
 
   @override
   void removeTracksByPath(Iterable<String> trackPaths) {

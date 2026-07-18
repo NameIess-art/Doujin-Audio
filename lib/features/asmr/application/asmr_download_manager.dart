@@ -997,11 +997,9 @@ class AsmrDownloadManager extends ChangeNotifier {
       localTargetFile = File(
         _resolveLocalPathWithin(workRootPath, item.relativePath),
       );
-      if (await localTargetFile.exists() &&
-          await localTargetFile.length() == item.size) {
-        if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
-          return _WriteResult.skipped(bytesDownloaded: item.size);
-        }
+      if (conflictPolicy == AsmrDownloadConflictPolicy.skip &&
+          await localTargetFile.exists()) {
+        return _WriteResult.skipped(bytesDownloaded: item.size);
       }
       await localTargetFile.parent.create(recursive: true);
     } else {
@@ -1059,9 +1057,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       final targetExisted = await targetFile.exists();
       if (targetExisted) {
         if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
-          return _WriteResult.skipped(
-            bytesDownloaded: tempResult.bytesDownloaded,
-          );
+          return _WriteResult.skipped(bytesDownloaded: item.size);
         }
       }
       await commitLocalDownloadedFile(

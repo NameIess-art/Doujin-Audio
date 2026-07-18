@@ -235,7 +235,7 @@ class LibraryScannerService {
           );
         }
       } finally {
-        if (batchStarted && batchOpen) {
+        if (batchStarted) {
           if (provider.isScanGenerationActive(generation)) {
             for (final chunk in deferredCleanupChunks) {
               provider.applyStagedLibraryRefreshChunk(

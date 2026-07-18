@@ -53,6 +53,7 @@ internal class NativePlaybackStatePersistenceCoordinator(
     private val intervalMs: Long,
     private val debounceMs: Long,
     private val hasSessions: () -> Boolean,
+    private val hasActivePlayback: () -> Boolean,
     private val storedSessions: () -> List<StoredNativePlaybackSession>
 ) {
     constructor(
@@ -61,23 +62,26 @@ internal class NativePlaybackStatePersistenceCoordinator(
         intervalMs: Long,
         debounceMs: Long,
         hasSessions: () -> Boolean,
+        hasActivePlayback: () -> Boolean,
         storedSessions: () -> List<StoredNativePlaybackSession>
     ) : this(
         environment = AndroidNativePlaybackStatePersistenceEnvironment(context, mainHandler),
         intervalMs = intervalMs,
         debounceMs = debounceMs,
         hasSessions = hasSessions,
+        hasActivePlayback = hasActivePlayback,
         storedSessions = storedSessions
     )
 
     private val generation = AtomicLong(0L)
     private var tickerScheduled = false
     private var pendingDebounce = false
+    private var lastSubmittedSnapshots: List<StoredNativePlaybackSession>? = null
 
     private val ticker = object : Runnable {
         override fun run() {
             persistNow()
-            if (!hasSessions()) {
+            if (!hasActivePlayback()) {
                 tickerScheduled = false
                 return
             }
@@ -91,9 +95,19 @@ internal class NativePlaybackStatePersistenceCoordinator(
     }
 
     fun ensureTicker() {
-        if (tickerScheduled || !hasSessions()) return
+        if (tickerScheduled || !hasActivePlayback()) return
         tickerScheduled = true
         environment.postDelayed(ticker, intervalMs)
+    }
+
+    fun onPlaybackActivityChanged() {
+        if (hasActivePlayback()) {
+            ensureTicker()
+            return
+        }
+        if (!tickerScheduled) return
+        stopTicker()
+        persistNow()
     }
 
     fun stopTicker() {
@@ -116,8 +130,11 @@ internal class NativePlaybackStatePersistenceCoordinator(
 
     fun persistNow() {
         cancelScheduledPersist()
+        val snapshots = if (hasSessions()) storedSessions() else emptyList()
+        if (snapshots == lastSubmittedSnapshots) return
+        lastSubmittedSnapshots = snapshots
         val saveGeneration = generation.incrementAndGet()
-        if (!hasSessions()) {
+        if (snapshots.isEmpty()) {
             environment.execute {
                 if (saveGeneration == generation.get()) {
                     environment.clearSessions()
@@ -126,7 +143,6 @@ internal class NativePlaybackStatePersistenceCoordinator(
             return
         }
 
-        val snapshots = storedSessions()
         environment.execute {
             if (saveGeneration == generation.get()) {
                 environment.saveSessions(snapshots)

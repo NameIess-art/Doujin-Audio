@@ -338,7 +338,7 @@ class _PermissionTile extends StatelessWidget {
         onTap: onTap,
         minTileHeight: 82,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Icon(icon, color: statusColor, size: 30),
+        leading: Icon(icon, color: cs.onSurface, size: 30),
         title: Text(
           title,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(

@@ -226,6 +226,12 @@ class _AsmrFilteredWorksCacheKey {
 
 typedef _AsmrWorkRequestKey = ({int workId, int contentEpoch, int authEpoch});
 typedef _AsmrSyncRequestKey = ({int authEpoch, String token});
+typedef _AsmrCategoryRequestKey = ({
+  int authEpoch,
+  String? token,
+  int contentEpoch,
+  int requestSerial,
+});
 
 class AsmrLibraryController extends ChangeNotifier
     implements AsmrPlaybackSource, PersistedStateReloader {
@@ -263,10 +269,12 @@ class AsmrLibraryController extends ChangeNotifier
       <AsmrCategoryType, Future<void>>{};
   final Map<AsmrCategoryType, String> _refreshTaskQueries =
       <AsmrCategoryType, String>{};
-  final Map<AsmrCategoryType, int> _refreshTaskContentEpochs =
-      <AsmrCategoryType, int>{};
+  final Map<AsmrCategoryType, _AsmrCategoryRequestKey> _refreshTaskKeys =
+      <AsmrCategoryType, _AsmrCategoryRequestKey>{};
   final Map<AsmrCategoryType, int> _refreshRequestSerial =
       <AsmrCategoryType, int>{};
+  final Map<AsmrCategoryType, String> _pendingAuthCategoryRefreshes =
+      <AsmrCategoryType, String>{};
   final Map<AsmrCategoryType, List<AsmrWork>> _worksByCategory =
       <AsmrCategoryType, List<AsmrWork>>{};
   final Map<AsmrCategoryType, bool> _loadingByCategory =
@@ -322,12 +330,28 @@ class AsmrLibraryController extends ChangeNotifier
   int _authEpoch = 0;
   int _contentEpoch = 0;
 
-  void _commitPresentation(String key, VoidCallback commit) {
+  void _commitPresentation(
+    String key,
+    VoidCallback commit, {
+    bool Function()? isCurrent,
+    bool preserveAcrossUiGenerations = false,
+  }) {
     final coordinator = UiInteractionCoordinator.instance;
-    if (coordinator.isInteracting) {
-      coordinator.scheduleCommit(key: key, priority: 10, commit: commit);
-    } else {
+    final uiGeneration = coordinator.generation;
+    void guardedCommit() {
+      if (isCurrent != null && !isCurrent()) return;
       commit();
+    }
+
+    if (coordinator.isInteracting) {
+      coordinator.scheduleCommit(
+        key: key,
+        generation: preserveAcrossUiGenerations ? null : uiGeneration,
+        priority: 10,
+        commit: guardedCommit,
+      );
+    } else {
+      guardedCommit();
     }
   }
 
@@ -345,6 +369,64 @@ class AsmrLibraryController extends ChangeNotifier
 
   bool _isWorkRequestCurrent(_AsmrWorkRequestKey key) =>
       key.contentEpoch == _contentEpoch && key.authEpoch == _authEpoch;
+
+  _AsmrCategoryRequestKey _categoryRequestKey(int requestSerial) => (
+    authEpoch: _authEpoch,
+    token: _authSession?.token,
+    contentEpoch: _contentEpoch,
+    requestSerial: requestSerial,
+  );
+
+  bool _isCategoryRequestCurrent(
+    AsmrCategoryType category,
+    _AsmrCategoryRequestKey key,
+  ) =>
+      key.authEpoch == _authEpoch &&
+      key.token == _authSession?.token &&
+      key.contentEpoch == _contentEpoch &&
+      key.requestSerial == _refreshRequestSerial[category];
+
+  bool _isRemoteCategory(AsmrCategoryType category) =>
+      category != AsmrCategoryType.favorites &&
+      category != AsmrCategoryType.history;
+
+  void _invalidateCategoryRequestsForAuthChange() {
+    for (final category in AsmrCategoryType.values) {
+      if (_isRemoteCategory(category) &&
+          (_queryByCategory.containsKey(category) ||
+              _worksByCategory.containsKey(category) ||
+              _refreshTaskQueries.containsKey(category))) {
+        _pendingAuthCategoryRefreshes.putIfAbsent(
+          category,
+          () =>
+              _refreshTaskQueries[category] ?? _queryByCategory[category] ?? '',
+        );
+      }
+      _refreshRequestSerial[category] =
+          (_refreshRequestSerial[category] ?? 0) + 1;
+      _loadingByCategory[category] = false;
+      _loadingMoreByCategory[category] = false;
+      if (_isRemoteCategory(category)) {
+        _currentPageByCategory.remove(category);
+        _totalCountByCategory.remove(category);
+        _hasMoreByCategory.remove(category);
+      }
+    }
+    _refreshTasks.clear();
+    _refreshTaskQueries.clear();
+    _refreshTaskKeys.clear();
+  }
+
+  void _refreshLoadedCategoriesForCurrentAuth() {
+    if (_pendingAuthCategoryRefreshes.isEmpty) return;
+    final pending = Map<AsmrCategoryType, String>.from(
+      _pendingAuthCategoryRefreshes,
+    );
+    _pendingAuthCategoryRefreshes.clear();
+    for (final entry in pending.entries) {
+      unawaited(refreshCategory(entry.key, searchQuery: entry.value));
+    }
+  }
 
   void _invalidateRemoteWorkCaches() {
     _detailCache.clear();
@@ -579,15 +661,27 @@ class AsmrLibraryController extends ChangeNotifier
       }
       _authEpoch++;
       _cancelActiveSync();
+      _invalidateCategoryRequestsForAuthChange();
       _invalidateRemoteWorkCaches();
       _applyAccountSnapshot(snapshot);
       _lastSyncError = null;
       _bumpGlobalRevision();
-      _commitPresentation('asmr_auth_restore', notifyListeners);
+      final appliedEpoch = _authEpoch;
+      _commitPresentation(
+        'asmr_auth_restore',
+        notifyListeners,
+        isCurrent: () => appliedEpoch == _authEpoch,
+      );
+      _refreshLoadedCategoriesForCurrentAuth();
     } catch (error) {
+      if (requestEpoch != _authEpoch) return;
       _lastSyncError = error;
       _bumpGlobalRevision();
-      _commitPresentation('asmr_auth_restore_error', notifyListeners);
+      _commitPresentation(
+        'asmr_auth_restore_error',
+        notifyListeners,
+        isCurrent: () => requestEpoch == _authEpoch,
+      );
     }
   }
 
@@ -604,8 +698,9 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> loginAsmrAccount(String name, String password) async {
-    final loginEpoch = ++_authEpoch;
+    var operationEpoch = ++_authEpoch;
     _cancelActiveSync();
+    _invalidateCategoryRequestsForAuthChange();
     _invalidateRemoteWorkCaches();
     _authSession = null;
     _syncPhase = AsmrSyncPhase.syncing;
@@ -614,29 +709,37 @@ class AsmrLibraryController extends ChangeNotifier
     notifyListeners();
     try {
       final snapshot = await _accountSyncService.login(name, password);
-      if (loginEpoch != _authEpoch) return;
+      if (operationEpoch != _authEpoch) return;
+      operationEpoch = ++_authEpoch;
+      _invalidateCategoryRequestsForAuthChange();
       _applyAccountSnapshot(snapshot);
       await syncAsmrAccount(force: true);
+      _refreshLoadedCategoriesForCurrentAuth();
     } catch (error) {
-      if (loginEpoch != _authEpoch) return;
+      if (operationEpoch != _authEpoch) return;
       _authSession = null;
       _syncPhase = AsmrSyncPhase.failed;
       _lastSyncError = error;
       _bumpGlobalRevision();
       notifyListeners();
+      _refreshLoadedCategoriesForCurrentAuth();
       rethrow;
     }
   }
 
   Future<void> logoutAsmrAccount() async {
-    _authEpoch++;
+    final logoutEpoch = ++_authEpoch;
     _cancelActiveSync();
+    _invalidateCategoryRequestsForAuthChange();
     _invalidateRemoteWorkCaches();
-    _applyAccountSnapshot(await _accountSyncService.logout());
+    final snapshot = await _accountSyncService.logout();
+    if (logoutEpoch != _authEpoch) return;
+    _applyAccountSnapshot(snapshot);
     _syncPhase = AsmrSyncPhase.idle;
     _lastSyncError = null;
     _bumpGlobalRevision();
     notifyListeners();
+    _refreshLoadedCategoriesForCurrentAuth();
   }
 
   Future<void> syncAsmrAccount({bool force = false}) {
@@ -666,6 +769,7 @@ class AsmrLibraryController extends ChangeNotifier
     _lastSyncError = null;
     _bumpGlobalRevision();
     notifyListeners();
+    var tokenChanged = false;
     try {
       final result = await _accountSyncService.synchronize(
         language: _contentLanguage,
@@ -674,8 +778,10 @@ class AsmrLibraryController extends ChangeNotifier
       if (cancellationToken.isCancelled || key.authEpoch != _authEpoch) return;
       final previousToken = _authSession?.token;
       _applyAccountSnapshot(result.snapshot);
-      if (_authSession?.token != previousToken) {
+      tokenChanged = _authSession?.token != previousToken;
+      if (tokenChanged) {
         _authEpoch++;
+        _invalidateCategoryRequestsForAuthChange();
         _invalidateRemoteWorkCaches();
       }
       _syncPhase = result.succeeded
@@ -692,6 +798,9 @@ class AsmrLibraryController extends ChangeNotifier
         _bumpCategoryRevision(AsmrCategoryType.history);
         _bumpGlobalRevision();
         notifyListeners();
+        if (tokenChanged) {
+          _refreshLoadedCategoriesForCurrentAuth();
+        }
       }
     }
   }
@@ -776,7 +885,7 @@ class AsmrLibraryController extends ChangeNotifier
     }
     _refreshTasks.clear();
     _refreshTaskQueries.clear();
-    _refreshTaskContentEpochs.clear();
+    _refreshTaskKeys.clear();
     _worksByCategory.clear();
     _detailCache.clear();
     _trackCache.clear();
@@ -797,39 +906,41 @@ class AsmrLibraryController extends ChangeNotifier
   Future<void> refreshCategory(
     AsmrCategoryType category, {
     String searchQuery = '',
-  }) {
+  }) async {
+    await initialize();
     final existing = _refreshTasks[category];
     final normalizedQuery = normalizeSearchQuery(searchQuery);
+    final existingKey = _refreshTaskKeys[category];
     if (existing != null &&
         _refreshTaskQueries[category] == normalizedQuery &&
-        _refreshTaskContentEpochs[category] == _contentEpoch) {
+        existingKey != null &&
+        existingKey.authEpoch == _authEpoch &&
+        existingKey.token == _authSession?.token &&
+        existingKey.contentEpoch == _contentEpoch) {
       return existing;
     }
     final requestId = (_refreshRequestSerial[category] ?? 0) + 1;
     _refreshRequestSerial[category] = requestId;
-    final requestEpoch = _contentEpoch;
+    final requestKey = _categoryRequestKey(requestId);
     final requestLanguage = _contentLanguage;
-    final requestToken = _authSession?.token;
     late final Future<void> task;
     task =
         _refreshCategoryInternal(
           category,
           searchQuery: normalizedQuery,
-          requestId: requestId,
-          requestEpoch: requestEpoch,
+          requestKey: requestKey,
           language: requestLanguage,
-          token: requestToken,
         ).whenComplete(() {
           if (identical(_refreshTasks[category], task)) {
             _refreshTasks.remove(category);
             _refreshTaskQueries.remove(category);
-            _refreshTaskContentEpochs.remove(category);
+            _refreshTaskKeys.remove(category);
           }
         });
     _refreshTasks[category] = task;
     _refreshTaskQueries[category] = normalizedQuery;
-    _refreshTaskContentEpochs[category] = _contentEpoch;
-    return task;
+    _refreshTaskKeys[category] = requestKey;
+    await task;
   }
 
   Future<void> loadMoreCategory(
@@ -855,23 +966,25 @@ class AsmrLibraryController extends ChangeNotifier
       return;
     }
 
+    final requestId = _refreshRequestSerial[category] ?? 0;
+    final requestKey = _categoryRequestKey(requestId);
     _loadingMoreByCategory[category] = true;
-    notifyListeners();
-    final requestEpoch = _contentEpoch;
+    _commitPresentation(
+      'asmr_loading_more_start_${category.name}',
+      notifyListeners,
+      isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
+    );
     final requestLanguage = _contentLanguage;
-    final requestToken = _authSession?.token;
     try {
-      final requestId = _refreshRequestSerial[category] ?? 0;
       final page = (_currentPageByCategory[category] ?? 1) + 1;
       final pageResult = await _loadRemotePage(
         category,
         searchQuery: normalizedQuery,
         page: page,
         language: requestLanguage,
-        token: requestToken,
+        token: requestKey.token,
       );
-      if (_contentEpoch != requestEpoch ||
-          _refreshRequestSerial[category] != requestId) {
+      if (!_isCategoryRequestCurrent(category, requestKey)) {
         return;
       }
       final existingIds = (_worksByCategory[category] ?? const <AsmrWork>[])
@@ -882,24 +995,35 @@ class AsmrLibraryController extends ChangeNotifier
         ...pageResult.works.where((work) => existingIds.add(work.id)),
       ];
       final decorated = merged.map(_decorateWork).toList(growable: false);
-      _commitPresentation('asmr_page_${category.name}', () {
-        _worksByCategory[category] = decorated;
-        _bumpCategoryRevision(category);
-        _applyPageResult(
-          category,
-          query: normalizedQuery,
-          pageResult: pageResult,
-        );
-        notifyListeners();
-      });
-    } catch (error) {
-      if (_contentEpoch == requestEpoch) _lastError = error;
-    } finally {
-      if (_contentEpoch == requestEpoch) {
-        _commitPresentation('asmr_loading_more_${category.name}', () {
-          _loadingMoreByCategory[category] = false;
+      _commitPresentation(
+        'asmr_page_${category.name}',
+        () {
+          _worksByCategory[category] = decorated;
+          _bumpCategoryRevision(category);
+          _applyPageResult(
+            category,
+            query: normalizedQuery,
+            pageResult: pageResult,
+          );
           notifyListeners();
-        });
+        },
+        isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
+      );
+    } catch (error) {
+      if (_isCategoryRequestCurrent(category, requestKey)) {
+        _lastError = error;
+      }
+    } finally {
+      if (_isCategoryRequestCurrent(category, requestKey)) {
+        _commitPresentation(
+          'asmr_loading_more_${category.name}',
+          () {
+            _loadingMoreByCategory[category] = false;
+            notifyListeners();
+          },
+          isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
+          preserveAcrossUiGenerations: true,
+        );
       }
     }
   }
@@ -907,70 +1031,66 @@ class AsmrLibraryController extends ChangeNotifier
   Future<void> _refreshCategoryInternal(
     AsmrCategoryType category, {
     required String searchQuery,
-    required int requestId,
-    required int requestEpoch,
+    required _AsmrCategoryRequestKey requestKey,
     required AsmrContentLanguage language,
-    required String? token,
   }) async {
     final normalizedQuery = normalizeSearchQuery(searchQuery);
     _loadingByCategory[category] = true;
     _lastError = null;
-    _commitPresentation('asmr_loading_start_${category.name}', notifyListeners);
+    _commitPresentation(
+      'asmr_loading_start_${category.name}',
+      notifyListeners,
+      isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
+    );
     try {
-      await initialize();
+      if (!_isCategoryRequestCurrent(category, requestKey)) return;
       switch (category) {
         case AsmrCategoryType.collected:
           await _loadWorks(
             category,
             searchQuery: normalizedQuery,
-            requestId: requestId,
+            requestKey: requestKey,
             language: language,
-            token: token,
           );
           break;
         case AsmrCategoryType.recommendation:
           await _loadRecommendedWorks(
             category,
             searchQuery: normalizedQuery,
-            requestId: requestId,
+            requestKey: requestKey,
             language: language,
-            token: token,
           );
           break;
         case AsmrCategoryType.sales:
           await _loadWorks(
             category,
             searchQuery: normalizedQuery,
-            requestId: requestId,
+            requestKey: requestKey,
             language: language,
-            token: token,
           );
           break;
         case AsmrCategoryType.rating:
           await _loadWorks(
             category,
             searchQuery: normalizedQuery,
-            requestId: requestId,
+            requestKey: requestKey,
             language: language,
-            token: token,
           );
           break;
         case AsmrCategoryType.reviews:
           await _loadWorks(
             category,
             searchQuery: normalizedQuery,
-            requestId: requestId,
+            requestKey: requestKey,
             language: language,
-            token: token,
           );
           break;
         case AsmrCategoryType.release:
           await _loadWorks(
             category,
             searchQuery: normalizedQuery,
-            requestId: requestId,
+            requestKey: requestKey,
             language: language,
-            token: token,
           );
           break;
         case AsmrCategoryType.favorites:
@@ -991,14 +1111,20 @@ class AsmrLibraryController extends ChangeNotifier
           break;
       }
     } catch (error) {
-      if (_contentEpoch == requestEpoch) _lastError = error;
+      if (_isCategoryRequestCurrent(category, requestKey)) {
+        _lastError = error;
+      }
     } finally {
-      if (_contentEpoch == requestEpoch &&
-          _refreshRequestSerial[category] == requestId) {
-        _commitPresentation('asmr_loading_end_${category.name}', () {
-          _loadingByCategory[category] = false;
-          notifyListeners();
-        });
+      if (_isCategoryRequestCurrent(category, requestKey)) {
+        _commitPresentation(
+          'asmr_loading_end_${category.name}',
+          () {
+            _loadingByCategory[category] = false;
+            notifyListeners();
+          },
+          isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
+          preserveAcrossUiGenerations: true,
+        );
       }
     }
   }
@@ -1006,64 +1132,72 @@ class AsmrLibraryController extends ChangeNotifier
   Future<void> _loadWorks(
     AsmrCategoryType category, {
     required String searchQuery,
-    required int requestId,
+    required _AsmrCategoryRequestKey requestKey,
     required AsmrContentLanguage language,
-    required String? token,
   }) async {
     final pageResult = await _loadRemotePage(
       category,
       searchQuery: searchQuery,
       page: 1,
       language: language,
-      token: token,
+      token: requestKey.token,
     );
-    if (_refreshRequestSerial[category] != requestId) {
+    if (!_isCategoryRequestCurrent(category, requestKey)) {
       return;
     }
     final decorated = pageResult.works
         .map(_decorateWork)
         .toList(growable: false);
-    _commitPresentation('asmr_refresh_${category.name}', () {
-      if (_refreshRequestSerial[category] != requestId) return;
-      _worksByCategory[category] = decorated;
-      _bumpCategoryRevision(category);
-      _applyPageResult(category, query: searchQuery, pageResult: pageResult);
-      notifyListeners();
-    });
+    _commitPresentation(
+      'asmr_refresh_${category.name}',
+      () {
+        _worksByCategory[category] = decorated;
+        _bumpCategoryRevision(category);
+        _applyPageResult(category, query: searchQuery, pageResult: pageResult);
+        notifyListeners();
+      },
+      isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
+    );
   }
 
   Future<void> _loadRecommendedWorks(
     AsmrCategoryType category, {
     required String searchQuery,
-    required int requestId,
+    required _AsmrCategoryRequestKey requestKey,
     required AsmrContentLanguage language,
-    required String? token,
   }) async {
     final ranked = await _remoteCatalogService.loadRecommendations(
       searchQuery: searchQuery,
       language: language,
-      token: token,
+      token: requestKey.token,
       favoriteWorks: _favoriteWorks,
       historyWorks: _historyWorks,
-      refreshSeed: requestId,
+      refreshSeed: requestKey.requestSerial,
     );
-    if (_refreshRequestSerial[category] != requestId) {
+    if (!_isCategoryRequestCurrent(category, requestKey)) {
       return;
     }
     final decorated = ranked.map(_decorateWork).toList(growable: false);
-    _worksByCategory[category] = decorated;
-    _bumpCategoryRevision(category);
-    _applyPageResult(
-      category,
-      query: searchQuery,
-      pageResult: AsmrWorkPage(
-        works: decorated,
-        currentPage: 1,
-        pageSize: decorated.length,
-        totalCount: decorated.length,
-      ),
+    _commitPresentation(
+      'asmr_refresh_${category.name}',
+      () {
+        _worksByCategory[category] = decorated;
+        _bumpCategoryRevision(category);
+        _applyPageResult(
+          category,
+          query: searchQuery,
+          pageResult: AsmrWorkPage(
+            works: decorated,
+            currentPage: 1,
+            pageSize: decorated.length,
+            totalCount: decorated.length,
+          ),
+        );
+        _hasMoreByCategory[category] = false;
+        notifyListeners();
+      },
+      isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
     );
-    _hasMoreByCategory[category] = false;
   }
 
   Future<AsmrWorkPage> _loadRemotePage(

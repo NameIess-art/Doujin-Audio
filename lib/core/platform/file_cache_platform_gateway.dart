@@ -3,11 +3,13 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/services.dart';
+import 'package:media_kit/media_kit.dart' as media;
 import 'package:path/path.dart' as path;
 
 import 'library_scan_wire_models.dart';
 import '../logging/app_log_service.dart';
 import '../media/media_file_support.dart';
+import '../media/path_matcher.dart';
 import '../errors/native_result.dart';
 import '../media/path_display.dart';
 import 'platform_channels.dart';
@@ -23,13 +25,15 @@ class FileCachePlatformGateway {
        ),
        _scanEvents =
            scanEvents ?? const EventChannel(FileCacheChannel.scanEvents),
-       _isAndroid = isAndroid ?? (() => Platform.isAndroid);
+       _isAndroid = isAndroid ?? (() => Platform.isAndroid),
+       _usesHostPlatform = isAndroid == null;
 
   static final FileCachePlatformGateway instance = FileCachePlatformGateway();
 
   final PlatformMethodClient _client;
   final EventChannel _scanEvents;
   final bool Function() _isAndroid;
+  final bool _usesHostPlatform;
 
   void _logOptionalFailure<T>(String method, NativeResult<T> result) {
     if (result case NativeFailure<T>(
@@ -232,7 +236,10 @@ class FileCachePlatformGateway {
   }
 
   Future<Duration?> resolveMediaDuration(String mediaPath) async {
-    if (!_isAndroid()) return null;
+    if (!_isAndroid()) {
+      if (!_usesHostPlatform || !Platform.isWindows) return null;
+      return _resolveWindowsMediaDuration(mediaPath);
+    }
     try {
       final result = await _client
           .invoke<num?>(
@@ -249,6 +256,51 @@ class FileCachePlatformGateway {
       return Duration(milliseconds: milliseconds.toInt());
     } catch (_) {
       return null;
+    }
+  }
+
+  Future<Duration?> _resolveWindowsMediaDuration(String mediaPath) async {
+    const timeout = Duration(seconds: 8);
+    final stopwatch = Stopwatch()..start();
+    media.Player? player;
+    try {
+      media.MediaKit.ensureInitialized();
+      player = media.Player();
+      final mediaUri =
+          PathMatcher.isContentUri(mediaPath) ||
+              PathMatcher.isRemoteUri(mediaPath)
+          ? mediaPath
+          : Uri.file(mediaPath).toString();
+      await player.open(media.Media(mediaUri), play: false).timeout(timeout);
+      var duration = player.state.duration;
+      if (duration <= Duration.zero) {
+        final remaining = timeout - stopwatch.elapsed;
+        if (remaining <= Duration.zero) return null;
+        duration = await player.stream.duration
+            .firstWhere((value) => value > Duration.zero)
+            .timeout(remaining);
+      }
+      return duration > Duration.zero ? duration : null;
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'windows_media_duration_resolve_failed path=$mediaPath',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return null;
+    } finally {
+      final playerToDispose = player;
+      if (playerToDispose != null) {
+        try {
+          await playerToDispose.dispose().timeout(const Duration(seconds: 2));
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'windows_media_duration_player_dispose_failed path=$mediaPath',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
     }
   }
 
@@ -442,9 +494,10 @@ class FileCachePlatformGateway {
     }
     _activeScanTaskId = taskId;
 
-    void complete(NativeScanResult result) {
-      if (!completer.isCompleted) completer.complete(result);
-    }
+    final eventLifecycle = _FolderScanEventLifecycle(
+      completer: completer,
+      cancelNativeScan: () => _cancelFolderScan(taskId),
+    )..markActivity();
 
     try {
       subscription = _scanEvents
@@ -462,12 +515,13 @@ class FileCachePlatformGateway {
                   scanEvent.generationId != generationId) {
                 return;
               }
+              eventLifecycle.markActivity();
               if (scanEvent.isChunk) {
                 tracks.addAll(scanEvent.chunk.tracks);
                 paths.addAll(scanEvent.chunk.paths);
                 failureCount += scanEvent.chunk.failureCount;
               } else if (scanEvent.isDone) {
-                complete(
+                eventLifecycle.complete(
                   NativeScanResult.success(
                     List<ScannedTrack>.unmodifiable(tracks),
                     Set<String>.unmodifiable(paths),
@@ -476,7 +530,7 @@ class FileCachePlatformGateway {
                   ),
                 );
               } else if (scanEvent.isCancelled) {
-                complete(
+                eventLifecycle.complete(
                   NativeScanResult.success(
                     List<ScannedTrack>.unmodifiable(tracks),
                     Set<String>.unmodifiable(paths),
@@ -486,7 +540,7 @@ class FileCachePlatformGateway {
                   ),
                 );
               } else if (scanEvent.isError) {
-                complete(
+                eventLifecycle.complete(
                   NativeScanResult.failed(
                     code: scanEvent.errorCode,
                     message: scanEvent.errorMessage,
@@ -494,11 +548,13 @@ class FileCachePlatformGateway {
                 );
               }
             },
-            onError: (Object error) => complete(
-              NativeScanResult.failed(
-                code: 'scan_event_error',
-                message: error.toString(),
-              ),
+            onError: (Object error) => eventLifecycle.fail(
+              code: 'scan_event_error',
+              message: error.toString(),
+            ),
+            onDone: () => eventLifecycle.fail(
+              code: 'scan_event_closed',
+              message: 'Folder scan event stream closed before completion.',
             ),
           );
       final startResult = await _client.invoke<bool>(
@@ -532,8 +588,9 @@ class FileCachePlatformGateway {
         message: error.toString(),
       );
     } finally {
-      await subscription?.cancel();
-      if (!completer.isCompleted) unawaited(_cancelFolderScan(taskId));
+      eventLifecycle.dispose();
+      _releaseScanSubscription(subscription);
+      if (!eventLifecycle.isCompleted) unawaited(_cancelFolderScan(taskId));
       if (_activeScanTaskId == taskId) _activeScanTaskId = null;
     }
   }
@@ -559,13 +616,14 @@ class FileCachePlatformGateway {
     }
     _activeScanTaskId = taskId;
 
-    void complete(NativeScanResult result) {
-      if (!completer.isCompleted) completer.complete(result);
-    }
+    final eventLifecycle = _FolderScanEventLifecycle(
+      completer: completer,
+      cancelNativeScan: () => _cancelFolderScan(taskId),
+    )..markActivity();
 
     Future<void> completeAfterPending(NativeScanResult Function() result) {
       pendingChunk = pendingChunk.whenComplete(() {
-        complete(result());
+        eventLifecycle.complete(result());
       });
       return pendingChunk;
     }
@@ -586,6 +644,7 @@ class FileCachePlatformGateway {
                   scanEvent.generationId != generationId) {
                 return;
               }
+              eventLifecycle.markActivity();
               if (scanEvent.isStarted ||
                   scanEvent.isStageChanged ||
                   scanEvent.isProgress) {
@@ -601,7 +660,7 @@ class FileCachePlatformGateway {
                       failureCount += chunk.failureCount;
                       final keepGoing = await onChunk(chunk);
                       if (!keepGoing) {
-                        complete(
+                        eventLifecycle.complete(
                           NativeScanResult.success(
                             const <ScannedTrack>[],
                             Set<String>.unmodifiable(paths),
@@ -619,7 +678,7 @@ class FileCachePlatformGateway {
                         error: error,
                         stackTrace: stackTrace,
                       );
-                      complete(
+                      eventLifecycle.complete(
                         NativeScanResult.failed(
                           code: 'scan_handler_error',
                           message: error.toString(),
@@ -661,11 +720,13 @@ class FileCachePlatformGateway {
                 );
               }
             },
-            onError: (Object error) => complete(
-              NativeScanResult.failed(
-                code: 'scan_event_error',
-                message: error.toString(),
-              ),
+            onError: (Object error) => eventLifecycle.fail(
+              code: 'scan_event_error',
+              message: error.toString(),
+            ),
+            onDone: () => eventLifecycle.fail(
+              code: 'scan_event_closed',
+              message: 'Folder scan event stream closed before completion.',
             ),
           );
       final startResult = await _client.invoke<bool>(
@@ -699,8 +760,9 @@ class FileCachePlatformGateway {
         message: error.toString(),
       );
     } finally {
-      await subscription?.cancel();
-      if (!completer.isCompleted) unawaited(_cancelFolderScan(taskId));
+      eventLifecycle.dispose();
+      _releaseScanSubscription(subscription);
+      if (!eventLifecycle.isCompleted) unawaited(_cancelFolderScan(taskId));
       if (_activeScanTaskId == taskId) _activeScanTaskId = null;
     }
   }
@@ -715,6 +777,19 @@ class FileCachePlatformGateway {
       FileCacheMethod.cancelFolderScan,
       arguments: <String, Object?>{'taskId': taskId},
       decode: (value) => value as bool,
+    );
+  }
+
+  void _releaseScanSubscription(StreamSubscription<dynamic>? subscription) {
+    if (subscription == null) return;
+    unawaited(
+      subscription.cancel().catchError((Object error, StackTrace stackTrace) {
+        AppLogService.warning(
+          'folder_scan_event_subscription_cancel_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }),
     );
   }
 
@@ -747,5 +822,62 @@ class FileCachePlatformGateway {
         message: error.toString(),
       );
     }
+  }
+}
+
+const Duration _folderScanEventInactivityTimeout = Duration(seconds: 120);
+
+final class _FolderScanEventLifecycle {
+  _FolderScanEventLifecycle({
+    required Completer<NativeScanResult> completer,
+    required Future<void> Function() cancelNativeScan,
+  }) : _completer = completer,
+       _cancelNativeScan = cancelNativeScan;
+
+  final Completer<NativeScanResult> _completer;
+  final Future<void> Function() _cancelNativeScan;
+  Timer? _watchdog;
+  bool _disposed = false;
+
+  bool get isCompleted => _completer.isCompleted;
+
+  bool complete(NativeScanResult result) {
+    if (_completer.isCompleted) return false;
+    _completer.complete(result);
+    return true;
+  }
+
+  void markActivity() {
+    if (_disposed) return;
+    _watchdog?.cancel();
+    _watchdog = Timer(_folderScanEventInactivityTimeout, () {
+      fail(
+        code: 'scan_timeout',
+        message: 'Folder scan produced no events for 120 seconds.',
+      );
+    });
+  }
+
+  void fail({required String code, required String message}) {
+    if (_disposed) return;
+    _watchdog?.cancel();
+    if (!complete(NativeScanResult.failed(code: code, message: message))) {
+      return;
+    }
+    unawaited(
+      _cancelNativeScan().catchError((Object error, StackTrace stackTrace) {
+        AppLogService.warning(
+          'folder_scan_cancel_after_event_failure_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }),
+    );
+  }
+
+  void dispose() {
+    _disposed = true;
+    _watchdog?.cancel();
+    _watchdog = null;
   }
 }

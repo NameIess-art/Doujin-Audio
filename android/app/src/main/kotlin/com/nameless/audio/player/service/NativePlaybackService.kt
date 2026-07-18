@@ -87,6 +87,16 @@ internal fun shouldEnsurePlayerForAudioEffects(
         effects.channelSwapEnabled
 }
 
+internal fun shouldAutoPlayWithAudioFocus(
+    autoPlayRequested: Boolean,
+    requestAudioFocus: () -> Boolean
+): Boolean = autoPlayRequested && requestAudioFocus()
+
+internal data class NativeTimerResumeResult(
+    val resumedSessionIds: List<String>,
+    val audioFocusDenied: Boolean
+)
+
 @Suppress("DEPRECATION")
 private fun Bundle.rawExtra(key: String): Any? = get(key)
 
@@ -182,6 +192,7 @@ class NativePlaybackService : MediaSessionService() {
             intervalMs = STATE_PERSISTENCE_INTERVAL_MS,
             debounceMs = STATE_PERSISTENCE_DEBOUNCE_MS,
             hasSessions = { sessions.isNotEmpty() },
+            hasActivePlayback = ::hasActivePlayback,
             storedSessions = {
                 val intendedSessionIds = playbackRecovery.intendedSessionIds
                 sessions.values.map { session ->
@@ -262,6 +273,7 @@ class NativePlaybackService : MediaSessionService() {
         NativeMediaSessionCallback(
             appPackageName = packageName,
             appUid = applicationInfo.uid,
+            handlePlayerCommandRequest = ::handleMediaSessionPlayerCommandRequest,
             logSecurityEvent = ::logSecurityEvent
         )
     }
@@ -734,7 +746,11 @@ class NativePlaybackService : MediaSessionService() {
     internal fun prepareSession(args: NativePrepareSessionArguments): Map<String, Any?> {
         val sessionId = args.sessionId
         val queue = args.queue
-        if (args.autoPlay) {
+        val shouldAutoPlay = shouldAutoPlayWithAudioFocus(args.autoPlay) {
+            requestAudioFocusIfNeeded()
+        }
+        val autoPlayFocusDenied = args.autoPlay && !shouldAutoPlay
+        if (shouldAutoPlay) {
             notificationsDismissed = false
             playbackSuspended = false
             markPlaybackIntended(sessionId)
@@ -758,7 +774,7 @@ class NativePlaybackService : MediaSessionService() {
                 repeatOne = args.repeatOne,
                 repeatAll = args.repeatAll,
                 shuffleModeEnabled = args.shuffle,
-                autoPlay = args.autoPlay,
+                autoPlay = shouldAutoPlay,
                 deferPlayerCreation = args.deferPlayerCreation
             )
             if (!args.deferPlayerCreation) {
@@ -771,7 +787,11 @@ class NativePlaybackService : MediaSessionService() {
             persistSessionStateNow()
             ensureStatePersistenceTicker()
             syncForegroundState()
-            okResult(nativeSession.snapshot())
+            if (autoPlayFocusDenied) {
+                errorResult("Audio focus was denied.")
+            } else {
+                okResult(nativeSession.snapshot())
+            }
         } catch (e: Exception) {
             sessions.remove(sessionId)
             nativeSession.release()
@@ -1211,9 +1231,13 @@ class NativePlaybackService : MediaSessionService() {
         return pausedSessionIds
     }
 
-    fun resumeSessionsForTimer(sessionIds: List<String>): List<String> {
-        if (sessionIds.isEmpty()) return emptyList()
-        if (!requestAudioFocusIfNeeded()) return emptyList()
+    internal fun resumeSessionsForTimer(sessionIds: List<String>): NativeTimerResumeResult {
+        if (sessionIds.isEmpty()) {
+            return NativeTimerResumeResult(emptyList(), audioFocusDenied = false)
+        }
+        if (!requestAudioFocusIfNeeded()) {
+            return NativeTimerResumeResult(emptyList(), audioFocusDenied = true)
+        }
         restorePersistedSessionsForTimer(sessionIds)
         notificationsDismissed = false
         playbackSuspended = false
@@ -1234,7 +1258,7 @@ class NativePlaybackService : MediaSessionService() {
             persistSessionStateNow()
         }
         syncForegroundState()
-        return resumedSessionIds
+        return NativeTimerResumeResult(resumedSessionIds, audioFocusDenied = false)
     }
 
     private fun evictPlayersIfNeeded() {
@@ -1330,7 +1354,10 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun handleIsPlayingChanged(sessionId: String, isPlaying: Boolean) {
         logInfo("player_is_playing_changed isPlaying=$isPlaying", sessions[sessionId])
-        if (isPlaying) playbackRecovery.onPlaying(sessionId)
+        if (isPlaying) {
+            playbackRecovery.onPlaying(sessionId)
+            PlaybackTimerAlarmScheduler.onPlaybackStarted(this, sessionId)
+        }
         publishSessionState(sessionId)
         schedulePersistSessionState()
         syncForegroundState()
@@ -1429,6 +1456,35 @@ class NativePlaybackService : MediaSessionService() {
         return sessions.values.firstOrNull { it.playerOrNull() != null }
     }
 
+    private fun handleMediaSessionPlayerCommandRequest(
+        command: Int,
+        playWhenReady: Boolean
+    ): Int {
+        val session = mediaSessionCandidate()
+        return com.nameless.audio.player.session.handleMediaSessionPlayerCommandRequest(
+            command = command,
+            playWhenReady = playWhenReady,
+            requestAudioFocus = {
+                session != null && requestAudioFocusIfNeeded()
+            },
+            markPlaybackIntended = {
+                if (session != null) {
+                    pendingAudioFocusResumeSessionIds.remove(session.sessionId)
+                    notificationsDismissed = false
+                    playbackSuspended = false
+                    focusSession(session.sessionId)
+                    markPlaybackIntended(session.sessionId)
+                }
+            },
+            clearPlaybackIntent = {
+                if (session != null) {
+                    pendingAudioFocusResumeSessionIds.remove(session.sessionId)
+                    clearPlaybackIntent(session.sessionId)
+                }
+            }
+        )
+    }
+
     private fun releaseMediaSession(reason: String) {
         val existingSession = mediaSession ?: return
         logInfo("media_session_release reason=$reason")
@@ -1478,6 +1534,7 @@ class NativePlaybackService : MediaSessionService() {
         if (shouldClearAudioFocusInterruptionState(hasPlaybackToKeepAlive())) {
             clearAudioFocusInterruptionState()
         }
+        syncStatePersistenceTicker()
         foregroundCoordinator.sync()
     }
 
@@ -1518,6 +1575,10 @@ class NativePlaybackService : MediaSessionService() {
 
     private fun ensureStatePersistenceTicker() {
         statePersistence.ensureTicker()
+    }
+
+    private fun syncStatePersistenceTicker() {
+        statePersistence.onPlaybackActivityChanged()
     }
 
     private fun stopStatePersistenceTicker() {
@@ -1562,6 +1623,14 @@ class NativePlaybackService : MediaSessionService() {
         notificationsDismissed = false
         playbackSuspended = false
         val restoredSessionIds = mutableListOf<String>()
+        val shouldAutoPlay = shouldAutoPlayWithAudioFocus(
+            playbackBehavior.resumePlaybackOnStartupRestore
+        ) {
+            requestAudioFocusIfNeeded()
+        }
+        if (playbackBehavior.resumePlaybackOnStartupRestore && !shouldAutoPlay) {
+            logInfo("sticky_restore_auto_play_focus_denied")
+        }
 
         fun restoreNext(index: Int) {
             if (generation != restoreGeneration) return
@@ -1576,8 +1645,10 @@ class NativePlaybackService : MediaSessionService() {
                     return
                 }
 
-                if (playbackBehavior.resumePlaybackOnStartupRestore) {
+                if (shouldAutoPlay) {
                     restoredSessionIds.forEach(::markPlaybackIntended)
+                } else {
+                    restoredSessionIds.forEach(::clearPlaybackIntent)
                 }
                 evictPlayersIfNeeded()
                 restoredSessionIds.forEach(::publishSessionState)
@@ -1596,7 +1667,7 @@ class NativePlaybackService : MediaSessionService() {
             restoredSessionIds += sessionRestorer.restore(
                 storedSessions = listOf(stored),
                 autoPlay = {
-                    playbackBehavior.resumePlaybackOnStartupRestore &&
+                    shouldAutoPlay &&
                         (it.playWhenReady || it.playing)
                 }
             )

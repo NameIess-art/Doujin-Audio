@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../core/app_language.dart';
@@ -507,17 +506,7 @@ final class LibraryFacade implements LibraryCatalog {
         if (nativeDuration != null && nativeDuration > Duration.zero) {
           return nativeDuration;
         }
-        if (!PathMatcher.isContentUri(track.path) &&
-            !PathMatcher.isRemoteUri(track.path) &&
-            !await File(track.path).exists()) {
-          return null;
-        }
-        final player = AudioPlayer();
-        try {
-          return await _readLocalMediaDuration(player, track.path);
-        } finally {
-          await player.dispose();
-        }
+        return null;
       } catch (error, stackTrace) {
         AppLogService.warning(
           'library_duration_probe_failed path=${track.path}',
@@ -2549,16 +2538,4 @@ class AudioDetailRenameException implements Exception {
   const AudioDetailRenameException(this.reason);
 
   final String reason;
-}
-
-Future<Duration?> _readLocalMediaDuration(
-  AudioPlayer player,
-  String mediaPath,
-) {
-  if (PathMatcher.isContentUri(mediaPath)) {
-    return player
-        .setAudioSource(AudioSource.uri(Uri.parse(mediaPath)))
-        .timeout(const Duration(seconds: 8));
-  }
-  return player.setFilePath(mediaPath).timeout(const Duration(seconds: 8));
 }

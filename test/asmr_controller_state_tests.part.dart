@@ -563,4 +563,184 @@ void registerAsmrControllerStateTests({
     expect(detail.work.title, startsWith('ja:'));
     expect(api.detailFetchWorkIds, <int>[405, 405]);
   });
+
+  test(
+    'account changes discard old category responses and refresh with the new token',
+    () async {
+      await resetPrefs();
+      final oldRequestStarted = Completer<void>();
+      final releaseOldRequest = Completer<void>();
+      final aliceRequestStarted = Completer<void>();
+      final releaseAliceRequest = Completer<void>();
+      var releaseRequests = 0;
+      final api = _FakeAsmrApiService(
+        worksByToken: <String, List<AsmrWork>>{
+          '': <AsmrWork>[_work(id: 901, title: 'Guest result')],
+          'token-alice': <AsmrWork>[_work(id: 902, title: 'Alice result')],
+        },
+        beforeFetchWorkResponse: (request) async {
+          if (request != 'release:desc:1') return;
+          releaseRequests++;
+          if (releaseRequests == 1) {
+            oldRequestStarted.complete();
+            await releaseOldRequest.future;
+          } else if (releaseRequests == 3) {
+            aliceRequestStarted.complete();
+            await releaseAliceRequest.future;
+          }
+        },
+      );
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        apiService: api,
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+      final oldRefresh = controller.refreshCategory(AsmrCategoryType.release);
+      await oldRequestStarted.future;
+      await controller.loginAsmrAccount('alice', 'password');
+      final deadline = DateTime.now().add(const Duration(seconds: 1));
+      while (!api.fetchWorkTokens.contains('token-alice') &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(api.fetchWorkTokens, contains('token-alice'));
+      expect(
+        controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+        <int>[902],
+      );
+
+      releaseOldRequest.complete();
+      await oldRefresh;
+
+      expect(
+        controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+        <int>[902],
+      );
+      expect(controller.isLoadingCategory(AsmrCategoryType.release), isFalse);
+
+      await Future<void>.delayed(Duration.zero);
+      final aliceRefresh = controller.refreshCategory(AsmrCategoryType.release);
+      await aliceRequestStarted.future;
+      await controller.logoutAsmrAccount();
+      final logoutDeadline = DateTime.now().add(const Duration(seconds: 1));
+      while (api.fetchWorkTokens.isNotEmpty &&
+          api.fetchWorkTokens.last != null &&
+          DateTime.now().isBefore(logoutDeadline)) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(api.fetchWorkTokens.last, isNull);
+      expect(
+        controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+        <int>[901],
+      );
+
+      releaseAliceRequest.complete();
+      await aliceRefresh;
+      expect(
+        controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+        <int>[901],
+      );
+    },
+  );
+
+  test(
+    'pagination commit is dropped after UI generation changes without leaving loading stuck',
+    () async {
+      await resetPrefs();
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.resetForTest();
+      addTearDown(coordinator.resetForTest);
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        apiService: _FakeAsmrApiService(largeRecommendationPool: true),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      await controller.refreshCategory(AsmrCategoryType.release);
+      expect(controller.worksFor(AsmrCategoryType.release), hasLength(40));
+
+      final interactionSource = Object();
+      coordinator.beginInteraction(interactionSource);
+      await controller.loadMoreCategory(AsmrCategoryType.release);
+      expect(
+        controller.isLoadingMoreCategory(AsmrCategoryType.release),
+        isTrue,
+      );
+
+      coordinator.beginGeneration();
+      coordinator.finishInteractionsForTest();
+
+      expect(controller.worksFor(AsmrCategoryType.release), hasLength(40));
+      expect(
+        controller.isLoadingMoreCategory(AsmrCategoryType.release),
+        isFalse,
+      );
+    },
+  );
+
+  test(
+    'restoring a different token invalidates and refreshes a loaded category',
+    () async {
+      await resetPrefs();
+      final oldRequestStarted = Completer<void>();
+      final releaseOldRequest = Completer<void>();
+      var releaseRequests = 0;
+      final tokenStore = _MemoryAsmrTokenStore()..token = 'token-old';
+      final api = _FakeAsmrApiService(
+        worksByToken: <String, List<AsmrWork>>{
+          'token-old': <AsmrWork>[_work(id: 911, title: 'Old account')],
+          'token-new': <AsmrWork>[_work(id: 912, title: 'New account')],
+        },
+        beforeFetchWorkResponse: (request) async {
+          if (request != 'release:desc:1') return;
+          releaseRequests++;
+          if (releaseRequests == 1) {
+            oldRequestStarted.complete();
+            await releaseOldRequest.future;
+          }
+        },
+      );
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        apiService: api,
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      await controller.restoreAsmrAccountSession();
+
+      final oldRefresh = controller.refreshCategory(AsmrCategoryType.release);
+      await oldRequestStarted.future;
+      tokenStore.token = 'token-new';
+      await controller.restoreAsmrAccountSession(force: true);
+      final deadline = DateTime.now().add(const Duration(seconds: 1));
+      while (!api.fetchWorkTokens.contains('token-new') &&
+          DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      expect(api.fetchWorkTokens, contains('token-new'));
+      expect(
+        controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+        <int>[912],
+      );
+
+      releaseOldRequest.complete();
+      await oldRefresh;
+      expect(
+        controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+        <int>[912],
+      );
+    },
+  );
 }

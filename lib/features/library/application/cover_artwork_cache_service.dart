@@ -92,6 +92,9 @@ class CoverArtworkCacheService {
   final Map<String, Future<String?>> _manualCoverValidationFutures =
       <String, Future<String?>>{};
   final Map<String, String> _folderCoverSelections = <String, String>{};
+  final Map<String, int> _coverKeyRevisions = <String, int>{};
+  final Map<String, Future<List<String>>> _folderImageIndexFutures =
+      <String, Future<List<String>>>{};
   Future<void>? _folderCoverSelectionsLoadFuture;
   HttpClient? _remoteHttpClient;
   int _activeRemoteDownloads = 0;
@@ -370,10 +373,13 @@ class CoverArtworkCacheService {
     final normalizedFolder = PathMatcher.normalize(folderPath);
     final normalizedCover = coverPath.trim();
     if (normalizedFolder.isEmpty || normalizedCover.isEmpty) return null;
+    invalidateFolder(normalizedFolder);
     if (!newlySaved) {
       final candidates = await _resolveFolderCoverCandidates(normalizedFolder);
       if (!candidates.contains(normalizedCover)) return null;
     }
+    final selectionGeneration = _generation;
+    final selectionRevision = _coverKeyRevision(normalizedFolder);
     await _ensureFolderCoverSelections();
     _folderCoverSelections[normalizedFolder] = normalizedCover;
     await _saveFolderCoverSelections();
@@ -381,7 +387,13 @@ class CoverArtworkCacheService {
       AudioDetailTarget.libraryRootFolder(normalizedFolder),
       normalizedCover,
     );
-    invalidateFolder(normalizedFolder);
+    if (!_isCoverKeyCurrent(
+      normalizedFolder,
+      generation: selectionGeneration,
+      revision: selectionRevision,
+    )) {
+      return _resolvedFolderCovers[normalizedFolder];
+    }
     _resolvedFolderCovers[normalizedFolder] = normalizedCover;
     _resolvedFolderCoverFutures[normalizedFolder] = SynchronousFuture<String?>(
       normalizedCover,
@@ -432,6 +444,10 @@ class CoverArtworkCacheService {
     }
     final normalizedScope = _normalizeCoverCacheKey(scope);
     _generation++;
+    _coverKeyRevisions.clear();
+    _advanceCoverKeyRevision(normalizedScope);
+    _advanceTrackCoverRevisionsInScope(normalizedScope);
+    _invalidateFolderImageIndexes(normalizedScope);
     _folderCoverFutures.remove(normalizedScope);
     _resolvedFolderCovers.remove(normalizedScope);
     _resolvedFolderCoverFutures.remove(normalizedScope);
@@ -457,10 +473,14 @@ class CoverArtworkCacheService {
       return;
     }
     _generation++;
+    _coverKeyRevisions.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
     _playbackTrackCoverFutures.clear();
     for (final scope in normalizedScopes) {
+      _advanceCoverKeyRevision(scope);
+      _advanceTrackCoverRevisionsInScope(scope);
+      _invalidateFolderImageIndexes(scope);
       _folderCoverFutures.remove(scope);
       _resolvedFolderCovers.remove(scope);
       _resolvedFolderCoverFutures.remove(scope);
@@ -476,6 +496,8 @@ class CoverArtworkCacheService {
 
   void invalidateAll() {
     _generation++;
+    _coverKeyRevisions.clear();
+    _folderImageIndexFutures.clear();
     _folderCoverFutures.clear();
     _resolvedFolderCovers.clear();
     _resolvedFolderCoverFutures.clear();
@@ -488,6 +510,45 @@ class CoverArtworkCacheService {
     _remoteCoverFailures.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
+  }
+
+  int _coverKeyRevision(String key) => _coverKeyRevisions[key] ?? 0;
+
+  void _advanceCoverKeyRevision(String key) {
+    _coverKeyRevisions[key] = _coverKeyRevision(key) + 1;
+  }
+
+  void _advanceTrackCoverRevisionsInScope(String normalizedScope) {
+    final keys = <String>{
+      ..._trackCoverFutures.keys,
+      ..._resolvedTrackCovers.keys,
+      ..._resolvedTrackCoverFutures.keys,
+    };
+    for (final key in keys) {
+      if (_isTrackCoverKeyWithinScope(key, normalizedScope)) {
+        _advanceCoverKeyRevision(key);
+      }
+    }
+  }
+
+  bool _isCoverKeyCurrent(
+    String key, {
+    required int generation,
+    required int revision,
+  }) {
+    return !_disposed &&
+        generation == _generation &&
+        revision == _coverKeyRevision(key);
+  }
+
+  void _invalidateFolderImageIndexes(String normalizedScope) {
+    final roots = _folderImageIndexFutures.keys.toList(growable: false);
+    for (final root in roots) {
+      if (PathMatcher.isWithinOrEqual(normalizedScope, root) ||
+          PathMatcher.isWithinOrEqual(root, normalizedScope)) {
+        _folderImageIndexFutures.remove(root);
+      }
+    }
   }
 
   void _trimResolvedCache<T>(
@@ -793,14 +854,35 @@ class CoverArtworkCacheService {
       );
     }
 
-    return _folderCoverFutures.putIfAbsent(normalizedFolderPath, () async {
+    final inFlight = _folderCoverFutures[normalizedFolderPath];
+    if (inFlight != null) return inFlight;
+    final requestGeneration = _generation;
+    final requestRevision = _coverKeyRevision(normalizedFolderPath);
+    late final Future<String?> lookup;
+    lookup = () async {
       await _ensureFolderCoverSelections();
+      if (!_isFolderLookupCurrent(
+        normalizedFolderPath,
+        requestGeneration,
+        requestRevision,
+        lookup,
+      )) {
+        return _resolvedFolderCovers[normalizedFolderPath];
+      }
       final target = AudioDetailTarget.libraryRootFolder(normalizedFolderPath);
       final selectedCover = _folderCoverSelections[normalizedFolderPath];
       final selectedCoverPath = await _validatedManualCoverPath(selectedCover);
       final persistedCoverPath = selectedCoverPath == null
           ? await _loadValidCardCoverPath(target)
           : null;
+      if (!_isFolderLookupCurrent(
+        normalizedFolderPath,
+        requestGeneration,
+        requestRevision,
+        lookup,
+      )) {
+        return _resolvedFolderCovers[normalizedFolderPath];
+      }
       final indexedCoverPath = selectedCoverPath ?? persistedCoverPath;
       if (indexedCoverPath != null) {
         if (selectedCover != null && selectedCoverPath == null) {
@@ -808,10 +890,14 @@ class CoverArtworkCacheService {
           await _saveFolderCoverSelections();
         }
         await _saveCardCoverPath(target, indexedCoverPath);
-        final removedFolderFuture = _folderCoverFutures.remove(
+        if (!_isFolderLookupCurrent(
           normalizedFolderPath,
-        );
-        if (removedFolderFuture != null) unawaited(removedFolderFuture);
+          requestGeneration,
+          requestRevision,
+          lookup,
+        )) {
+          return _resolvedFolderCovers[normalizedFolderPath];
+        }
         _resolvedFolderCovers[normalizedFolderPath] = indexedCoverPath;
         _resolvedFolderCoverFutures[normalizedFolderPath] =
             SynchronousFuture<String?>(indexedCoverPath);
@@ -821,22 +907,64 @@ class CoverArtworkCacheService {
       final coverPath = await _resolvePreferredFolderCover(
         normalizedFolderPath,
       );
+      if (!_isFolderLookupCurrent(
+        normalizedFolderPath,
+        requestGeneration,
+        requestRevision,
+        lookup,
+      )) {
+        return _resolvedFolderCovers[normalizedFolderPath];
+      }
       if (selectedCover != null && selectedCover != coverPath) {
         _folderCoverSelections.remove(normalizedFolderPath);
         await _saveFolderCoverSelections();
       }
-      unawaited(
-        _folderCoverFutures.remove(normalizedFolderPath) ?? Future.value(),
-      );
-
+      await _saveCardCoverPath(target, coverPath);
+      if (!_isFolderLookupCurrent(
+        normalizedFolderPath,
+        requestGeneration,
+        requestRevision,
+        lookup,
+      )) {
+        return _resolvedFolderCovers[normalizedFolderPath];
+      }
       _resolvedFolderCovers[normalizedFolderPath] = coverPath;
       _resolvedFolderCoverFutures[normalizedFolderPath] =
           SynchronousFuture<String?>(coverPath);
       _trimResolvedFolderCovers();
-      await _saveCardCoverPath(target, coverPath);
 
       return coverPath;
-    });
+    }();
+    _folderCoverFutures[normalizedFolderPath] = lookup;
+    void removeLookup() {
+      if (identical(_folderCoverFutures[normalizedFolderPath], lookup)) {
+        _folderCoverFutures.remove(normalizedFolderPath);
+      }
+    }
+
+    unawaited(
+      lookup.then<void>(
+        (_) => removeLookup(),
+        onError: (Object _, StackTrace _) {
+          removeLookup();
+        },
+      ),
+    );
+    return lookup;
+  }
+
+  bool _isFolderLookupCurrent(
+    String key,
+    int generation,
+    int revision,
+    Future<String?> lookup,
+  ) {
+    return _isCoverKeyCurrent(
+          key,
+          generation: generation,
+          revision: revision,
+        ) &&
+        identical(_folderCoverFutures[key], lookup);
   }
 
   AudioDetailTarget? _cardCoverTargetForTrack(MusicTrack? track) {
@@ -1252,9 +1380,31 @@ class CoverArtworkCacheService {
       }
     }
 
+    final normalizedFolder = PathMatcher.normalize(folderPath);
+    final indexRoot = _folderImageIndexRoot(normalizedFolder);
+    final indexedImages = await _folderImageIndexFutures.putIfAbsent(
+      indexRoot,
+      () => _buildFolderImageIndex(indexRoot),
+    );
+    return List<String>.unmodifiable(
+      indexedImages.where(
+        (imagePath) => PathMatcher.isWithinOrEqual(imagePath, normalizedFolder),
+      ),
+    );
+  }
+
+  String _folderImageIndexRoot(String folderPath) {
+    final roots = <String>[
+      ..._libraryService.watchedLibraries,
+      ..._libraryService.watchedFolders,
+    ];
+    return _mostSpecificContainingRoot(roots, folderPath) ?? folderPath;
+  }
+
+  Future<List<String>> _buildFolderImageIndex(String rootPath) async {
     final images = <String>[];
     try {
-      final directory = Directory(folderPath);
+      final directory = Directory(rootPath);
       if (!await directory.exists()) return const <String>[];
       await for (final entity in directory.list(
         recursive: true,

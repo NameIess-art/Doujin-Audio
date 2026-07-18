@@ -3,8 +3,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/core/app_language.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
+import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:nameless_audio/features/settings/presentation/settings_tab.dart';
 import 'package:nameless_audio/features/settings/presentation/about_page.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
@@ -167,6 +169,72 @@ void main() {
     expect(find.byType(AboutPage), findsOneWidget);
   });
 
+  testWidgets('settings pages use monochrome icons and a light surface', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    final rootTile = find.widgetWithText(ListTile, i18n.tr('section_common'));
+    final rootContext = tester.element(rootTile);
+    final rootIcon = tester.widget<ListTile>(rootTile).leading! as Icon;
+    expect(rootIcon.color, Theme.of(rootContext).colorScheme.onSurface);
+
+    await tester.tap(rootTile);
+    await tester.pumpAndSettle();
+
+    final detailTile = find.widgetWithText(ListTile, i18n.tr('startup_page'));
+    final detailContext = tester.element(detailTile);
+    final detailIcon = tester.widget<ListTile>(detailTile).leading! as Icon;
+    final colorScheme = Theme.of(detailContext).colorScheme;
+    expect(detailIcon.color, colorScheme.onSurface);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Scaffold && widget.backgroundColor == colorScheme.surface,
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('settings bottom gap matches the shared mobile overlay inset', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const overlayInset = 96.0;
+
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(
+      harness.build(
+        const MobileOverlayInset(
+          bottomInset: overlayInset,
+          child: SettingsTab(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final aboutTile = find.widgetWithText(
+      ListTile,
+      harness.languageProvider.tr('about'),
+    );
+    await tester.scrollUntilVisible(
+      aboutTile,
+      240,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+
+    final viewportBottom = tester.getBottomLeft(find.byType(Scaffold).first).dy;
+    final lastTileBottom = tester.getBottomLeft(aboutTile).dy;
+    expect(viewportBottom - lastTileBottom, closeTo(overlayInset + 8, 1));
+  });
+
   testWidgets('settings titles and choices wrap on narrow screens', (
     tester,
   ) async {
@@ -202,10 +270,76 @@ void main() {
 
     final optionPadding = dropdown.items!.first.child as Padding;
     final optionText = optionPadding.child! as Text;
-    expect(optionText.maxLines, 2);
+    expect(optionText.maxLines, isNull);
     expect(optionText.softWrap, isTrue);
     expect(optionText.overflow, TextOverflow.visible);
   });
+
+  testWidgets(
+    'settings dropdowns remain usable across locales and large text',
+    (tester) async {
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      for (final width in <double>[320, 360]) {
+        await tester.binding.setSurfaceSize(Size(width, 720));
+        for (final language in AppLanguage.values) {
+          await harness.languageProvider.setLanguage(language);
+          for (final scale in <double>[1, 2, 3]) {
+            await tester.pumpWidget(
+              harness.build(
+                MediaQuery(
+                  data: MediaQueryData(
+                    size: Size(width, 720),
+                    textScaler: TextScaler.linear(scale),
+                  ),
+                  child: const SettingsTab(),
+                ),
+              ),
+            );
+            await tester.pumpAndSettle();
+
+            final i18n = harness.languageProvider;
+            await tester.tap(find.text(i18n.tr('section_common')));
+            await tester.pumpAndSettle();
+            final tile = find.widgetWithText(
+              ListTile,
+              i18n.tr('startup_playback_restore_behavior'),
+            );
+            expect(tile, findsOneWidget);
+            expect(tester.getSize(tile).height, greaterThanOrEqualTo(58));
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: 'width=$width language=${language.name} scale=$scale',
+            );
+
+            if (scale == 3) {
+              final dropdown = find.byType(
+                DropdownButton<StartupPlaybackRestoreBehavior>,
+              );
+              await tester.tap(dropdown);
+              await tester.pumpAndSettle();
+              expect(
+                tester.takeException(),
+                isNull,
+                reason:
+                    'open menu width=$width language=${language.name} '
+                    'scale=$scale',
+              );
+              final pauseOption = find.text(
+                i18n.tr('startup_playback_restore_pause'),
+              );
+              expect(pauseOption, findsWidgets);
+              await tester.tap(pauseOption.last);
+              await tester.pumpAndSettle();
+            }
+          }
+        }
+      }
+    },
+  );
 
   testWidgets('card info settings enforce the selected field limit', (
     tester,

@@ -298,12 +298,8 @@ class _AboutIconContainer extends StatelessWidget {
     return Container(
       width: tokens.iconContainerSize,
       height: tokens.iconContainerSize,
-      decoration: BoxDecoration(
-        color: cs.primaryContainer,
-        borderRadius: BorderRadius.circular(tokens.radiusSmall),
-      ),
       alignment: Alignment.center,
-      child: Icon(icon, color: cs.onPrimaryContainer),
+      child: Icon(icon, color: cs.onSurface),
     );
   }
 }

@@ -182,6 +182,21 @@ void main() {
     final rootContext = tester.element(rootTile);
     final rootIcon = tester.widget<ListTile>(rootTile).leading! as Icon;
     expect(rootIcon.color, Theme.of(rootContext).colorScheme.onSurface);
+    final rootSurface = tester
+        .widgetList<Container>(
+          find.ancestor(of: rootTile, matching: find.byType(Container)),
+        )
+        .firstWhere(
+          (container) =>
+              container.decoration is BoxDecoration &&
+              (container.decoration! as BoxDecoration).color ==
+                  Theme.of(rootContext).colorScheme.surfaceContainerLow,
+        );
+    expect(
+      (rootSurface.decoration! as BoxDecoration).border,
+      isNull,
+      reason: 'Settings root items should not paint a card outline.',
+    );
 
     await tester.tap(rootTile);
     await tester.pumpAndSettle();
@@ -191,6 +206,21 @@ void main() {
     final detailIcon = tester.widget<ListTile>(detailTile).leading! as Icon;
     final colorScheme = Theme.of(detailContext).colorScheme;
     expect(detailIcon.color, colorScheme.onSurface);
+    final detailSurface = tester
+        .widgetList<Container>(
+          find.ancestor(of: detailTile, matching: find.byType(Container)),
+        )
+        .firstWhere(
+          (container) =>
+              container.decoration is BoxDecoration &&
+              (container.decoration! as BoxDecoration).color ==
+                  colorScheme.surfaceContainerLow,
+        );
+    expect(
+      (detailSurface.decoration! as BoxDecoration).border,
+      isNull,
+      reason: 'Settings secondary-page items should remain borderless.',
+    );
     expect(
       find.byWidgetPredicate(
         (widget) =>

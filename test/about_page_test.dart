@@ -42,6 +42,23 @@ void main() {
       expect(rewardButton.onPressed, isNotNull);
       expect(find.text('NameIess-art'), findsOneWidget);
       expect(find.byType(BackButton), findsOneWidget);
+      final appTitle = find.text(i18n.tr('app_title'));
+      final appTitleContext = tester.element(appTitle);
+      final aboutSurface = tester
+          .widgetList<Container>(
+            find.ancestor(of: appTitle, matching: find.byType(Container)),
+          )
+          .firstWhere(
+            (container) =>
+                container.decoration is BoxDecoration &&
+                (container.decoration! as BoxDecoration).color ==
+                    Theme.of(appTitleContext).colorScheme.surfaceContainerLow,
+          );
+      expect(
+        (aboutSurface.decoration! as BoxDecoration).border,
+        isNull,
+        reason: 'About-page item groups should not paint a card outline.',
+      );
 
       final versionY = tester.getTopLeft(find.text('1.2.3')).dy;
       final sourceY = tester

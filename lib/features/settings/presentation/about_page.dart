@@ -163,10 +163,6 @@ class _AboutCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: cs.surfaceContainerLow,
         borderRadius: BorderRadius.circular(tokens.radiusCard),
-        border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
-          width: 0.5,
-        ),
       ),
       clipBehavior: Clip.antiAlias,
       padding: const EdgeInsets.all(AppSpacing.sm),

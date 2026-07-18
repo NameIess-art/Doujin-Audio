@@ -97,7 +97,6 @@ class _SettingsGroupCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
 
     final List<Widget> separatedChildren = [];
     for (int i = 0; i < children.length; i++) {
@@ -113,12 +112,6 @@ class _SettingsGroupCard extends StatelessWidget {
         decoration: BoxDecoration(
           color: cs.surfaceContainerLow,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: cs.outlineVariant.withValues(
-              alpha: tokens.subtleBorderAlpha,
-            ),
-            width: 0.5,
-          ),
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(

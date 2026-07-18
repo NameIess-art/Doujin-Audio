@@ -1,6 +1,8 @@
 part of 'playlist_tab.dart';
 
 const double _kSessionDetailBackgroundBlurSigma = 32;
+const double _kAsmrSessionDetailBackgroundBlurSigma = 12;
+const int _kAsmrSessionDetailBackgroundCacheWidth = 300;
 
 ThemeData _sessionDetailThemeForTrack(BuildContext context, MusicTrack? track) {
   final base = Theme.of(context);
@@ -682,9 +684,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
     final track = paths.trackByPath(session.currentTrackPath);
+    final isAsmrTrack = track?.remoteMetadataKind == 'asmr.one';
     final detailTheme = _sessionDetailThemeForTrack(context, track);
     final cs = detailTheme.colorScheme;
-    final coverCacheWidth = coverCacheWidthForResolution(
+    final requestedBackgroundCacheWidth = coverCacheWidthForResolution(
       ref.watch(
         settingsStateProvider.select(
           (s) =>
@@ -693,6 +696,16 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
         ),
       ),
     );
+    final backgroundCacheWidth = isAsmrTrack
+        ? min(
+            requestedBackgroundCacheWidth ??
+                _kAsmrSessionDetailBackgroundCacheWidth,
+            _kAsmrSessionDetailBackgroundCacheWidth,
+          )
+        : requestedBackgroundCacheWidth;
+    final backgroundBlurSigma = isAsmrTrack
+        ? _kAsmrSessionDetailBackgroundBlurSigma
+        : _kSessionDetailBackgroundBlurSigma;
     final blurEnabled = ref.watch(
       settingsStateProvider.select(
         (s) => s.valueOrNull?.blurPlayerBackgroundEnabled ?? true,
@@ -784,13 +797,15 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                       child: ImageFiltered(
                         key: const ValueKey('session_detail_background_blur'),
                         imageFilter: ImageFilter.blur(
-                          sigmaX: _kSessionDetailBackgroundBlurSigma,
-                          sigmaY: _kSessionDetailBackgroundBlurSigma,
+                          sigmaX: backgroundBlurSigma,
+                          sigmaY: backgroundBlurSigma,
                           tileMode: TileMode.decal,
                         ),
                         child: AsyncCoverImage(
                           future: coverPathFuture,
                           requestKey: session.id,
+                          duration: Duration.zero,
+                          deferCommitDuringInteraction: true,
                           initialPath: library
                               .resolvedPlaybackCoverPathForTrack(track),
                           retryFutureBuilder: () => _coverFutureForTrack(
@@ -805,11 +820,16 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           imageBuilder: (context, coverPath) {
                             return RetryingFileImage(
                               path: coverPath,
-                              cacheWidth: coverCacheWidth,
-                              useDefaultCacheWidth: coverCacheWidth != null,
+                              cacheWidth: backgroundCacheWidth,
+                              useDefaultCacheWidth:
+                                  backgroundCacheWidth != null,
                               fit: BoxFit.cover,
+                              filterQuality: isAsmrTrack
+                                  ? FilterQuality.low
+                                  : FilterQuality.medium,
                               color: cs.surface.withValues(alpha: 0.45),
                               colorBlendMode: BlendMode.darken,
+                              deferRetryDuringInteraction: true,
                               fallbackBuilder: (_) => CoverFallbackArtwork(
                                 seed:
                                     track?.displayName ??

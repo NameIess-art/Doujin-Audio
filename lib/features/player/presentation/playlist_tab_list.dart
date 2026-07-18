@@ -1,23 +1,43 @@
 part of 'playlist_tab.dart';
 
 class _PlaylistLoadingSkeleton extends StatelessWidget {
-  const _PlaylistLoadingSkeleton({super.key});
+  const _PlaylistLoadingSkeleton({
+    super.key,
+    required this.topPadding,
+    required this.bottomPadding,
+  });
+
+  static const double _cardHeight = 88;
+
+  final double topPadding;
+  final double bottomPadding;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return ListView(
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(
-        AppSpacing.md,
-        AppSpacing.sm,
-        AppSpacing.md,
-        AppSpacing.xl,
-      ),
-      children: [
-        for (var index = 0; index < 4; index++)
-          Container(
-            height: 88,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final contentHeight = max(
+          0.0,
+          constraints.maxHeight - topPadding - bottomPadding,
+        );
+        final cardCount = max(
+          1,
+          ((contentHeight + AppSpacing.xs) / (_cardHeight + AppSpacing.xs))
+              .ceil(),
+        );
+        return ListView.builder(
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.md,
+            topPadding,
+            AppSpacing.md,
+            bottomPadding,
+          ),
+          itemCount: cardCount,
+          itemBuilder: (context, index) => Container(
+            key: ValueKey<String>('playlist_skeleton_card_$index'),
+            height: _cardHeight,
             margin: const EdgeInsets.only(bottom: AppSpacing.xs),
             padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
             decoration: BoxDecoration(
@@ -86,7 +106,8 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
               ),
             ),
           ),
-      ],
+        );
+      },
     );
   }
 }

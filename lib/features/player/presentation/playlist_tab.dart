@@ -603,6 +603,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     !_initialPlaceholderDismissed || !listState.isInitialized,
                 placeholder: const _PlaylistLoadingSkeleton(
                   key: ValueKey('playlist_initial_placeholder'),
+                  topPadding: topPadding,
+                  bottomPadding: bottomPadding,
                 ),
                 content: Stack(
                   key: const ValueKey('playlist_loaded_content'),

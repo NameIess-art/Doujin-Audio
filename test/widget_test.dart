@@ -143,6 +143,40 @@ void main() {
     );
   });
 
+  testWidgets('startup overlay stays for 1.5 seconds while pages initialize', (
+    tester,
+  ) async {
+    await _pumpAppShell(tester, waitForStartup: false);
+    await tester.pump();
+
+    const overlayKey = ValueKey<String>('main_bootstrap_overlay');
+    expect(find.byKey(overlayKey), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('main_page_view')),
+      findsOneWidget,
+    );
+    expect(kBootstrapOverlayDuration, const Duration(milliseconds: 1500));
+
+    const entranceDuration = Duration(milliseconds: 750);
+    await tester.pump(entranceDuration);
+    await tester.pump();
+    await tester.pump(
+      kBootstrapOverlayDuration -
+          entranceDuration -
+          const Duration(milliseconds: 1),
+    );
+    expect(find.byKey(overlayKey), findsOneWidget);
+
+    for (
+      var frame = 0;
+      frame < 60 && find.byKey(overlayKey).evaluate().isNotEmpty;
+      frame++
+    ) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.byKey(overlayKey), findsNothing);
+  });
+
   testWidgets('app shell supports Android landscape navigation', (
     tester,
   ) async {
@@ -703,6 +737,7 @@ Future<_AppShellHarness> _pumpAppShell(
   WidgetTester tester, {
   bool includePlaybackSession = true,
   MusicTrack? playbackTrack,
+  bool waitForStartup = true,
 }) async {
   final themeProvider = ThemeProvider();
   final languageProvider = AppLanguageProvider();
@@ -767,8 +802,10 @@ Future<_AppShellHarness> _pumpAppShell(
       child: const MusicPlayerApp(),
     ),
   );
-  await _pumpMainScreenAnimations(tester, startup: true);
-  await _waitForAppBootstrap(tester);
+  if (waitForStartup) {
+    await _pumpMainScreenAnimations(tester, startup: true);
+    await _waitForAppBootstrap(tester);
+  }
   return _AppShellHarness(language: languageProvider);
 }
 

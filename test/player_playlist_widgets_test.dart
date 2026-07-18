@@ -17,6 +17,7 @@ import 'package:nameless_audio/features/library/application/cover_artwork_cache_
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/duration_overlay.dart';
+import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -246,6 +247,23 @@ void main() {
     const contentKey = ValueKey<String>('playlist_loaded_content');
     expect(find.byKey(placeholderKey), findsOneWidget);
     expect(find.byKey(contentKey), findsNothing);
+
+    final skeletonCards = find.byWidgetPredicate((widget) {
+      final key = widget.key;
+      return key is ValueKey<String> &&
+          key.value.startsWith('playlist_skeleton_card_');
+    });
+    expect(skeletonCards, findsAtLeastNWidgets(5));
+    expect(
+      tester.getTopLeft(skeletonCards.first).dy,
+      greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TopPageHeader)).dy),
+    );
+    expect(
+      tester.getBottomLeft(skeletonCards.last).dy,
+      greaterThanOrEqualTo(
+        tester.getBottomLeft(find.byType(PlaylistTab)).dy - 16,
+      ),
+    );
 
     await tester.pump();
     expect(find.byKey(placeholderKey), findsOneWidget);

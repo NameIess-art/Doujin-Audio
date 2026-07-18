@@ -45,6 +45,9 @@ part 'main_screen_widgets.dart';
 part 'main_screen_timer_scrim.dart';
 
 @visibleForTesting
+const kBootstrapOverlayDuration = Duration(milliseconds: 1500);
+
+@visibleForTesting
 bool shouldRunGlobalSubtitleOverlay({
   required bool appInForeground,
   required bool isWindows,

@@ -23,6 +23,7 @@ import 'package:nameless_audio/features/player/application/native_playback_repos
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
@@ -497,11 +498,27 @@ void main() {
     final detailThemeContext = tester.element(
       find.byKey(const ValueKey('session_detail_background_blur')),
     );
+    final backgroundCover = tester.widget<AsyncCoverImage>(
+      find.descendant(
+        of: find.byKey(const ValueKey('session_detail_background_blur')),
+        matching: find.byType(AsyncCoverImage),
+      ),
+    );
+    final artworkCover = tester.widget<AsyncLocalCoverImage>(
+      find.descendant(
+        of: find.byType(SessionDetailPage),
+        matching: find.byType(AsyncLocalCoverImage),
+      ),
+    );
     final expectedAccent =
         Theme.of(detailThemeContext).brightness == Brightness.dark
         ? AppDesignTokens.dark.asmrAccent
         : AppDesignTokens.light.asmrAccent;
     expect(Theme.of(detailThemeContext).colorScheme.primary, expectedAccent);
+    expect(backgroundCover.duration, kCoverImageFadeDuration);
+    expect(backgroundCover.deferCommitDuringInteraction, isTrue);
+    expect(artworkCover.duration, kCoverImageFadeDuration);
+    expect(artworkCover.deferCommitDuringInteraction, isTrue);
     await _settleSessionDetailAsyncWork(tester);
     await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = previousPlatform;

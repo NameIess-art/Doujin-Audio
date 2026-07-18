@@ -2,12 +2,10 @@ part of 'playlist_tab.dart';
 
 const double _kSessionDetailBackgroundBlurSigma = 32;
 
-ThemeData _sessionDetailThemeForTrack(BuildContext context, MusicTrack? track) {
-  final base = Theme.of(context);
-  if (track?.remoteMetadataKind != 'asmr.one') {
-    return base;
-  }
-  final tokens = AppDesignTokens.of(context);
+ThemeData _createAsmrSessionDetailTheme(
+  ThemeData base,
+  AppDesignTokens tokens,
+) {
   final scheme = base.colorScheme.copyWith(
     primary: tokens.asmrAccent,
     onPrimary: tokens.onAsmrAccent,
@@ -511,8 +509,27 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   final _detailContentKey = GlobalKey<_SessionDetailContentState>();
   final PermissionActionController _permissionActionController =
       PermissionActionController();
+  ThemeData? _cachedBaseTheme;
+  AppDesignTokens? _cachedDesignTokens;
+  ThemeData? _cachedAsmrTheme;
   double _segmentPanelDragDelta = 0;
   bool _isDismissGesture = false;
+
+  ThemeData _detailThemeForTrack(BuildContext context, MusicTrack? track) {
+    final base = Theme.of(context);
+    if (track?.remoteMetadataKind != 'asmr.one') {
+      return base;
+    }
+    final tokens = AppDesignTokens.of(context);
+    if (identical(_cachedBaseTheme, base) &&
+        identical(_cachedDesignTokens, tokens) &&
+        _cachedAsmrTheme != null) {
+      return _cachedAsmrTheme!;
+    }
+    _cachedBaseTheme = base;
+    _cachedDesignTokens = tokens;
+    return _cachedAsmrTheme = _createAsmrSessionDetailTheme(base, tokens);
+  }
 
   @override
   void initState() {
@@ -682,7 +699,8 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
     final track = paths.trackByPath(session.currentTrackPath);
-    final detailTheme = _sessionDetailThemeForTrack(context, track);
+    final isAsmrTrack = track?.remoteMetadataKind == 'asmr.one';
+    final detailTheme = _detailThemeForTrack(context, track);
     final cs = detailTheme.colorScheme;
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
@@ -791,6 +809,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                         child: AsyncCoverImage(
                           future: coverPathFuture,
                           requestKey: session.id,
+                          deferCommitDuringInteraction: isAsmrTrack,
                           initialPath: library
                               .resolvedPlaybackCoverPathForTrack(track),
                           retryFutureBuilder: () => _coverFutureForTrack(
@@ -810,6 +829,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               fit: BoxFit.cover,
                               color: cs.surface.withValues(alpha: 0.45),
                               colorBlendMode: BlendMode.darken,
+                              deferRetryDuringInteraction: isAsmrTrack,
                               fallbackBuilder: (_) => CoverFallbackArtwork(
                                 seed:
                                     track?.displayName ??

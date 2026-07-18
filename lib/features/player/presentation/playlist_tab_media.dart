@@ -65,6 +65,8 @@ class _SessionHeroArtwork extends ConsumerWidget {
                   AsyncLocalCoverImage(
                     future: coverPathFuture,
                     requestKey: sessionId,
+                    deferCommitDuringInteraction:
+                        track?.remoteMetadataKind == 'asmr.one',
                     initialPath: library.resolvedPlaybackCoverPathForTrack(
                       track,
                     ),

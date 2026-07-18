@@ -77,14 +77,12 @@ class AboutPage extends ConsumerWidget {
                     _AboutLinkTile(
                       icon: Icons.code_rounded,
                       title: i18n.tr('about_source_code'),
-                      subtitle: i18n.tr('about_source_code_subtitle'),
                       onTap: () => unawaited(_openRepository(context, ref)),
                     ),
                     const SizedBox(height: AppSpacing.xs),
                     _AboutLinkTile(
                       icon: Icons.menu_book_outlined,
                       title: i18n.tr('about_wiki'),
-                      subtitle: i18n.tr('about_wiki_subtitle'),
                       onTap: () => unawaited(_openRepository(context, ref)),
                     ),
                   ],
@@ -96,8 +94,20 @@ class AboutPage extends ConsumerWidget {
                       leading: const _AboutIconContainer(
                         icon: Icons.person_outline_rounded,
                       ),
-                      title: Text(i18n.tr('about_author')),
-                      subtitle: const Text('NameIess-art'),
+                      title: Text(
+                        i18n.tr('about_author'),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      trailing: const Text(
+                        'NameIess-art',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: AppSpacing.xs,
                       ),
@@ -110,7 +120,13 @@ class AboutPage extends ConsumerWidget {
                       child: OutlinedButton.icon(
                         onPressed: () => unawaited(_openSponsor(context, ref)),
                         icon: const Icon(Icons.favorite_border_rounded),
-                        label: Text(i18n.tr('about_reward')),
+                        label: Text(
+                          i18n.tr('about_reward'),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -170,9 +186,13 @@ class _AboutIdentity extends StatelessWidget {
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      padding: const EdgeInsets.only(
+        left: AppSpacing.lg,
+        top: AppSpacing.md,
+        bottom: AppSpacing.md,
+      ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.start,
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(AppRadius.card),
@@ -198,9 +218,10 @@ class _AboutIdentity extends StatelessWidget {
           Flexible(
             child: Text(
               i18n.tr('app_title'),
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 32,
+                  ),
             ),
           ),
         ],
@@ -213,21 +234,21 @@ class _AboutLinkTile extends StatelessWidget {
   const _AboutLinkTile({
     required this.icon,
     required this.title,
-    required this.subtitle,
     required this.onTap,
   });
 
   final IconData icon;
   final String title;
-  final String subtitle;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return ListTile(
       leading: _AboutIconContainer(icon: icon),
-      title: Text(title),
-      subtitle: Text(subtitle),
+      title: Text(
+        title,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ),
       trailing: const Icon(Icons.open_in_new_rounded),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
@@ -248,13 +269,17 @@ class _AboutVersionTile extends StatelessWidget {
     ).read(appLanguageProviderInstanceProvider);
     return ListTile(
       leading: const _AboutIconContainer(icon: Icons.info_outline_rounded),
-      title: Text(i18n.tr('about_version')),
-      subtitle: FutureBuilder<AppVersionInfo>(
+      title: Text(
+        i18n.tr('about_version'),
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ),
+      trailing: FutureBuilder<AppVersionInfo>(
         future: versionFuture,
         builder: (context, snapshot) => Text(
           snapshot.data?.versionName ?? '...',
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
         ),
       ),
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),

@@ -15,6 +15,7 @@ import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
+import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/duration_overlay.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -208,6 +209,58 @@ void main() {
     expect(paths.contains(''), isFalse);
     expect(container.read(isTrackActiveProvider('/tracks/active.mp3')), isTrue);
     expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isFalse);
+  });
+
+  testWidgets('playlist first open fades its card skeleton out over 750ms', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    fixture.playbackService.syncSlice(
+      activeSessions: const <PlaybackSession>[],
+      playingSessionCount: 0,
+      focusedSessionId: null,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(
+      buildAppRuntimeTestApp(
+        runtimeGraph: fixture.runtimeGraph,
+        audioDatabaseRepository: fixture.audioDatabaseRepository,
+        nativePlaybackRepository: fixture.nativePlaybackRepository,
+        playbackCommandRunner:
+            AppRuntimeWidgetTestFixture.playbackCommandRunner,
+        libraryService: fixture.libraryService,
+        playbackService: fixture.playbackService,
+        timerService: fixture.timerService,
+        notificationCoordinatorService: fixture.notificationCoordinatorService,
+        settingsRepository: fixture.settings,
+        languageProvider: fixture.languageProvider,
+        child: const PlaylistTab(),
+      ),
+    );
+
+    const placeholderKey = ValueKey<String>('playlist_initial_placeholder');
+    const contentKey = ValueKey<String>('playlist_loaded_content');
+    expect(find.byKey(placeholderKey), findsOneWidget);
+    expect(find.byKey(contentKey), findsNothing);
+
+    await tester.pump();
+    expect(find.byKey(placeholderKey), findsOneWidget);
+    expect(find.byKey(contentKey), findsOneWidget);
+
+    await tester.pump(
+      kPlaceholderContentTransitionDuration - const Duration(milliseconds: 1),
+    );
+    expect(find.byKey(placeholderKey), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pump();
+    expect(find.byKey(placeholderKey), findsNothing);
+    expect(find.byKey(contentKey), findsOneWidget);
   });
 
   testWidgets('session reset actions share style and disable at defaults', (

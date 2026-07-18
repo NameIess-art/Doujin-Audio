@@ -43,6 +43,7 @@ import '../../../core/widgets/mobile_overlay_inset.dart';
 import 'playback_position_ui_gate.dart';
 import '../../../core/widgets/reorder_auto_scroller.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
+import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/target_countdown_builder.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -338,6 +339,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     with AutomaticKeepAliveClientMixin, MainTabStateMixin<PlaylistTab> {
   final ScrollController _scrollController = ScrollController();
   bool _isReordering = false;
+  bool _initialPlaceholderDismissed = false;
+  bool _initialPlaceholderDismissScheduled = false;
   PlaylistListState? _reorderSnapshot;
   String? _lastPlaybackCoverWarmupSignature;
 
@@ -356,6 +359,21 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   void _handleActiveTabChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _scheduleInitialPlaceholderDismissal({required bool isInitialized}) {
+    if (_initialPlaceholderDismissed ||
+        _initialPlaceholderDismissScheduled ||
+        !_isActive ||
+        !isInitialized) {
+      return;
+    }
+    _initialPlaceholderDismissScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initialPlaceholderDismissScheduled = false;
+      if (!mounted || _initialPlaceholderDismissed || !_isActive) return;
+      setState(() => _initialPlaceholderDismissed = true);
+    });
   }
 
   @override
@@ -492,6 +510,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         : (_isActive
               ? ref.watch(subtitleSettingsProvider)
               : ref.read(subtitleSettingsProvider));
+    _scheduleInitialPlaceholderDismissal(
+      isInitialized: listState.isInitialized,
+    );
     _schedulePlaybackCoverWarmup(listState, paths, warmup);
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final coverCacheWidth = coverCacheWidthForResolution(
@@ -577,110 +598,107 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               scrollController: _scrollController,
               showScrollbar: isWindows,
               scrollbarMainAxisMargin: isWindows ? 12 : 0,
-              child: !listState.isInitialized
-                  ? const _PlaylistLoadingSkeleton(
-                      key: ValueKey('initializing'),
-                    )
-                  : Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        if (!listState.hasSessions)
-                          const _SessionsEmptyState(
-                            key: ValueKey('empty_state'),
-                            bottomInset: 100,
-                            topInset: expansion + 64,
-                          ),
-                        if (listState.hasSessions)
-                          Theme(
-                            data: Theme.of(
-                              context,
-                            ).copyWith(canvasColor: Colors.transparent),
-                            child: ReorderAutoScroller(
-                              key: const ValueKey('session_list'),
-                              scrollController: _scrollController,
-                              isDragging: !cardPositionsLocked && _isReordering,
-                              contentMarginTop: topPadding,
-                              contentMarginBottom: bottomPadding,
-                              child: cardPositionsLocked
-                                  ? ListView.builder(
-                                      controller: _scrollController,
-                                      physics: const ClampingScrollPhysics(),
-                                      padding: const EdgeInsets.fromLTRB(
-                                        16,
-                                        topPadding,
-                                        16,
-                                        bottomPadding,
+              child: PlaceholderContentTransition(
+                showPlaceholder:
+                    !_initialPlaceholderDismissed || !listState.isInitialized,
+                placeholder: const _PlaylistLoadingSkeleton(
+                  key: ValueKey('playlist_initial_placeholder'),
+                ),
+                content: Stack(
+                  key: const ValueKey('playlist_loaded_content'),
+                  clipBehavior: Clip.none,
+                  children: [
+                    if (!listState.hasSessions)
+                      const _SessionsEmptyState(
+                        key: ValueKey('empty_state'),
+                        bottomInset: 100,
+                        topInset: expansion + 64,
+                      ),
+                    if (listState.hasSessions)
+                      Theme(
+                        data: Theme.of(
+                          context,
+                        ).copyWith(canvasColor: Colors.transparent),
+                        child: ReorderAutoScroller(
+                          key: const ValueKey('session_list'),
+                          scrollController: _scrollController,
+                          isDragging: !cardPositionsLocked && _isReordering,
+                          contentMarginTop: topPadding,
+                          contentMarginBottom: bottomPadding,
+                          child: cardPositionsLocked
+                              ? ListView.builder(
+                                  controller: _scrollController,
+                                  physics: const ClampingScrollPhysics(),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    topPadding,
+                                    16,
+                                    bottomPadding,
+                                  ),
+                                  cacheExtent: listCacheExtent,
+                                  clipBehavior: Clip.none,
+                                  keyboardDismissBehavior:
+                                      ScrollViewKeyboardDismissBehavior.onDrag,
+                                  itemCount: listState.sessions.length + 1,
+                                  itemBuilder: buildSessionItem,
+                                )
+                              : ReorderableListView.builder(
+                                  scrollController: _scrollController,
+                                  physics: const ClampingScrollPhysics(),
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    topPadding,
+                                    16,
+                                    bottomPadding,
+                                  ),
+                                  cacheExtent: listCacheExtent,
+                                  clipBehavior: Clip.none,
+                                  autoScrollerVelocityScalar: 0,
+                                  buildDefaultDragHandles: false,
+                                  keyboardDismissBehavior:
+                                      ScrollViewKeyboardDismissBehavior.onDrag,
+                                  onReorder: (oldIndex, newIndex) {
+                                    ref
+                                        .read(playbackFacadeProvider)
+                                        .reorderSessions(oldIndex, newIndex);
+                                    setState(() {
+                                      _isReordering = false;
+                                      _reorderSnapshot = null;
+                                    });
+                                  },
+                                  onReorderStart: (_) {
+                                    setState(() {
+                                      _reorderSnapshot = listState;
+                                      _isReordering = true;
+                                    });
+                                    unawaited(
+                                      AppInteractionFeedback.trigger(
+                                        AppInteractionFeedbackType.destructive,
                                       ),
-                                      cacheExtent: listCacheExtent,
-                                      clipBehavior: Clip.none,
-                                      keyboardDismissBehavior:
-                                          ScrollViewKeyboardDismissBehavior
-                                              .onDrag,
-                                      itemCount: listState.sessions.length + 1,
-                                      itemBuilder: buildSessionItem,
-                                    )
-                                  : ReorderableListView.builder(
-                                      scrollController: _scrollController,
-                                      physics: const ClampingScrollPhysics(),
-                                      padding: const EdgeInsets.fromLTRB(
-                                        16,
-                                        topPadding,
-                                        16,
-                                        bottomPadding,
+                                    );
+                                  },
+                                  onReorderEnd: (_) {
+                                    if (_isReordering) {
+                                      setState(() {
+                                        _isReordering = false;
+                                        _reorderSnapshot = null;
+                                      });
+                                    }
+                                  },
+                                  proxyDecorator: (child, index, animation) =>
+                                      _buildReorderProxy(
+                                        context,
+                                        child,
+                                        animation,
                                       ),
-                                      cacheExtent: listCacheExtent,
-                                      clipBehavior: Clip.none,
-                                      autoScrollerVelocityScalar: 0,
-                                      buildDefaultDragHandles: false,
-                                      keyboardDismissBehavior:
-                                          ScrollViewKeyboardDismissBehavior
-                                              .onDrag,
-                                      onReorder: (oldIndex, newIndex) {
-                                        ref
-                                            .read(playbackFacadeProvider)
-                                            .reorderSessions(
-                                              oldIndex,
-                                              newIndex,
-                                            );
-                                        setState(() {
-                                          _isReordering = false;
-                                          _reorderSnapshot = null;
-                                        });
-                                      },
-                                      onReorderStart: (_) {
-                                        setState(() {
-                                          _reorderSnapshot = listState;
-                                          _isReordering = true;
-                                        });
-                                        unawaited(
-                                          AppInteractionFeedback.trigger(
-                                            AppInteractionFeedbackType
-                                                .destructive,
-                                          ),
-                                        );
-                                      },
-                                      onReorderEnd: (_) {
-                                        if (_isReordering) {
-                                          setState(() {
-                                            _isReordering = false;
-                                            _reorderSnapshot = null;
-                                          });
-                                        }
-                                      },
-                                      proxyDecorator:
-                                          (child, index, animation) =>
-                                              _buildReorderProxy(
-                                                context,
-                                                child,
-                                                animation,
-                                              ),
-                                      itemCount: listState.sessions.length + 1,
-                                      itemBuilder: buildSessionItem,
-                                    ),
-                            ),
-                          ),
-                      ],
-                    ),
+                                  itemCount: listState.sessions.length + 1,
+                                  itemBuilder: buildSessionItem,
+                                ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ),
           Positioned(

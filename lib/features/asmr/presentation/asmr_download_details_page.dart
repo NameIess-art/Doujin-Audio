@@ -148,6 +148,10 @@ class _AsmrDownloadDetailsNodeTile extends StatefulWidget {
 
 class _AsmrDownloadDetailsNodeTileState
     extends State<_AsmrDownloadDetailsNodeTile> {
+  static const double _indentWidth = 12;
+  static const double _rootContentInset = 16;
+  static const double _nestedContentInset = 8;
+
   bool _expanded = true;
 
   void _toggleExpanded() {
@@ -160,7 +164,7 @@ class _AsmrDownloadDetailsNodeTileState
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final indent = widget.depth * 16.0;
+    final indent = widget.depth * _indentWidth;
     const fileRowHeight = 44.0;
 
     if (widget.node.isFolder) {
@@ -170,7 +174,10 @@ class _AsmrDownloadDetailsNodeTileState
         child: ExpansionTile(
           initiallyExpanded: _expanded,
           onExpansionChanged: (v) => _toggleExpanded(),
-          tilePadding: EdgeInsetsDirectional.only(start: indent + 16, end: 16),
+          tilePadding: EdgeInsetsDirectional.only(
+            start: indent + _rootContentInset,
+            end: 16,
+          ),
           childrenPadding: EdgeInsets.zero,
           minTileHeight: fileRowHeight,
           iconColor: asmrBlue,
@@ -199,7 +206,7 @@ class _AsmrDownloadDetailsNodeTileState
               : [
                   Padding(
                     padding: EdgeInsetsDirectional.only(
-                      start: indent + 16 + 40,
+                      start: indent + _rootContentInset,
                       end: 8,
                       bottom: 8,
                     ),
@@ -225,9 +232,12 @@ class _AsmrDownloadDetailsNodeTileState
       progress = (downloaded / total).clamp(0.0, 1.0);
     }
 
+    final contentStart = widget.depth == 0
+        ? _rootContentInset
+        : indent + _nestedContentInset;
     return Padding(
       padding: EdgeInsetsDirectional.only(
-        start: indent + 16 + 24,
+        start: contentStart,
         end: 16,
         top: 4,
         bottom: 4,

@@ -1289,12 +1289,8 @@ class AsmrDownloadManager extends ChangeNotifier {
   }
 
   String _buildWorkFolderName(AsmrWork work) {
-    final raw = [
-      if (work.rjCode.trim().isNotEmpty) work.rjCode.trim(),
-      work.title.trim(),
-    ].where((item) => item.isNotEmpty).join(' - ');
     return PathDisplay.safeFileName(
-      raw,
+      work.title.trim(),
       replacement: '_',
       collapseWhitespace: false,
       fallback: 'ASMR_ONE',

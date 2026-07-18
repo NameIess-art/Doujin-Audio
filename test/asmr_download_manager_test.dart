@@ -292,9 +292,10 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(cacheDirectoryRequests, 0);
+      expect(manager.getTask(1)?.workFolderName, 'Work');
       expect(
         await File(
-          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}Track.mp3',
         ).length(),
         256,
@@ -400,12 +401,12 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       final backupPath =
-          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}nameless-audio.json';
       final backup = await File(backupPath).readAsString();
       final detail = AudioDetail.fromBackupJson(
         AudioDetailTarget.libraryRootFolder(
-          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work',
+          '${tempDir.path}${Platform.pathSeparator}Work',
         ),
         Map<String, dynamic>.from(jsonDecode(backup) as Map),
       );
@@ -468,7 +469,7 @@ void main() {
         expect(manager.getTask(1), isNull);
         expect(
           await Directory(
-            '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work',
+            '${tempDir.path}${Platform.pathSeparator}Work',
           ).exists(),
           isFalse,
         );
@@ -488,9 +489,7 @@ void main() {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_existing_',
       );
-      final workDir = Directory(
-        '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work',
-      );
+      final workDir = Directory('${tempDir.path}${Platform.pathSeparator}Work');
       await workDir.create(recursive: true);
       final sentinel = File('${workDir.path}${Platform.pathSeparator}keep.txt');
       await sentinel.writeAsString('keep');
@@ -606,7 +605,7 @@ void main() {
         expect(requestCount, 2);
         expect(
           await File(
-            '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
+            '${tempDir.path}${Platform.pathSeparator}Work'
             '${Platform.pathSeparator}Track.mp3',
           ).length(),
           1024 * 1024,
@@ -650,7 +649,7 @@ void main() {
 
       expect(
         await Directory(
-          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work',
+          '${tempDir.path}${Platform.pathSeparator}Work',
         ).exists(),
         isFalse,
       );
@@ -695,7 +694,7 @@ void main() {
         );
 
         final output = File(
-          '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}track.mp3',
         );
         expect(await output.exists(), isFalse);
@@ -763,11 +762,9 @@ void main() {
         expect(requestCount, 3);
         expect(notificationCount, notificationsAtDispose);
         for (var workId = 1; workId <= 4; workId++) {
-          final sourceId = workId == 1 ? 'RJ123456' : 'RJ12345$workId';
           final title = workId == 1 ? 'Work' : 'Work $workId';
           final output = File(
-            '${tempDir.path}${Platform.pathSeparator}'
-            '$sourceId - $title'
+            '${tempDir.path}${Platform.pathSeparator}$title'
             '${Platform.pathSeparator}track.mp3',
           );
           expect(await output.exists(), isFalse);

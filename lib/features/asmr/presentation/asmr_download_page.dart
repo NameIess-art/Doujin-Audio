@@ -10,6 +10,7 @@ import '../application/asmr_download_manager.dart';
 import '../application/asmr_download_selection.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
@@ -449,8 +450,8 @@ class _TaskCard extends ConsumerWidget {
       child: InkWell(
         onTap: () {
           Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => AsmrDownloadDetailsPage(workId: task.work.id),
+            buildAppPageRoute<void>(
+              child: AsmrDownloadDetailsPage(workId: task.work.id),
             ),
           );
         },

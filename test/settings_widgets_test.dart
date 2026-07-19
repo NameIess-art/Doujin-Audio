@@ -7,6 +7,7 @@ import 'package:nameless_audio/core/app_language.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/settings/presentation/settings_tab.dart';
 import 'package:nameless_audio/features/settings/presentation/about_page.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
@@ -235,6 +236,66 @@ void main() {
       );
     },
   );
+
+  testWidgets('ASMR folder name reorder keeps tap identity', (tester) async {
+    final settingsRepository = _DeferredFolderNameSettingsRepository();
+    final harness = AppRuntimeWidgetTestFixture(
+      providedSettingsRepository: settingsRepository,
+    );
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_asmr_download')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(i18n.tr('asmr_download_folder_name_setting')));
+    await tester.pumpAndSettle();
+
+    final workTitle = i18n.tr('asmr_download_folder_field_work_title');
+    final rjCode = i18n.tr('asmr_download_folder_field_rj_code');
+
+    final workTile = find.widgetWithText(CheckboxListTile, workTitle);
+    final workHandle = find.descendant(
+      of: workTile,
+      matching: find.byType(ReorderableDragStartListener),
+    );
+    await tester.drag(workHandle, const Offset(0, 120));
+    await tester.pumpAndSettle();
+    expect(settingsRepository.folderNameFieldUpdates.single, const [
+      AsmrDownloadFolderNameField.rjCode,
+      AsmrDownloadFolderNameField.workTitle,
+    ]);
+    expect(
+      tester.getTopLeft(find.widgetWithText(CheckboxListTile, rjCode)).dy,
+      lessThan(
+        tester.getTopLeft(find.widgetWithText(CheckboxListTile, workTitle)).dy,
+      ),
+      reason: 'The rendered order must update before persistence completes.',
+    );
+
+    await tester.tap(find.widgetWithText(CheckboxListTile, workTitle));
+    await tester.pumpAndSettle();
+    expect(settingsRepository.folderNameFieldUpdates.last, const [
+      AsmrDownloadFolderNameField.rjCode,
+    ]);
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.widgetWithText(CheckboxListTile, workTitle),
+          )
+          .value,
+      isFalse,
+    );
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.widgetWithText(CheckboxListTile, rjCode),
+          )
+          .value,
+      isTrue,
+    );
+  });
 
   testWidgets('settings pages use monochrome icons and a light surface', (
     tester,
@@ -577,4 +638,25 @@ void main() {
     await download;
     await tester.pump();
   });
+}
+
+final class _DeferredFolderNameSettingsRepository extends SettingsRepository {
+  _DeferredFolderNameSettingsRepository() {
+    asmrDownloadFolderNameFields = const [
+      AsmrDownloadFolderNameField.workTitle,
+      AsmrDownloadFolderNameField.rjCode,
+    ];
+    syncSlice(isInitialized: true);
+  }
+
+  final List<List<AsmrDownloadFolderNameField>> folderNameFieldUpdates = [];
+  final Completer<void> _pendingPersistence = Completer<void>();
+
+  @override
+  Future<void> setAsmrDownloadFolderNameFields(
+    Iterable<AsmrDownloadFolderNameField> fields,
+  ) {
+    folderNameFieldUpdates.add(List.of(fields));
+    return _pendingPersistence.future;
+  }
 }

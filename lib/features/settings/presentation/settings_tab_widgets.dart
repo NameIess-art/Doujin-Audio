@@ -932,37 +932,64 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
   }
 }
 
-class _AsmrDownloadFolderNameSettingsSheet extends ConsumerWidget {
+class _AsmrDownloadFolderNameSettingsSheet extends ConsumerStatefulWidget {
   const _AsmrDownloadFolderNameSettingsSheet();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_AsmrDownloadFolderNameSettingsSheet> createState() =>
+      _AsmrDownloadFolderNameSettingsSheetState();
+}
+
+class _AsmrDownloadFolderNameSettingsSheetState
+    extends ConsumerState<_AsmrDownloadFolderNameSettingsSheet> {
+  late final List<AsmrDownloadFolderNameField> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = ref
+        .read(settingsRepositoryProvider)
+        .asmrDownloadFolderNameFields
+        .toList(growable: true);
+  }
+
+  void _persistSelection() {
+    final snapshot = List<AsmrDownloadFolderNameField>.unmodifiable(_selected);
+    unawaited(
+      ref
+          .read(settingsRepositoryProvider)
+          .setAsmrDownloadFolderNameFields(snapshot),
+    );
+  }
+
+  void _remove(AsmrDownloadFolderNameField field) {
+    if (_selected.length == 1) return;
+    setState(() => _selected.remove(field));
+    _persistSelection();
+  }
+
+  void _add(AsmrDownloadFolderNameField field) {
+    if (_selected.contains(field)) return;
+    setState(() => _selected.add(field));
+    _persistSelection();
+  }
+
+  void _reorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final field = _selected.removeAt(oldIndex);
+      _selected.insert(newIndex, field);
+    });
+    _persistSelection();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final settings = ref.read(settingsRepositoryProvider);
-    final selected = ref.watch(
-      settingsStateProvider.select(
-        (state) =>
-            state.value?.asmrDownloadFolderNameFields ??
-            kDefaultAsmrDownloadFolderNameFields,
-      ),
-    );
     final unselected = AsmrDownloadFolderNameField.values
-        .where((field) => !selected.contains(field))
+        .where((field) => !_selected.contains(field))
         .toList(growable: false);
-
-    void remove(AsmrDownloadFolderNameField field) {
-      if (selected.length == 1) return;
-      unawaited(
-        settings.setAsmrDownloadFolderNameFields(
-          selected.where((candidate) => candidate != field),
-        ),
-      );
-    }
-
-    void add(AsmrDownloadFolderNameField field) {
-      unawaited(settings.setAsmrDownloadFolderNameFields([...selected, field]));
-    }
 
     return SafeArea(
       child: ConstrainedBox(
@@ -991,20 +1018,16 @@ class _AsmrDownloadFolderNameSettingsSheet extends ConsumerWidget {
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               buildDefaultDragHandles: false,
-              itemCount: selected.length,
-              onReorder: (oldIndex, newIndex) {
-                final reordered = selected.toList(growable: true);
-                if (newIndex > oldIndex) newIndex--;
-                final field = reordered.removeAt(oldIndex);
-                reordered.insert(newIndex, field);
-                unawaited(settings.setAsmrDownloadFolderNameFields(reordered));
-              },
+              itemCount: _selected.length,
+              onReorder: _reorder,
               itemBuilder: (context, index) {
-                final field = selected[index];
+                final field = _selected[index];
                 return CheckboxListTile(
-                  key: ValueKey(field),
+                  key: ValueKey(('selected', field)),
                   value: true,
-                  onChanged: selected.length > 1 ? (_) => remove(field) : null,
+                  onChanged: _selected.length > 1
+                      ? (_) => _remove(field)
+                      : null,
                   title: _settingsTitle(
                     _asmrDownloadFolderNameFieldLabel(i18n, field),
                   ),
@@ -1019,8 +1042,9 @@ class _AsmrDownloadFolderNameSettingsSheet extends ConsumerWidget {
             ),
             for (final field in unselected)
               CheckboxListTile(
+                key: ValueKey(('unselected', field)),
                 value: false,
-                onChanged: (_) => add(field),
+                onChanged: (_) => _add(field),
                 title: _settingsTitle(
                   _asmrDownloadFolderNameFieldLabel(i18n, field),
                 ),

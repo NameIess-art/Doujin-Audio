@@ -239,6 +239,7 @@ final class AppRuntimeWidgetTestFixture {
     CoverArtworkCacheService? coverArtworkCacheService,
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
+    SettingsRepository? providedSettingsRepository,
     void Function(SettingsRepository settingsRepository)?
     configureSettingsRepository,
   }) : notificationService = PlaybackNotificationService(),
@@ -248,7 +249,7 @@ final class AppRuntimeWidgetTestFixture {
        playbackService = PlaybackSessionService(),
        timerService = TimerService(),
        notificationCoordinatorService = NotificationCoordinatorService(),
-       settingsRepository = SettingsRepository(),
+       settingsRepository = providedSettingsRepository ?? SettingsRepository(),
        uiOperationService = UiOperationService(),
        languageProvider = AppLanguageProvider() {
     configureSettingsRepository?.call(settingsRepository);

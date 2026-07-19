@@ -666,7 +666,7 @@ const Map<String, String> appLanguageEn = {
       'The ocean comes closer, and your breathing settles with it.',
   'font_setting': 'Font Setting',
   'system_default': 'System Default',
-  'font_color': 'Font Color',
+  'font_color': 'Text Color',
   'background_opacity': 'Background Opacity',
   'background_transparency': 'Background Transparency',
   'background_color': 'Background Color',

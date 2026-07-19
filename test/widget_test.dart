@@ -657,18 +657,22 @@ void main() {
         .firstWhere((widget) => widget.style?.fontFeatures?.isNotEmpty ?? false)
         .style!
         .color!;
-    final timerButton = tester.widget<IconButton>(
+    expect(
+      find.descendant(of: detail, matching: find.byIcon(Icons.alarm_rounded)),
+      findsNothing,
+    );
+    final secondaryButton = tester.widget<IconButton>(
       find
           .ancestor(
             of: find.descendant(
               of: detail,
-              matching: find.byIcon(Icons.alarm_rounded),
+              matching: find.byIcon(Icons.tune_rounded),
             ),
             matching: find.byType(IconButton),
           )
           .first,
     );
-    final secondaryColor = timerButton.style!.foregroundColor!.resolve({})!;
+    final secondaryColor = secondaryButton.style!.foregroundColor!.resolve({})!;
 
     expect(titleColor, isNot(Colors.black));
     expect(titleColor, isNot(scheme.onSurface));

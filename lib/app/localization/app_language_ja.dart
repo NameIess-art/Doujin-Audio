@@ -607,7 +607,7 @@ const Map<String, String> appLanguageJa = {
   'subtitle_preview_sample': '波の音がゆっくり近づき、呼吸も少しずつ落ち着いていきます。',
   'font_setting': 'フォント設定',
   'system_default': 'システムデフォルト',
-  'font_color': 'フォント色',
+  'font_color': 'テキスト色',
   'background_opacity': '背景透明度',
   'background_transparency': '背景透明度',
   'background_color': '背景色',

@@ -176,9 +176,10 @@ class _UpdateSettingsTile extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2.4),
                 ),
               )
-            : IconButton.filledTonal(
+            : IconButton(
                 onPressed: onCheck,
                 tooltip: i18n.tr('check'),
+                color: cs.onSurfaceVariant,
                 icon: const Icon(Icons.refresh_rounded, size: 20),
               ),
       ),
@@ -276,10 +277,10 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
     'KaiTi',
     'SimHei',
   ];
-  static const double _previewHeight = 216;
+  static const double _previewHeight = 176;
   static const double _previewTopInset = 8;
   static const double _previewSideInset = 24;
-  static const double _previewBottomGap = 28;
+  static const double _previewBottomGap = 20;
 
   Widget _buildRgbSliders({
     required String label,
@@ -313,7 +314,11 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
             ),
             if (currentColor != null)
               IconButton(
-                icon: Icon(Icons.close_rounded, size: 18, color: cs.primary),
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: cs.onSurfaceVariant,
+                ),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: onReset,
@@ -624,6 +629,7 @@ class _SubtitleWindowPreviewCard extends StatelessWidget {
     );
 
     return SizedBox(
+      key: const ValueKey<String>('subtitle_window_preview_card'),
       height: _SubtitleWindowSettingsSheet._previewHeight,
       child: DecoratedBox(
         decoration: BoxDecoration(
@@ -669,7 +675,7 @@ class _SubtitleWindowPreviewCard extends StatelessWidget {
                 ),
               ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -680,9 +686,8 @@ class _SubtitleWindowPreviewCard extends StatelessWidget {
                         color: cs.onSurface,
                       ),
                     ),
-                    const Spacer(),
-                    SizedBox(
-                      height: 84,
+                    const SizedBox(height: 8),
+                    Expanded(
                       child: Center(
                         child: SubtitleWindowVisual(
                           settings: settings,
@@ -692,7 +697,6 @@ class _SubtitleWindowPreviewCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const Spacer(),
                   ],
                 ),
               ),
@@ -1022,7 +1026,10 @@ class _AsmrDownloadFolderNameSettingsSheetState
                   ),
                   secondary: ReorderableDragStartListener(
                     index: index,
-                    child: Icon(Icons.drag_handle_rounded, color: cs.primary),
+                    child: Icon(
+                      Icons.drag_handle_rounded,
+                      color: cs.onSurfaceVariant,
+                    ),
                   ),
                   dense: true,
                   contentPadding: EdgeInsets.zero,

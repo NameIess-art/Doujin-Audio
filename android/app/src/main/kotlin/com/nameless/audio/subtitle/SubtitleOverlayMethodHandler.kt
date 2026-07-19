@@ -31,8 +31,8 @@ internal class SubtitleOverlayMethodHandler(
                     val arguments = call.argumentReader()
                     coordinator.updateStyle(
                         SubtitleOverlayStyle(
-                            fontSize = if (arguments.hasKey("fontSize")) arguments.requiredDouble("fontSize").toFloat() else 18f,
-                            backgroundColor = arguments.optionalString("backgroundColor") ?: "#80000000",
+                            fontSize = if (arguments.hasKey("fontSize")) arguments.requiredDouble("fontSize").toFloat() else 16f,
+                            backgroundColor = arguments.optionalString("backgroundColor") ?: "#33000000",
                             textColor = arguments.optionalString("textColor") ?: "#FFFFFF",
                             fontFamily = arguments.optionalString("fontFamily") ?: "",
                             borderDepth = if (arguments.hasKey("borderDepth")) arguments.requiredDouble("borderDepth").toFloat() else 0.5f

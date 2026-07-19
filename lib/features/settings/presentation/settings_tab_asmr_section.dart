@@ -31,11 +31,12 @@ List<Widget> _buildSettingsAsmrSection({
                 softWrap: true,
               ),
               leading: _settingsIcon(Icons.folder_rounded, cs.primary),
-              trailing: IconButton.filledTonal(
+              trailing: IconButton(
                 onPressed: asmrDownloadPathOperation.isBusy
                     ? null
                     : onChooseAsmrDownloadDestination,
                 tooltip: i18n.tr('asmr_download_choose_path'),
+                color: cs.onSurfaceVariant,
                 icon: asmrDownloadPathOperation.isBusy
                     ? const SizedBox.square(
                         dimension: 18,
@@ -144,7 +145,10 @@ List<Widget> _buildSettingsAsmrSection({
                 Icons.drive_file_rename_outline,
                 cs.primary,
               ),
-              trailing: Icon(Icons.chevron_right_rounded, color: cs.primary),
+              trailing: Icon(
+                Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant,
+              ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 8,
                 vertical: 2,

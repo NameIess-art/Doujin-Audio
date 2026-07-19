@@ -591,7 +591,7 @@ const Map<String, String> appLanguageZh = {
   'subtitle_preview_sample': '海浪声正在慢慢靠近，呼吸也跟着放松下来。',
   'font_setting': '字体设置',
   'system_default': '系统默认',
-  'font_color': '字体颜色',
+  'font_color': '文字颜色',
   'background_opacity': '背景透明度',
   'background_transparency': '背景透明度',
   'background_color': '背景颜色',

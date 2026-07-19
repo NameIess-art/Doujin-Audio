@@ -58,7 +58,6 @@ import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
 import '../domain/time_segment_label.dart';
-import 'timer_tab.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
 
 part 'playlist_tab_list.dart';

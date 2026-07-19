@@ -6,6 +6,8 @@ import 'package:nameless_audio/core/app_language.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:nameless_audio/core/widgets/subtitle_window_visual.dart';
+import 'package:nameless_audio/app/state/subtitle_settings_provider.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/settings/presentation/settings_tab.dart';
 import 'package:nameless_audio/features/settings/presentation/about_page.dart';
@@ -303,6 +305,11 @@ void main() {
     final rootContext = tester.element(rootTile);
     final rootIcon = tester.widget<ListTile>(rootTile).leading! as Icon;
     expect(rootIcon.color, Theme.of(rootContext).colorScheme.primary);
+    final rootTrailing = tester.widget<ListTile>(rootTile).trailing! as Icon;
+    expect(
+      rootTrailing.color,
+      Theme.of(rootContext).colorScheme.onSurfaceVariant,
+    );
     final rootSurface = tester
         .widgetList<Container>(
           find.ancestor(of: rootTile, matching: find.byType(Container)),
@@ -373,7 +380,58 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(i18n.tr('subtitle_window_preview')), findsOneWidget);
+    expect(find.text(i18n.tr('font_color')), findsOneWidget);
+    expect(i18n.tr('font_color'), '文字颜色');
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey<String>('subtitle_window_preview_card')),
+          )
+          .height,
+      176,
+    );
+    final previewText = tester.widget<Text>(
+      find.text(i18n.tr('subtitle_preview_sample')),
+    );
+    expect(previewText.style?.color, Colors.white);
+    expect(previewText.style?.fontWeight, FontWeight.normal);
+    final previewSurface = tester.widget<Container>(
+      find.byKey(const ValueKey<String>('subtitle_window_visual_surface')),
+    );
+    final previewDecoration = previewSurface.decoration! as BoxDecoration;
+    final previewRadius = previewDecoration.borderRadius! as BorderRadius;
+    expect(previewRadius.topLeft.x, closeTo(19.2, 0.001));
+    expect(
+      (previewDecoration.border! as Border).top.color,
+      const Color(0x40FFFFFF),
+    );
+    expect((previewDecoration.border! as Border).top.width, 2);
     expect(find.text('下方继续滚动调节参数，这里会固定位置并同步刷新。'), findsNothing);
+  });
+
+  testWidgets('subtitle preview fallback text stays white in both themes', (
+    tester,
+  ) async {
+    for (final theme in <ThemeData>[ThemeData.light(), ThemeData.dark()]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: theme,
+          home: Scaffold(
+            body: Center(
+              child: SubtitleWindowVisual(
+                settings: SubtitleSettingsState(),
+                text: 'Theme independent subtitle',
+                maxTextWidth: 260,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      final text = tester.widget<Text>(find.text('Theme independent subtitle'));
+      expect(text.style?.color, Colors.white);
+      expect(text.style?.fontWeight, FontWeight.normal);
+    }
   });
 
   testWidgets('settings bottom gap matches the shared mobile overlay inset', (

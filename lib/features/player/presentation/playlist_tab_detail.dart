@@ -569,79 +569,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     );
   }
 
-  Future<void> _openTimerSettingsPage() {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final mediaSize = MediaQuery.sizeOf(context);
-    final isLandscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop = mediaSize.width >= 760 || isLandscape;
-    final maxWidth = isDesktop ? 520.0 : double.infinity;
-    final outerPadding = EdgeInsets.symmetric(
-      horizontal: isDesktop ? 24 : 12,
-      vertical: isDesktop ? 24 : 12,
-    );
-
-    return showGeneralDialog<void>(
-      context: context,
-      barrierLabel: i18n.tr('close'),
-      barrierDismissible: true,
-      barrierColor: Colors.transparent,
-      transitionDuration: kSecondaryOverlayConfig.transitionDuration,
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        final curved = CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-          reverseCurve: Curves.easeInCubic,
-        );
-        return Material(
-          color: Colors.transparent,
-          child: AnimatedBuilder(
-            animation: curved,
-            builder: (context, child) {
-              return Stack(
-                fit: StackFit.expand,
-                children: [
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => Navigator.of(context).maybePop(),
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
-                  SafeArea(
-                    child: FadeTransition(
-                      opacity: curved,
-                      child: Padding(
-                        padding: outerPadding,
-                        child: Align(
-                          alignment: isDesktop
-                              ? Alignment.center
-                              : Alignment.topCenter,
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(maxWidth: maxWidth),
-                            child: const TimerTab(
-                              showHeader: false,
-                              useSafeArea: false,
-                              compactOnly: true,
-                              initialCompactDetail: true,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
-        );
-      },
-    );
-  }
-
   void _showAudioDetailForSession(
     BuildContext context,
     PlaybackSession session,
@@ -1027,9 +954,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                         );
                                       }
                                     : null,
-                                onOpenTimer: () {
-                                  unawaited(_openTimerSettingsPage());
-                                },
                                 onShowAudioDetail: () =>
                                     _showAudioDetailForSession(
                                       context,

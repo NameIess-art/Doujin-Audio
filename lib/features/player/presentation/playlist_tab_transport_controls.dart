@@ -15,7 +15,6 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
     required this.onToggleSegments,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
-    this.onOpenTimer,
     this.onShowAudioDetail,
   });
 
@@ -31,7 +30,6 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
   final VoidCallback onToggleSegments;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
-  final VoidCallback? onOpenTimer;
   final VoidCallback? onShowAudioDetail;
 
   @override
@@ -55,7 +53,6 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
       onToggleSegments: onToggleSegments,
       onToggleSubtitle: onToggleSubtitle,
       onToggleGlobalSubtitle: onToggleGlobalSubtitle,
-      onOpenTimer: onOpenTimer,
       onShowAudioDetail: onShowAudioDetail,
     );
   }
@@ -76,7 +73,6 @@ class _PlaybackControlPanel extends StatelessWidget {
     required this.onToggleSegments,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
-    this.onOpenTimer,
     this.onShowAudioDetail,
   });
 
@@ -93,7 +89,6 @@ class _PlaybackControlPanel extends StatelessWidget {
   final VoidCallback onToggleSegments;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
-  final VoidCallback? onOpenTimer;
   final VoidCallback? onShowAudioDetail;
 
   @override
@@ -118,7 +113,6 @@ class _PlaybackControlPanel extends StatelessWidget {
           onToggleSegments: onToggleSegments,
           onToggleSubtitle: onToggleSubtitle,
           onToggleGlobalSubtitle: onToggleGlobalSubtitle,
-          onOpenTimer: onOpenTimer,
           onShowAudioDetail: onShowAudioDetail,
         ),
       ],
@@ -304,7 +298,6 @@ class _PlaybackSecondaryControls extends StatelessWidget {
     required this.onToggleSegments,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
-    this.onOpenTimer,
     this.onShowAudioDetail,
   });
 
@@ -319,7 +312,6 @@ class _PlaybackSecondaryControls extends StatelessWidget {
   final VoidCallback onToggleSegments;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
-  final VoidCallback? onOpenTimer;
   final VoidCallback? onShowAudioDetail;
 
   @override
@@ -350,11 +342,6 @@ class _PlaybackSecondaryControls extends StatelessWidget {
               children: [
                 _ExpandableLoopOptions(session: session, playback: playback),
                 _SessionVolumeButton(session: session, playback: playback),
-                _SecondaryControlButton(
-                  icon: Icons.alarm_rounded,
-                  tooltip: i18n.tr('timer'),
-                  onPressed: onOpenTimer,
-                ),
                 if (hasSubtitle)
                   _SecondaryControlButton(
                     icon: subtitleEnabled

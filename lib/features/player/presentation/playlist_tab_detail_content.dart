@@ -14,7 +14,6 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
     this.subtitleGlobalEnabled = false,
     this.onToggleSubtitle,
     this.onToggleGlobalSubtitle,
-    this.onOpenTimer,
     this.onShowAudioDetail,
   });
 
@@ -29,7 +28,6 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
   final bool subtitleGlobalEnabled;
   final VoidCallback? onToggleSubtitle;
   final VoidCallback? onToggleGlobalSubtitle;
-  final VoidCallback? onOpenTimer;
   final VoidCallback? onShowAudioDetail;
 
   @override
@@ -413,7 +411,6 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                   : expandSegmentPanel),
         onToggleSubtitle: widget.onToggleSubtitle,
         onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
-        onOpenTimer: widget.onOpenTimer,
         onShowAudioDetail: widget.onShowAudioDetail,
       );
     }

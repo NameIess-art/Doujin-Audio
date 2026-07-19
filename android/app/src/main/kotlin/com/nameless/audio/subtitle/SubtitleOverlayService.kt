@@ -15,6 +15,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.TextView
+import kotlin.math.roundToInt
 
 class SubtitleOverlayService : Service() {
 
@@ -22,6 +23,10 @@ class SubtitleOverlayService : Service() {
     private var subtitleTextView: TextView? = null
     private lateinit var params: WindowManager.LayoutParams
     private val binder = LocalBinder()
+
+    private fun dp(value: Float): Float = value * resources.displayMetrics.density
+
+    private fun dpInt(value: Float): Int = dp(value).roundToInt()
 
     inner class LocalBinder : Binder() {
         fun getService(): SubtitleOverlayService = this@SubtitleOverlayService
@@ -62,14 +67,15 @@ class SubtitleOverlayService : Service() {
             text = ""
             visibility = View.GONE
             setTextColor(Color.WHITE)
-            textSize = 18f
-            setPadding(40, 20, 40, 20)
+            textSize = 16f
+            setPadding(dpInt(20f), dpInt(10f), dpInt(20f), dpInt(10f))
             gravity = Gravity.CENTER
+            includeFontPadding = false
             
             // Initial style
             val shape = GradientDrawable().apply {
-                cornerRadius = 24f
-                setColor(Color.parseColor("#90000000"))
+                cornerRadius = dp(16f * 1.2f)
+                setColor(Color.parseColor("#33000000"))
             }
             background = shape
         }
@@ -132,10 +138,10 @@ class SubtitleOverlayService : Service() {
                 subtitleTextView?.setTextColor(Color.parseColor(textColor))
                 
                 val shape = GradientDrawable().apply {
-                    cornerRadius = fontSize * 1.2f // Dynamic corner radius
+                    cornerRadius = dp(fontSize * 1.2f)
                     setColor(Color.parseColor(backgroundColor))
                     if (borderDepth > 0) {
-                        setStroke((borderDepth * 4).toInt().coerceAtLeast(1), Color.parseColor("#40FFFFFF"))
+                        setStroke(dpInt(borderDepth * 4).coerceAtLeast(1), Color.parseColor("#40FFFFFF"))
                     }
                 }
                 subtitleTextView?.background = shape
@@ -147,7 +153,7 @@ class SubtitleOverlayService : Service() {
                     subtitleTextView?.typeface = android.graphics.Typeface.DEFAULT
                 }
 
-                subtitleTextView?.setShadowLayer(4f, 0f, 2f, Color.parseColor("#80000000"))
+                subtitleTextView?.setShadowLayer(dp(4f), 0f, dp(2f), Color.parseColor("#80000000"))
             } catch (e: Exception) {
                 // Ignore invalid colors
             }

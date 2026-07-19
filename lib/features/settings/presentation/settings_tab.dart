@@ -304,7 +304,10 @@ class _SettingsCategoryTile extends StatelessWidget {
             onTap: onTap,
             leading: _settingsIcon(category.icon, cs.primary),
             title: _settingsTitle(i18n.tr(category.labelKey)),
-            trailing: Icon(Icons.chevron_right_rounded, color: cs.primary),
+            trailing: Icon(
+              Icons.chevron_right_rounded,
+              color: cs.onSurfaceVariant,
+            ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
               vertical: 4,
@@ -430,7 +433,7 @@ class _SettingsCategoryPage extends ConsumerWidget {
             title: i18n.tr(category.labelKey),
             leading: IconButton(
               onPressed: () => Navigator.of(context).maybePop(),
-              icon: Icon(Icons.arrow_back_rounded, color: cs.primary),
+              icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
               tooltip: i18n.tr('back'),
             ),
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),

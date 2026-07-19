@@ -22,7 +22,7 @@ List<Widget> _buildSettingsUpdateSection({
           trailing: Icon(
             Icons.chevron_right_rounded,
             size: 20,
-            color: cs.primary,
+            color: cs.onSurfaceVariant,
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           shape: const RoundedRectangleBorder(

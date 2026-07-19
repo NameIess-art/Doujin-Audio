@@ -8,7 +8,7 @@ class SubtitleWindowVisual extends StatelessWidget {
     required this.settings,
     required this.text,
     required this.maxTextWidth,
-    this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+    this.padding = const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
     this.fallbackBackgroundColor,
   });
 
@@ -20,53 +20,47 @@ class SubtitleWindowVisual extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fallbackSurface =
-        fallbackBackgroundColor ?? Theme.of(context).colorScheme.surface;
+    final fallbackSurface = fallbackBackgroundColor ?? Colors.black;
     final backgroundColor =
         settings.backgroundColor?.withValues(
           alpha: settings.backgroundOpacity,
         ) ??
         fallbackSurface.withValues(alpha: settings.backgroundOpacity);
 
+    final borderWidth = settings.borderDepth > 0
+        ? settings.borderDepth * 4
+        : 0.0;
+
     return Container(
-      constraints: const BoxConstraints(minHeight: 34),
-      width: double.infinity,
+      key: const ValueKey<String>('subtitle_window_visual_surface'),
       padding: padding,
       decoration: BoxDecoration(
         color: backgroundColor,
-        border: Border(
-          top: BorderSide(
-            color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
-            width: settings.borderDepth,
-          ),
-          bottom: BorderSide(
-            color: Colors.white.withValues(alpha: 0.1 * settings.borderDepth),
-            width: settings.borderDepth,
-          ),
-        ),
+        borderRadius: BorderRadius.circular(settings.fontSize * 1.2),
+        border: borderWidth > 0
+            ? Border.all(color: const Color(0x40FFFFFF), width: borderWidth)
+            : null,
       ),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: maxTextWidth),
-          child: Text(
-            text,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-              color:
-                  settings.fontColor ?? Theme.of(context).colorScheme.onSurface,
-              fontWeight: FontWeight.w700,
-              fontSize: settings.fontSize,
-              fontFamily: settings.fontFamily.isEmpty
-                  ? null
-                  : settings.fontFamily,
-              shadows: [
-                Shadow(
-                  color: Colors.black.withValues(alpha: 0.5),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxTextWidth),
+        child: Text(
+          text,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            inherit: false,
+            color: settings.fontColor ?? Colors.white,
+            fontWeight: FontWeight.normal,
+            fontSize: settings.fontSize,
+            fontFamily: settings.fontFamily.isEmpty
+                ? null
+                : settings.fontFamily,
+            shadows: const [
+              Shadow(
+                color: Color(0x80000000),
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
           ),
         ),
       ),

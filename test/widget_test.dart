@@ -416,6 +416,7 @@ void main() {
   testWidgets('ASMR playback errors show retry subtitle and play icon', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
     final themeProvider = ThemeProvider();
     final languageProvider = AppLanguageProvider();
     final notificationService = PlaybackNotificationService();
@@ -496,10 +497,17 @@ void main() {
     );
     expect(find.byIcon(Icons.pause_rounded), findsNothing);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (widget) => widget is Semantics && widget.properties.value == '1 / 1',
+      ),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 100));
+    semantics.dispose();
   });
 
   testWidgets('bottom dock blur remains active during UI interaction', (

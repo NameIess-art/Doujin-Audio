@@ -345,6 +345,8 @@ extension _MainScreenLayout on _MainScreenState {
       settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
     final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final textScale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5);
+    final barHeight = (58 * textScale).toDouble();
 
     Widget buildBar(bool useBlur) => DecoratedBox(
       decoration: BoxDecoration(
@@ -359,7 +361,7 @@ extension _MainScreenLayout on _MainScreenState {
         ),
       ),
       child: SizedBox(
-        height: 58,
+        height: barHeight,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 4, 8, 2),
           child: _buildBottomBar(context),

@@ -207,56 +207,111 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
     return SizedBox(
       height: isBar ? 74 : 88,
-      child: Listener(
-        onPointerSignal: (signal) {
-          if (signal is PointerScrollEvent && sessions.length > 1) {
-            if (signal.scrollDelta.dy > 0) {
-              _moveToPage(
-                _pageNotifier.value.round() + 1,
-                duration: const Duration(milliseconds: 250),
-              );
-            } else if (signal.scrollDelta.dy < 0) {
-              _moveToPage(
-                _pageNotifier.value.round() - 1,
-                duration: const Duration(milliseconds: 250),
-              );
-            }
-          }
-        },
-        child: PageView.builder(
-          controller: _pageController,
-          scrollBehavior: ScrollConfiguration.of(context).copyWith(
-            dragDevices: {
-              PointerDeviceKind.touch,
-              PointerDeviceKind.mouse,
-              PointerDeviceKind.trackpad,
+      child: Stack(
+        children: [
+          Listener(
+            onPointerSignal: (signal) {
+              if (signal is PointerScrollEvent && sessions.length > 1) {
+                final currentPage = _pageNotifier.value.round();
+                final delta = signal.scrollDelta.dy > 0
+                    ? 1
+                    : signal.scrollDelta.dy < 0
+                    ? -1
+                    : 0;
+                if (delta != 0) {
+                  final targetPage = (currentPage + delta)
+                      .clamp(0, sessions.length - 1)
+                      .toInt();
+                  _moveToPage(
+                    targetPage,
+                    duration: const Duration(milliseconds: 250),
+                  );
+                }
+              }
             },
-          ),
-          physics: sessions.length == 1
-              ? const NeverScrollableScrollPhysics()
-              : const BouncingScrollPhysics(),
-          itemCount: sessions.length,
-          itemBuilder: (context, index) {
-            final session = sessions[index];
-            final track = ref
-                .read(audioPathCoordinatorProvider)
-                .sessionTrackForPath(session.id, session.currentTrackPath);
+            child: PageView.builder(
+              controller: _pageController,
+              scrollBehavior: ScrollConfiguration.of(context).copyWith(
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                },
+              ),
+              physics: sessions.length == 1
+                  ? const NeverScrollableScrollPhysics()
+                  : const BouncingScrollPhysics(),
+              itemCount: sessions.length,
+              itemBuilder: (context, index) {
+                final session = sessions[index];
+                final track = ref
+                    .read(audioPathCoordinatorProvider)
+                    .sessionTrackForPath(session.id, session.currentTrackPath);
 
-            return _ActiveSessionPageTransform(
-              pageListenable: _pageNotifier,
-              index: index,
-              isBar: isBar,
-              child: RepaintBoundary(
-                child: _ActiveSessionCard(
-                  session: session,
-                  coverPathFuture: _sessionCoverFutureForTrack(library, track),
-                  compact: widget.compactForFab,
-                  onOpen: () => _openSessionDetail(context, session),
+                return _ActiveSessionPageTransform(
+                  pageListenable: _pageNotifier,
+                  index: index,
+                  isBar: isBar,
+                  child: RepaintBoundary(
+                    child: _ActiveSessionCard(
+                      session: session,
+                      position: index,
+                      count: sessions.length,
+                      coverPathFuture: _sessionCoverFutureForTrack(
+                        library,
+                        track,
+                      ),
+                      compact: widget.compactForFab,
+                      onOpen: () => _openSessionDetail(context, session),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          if (sessions.length > 1)
+            Positioned(
+              right: 14,
+              bottom: 3,
+              child: IgnorePointer(
+                child: ValueListenableBuilder<double>(
+                  valueListenable: _pageNotifier,
+                  builder: (context, page, child) {
+                    final activePage = page.round().clamp(
+                      0,
+                      sessions.length - 1,
+                    );
+                    return Semantics(
+                      label: '${activePage + 1} / ${sessions.length}',
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          for (var index = 0; index < sessions.length; index++)
+                            AnimatedContainer(
+                              duration: MediaQuery.disableAnimationsOf(context)
+                                  ? Duration.zero
+                                  : const Duration(milliseconds: 150),
+                              margin: const EdgeInsets.symmetric(horizontal: 2),
+                              width: index == activePage ? 12 : 5,
+                              height: 5,
+                              decoration: BoxDecoration(
+                                color: index == activePage
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant
+                                          .withValues(alpha: 0.55),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               ),
-            );
-          },
-        ),
+            ),
+        ],
       ),
     );
   }

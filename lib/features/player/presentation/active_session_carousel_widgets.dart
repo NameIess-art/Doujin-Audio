@@ -3,12 +3,16 @@ part of 'active_session_carousel.dart';
 class _ActiveSessionCard extends ConsumerWidget {
   const _ActiveSessionCard({
     required this.session,
+    required this.position,
+    required this.count,
     required this.coverPathFuture,
     required this.onOpen,
     this.compact = false,
   });
 
   final PlaybackSession session;
+  final int position;
+  final int count;
   final Future<String?> coverPathFuture;
   final VoidCallback onOpen;
   final bool compact;
@@ -151,6 +155,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     final useBlur = blurEnabled;
     return Semantics(
       container: true,
+      value: '${position + 1} / $count',
       child: ClipRRect(
         borderRadius: BorderRadius.circular(cardRadius),
         child: useBlur

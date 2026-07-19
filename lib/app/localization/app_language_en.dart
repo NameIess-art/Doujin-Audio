@@ -546,8 +546,6 @@ const Map<String, String> appLanguageEn = {
       'Version {version} was downloaded and SHA-256 verified. The app may close and restart automatically to finish updating. File: {path}',
   'update_ready_install':
       'Installer opened. Follow the system prompts to finish updating.',
-  'update_windows_ready_install':
-      'Updater is ready. The app will close and restart to finish updating.',
   'update_install_failed': 'Could not continue installing the update.',
   'update_install_failed_next_step':
       'Retry later. If it still fails, check the update log or open the GitHub Release page to install manually.',

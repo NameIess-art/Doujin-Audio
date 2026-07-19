@@ -374,9 +374,6 @@ class _DetailCapsule extends StatelessWidget {
         onLongPress: defaultTargetPlatform == TargetPlatform.android
             ? onCopy
             : null,
-        onSecondaryTap: defaultTargetPlatform == TargetPlatform.windows
-            ? onCopy
-            : null,
         borderRadius: BorderRadius.circular(999),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

@@ -16,11 +16,7 @@ env:
 
 jobs:
   flutter-test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -41,7 +37,6 @@ jobs:
         run: flutter analyze
 
       - name: Stress Ubuntu regression tests
-        if: matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
           for iteration in {1..10}; do
@@ -51,28 +46,10 @@ jobs:
             flutter test --no-pub test/player_playlist_widgets_test.dart --plain-name "playlist cards freeze background updates while reordering"
           done
 
-      - name: Stress Windows rename regression test
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          for ($iteration = 1; $iteration -le 10; $iteration++) {
-            Write-Output "Windows rename iteration $iteration/10"
-            flutter test --no-pub test/library_audio_detail_cover_test.dart --plain-name "renaming an active folder keeps playlist track lookups after stale native paths"
-            if ($LASTEXITCODE -ne 0) {
-              exit $LASTEXITCODE
-            }
-          }
-
-      - name: Test
-        if: matrix.os != 'ubuntu-latest'
-        run: flutter test --concurrency=1
-
       - name: Test with coverage
-        if: matrix.os == 'ubuntu-latest'
         run: flutter test --coverage --concurrency=1
 
       - name: Verify coverage baseline
-        if: matrix.os == 'ubuntu-latest'
         run: dart run tool/verify_coverage.dart
 
   android:
@@ -106,37 +83,10 @@ jobs:
       - name: Build debug APK
         run: flutter build apk --debug
 
-  windows-build:
-    needs: flutter-test
-    runs-on: windows-latest
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
-
-      - name: Enable Windows desktop
-        run: flutter config --enable-windows-desktop
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Patch smtc_windows cargokit
-        shell: pwsh
-        run: ./tool/patch_smtc_windows_cargokit.ps1
-
-      - name: Build Windows release
-        run: flutter build windows
-
   release-android:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
       - android
-      - windows-build
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -264,116 +214,10 @@ jobs:
             NamelessAudio-android-x64-${{ github.ref_name }}.apk
             NamelessAudio-android-x64-${{ github.ref_name }}.apk.sha256
 
-  release-windows:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs:
-      - android
-      - windows-build
-    runs-on: windows-latest
-    permissions:
-      contents: write
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Set up Flutter
-        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
-        with:
-          flutter-version: ${{ env.FLUTTER_VERSION }}
-          cache: true
-
-      - name: Enable Windows desktop
-        run: flutter config --enable-windows-desktop
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Patch smtc_windows cargokit
-        shell: pwsh
-        run: ./tool/patch_smtc_windows_cargokit.ps1
-
-      - name: Verify release metadata
-        run: dart run tool/verify_release.dart --tag "${{ github.ref_name }}"
-
-      - name: Download verified Windows FFmpeg tools
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $releaseBaseUrl = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest'
-          $ffmpegName = 'ffmpeg-master-latest-win64-gpl.zip'
-          $zip = Join-Path $env:RUNNER_TEMP $ffmpegName
-          $extract = Join-Path $env:RUNNER_TEMP 'ffmpeg'
-          $checksums = Join-Path $env:RUNNER_TEMP 'ffmpeg-checksums.sha256'
-          Invoke-WebRequest `
-            -Uri "$releaseBaseUrl/checksums.sha256" `
-            -OutFile $checksums
-          $checksumLine = Get-Content -LiteralPath $checksums |
-            ForEach-Object {
-              $parts = $_.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
-              if ($parts.Count -ge 2 -and $parts[-1].TrimStart('*') -eq $ffmpegName) {
-                $_
-              }
-            } |
-            Select-Object -First 1
-          if (-not $checksumLine) {
-            throw "FFmpeg checksum entry not found for $ffmpegName"
-          }
-          $expectedSha256 = $checksumLine.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)[0].ToLowerInvariant()
-          Invoke-WebRequest `
-            -Uri "$releaseBaseUrl/$ffmpegName" `
-            -OutFile $zip
-          $actualSha256 = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actualSha256 -ne $expectedSha256) {
-            throw "FFmpeg checksum mismatch: expected $expectedSha256, got $actualSha256"
-          }
-          Expand-Archive -LiteralPath $zip -DestinationPath $extract -Force
-          $bin = Get-ChildItem -LiteralPath $extract -Directory |
-            Select-Object -First 1 |
-            ForEach-Object { Join-Path $_.FullName 'bin' }
-          New-Item -ItemType Directory -Force -Path assets\ffmpeg | Out-Null
-          Copy-Item -LiteralPath (Join-Path $bin 'ffmpeg.exe') -Destination assets\ffmpeg\ffmpeg.exe -Force
-          Copy-Item -LiteralPath (Join-Path $bin 'ffprobe.exe') -Destination assets\ffmpeg\ffprobe.exe -Force
-
-      - name: Build Windows release
-        run: flutter build windows
-
-      - name: Create Windows release assets
-        shell: pwsh
-        run: |
-          $zipName = "NamelessAudio-windows-x64-${{ github.ref_name }}.zip"
-          Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath $zipName -Force
-          $hash = (Get-FileHash -LiteralPath $zipName -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  $zipName" | Set-Content -LiteralPath "$zipName.sha256" -Encoding ascii
-
-      - name: Verify Windows release assets
-        shell: pwsh
-        run: |
-          $zipName = "NamelessAudio-windows-x64-${{ github.ref_name }}.zip"
-          if (-not (Test-Path -LiteralPath $zipName -PathType Leaf)) {
-            throw "Missing release ZIP: $zipName"
-          }
-          $checksumPath = "$zipName.sha256"
-          $expected = (Get-Content -LiteralPath $checksumPath -Raw).Split()[0].ToLowerInvariant()
-          $actual = (Get-FileHash -LiteralPath $zipName -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($actual -ne $expected) {
-            throw "Windows release checksum mismatch: expected $expected, got $actual"
-          }
-
-      - name: Store verified Windows release assets
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-windows-${{ github.ref_name }}
-          if-no-files-found: error
-          retention-days: 7
-          path: |
-            NamelessAudio-windows-x64-${{ github.ref_name }}.zip
-            NamelessAudio-windows-x64-${{ github.ref_name }}.zip.sha256
-
   publish-release:
     if: startsWith(github.ref, 'refs/tags/')
     needs:
       - release-android
-      - release-windows
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -385,12 +229,6 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-android-${{ github.ref_name }}
-          path: release-assets
-
-      - name: Download verified Windows assets
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        with:
-          name: release-windows-${{ github.ref_name }}
           path: release-assets
 
       - name: Verify complete release payload
@@ -406,8 +244,6 @@ jobs:
           NamelessAudio-android-armv7-${tag}.apk.sha256
           NamelessAudio-android-x64-${tag}.apk
           NamelessAudio-android-x64-${tag}.apk.sha256
-          NamelessAudio-windows-x64-${tag}.zip
-          NamelessAudio-windows-x64-${tag}.zip.sha256
           EOF
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > actual-assets.txt
           sort -o expected-assets.txt expected-assets.txt

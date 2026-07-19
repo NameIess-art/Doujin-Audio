@@ -1,4 +1,3 @@
-import 'dart:io';
 import '../../../core/app_language.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/persistence/app_database.dart';
@@ -125,7 +124,7 @@ class AsmrPreferencesStore {
         continue;
       }
       result.add(value);
-      if (!Platform.isWindows && result.length == 5) {
+      if (result.length == 5) {
         break;
       }
     }

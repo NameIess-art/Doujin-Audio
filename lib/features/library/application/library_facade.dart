@@ -1751,31 +1751,11 @@ final class LibraryFacade implements LibraryCatalog {
           );
     if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
     if (oldTarget.isLibraryRootFolder) {
-      await _retryWindowsRename(() async {
-        await Directory(oldPath).rename(newPath);
-      });
+      await Directory(oldPath).rename(newPath);
     } else {
-      await _retryWindowsRename(() async {
-        await File(oldPath).rename(newPath);
-      });
+      await File(oldPath).rename(newPath);
     }
     return newPath;
-  }
-
-  Future<void> _retryWindowsRename(Future<void> Function() operation) async {
-    const retryDelays = <Duration>[
-      Duration(milliseconds: 40),
-      Duration(milliseconds: 80),
-    ];
-    for (var attempt = 0; ; attempt++) {
-      try {
-        await operation();
-        return;
-      } on PathAccessException {
-        if (!Platform.isWindows || attempt >= retryDelays.length) rethrow;
-        await Future<void>.delayed(retryDelays[attempt]);
-      }
-    }
   }
 
   Future<String> _renameContentAudioDetailTarget(

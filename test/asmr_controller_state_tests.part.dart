@@ -30,24 +30,13 @@ void registerAsmrControllerStateTests({
       AsmrCategoryType.collected,
     ]);
 
-    if (Platform.isWindows) {
-      expect(await preferences.loadVisibleCategories(), <AsmrCategoryType>[
-        AsmrCategoryType.sales,
-        AsmrCategoryType.rating,
-        AsmrCategoryType.release,
-        AsmrCategoryType.favorites,
-        AsmrCategoryType.history,
-        AsmrCategoryType.collected,
-      ]);
-    } else {
-      expect(await preferences.loadVisibleCategories(), <AsmrCategoryType>[
-        AsmrCategoryType.sales,
-        AsmrCategoryType.rating,
-        AsmrCategoryType.release,
-        AsmrCategoryType.favorites,
-        AsmrCategoryType.history,
-      ]);
-    }
+    expect(await preferences.loadVisibleCategories(), <AsmrCategoryType>[
+      AsmrCategoryType.sales,
+      AsmrCategoryType.rating,
+      AsmrCategoryType.release,
+      AsmrCategoryType.favorites,
+      AsmrCategoryType.history,
+    ]);
   });
 
   test(

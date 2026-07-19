@@ -1,8 +1,5 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
-import '../platform/app_platform.dart';
 import 'app_feedback.dart';
 
 class SwipeRevealCard extends StatefulWidget {
@@ -67,18 +64,12 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   static const double _rejectSlopeRatio = 1.35;
   static const double _minOpenVelocity = 560;
   static const double _minOpenDistance = 44;
-  static const double _windowsContextMenuItemHeight = 42;
-  static const EdgeInsets _windowsContextMenuItemPadding = EdgeInsets.symmetric(
-    horizontal: 18,
-  );
-
   double _revealedWidth = 0;
   double _dragStartRevealedWidth = 0;
   double _dragDx = 0;
   double _dragDy = 0;
   bool _dragAccepted = false;
   bool _dragRejected = false;
-  bool _contextMenuOpen = false;
   bool _snapClosed = false;
   bool _actionPaneActive = false;
 
@@ -92,120 +83,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       ? 144
       : 72;
   bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
-
-  Future<void> _showWindowsContextMenu(
-    BuildContext context,
-    Offset position,
-  ) async {
-    if (_contextMenuOpen) return;
-    final cs = Theme.of(context).colorScheme;
-    final items = <PopupMenuEntry<VoidCallback>>[];
-
-    if (_hasTertiaryAction) {
-      items.add(
-        PopupMenuItem(
-          height: _windowsContextMenuItemHeight,
-          padding: _windowsContextMenuItemPadding,
-          value: widget.onTertiaryAction,
-          child: Row(
-            children: [
-              Icon(widget.tertiaryActionIcon, size: 20, color: cs.onSurface),
-              const SizedBox(width: 12),
-              Text(
-                widget.tertiaryActionLabel ??
-                    widget.tertiaryActionTooltip ??
-                    '',
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    if (_hasSecondaryAction) {
-      items.add(
-        PopupMenuItem(
-          height: _windowsContextMenuItemHeight,
-          padding: _windowsContextMenuItemPadding,
-          value: widget.onSecondaryAction,
-          child: Row(
-            children: [
-              Icon(widget.secondaryActionIcon, size: 20, color: cs.onSurface),
-              const SizedBox(width: 12),
-              Text(
-                widget.secondaryActionLabel ??
-                    widget.secondaryActionTooltip ??
-                    '',
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-    items.add(
-      PopupMenuItem(
-        height: _windowsContextMenuItemHeight,
-        padding: _windowsContextMenuItemPadding,
-        value: widget.onRemove,
-        child: Row(
-          children: [
-            Icon(
-              widget.primaryActionIcon,
-              size: 20,
-              color: widget.destructive ? cs.error : cs.primary,
-            ),
-            const SizedBox(width: 12),
-            Text(
-              widget.actionLabel,
-              style: TextStyle(
-                color: widget.destructive ? cs.error : cs.primary,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    setState(() {
-      _contextMenuOpen = true;
-    });
-    VoidCallback? action;
-    try {
-      action = await showMenu<VoidCallback>(
-        context: context,
-        position: RelativeRect.fromLTRB(
-          position.dx,
-          position.dy,
-          position.dx,
-          position.dy,
-        ),
-        items: items,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        elevation: 4,
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _contextMenuOpen = false;
-        });
-      }
-    }
-    if (action == null) return;
-    if (action == widget.onRemove) {
-      unawaited(
-        AppInteractionFeedback.trigger(
-          widget.destructive
-              ? AppInteractionFeedbackType.destructive
-              : AppInteractionFeedbackType.confirmation,
-        ),
-      );
-    } else {
-      unawaited(
-        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
-      );
-    }
-    action();
-  }
 
   @override
   void didUpdateWidget(covariant SwipeRevealCard oldWidget) {
@@ -327,7 +204,6 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final baseColor =
         widget.color ??
         (widget.destructive
@@ -370,30 +246,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
       final content = ColoredBox(
         color: widget.closedColor ?? cs.surface,
         child: Stack(
-          children: [
-            IgnorePointer(ignoring: _isOpen, child: widget.child),
-            if (_contextMenuOpen)
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: ShapeDecoration(
-                      color: cs.primaryContainer.withValues(
-                        alpha: isDark ? 0.18 : 0.22,
-                      ),
-                      shape: widget.shape,
-                      shadows: [
-                        BoxShadow(
-                          color: cs.primary.withValues(
-                            alpha: isDark ? 0.16 : 0.10,
-                          ),
-                          blurRadius: 18,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-          ],
+          children: [IgnorePointer(ignoring: _isOpen, child: widget.child)],
         ),
       );
 
@@ -420,40 +273,23 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           padding: widget.margin,
           child: GestureDetector(
             behavior: HitTestBehavior.translucent,
-            onHorizontalDragStart: AppPlatform.isWindows
-                ? null
-                : _handleHorizontalDragStart,
-            onHorizontalDragUpdate: AppPlatform.isWindows
-                ? null
-                : _handleHorizontalDragUpdate,
-            onHorizontalDragEnd: AppPlatform.isWindows
-                ? null
-                : _handleHorizontalDragEnd,
-            onSecondaryTapUp: AppPlatform.isWindows
-                ? (details) {
-                    unawaited(
-                      _showWindowsContextMenu(context, details.globalPosition),
-                    );
-                  }
-                : null,
-            onSecondaryTap: AppPlatform.isWindows
-                ? null
-                : () {
-                    setState(() {
-                      final opening = !_isOpen;
-                      _actionPaneActive = opening || _actionPaneActive;
-                      _revealedWidth = opening ? _actionWidth : 0;
-                    });
-                  },
-            onHorizontalDragCancel: AppPlatform.isWindows
-                ? null
-                : () {
-                    _dragAccepted = false;
-                    _dragRejected = false;
-                  },
+            onHorizontalDragStart: _handleHorizontalDragStart,
+            onHorizontalDragUpdate: _handleHorizontalDragUpdate,
+            onHorizontalDragEnd: _handleHorizontalDragEnd,
+            onSecondaryTap: () {
+              setState(() {
+                final opening = !_isOpen;
+                _actionPaneActive = opening || _actionPaneActive;
+                _revealedWidth = opening ? _actionWidth : 0;
+              });
+            },
+            onHorizontalDragCancel: () {
+              _dragAccepted = false;
+              _dragRejected = false;
+            },
             child: Stack(
               children: [
-                if (!AppPlatform.isWindows && _actionPaneActive)
+                if (_actionPaneActive)
                   Positioned.fill(
                     child: DecoratedBox(
                       decoration: ShapeDecoration(

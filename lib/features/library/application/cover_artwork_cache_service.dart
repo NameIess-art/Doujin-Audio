@@ -11,7 +11,6 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/audio_detail.dart';
-import '../../../core/platform/app_platform.dart';
 import '../../settings/application/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/persistence/audio_database_repository.dart';
@@ -21,7 +20,6 @@ import 'library_service.dart';
 import 'embedded_cover_artwork_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../video_converter/application/windows_ffmpeg_service.dart';
 
 const String _folderCoverSelectionsKey = 'folder_cover_selections_v1';
 const Set<String> _folderCoverImageExtensions = <String>{
@@ -1215,7 +1213,7 @@ class CoverArtworkCacheService {
         return nativeFrame;
       }
     } on MissingPluginException {
-      // Windows generates the frame through its bundled FFmpeg below.
+      return null;
     } catch (e, stackTrace) {
       AppLogService.warning(
         'CoverArtworkCacheService._resolveVideoFramePathForTrack error',
@@ -1223,13 +1221,7 @@ class CoverArtworkCacheService {
         stackTrace: stackTrace,
       );
     }
-    if (!AppPlatform.isWindows) return null;
-    final framePath = await WindowsFfmpegService.resolveVideoFrame(
-      videoPath: track.path,
-      modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
-    );
-    if (framePath != null) AppCacheService.scheduleEnforce();
-    return framePath;
+    return null;
   }
 
   String? _cachedManualCoverPath(String? coverPath) {
@@ -1299,22 +1291,6 @@ class CoverArtworkCacheService {
     }
     if (embeddedCover != null) AppCacheService.scheduleEnforce();
     if (embeddedCover != null) return embeddedCover;
-
-    if (AppPlatform.isWindows) {
-      try {
-        final ffmpegCover = await WindowsFfmpegService.resolveAudioCover(
-          audioPath: track.path,
-          modifiedAtMs: track.modifiedAt?.millisecondsSinceEpoch,
-        );
-        if (ffmpegCover != null) return ffmpegCover;
-      } catch (e, stackTrace) {
-        AppLogService.warning(
-          'CoverArtworkCacheService._resolvePlatformCoverPathForTrack WindowsFfmpegService error',
-          error: e,
-          stackTrace: stackTrace,
-        );
-      }
-    }
 
     return null;
   }

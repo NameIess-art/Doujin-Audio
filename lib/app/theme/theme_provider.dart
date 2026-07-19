@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 
 import '../../features/settings/application/app_preferences.dart';
@@ -106,24 +105,20 @@ class ThemeProvider with ChangeNotifier {
       );
 
   ThemeData _buildTheme(ColorScheme scheme) {
-    final bool isDesktop =
-        !const bool.fromEnvironment('dart.library.html') &&
-        (Platform.isWindows || Platform.isMacOS || Platform.isLinux);
-
     final bodyText = const TextTheme().copyWith(
-      bodyMedium: TextStyle(
+      bodyMedium: const TextStyle(
         fontFamily: 'Raleway',
-        fontSize: isDesktop ? 13 : 14,
+        fontSize: 14,
         height: 1.5,
       ),
-      bodyLarge: TextStyle(
+      bodyLarge: const TextStyle(
         fontFamily: 'Raleway',
-        fontSize: isDesktop ? 14 : 15,
+        fontSize: 15,
         height: 1.5,
       ),
-      labelLarge: TextStyle(
+      labelLarge: const TextStyle(
         fontFamily: 'Raleway',
-        fontSize: isDesktop ? 11 : 12,
+        fontSize: 12,
         fontWeight: FontWeight.w700,
         letterSpacing: 0.1,
       ),
@@ -142,27 +137,27 @@ class ThemeProvider with ChangeNotifier {
         fontSize: 12,
         fontWeight: FontWeight.w500,
       ),
-      titleMedium: TextStyle(
+      titleMedium: const TextStyle(
         fontFamily: 'Raleway',
         fontWeight: FontWeight.w700,
-        fontSize: isDesktop ? 13 : 14,
+        fontSize: 14,
         height: 1.25,
       ),
-      titleLarge: TextStyle(
+      titleLarge: const TextStyle(
         fontFamily: 'Outfit',
         fontWeight: FontWeight.w700,
-        fontSize: isDesktop ? 16 : 18,
+        fontSize: 18,
       ),
-      headlineMedium: TextStyle(
+      headlineMedium: const TextStyle(
         fontFamily: 'Outfit',
         fontWeight: FontWeight.w800,
-        fontSize: isDesktop ? 26 : 31,
+        fontSize: 31,
         height: 1.05,
       ),
-      headlineSmall: TextStyle(
+      headlineSmall: const TextStyle(
         fontFamily: 'Outfit',
         fontWeight: FontWeight.w800,
-        fontSize: isDesktop ? 18 : 20,
+        fontSize: 20,
       ),
     );
 
@@ -181,16 +176,14 @@ class ThemeProvider with ChangeNotifier {
     }
 
     final largeShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(
-        isDesktop ? tokens.radiusSmall : tokens.radiusSection,
-      ),
+      borderRadius: BorderRadius.circular(tokens.radiusSection),
     );
 
     return ThemeData(
       useMaterial3: true,
       materialTapTargetSize: MaterialTapTargetSize.padded,
       extensions: <ThemeExtension<dynamic>>[tokens],
-      visualDensity: isDesktop ? VisualDensity.compact : VisualDensity.standard,
+      visualDensity: VisualDensity.standard,
       colorScheme: scheme,
       textTheme: bodyText.apply(
         bodyColor: scheme.onSurface,
@@ -200,16 +193,13 @@ class ThemeProvider with ChangeNotifier {
         builders: {
           TargetPlatform.android: CenterScalePageTransitionsBuilder(),
           TargetPlatform.iOS: CenterScalePageTransitionsBuilder(),
-          TargetPlatform.linux: CenterScalePageTransitionsBuilder(),
-          TargetPlatform.macOS: CenterScalePageTransitionsBuilder(),
-          TargetPlatform.windows: CenterScalePageTransitionsBuilder(),
         },
       ),
       hoverColor: scheme.primary.withValues(alpha: 0.08),
       focusColor: scheme.primary.withValues(alpha: 0.12),
       highlightColor: scheme.primary.withValues(alpha: 0.12),
-      scaffoldBackgroundColor: isDesktop ? Colors.transparent : scheme.surface,
-      canvasColor: isDesktop ? Colors.transparent : scheme.surface,
+      scaffoldBackgroundColor: scheme.surface,
+      canvasColor: scheme.surface,
       dividerColor: scheme.outlineVariant,
       splashFactory: InkRipple.splashFactory,
       cardTheme: CardThemeData(
@@ -219,12 +209,10 @@ class ThemeProvider with ChangeNotifier {
         shadowColor: scheme.shadow.withValues(alpha: 0.08),
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(
-            isDesktop ? tokens.radiusControl : tokens.radiusCard,
-          ),
+          borderRadius: BorderRadius.circular(tokens.radiusCard),
           side: BorderSide(
             color: scheme.outlineVariant.withValues(
-              alpha: isDesktop ? 0.38 : tokens.standardBorderAlpha,
+              alpha: tokens.standardBorderAlpha,
             ),
           ),
         ),
@@ -287,7 +275,7 @@ class ThemeProvider with ChangeNotifier {
         overlayColor: scheme.primary.withValues(alpha: 0.12),
       ),
       listTileTheme: ListTileThemeData(
-        dense: isDesktop,
+        dense: false,
         minLeadingWidth: 24,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(tokens.radiusCard),
@@ -386,8 +374,8 @@ class ThemeProvider with ChangeNotifier {
       ),
       scrollbarTheme: ScrollbarThemeData(
         thickness: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.hovered)) return isDesktop ? 6 : 8;
-          return isDesktop ? 3 : 4;
+          if (states.contains(WidgetState.hovered)) return 8;
+          return 4;
         }),
         thumbColor: WidgetStateProperty.resolveWith((states) {
           if (states.contains(WidgetState.dragged)) {

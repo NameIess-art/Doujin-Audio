@@ -22,7 +22,6 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
     ];
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isPortraitMobile =
-        !AppPlatform.isWindows &&
         MediaQuery.orientationOf(context) == Orientation.portrait;
 
     final itemWidth = isPortraitMobile ? (screenWidth - 24.0 - 24.0) / 4 : 86.0;

@@ -303,46 +303,6 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
                     },
                   ),
                 ),
-                if (!const bool.fromEnvironment('dart.library.html') &&
-                    Platform.isWindows &&
-                    _images.length > 1)
-                  Positioned.fill(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8.0),
-                          child: IconButton.filledTonal(
-                            onPressed: () {
-                              _pageController?.previousPage(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeOutCubic,
-                              );
-                            },
-                            icon: const Icon(
-                              Icons.chevron_left_rounded,
-                              size: 32,
-                            ),
-                          ),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.only(right: 8.0),
-                          child: IconButton.filledTonal(
-                            onPressed: () {
-                              _pageController?.nextPage(
-                                duration: const Duration(milliseconds: 300),
-                                curve: Curves.easeOutCubic,
-                              );
-                            },
-                            icon: const Icon(
-                              Icons.chevron_right_rounded,
-                              size: 32,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 Positioned(
                   right: 12,
                   top: 12,

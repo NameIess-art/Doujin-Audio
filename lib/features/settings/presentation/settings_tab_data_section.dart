@@ -32,77 +32,75 @@ List<Widget> _buildSettingsDataSection({
             borderRadius: AppRadius.borderCard,
           ),
         ),
-        if (!Platform.isWindows) ...[
-          Consumer(
-            builder: (context, ref, _) {
-              final maxCacheBytes = ref.watch(
-                settingsStateProvider.select(
-                  (s) =>
-                      s.value?.maxCacheBytes ??
-                      AppCacheService.defaultMaxCacheBytes,
-                ),
-              );
-              return ListTile(
-                title: _settingsTitle(i18n.tr('max_cache_size')),
-                subtitle: Text(
-                  AppCacheService.formatBytes(maxCacheBytes),
-                  softWrap: true,
-                ),
-                leading: _settingsIcon(Icons.storage_rounded, cs.onSurface),
-                trailing: _settingsDropdown<int>(
-                  context,
-                  value: _settingsCacheLimitOptions.contains(maxCacheBytes)
-                      ? maxCacheBytes
-                      : AppCacheService.defaultMaxCacheBytes,
-                  onChanged: (value) {
-                    if (value != null) {
-                      settingsController.setMaxCacheBytes(value);
-                    }
-                  },
-                  items: _settingsCacheLimitOptions
-                      .map(
-                        (value) => DropdownMenuItem<int>(
-                          value: value,
-                          child: _settingsDropdownText(
-                            AppCacheService.formatBytes(value),
-                          ),
+        Consumer(
+          builder: (context, ref, _) {
+            final maxCacheBytes = ref.watch(
+              settingsStateProvider.select(
+                (s) =>
+                    s.value?.maxCacheBytes ??
+                    AppCacheService.defaultMaxCacheBytes,
+              ),
+            );
+            return ListTile(
+              title: _settingsTitle(i18n.tr('max_cache_size')),
+              subtitle: Text(
+                AppCacheService.formatBytes(maxCacheBytes),
+                softWrap: true,
+              ),
+              leading: _settingsIcon(Icons.storage_rounded, cs.onSurface),
+              trailing: _settingsDropdown<int>(
+                context,
+                value: _settingsCacheLimitOptions.contains(maxCacheBytes)
+                    ? maxCacheBytes
+                    : AppCacheService.defaultMaxCacheBytes,
+                onChanged: (value) {
+                  if (value != null) {
+                    settingsController.setMaxCacheBytes(value);
+                  }
+                },
+                items: _settingsCacheLimitOptions
+                    .map(
+                      (value) => DropdownMenuItem<int>(
+                        value: value,
+                        child: _settingsDropdownText(
+                          AppCacheService.formatBytes(value),
                         ),
-                      )
-                      .toList(),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
-              );
-            },
-          ),
-          Consumer(
-            builder: (context, ref, _) {
-              final cacheOperation = ref.watch(
-                uiOperationForScopeProvider(UiOperationScope.settingsCache),
-              );
-              return ListTile(
-                onTap: cacheOperation.isBusy ? null : onClearApplicationCache,
-                title: _settingsTitle(i18n.tr('clear_app_cache')),
-                leading: _settingsIcon(
-                  Icons.cleaning_services_rounded,
-                  cs.onSurface,
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
-                trailing: cacheOperation.isBusy
-                    ? const SizedBox.square(
-                        dimension: 18,
-                        child: CircularProgressIndicator(strokeWidth: 2.2),
-                      )
-                    : null,
-              );
-            },
-          ),
-        ],
+                      ),
+                    )
+                    .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final cacheOperation = ref.watch(
+              uiOperationForScopeProvider(UiOperationScope.settingsCache),
+            );
+            return ListTile(
+              onTap: cacheOperation.isBusy ? null : onClearApplicationCache,
+              title: _settingsTitle(i18n.tr('clear_app_cache')),
+              leading: _settingsIcon(
+                Icons.cleaning_services_rounded,
+                cs.onSurface,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+              trailing: cacheOperation.isBusy
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2.2),
+                    )
+                  : null,
+            );
+          },
+        ),
       ],
     ),
   ];

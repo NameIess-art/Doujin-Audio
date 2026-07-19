@@ -38,7 +38,6 @@ void main(List<String> args) {
   final documentedAssets = <String>[
     for (final variant in androidVariants)
       'NamelessAudio-android-$variant-$documentedTag.apk',
-    'NamelessAudio-windows-x64-$documentedTag.zip',
   ];
   for (final asset in documentedAssets) {
     for (final document in <MapEntry<String, String>>[
@@ -57,7 +56,6 @@ void main(List<String> args) {
   final workflowAssets = <String>[
     for (final variant in androidVariants)
       'NamelessAudio-android-$variant-\${{ github.ref_name }}.apk',
-    'NamelessAudio-windows-x64-\${{ github.ref_name }}.zip',
   ];
   for (final asset in workflowAssets) {
     if (!workflow.contains(asset) || !workflow.contains('$asset.sha256')) {
@@ -109,10 +107,6 @@ void main(List<String> args) {
     MapEntry<String, String>(
       '.github/ISSUE_TEMPLATE/bug_report.yml',
       File('.github/ISSUE_TEMPLATE/bug_report.yml').readAsStringSync(),
-    ),
-    MapEntry<String, String>(
-      'windows/runner/Runner.rc',
-      File('windows/runner/Runner.rc').readAsStringSync(),
     ),
     MapEntry<String, String>(
       'android UpdateMethodHandler.kt',

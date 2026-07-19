@@ -243,26 +243,25 @@ List<Widget> _buildSettingsGeneralSection({
             );
           },
         ),
-        if (!Platform.isWindows)
-          Consumer(
-            builder: (context, ref, _) {
-              final enabled = ref.watch(
-                settingsStateProvider.select(
-                  (s) => s.value?.hapticFeedbackEnabled ?? true,
-                ),
-              );
-              return SwitchListTile(
-                title: _settingsTitle(i18n.tr('haptic_feedback_enabled')),
-                value: enabled,
-                onChanged: settings.setHapticFeedbackEnabled,
-                secondary: _settingsIcon(Icons.vibration_rounded, cs.onSurface),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
-              );
-            },
-          ),
+        Consumer(
+          builder: (context, ref, _) {
+            final enabled = ref.watch(
+              settingsStateProvider.select(
+                (s) => s.value?.hapticFeedbackEnabled ?? true,
+              ),
+            );
+            return SwitchListTile(
+              title: _settingsTitle(i18n.tr('haptic_feedback_enabled')),
+              value: enabled,
+              onChanged: settings.setHapticFeedbackEnabled,
+              secondary: _settingsIcon(Icons.vibration_rounded, cs.onSurface),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
       ],
     ),
   ];

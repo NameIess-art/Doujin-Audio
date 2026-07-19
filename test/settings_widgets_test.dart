@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -125,10 +124,7 @@ void main() {
           .subtitle,
       isNull,
     );
-    expect(
-      find.text(i18n.tr('haptic_feedback_enabled')),
-      Platform.isWindows ? findsNothing : findsOneWidget,
-    );
+    expect(find.text(i18n.tr('haptic_feedback_enabled')), findsOneWidget);
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
 
@@ -136,16 +132,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(
       find.text(i18n.tr('audio_device_disconnect_behavior')),
-      Platform.isAndroid ? findsOneWidget : findsNothing,
+      findsOneWidget,
     );
     expect(
       find.text(i18n.tr('transient_audio_focus_loss_behavior')),
-      Platform.isAndroid ? findsOneWidget : findsNothing,
+      findsOneWidget,
     );
-    expect(
-      find.text(i18n.tr('interruption_resume_behavior')),
-      Platform.isAndroid ? findsOneWidget : findsNothing,
-    );
+    expect(find.text(i18n.tr('interruption_resume_behavior')), findsOneWidget);
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
 

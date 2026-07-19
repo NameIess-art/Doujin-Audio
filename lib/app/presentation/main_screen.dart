@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,7 +36,6 @@ import '../../core/widgets/app_feedback.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/confirm_action_dialog.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
-import '../../core/widgets/windows_title_bar.dart';
 
 part 'main_screen_notifications.dart';
 part 'main_screen_layout.dart';
@@ -48,11 +46,8 @@ part 'main_screen_timer_scrim.dart';
 const kBootstrapOverlayDuration = Duration(milliseconds: 1500);
 
 @visibleForTesting
-bool shouldRunGlobalSubtitleOverlay({
-  required bool appInForeground,
-  required bool isWindows,
-}) {
-  return isWindows || !appInForeground;
+bool shouldRunGlobalSubtitleOverlay({required bool appInForeground}) {
+  return !appInForeground;
 }
 
 class MainScreen extends ConsumerStatefulWidget {
@@ -294,10 +289,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _lastRecoveredViewSize = size;
     _lastRecoveredOrientation = orientation;
 
-    if (defaultTargetPlatform == TargetPlatform.windows) {
-      return false;
-    }
-
     if (previousSize == null || previousOrientation == null) {
       return false;
     }
@@ -363,10 +354,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
     if (!mounted ||
-        !shouldRunGlobalSubtitleOverlay(
-          appInForeground: _appInForeground,
-          isWindows: Platform.isWindows,
-        )) {
+        !shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
       return;
     }
     _globalSubtitleOverlaySyncing = true;
@@ -438,10 +426,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _updateGlobalSubtitleOverlay() {
     if (!mounted) return;
-    if (!shouldRunGlobalSubtitleOverlay(
-      appInForeground: _appInForeground,
-      isWindows: Platform.isWindows,
-    )) {
+    if (!shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
       unawaited(_stopGlobalSubtitleOverlay(immediate: true));
       return;
     }
@@ -469,7 +454,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
           if (mounted &&
               shouldRunGlobalSubtitleOverlay(
                 appInForeground: _appInForeground,
-                isWindows: Platform.isWindows,
               )) {
             _updateGlobalSubtitleOverlay();
           }
@@ -505,11 +489,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
     _appInForeground = true;
-    if (Platform.isWindows) {
-      unawaited(_syncGlobalSubtitleOverlay());
-    } else {
-      unawaited(_stopGlobalSubtitleOverlay(immediate: true));
-    }
+    unawaited(_stopGlobalSubtitleOverlay(immediate: true));
     unawaited(_consumePendingNotificationSession());
     unawaited(_permissionActionController.handleAppResumed());
     unawaited(
@@ -676,7 +656,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
     final isDesktop =
-        Platform.isWindows ||
         MediaQuery.orientationOf(context) == Orientation.landscape ||
         width >= _desktopBreakpoint;
     final isTinyWindow = width < 300 || layoutSize.height < 300;
@@ -696,7 +675,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
             _AmbientBackground(tinyMode: isTinyWindow),
             Column(
               children: [
-                const WindowsTitleBar(),
                 Expanded(
                   child: Stack(
                     fit: StackFit.expand,

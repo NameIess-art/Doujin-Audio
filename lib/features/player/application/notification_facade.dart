@@ -14,7 +14,6 @@ import 'playback_facade.dart';
 import 'playback_notification_service.dart';
 import 'playback_session.dart';
 import 'playback_subtitle_service.dart';
-import 'system_media_controls_service.dart';
 
 part 'notification_facade_covers.dart';
 part 'notification_facade_subtitles.dart';
@@ -89,12 +88,9 @@ final class NotificationFacade {
   bool Function() _notificationsEnabledResolver = _alwaysFalse;
   bool _synchronizationAttached = false;
 
-  NotificationFacade get _notificationFacade => this;
   PlaybackFacade get _playbackFacade => _playback!;
   NotificationCoordinatorService get _notificationStateService => stateService;
   PlaybackNotificationService get _notificationService => service;
-  SystemMediaControlsService get _systemMediaControlsService =>
-      _playbackFacade.systemMediaControlsService;
   Map<String, PlaybackSession> get _sessions =>
       _playbackFacade.service.sessions;
   List<PlaybackSession> get activeSessions =>

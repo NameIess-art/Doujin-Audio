@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -17,8 +15,7 @@ class OnboardingGate extends StatefulWidget {
 }
 
 class _OnboardingGateState extends State<OnboardingGate> {
-  late bool _showOnboarding =
-      !Platform.isWindows && AppPreferences.shouldShowOnboardingSync();
+  late bool _showOnboarding = AppPreferences.shouldShowOnboardingSync();
 
   Future<void> _complete() async {
     await AppPreferences.completeOnboarding();

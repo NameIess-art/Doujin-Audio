@@ -4,12 +4,10 @@ import 'dart:math';
 import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
-import 'package:window_manager/window_manager.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/application/audio_path_coordinator.dart';
@@ -549,8 +547,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final listCacheExtent = (headerHeight + 800)
         .clamp(headerHeight + 4, 1600.0)
         .toDouble();
-    final isWindows =
-        Platform.isWindows ||
+    final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     const double expansion = 320.0;
     const topPadding = 4.0 + expansion;
@@ -623,8 +620,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               topExpansion: expansion,
               bottomExpansion: expansion,
               scrollController: _scrollController,
-              showScrollbar: isWindows,
-              scrollbarMainAxisMargin: isWindows ? 12 : 0,
+              showScrollbar: isLandscape,
+              scrollbarMainAxisMargin: isLandscape ? 12 : 0,
               child: PlaceholderContentTransition(
                 showPlaceholder:
                     !_initialPlaceholderDismissed || !listState.isInitialized,

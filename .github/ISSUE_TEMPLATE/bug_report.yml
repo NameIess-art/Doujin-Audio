@@ -23,8 +23,6 @@ body:
       label: Platform
       options:
         - Android
-        - Windows
-        - Other
     validations:
       required: true
   - type: textarea

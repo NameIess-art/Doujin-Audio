@@ -65,21 +65,6 @@ void main() {
     expect(index.containsEquivalent('/library/root/track.mp3'), isTrue);
   });
 
-  test('Windows paths keep their semantics on every host platform', () {
-    const root = r'C:\Audio\Library';
-    const work = r'C:\Audio\Library\Work A';
-    const track = r'C:\Audio\Library\Work A\Disc 1\01.mp3';
-
-    expect(PathMatcher.normalize(track), track);
-    expect(PathMatcher.isWithinOrEqual(track, root), isTrue);
-    expect(PathMatcher.relativeWithin(track, work), 'Disc 1/01.mp3');
-    expect(PathMatcher.join(root, 'Work A'), work);
-    expect(
-      PathMatcher.equivalenceKey(track),
-      PathMatcher.equivalenceKey(track.toUpperCase()),
-    );
-  });
-
   test('path membership index preserves SAF equivalence and folder bounds', () {
     const root =
         'content://com.android.externalstorage.documents/tree/primary%3AMusic';
@@ -92,19 +77,6 @@ void main() {
     expect(
       PathMatcher.parentEquivalenceKey(trackSynthetic),
       PathMatcher.equivalenceKey('$root::Album/Disc'),
-    );
-  });
-
-  test('path membership index finds Windows ancestors case-insensitively', () {
-    final index = PathMembershipIndex(const <String>{r'C:\Audio\Library'});
-
-    expect(
-      index.containsAncestorOrEqual(r'c:\audio\library\Work\01.mp3'),
-      isTrue,
-    );
-    expect(
-      index.containsAncestorOrEqual(r'C:\Audio\Library 2\01.mp3'),
-      isFalse,
     );
   });
 

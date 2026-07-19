@@ -555,17 +555,9 @@ class AppUpdateService {
 
   Future<bool> openReleasePage(String url) async {
     try {
-      if (Platform.isAndroid) {
-        final result = await _platform.openReleasePage(url);
-        _logNativeFailure('openReleasePage', result);
-        return result.valueOrNull ?? false;
-      }
-      if (Platform.isWindows) {
-        await Process.start('cmd', ['/c', 'start', '', url]);
-        return true;
-      }
-      await Process.start('xdg-open', [url]);
-      return true;
+      final result = await _platform.openReleasePage(url);
+      _logNativeFailure('openReleasePage', result);
+      return result.valueOrNull ?? false;
     } catch (error, stackTrace) {
       AppLogService.warning(
         'open_release_page_failed',
@@ -591,7 +583,6 @@ class AppUpdateService {
   }
 
   Future<UpdateInstallResult> _installUpdateOnce(File file) async {
-    if (Platform.isWindows) return _installWindowsZip(file);
     final result = await _platform.installApk(file.path);
     _logNativeFailure('installApk', result);
     final installResult = result.valueOrNull;
@@ -621,30 +612,8 @@ class AppUpdateService {
     }
   }
 
-  static String get windowsUpdateLogPath =>
-      path.join(Directory.systemTemp.path, 'nameless_audio_windows_update.log');
-
-  Future<bool> openWindowsUpdateLog() async {
-    if (!Platform.isWindows) return false;
-    try {
-      final logFile = File(windowsUpdateLogPath);
-      if (!await logFile.exists()) return false;
-      await Process.start('notepad.exe', [logFile.path]);
-      return true;
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'open_windows_update_log_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return false;
-    }
-  }
-
-  static _GitHubAsset? _selectUpdateAsset(List<_GitHubAsset> assets) {
-    if (Platform.isWindows) return _selectWindowsZipAsset(assets);
-    return _selectApkAsset(assets);
-  }
+  static _GitHubAsset? _selectUpdateAsset(List<_GitHubAsset> assets) =>
+      _selectApkAsset(assets);
 
   static _GitHubAsset? _selectApkAsset(List<_GitHubAsset> assets) {
     return assets.cast<_GitHubAsset?>().firstWhere((asset) {
@@ -663,41 +632,6 @@ class AppUpdateService {
         .whereType<_GitHubAsset>()
         .toList(growable: false),
   )?.toJson();
-
-  @visibleForTesting
-  static Map<String, dynamic>? selectWindowsZipAssetForTesting(
-    List<Map<String, dynamic>> assets,
-  ) => _selectWindowsZipAsset(
-    assets
-        .map(_GitHubAsset.fromJson)
-        .whereType<_GitHubAsset>()
-        .toList(growable: false),
-  )?.toJson();
-
-  static _GitHubAsset? _selectWindowsZipAsset(List<_GitHubAsset> assets) {
-    final zipAssets = assets
-        .where((asset) {
-          final name = asset.name;
-          return name.startsWith(releaseChannel.windowsAssetPrefix) &&
-              name.toLowerCase().endsWith('.zip');
-        })
-        .toList(growable: false);
-    if (zipAssets.isEmpty) return null;
-    zipAssets.sort((left, right) {
-      int score(_GitHubAsset asset) {
-        final name = asset.name.toLowerCase();
-        var score = 10;
-        if (name.contains('windows')) score -= 6;
-        if (name.contains('win')) score -= 4;
-        if (name.contains('x64') || name.contains('amd64')) score -= 2;
-        if (name.contains('symbols') || name.contains('debug')) score += 6;
-        return score;
-      }
-
-      return score(left).compareTo(score(right));
-    });
-    return zipAssets.first;
-  }
 
   static List<_GitHubAsset> _parseExpandedReleaseAssets(String html) {
     final links = RegExp(
@@ -758,99 +692,6 @@ class AppUpdateService {
     return tagName.isEmpty ? null : tagName;
   }
 
-  Future<UpdateInstallResult> _installWindowsZip(File file) async {
-    if (!await file.exists() || await file.length() <= 0) {
-      return const UpdateInstallResult(
-        ok: false,
-        needsPermission: false,
-        message: 'Update ZIP does not exist.',
-      );
-    }
-
-    final exePath = Platform.resolvedExecutable;
-    final installDir = File(exePath).parent.path;
-    final tempDir = await _temporaryDirectoryProvider();
-    final script = File(
-      path.join(
-        tempDir.path,
-        'nameless_audio_windows_update_${DateTime.now().millisecondsSinceEpoch}.ps1',
-      ),
-    );
-    final readyFile = File('${script.path}.ready');
-    await script.writeAsString(_windowsUpdateScript, flush: true);
-
-    try {
-      if (await readyFile.exists()) await readyFile.delete();
-      await Process.start(_windowsPowerShellExecutable(), [
-        '-WindowStyle',
-        'Hidden',
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-STA',
-        '-File',
-        script.path,
-        file.path,
-        installDir,
-        exePath,
-        pid.toString(),
-        readyFile.path,
-      ], mode: ProcessStartMode.detached);
-
-      final readyResult = await _waitForWindowsUpdaterReady(readyFile);
-      if (readyResult != null) {
-        return UpdateInstallResult(
-          ok: false,
-          needsPermission: false,
-          message: readyResult,
-        );
-      }
-      Timer(const Duration(milliseconds: 500), () => exit(0));
-      return const UpdateInstallResult(ok: true, needsPermission: false);
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'windows_update_install_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return UpdateInstallResult(
-        ok: false,
-        needsPermission: false,
-        message: error.toString(),
-      );
-    }
-  }
-
-  Future<String?> _waitForWindowsUpdaterReady(File readyFile) async {
-    final deadline = DateTime.now().add(const Duration(seconds: 60));
-    while (DateTime.now().isBefore(deadline)) {
-      if (await readyFile.exists()) {
-        final status = (await readyFile.readAsString()).trim();
-        if (status == 'ready') return null;
-        if (status.startsWith('error:')) {
-          return status.substring('error:'.length).trim();
-        }
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-    }
-    return 'Windows updater did not become ready in time. Log: $windowsUpdateLogPath';
-  }
-
-  static String _windowsPowerShellExecutable() {
-    final systemRoot = Platform.environment['SystemRoot'] ?? r'C:\Windows';
-    final powerShell = path.join(
-      systemRoot,
-      'System32',
-      'WindowsPowerShell',
-      'v1.0',
-      'powershell.exe',
-    );
-    return File(powerShell).existsSync() ? powerShell : 'powershell.exe';
-  }
-
-  @visibleForTesting
-  static String get windowsUpdateScriptForTesting => _windowsUpdateScript;
-
   static String _versionNameFromTag(String tagName) {
     final normalized = tagName.trim();
     return normalized.startsWith('v') ? normalized.substring(1) : normalized;
@@ -877,10 +718,7 @@ class AppUpdateService {
   }
 
   static String _safeFileName(String value) {
-    final extension = path.extension(value).toLowerCase();
-    final updateExtension = extension == '.zip' || extension == '.apk'
-        ? extension
-        : (Platform.isWindows ? '.zip' : '.apk');
+    const updateExtension = '.apk';
     final cleaned = PathDisplay.safeFileName(
       value,
       replacement: '_',
@@ -892,219 +730,3 @@ class AppUpdateService {
         : '$cleaned$updateExtension';
   }
 }
-
-const String _windowsUpdateScript = r'''
-param(
-  [Parameter(Mandatory=$true)][string]$ZipPath,
-  [Parameter(Mandatory=$true)][string]$InstallDir,
-  [Parameter(Mandatory=$true)][string]$ExePath,
-  [Parameter(Mandatory=$true)][int]$AppProcessId,
-  [Parameter(Mandatory=$true)][string]$ReadyPath,
-  [switch]$Elevated
-)
-
-$ErrorActionPreference = 'Stop'
-$logPath = Join-Path $env:TEMP 'nameless_audio_windows_update.log'
-$staging = $null
-
-function Write-UpdateLog([string]$Message) {
-  $timestamp = Get-Date -Format o
-  Add-Content -LiteralPath $logPath -Value "$timestamp $Message"
-}
-
-function Wait-AppExit {
-  Write-UpdateLog "waiting pid=$AppProcessId"
-  $deadline = (Get-Date).AddSeconds(30)
-  while ((Get-Date) -lt $deadline) {
-    $process = Get-Process -Id $AppProcessId -ErrorAction SilentlyContinue
-    if ($null -eq $process) {
-      Start-Sleep -Seconds 2
-      return
-    }
-    Start-Sleep -Milliseconds 500
-  }
-  throw 'The application did not exit in time for the update.'
-}
-
-function Test-DirectoryWritable([string]$Directory) {
-  try {
-    $probe = Join-Path $Directory ('.nameless_audio_update_write_test_' + [Guid]::NewGuid().ToString('N') + '.tmp')
-    Set-Content -LiteralPath $probe -Value 'test' -Encoding UTF8
-    Remove-Item -LiteralPath $probe -Force
-    return $true
-  } catch {
-    return $false
-  }
-}
-
-function Test-UpdateTargetWritable {
-  $parent = Split-Path -Parent $InstallDir
-  return (Test-DirectoryWritable $InstallDir) -and (Test-DirectoryWritable $parent)
-}
-
-function Quote-Argument([string]$Value) {
-  return "'" + ($Value -replace "'", "''") + "'"
-}
-
-function Start-ElevatedUpdater {
-  $powerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-  if (-not (Test-Path -LiteralPath $powerShell)) {
-    $powerShell = 'powershell.exe'
-  }
-  $command = @(
-    '&',
-    (Quote-Argument $PSCommandPath),
-    (Quote-Argument $ZipPath),
-    (Quote-Argument $InstallDir),
-    (Quote-Argument $ExePath),
-    $AppProcessId,
-    (Quote-Argument $ReadyPath),
-    '-Elevated'
-  ) -join ' '
-  $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
-  $args = @(
-    '-WindowStyle', 'Hidden',
-    '-NoProfile',
-    '-ExecutionPolicy', 'Bypass',
-    '-STA',
-    '-EncodedCommand', $encodedCommand
-  )
-  Write-UpdateLog 'requesting elevated updater'
-  Start-Process -FilePath $powerShell -ArgumentList $args -Verb RunAs -WorkingDirectory $env:TEMP
-}
-
-function Show-Failure([string]$Message) {
-  try {
-    Add-Type -AssemblyName PresentationFramework
-    [System.Windows.MessageBox]::Show(
-      "Nameless Audio update failed.`n`n$Message`n`nLog: $logPath",
-      'Nameless Audio Updater',
-      'OK',
-      'Error'
-    ) | Out-Null
-  } catch {
-    Start-Process -FilePath 'notepad.exe' -ArgumentList (Quote-Argument $logPath) -ErrorAction SilentlyContinue
-  }
-}
-
-function Invoke-RobocopyMirror([string]$Source, [string]$Destination) {
-  if (-not (Test-Path -LiteralPath $Destination)) {
-    New-Item -ItemType Directory -Force -Path $Destination | Out-Null
-  }
-  Write-UpdateLog "mirroring $Source to $Destination"
-  & robocopy $Source $Destination /MIR /COPY:DAT /R:15 /W:1 /NFL /NDL /NP | Out-Null
-  $robocopyExitCode = $LASTEXITCODE
-  Write-UpdateLog "robocopy exit code=$robocopyExitCode"
-  if ($robocopyExitCode -ge 8) {
-    throw "File copy failed with robocopy exit code $robocopyExitCode."
-  }
-}
-
-function Install-WithDirectorySwap([string]$PayloadDir, [string]$TargetExePath) {
-  $installParent = Split-Path -Parent $InstallDir
-  $installName = Split-Path -Leaf $InstallDir
-  $stamp = Get-Date -Format 'yyyyMMddHHmmss'
-  $newDir = Join-Path $installParent ($installName + '.new_' + $stamp)
-  $backupDir = Join-Path $installParent ($installName + '.old_' + $stamp)
-
-  try {
-    Invoke-RobocopyMirror $PayloadDir $newDir
-    Write-UpdateLog "renaming current install dir to backup: $backupDir"
-    Rename-Item -LiteralPath $InstallDir -NewName (Split-Path -Leaf $backupDir)
-    Write-UpdateLog "activating new install dir: $InstallDir"
-    Rename-Item -LiteralPath $newDir -NewName $installName
-    if (-not (Test-Path -LiteralPath $TargetExePath)) {
-      throw "Updated executable is missing: $TargetExePath"
-    }
-    return $backupDir
-  } catch {
-    Write-UpdateLog ("directory swap failed: " + $_.Exception.Message)
-    if ((Test-Path -LiteralPath $backupDir) -and -not (Test-Path -LiteralPath $InstallDir)) {
-      try {
-        Rename-Item -LiteralPath $backupDir -NewName $installName
-        Write-UpdateLog 'restored backup install directory'
-      } catch {
-        Write-UpdateLog ("failed to restore backup install directory: " + $_.Exception.Message)
-      }
-    }
-    if (Test-Path -LiteralPath $newDir) {
-      Remove-Item -LiteralPath $newDir -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    throw
-  }
-}
-
-try {
-  Write-UpdateLog "start zip=$ZipPath install=$InstallDir exe=$ExePath pid=$AppProcessId elevated=$Elevated"
-  $staging = Join-Path $env:TEMP ("nameless_audio_update_" + [Guid]::NewGuid().ToString("N"))
-  New-Item -ItemType Directory -Force -Path $staging | Out-Null
-  Write-UpdateLog "expanding $ZipPath to $staging"
-  
-  Add-Type -AssemblyName System.IO.Compression.FileSystem
-  [System.IO.Compression.ZipFile]::ExtractToDirectory($ZipPath, $staging)
-
-  $currentExeName = Split-Path -Leaf $ExePath
-  $payloadExeCandidates = Get-ChildItem -LiteralPath $staging -Filter 'nameless_audio*.exe' -Recurse -File
-  $payloadExe = $payloadExeCandidates |
-    Where-Object { $_.Name -ieq $currentExeName } |
-    Select-Object -First 1
-  if ($null -eq $payloadExe) {
-    $payloadExe = $payloadExeCandidates |
-      Where-Object { $_.Name -ieq 'nameless_audio.exe' } |
-      Select-Object -First 1
-  }
-  if ($null -eq $payloadExe) {
-    $payloadExe = $payloadExeCandidates | Select-Object -First 1
-  }
-  if ($null -eq $payloadExe) {
-    throw "Cannot find Nameless Audio executable inside update ZIP."
-  }
-  if ($payloadExe.Name -ine $currentExeName) {
-    Write-UpdateLog "payload executable differs from current executable: $($payloadExe.Name)"
-  }
-  $payloadDir = $payloadExe.Directory.FullName
-  $targetExePath = Join-Path $InstallDir $payloadExe.Name
-
-  if (-not (Test-UpdateTargetWritable)) {
-    if (-not $Elevated) {
-      Start-ElevatedUpdater
-      Set-Content -LiteralPath $ReadyPath -Value 'ready' -Encoding ASCII
-      Write-UpdateLog 'elevated updater started'
-      exit 0
-    }
-    throw "Cannot write to install directory or parent directory: $InstallDir"
-  }
-
-  Set-Content -LiteralPath $ReadyPath -Value 'ready' -Encoding ASCII
-  Write-UpdateLog 'payload verified; waiting for application exit'
-  Wait-AppExit
-
-  $backupDir = $null
-  try {
-    Write-UpdateLog 'installing by directory swap'
-    $backupDir = Install-WithDirectorySwap $payloadDir $targetExePath
-  } catch {
-    Write-UpdateLog ("directory swap unavailable; falling back to in-place mirror: " + $_.Exception.Message)
-    Invoke-RobocopyMirror $payloadDir $InstallDir
-    if (-not (Test-Path -LiteralPath $targetExePath)) {
-      throw "Updated executable is missing: $targetExePath"
-    }
-  }
-
-  Write-UpdateLog "restarting $targetExePath"
-  Start-Process -FilePath $targetExePath -WorkingDirectory $InstallDir
-  if ($null -ne $backupDir -and (Test-Path -LiteralPath $backupDir)) {
-    Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
-  }
-  Write-UpdateLog 'update complete'
-  exit 0
-} catch {
-  Write-UpdateLog ("update failed: " + $_.Exception.Message)
-  Set-Content -LiteralPath $ReadyPath -Value ("error:" + $_.Exception.Message) -Encoding UTF8 -ErrorAction SilentlyContinue
-  Show-Failure $_.Exception.Message
-} finally {
-  if ($null -ne $staging) {
-    Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
-  }
-}
-''';

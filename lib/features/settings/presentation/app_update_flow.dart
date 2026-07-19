@@ -287,9 +287,7 @@ class AppUpdateFlow {
       }
       showAppSnackBar(
         context,
-        Platform.isWindows
-            ? i18n.tr('update_windows_ready_install')
-            : i18n.tr('update_ready_install'),
+        i18n.tr('update_ready_install'),
         tone: AppFeedbackTone.success,
         icon: Icons.install_mobile_rounded,
       );
@@ -320,10 +318,6 @@ class AppUpdateFlow {
       title: i18n.tr('update_install_failed'),
       icon: Icons.error_outline_rounded,
       duration: const Duration(seconds: 8),
-      actionLabel: Platform.isWindows ? i18n.tr('open_update_log') : null,
-      onAction: Platform.isWindows
-          ? () => unawaited(_updateService.openWindowsUpdateLog())
-          : null,
     );
   }
 }

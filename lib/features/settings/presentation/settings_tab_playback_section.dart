@@ -98,139 +98,130 @@ List<Widget> _buildSettingsPlaybackSection({
             );
           },
         ),
-        if (Platform.isAndroid) ...[
-          Consumer(
-            builder: (context, ref, _) {
-              final behavior = ref.watch(
-                settingsStateProvider.select(
-                  (state) =>
-                      state.value?.audioDeviceDisconnectBehavior ??
-                      AudioDeviceDisconnectBehavior.pause,
-                ),
-              );
-              return ListTile(
-                title: _settingsTitle(
-                  i18n.tr('audio_device_disconnect_behavior'),
-                ),
-                leading: _settingsIcon(Icons.headset_off_rounded, cs.onSurface),
-                trailing: _settingsDropdown<AudioDeviceDisconnectBehavior>(
-                  context,
-                  value: behavior,
-                  onChanged: (value) {
-                    if (value != null) {
-                      settingsController.setAudioDeviceDisconnectBehavior(
-                        value,
-                      );
-                    }
-                  },
-                  items: AudioDeviceDisconnectBehavior.values
-                      .map(
-                        (value) =>
-                            DropdownMenuItem<AudioDeviceDisconnectBehavior>(
-                              value: value,
-                              child: _settingsDropdownText(
-                                i18n.tr(
-                                  'audio_device_disconnect_${value.name}',
-                                ),
-                              ),
+        Consumer(
+          builder: (context, ref, _) {
+            final behavior = ref.watch(
+              settingsStateProvider.select(
+                (state) =>
+                    state.value?.audioDeviceDisconnectBehavior ??
+                    AudioDeviceDisconnectBehavior.pause,
+              ),
+            );
+            return ListTile(
+              title: _settingsTitle(
+                i18n.tr('audio_device_disconnect_behavior'),
+              ),
+              leading: _settingsIcon(Icons.headset_off_rounded, cs.onSurface),
+              trailing: _settingsDropdown<AudioDeviceDisconnectBehavior>(
+                context,
+                value: behavior,
+                onChanged: (value) {
+                  if (value != null) {
+                    settingsController.setAudioDeviceDisconnectBehavior(value);
+                  }
+                },
+                items: AudioDeviceDisconnectBehavior.values
+                    .map(
+                      (value) =>
+                          DropdownMenuItem<AudioDeviceDisconnectBehavior>(
+                            value: value,
+                            child: _settingsDropdownText(
+                              i18n.tr('audio_device_disconnect_${value.name}'),
                             ),
-                      )
-                      .toList(),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
-              );
-            },
-          ),
-          Consumer(
-            builder: (context, ref, _) {
-              final behavior = ref.watch(
-                settingsStateProvider.select(
-                  (state) =>
-                      state.value?.transientAudioFocusLossBehavior ??
-                      TransientAudioFocusLossBehavior.duck,
-                ),
-              );
-              return ListTile(
-                title: _settingsTitle(
-                  i18n.tr('transient_audio_focus_loss_behavior'),
-                ),
-                leading: _settingsIcon(Icons.volume_down_rounded, cs.onSurface),
-                trailing: _settingsDropdown<TransientAudioFocusLossBehavior>(
-                  context,
-                  value: behavior,
-                  onChanged: (value) {
-                    if (value != null) {
-                      settingsController.setTransientAudioFocusLossBehavior(
-                        value,
-                      );
-                    }
-                  },
-                  items: TransientAudioFocusLossBehavior.values
-                      .map(
-                        (value) =>
-                            DropdownMenuItem<TransientAudioFocusLossBehavior>(
-                              value: value,
-                              child: _settingsDropdownText(
-                                i18n.tr(
-                                  'transient_audio_focus_loss_${value.name}',
-                                ),
-                              ),
-                            ),
-                      )
-                      .toList(),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
-              );
-            },
-          ),
-          Consumer(
-            builder: (context, ref, _) {
-              final behavior = ref.watch(
-                settingsStateProvider.select(
-                  (state) =>
-                      state.value?.interruptionResumeBehavior ??
-                      InterruptionResumeBehavior.resume,
-                ),
-              );
-              return ListTile(
-                title: _settingsTitle(i18n.tr('interruption_resume_behavior')),
-                leading: _settingsIcon(
-                  Icons.phone_in_talk_rounded,
-                  cs.onSurface,
-                ),
-                trailing: _settingsDropdown<InterruptionResumeBehavior>(
-                  context,
-                  value: behavior,
-                  onChanged: (value) {
-                    if (value != null) {
-                      settingsController.setInterruptionResumeBehavior(value);
-                    }
-                  },
-                  items: InterruptionResumeBehavior.values
-                      .map(
-                        (value) => DropdownMenuItem<InterruptionResumeBehavior>(
-                          value: value,
-                          child: _settingsDropdownText(
-                            i18n.tr('interruption_resume_${value.name}'),
                           ),
+                    )
+                    .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final behavior = ref.watch(
+              settingsStateProvider.select(
+                (state) =>
+                    state.value?.transientAudioFocusLossBehavior ??
+                    TransientAudioFocusLossBehavior.duck,
+              ),
+            );
+            return ListTile(
+              title: _settingsTitle(
+                i18n.tr('transient_audio_focus_loss_behavior'),
+              ),
+              leading: _settingsIcon(Icons.volume_down_rounded, cs.onSurface),
+              trailing: _settingsDropdown<TransientAudioFocusLossBehavior>(
+                context,
+                value: behavior,
+                onChanged: (value) {
+                  if (value != null) {
+                    settingsController.setTransientAudioFocusLossBehavior(
+                      value,
+                    );
+                  }
+                },
+                items: TransientAudioFocusLossBehavior.values
+                    .map(
+                      (value) =>
+                          DropdownMenuItem<TransientAudioFocusLossBehavior>(
+                            value: value,
+                            child: _settingsDropdownText(
+                              i18n.tr(
+                                'transient_audio_focus_loss_${value.name}',
+                              ),
+                            ),
+                          ),
+                    )
+                    .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final behavior = ref.watch(
+              settingsStateProvider.select(
+                (state) =>
+                    state.value?.interruptionResumeBehavior ??
+                    InterruptionResumeBehavior.resume,
+              ),
+            );
+            return ListTile(
+              title: _settingsTitle(i18n.tr('interruption_resume_behavior')),
+              leading: _settingsIcon(Icons.phone_in_talk_rounded, cs.onSurface),
+              trailing: _settingsDropdown<InterruptionResumeBehavior>(
+                context,
+                value: behavior,
+                onChanged: (value) {
+                  if (value != null) {
+                    settingsController.setInterruptionResumeBehavior(value);
+                  }
+                },
+                items: InterruptionResumeBehavior.values
+                    .map(
+                      (value) => DropdownMenuItem<InterruptionResumeBehavior>(
+                        value: value,
+                        child: _settingsDropdownText(
+                          i18n.tr('interruption_resume_${value.name}'),
                         ),
-                      )
-                      .toList(),
-                ),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 2,
-                ),
-              );
-            },
-          ),
-        ],
+                      ),
+                    )
+                    .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
       ],
     ),
   ];

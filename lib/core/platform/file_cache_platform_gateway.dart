@@ -3,13 +3,11 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/services.dart';
-import 'package:media_kit/media_kit.dart' as media;
 import 'package:path/path.dart' as path;
 
 import 'library_scan_wire_models.dart';
 import '../logging/app_log_service.dart';
 import '../media/media_file_support.dart';
-import '../media/path_matcher.dart';
 import '../errors/native_result.dart';
 import '../media/path_display.dart';
 import 'platform_channels.dart';
@@ -25,15 +23,13 @@ class FileCachePlatformGateway {
        ),
        _scanEvents =
            scanEvents ?? const EventChannel(FileCacheChannel.scanEvents),
-       _isAndroid = isAndroid ?? (() => Platform.isAndroid),
-       _usesHostPlatform = isAndroid == null;
+       _isAndroid = isAndroid ?? (() => Platform.isAndroid);
 
   static final FileCachePlatformGateway instance = FileCachePlatformGateway();
 
   final PlatformMethodClient _client;
   final EventChannel _scanEvents;
   final bool Function() _isAndroid;
-  final bool _usesHostPlatform;
 
   void _logOptionalFailure<T>(String method, NativeResult<T> result) {
     if (result case NativeFailure<T>(
@@ -236,10 +232,7 @@ class FileCachePlatformGateway {
   }
 
   Future<Duration?> resolveMediaDuration(String mediaPath) async {
-    if (!_isAndroid()) {
-      if (!_usesHostPlatform || !Platform.isWindows) return null;
-      return _resolveWindowsMediaDuration(mediaPath);
-    }
+    if (!_isAndroid()) return null;
     try {
       final result = await _client
           .invoke<num?>(
@@ -256,51 +249,6 @@ class FileCachePlatformGateway {
       return Duration(milliseconds: milliseconds.toInt());
     } catch (_) {
       return null;
-    }
-  }
-
-  Future<Duration?> _resolveWindowsMediaDuration(String mediaPath) async {
-    const timeout = Duration(seconds: 8);
-    final stopwatch = Stopwatch()..start();
-    media.Player? player;
-    try {
-      media.MediaKit.ensureInitialized();
-      player = media.Player();
-      final mediaUri =
-          PathMatcher.isContentUri(mediaPath) ||
-              PathMatcher.isRemoteUri(mediaPath)
-          ? mediaPath
-          : Uri.file(mediaPath).toString();
-      await player.open(media.Media(mediaUri), play: false).timeout(timeout);
-      var duration = player.state.duration;
-      if (duration <= Duration.zero) {
-        final remaining = timeout - stopwatch.elapsed;
-        if (remaining <= Duration.zero) return null;
-        duration = await player.stream.duration
-            .firstWhere((value) => value > Duration.zero)
-            .timeout(remaining);
-      }
-      return duration > Duration.zero ? duration : null;
-    } catch (error, stackTrace) {
-      AppLogService.warning(
-        'windows_media_duration_resolve_failed path=$mediaPath',
-        error: error,
-        stackTrace: stackTrace,
-      );
-      return null;
-    } finally {
-      final playerToDispose = player;
-      if (playerToDispose != null) {
-        try {
-          await playerToDispose.dispose().timeout(const Duration(seconds: 2));
-        } catch (error, stackTrace) {
-          AppLogService.warning(
-            'windows_media_duration_player_dispose_failed path=$mediaPath',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-      }
     }
   }
 

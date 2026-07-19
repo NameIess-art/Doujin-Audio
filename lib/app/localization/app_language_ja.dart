@@ -494,7 +494,6 @@ const Map<String, String> appLanguageJa = {
   'update_install_preparing_message':
       'バージョン {version} をダウンロードし、SHA-256 検証を完了しました。更新を完了するため、アプリが自動で終了して再起動する場合があります。ファイル: {path}',
   'update_ready_install': 'インストーラーを開きました。画面の指示に従って更新してください。',
-  'update_windows_ready_install': '更新プログラムの準備ができました。アプリを終了して再起動し、更新を完了します。',
   'update_install_failed': '更新のインストールを続行できませんでした。',
   'update_install_failed_next_step':
       '後でもう一度お試しください。まだ失敗する場合は更新ログを確認するか、GitHub Release ページから手動でインストールしてください。',

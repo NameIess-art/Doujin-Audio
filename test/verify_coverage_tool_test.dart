@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+const _verifierTimeout = Timeout(Duration(minutes: 2));
+
 void main() {
   late Directory temporaryDirectory;
   late String verifierPath;
@@ -20,40 +22,48 @@ void main() {
     }
   });
 
-  test('aggregates all files matching a configured module prefix', () async {
-    final result = await _runVerifier(
-      verifierPath: verifierPath,
-      directory: temporaryDirectory,
-      baseline: <String, Object?>{
-        'minimumTotalLineCoveragePercent': 70,
-        'moduleMinimumLineCoveragePercent': <String, num>{'lib/feature/': 75},
-      },
-      lcov: _lcov(<({String path, int found, int hit})>[
-        (path: 'lib/feature/first.dart', found: 10, hit: 10),
-        (path: 'lib/feature/second.dart', found: 10, hit: 5),
-      ]),
-    );
+  test(
+    'aggregates all files matching a configured module prefix',
+    () async {
+      final result = await _runVerifier(
+        verifierPath: verifierPath,
+        directory: temporaryDirectory,
+        baseline: <String, Object?>{
+          'minimumTotalLineCoveragePercent': 70,
+          'moduleMinimumLineCoveragePercent': <String, num>{'lib/feature/': 75},
+        },
+        lcov: _lcov(<({String path, int found, int hit})>[
+          (path: 'lib/feature/first.dart', found: 10, hit: 10),
+          (path: 'lib/feature/second.dart', found: 10, hit: 5),
+        ]),
+      );
 
-    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
-    expect(result.stdout, contains('Module lib/feature/: 75.00%'));
-  });
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('Module lib/feature/: 75.00%'));
+    },
+    timeout: _verifierTimeout,
+  );
 
-  test('fails when total or module coverage is below its threshold', () async {
-    final result = await _runVerifier(
-      verifierPath: verifierPath,
-      directory: temporaryDirectory,
-      baseline: <String, Object?>{
-        'minimumTotalLineCoveragePercent': 80,
-        'moduleMinimumLineCoveragePercent': <String, num>{'lib/feature/': 90},
-      },
-      lcov: _lcov(<({String path, int found, int hit})>[
-        (path: 'lib/feature/value.dart', found: 10, hit: 7),
-      ]),
-    );
+  test(
+    'fails when total or module coverage is below its threshold',
+    () async {
+      final result = await _runVerifier(
+        verifierPath: verifierPath,
+        directory: temporaryDirectory,
+        baseline: <String, Object?>{
+          'minimumTotalLineCoveragePercent': 80,
+          'moduleMinimumLineCoveragePercent': <String, num>{'lib/feature/': 90},
+        },
+        lcov: _lcov(<({String path, int found, int hit})>[
+          (path: 'lib/feature/value.dart', found: 10, hit: 7),
+        ]),
+      );
 
-    expect(result.exitCode, isNot(0));
-    expect(result.stderr, contains('Coverage check failed.'));
-  });
+      expect(result.exitCode, isNot(0));
+      expect(result.stderr, contains('Coverage check failed.'));
+    },
+    timeout: _verifierTimeout,
+  );
 
   test(
     'fails when a configured module prefix has no coverage records',
@@ -73,6 +83,7 @@ void main() {
       expect(result.exitCode, isNot(0));
       expect(result.stderr, contains('lib/missing/'));
     },
+    timeout: _verifierTimeout,
   );
 }
 

@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 
-import '../../../core/platform/app_platform.dart';
 import '../../../core/persistence/app_database.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../settings/application/app_preferences.dart';
@@ -156,15 +155,7 @@ class AppBackupService {
            closeDatabase ?? (database ?? AppDatabase.instance).close,
        _reopenDatabase =
            reopenDatabase ?? (database ?? AppDatabase.instance).reopen,
-       _platformName =
-           platformName ??
-           (AppPlatform.isAndroid
-               ? 'android'
-               : AppPlatform.isWindows
-               ? 'windows'
-               : AppPlatform.isDesktopLinux
-               ? 'linux'
-               : 'unknown');
+       _platformName = platformName ?? 'android';
 
   static const int formatVersion = 2;
   static const int dataEpoch = 1;

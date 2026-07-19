@@ -9,7 +9,6 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/persistence/app_database.dart' show PersistedSession;
 import '../../../core/persistence/audio_database_repository.dart';
-import '../../../core/platform/app_platform.dart';
 import '../../asmr/application/asmr_playback_cache_service.dart';
 import '../../settings/application/app_preferences.dart';
 import '../domain/audio_effects.dart';
@@ -21,7 +20,6 @@ import 'native_playback_repository.dart';
 import 'native_playback_bridge.dart';
 import 'playback_command_runner.dart';
 import 'playback_queue_resolver.dart';
-import 'system_media_controls_service.dart';
 
 typedef PlaybackQueueSessionSynchronizer =
     Future<void> Function(PlaybackSession session, {bool selectFirst});
@@ -73,7 +71,6 @@ final class PlaybackFacade {
     required this.commandRunner,
     required this.playbackCacheService,
     required this.service,
-    required this.systemMediaControlsService,
   });
 
   factory PlaybackFacade.create({
@@ -83,7 +80,6 @@ final class PlaybackFacade {
     AsmrPlaybackCacheService playbackCacheService =
         const AsmrPlaybackCacheService(),
     PlaybackSessionService? service,
-    SystemMediaControlsService? systemMediaControlsService,
   }) {
     return PlaybackFacade(
       databaseRepository: databaseRepository,
@@ -91,8 +87,6 @@ final class PlaybackFacade {
       commandRunner: commandRunner,
       playbackCacheService: playbackCacheService,
       service: service ?? PlaybackSessionService(),
-      systemMediaControlsService:
-          systemMediaControlsService ?? SystemMediaControlsService(),
     );
   }
 
@@ -101,7 +95,6 @@ final class PlaybackFacade {
   final PlaybackCommandRunner commandRunner;
   final AsmrPlaybackCacheService playbackCacheService;
   final PlaybackSessionService service;
-  final SystemMediaControlsService systemMediaControlsService;
   final StreamController<String> _sessionActivations =
       StreamController<String>.broadcast(sync: true);
   MusicTrack? Function(String trackPath)? _persistedTrackResolver;
@@ -282,7 +275,7 @@ final class PlaybackFacade {
     final uri = Uri.tryParse(value);
     if (uri == null) return value;
     if (uri.scheme == 'file') {
-      return uri.toFilePath(windows: isWindowsDriveFileUri(uri));
+      return uri.toFilePath();
     }
     if (uri.scheme == 'content' ||
         uri.scheme == 'http' ||
@@ -1799,7 +1792,6 @@ final class PlaybackFacade {
     await _sessionActivations.close();
     await nativeRepository.dispose();
     await service.dispose();
-    await systemMediaControlsService.dispose();
   }
 }
 

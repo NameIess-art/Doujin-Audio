@@ -15,10 +15,6 @@ migration:
     - platform: root
       create_revision: db50e20168db8fee486b9abf32fc912de3bc5b6a
       base_revision: db50e20168db8fee486b9abf32fc912de3bc5b6a
-    - platform: windows
-      create_revision: db50e20168db8fee486b9abf32fc912de3bc5b6a
-      base_revision: db50e20168db8fee486b9abf32fc912de3bc5b6a
-
   # User provided section
 
   # List of Local paths (relative to this file) that should be

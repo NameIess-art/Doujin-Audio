@@ -1,6 +1,6 @@
 # Nameless Audio
 
-Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的跨平台播放器，使用 Flutter、Android 原生 Media3 / ExoPlayer 与 Windows libmpv 混合实现。
+Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 播放器，使用 Flutter 与 Android 原生 Media3 / ExoPlayer 实现。
 
 当前版本：以 [`pubspec.yaml`](pubspec.yaml) 为唯一来源；发布页：[GitHub Latest Release](https://github.com/NameIess-art/nameless-audio/releases/latest)。
 
@@ -18,11 +18,8 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的跨平台
 | Android arm64-v8a | `NamelessAudio-android-arm64-<tag>.apk` | 适用于大多数现代 64 位 Android 手机，安装包较小 |
 | Android armeabi-v7a | `NamelessAudio-android-armv7-<tag>.apk` | 适用于旧款 32 位 ARM Android 设备 |
 | Android x86_64 | `NamelessAudio-android-x64-<tag>.apk` | 适用于 x86_64 Android 设备或模拟器 |
-| Windows x64 | `NamelessAudio-windows-x64-<tag>.zip` | 解压完整 ZIP 后运行 `nameless_audio.exe` |
 
 本项目仅通过 GitHub Release 正式分发，不提供应用商店 AAB 或 iOS 安装包。
-
-Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe。不要只复制 EXE。
 
 ## 主要功能
 
@@ -31,12 +28,11 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 - 多会话播放：同时保留多个独立播放会话，分别控制曲目、进度、音量、循环、字幕、队列和音效。
 - 播放范围：支持单曲循环、当前文件夹顺序/随机、跨文件夹顺序/随机播放。
 - 传输控制：播放/暂停、上一首/下一首、快退/快进、进度拖动、播放失败重试。
-- Windows 支持系统媒体传输控制（SMTC），可在系统音量/任务栏媒体面板中显示标题、封面、播放状态，并响应播放/暂停、上一首和下一首。
 - 加载中或播放错误时，播放按钮显示暂停图标；点击可立即重试。
 - 控制台功能栏：均衡器、功能、播放速度、标签、声道平衡都可在播放详情页直接打开。
 - 均衡器：支持设备频段、自带预设、自定义频段增益和持久化。
 - 功能面板：支持跳过空白、轻度降噪、音量平衡、左右声道调换。
-- 播放速度：提供固定速度刻度，Windows 鼠标滚轮每次只切换一个刻度。
+- 播放速度：提供固定速度刻度。
 - 声道平衡：支持左右声道平移，适合单耳或声场偏移内容。
 - 标签面板：支持时间段标签、颜色、起止时间和片段循环播放。
 - 功能状态图标：字幕、速度、均衡器、跳过空白、降噪、音量平衡、声道平衡和左右声道互换会显示在播放详情页右上角、播放列表卡片和底部播放卡片的播放按钮下方。
@@ -47,7 +43,7 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 - 会话详情、播放卡片和全局悬浮窗口同步当前字幕。
 - 当音频加载失败时，会在详情页字幕区域以红字提示报错信息。
 - 当音频仍在加载时，详情页字幕区域会显示“加载中”。
-- Android 使用系统悬浮窗；Windows 使用可重复开启、拖动和交互的原生桌面字幕窗口。
+- Android 使用系统悬浮窗显示全局字幕。
 - 字幕悬浮窗支持字体、字号、文字颜色、背景颜色、背景透明度和边框深度设置，并提供实时预览。
 
 ### 本地媒体库
@@ -89,7 +85,7 @@ Windows ZIP 包含完整 Flutter 运行时、`libmpv-2.dll`、FFmpeg 和 FFprobe
 - 普通 `.nalbackup` 只包含应用偏好和媒体库数据，不导出 ASMR.ONE 密码、JWT 或其他登录凭据；恢复后需要重新登录。
 - 缓存管理覆盖封面、ASMR.ONE 播放缓存、视频帧、更新包和下载临时文件。
 - 应用内更新从 GitHub Release 检查、下载、SHA-256 校验并安装。
-- 点击更新后，下载进度会在页面最上方持续显示；下载失败时会保留错误信息，Windows 可直接打开更新日志。
+- 点击更新后，下载进度会在页面最上方持续显示；下载失败时会保留错误信息。
 - 启动自动检查与设置页手动检查复用同一更新流程，权限、下载校验、失败重试和安装反馈保持一致。
 
 ## 应用内自动更新
@@ -105,11 +101,9 @@ NamelessAudio-android-armv7-<tag>.apk
 NamelessAudio-android-armv7-<tag>.apk.sha256
 NamelessAudio-android-x64-<tag>.apk
 NamelessAudio-android-x64-<tag>.apk.sha256
-NamelessAudio-windows-x64-<tag>.zip
-NamelessAudio-windows-x64-<tag>.zip.sha256
 ```
 
-Android 应用内自动更新始终下载 universal APK 并交给系统安装器；其他 ABI 拆分包供用户在 GitHub Release 手动选择。Windows 下载 ZIP 后启动独立更新器，更新器会验证 ZIP、等待应用退出、切换安装目录并重启新版本。
+Android 应用内自动更新始终下载 universal APK 并交给系统安装器；其他 ABI 拆分包供用户在 GitHub Release 手动选择。
 
 ## 支持格式
 
@@ -163,26 +157,14 @@ flutter build apk --release
 flutter build apk --release --split-per-abi --target-platform android-arm,android-arm64,android-x64
 ```
 
-### Windows Release
-
-构建前确保 `assets/ffmpeg/ffmpeg.exe` 和 `assets/ffmpeg/ffprobe.exe` 存在。Windows SMTC 依赖 `smtc_windows`，本地和 CI 构建环境需要可用的 Rust toolchain / `rustup`。`smtc_windows` 当前的 cargokit 脚本在 Windows hidden `AppData` 路径下可能无法解析 pub cache 符号链接，执行构建前补丁脚本后再打包。
-
-```powershell
-.\tool\patch_smtc_windows_cargokit.ps1
-flutter build windows --release
-$tag = dart tool/verify_release.dart --print-tag
-Compress-Archive -Path build\windows\x64\runner\Release\* -DestinationPath "dist\NamelessAudio-windows-x64-$tag.zip" -Force
-```
-
 ## 发布流程
 
 推送与 `pubspec.yaml` 版本一致的标签会触发 GitHub Actions：
 
 1. 执行静态分析、Flutter 测试、Android JVM 测试和 Debug APK 构建。
 2. 使用仓库 Secrets 中的正式签名构建 Android universal、arm64、armv7 和 x64 APK。
-3. 下载并校验 FFmpeg，构建包含完整 libmpv 的 Windows ZIP。
-4. 为全部资产生成 `.sha256`，逐个验证签名和 ABI 后暂存为 CI artifacts。
-5. 所有平台构建成功后创建草稿 Release，核对完整资产列表，再公开为 GitHub Latest。
+3. 为全部资产生成 `.sha256`，逐个验证签名和 ABI 后暂存为 CI artifacts。
+4. Android 构建成功后创建草稿 Release，核对完整资产列表，再公开为 GitHub Latest。
 
 ```powershell
 $tag = dart tool/verify_release.dart --print-tag

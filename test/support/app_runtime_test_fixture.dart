@@ -28,7 +28,6 @@ import 'package:nameless_audio/features/player/application/notification_facade.d
 import 'package:nameless_audio/features/player/application/playback_command_runner.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
-import 'package:nameless_audio/features/player/application/system_media_controls_service.dart';
 import 'package:nameless_audio/features/player/application/timer_facade.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
@@ -64,7 +63,6 @@ AppRuntimeGraph createTestRuntimeGraph({
   TimerService? timerService,
   NotificationCoordinatorService? notificationStateService,
   SettingsRepository? settingsRepository,
-  SystemMediaControlsService? systemMediaControlsService,
   bool skipPersistence = true,
   bool startRuntime = false,
 }) {
@@ -96,7 +94,6 @@ AppRuntimeGraph createTestRuntimeGraph({
         commandRunner: playbackCommandRunner,
         playbackCacheService: asmrPlaybackCacheService,
         service: playbackService,
-        systemMediaControlsService: systemMediaControlsService,
       );
   final graph = createAppRuntimeGraph(
     library: resolvedLibrary,

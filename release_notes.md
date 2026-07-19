@@ -6,7 +6,7 @@
 
 - 修复播放队列中单独导入的音频或视频不能正确切换音频、上一首或下一首的问题。
 - 播放队列按用户排列顺序前进，重复添加同一路径时也会切换到正确的队列索引。
-- 改进多会话播放、通知栏控制、Windows SMTC、播放意图同步和网络错误恢复。
+- 改进多会话播放、通知栏控制、播放意图同步和网络错误恢复。
 - 完善音频焦点、后台服务、睡眠计时器、字幕悬浮窗和进程恢复行为。
 
 ## ASMR.ONE
@@ -20,7 +20,7 @@
 - Android 文件夹扫描支持增量批次、及时取消、generation 隔离和不完整扫描删除保护。
 - 优化大型媒体库树、搜索、封面缓存、列表重建和播放进度更新性能。
 - 加强数据库维护锁、备份恢复回滚、SQLite 大批量删除和 ASMR outbox 原子保存。
-- 修复封面作用域、Windows 回到顶部、视频转换取消和多处生命周期资源清理问题。
+- 修复封面作用域、视频转换取消和多处生命周期资源清理问题。
 
 ## 架构与质量
 
@@ -40,8 +40,6 @@ NamelessAudio-android-armv7-<tag>.apk
 NamelessAudio-android-armv7-<tag>.apk.sha256
 NamelessAudio-android-x64-<tag>.apk
 NamelessAudio-android-x64-<tag>.apk.sha256
-NamelessAudio-windows-x64-<tag>.zip
-NamelessAudio-windows-x64-<tag>.zip.sha256
 ```
 
-普通 Android 用户建议下载 universal APK。现代手机可选择 arm64，旧款 32 位 ARM 设备选择 armv7，x86_64 仅用于对应设备或模拟器。Windows ZIP 必须完整解压后运行。
+普通 Android 用户建议下载 universal APK。现代手机可选择 arm64，旧款 32 位 ARM 设备选择 armv7，x86_64 仅用于对应设备或模拟器。

@@ -280,8 +280,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       _contentEnterController,
       _dismissController,
     ]);
-    final isWindows = defaultTargetPlatform == TargetPlatform.windows;
-    final enableVerticalDismiss = !isWindows;
 
     return Material(
       color: Colors.transparent,
@@ -370,59 +368,42 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                     segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
                     onClose: () =>
                         _dismissAndPop(navigator: Navigator.of(context)),
-                    onHorizontalDragUpdate: isWindows
-                        ? null
-                        : (details) {
-                            if (_segmentPanelExpandedNotifier.value) return;
-                            _horizontalDragDelta += details.primaryDelta ?? 0;
-                          },
-                    onHorizontalDragEnd: isWindows
-                        ? null
-                        : (details) {
-                            if (_segmentPanelExpandedNotifier.value) return;
-                            _handleHorizontalDragEnd(details, sessionIds);
-                          },
-                    onHorizontalDragCancel: isWindows
-                        ? null
-                        : () {
-                            if (_segmentPanelExpandedNotifier.value) return;
-                            _horizontalDragDelta = 0;
-                          },
-                    onVerticalDragUpdate: enableVerticalDismiss
-                        ? (delta) {
-                            final screenHeight = MediaQuery.sizeOf(
-                              context,
-                            ).height;
-                            if (screenHeight <= 0) return;
-                            final nextValue =
-                                _dismissController.value +
-                                (delta / screenHeight);
-                            if (nextValue > 0.001) {
-                              _beginDismissInteraction();
-                            }
-                            _dismissController.value = nextValue.clamp(
-                              0.0,
-                              1.0,
-                            );
-                          }
-                        : null,
-                    onVerticalDragEnd: enableVerticalDismiss
-                        ? (details) => _handleVerticalDragEnd(details, context)
-                        : null,
-                    onVerticalDragCancel: enableVerticalDismiss
-                        ? () {
-                            if (_dismissController.value <= 0.001) {
-                              _endDismissInteraction();
-                              return;
-                            }
-                            _beginDismissInteraction();
-                            unawaited(
-                              _animateDismissBack().whenComplete(
-                                _endDismissInteraction,
-                              ),
-                            );
-                          }
-                        : null,
+                    onHorizontalDragUpdate: (details) {
+                      if (_segmentPanelExpandedNotifier.value) return;
+                      _horizontalDragDelta += details.primaryDelta ?? 0;
+                    },
+                    onHorizontalDragEnd: (details) {
+                      if (_segmentPanelExpandedNotifier.value) return;
+                      _handleHorizontalDragEnd(details, sessionIds);
+                    },
+                    onHorizontalDragCancel: () {
+                      if (_segmentPanelExpandedNotifier.value) return;
+                      _horizontalDragDelta = 0;
+                    },
+                    onVerticalDragUpdate: (delta) {
+                      final screenHeight = MediaQuery.sizeOf(context).height;
+                      if (screenHeight <= 0) return;
+                      final nextValue =
+                          _dismissController.value + (delta / screenHeight);
+                      if (nextValue > 0.001) {
+                        _beginDismissInteraction();
+                      }
+                      _dismissController.value = nextValue.clamp(0.0, 1.0);
+                    },
+                    onVerticalDragEnd: (details) =>
+                        _handleVerticalDragEnd(details, context),
+                    onVerticalDragCancel: () {
+                      if (_dismissController.value <= 0.001) {
+                        _endDismissInteraction();
+                        return;
+                      }
+                      _beginDismissInteraction();
+                      unawaited(
+                        _animateDismissBack().whenComplete(
+                          _endDismissInteraction,
+                        ),
+                      );
+                    },
                   );
                 },
               ),
@@ -596,8 +577,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final mediaSize = MediaQuery.sizeOf(context);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop =
-        Platform.isWindows || mediaSize.width >= 760 || isLandscape;
+    final isDesktop = mediaSize.width >= 760 || isLandscape;
     final maxWidth = isDesktop ? 520.0 : double.infinity;
     final outerPadding = EdgeInsets.symmetric(
       horizontal: isDesktop ? 24 : 12,
@@ -881,18 +861,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       size: 32,
                                     ),
                                   ),
-                                  Expanded(
-                                    child: GestureDetector(
-                                      key: const ValueKey(
-                                        'session_detail_window_drag_region',
-                                      ),
-                                      behavior: HitTestBehavior.translucent,
-                                      onPanStart: Platform.isWindows
-                                          ? (_) => windowManager.startDragging()
-                                          : null,
-                                      child: const SizedBox(height: 48),
-                                    ),
-                                  ),
+                                  const Expanded(child: SizedBox(height: 48)),
                                   if (hasSubtitle &&
                                       settings.isShowEnabled(session.id) &&
                                       settings.isGlobalEnabled(session.id)) ...[

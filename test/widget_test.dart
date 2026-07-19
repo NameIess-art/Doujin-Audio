@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -128,21 +127,6 @@ void main() {
     expect(find.text(harness.language.tr('loading_dot')), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
     expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('Windows settings hides haptic feedback option', (tester) async {
-    if (!Platform.isWindows) {
-      return;
-    }
-
-    final harness = await _pumpAppShell(tester);
-    await _tapSettingsDestination(tester);
-    await _pumpMainScreenAnimations(tester);
-
-    expect(
-      find.text(harness.language.tr('haptic_feedback_enabled')),
-      findsNothing,
-    );
   });
 
   testWidgets('startup overlay stays for 1.5 seconds while pages initialize', (
@@ -280,39 +264,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Windows keeps desktop rail without side menu scrolling', (
-    tester,
-  ) async {
-    if (!Platform.isWindows) {
-      return;
-    }
-
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(550, 800);
-    addTearDown(() {
-      tester.view.resetDevicePixelRatio();
-      tester.view.resetPhysicalSize();
-    });
-    await _pumpAppShell(tester, includePlaybackSession: false);
-
-    expect(find.byType(NavigationRail), findsOneWidget);
-    expect(
-      find.ancestor(
-        of: find.byType(NavigationRail),
-        matching: find.byType(SingleChildScrollView),
-      ),
-      findsNothing,
-    );
-    expect(tester.takeException(), isNull);
-  });
-
   testWidgets('app shell handles keyboard and dynamic portrait sizes', (
     tester,
   ) async {
-    if (Platform.isWindows) {
-      return;
-    }
-
     await _pumpAppShell(tester);
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
@@ -433,10 +387,6 @@ void main() {
   testWidgets('bottom dock blur remains active during UI interaction', (
     tester,
   ) async {
-    if (Platform.isWindows) {
-      return;
-    }
-
     tester.view.physicalSize = const Size(1080, 2400);
     addTearDown(tester.view.resetPhysicalSize);
     await _pumpAppShell(tester);
@@ -475,10 +425,7 @@ void main() {
     addTearDown(() {
       debugDefaultTargetPlatformOverride = previousPlatform;
     });
-    _setLogicalTestViewSize(
-      tester,
-      Platform.isWindows ? const Size(1100, 750) : const Size(1080, 2400),
-    );
+    _setLogicalTestViewSize(tester, const Size(1080, 2400));
     const track = MusicTrack(
       path: 'https://asmr.one/media/work/detail-track.mp3',
       displayName: 'ASMR detail track',
@@ -533,10 +480,7 @@ void main() {
     addTearDown(() {
       debugDefaultTargetPlatformOverride = previousPlatform;
     });
-    _setLogicalTestViewSize(
-      tester,
-      Platform.isWindows ? const Size(1100, 750) : const Size(1080, 2400),
-    );
+    _setLogicalTestViewSize(tester, const Size(1080, 2400));
     const track = MusicTrack(
       path: 'https://asmr.one/media/work/color-hierarchy.mp3',
       displayName: 'Color hierarchy track',
@@ -624,30 +568,6 @@ void main() {
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 
-  testWidgets('Windows session detail exposes a window drag region', (
-    tester,
-  ) async {
-    if (!Platform.isWindows) {
-      return;
-    }
-
-    _setLogicalTestViewSize(tester, const Size(1100, 750));
-    await _pumpAppShell(tester);
-    unawaited(
-      tester
-          .state<NavigatorState>(find.byType(Navigator).first)
-          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
-    );
-    await tester.pumpAndSettle();
-
-    final dragRegion = tester.widget<GestureDetector>(
-      find.byKey(const ValueKey('session_detail_window_drag_region')),
-    );
-    expect(dragRegion.onPanStart, isNotNull);
-    await _settleSessionDetailAsyncWork(tester);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
-
   testWidgets(
     'session detail keeps route revealed through a rapid drag reversal',
     (tester) async {
@@ -657,10 +577,7 @@ void main() {
         debugDefaultTargetPlatformOverride = previousPlatform;
       });
       expect(defaultTargetPlatform, TargetPlatform.android);
-      _setLogicalTestViewSize(
-        tester,
-        Platform.isWindows ? const Size(1100, 750) : const Size(1080, 2400),
-      );
+      _setLogicalTestViewSize(tester, const Size(1080, 2400));
       await _pumpAppShell(tester);
       unawaited(
         tester
@@ -739,10 +656,7 @@ void main() {
     addTearDown(() {
       debugDefaultTargetPlatformOverride = previousPlatform;
     });
-    _setLogicalTestViewSize(
-      tester,
-      Platform.isWindows ? const Size(1100, 750) : const Size(1080, 2400),
-    );
+    _setLogicalTestViewSize(tester, const Size(1080, 2400));
     await _pumpAppShell(tester);
     unawaited(
       tester
@@ -782,10 +696,7 @@ void main() {
     addTearDown(() {
       debugDefaultTargetPlatformOverride = previousPlatform;
     });
-    _setLogicalTestViewSize(
-      tester,
-      Platform.isWindows ? const Size(1100, 750) : const Size(1080, 2400),
-    );
+    _setLogicalTestViewSize(tester, const Size(1080, 2400));
     await _pumpAppShell(tester);
     unawaited(
       tester

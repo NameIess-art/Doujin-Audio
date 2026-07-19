@@ -572,11 +572,6 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                                       TargetPlatform.android
                                   ? () => _copyCategoryTerm(context, term)
                                   : null,
-                              onSecondaryTap:
-                                  defaultTargetPlatform ==
-                                      TargetPlatform.windows
-                                  ? () => _copyCategoryTerm(context, term)
-                                  : null,
                               child: SizedBox(
                                 height: 28,
                                 child: FilterChip(

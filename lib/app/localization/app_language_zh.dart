@@ -482,7 +482,6 @@ const Map<String, String> appLanguageZh = {
   'update_install_preparing_message':
       '版本 {version} 已下载并通过 SHA-256 校验。应用可能会自动关闭并重启以完成更新。文件：{path}',
   'update_ready_install': '安装器已打开，请按提示完成更新。',
-  'update_windows_ready_install': '更新器已准备就绪，应用将关闭并重启完成更新。',
   'update_install_failed': '无法继续安装更新',
   'update_install_failed_next_step':
       '请稍后重试；如果仍失败，请查看更新日志，或打开 GitHub Release 页面手动安装。',

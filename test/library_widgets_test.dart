@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,7 +5,6 @@ import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/features/library/presentation/library_tab.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
-import 'package:nameless_audio/core/widgets/content_bound_reorder_area.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -151,13 +148,8 @@ void main() {
 
     expect(additionalChildBuilds, 1);
 
-    if (Platform.isWindows) {
-      expect(beforeThresholdHeight, collapsedHeight);
-      expect(revealedHeight, collapsedHeight);
-    } else {
-      expect(beforeThresholdHeight, collapsedHeight);
-      expect(revealedHeight, greaterThan(collapsedHeight));
-    }
+    expect(beforeThresholdHeight, collapsedHeight);
+    expect(revealedHeight, greaterThan(collapsedHeight));
   });
 
   testWidgets('unloaded library reuses ASMR-style skeleton cards', (
@@ -262,24 +254,6 @@ void main() {
     await runtimeGraph.settings.setCardPositionsLocked(false);
     await tester.pump();
     expect(find.byType(ReorderableListView), findsOneWidget);
-
-    if (Platform.isWindows) {
-      final reorderArea = tester.widget<ContentBoundReorderArea>(
-        find.byType(ContentBoundReorderArea),
-      );
-      expect(reorderArea.bottomExpansion, 320);
-      final scrollbar = find.descendant(
-        of: find.byType(ContentBoundReorderArea),
-        matching: find.byType(Scrollbar),
-      );
-      expect(scrollbar, findsOneWidget);
-      expect(
-        MediaQuery.paddingOf(tester.element(scrollbar)).bottom,
-        reorderArea.bottomInset +
-            reorderArea.topExpansion +
-            reorderArea.bottomExpansion,
-      );
-    }
 
     expect(find.byType(TextField), findsOneWidget);
 

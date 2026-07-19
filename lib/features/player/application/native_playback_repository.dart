@@ -1,21 +1,12 @@
-import 'dart_playback_bridge.dart';
 import 'native_playback_bridge.dart';
 import '../../../core/errors/native_result.dart';
 import '../domain/audio_effects.dart';
-import '../../../core/platform/app_platform.dart';
 
 class NativePlaybackRepository {
   NativePlaybackRepository({NativePlaybackBridgeBase? bridge})
-    : _bridge = bridge ?? _defaultBridge();
+    : _bridge = bridge ?? NativePlaybackBridge.instance;
 
   final NativePlaybackBridgeBase _bridge;
-
-  static NativePlaybackBridgeBase _defaultBridge() {
-    if (AppPlatform.usesDesktopPlaybackBridge) {
-      return DartPlaybackBridge();
-    }
-    return NativePlaybackBridge.instance;
-  }
 
   Stream<NativePlaybackSnapshot> get snapshots => _bridge.snapshots;
 

@@ -10,17 +10,15 @@ do not commit device-specific traces or credentials.
 | App version / tag | |
 | Commit | |
 | Android APK asset | |
-| Windows ZIP asset | |
 | SHA-256 verified | |
 | Tester and date | |
 
 ## Device Matrix
 
-| Platform / device | OS | Startup | Library | Playback / screen off | Notification / SMTC | Timer / restart | Overlay | Update / signature | Result / notes |
+| Platform / device | OS | Startup | Library | Playback / screen off | Notification | Timer / restart | Overlay | Update / signature | Result / notes |
 |---|---|---|---|---|---|---|---|---|---|
 | Android reference | | | | | | | | | |
 | Android OEM background-policy device | | | | | | | | | |
-| Windows x64 reference | | | | | | | | | |
 
 Confirm first launch with every optional permission denied. Each permission
 handoff must occur only after the related user action, re-read real state after
@@ -48,4 +46,3 @@ An unexplained regression greater than 20% blocks release.
 - [ ] System installer handled the formally signed upgrade.
 - [ ] Playback and timer state recovered after process/device restart.
 - [ ] OEM background restrictions were documented.
-- [ ] Windows startup, navigation, SMTC, subtitle window, and updater launch were verified.

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -53,7 +52,6 @@ import '../../../app/presentation/screen_view_models.dart';
 import '../../video_converter/presentation/video_converter_tab.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../app/theme/app_styles.dart';
-import '../../../core/platform/app_platform.dart';
 
 import '../../../core/widgets/app_buttons.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
@@ -654,20 +652,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final headerContentHeight = topTotalHeight + headerControlsFullHeight;
     // Remove the extra 96px to make content flush with the bottom dock.
     final listBottomInset = bottomInset;
-    final isWindows =
-        Platform.isWindows ||
+    final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     const double expansion = 320.0;
     final listTopPadding = headerControlsFullHeight + 4.0 + expansion;
     const listBottomPadding = 16.0 + expansion;
-    final listViewportBottomInset = listBottomInset + (isWindows ? 16.0 : 0.0);
+    final listViewportBottomInset =
+        listBottomInset + (isLandscape ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
     // scroll/swipe performance.
-    final listCacheExtent = Platform.isWindows
-        ? (headerContentHeight + 800)
-              .clamp(headerContentHeight, 1600.0)
-              .toDouble()
-        : 320.0;
+    const listCacheExtent = 320.0;
     final hasLibrary = listStateHasLibrary || libraryHeaderAudioCount > 0;
     final showLibrarySkeleton =
         !hasLibrary &&
@@ -872,8 +866,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 topExpansion: expansion,
                 bottomExpansion: expansion,
                 scrollController: _scrollController,
-                showScrollbar: isWindows,
-                scrollbarMainAxisMargin: isWindows ? 8 : 0,
+                showScrollbar: isLandscape,
+                scrollbarMainAxisMargin: isLandscape ? 8 : 0,
                 child: PlaceholderContentTransition(
                   showPlaceholder:
                       !listStateIsInitialized ||
@@ -1051,12 +1045,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 floatingReveal: true,
                 floatingRevealDistance: 56,
                 trailing: SizedBox(
-                  width: 104 + (isWindows ? 52 : 0),
+                  width: 104 + (isLandscape ? 52 : 0),
                   height: 44,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      if (isWindows)
+                      if (isLandscape)
                         IconButton(
                           onPressed: canPullRefresh && !libraryRefreshBusy
                               ? () => unawaited(

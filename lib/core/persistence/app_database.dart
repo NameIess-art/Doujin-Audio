@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:sqflite/sqflite.dart';
 
 import '../media/audio_detail.dart';
 import '../../features/player/domain/audio_effects.dart';
@@ -12,7 +12,6 @@ import '../../features/library/domain/library_entry.dart';
 import '../media/music_track.dart';
 import '../../features/player/domain/playback_queue.dart';
 import '../../features/player/domain/time_segment_label.dart';
-import '../platform/app_platform.dart';
 import '../media/path_matcher.dart';
 
 part 'app_database_tracks.dart';
@@ -31,7 +30,6 @@ class AppDatabase {
 
   static const int schemaVersion = 3;
   static const String fileName = 'audio_player.db';
-  static bool _platformDatabaseInitialized = false;
 
   @visibleForTesting
   AppDatabase.test(
@@ -48,14 +46,6 @@ class AppDatabase {
   @visibleForTesting
   static void setInstanceForTest(AppDatabase? database) {
     _instance = database;
-  }
-
-  static void initializeForPlatform() {
-    if (!AppPlatform.usesDesktopDatabase) return;
-    if (_platformDatabaseInitialized) return;
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
-    _platformDatabaseInitialized = true;
   }
 
   Database? _db;

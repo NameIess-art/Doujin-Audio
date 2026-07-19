@@ -51,9 +51,7 @@ class _GlobalUpdateOperationBanner extends ConsumerWidget {
 
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final cs = Theme.of(context).colorScheme;
-    final top =
-        (Platform.isWindows ? 40.0 : MediaQuery.paddingOf(context).top) + 8;
+    final top = MediaQuery.paddingOf(context).top + 8;
     final hasError = operation.hasError;
     final progress = operation.progress;
     final percent = progress == null ? '--' : '${(progress * 100).round()}';
@@ -87,21 +85,10 @@ class _GlobalUpdateOperationBanner extends ConsumerWidget {
                     ? i18n.tr('update_download_failed')
                     : i18n.tr('download_update'),
                 message: label,
-                trailing: hasError && Platform.isWindows
-                    ? IconButton(
-                        tooltip: i18n.tr('open_update_log'),
-                        color: cs.error,
-                        onPressed: () => unawaited(
-                          ref
-                              .read(appUpdateServiceProvider)
-                              .openWindowsUpdateLog(),
-                        ),
-                        icon: const Icon(Icons.article_outlined),
-                      )
-                    : SizedBox(
-                        width: 72,
-                        child: LinearProgressIndicator(value: progress),
-                      ),
+                trailing: SizedBox(
+                  width: 72,
+                  child: LinearProgressIndicator(value: progress),
+                ),
               ),
             ),
           ),

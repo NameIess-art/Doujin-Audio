@@ -1,5 +1,3 @@
-import 'dart:io';
-
 class AppVersionInfo {
   const AppVersionInfo({required this.versionName, required this.buildNumber});
 
@@ -20,22 +18,18 @@ class ReleaseChannelConfig {
     required this.major,
     required this.tagPrefix,
     required this.androidAssetPrefix,
-    required this.windowsAssetPrefix,
   });
 
   final int major;
   final String tagPrefix;
   final String androidAssetPrefix;
-  final String windowsAssetPrefix;
 
-  String get platformAssetPrefix =>
-      Platform.isWindows ? windowsAssetPrefix : androidAssetPrefix;
+  String get platformAssetPrefix => androidAssetPrefix;
 
   static const ReleaseChannelConfig stable = ReleaseChannelConfig(
     major: 0,
     tagPrefix: '',
     androidAssetPrefix: 'NamelessAudio-android-universal-',
-    windowsAssetPrefix: 'NamelessAudio-windows-x64-',
   );
 }
 

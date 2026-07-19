@@ -33,7 +33,6 @@ AGENTS.md
 /android/app/debug/
 /android/app/profile/
 /android/app/release/
-/windows/flutter/ephemeral/
 
 # Signing, local platform config, and private deployment inputs
 /android/local.properties
@@ -55,8 +54,6 @@ analyze_output.txt
 
 # Local build outputs and release archives
 /dist/
-/NamelessAudio-*.zip
-/NamelessAudio-*.zip.sha256
 
 # Local-only helper scripts and scratch work
 /script/*
@@ -80,6 +77,3 @@ work2.json
 # Local planning notes and unreferenced presentation assets
 /docs/plans/
 /docs/screenshots/
-
-# Locally supplied binary tools
-/assets/ffmpeg/*.exe

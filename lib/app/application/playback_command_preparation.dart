@@ -291,7 +291,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     required int generation,
     int? targetQueueIndex,
   }) async {
-    final maxAttempts = AppPlatform.usesDesktopPlaybackBridge ? 1 : 2;
+    const maxAttempts = 2;
     String? lastError;
     for (var attempt = 0; attempt < maxAttempts; attempt++) {
       if (attempt > 0) {

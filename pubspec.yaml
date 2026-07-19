@@ -10,7 +10,6 @@ hooks:
   user_defines:
     sqlite3:
       source: system
-      name_windows: winsqlite3
       name_android: sqlite
       name: sqlite3
 
@@ -30,26 +29,21 @@ dependencies:
   shared_preferences: ^2.5.1
   flutter_secure_storage: ^10.3.1
   sqflite: ^2.4.2
-  sqflite_common_ffi: ^2.3.6
   flutter_riverpod: ^3.3.2
   audio_session: ^0.2.4
-  window_manager: ^0.5.2
   ffmpeg_kit_flutter_new_audio: ^2.0.0
   lottie: ^3.3.3
-  media_kit: ^1.0.2
-  media_kit_libs_windows_audio: ^1.0.9
-  flutter_acrylic: ^1.1.4
   flutter_animate: ^4.5.2
   crypto: ^3.0.6
   archive: ^4.0.9
   pub_semver: ^2.2.0
-  smtc_windows: 1.1.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   integration_test:
     sdk: flutter
+  sqflite_common_ffi: ^2.3.6
   flutter_lints: ^6.0.0
 
 

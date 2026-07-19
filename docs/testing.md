@@ -9,7 +9,6 @@ flutter test --coverage --concurrency=1
 dart run tool/verify_coverage.dart
 cd android && ./gradlew testDebugUnitTest && cd ..
 flutter build apk --debug
-flutter build windows --release
 dart run tool/verify_release.dart
 ```
 
@@ -26,9 +25,8 @@ When that local signing identity exists, local debug APKs use it too, so debug
 and release deployments can update each other on the same device. The release
 deployment script also raises the temporary Android `versionCode` above the
 currently installed app when needed, without changing `pubspec.yaml`.
-The sqlite3 native-assets hook uses each platform's system SQLite library
-(`winsqlite3` on Windows and `sqlite` on Android), so builds do not depend on
-downloading a GitHub-hosted sqlite3 binary.
+The sqlite3 native-assets hook uses Android's system SQLite library, so builds
+do not depend on downloading a GitHub-hosted sqlite3 binary.
 Devices carrying a legacy debug-signed release require a one-time migration.
 After exporting a `.nalbackup`, run `script\deploy_arm64.bat --replace-signature`;
 or run `tool/deploy_android_release.ps1 -ReplaceSignature`. The flag explicitly
@@ -37,7 +35,7 @@ Running `script\deploy_arm64.bat` without arguments also prompts for the same
 one-time migration when it detects a signature mismatch; type `REPLACE` only
 after exporting a backup.
 Tag workflows create temporary signing files from GitHub Secrets and publish
-arm64 APK/Windows ZIP assets together with SHA-256 checksum files.
+Android APK assets together with SHA-256 checksum files.
 CI also proves that release signing validation fails when `key.properties` is
 absent, preventing accidental debug-signed release artifacts.
 The app refuses to install downloaded updates unless the matching checksum

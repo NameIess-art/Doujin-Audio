@@ -1,13 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
-import 'package:path/path.dart' as path;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -261,16 +259,6 @@ void main() {
     );
   });
 
-  test('Windows updater selects the x64 ZIP from mixed release assets', () {
-    final selected =
-        AppUpdateService.selectWindowsZipAssetForTesting(<Map<String, dynamic>>[
-          githubAsset('NamelessAudio-android-universal-v0.13.0.apk'),
-          githubAsset('NamelessAudio-windows-x64-v0.13.0.zip'),
-        ]);
-
-    expect(selected?['name'], 'NamelessAudio-windows-x64-v0.13.0.zip');
-  });
-
   test('asset selection ignores missing, mistyped, and invalid URLs', () {
     final selected = AppUpdateService.selectApkAssetForTesting(
       <Map<String, dynamic>>[
@@ -289,10 +277,10 @@ void main() {
 
   test('expanded release HTML produces typed, de-duplicated assets', () {
     final assets = AppUpdateService.parseExpandedReleaseAssetsForTesting('''
-      <a href="/example/releases/download/v0.13.0/NamelessAudio-windows-x64-v0.13.0.zip?download=1&amp;source=expanded">zip</a>
-      <a href="/example/releases/download/v0.13.0/NamelessAudio-windows-x64-v0.13.0.zip?download=1&amp;source=expanded">duplicate</a>
-      <a href="/example/releases/download/v0.13.0/NamelessAudio-windows-x64-v0.13.0.zip.sha256">checksum</a>
-      <a href="/example/releases/download/v0.13.0/invalid%zz.zip">invalid encoding</a>
+      <a href="/example/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk?download=1&amp;source=expanded">apk</a>
+      <a href="/example/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk?download=1&amp;source=expanded">duplicate</a>
+      <a href="/example/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk.sha256">checksum</a>
+      <a href="/example/releases/download/v0.13.0/invalid%zz.apk">invalid encoding</a>
       <a href="/example/not-a-release-asset">ignored</a>
     ''');
 
@@ -300,8 +288,8 @@ void main() {
     expect(
       assets.map((asset) => asset['name']),
       containsAll(<String>[
-        'NamelessAudio-windows-x64-v0.13.0.zip',
-        'NamelessAudio-windows-x64-v0.13.0.zip.sha256',
+        'NamelessAudio-android-universal-v0.13.0.apk',
+        'NamelessAudio-android-universal-v0.13.0.apk.sha256',
       ]),
     );
     expect(
@@ -340,8 +328,6 @@ void main() {
           request.response.write('''
             <a href="/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk">apk</a>
             <a href="/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk.sha256">apk checksum</a>
-            <a href="/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/NamelessAudio-windows-x64-v0.13.0.zip">zip</a>
-            <a href="/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/NamelessAudio-windows-x64-v0.13.0.zip.sha256">zip checksum</a>
           ''');
         default:
           request.response.statusCode = HttpStatus.notFound;
@@ -375,9 +361,7 @@ void main() {
     expect(noAsset.status, AppUpdateStatus.missingAsset);
     expect(noAsset.isUpdateAvailable, isFalse);
 
-    final platformAssetName = Platform.isWindows
-        ? 'NamelessAudio-windows-x64-v0.13.0.zip'
-        : 'NamelessAudio-android-universal-v0.13.0.apk';
+    const platformAssetName = 'NamelessAudio-android-universal-v0.13.0.apk';
     final missingChecksum = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
       tagName: 'v0.13.0',
@@ -411,93 +395,6 @@ void main() {
     expect(ready.status, AppUpdateStatus.updateAvailable);
     expect(ready.canDownload, isTrue);
   });
-
-  test('Windows updater verifies ZIP before requesting app exit', () {
-    final script = AppUpdateService.windowsUpdateScriptForTesting;
-
-    expect(
-      script,
-      contains("Set-Content -LiteralPath \$ReadyPath -Value 'ready'"),
-    );
-    expect(
-      script.indexOf("Set-Content -LiteralPath \$ReadyPath -Value 'ready'"),
-      lessThan(script.lastIndexOf('Wait-AppExit')),
-    );
-    expect(
-      script,
-      contains(
-        "Start-ElevatedUpdater\n"
-        "      Set-Content -LiteralPath \$ReadyPath -Value 'ready'",
-      ),
-    );
-    expect(script, contains(r'Start-Process -FilePath $targetExePath'));
-  });
-
-  test(
-    'Windows updater extracts, overwrites, and marks itself ready',
-    () async {
-      final installDir = Directory(
-        '${tempDir.path}${Platform.pathSeparator}install',
-      )..createSync();
-      final exe = File(
-        '${installDir.path}${Platform.pathSeparator}legacy_audio.exe',
-      )..writeAsStringSync('old');
-      final targetExe = File(
-        '${installDir.path}${Platform.pathSeparator}nameless_audio.exe',
-      );
-      final staleFile = File(
-        '${installDir.path}${Platform.pathSeparator}stale.txt',
-      )..writeAsStringSync('old file');
-      final payloadExe = File(r'C:\Windows\System32\where.exe');
-      expect(payloadExe.existsSync(), isTrue);
-      final payloadBytes = await payloadExe.readAsBytes();
-      final archive = Archive()
-        ..addFile(
-          ArchiveFile(
-            'bundle/nameless_audio.exe',
-            payloadBytes.length,
-            payloadBytes,
-          ),
-        );
-      final zip = File('${tempDir.path}${Platform.pathSeparator}update.zip');
-      await zip.writeAsBytes(ZipEncoder().encode(archive), flush: true);
-      final script = File(
-        '${tempDir.path}${Platform.pathSeparator}updater.ps1',
-      );
-      await script.writeAsString(
-        AppUpdateService.windowsUpdateScriptForTesting,
-        flush: true,
-      );
-      final ready = File('${tempDir.path}${Platform.pathSeparator}ready.txt');
-
-      final result = await Process.run('powershell.exe', [
-        '-NoProfile',
-        '-ExecutionPolicy',
-        'Bypass',
-        '-File',
-        script.path,
-        zip.path,
-        installDir.path,
-        exe.path,
-        '2147483647',
-        ready.path,
-      ]);
-
-      expect(result.exitCode, 0, reason: result.stderr.toString());
-      expect(await ready.readAsString(), contains('ready'));
-      expect(await targetExe.length(), payloadBytes.length);
-      expect(exe.existsSync(), isFalse);
-      expect(staleFile.existsSync(), isFalse);
-      expect(
-        tempDir.listSync().whereType<Directory>().where(
-          (entry) => path.basename(entry.path).startsWith('install.'),
-        ),
-        isEmpty,
-      );
-    },
-    skip: !Platform.isWindows,
-    timeout: const Timeout(Duration(minutes: 2)),
-  );
 }
 
 final class _RewritingHttpOverrides extends HttpOverrides {

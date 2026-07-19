@@ -10,8 +10,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/localization/app_language_provider.dart';
 import 'app/application/app_runtime_graph.dart';
-import 'core/platform/app_platform.dart';
-import 'core/platform/app_window_bootstrap.dart';
 import 'app/state/app_runtime_providers.dart';
 import 'app/presentation/main_screen.dart';
 import 'app/presentation/onboarding_page.dart';
@@ -63,9 +61,6 @@ Future<void> main() async {
 }
 
 Future<void> _runAudioPlayerApp() async {
-  AppDatabase.initializeForPlatform();
-  await AppWindowBootstrap.initializeMainWindow();
-
   applyCoverImageCachePolicy(CoverImageResolution.balanced);
 
   // Start essential services in parallel to minimize blocking before runApp
@@ -251,7 +246,7 @@ class MusicPlayerApp extends ConsumerWidget {
       darkTheme: themeProvider.darkTheme,
       themeMode: themeProvider.themeMode,
       scrollBehavior: const _StretchOverscrollBehavior().copyWith(
-        scrollbars: AppPlatform.showsDesktopScrollbars,
+        scrollbars: false,
         physics: const ClampingScrollPhysics(
           parent: AlwaysScrollableScrollPhysics(),
         ),

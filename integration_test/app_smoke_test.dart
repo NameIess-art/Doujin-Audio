@@ -1,12 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:nameless_audio/main.dart' as app;
 import 'package:nameless_audio/app/presentation/main_screen.dart';
 import 'package:nameless_audio/app/presentation/onboarding_page.dart';
-import 'package:nameless_audio/features/player/application/subtitle_overlay_controller.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -22,24 +19,6 @@ void main() {
       await tester.pumpAndSettle();
     }
     expect(find.byType(MainScreen), findsOneWidget);
-
-    if (Platform.isWindows) {
-      final overlay = SubtitleOverlayController();
-      expect(await overlay.canDrawOverlays(), isTrue);
-      await overlay.updateStyle(
-        fontSize: 18,
-        backgroundColor: '#cc202020',
-        textColor: '#ffffffff',
-        backgroundOpacity: 0.8,
-        fontFamily: 'sans-serif',
-        borderDepth: 1,
-      );
-      await overlay.updateSubtitle('Windows overlay test');
-      await overlay.startOverlay();
-      await tester.pump(const Duration(milliseconds: 300));
-      await overlay.stopOverlay(immediate: true);
-      await overlay.dispose();
-    }
 
     for (final icons in <(IconData, IconData)>[
       (Icons.library_music_outlined, Icons.library_music_rounded),

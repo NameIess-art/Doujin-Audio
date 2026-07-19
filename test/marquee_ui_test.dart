@@ -66,12 +66,16 @@ void main() {
   });
 
   testWidgets('marquee text forwards custom edge padding', (tester) async {
-    await _withPlatform(TargetPlatform.windows, () async {
+    await _withPlatform(TargetPlatform.android, () async {
       await tester.pumpWidget(
         _buildApp(
           const SizedBox(
             width: 120,
-            child: MarqueeText(text: 'long text', edgePadding: 3),
+            child: MarqueeText(
+              text: 'long text',
+              edgePadding: 3,
+              allowAndroidMarquee: true,
+            ),
           ),
         ),
       );
@@ -271,7 +275,7 @@ void main() {
   testWidgets('marquee resumes after vertical scrolling becomes idle', (
     tester,
   ) async {
-    await _withPlatform(TargetPlatform.windows, () async {
+    await _withPlatform(TargetPlatform.android, () async {
       const marqueeKey = ValueKey('resuming_marquee');
       await tester.pumpWidget(
         _buildApp(
@@ -285,6 +289,7 @@ void main() {
                 text: 'A very long information value that must scroll',
                 pauseDuration: Duration(milliseconds: 1),
                 scrollSpeed: 100,
+                allowAndroidMarquee: true,
               ),
             ),
           ),

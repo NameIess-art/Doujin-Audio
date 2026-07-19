@@ -21,8 +21,7 @@ extension _MainScreenLayout on _MainScreenState {
                   AppSpacing.sm,
                 ))
         : EdgeInsets.zero;
-    final isWindows =
-        Platform.isWindows ||
+    final isLandscapeLayout =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     Widget pageShell(int actualIndex) {
       final Widget page = TickerMode(
@@ -42,16 +41,18 @@ extension _MainScreenLayout on _MainScreenState {
           alignment: Alignment.topCenter,
           child: isDesktop
               ? Padding(
-                  padding: isWindows ? EdgeInsets.zero : padding,
+                  padding: isLandscapeLayout ? EdgeInsets.zero : padding,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      color: isWindows ? cs.surface : cs.surfaceContainerLow,
-                      borderRadius: isWindows
+                      color: isLandscapeLayout
+                          ? cs.surface
+                          : cs.surfaceContainerLow,
+                      borderRadius: isLandscapeLayout
                           ? const BorderRadius.only(
                               topLeft: Radius.circular(AppRadius.medium),
                             )
                           : radius,
-                      border: isWindows
+                      border: isLandscapeLayout
                           ? Border(
                               left: BorderSide(
                                 color: cs.outlineVariant.withValues(
@@ -67,7 +68,7 @@ extension _MainScreenLayout on _MainScreenState {
                           : Border.all(
                               color: cs.outlineVariant.withValues(alpha: 0.85),
                             ),
-                      boxShadow: isWindows
+                      boxShadow: isLandscapeLayout
                           ? [
                               BoxShadow(
                                 color: cs.shadow.withValues(alpha: 0.04),
@@ -84,7 +85,7 @@ extension _MainScreenLayout on _MainScreenState {
                             ],
                     ),
                     child: ClipRRect(
-                      borderRadius: isWindows
+                      borderRadius: isLandscapeLayout
                           ? const BorderRadius.only(
                               topLeft: Radius.circular(AppRadius.medium),
                             )
@@ -122,8 +123,7 @@ extension _MainScreenLayout on _MainScreenState {
     final mediaSize = MediaQuery.sizeOf(context);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop =
-        Platform.isWindows || mediaSize.width >= 760 || isLandscape;
+    final isDesktop = mediaSize.width >= 760 || isLandscape;
 
     if (!_timerOverlayPrimed) {
       _setLocalState(() {
@@ -402,11 +402,10 @@ extension _MainScreenLayout on _MainScreenState {
   ) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isWindows =
-        Platform.isWindows ||
+    final isLandscapeLayout =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    final double expandedWidth = isWindows ? 260 : 292;
-    final double collapsedWidth = isWindows ? 80 : 92;
+    final double expandedWidth = isLandscapeLayout ? 260 : 292;
+    final double collapsedWidth = isLandscapeLayout ? 80 : 92;
     final double containerWidth = _isMenuCollapsed
         ? collapsedWidth
         : expandedWidth;
@@ -415,19 +414,21 @@ extension _MainScreenLayout on _MainScreenState {
       duration: const Duration(milliseconds: 250),
       curve: Curves.easeOutCubic,
       width: containerWidth,
-      margin: isWindows
+      margin: isLandscapeLayout
           ? EdgeInsets.zero
           : const EdgeInsets.fromLTRB(AppSpacing.md, 18, AppSpacing.xs, 18),
-      padding: isWindows
+      padding: isLandscapeLayout
           ? const EdgeInsets.fromLTRB(8, 4, 8, 8)
           : const EdgeInsets.fromLTRB(10, AppSpacing.md, 10, 10),
       decoration: BoxDecoration(
-        color: isWindows ? Colors.transparent : cs.surfaceContainerLow,
-        borderRadius: isWindows ? BorderRadius.zero : BorderRadius.circular(16),
-        border: isWindows
+        color: isLandscapeLayout ? Colors.transparent : cs.surfaceContainerLow,
+        borderRadius: isLandscapeLayout
+            ? BorderRadius.zero
+            : BorderRadius.circular(16),
+        border: isLandscapeLayout
             ? null
             : Border.all(color: cs.outlineVariant.withValues(alpha: 0.85)),
-        boxShadow: isWindows
+        boxShadow: isLandscapeLayout
             ? null
             : [
                 BoxShadow(
@@ -463,10 +464,10 @@ extension _MainScreenLayout on _MainScreenState {
                     onDestinationSelected: _switchPage,
                     extended: !_isMenuCollapsed,
                     minWidth: 64,
-                    minExtendedWidth: isWindows ? 212 : 236,
+                    minExtendedWidth: isLandscapeLayout ? 212 : 236,
                     useIndicator: true,
                     groupAlignment: -1.0,
-                    leading: isWindows
+                    leading: isLandscapeLayout
                         ? Container(
                             alignment: _isMenuCollapsed
                                 ? Alignment.center

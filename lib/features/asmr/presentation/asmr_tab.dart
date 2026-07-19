@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -8,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
-import '../../../core/platform/app_platform.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../application/asmr_download_manager.dart';
 import '../application/asmr_api_service.dart';
@@ -60,14 +58,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   );
   late final Map<AsmrCategoryType, ScrollController> _scrollControllers =
       <AsmrCategoryType, ScrollController>{
-        for (final category in _categories)
-          category: ScrollController()
-            ..addListener(() => _handleCategoryScroll(category)),
+        for (final category in _categories) category: ScrollController(),
       };
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounceTimer;
-  final Map<AsmrCategoryType, Timer> _loadMoreDebounceTimers =
-      <AsmrCategoryType, Timer>{};
   final Object _tabSwitchInteraction = Object();
   int _lastHandledTabIndex = 0;
   String _searchQuery = '';
@@ -176,53 +170,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     if (metricsChanged) {
       _headerHeight = 0;
     }
-  }
-
-  void _handleCategoryScroll(AsmrCategoryType category) {
-    if (!AppPlatform.isWindows) {
-      return;
-    }
-    final controller = _scrollControllers[category];
-    if (controller == null || !controller.hasClients) {
-      return;
-    }
-    if (controller.position.extentAfter > 280) {
-      return;
-    }
-    if (_loadMoreDebounceTimers.containsKey(category)) {
-      return;
-    }
-    _loadMoreDebounceTimers[category] = Timer(
-      const Duration(milliseconds: 180),
-      () {
-        _loadMoreDebounceTimers.remove(category);
-        if (!mounted) {
-          return;
-        }
-        final coordinator = UiInteractionCoordinator.instance;
-        final generation = coordinator.generation;
-        coordinator.scheduleAfterIdle(
-          key: 'asmr_load_more_${category.name}_$_normalizedSearchQuery',
-          generation: generation,
-          priority: 20,
-          task: () => _runAsmrOperation<void>(
-            scope: UiOperationScope.asmrCategory(
-              AsmrOperationKind.loadMore,
-              category.name,
-            ),
-            labelKey: 'loading_dot',
-            task: () async {
-              final controller = ref.read(asmrLibraryControllerProvider);
-              if (controller == null) return;
-              await controller.loadMoreCategory(
-                category,
-                searchQuery: _searchQuery,
-              );
-            },
-          ),
-        );
-      },
-    );
   }
 
   void _handleTabChanged() {
@@ -414,10 +361,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     disposeTabState();
     UiInteractionCoordinator.instance.cancelInteraction(_tabSwitchInteraction);
     _searchDebounceTimer?.cancel();
-    for (final timer in _loadMoreDebounceTimers.values) {
-      timer.cancel();
-    }
-    _loadMoreDebounceTimers.clear();
     _searchController.dispose();
     _tabController
       ..removeListener(_handleTabChanged)
@@ -458,8 +401,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         ? i18n.tr('loading_dot')
         : i18n.tr('asmr_collected_count', {'count': collectedCount});
     final currentScrollController = _scrollControllers[currentCategory]!;
-    final isWindows =
-        Platform.isWindows ||
+    final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final bottomInset = MobileOverlayInset.of(context);
     final headerControlsFullHeight = this.headerControlsFullHeight;
@@ -487,9 +429,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                     const totalHorizontalPadding = 24.0;
 
                     final isPortraitMobile =
-                        !AppPlatform.isWindows &&
                         MediaQuery.orientationOf(context) ==
-                            Orientation.portrait;
+                        Orientation.portrait;
 
                     final itemWidth = isPortraitMobile
                         ? (screenWidth - totalHorizontalPadding - 24.0) / 4
@@ -681,7 +622,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  if (isWindows)
+                  if (isLandscape)
                     IconButton(
                       onPressed: globalState.initialized
                           ? () => unawaited(

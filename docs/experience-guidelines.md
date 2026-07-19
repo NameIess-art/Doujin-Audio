@@ -26,8 +26,6 @@ It keeps future UI changes small, consistent, and easy to verify.
 
 - Android list text should not scroll. This keeps notification shade, app
   backgrounding, and system gestures responsive on lower-end devices.
-- Windows may keep marquee text in focused playback areas, but large scrolling
-  lists should avoid many simultaneous marquee animations.
 - Reduced-motion settings should continue to disable decorative animation and
   keep loading states readable.
 
@@ -88,5 +86,3 @@ runs, and notes. Do not commit device traces.
 | Android | Player detail | Dragging down reveals the previous page and keeps system gestures responsive |
 | Android | System gestures | Notification shade pull-down and background/foreground switching stay responsive |
 | Android | Library scale | Cover loading and large-library scans do not block interaction |
-| Windows | Library cards | Cover resolution, button placement, and title rhythm remain stable |
-| Windows | Motion | Required marquee text continues in focused playback areas without list-wide animation |

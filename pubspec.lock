@@ -57,14 +57,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.1.2"
-  build_cli_annotations:
-    dependency: transitive
-    description:
-      name: build_cli_annotations
-      sha256: e563c2e01de8974566a1998410d3f6f03521788160a02503b0b1f1a46c7b3d95
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.1.1"
   characters:
     dependency: transitive
     description:
@@ -206,14 +198,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  flutter_acrylic:
-    dependency: "direct main"
-    description:
-      name: flutter_acrylic
-      sha256: b3996dbde5abf5823cc9ead4cf2e5267c3181f15585fe47ce4dc4472e7ec827a
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.4"
   flutter_animate:
     dependency: "direct main"
     description:
@@ -256,14 +240,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.3.2"
-  flutter_rust_bridge:
-    dependency: transitive
-    description:
-      name: flutter_rust_bridge
-      sha256: e87d6b9ee934dcd24a128ccb2bd91905d2d5fe5c06245d6a8f5477d4907a437a
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.12.0"
   flutter_secure_storage:
     dependency: "direct main"
     description:
@@ -383,14 +359,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
-  image:
-    dependency: transitive
-    description:
-      name: image
-      sha256: f9881ff4998044947ec38d098bc7c8316ae1186fa786eddffdb867b9bc94dfce
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.8.0"
   integration_test:
     dependency: "direct dev"
     description: flutter
@@ -428,14 +396,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.0.1"
-  json_annotation:
-    dependency: transitive
-    description:
-      name: json_annotation
-      sha256: "2a743920d81b7910627f68ee2c9ac1fc0bfee32b9fc3403587d7c6791ca12f80"
-      url: "https://pub.dev"
-    source: hosted
-    version: "4.12.0"
   just_audio:
     dependency: "direct main"
     description:
@@ -508,14 +468,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.3.3"
-  macos_window_utils:
-    dependency: transitive
-    description:
-      name: macos_window_utils
-      sha256: cb918e1ff0b31fdaa5cd8631eded7c24bd72e1025cf1f95c819e483f0057c652
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.9.1"
   matcher:
     dependency: transitive
     description:
@@ -532,22 +484,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.13.0"
-  media_kit:
-    dependency: "direct main"
-    description:
-      name: media_kit
-      sha256: ae9e79597500c7ad6083a3c7b7b7544ddabfceacce7ae5c9709b0ec16a5d6643
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.2.6"
-  media_kit_libs_windows_audio:
-    dependency: "direct main"
-    description:
-      name: media_kit_libs_windows_audio
-      sha256: c2fd558cc87b9d89a801141fcdffe02e338a3b21a41a18fbd63d5b221a1b8e53
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.0.9"
   meta:
     dependency: "direct main"
     description:
@@ -780,54 +716,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.28.0"
-  safe_local_storage:
-    dependency: transitive
-    description:
-      name: safe_local_storage
-      sha256: "7483b3d5e8976f0bd263647c03b96131ee8e43f48b56fa8a8ec459e8515d74b0"
-      url: "https://pub.dev"
-    source: hosted
-    version: "2.0.4"
-  screen_retriever:
-    dependency: transitive
-    description:
-      name: screen_retriever
-      sha256: ace919117a7520c13a50a6259e60c4a0d4cbe98809468792a91b5c5adada2aa6
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.2"
-  screen_retriever_linux:
-    dependency: transitive
-    description:
-      name: screen_retriever_linux
-      sha256: "7b52006a5ceae1f3d5af7f77188c3290d6e7d8ded16d99809bea84967c65c257"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.2"
-  screen_retriever_macos:
-    dependency: transitive
-    description:
-      name: screen_retriever_macos
-      sha256: a1489b99cce597c45a54b9aae1cd94c8d4705353b7e0bb2457a6e4de44e0ad8a
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.2"
-  screen_retriever_platform_interface:
-    dependency: transitive
-    description:
-      name: screen_retriever_platform_interface
-      sha256: "94a5535277510a63184ca178ce12a1449bc0b38618879aa1c18bf57369c5064a"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.2"
-  screen_retriever_windows:
-    dependency: transitive
-    description:
-      name: screen_retriever_windows
-      sha256: dafc6922b0bfbf1d48cf3ccbf519b4fff47bdcb820da1728ea6db675fecc9324
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.2.2"
   shared_preferences:
     dependency: "direct main"
     description:
@@ -921,14 +809,6 @@ packages:
     description: flutter
     source: sdk
     version: "0.0.0"
-  smtc_windows:
-    dependency: "direct main"
-    description:
-      name: smtc_windows
-      sha256: dee279b0ddf663c4c729a88bca4e57fb4861aa1b3d01e230bdbf1277b8bfe664
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.0"
   source_map_stack_trace:
     dependency: transitive
     description:
@@ -978,7 +858,7 @@ packages:
     source: hosted
     version: "2.5.8"
   sqflite_common_ffi:
-    dependency: "direct main"
+    dependency: "direct dev"
     description:
       name: sqflite_common_ffi
       sha256: cd0c7f7de39a08f2d54ef144d9058c46eca8461879aaa648025643455c1e5a20
@@ -1097,22 +977,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
-  universal_platform:
-    dependency: transitive
-    description:
-      name: universal_platform
-      sha256: "64e16458a0ea9b99260ceb5467a214c1f298d647c659af1bff6d3bf82536b1ec"
-      url: "https://pub.dev"
-    source: hosted
-    version: "1.1.0"
-  uri_parser:
-    dependency: transitive
-    description:
-      name: uri_parser
-      sha256: "051c62e5f693de98ca9f130ee707f8916e2266945565926be3ff20659f7853ce"
-      url: "https://pub.dev"
-    source: hosted
-    version: "3.0.2"
   uuid:
     dependency: transitive
     description:
@@ -1193,14 +1057,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "5.15.0"
-  window_manager:
-    dependency: "direct main"
-    description:
-      name: window_manager
-      sha256: "05c231fd7b23d2380f14c5cc10b7b93d60d4fa4a2fb4e0f032de27e44b5560e9"
-      url: "https://pub.dev"
-    source: hosted
-    version: "0.5.2"
   xdg_directories:
     dependency: transitive
     description:

@@ -44,6 +44,8 @@ class SettingsState {
     this.coverImageResolution = CoverImageResolution.balanced,
     this.asmrDownloadDestinationRoot,
     this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
+    this.asmrDownloadSaveMetadata = true,
+    this.asmrDownloadFolderNameFields = kDefaultAsmrDownloadFolderNameFields,
     this.audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.pause,
     this.transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck,
     this.interruptionResumeBehavior = InterruptionResumeBehavior.resume,
@@ -75,6 +77,8 @@ class SettingsState {
   final CoverImageResolution coverImageResolution;
   final String? asmrDownloadDestinationRoot;
   final AsmrDownloadConflictPolicy asmrDownloadConflictPolicy;
+  final bool asmrDownloadSaveMetadata;
+  final List<AsmrDownloadFolderNameField> asmrDownloadFolderNameFields;
   final AudioDeviceDisconnectBehavior audioDeviceDisconnectBehavior;
   final TransientAudioFocusLossBehavior transientAudioFocusLossBehavior;
   final InterruptionResumeBehavior interruptionResumeBehavior;
@@ -108,6 +112,11 @@ class SettingsState {
         other.coverImageResolution == coverImageResolution &&
         other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
         other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy &&
+        other.asmrDownloadSaveMetadata == asmrDownloadSaveMetadata &&
+        listEquals(
+          other.asmrDownloadFolderNameFields,
+          asmrDownloadFolderNameFields,
+        ) &&
         other.audioDeviceDisconnectBehavior == audioDeviceDisconnectBehavior &&
         other.transientAudioFocusLossBehavior ==
             transientAudioFocusLossBehavior &&
@@ -143,6 +152,8 @@ class SettingsState {
     coverImageResolution,
     asmrDownloadDestinationRoot,
     asmrDownloadConflictPolicy,
+    asmrDownloadSaveMetadata,
+    Object.hashAll(asmrDownloadFolderNameFields),
     audioDeviceDisconnectBehavior,
     transientAudioFocusLossBehavior,
     interruptionResumeBehavior,

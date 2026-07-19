@@ -38,6 +38,9 @@ class SettingsRepository {
   String? asmrDownloadDestinationRoot;
   AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
       AsmrDownloadConflictPolicy.overwrite;
+  bool asmrDownloadSaveMetadata = true;
+  List<AsmrDownloadFolderNameField> asmrDownloadFolderNameFields =
+      kDefaultAsmrDownloadFolderNameFields;
   AudioDeviceDisconnectBehavior audioDeviceDisconnectBehavior =
       AudioDeviceDisconnectBehavior.pause;
   TransientAudioFocusLossBehavior transientAudioFocusLossBehavior =
@@ -95,6 +98,11 @@ class SettingsRepository {
       asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.values.firstWhere(
         (value) => value.name == playback['asmrDownloadConflictPolicy'],
         orElse: () => AsmrDownloadConflictPolicy.overwrite,
+      );
+      asmrDownloadSaveMetadata =
+          playback['asmrDownloadSaveMetadata'] as bool? ?? true;
+      asmrDownloadFolderNameFields = decodeAsmrDownloadFolderNameFields(
+        playback['asmrDownloadFolderNameFields'],
       );
       audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.values
           .firstWhere(
@@ -169,6 +177,10 @@ class SettingsRepository {
       'coverImageResolution': coverImageResolution.name,
       'asmrDownloadDestinationRoot': asmrDownloadDestinationRoot,
       'asmrDownloadConflictPolicy': asmrDownloadConflictPolicy.name,
+      'asmrDownloadSaveMetadata': asmrDownloadSaveMetadata,
+      'asmrDownloadFolderNameFields': asmrDownloadFolderNameFields
+          .map((field) => field.name)
+          .toList(growable: false),
       'dlsiteMetadataLanguage': dlsiteMetadataLanguage.name,
       'cardInfoFields': cardInfoFields
           .map((field) => field.name)
@@ -313,6 +325,21 @@ class SettingsRepository {
     update: () => asmrDownloadConflictPolicy = policy,
   );
 
+  Future<void> setAsmrDownloadSaveMetadata(bool enabled) => _setValue(
+    unchanged: asmrDownloadSaveMetadata == enabled,
+    update: () => asmrDownloadSaveMetadata = enabled,
+  );
+
+  Future<void> setAsmrDownloadFolderNameFields(
+    Iterable<AsmrDownloadFolderNameField> fields,
+  ) async {
+    final normalized = normalizeAsmrDownloadFolderNameFields(fields);
+    if (listEquals(asmrDownloadFolderNameFields, normalized)) return;
+    asmrDownloadFolderNameFields = normalized;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await persist();
+  }
+
   Future<void> setAudioDeviceDisconnectBehavior(
     AudioDeviceDisconnectBehavior behavior,
   ) => _setValue(
@@ -384,6 +411,8 @@ class SettingsRepository {
     coverImageResolution = CoverImageResolution.balanced;
     asmrDownloadDestinationRoot = null;
     asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
+    asmrDownloadSaveMetadata = true;
+    asmrDownloadFolderNameFields = kDefaultAsmrDownloadFolderNameFields;
     audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.pause;
     transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck;
     interruptionResumeBehavior = InterruptionResumeBehavior.resume;
@@ -431,6 +460,11 @@ class SettingsRepository {
         coverImageResolution: coverImageResolution,
         asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
         asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,
+        asmrDownloadSaveMetadata: asmrDownloadSaveMetadata,
+        asmrDownloadFolderNameFields:
+            List<AsmrDownloadFolderNameField>.unmodifiable(
+              asmrDownloadFolderNameFields,
+            ),
         audioDeviceDisconnectBehavior: audioDeviceDisconnectBehavior,
         transientAudioFocusLossBehavior: transientAudioFocusLossBehavior,
         interruptionResumeBehavior: interruptionResumeBehavior,

@@ -686,9 +686,7 @@ class _LibraryCoverThumbnailState
     final coverGeneration = ref.watch(coverGenerationProvider);
     final resolution = ref.watch(
       settingsStateProvider.select(
-        (s) =>
-            s.valueOrNull?.coverImageResolution ??
-            CoverImageResolution.balanced,
+        (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
       ),
     );
     final libraryFacade = ref.read(libraryFacadeProvider);
@@ -786,9 +784,7 @@ class _LibraryTrackCoverThumbnailState
     final coverGeneration = ref.watch(coverGenerationProvider);
     final resolution = ref.watch(
       settingsStateProvider.select(
-        (s) =>
-            s.valueOrNull?.coverImageResolution ??
-            CoverImageResolution.balanced,
+        (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
       ),
     );
     final libraryFacade = ref.read(libraryFacadeProvider);
@@ -918,7 +914,7 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     final fields = ref.watch(
       settingsStateProvider.select(
-        (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
+        (state) => state.value?.cardInfoFields ?? CardInfoField.defaults,
       ),
     );
     return LibraryLikeMetadataWorkCardContent(
@@ -971,7 +967,7 @@ class _SingleAudioFileCardContent extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     final fields = ref.watch(
       settingsStateProvider.select(
-        (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
+        (state) => state.value?.cardInfoFields ?? CardInfoField.defaults,
       ),
     );
     return LibraryLikeSingleAudioCardContent(

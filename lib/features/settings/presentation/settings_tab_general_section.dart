@@ -41,7 +41,7 @@ List<Widget> _buildSettingsLanguageSection({
             final dlsiteLanguage = ref.watch(
               settingsStateProvider.select(
                 (s) =>
-                    s.valueOrNull?.dlsiteMetadataLanguage ??
+                    s.value?.dlsiteMetadataLanguage ??
                     ContentLanguagePreference.followPage,
               ),
             );
@@ -78,7 +78,7 @@ List<Widget> _buildSettingsLanguageSection({
             final preference = ref.watch(
               asmrLibraryGlobalStateProvider.select(
                 (state) =>
-                    state.valueOrNull?.contentLanguagePreference ??
+                    state.value?.contentLanguagePreference ??
                     ContentLanguagePreference.followPage,
               ),
             );
@@ -134,8 +134,7 @@ List<Widget> _buildSettingsGeneralSection({
           builder: (context, ref, _) {
             final startupPage = ref.watch(
               settingsStateProvider.select(
-                (state) =>
-                    state.valueOrNull?.startupPage ?? StartupPage.library,
+                (state) => state.value?.startupPage ?? StartupPage.library,
               ),
             );
             return ListTile(
@@ -170,7 +169,7 @@ List<Widget> _buildSettingsGeneralSection({
             final behavior = ref.watch(
               settingsStateProvider.select(
                 (state) =>
-                    state.valueOrNull?.startupPlaybackRestoreBehavior ??
+                    state.value?.startupPlaybackRestoreBehavior ??
                     StartupPlaybackRestoreBehavior.resume,
               ),
             );
@@ -210,7 +209,7 @@ List<Widget> _buildSettingsGeneralSection({
           builder: (context, ref, _) {
             final enabled = ref.watch(
               settingsStateProvider.select(
-                (state) => state.valueOrNull?.allowDuplicateWorks ?? false,
+                (state) => state.value?.allowDuplicateWorks ?? false,
               ),
             );
             return SwitchListTile(
@@ -229,7 +228,7 @@ List<Widget> _buildSettingsGeneralSection({
           builder: (context, ref, _) {
             final enabled = ref.watch(
               settingsStateProvider.select(
-                (state) => state.valueOrNull?.reduceAnimations ?? false,
+                (state) => state.value?.reduceAnimations ?? false,
               ),
             );
             return SwitchListTile(
@@ -249,7 +248,7 @@ List<Widget> _buildSettingsGeneralSection({
             builder: (context, ref, _) {
               final enabled = ref.watch(
                 settingsStateProvider.select(
-                  (s) => s.valueOrNull?.hapticFeedbackEnabled ?? true,
+                  (s) => s.value?.hapticFeedbackEnabled ?? true,
                 ),
               );
               return SwitchListTile(

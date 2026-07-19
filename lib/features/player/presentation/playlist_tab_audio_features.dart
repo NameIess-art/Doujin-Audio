@@ -260,7 +260,7 @@ class _EqualizerPage extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final customPresets =
-        ref.watch(settingsStateProvider).valueOrNull?.customEqPresets ??
+        ref.watch(settingsStateProvider).value?.customEqPresets ??
         ref.read(settingsRepositoryProvider).customEqPresets;
     final presets = <EqPreset>[...builtInEqPresets, ...customPresets];
     final selectedPresetId = effects.eqPresetId;

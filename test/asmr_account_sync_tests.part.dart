@@ -71,6 +71,8 @@ void registerAsmrAccountSyncTests({
         ],
       );
       addTearDown(container.dispose);
+      final subscription = container.listen(asmrAuthStateProvider, (_, _) {});
+      addTearDown(subscription.close);
 
       final state = await container
           .read(asmrAuthStateProvider.future)

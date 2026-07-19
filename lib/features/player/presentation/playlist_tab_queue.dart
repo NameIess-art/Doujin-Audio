@@ -936,7 +936,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
                               ref.watch(
                                 settingsStateProvider.select(
                                   (state) =>
-                                      state.valueOrNull?.coverImageResolution ??
+                                      state.value?.coverImageResolution ??
                                       CoverImageResolution.balanced,
                                 ),
                               ),

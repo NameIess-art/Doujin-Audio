@@ -7,7 +7,7 @@ final _libraryEditTrackViewStateProvider =
     ) {
       ref.watch(
         libraryStateProvider.select(
-          (value) => value.valueOrNull?.contentRevision ?? 0,
+          (value) => value.value?.contentRevision ?? 0,
         ),
       );
       final libraryService = ref.read(libraryFacadeProvider);
@@ -1005,7 +1005,7 @@ class _LibraryEditTreeNodeWidget extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(
       libraryStateProvider.select(
-        (value) => value.valueOrNull?.structureRevision ?? 0,
+        (value) => value.value?.structureRevision ?? 0,
       ),
     );
     if (node is _LibraryEditFolderTreeNode) {
@@ -1061,9 +1061,7 @@ class _LibraryEditFolderTreeTileState
   @override
   Widget build(BuildContext context) {
     ref.watch(
-      libraryStateProvider.select(
-        (value) => value.valueOrNull?.contentRevision ?? 0,
-      ),
+      libraryStateProvider.select((value) => value.value?.contentRevision ?? 0),
     );
     final i18n = ProviderScope.containerOf(
       context,

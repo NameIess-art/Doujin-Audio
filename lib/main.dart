@@ -224,15 +224,15 @@ class MusicPlayerApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeProvider =
-        ref.watch(themeStateProvider).valueOrNull ??
+        ref.watch(themeStateProvider).value ??
         ThemeState.from(ref.read(themeProviderInstanceProvider));
     final languageProvider = ref.read(appLanguageProviderInstanceProvider);
     final languageState =
-        ref.watch(appLanguageStateProvider).valueOrNull ??
+        ref.watch(appLanguageStateProvider).value ??
         AppLanguageState.from(languageProvider);
     final reduceAnimations = ref.watch(
       settingsStateProvider.select(
-        (state) => state.valueOrNull?.reduceAnimations ?? false,
+        (state) => state.value?.reduceAnimations ?? false,
       ),
     );
     return MaterialApp(

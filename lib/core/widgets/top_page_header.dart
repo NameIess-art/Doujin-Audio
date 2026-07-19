@@ -171,9 +171,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
     final tokens = AppDesignTokens.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final blurEnabled = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
-      ),
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
     final currentAlpha = blurEnabled ? (isDark ? 0.82 : 0.88) : 1.0;
     final topPadding = widget.useSafeAreaTop

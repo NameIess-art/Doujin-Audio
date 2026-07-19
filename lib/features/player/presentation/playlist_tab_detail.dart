@@ -705,15 +705,13 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
         settingsStateProvider.select(
-          (s) =>
-              s.valueOrNull?.coverImageResolution ??
-              CoverImageResolution.balanced,
+          (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
         ),
       ),
     );
     final blurEnabled = ref.watch(
       settingsStateProvider.select(
-        (s) => s.valueOrNull?.blurPlayerBackgroundEnabled ?? true,
+        (s) => s.value?.blurPlayerBackgroundEnabled ?? true,
       ),
     );
 

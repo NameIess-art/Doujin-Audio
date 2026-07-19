@@ -435,12 +435,12 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _measureHeader();
     });
-    final globalState = ref.watch(asmrLibraryGlobalStateProvider).valueOrNull;
+    final globalState = ref.watch(asmrLibraryGlobalStateProvider).value;
     final hasDownloadManager = ref.watch(asmrDownloadManagerProvider) != null;
     final currentCategory = _currentCategory;
     final currentCategoryState = ref
         .watch(asmrCategoryStateProvider(currentCategory))
-        .valueOrNull;
+        .value;
     final collectedCount =
         ref
             .read(asmrLibraryControllerProvider)

@@ -20,9 +20,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
         settingsStateProvider.select(
-          (s) =>
-              s.valueOrNull?.coverImageResolution ??
-              CoverImageResolution.balanced,
+          (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
         ),
       ),
     );

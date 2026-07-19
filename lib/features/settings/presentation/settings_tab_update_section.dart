@@ -54,7 +54,7 @@ List<Widget> _buildSettingsUpdateSection({
           builder: (context, ref, _) {
             final autoCheckUpdates = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.autoCheckUpdates ?? false,
+                (s) => s.value?.autoCheckUpdates ?? false,
               ),
             );
             return SwitchListTile(

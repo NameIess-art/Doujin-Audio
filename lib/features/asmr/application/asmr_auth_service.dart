@@ -16,11 +16,7 @@ abstract class AsmrTokenStore {
 
 class SecureAsmrTokenStore implements AsmrTokenStore {
   SecureAsmrTokenStore({FlutterSecureStorage? storage})
-    : _storage =
-          storage ??
-          const FlutterSecureStorage(
-            aOptions: AndroidOptions(encryptedSharedPreferences: true),
-          );
+    : _storage = storage ?? const FlutterSecureStorage();
 
   static const String _tokenKey = 'asmr_one_jwt_token_v1';
   static const String _nameKey = 'asmr_one_name_v1';

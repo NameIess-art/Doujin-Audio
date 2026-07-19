@@ -865,7 +865,7 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
     final settings = ref.read(settingsRepositoryProvider);
     final selected = ref.watch(
       settingsStateProvider.select(
-        (state) => state.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
+        (state) => state.value?.cardInfoFields ?? CardInfoField.defaults,
       ),
     );
     final selectedSet = selected.toSet();
@@ -930,6 +930,136 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _AsmrDownloadFolderNameSettingsSheet extends ConsumerWidget {
+  const _AsmrDownloadFolderNameSettingsSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final cs = Theme.of(context).colorScheme;
+    final settings = ref.read(settingsRepositoryProvider);
+    final selected = ref.watch(
+      settingsStateProvider.select(
+        (state) =>
+            state.value?.asmrDownloadFolderNameFields ??
+            kDefaultAsmrDownloadFolderNameFields,
+      ),
+    );
+    final unselected = AsmrDownloadFolderNameField.values
+        .where((field) => !selected.contains(field))
+        .toList(growable: false);
+
+    void remove(AsmrDownloadFolderNameField field) {
+      if (selected.length == 1) return;
+      unawaited(
+        settings.setAsmrDownloadFolderNameFields(
+          selected.where((candidate) => candidate != field),
+        ),
+      );
+    }
+
+    void add(AsmrDownloadFolderNameField field) {
+      unawaited(settings.setAsmrDownloadFolderNameFields([...selected, field]));
+    }
+
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+          children: [
+            Text(
+              i18n.tr('asmr_download_folder_name_setting'),
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              i18n.tr('asmr_download_folder_name_hint'),
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 12),
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              itemCount: selected.length,
+              onReorder: (oldIndex, newIndex) {
+                final reordered = selected.toList(growable: true);
+                if (newIndex > oldIndex) newIndex--;
+                final field = reordered.removeAt(oldIndex);
+                reordered.insert(newIndex, field);
+                unawaited(settings.setAsmrDownloadFolderNameFields(reordered));
+              },
+              itemBuilder: (context, index) {
+                final field = selected[index];
+                return CheckboxListTile(
+                  key: ValueKey(field),
+                  value: true,
+                  onChanged: selected.length > 1 ? (_) => remove(field) : null,
+                  title: _settingsTitle(
+                    _asmrDownloadFolderNameFieldLabel(i18n, field),
+                  ),
+                  secondary: ReorderableDragStartListener(
+                    index: index,
+                    child: const Icon(Icons.drag_handle_rounded),
+                  ),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                );
+              },
+            ),
+            for (final field in unselected)
+              CheckboxListTile(
+                value: false,
+                onChanged: (_) => add(field),
+                title: _settingsTitle(
+                  _asmrDownloadFolderNameFieldLabel(i18n, field),
+                ),
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+              ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(i18n.tr('done')),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _asmrDownloadFolderNameFieldLabel(
+  AppLanguageProvider i18n,
+  AsmrDownloadFolderNameField field,
+) {
+  return switch (field) {
+    AsmrDownloadFolderNameField.rjCode => i18n.tr(
+      'asmr_download_folder_field_rj_code',
+    ),
+    AsmrDownloadFolderNameField.voiceActors => i18n.tr(
+      'asmr_download_folder_field_voice_actors',
+    ),
+    AsmrDownloadFolderNameField.circleName => i18n.tr(
+      'asmr_download_folder_field_circle_name',
+    ),
+    AsmrDownloadFolderNameField.workTitle => i18n.tr(
+      'asmr_download_folder_field_work_title',
+    ),
+  };
 }
 
 String _cardInfoFieldLabel(AppLanguageProvider i18n, CardInfoField field) {

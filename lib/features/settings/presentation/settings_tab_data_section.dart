@@ -38,7 +38,7 @@ List<Widget> _buildSettingsDataSection({
               final maxCacheBytes = ref.watch(
                 settingsStateProvider.select(
                   (s) =>
-                      s.valueOrNull?.maxCacheBytes ??
+                      s.value?.maxCacheBytes ??
                       AppCacheService.defaultMaxCacheBytes,
                 ),
               );

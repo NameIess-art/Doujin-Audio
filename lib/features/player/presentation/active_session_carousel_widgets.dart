@@ -19,9 +19,7 @@ class _ActiveSessionCard extends ConsumerWidget {
 
     final style = ref.watch(
       settingsStateProvider.select(
-        (s) =>
-            s.valueOrNull?.bottomNavigationStyle ??
-            BottomNavigationStyle.capsule,
+        (s) => s.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
       ),
     );
     final isBar = style == BottomNavigationStyle.bar;
@@ -29,7 +27,7 @@ class _ActiveSessionCard extends ConsumerWidget {
 
     final view = ref.watch(
       playbackStateProvider.select((value) {
-        final playbackState = value.valueOrNull;
+        final playbackState = value.value;
         final currentSession =
             playbackState?.activeSessions.firstWhere(
               (candidate) => candidate.id == session.id,
@@ -68,9 +66,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     final isTinyWindow = screenSize.width < 300 || screenSize.height < 300;
 
     final blurEnabled = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
-      ),
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
 
     Widget buildCardBody(bool useBlur) => Material(
@@ -667,18 +663,14 @@ class _ActiveSessionCover extends ConsumerWidget {
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
         settingsStateProvider.select(
-          (s) =>
-              s.valueOrNull?.coverImageResolution ??
-              CoverImageResolution.balanced,
+          (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
         ),
       ),
     );
 
     final bottomNavStyle = ref.watch(
       settingsStateProvider.select(
-        (s) =>
-            s.valueOrNull?.bottomNavigationStyle ??
-            BottomNavigationStyle.capsule,
+        (s) => s.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
       ),
     );
     final borderRadius = bottomNavStyle == BottomNavigationStyle.capsule

@@ -183,7 +183,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void _openTimerFromPlaylist() {
     if (!mounted) return;
     final timer =
-        ref.read(timerStateProvider).valueOrNull ??
+        ref.read(timerStateProvider).value ??
         ref.read(timerFacadeProvider).state;
     final timerState = _TimerPresentation(
       duration: timer.duration,
@@ -618,19 +618,18 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final overlayUi = ref.watch(mainOverlayUiProvider);
     final startupPage = ref.watch(
       settingsStateProvider.select(
-        (value) => value.valueOrNull?.startupPage ?? StartupPage.library,
+        (value) => value.value?.startupPage ?? StartupPage.library,
       ),
     );
     final bottomNavigationStyle = ref.watch(
       settingsStateProvider.select(
         (value) =>
-            value.valueOrNull?.bottomNavigationStyle ??
-            BottomNavigationStyle.capsule,
+            value.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
       ),
     );
     final autoCheckUpdates = ref.watch(
       settingsStateProvider.select(
-        (value) => value.valueOrNull?.autoCheckUpdates ?? false,
+        (value) => value.value?.autoCheckUpdates ?? false,
       ),
     );
     if (autoCheckUpdates && overlayUi.startupReady && !_autoUpdateCheckQueued) {

@@ -154,7 +154,7 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
         // Fall through to the cross-platform picker.
       }
     }
-    return FilePicker.platform.getDirectoryPath(dialogTitle: dialogTitle);
+    return FilePicker.getDirectoryPath(dialogTitle: dialogTitle);
   }
 
   @override
@@ -169,7 +169,7 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
       }
     }
 
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       allowMultiple: true,
       withReadStream: true,
       dialogTitle: dialogTitle,

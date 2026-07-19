@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 
 import '../../core/media/audio_detail.dart';
 import '../../core/media/music_track.dart';
@@ -211,10 +212,7 @@ final asmrDownloadStateProvider = StreamProvider<AsmrDownloadState>((ref) {
 final asmrDownloadTaskProvider =
     Provider.family<AsmrDownloadTaskSnapshot?, int>((ref, workId) {
       final manager = ref.watch(asmrDownloadManagerProvider);
-      return ref
-              .watch(asmrDownloadStateProvider)
-              .valueOrNull
-              ?.taskFor(workId) ??
+      return ref.watch(asmrDownloadStateProvider).value?.taskFor(workId) ??
           manager?.getTask(workId);
     });
 
@@ -400,7 +398,7 @@ final notificationStateProvider = StreamProvider<NotificationState>((ref) {
 
 final libraryHeaderUiProvider = Provider<LibraryHeaderState>((ref) {
   final serviceState = ref.watch(libraryFacadeProvider).state;
-  final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
+  final state = ref.watch(libraryStateProvider).value ?? serviceState;
   final refreshOperation = ref.watch(
     uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
   );
@@ -421,7 +419,7 @@ final libraryHeaderUiProvider = Provider<LibraryHeaderState>((ref) {
 final libraryListUiProvider = Provider<LibraryListState>((ref) {
   final facade = ref.watch(libraryFacadeProvider);
   final serviceState = facade.state;
-  final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
+  final state = ref.watch(libraryStateProvider).value ?? serviceState;
   final refreshOperation = ref.watch(
     uiOperationForScopeProvider(UiOperationScope.libraryRefresh),
   );
@@ -457,7 +455,7 @@ final libraryListUiProvider = Provider<LibraryListState>((ref) {
 
 final libraryScanUiProvider = Provider<LibraryScanUiState>((ref) {
   final serviceState = ref.watch(libraryFacadeProvider).state;
-  final state = ref.watch(libraryStateProvider).valueOrNull ?? serviceState;
+  final state = ref.watch(libraryStateProvider).value ?? serviceState;
   return LibraryScanUiState(
     isScanning: state.isScanning,
     isBackgroundScanning: state.isBackgroundScanning,
@@ -473,16 +471,13 @@ final libraryScanUiProvider = Provider<LibraryScanUiState>((ref) {
 
 final libraryDetailRevisionProvider = Provider<int>((ref) {
   final serviceState = ref.watch(libraryFacadeProvider).state;
-  return ref.watch(libraryStateProvider).valueOrNull?.detailRevision ??
+  return ref.watch(libraryStateProvider).value?.detailRevision ??
       serviceState.detailRevision;
 });
 
 final libraryCategoryRevisionProvider = Provider<int>((ref) {
   final serviceState = ref.watch(libraryFacadeProvider).state;
-  return ref
-          .watch(libraryStateProvider)
-          .valueOrNull
-          ?.categorySnapshotRevision ??
+  return ref.watch(libraryStateProvider).value?.categorySnapshotRevision ??
       serviceState.categorySnapshotRevision;
 });
 
@@ -501,17 +496,17 @@ final libraryDetailForTargetProvider =
 
 final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {
   final playbackState =
-      ref.watch(playbackStateProvider).valueOrNull ??
+      ref.watch(playbackStateProvider).value ??
       ref.watch(playbackFacadeProvider).state;
   final timerState =
-      ref.watch(timerStateProvider).valueOrNull ??
+      ref.watch(timerStateProvider).value ??
       ref.watch(timerFacadeProvider).state;
   return playlistHeaderStateFromSlices(playbackState, timerState);
 });
 
 final playlistListUiProvider = Provider<PlaylistListState>((ref) {
   final playbackState =
-      ref.watch(playbackStateProvider).valueOrNull ??
+      ref.watch(playbackStateProvider).value ??
       ref.watch(playbackFacadeProvider).state;
   return PlaylistListState(
     sessions: playbackState.activeSessions,
@@ -522,12 +517,12 @@ final playlistListUiProvider = Provider<PlaylistListState>((ref) {
 });
 
 final coverGenerationProvider = Provider<int>((ref) {
-  return ref.watch(playbackStateProvider).valueOrNull?.coverGeneration ??
+  return ref.watch(playbackStateProvider).value?.coverGeneration ??
       ref.watch(playbackFacadeProvider).state.coverGeneration;
 });
 
 final coverImageResolutionProvider = Provider<CoverImageResolution>((ref) {
-  return ref.watch(settingsStateProvider).valueOrNull?.coverImageResolution ??
+  return ref.watch(settingsStateProvider).value?.coverImageResolution ??
       ref.watch(settingsRepositoryProvider).slice.state.coverImageResolution;
 });
 
@@ -536,16 +531,14 @@ final libraryTrackProvider = Provider.family<MusicTrack?, String>((
   trackPath,
 ) {
   ref.watch(
-    libraryStateProvider.select(
-      (state) => state.valueOrNull?.contentRevision ?? 0,
-    ),
+    libraryStateProvider.select((state) => state.value?.contentRevision ?? 0),
   );
   return ref.read(libraryFacadeProvider).trackByPath(trackPath);
 });
 
 final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
   final playbackState =
-      ref.watch(playbackStateProvider).valueOrNull ??
+      ref.watch(playbackStateProvider).value ??
       ref.watch(playbackFacadeProvider).state;
   return ActiveTrackPaths(
     playbackState.activeSessions
@@ -557,7 +550,7 @@ final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
 
 final isTrackActiveProvider = Provider.family<bool, String>((ref, trackPath) {
   final playbackState =
-      ref.watch(playbackStateProvider).valueOrNull ??
+      ref.watch(playbackStateProvider).value ??
       ref.watch(playbackFacadeProvider).state;
   return playbackState.activeSessions.any(
     (session) => session.currentTrackPath == trackPath,
@@ -566,10 +559,10 @@ final isTrackActiveProvider = Provider.family<bool, String>((ref, trackPath) {
 
 final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   final playbackState =
-      ref.watch(playbackStateProvider).valueOrNull ??
+      ref.watch(playbackStateProvider).value ??
       ref.watch(playbackFacadeProvider).state;
   final settingsState =
-      ref.watch(settingsStateProvider).valueOrNull ??
+      ref.watch(settingsStateProvider).value ??
       ref.watch(settingsRepositoryProvider).slice.state;
   ref.watch(subtitleSettingsProvider);
   final overlaySessions = overlaySessionsFromPlaybackState(playbackState);
@@ -593,7 +586,7 @@ final sessionDetailUiProvider = Provider.family<SessionDetailUiState, String>((
   sessionId,
 ) {
   final playbackState =
-      ref.watch(playbackStateProvider).valueOrNull ??
+      ref.watch(playbackStateProvider).value ??
       ref.watch(playbackFacadeProvider).state;
   return SessionDetailUiState(
     sessionOrder: sessionOrderStateFromPlaybackState(playbackState),

@@ -35,7 +35,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   Widget build(BuildContext context) {
     super.build(context);
     final state =
-        ref.watch(asmrCategoryStateProvider(widget.category)).valueOrNull ??
+        ref.watch(asmrCategoryStateProvider(widget.category)).value ??
         ref
             .read(asmrLibraryControllerProvider)
             ?.categoryViewState(

@@ -334,9 +334,7 @@ extension _MainScreenLayout on _MainScreenState {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final blurEnabled = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
-      ),
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
     final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
 

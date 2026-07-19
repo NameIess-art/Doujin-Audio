@@ -51,7 +51,7 @@ class DataSupportFileService {
   }
 
   Future<BackupValidationResult?> pickAndRestoreBackup() async {
-    final selection = await FilePicker.platform.pickFiles(
+    final selection = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const <String>['nalbackup'],
       lockParentWindow: true,
@@ -67,7 +67,7 @@ class DataSupportFileService {
     } finally {
       if (_isAndroid()) {
         try {
-          await FilePicker.platform.clearTemporaryFiles();
+          await FilePicker.clearTemporaryFiles();
         } catch (error, stackTrace) {
           AppLogService.warning(
             'backup_picker_cache_cleanup_failed',
@@ -116,7 +116,7 @@ class DataSupportFileService {
         mimeType: mimeType,
       );
     }
-    final savedPath = await FilePicker.platform.saveFile(
+    final savedPath = await FilePicker.saveFile(
       dialogTitle: dialogTitle,
       fileName: path.basename(source.path),
       type: FileType.custom,

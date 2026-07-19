@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+// ignore: implementation_imports
+import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/data_support/application/app_backup_service.dart';
@@ -15,6 +17,7 @@ void main() {
   late Directory temporaryDirectory;
   late File databaseFile;
   late Map<String, Object> preferences;
+  final defaultFilePicker = FilePickerPlatform.instance;
 
   setUp(() async {
     temporaryDirectory = await Directory.systemTemp.createTemp(
@@ -23,7 +26,7 @@ void main() {
     databaseFile = File(path.join(temporaryDirectory.path, 'audio_player.db'));
     await databaseFile.writeAsString('original database', flush: true);
     preferences = <String, Object>{'language': 'zh', 'themeMode': 'dark'};
-    FilePicker.platform = _TestFilePicker();
+    FilePickerPlatform.instance = _TestFilePicker();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(pathProviderChannel, (call) async {
           if (call.method == 'getTemporaryDirectory') {
@@ -34,7 +37,7 @@ void main() {
   });
 
   tearDown(() async {
-    FilePicker.platform = _TestFilePicker();
+    FilePickerPlatform.instance = defaultFilePicker;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(pathProviderChannel, null);
     if (await temporaryDirectory.exists()) {
@@ -68,7 +71,7 @@ void main() {
         savePath: destination.path,
         saveDelay: const Duration(milliseconds: 20),
       );
-      FilePicker.platform = picker;
+      FilePickerPlatform.instance = picker;
       final backupService = createBackupService();
       final service = DataSupportFileService(
         backupService: backupService,
@@ -102,7 +105,7 @@ void main() {
       await databaseFile.writeAsString('changed database', flush: true);
       preferences = <String, Object>{'language': 'en'};
       final picker = _TestFilePicker(selectedFile: selectedBackup);
-      FilePicker.platform = picker;
+      FilePickerPlatform.instance = picker;
       final service = DataSupportFileService(
         backupService: backupService,
         isAndroid: () => true,
@@ -120,7 +123,7 @@ void main() {
   );
 }
 
-final class _TestFilePicker extends FilePicker {
+final class _TestFilePicker extends FilePickerPlatform {
   _TestFilePicker({
     this.savePath,
     this.saveDelay = Duration.zero,
@@ -139,7 +142,7 @@ final class _TestFilePicker extends FilePicker {
     String? initialDirectory,
     FileType type = FileType.any,
     List<String>? allowedExtensions,
-    List<int>? bytes,
+    Uint8List? bytes,
     bool lockParentWindow = false,
   }) async {
     await Future<void>.delayed(saveDelay);
@@ -153,13 +156,13 @@ final class _TestFilePicker extends FilePicker {
     FileType type = FileType.any,
     List<String>? allowedExtensions,
     void Function(FilePickerStatus)? onFileLoading,
-    bool allowCompression = false,
     int compressionQuality = 0,
     bool allowMultiple = false,
     bool withData = false,
     bool withReadStream = false,
     bool lockParentWindow = false,
     bool readSequential = false,
+    bool cancelUploadOnWindowBlur = true,
   }) async {
     final file = selectedFile;
     if (file == null) return null;

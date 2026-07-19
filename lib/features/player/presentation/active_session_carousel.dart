@@ -66,7 +66,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   void initState() {
     super.initState();
     final initialStyle =
-        ref.read(settingsStateProvider).valueOrNull?.bottomNavigationStyle ??
+        ref.read(settingsStateProvider).value?.bottomNavigationStyle ??
         BottomNavigationStyle.capsule;
     _lastStyle = initialStyle;
     _pageController = PageController(
@@ -118,7 +118,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     if (sessionId == null || sessionId == _lastCarouselSnapSessionId) return;
     final sessions =
         widget.sessions ??
-        (ref.read(playbackStateProvider).valueOrNull?.activeSessions ??
+        (ref.read(playbackStateProvider).value?.activeSessions ??
             const <PlaybackSession>[]);
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
     if (targetIndex < 0 || !_pageController.hasClients) return;
@@ -156,9 +156,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   Widget build(BuildContext context) {
     final style = ref.watch(
       settingsStateProvider.select(
-        (s) =>
-            s.valueOrNull?.bottomNavigationStyle ??
-            BottomNavigationStyle.capsule,
+        (s) => s.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
       ),
     );
     if (_lastStyle != style) {
@@ -176,7 +174,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final isBar = style == BottomNavigationStyle.bar;
 
     final playbackState =
-        ref.watch(playbackStateProvider).valueOrNull ??
+        ref.watch(playbackStateProvider).value ??
         const PlaybackStateSliceData();
     final library = ref.read(libraryFacadeProvider);
     final sessions = widget.sessions ?? playbackState.activeSessions;

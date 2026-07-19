@@ -196,6 +196,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
           selectedRoots: selectedRoots,
           destinationRoot: destination!,
           conflictPolicy: settings.asmrDownloadConflictPolicy,
+          saveMetadata: settings.asmrDownloadSaveMetadata,
+          folderNameFields: settings.asmrDownloadFolderNameFields,
         ),
       );
       if (!mounted) return;
@@ -373,7 +375,7 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(asmrDownloadStateProvider).valueOrNull;
+    final state = ref.watch(asmrDownloadStateProvider).value;
     final taskIds =
         state?.taskIds ??
         ref.read(asmrDownloadManagerProvider)?.taskIds ??

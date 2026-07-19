@@ -282,6 +282,66 @@ void main() {
       );
     });
 
+    test('ASMR download metadata and folder name settings persist', () async {
+      const state = SettingsState();
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      expect(state.asmrDownloadSaveMetadata, isTrue);
+      expect(
+        state.asmrDownloadFolderNameFields,
+        kDefaultAsmrDownloadFolderNameFields,
+      );
+
+      await repository.setAsmrDownloadSaveMetadata(false);
+      await repository.setAsmrDownloadFolderNameFields(const [
+        AsmrDownloadFolderNameField.rjCode,
+        AsmrDownloadFolderNameField.voiceActors,
+        AsmrDownloadFolderNameField.workTitle,
+      ]);
+
+      final saved =
+          json.decode(
+                (await SharedPreferences.getInstance()).getString(
+                  'playback_settings_v1',
+                )!,
+              )
+              as Map<String, dynamic>;
+      expect(saved['asmrDownloadSaveMetadata'], isFalse);
+      expect(saved['asmrDownloadFolderNameFields'], [
+        'rjCode',
+        'voiceActors',
+        'workTitle',
+      ]);
+
+      final restored = SettingsRepository();
+      addTearDown(restored.dispose);
+      await restored.loadPersistedState();
+      expect(restored.asmrDownloadSaveMetadata, isFalse);
+      expect(restored.asmrDownloadFolderNameFields, const [
+        AsmrDownloadFolderNameField.rjCode,
+        AsmrDownloadFolderNameField.voiceActors,
+        AsmrDownloadFolderNameField.workTitle,
+      ]);
+    });
+
+    test('invalid ASMR folder name fields fall back to work title', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'playback_settings_v1': json.encode(<String, Object?>{
+          'asmrDownloadFolderNameFields': <String>['unknown', 'unknown'],
+        }),
+      });
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      await repository.loadPersistedState();
+
+      expect(
+        repository.asmrDownloadFolderNameFields,
+        kDefaultAsmrDownloadFolderNameFields,
+      );
+    });
+
     test('ASMR download destination publishes and persists', () async {
       final repository = SettingsRepository();
       addTearDown(repository.dispose);

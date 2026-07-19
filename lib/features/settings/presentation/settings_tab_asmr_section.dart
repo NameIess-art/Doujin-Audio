@@ -13,7 +13,7 @@ List<Widget> _buildSettingsAsmrSection({
           builder: (context, ref, _) {
             final destinationRoot = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.asmrDownloadDestinationRoot,
+                (s) => s.value?.asmrDownloadDestinationRoot,
               ),
             );
             final asmrDownloadPathOperation = ref.watch(
@@ -55,7 +55,7 @@ List<Widget> _buildSettingsAsmrSection({
             final conflictPolicy = ref.watch(
               settingsStateProvider.select(
                 (s) =>
-                    s.valueOrNull?.asmrDownloadConflictPolicy ??
+                    s.value?.asmrDownloadConflictPolicy ??
                     AsmrDownloadConflictPolicy.overwrite,
               ),
             );
@@ -86,6 +86,70 @@ List<Widget> _buildSettingsAsmrSection({
                       ),
                     )
                     .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final saveMetadata = ref.watch(
+              settingsStateProvider.select(
+                (s) => s.value?.asmrDownloadSaveMetadata ?? true,
+              ),
+            );
+            return SwitchListTile(
+              value: saveMetadata,
+              onChanged: settings.setAsmrDownloadSaveMetadata,
+              title: _settingsTitle(
+                i18n.tr('asmr_download_save_metadata_setting'),
+              ),
+              secondary: _settingsIcon(
+                Icons.description_outlined,
+                cs.onSurface,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 2,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final fields = ref.watch(
+              settingsStateProvider.select(
+                (s) =>
+                    s.value?.asmrDownloadFolderNameFields ??
+                    kDefaultAsmrDownloadFolderNameFields,
+              ),
+            );
+            return ListTile(
+              onTap: () => AppBottomSheet.show<void>(
+                context: context,
+                builder: (_) => const _AsmrDownloadFolderNameSettingsSheet(),
+              ),
+              title: _settingsTitle(
+                i18n.tr('asmr_download_folder_name_setting'),
+              ),
+              subtitle: Text(
+                fields
+                    .map(
+                      (field) => _asmrDownloadFolderNameFieldLabel(i18n, field),
+                    )
+                    .join(' - '),
+                softWrap: true,
+              ),
+              leading: _settingsIcon(
+                Icons.drive_file_rename_outline,
+                cs.onSurface,
+              ),
+              trailing: Icon(
+                Icons.chevron_right_rounded,
+                color: cs.onSurfaceVariant,
               ),
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 8,

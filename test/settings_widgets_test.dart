@@ -169,6 +169,73 @@ void main() {
     expect(find.byType(AboutPage), findsOneWidget);
   });
 
+  testWidgets(
+    'ASMR download settings expose metadata and folder name choices',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pump();
+
+      final i18n = harness.languageProvider;
+      final category = find.text(i18n.tr('section_asmr_download'));
+      await tester.ensureVisible(category);
+      await tester.tap(category);
+      await tester.pumpAndSettle();
+
+      final metadataTile = find.widgetWithText(
+        SwitchListTile,
+        i18n.tr('asmr_download_save_metadata_setting'),
+      );
+      expect(metadataTile, findsOneWidget);
+      expect(tester.widget<SwitchListTile>(metadataTile).value, isTrue);
+      expect(
+        find.text(i18n.tr('asmr_download_folder_name_setting')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(i18n.tr('asmr_download_folder_field_work_title')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text(i18n.tr('asmr_download_folder_name_setting')));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(i18n.tr('asmr_download_folder_name_hint')),
+        findsOneWidget,
+      );
+      expect(find.byType(CheckboxListTile), findsNWidgets(4));
+
+      final workTitleCheckbox = tester.widget<CheckboxListTile>(
+        find.widgetWithText(
+          CheckboxListTile,
+          i18n.tr('asmr_download_folder_field_work_title'),
+        ),
+      );
+      expect(workTitleCheckbox.value, isTrue);
+      expect(workTitleCheckbox.onChanged, isNull);
+
+      await tester.tap(
+        find.widgetWithText(
+          CheckboxListTile,
+          i18n.tr('asmr_download_folder_field_rj_code'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.widgetWithText(
+                CheckboxListTile,
+                i18n.tr('asmr_download_folder_field_rj_code'),
+              ),
+            )
+            .value,
+        isTrue,
+      );
+    },
+  );
+
   testWidgets('settings pages use monochrome icons and a light surface', (
     tester,
   ) async {

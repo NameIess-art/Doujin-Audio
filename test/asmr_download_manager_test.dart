@@ -40,6 +40,39 @@ void main() {
     }
   });
 
+  test('work folder name follows selected field order', () {
+    const work = AsmrWork(
+      id: 1,
+      title: 'Work',
+      circleName: 'Circle',
+      sourceId: 'RJ123456',
+      sourceType: 'asmr',
+      sourceUrl: '',
+      coverUrl: '',
+      thumbnailUrl: '',
+      mainCoverUrl: '',
+      releaseDate: null,
+      createDate: null,
+      duration: Duration.zero,
+      dlCount: 0,
+      reviewCount: 0,
+      rating: 0,
+      voiceActors: <String>['Voice A', 'Voice B', 'Voice A'],
+      tags: <String>[],
+    );
+
+    expect(
+      buildAsmrDownloadWorkFolderName(work, const [
+        AsmrDownloadFolderNameField.rjCode,
+        AsmrDownloadFolderNameField.voiceActors,
+        AsmrDownloadFolderNameField.circleName,
+        AsmrDownloadFolderNameField.workTitle,
+      ]),
+      'RJ123456 - Voice A、Voice B - Circle - Work',
+    );
+    expect(buildAsmrDownloadWorkFolderName(work, const []), 'Work');
+  });
+
   test('task snapshot exposes a decoded destination path for SAF folders', () {
     const destinationRoot =
         'content://com.android.externalstorage.documents/tree/primary%3ADownload';
@@ -584,6 +617,64 @@ void main() {
       }
     }
   });
+
+  test(
+    'metadata backup can be disabled without affecting file totals',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_without_metadata_',
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: const <AsmrTrackFile>[
+            AsmrTrackFile(
+              hash: 'folder',
+              title: 'Folder',
+              type: 'folder',
+              streamUrl: null,
+              downloadUrl: null,
+              lowQualityUrl: null,
+              duration: Duration.zero,
+              size: 0,
+              children: <AsmrTrackFile>[],
+              workId: 1,
+              workTitle: 'Work',
+              sourceId: 'RJ123456',
+              relativePath: 'Folder',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.skip,
+          saveMetadata: false,
+          folderNameFields: const [
+            AsmrDownloadFolderNameField.rjCode,
+            AsmrDownloadFolderNameField.workTitle,
+          ],
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        final task = manager.getTask(1)!;
+        expect(task.workFolderName, 'RJ123456 - Work');
+        expect(task.saveMetadata, isFalse);
+        expect(task.totalFiles, 0);
+        expect(task.completedFiles, 0);
+        expect(task.totalBytes, 0);
+        expect(task.downloadedBytes, 0);
+        expect(
+          await File(
+            '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
+            '${Platform.pathSeparator}nameless-audio.json',
+          ).exists(),
+          isFalse,
+        );
+      } finally {
+        manager.dispose();
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
 
   test(
     'canceling an active download removes task and downloaded files',

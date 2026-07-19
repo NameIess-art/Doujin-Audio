@@ -13,7 +13,7 @@ List<Widget> _buildSettingsPlaybackSection({
           builder: (context, ref, _) {
             final autoPlay = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.autoPlayAddedSessions ?? true,
+                (s) => s.value?.autoPlayAddedSessions ?? true,
               ),
             );
             return SwitchListTile(
@@ -35,7 +35,7 @@ List<Widget> _buildSettingsPlaybackSection({
           builder: (context, ref, _) {
             final asmrPlaybackCacheEnabled = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.asmrPlaybackCacheEnabled ?? false,
+                (s) => s.value?.asmrPlaybackCacheEnabled ?? false,
               ),
             );
             return SwitchListTile(
@@ -54,7 +54,7 @@ List<Widget> _buildSettingsPlaybackSection({
           builder: (context, ref, _) {
             final recordProgress = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.recordPlaybackProgress ?? true,
+                (s) => s.value?.recordPlaybackProgress ?? true,
               ),
             );
             return SwitchListTile(
@@ -73,7 +73,7 @@ List<Widget> _buildSettingsPlaybackSection({
           builder: (context, ref, _) {
             final multiThreadEnabled = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.multiThreadPlaybackEnabled ?? false,
+                (s) => s.value?.multiThreadPlaybackEnabled ?? false,
               ),
             );
             return SwitchListTile(
@@ -104,7 +104,7 @@ List<Widget> _buildSettingsPlaybackSection({
               final behavior = ref.watch(
                 settingsStateProvider.select(
                   (state) =>
-                      state.valueOrNull?.audioDeviceDisconnectBehavior ??
+                      state.value?.audioDeviceDisconnectBehavior ??
                       AudioDeviceDisconnectBehavior.pause,
                 ),
               );
@@ -149,7 +149,7 @@ List<Widget> _buildSettingsPlaybackSection({
               final behavior = ref.watch(
                 settingsStateProvider.select(
                   (state) =>
-                      state.valueOrNull?.transientAudioFocusLossBehavior ??
+                      state.value?.transientAudioFocusLossBehavior ??
                       TransientAudioFocusLossBehavior.duck,
                 ),
               );
@@ -194,7 +194,7 @@ List<Widget> _buildSettingsPlaybackSection({
               final behavior = ref.watch(
                 settingsStateProvider.select(
                   (state) =>
-                      state.valueOrNull?.interruptionResumeBehavior ??
+                      state.value?.interruptionResumeBehavior ??
                       InterruptionResumeBehavior.resume,
                 ),
               );

@@ -22,7 +22,7 @@ List<Widget> _buildSettingsAppearanceSection({
         Consumer(
           builder: (context, ref, _) {
             final themeMode =
-                ref.watch(themeStateProvider).valueOrNull?.themeMode ??
+                ref.watch(themeStateProvider).value?.themeMode ??
                 ref.read(themeProviderInstanceProvider).themeMode;
             final modeLabels = <ThemeMode, String>{
               ThemeMode.system: i18n.tr('theme_system'),
@@ -59,7 +59,7 @@ List<Widget> _buildSettingsAppearanceSection({
         Consumer(
           builder: (context, ref, _) {
             final themeState =
-                ref.watch(themeStateProvider).valueOrNull ??
+                ref.watch(themeStateProvider).value ??
                 ThemeState.from(ref.read(themeProviderInstanceProvider));
             final provider = ref.read(themeProviderInstanceProvider);
             return SwitchListTile(
@@ -113,7 +113,7 @@ List<Widget> _buildSettingsAppearanceSection({
             final style = ref.watch(
               settingsStateProvider.select(
                 (s) =>
-                    s.valueOrNull?.bottomNavigationStyle ??
+                    s.value?.bottomNavigationStyle ??
                     BottomNavigationStyle.capsule,
               ),
             );
@@ -139,7 +139,7 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final uiBlurEnabled = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
+                (s) => s.value?.uiBlurEffectEnabled ?? true,
               ),
             );
             return SwitchListTile(
@@ -158,7 +158,7 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final blurEnabled = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.blurPlayerBackgroundEnabled ?? true,
+                (s) => s.value?.blurPlayerBackgroundEnabled ?? true,
               ),
             );
             return SwitchListTile(
@@ -177,7 +177,7 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final showPlaybackCard = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.showPlaybackCard ?? true,
+                (s) => s.value?.showPlaybackCard ?? true,
               ),
             );
             return SwitchListTile(
@@ -199,7 +199,7 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final fields = ref.watch(
               settingsStateProvider.select(
-                (s) => s.valueOrNull?.cardInfoFields ?? CardInfoField.defaults,
+                (s) => s.value?.cardInfoFields ?? CardInfoField.defaults,
               ),
             );
             final summary = fields.isEmpty

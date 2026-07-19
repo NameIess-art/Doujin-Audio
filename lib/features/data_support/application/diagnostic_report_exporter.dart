@@ -19,7 +19,7 @@ class DiagnosticReportExporter {
       path.join(directory.path, 'NamelessAudio-diagnostic.zip'),
     );
     try {
-      return FilePicker.platform.saveFile(
+      return FilePicker.saveFile(
         dialogTitle: dialogTitle,
         fileName: path.basename(report.path),
         type: FileType.custom,

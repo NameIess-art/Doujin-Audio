@@ -107,7 +107,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   Widget build(BuildContext context) {
     final controller = ref.read(asmrLibraryControllerProvider);
     final treeState = _expanded
-        ? ref.watch(asmrTrackTreeStateProvider(widget.work.id)).valueOrNull ??
+        ? ref.watch(asmrTrackTreeStateProvider(widget.work.id)).value ??
               controller?.trackTreeViewState(widget.work.id)
         : null;
     final tree = treeState?.tree;
@@ -208,8 +208,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                 final fields = ref.watch(
                   settingsStateProvider.select(
                     (state) =>
-                        state.valueOrNull?.cardInfoFields ??
-                        CardInfoField.defaults,
+                        state.value?.cardInfoFields ?? CardInfoField.defaults,
                   ),
                 );
                 return LibraryLikeMetadataWorkCardContent(

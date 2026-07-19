@@ -160,9 +160,7 @@ class _FloatingGlassPanel extends ConsumerWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
     final blurEnabled = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.valueOrNull?.uiBlurEffectEnabled ?? true,
-      ),
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
 
     Widget buildPanel(bool useBlur) => DecoratedBox(

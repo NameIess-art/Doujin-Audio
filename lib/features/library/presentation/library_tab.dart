@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
@@ -594,8 +595,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     _readOrWatch(libraryCategoryRevisionProvider);
     final coverGeneration = _readOrWatch(coverGenerationProvider);
     final settingsState =
-        _readOrWatch(settingsStateProvider).valueOrNull ??
-        const SettingsState();
+        _readOrWatch(settingsStateProvider).value ?? const SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final libraryRefreshOperationBusy = _readOrWatch(
       uiOperationForScopeProvider(

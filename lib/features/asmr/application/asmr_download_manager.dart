@@ -99,6 +99,7 @@ class AsmrDownloadTaskSnapshot {
     required this.destinationRoot,
     required this.workFolderName,
     required this.conflictPolicy,
+    this.saveMetadata = true,
     required this.status,
     required this.totalFiles,
     required this.completedFiles,
@@ -119,6 +120,7 @@ class AsmrDownloadTaskSnapshot {
   final String destinationRoot;
   final String workFolderName;
   final AsmrDownloadConflictPolicy conflictPolicy;
+  final bool saveMetadata;
   final AsmrDownloadTaskStatus status;
   final int totalFiles;
   final int completedFiles;
@@ -182,6 +184,7 @@ class AsmrDownloadTaskSnapshot {
       destinationRoot: destinationRoot,
       workFolderName: workFolderName,
       conflictPolicy: conflictPolicy ?? this.conflictPolicy,
+      saveMetadata: saveMetadata,
       status: status ?? this.status,
       totalFiles: totalFiles ?? this.totalFiles,
       completedFiles: completedFiles ?? this.completedFiles,
@@ -487,7 +490,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
 
     if (!Platform.isAndroid || kIsWeb) {
-      final directory = await FilePicker.platform.getDirectoryPath(
+      final directory = await FilePicker.getDirectoryPath(
         dialogTitle: dialogTitle ?? 'Choose download folder',
       );
       if (directory != null && directory.trim().isNotEmpty) {
@@ -607,6 +610,9 @@ class AsmrDownloadManager extends ChangeNotifier {
     required List<AsmrTrackFile> selectedRoots,
     required String destinationRoot,
     required AsmrDownloadConflictPolicy conflictPolicy,
+    bool saveMetadata = true,
+    Iterable<AsmrDownloadFolderNameField> folderNameFields =
+        kDefaultAsmrDownloadFolderNameFields,
   }) async {
     if (_disposed) return;
     final normalizedDestination = destinationRoot.trim();
@@ -629,7 +635,10 @@ class AsmrDownloadManager extends ChangeNotifier {
       _tasks.remove(workId);
     }
 
-    final workFolderName = _buildWorkFolderName(work);
+    final workFolderName = buildAsmrDownloadWorkFolderName(
+      work,
+      folderNameFields,
+    );
     final plannedFiles = _collectPlannedFiles(selectedRoots);
     for (final file in plannedFiles) {
       _validatedDownloadRelativePath(file.relativePath);
@@ -640,12 +649,16 @@ class AsmrDownloadManager extends ChangeNotifier {
       _workRootExistedBeforeTask.remove(workId);
       return;
     }
-    final backup = _buildBackupDetail(work, workRootPath);
-    final backupJson = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(backup.toBackupJson());
-    final backupBytes = utf8.encode(backupJson).length;
-    final totalFiles = plannedFiles.length + 1;
+    final backupBytes = saveMetadata
+        ? utf8
+              .encode(
+                const JsonEncoder.withIndent('  ').convert(
+                  _buildBackupDetail(work, workRootPath).toBackupJson(),
+                ),
+              )
+              .length
+        : 0;
+    final totalFiles = plannedFiles.length + (saveMetadata ? 1 : 0);
     final totalBytes = plannedFiles.fold<int>(backupBytes, (sum, item) {
       return sum + item.size;
     });
@@ -661,6 +674,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       destinationRoot: normalizedDestination,
       workFolderName: workFolderName,
       conflictPolicy: conflictPolicy,
+      saveMetadata: saveMetadata,
       status: AsmrDownloadTaskStatus.idle,
       totalFiles: totalFiles,
       completedFiles: 0,
@@ -716,11 +730,17 @@ class AsmrDownloadManager extends ChangeNotifier {
     final workRootPath = taskSnapshot.workRootPath;
     final conflictPolicy = taskSnapshot.conflictPolicy;
 
-    final backup = _buildBackupDetail(work, workRootPath);
-    final backupJson = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(backup.toBackupJson());
-    final backupBytes = utf8.encode(backupJson).length;
+    final saveMetadata = taskSnapshot.saveMetadata;
+    final backup = saveMetadata ? _buildBackupDetail(work, workRootPath) : null;
+    final backupBytes = backup == null
+        ? 0
+        : utf8
+              .encode(
+                const JsonEncoder.withIndent(
+                  '  ',
+                ).convert(backup.toBackupJson()),
+              )
+              .length;
 
     try {
       _createdOutputPaths.putIfAbsent(workId, () => <String>{});
@@ -733,23 +753,25 @@ class AsmrDownloadManager extends ChangeNotifier {
         throw const FileSystemException('Unable to create download folder.');
       }
 
-      final backupPath = _joinFolderPath(workRootPath, 'nameless-audio.json');
-      final backupExisted = await _pathExists(backupPath);
-      await _writeWorkDetailBackup(backup, workRootPath);
-      if (!backupExisted) {
-        _createdOutputPaths[workId]?.add(backupPath);
+      if (backup != null) {
+        final backupPath = _joinFolderPath(workRootPath, 'nameless-audio.json');
+        final backupExisted = await _pathExists(backupPath);
+        await _writeWorkDetailBackup(backup, workRootPath);
+        if (!backupExisted) {
+          _createdOutputPaths[workId]?.add(backupPath);
+        }
       }
       _throwIfCancelled(workId);
 
       _tasks[workId] = _tasks[workId]!.copyWith(
         status: AsmrDownloadTaskStatus.downloading,
-        completedFiles: 1,
+        completedFiles: saveMetadata ? 1 : 0,
         downloadedBytes: backupBytes,
-        message: 'downloading_work_detail',
+        message: saveMetadata ? 'downloading_work_detail' : 'downloading',
       );
       _notifyTaskChanged();
 
-      var completed = 1;
+      var completed = saveMetadata ? 1 : 0;
       var skipped = 0;
       var failed = 0;
       var downloadedBytes = backupBytes;
@@ -1292,15 +1314,6 @@ class AsmrDownloadManager extends ChangeNotifier {
       createdAt: DateTime.now(),
       updatedAt: DateTime.now(),
     ).normalizedForSave(DateTime.now());
-  }
-
-  String _buildWorkFolderName(AsmrWork work) {
-    return PathDisplay.safeFileName(
-      work.title.trim(),
-      replacement: '_',
-      collapseWhitespace: false,
-      fallback: 'ASMR_ONE',
-    );
   }
 
   String? _downloadUrlFor(AsmrTrackFile node) {

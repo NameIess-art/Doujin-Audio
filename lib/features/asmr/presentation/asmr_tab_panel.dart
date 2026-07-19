@@ -388,7 +388,7 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final authState =
-        ref.watch(asmrAuthStateProvider).valueOrNull ??
+        ref.watch(asmrAuthStateProvider).value ??
         const AsmrAuthViewState(
           isLoggedIn: false,
           isRestoring: true,
@@ -396,7 +396,7 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
           revision: 0,
         );
     final syncState =
-        ref.watch(asmrSyncStateProvider).valueOrNull ??
+        ref.watch(asmrSyncStateProvider).value ??
         const AsmrSyncViewState(
           phase: AsmrSyncPhase.idle,
           lastSyncAt: null,

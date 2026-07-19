@@ -435,7 +435,11 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
             text: folderName,
             allowAndroidMarquee: true,
             style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: cs.onSurface.withValues(alpha: 0.8),
+              color: _sessionDetailForeground(
+                cs,
+                _SessionDetailForegroundLevel.medium,
+                darkFallback: cs.onSurface.withValues(alpha: 0.8),
+              ),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -447,7 +451,10 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
               pauseDuration: const Duration(seconds: 1),
               allowAndroidMarquee: true,
               style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: cs.onSurface,
+                color: _sessionDetailForeground(
+                  cs,
+                  _SessionDetailForegroundLevel.strong,
+                ),
                 fontWeight: FontWeight.w900,
                 letterSpacing: -0.5,
                 height: 1.1,

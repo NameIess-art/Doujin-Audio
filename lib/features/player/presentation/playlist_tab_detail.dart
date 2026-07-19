@@ -874,7 +874,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                     onPressed: onClose,
                                     icon: Icon(
                                       Icons.keyboard_arrow_down_rounded,
-                                      color: cs.onSurface,
+                                      color: _sessionDetailForeground(
+                                        cs,
+                                        _SessionDetailForegroundLevel.muted,
+                                      ),
                                       size: 32,
                                     ),
                                   ),
@@ -895,7 +898,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       settings.isGlobalEnabled(session.id)) ...[
                                     Icon(
                                       Icons.subtitles_rounded,
-                                      color: cs.onSurface,
+                                      color: _sessionDetailForeground(
+                                        cs,
+                                        _SessionDetailForegroundLevel.muted,
+                                      ),
                                       size: 20,
                                     ),
                                     const SizedBox(width: 8),
@@ -928,7 +934,11 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                         children: [
                                           SessionFeatureIconRow(
                                             featureIcons: featureIcons,
-                                            color: cs.onSurface,
+                                            color: _sessionDetailForeground(
+                                              cs,
+                                              _SessionDetailForegroundLevel
+                                                  .muted,
+                                            ),
                                             iconSize: 20,
                                             spacing: 8,
                                             alignment: WrapAlignment.end,

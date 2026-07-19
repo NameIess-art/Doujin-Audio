@@ -489,7 +489,11 @@ class _PrimaryTransportButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurface;
+    final cs = Theme.of(context).colorScheme;
+    final color = _sessionDetailForeground(
+      cs,
+      _SessionDetailForegroundLevel.medium,
+    );
     return IconButton(
       tooltip: tooltip,
       constraints: constraints,
@@ -531,7 +535,12 @@ class _SecondaryControlButton extends StatelessWidget {
           backgroundColor: active
               ? cs.primaryContainer.withValues(alpha: 0.65)
               : Colors.transparent,
-          foregroundColor: active ? cs.onPrimaryContainer : cs.onSurface,
+          foregroundColor: active
+              ? cs.onPrimaryContainer
+              : _sessionDetailForeground(
+                  cs,
+                  _SessionDetailForegroundLevel.muted,
+                ),
           disabledForegroundColor: cs.onSurface.withValues(alpha: 0.35),
         ),
         onPressed: onPressed != null

@@ -81,6 +81,33 @@ const double _sessionDetailCapsuleWidth = 52;
 const double _sessionDetailCapsuleHeight = 212;
 const double _sessionDetailCapsuleAnchorOffsetY = 26;
 
+enum _SessionDetailForegroundLevel { strong, medium, muted }
+
+Color _sessionDetailForeground(
+  ColorScheme colorScheme,
+  _SessionDetailForegroundLevel level, {
+  Color? darkFallback,
+}) {
+  if (colorScheme.brightness == Brightness.dark) {
+    return darkFallback ?? colorScheme.onSurface;
+  }
+
+  return switch (level) {
+    _SessionDetailForegroundLevel.strong => Color.alphaBlend(
+      colorScheme.primary.withValues(alpha: 0.10),
+      colorScheme.onSurface,
+    ),
+    _SessionDetailForegroundLevel.medium => Color.alphaBlend(
+      colorScheme.primary.withValues(alpha: 0.06),
+      colorScheme.onSurfaceVariant,
+    ),
+    _SessionDetailForegroundLevel.muted => Color.alphaBlend(
+      colorScheme.primary.withValues(alpha: 0.03),
+      colorScheme.onSurfaceVariant,
+    ).withValues(alpha: 0.72),
+  };
+}
+
 List<MusicTrack> orderTracksForSessionSwitcher(
   List<MusicTrack> tracks, {
   required bool preserveQueueOrder,

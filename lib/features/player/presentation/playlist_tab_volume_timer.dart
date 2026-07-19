@@ -163,7 +163,10 @@ class _SessionVolumeButtonState extends State<_SessionVolumeButton>
                   icon,
                   key: ValueKey(icon),
                   size: 20,
-                  color: cs.onSurface,
+                  color: _sessionDetailForeground(
+                    cs,
+                    _SessionDetailForegroundLevel.muted,
+                  ),
                 ),
               ),
             ),
@@ -502,7 +505,11 @@ class _TimecodeLabel extends StatelessWidget {
       text,
       textAlign: alignEnd ? TextAlign.end : TextAlign.start,
       style: Theme.of(context).textTheme.labelMedium?.copyWith(
-        color: cs.onSurface.withValues(alpha: 0.8),
+        color: _sessionDetailForeground(
+          cs,
+          _SessionDetailForegroundLevel.muted,
+          darkFallback: cs.onSurface.withValues(alpha: 0.8),
+        ),
         fontWeight: FontWeight.w800,
         letterSpacing: 0.5,
         fontSize: 13,

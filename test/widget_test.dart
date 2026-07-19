@@ -24,6 +24,7 @@ import 'package:nameless_audio/features/player/application/playback_notification
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
+import 'package:nameless_audio/core/widgets/marquee_text.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
@@ -519,6 +520,105 @@ void main() {
     expect(backgroundCover.deferCommitDuringInteraction, isTrue);
     expect(artworkCover.duration, kCoverImageFadeDuration);
     expect(artworkCover.deferCommitDuringInteraction, isTrue);
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
+
+  testWidgets('light session detail uses layered foreground colors', (
+    tester,
+  ) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    });
+    _setLogicalTestViewSize(
+      tester,
+      Platform.isWindows ? const Size(1100, 750) : const Size(1080, 2400),
+    );
+    const track = MusicTrack(
+      path: 'https://asmr.one/media/work/color-hierarchy.mp3',
+      displayName: 'Color hierarchy track',
+      groupKey: 'asmr-color-hierarchy',
+      groupTitle: 'Color hierarchy work',
+      groupSubtitle: 'RJ000001',
+      isSingle: false,
+      remoteMetadataKind: 'asmr.one',
+    );
+    await _pumpAppShell(tester, playbackTrack: track);
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+    );
+    await tester.pumpAndSettle();
+
+    final detail = find.byType(SessionDetailPage);
+    final detailContext = tester.element(
+      find.byKey(const ValueKey('session_detail_background_blur')),
+    );
+    final scheme = Theme.of(detailContext).colorScheme;
+    expect(scheme.brightness, Brightness.light);
+
+    final detailMarquees = tester.widgetList<MarqueeText>(
+      find.descendant(of: detail, matching: find.byType(MarqueeText)),
+    );
+    final titleColor = detailMarquees
+        .singleWhere((widget) => widget.text == 'Color hierarchy track')
+        .style!
+        .color!;
+    final supportingColor = detailMarquees
+        .firstWhere((widget) => widget.text != 'Color hierarchy track')
+        .style!
+        .color!;
+    final closeColor = tester
+        .widget<Icon>(
+          find.descendant(
+            of: detail,
+            matching: find.byIcon(Icons.keyboard_arrow_down_rounded),
+          ),
+        )
+        .color!;
+    final forwardColor = tester
+        .widget<Icon>(
+          find.descendant(
+            of: detail,
+            matching: find.byIcon(Icons.forward_5_rounded),
+          ),
+        )
+        .color!;
+    final timeColor = tester
+        .widgetList<Text>(
+          find.descendant(of: detail, matching: find.byType(Text)),
+        )
+        .firstWhere((widget) => widget.style?.fontFeatures?.isNotEmpty ?? false)
+        .style!
+        .color!;
+    final timerButton = tester.widget<IconButton>(
+      find
+          .ancestor(
+            of: find.descendant(
+              of: detail,
+              matching: find.byIcon(Icons.alarm_rounded),
+            ),
+            matching: find.byType(IconButton),
+          )
+          .first,
+    );
+    final secondaryColor = timerButton.style!.foregroundColor!.resolve({})!;
+
+    expect(titleColor, isNot(Colors.black));
+    expect(titleColor, isNot(scheme.onSurface));
+    expect(titleColor.a, 1.0);
+    expect(supportingColor, isNot(titleColor));
+    expect(supportingColor.a, 1.0);
+    expect(forwardColor, supportingColor);
+    expect(closeColor, isNot(supportingColor));
+    expect(closeColor.a, lessThan(1.0));
+    expect(timeColor, closeColor);
+    expect(secondaryColor, closeColor);
+
     await _settleSessionDetailAsyncWork(tester);
     await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = previousPlatform;

@@ -935,7 +935,11 @@ class _SubtitleChip extends StatelessWidget {
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: cs.onSurface.withValues(alpha: 0.85),
+            color: _sessionDetailForeground(
+              cs,
+              _SessionDetailForegroundLevel.medium,
+              darkFallback: cs.onSurface.withValues(alpha: 0.85),
+            ),
             fontWeight: FontWeight.w600,
             fontSize: 16,
             height: 1.3,

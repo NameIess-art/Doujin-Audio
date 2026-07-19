@@ -2,7 +2,7 @@
 
 Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 播放器，使用 Flutter 与 Android 原生 Media3 / ExoPlayer 实现。
 
-当前版本：以 [`pubspec.yaml`](pubspec.yaml) 为唯一来源；发布页：[GitHub Latest Release](https://github.com/NameIess-art/nameless-audio/releases/latest)。
+当前版本以 [`pubspec.yaml`](pubspec.yaml) 为唯一来源；正式安装包和更新均来自发布页：[GitHub Latest Release](https://github.com/NameIess-art/nameless-audio/releases/latest)。
 
 [MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
@@ -20,6 +20,14 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 | Android x86_64 | `NamelessAudio-android-x64-<tag>.apk` | 适用于 x86_64 Android 设备或模拟器 |
 
 本项目仅通过 GitHub Release 正式分发，不提供应用商店 AAB 或 iOS 安装包。
+
+### 第一次使用
+
+1. 下载 universal APK 并安装；如果系统提示来源限制，请在系统设置中允许本应用安装用户主动下载的更新。
+2. 在“本地音频库”中通过系统文件夹选择器添加曲库，或直接添加文件/文件夹。
+3. 点按作品或音频开始播放；需要在线内容时，再在 ASMR.ONE 页面登录即可。
+
+应用默认本地优先：音频库、设置和播放状态保存在设备上，网络仅用于在线内容、元数据和 GitHub 更新。权限会在使用对应功能时按需请求。
 
 ## 主要功能
 
@@ -66,6 +74,12 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 - ASMR.ONE 下载任务支持暂停和继续。
 - 支持按 RJ 号、文件名或作品标题读取 DLsite 元数据，并可批量匹配和写入。
 
+### 视频转音频
+
+- 从本地选择视频文件和输出目录，将视频音轨转换为 MP3、AAC、OGG、WAV 或 FLAC。
+- MP3、AAC、OGG 可选择输出码率；WAV 和 FLAC 使用格式自身的编码参数。
+- 转换过程显示进度，支持取消；完成后直接提示输出文件位置。
+
 ### 后台播放与计时
 
 - Android 使用原生 `MediaSessionService`、Media3 / ExoPlayer、媒体前台服务和锁屏控制。
@@ -79,10 +93,13 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 ### 设置、数据与更新
 
 - 主题支持跟随系统、浅色和深色；界面支持中文、日文和英文。
+- 可选择启动页（ASMR.ONE、本地音频库或播放列表）、底部导航样式、竖屏锁定、操作震动和减少动画。
+- 播放详情支持简洁字幕或时间轴字幕；可配置封面清晰度、背景模糊、界面毛玻璃和卡片显示字段。
 - Android 可分别设置耳机或蓝牙断开、短暂音频焦点丢失、通话等中断结束后的播放行为，并可选择启动恢复时继续播放或保持暂停。
-- 播放列表默认以作品为单位替换重复会话，也可允许相同作品并存；支持“减少动画”辅助选项。
-- 支持 `.nalbackup` 数据备份、验证、恢复和失败回滚。
+- 播放列表支持创建多个命名队列、拖动排序、编辑队列音频和卡片颜色；默认以作品为单位替换重复会话，也可允许相同作品并存。
+- 支持 `.nalbackup` 数据备份、验证、恢复和失败回滚；恢复失败会自动回滚到当前数据。
 - 普通 `.nalbackup` 只包含应用偏好和媒体库数据，不导出 ASMR.ONE 密码、JWT 或其他登录凭据；恢复后需要重新登录。
+- “数据与支持”可导出脱敏诊断报告，并提供隐私摘要，便于反馈问题时控制共享范围。
 - 缓存管理覆盖封面、ASMR.ONE 播放缓存、视频帧、更新包和下载临时文件。
 - 应用内更新从 GitHub Release 检查、下载、SHA-256 校验并安装。
 - 点击更新后，下载进度会在页面最上方持续显示；下载失败时会保留错误信息。

@@ -497,6 +497,7 @@ void main() {
     );
     expect(find.byIcon(Icons.pause_rounded), findsNothing);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
+    expect(find.byType(SessionFeatureBadgeStack), findsNothing);
     expect(
       find.byWidgetPredicate(
         (widget) => widget is Semantics && widget.properties.value == '1 / 1',
@@ -507,6 +508,122 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 100));
+    semantics.dispose();
+  });
+
+  testWidgets('playback carousel wraps between the first and last session', (
+    tester,
+  ) async {
+    final themeProvider = ThemeProvider();
+    final languageProvider = AppLanguageProvider();
+    final notificationService = PlaybackNotificationService();
+    final audioDatabaseRepository = AudioDatabaseRepository();
+    final nativePlaybackRepository = NativePlaybackRepository();
+    final libraryService = LibraryService();
+    final playbackService = PlaybackSessionService();
+    final timerService = TimerService();
+    final notificationCoordinatorService = NotificationCoordinatorService();
+    final settingsRepository = SettingsRepository();
+    final runtimeGraph = createTestRuntimeGraph(
+      notificationService: notificationService,
+      audioDatabaseRepository: audioDatabaseRepository,
+      nativePlaybackRepository: nativePlaybackRepository,
+      libraryService: libraryService,
+      playbackService: playbackService,
+      timerService: timerService,
+      notificationStateService: notificationCoordinatorService,
+      settingsRepository: settingsRepository,
+    );
+    const firstTrack = MusicTrack(
+      path: '/audio/first.mp3',
+      displayName: 'First track',
+      groupKey: 'first',
+      groupTitle: 'First',
+      groupSubtitle: 'First',
+      isSingle: true,
+    );
+    const secondTrack = MusicTrack(
+      path: '/audio/second.mp3',
+      displayName: 'Second track',
+      groupKey: 'second',
+      groupTitle: 'Second',
+      groupSubtitle: 'Second',
+      isSingle: true,
+    );
+    final firstSession = PlaybackSession(
+      id: 'first_session',
+      currentTrackPath: firstTrack.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    final secondSession = PlaybackSession(
+      id: 'second_session',
+      currentTrackPath: secondTrack.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
+    addTearDown(firstSession.dispose);
+    addTearDown(secondSession.dispose);
+    runtimeGraph.library.addTracks(
+      [firstTrack, secondTrack],
+      notify: false,
+      persist: false,
+    );
+    playbackService
+      ..registerSession(firstSession)
+      ..registerSession(secondSession)
+      ..syncSlice(
+        activeSessions: [firstSession, secondSession],
+        playingSessionCount: 0,
+        focusedSessionId: firstSession.id,
+        multiThreadPlaybackEnabled: true,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          ..._testRuntimeOverrides(runtimeGraph),
+          themeProviderInstanceProvider.overrideWithValue(themeProvider),
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: ActiveSessionCarousel(
+                sessions: [firstSession, secondSession],
+                onOpenSession: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    Finder pageIndicator(String label) => find.byWidgetPredicate(
+      (widget) => widget is Semantics && widget.properties.label == label,
+    );
+
+    expect(pageIndicator('1 / 2'), findsOneWidget);
+    await tester.drag(find.byType(PageView), const Offset(400, 0));
+    await tester.pumpAndSettle();
+    expect(pageIndicator('2 / 2'), findsOneWidget);
+    await tester.drag(find.byType(PageView), const Offset(-400, 0));
+    await tester.pumpAndSettle();
+    expect(pageIndicator('1 / 2'), findsOneWidget);
     semantics.dispose();
   });
 

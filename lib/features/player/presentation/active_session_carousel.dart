@@ -9,7 +9,6 @@ import 'package:path/path.dart' as path;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
-import '../../../app/state/subtitle_settings_provider.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
@@ -56,11 +55,14 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
 }
 
 class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
+  static const int _loopPageSeed = 100000;
+
   late PageController _pageController;
   late final ValueListenable<String?> _carouselSnapListenable;
   final ValueNotifier<double> _pageNotifier = ValueNotifier<double>(0);
   String? _lastCarouselSnapSessionId;
   BottomNavigationStyle? _lastStyle;
+  bool _loopSeedScheduled = false;
 
   @override
   void initState() {
@@ -123,7 +125,54 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
     if (targetIndex < 0 || !_pageController.hasClients) return;
     _lastCarouselSnapSessionId = sessionId;
-    _moveToPage(targetIndex, duration: const Duration(milliseconds: 350));
+    _moveToPage(
+      _pageForSessionIndex(targetIndex, sessions.length),
+      duration: const Duration(milliseconds: 350),
+    );
+  }
+
+  int _sessionIndexForPage(int page, int length) {
+    if (length <= 0) return 0;
+    final remainder = page % length;
+    return remainder < 0 ? remainder + length : remainder;
+  }
+
+  int _pageForSessionIndex(int targetIndex, int length) {
+    if (length <= 1) return _pageNotifier.value.round();
+    final currentPage = _pageNotifier.value.round();
+    final currentIndex = _sessionIndexForPage(currentPage, length);
+    var delta = targetIndex - currentIndex;
+    if (delta > length / 2) {
+      delta -= length;
+    } else if (delta < -length / 2) {
+      delta += length;
+    }
+    return currentPage + delta;
+  }
+
+  void _ensureLoopPageSeed(int length) {
+    final currentPage = _pageNotifier.value.round();
+    if (length <= 1) {
+      if (currentPage == 0 || _loopSeedScheduled) return;
+      _loopSeedScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _loopSeedScheduled = false;
+        if (!mounted || !_pageController.hasClients) return;
+        _pageController.jumpToPage(0);
+        _pageNotifier.value = 0;
+      });
+      return;
+    }
+    if (currentPage >= _loopPageSeed ~/ 2 || _loopSeedScheduled) return;
+    _loopSeedScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loopSeedScheduled = false;
+      if (!mounted || !_pageController.hasClients) return;
+      final targetPage =
+          _loopPageSeed + _sessionIndexForPage(currentPage, length);
+      _pageController.jumpToPage(targetPage);
+      _pageNotifier.value = targetPage.toDouble();
+    });
   }
 
   void _moveToPage(int page, {required Duration duration}) {
@@ -147,18 +196,6 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       return;
     }
     Navigator.of(context).push(buildSessionDetailRoute(sessionId: session.id));
-  }
-
-  void _ensureValidPage(int length) {
-    if (length == 0) return;
-    final maxPage = length - 1;
-    final currentPage = _pageNotifier.value.round();
-    if (currentPage <= maxPage) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_pageController.hasClients) return;
-      _pageController.jumpToPage(maxPage);
-      _pageNotifier.value = maxPage.toDouble();
-    });
   }
 
   @override
@@ -198,12 +235,15 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         _lastCarouselSnapSessionId = snapSessionId;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || !_pageController.hasClients) return;
-          _moveToPage(targetIndex, duration: const Duration(milliseconds: 350));
+          _moveToPage(
+            _pageForSessionIndex(targetIndex, sessions.length),
+            duration: const Duration(milliseconds: 350),
+          );
         });
       }
     }
 
-    _ensureValidPage(sessions.length);
+    _ensureLoopPageSeed(sessions.length);
 
     return SizedBox(
       height: isBar ? 74 : 88,
@@ -219,11 +259,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                     ? -1
                     : 0;
                 if (delta != 0) {
-                  final targetPage = (currentPage + delta)
-                      .clamp(0, sessions.length - 1)
-                      .toInt();
                   _moveToPage(
-                    targetPage,
+                    currentPage + delta,
                     duration: const Duration(milliseconds: 250),
                   );
                 }
@@ -241,9 +278,13 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
               physics: sessions.length == 1
                   ? const NeverScrollableScrollPhysics()
                   : const BouncingScrollPhysics(),
-              itemCount: sessions.length,
+              itemCount: sessions.length == 1 ? 1 : null,
               itemBuilder: (context, index) {
-                final session = sessions[index];
+                final sessionIndex = _sessionIndexForPage(
+                  index,
+                  sessions.length,
+                );
+                final session = sessions[sessionIndex];
                 final track = ref
                     .read(audioPathCoordinatorProvider)
                     .sessionTrackForPath(session.id, session.currentTrackPath);
@@ -255,7 +296,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                   child: RepaintBoundary(
                     child: _ActiveSessionCard(
                       session: session,
-                      position: index,
+                      position: sessionIndex,
                       count: sessions.length,
                       coverPathFuture: _sessionCoverFutureForTrack(
                         library,
@@ -277,9 +318,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
                 child: ValueListenableBuilder<double>(
                   valueListenable: _pageNotifier,
                   builder: (context, page, child) {
-                    final activePage = page.round().clamp(
-                      0,
-                      sessions.length - 1,
+                    final activePage = _sessionIndexForPage(
+                      page.round(),
+                      sessions.length,
                     );
                     return Semantics(
                       label: '${activePage + 1} / ${sessions.length}',

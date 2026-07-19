@@ -245,38 +245,26 @@ class _ActiveSessionCard extends ConsumerWidget {
             children: [
               Consumer(
                 builder: (context, ref, child) {
-                  final settings = ref.watch(subtitleSettingsProvider);
-                  final showSub = settings.isGlobalEnabled(session.id);
-                  final featureIcons = sessionFeatureBadgeIcons(
-                    showSubtitles: showSub,
-                    channelSwapEnabled: view.channelSwapEnabled,
-                    audioEffects: view.audioEffects,
-                    speed: view.speed,
-                  );
-                  return SessionFeatureBadgeStack(
-                    featureIcons: featureIcons,
-                    color: activeColor,
-                    child: _ActiveSessionPlayPauseButton(
-                      showPauseIcon: isPlaying,
-                      isLoading: view.loading,
-                      enabled: view.trackPath.isNotEmpty && !view.loading,
-                      activeColor: activeColor,
-                      semanticLabel: i18n.tr(
-                        view.loading
-                            ? 'playback_loading'
-                            : view.error != null
-                            ? 'retry_playback'
-                            : (isPlaying ? 'pause' : 'play'),
-                      ),
-                      onPressed: () {
-                        AppInteractionFeedback.trigger(
-                          AppInteractionFeedbackType.confirmation,
-                        );
-                        ref
-                            .read(playbackFacadeProvider)
-                            .toggleSessionPlayPause(session.id);
-                      },
+                  return _ActiveSessionPlayPauseButton(
+                    showPauseIcon: isPlaying,
+                    isLoading: view.loading,
+                    enabled: view.trackPath.isNotEmpty && !view.loading,
+                    activeColor: activeColor,
+                    semanticLabel: i18n.tr(
+                      view.loading
+                          ? 'playback_loading'
+                          : view.error != null
+                          ? 'retry_playback'
+                          : (isPlaying ? 'pause' : 'play'),
                     ),
+                    onPressed: () {
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.confirmation,
+                      );
+                      ref
+                          .read(playbackFacadeProvider)
+                          .toggleSessionPlayPause(session.id);
+                    },
                   );
                 },
               ),

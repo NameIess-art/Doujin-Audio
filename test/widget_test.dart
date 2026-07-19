@@ -12,10 +12,15 @@ import 'package:nameless_audio/main.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/app/presentation/main_screen.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
+import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:nameless_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
@@ -23,6 +28,7 @@ import 'package:nameless_audio/features/player/application/playback_notification
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
+import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
@@ -126,8 +132,70 @@ void main() {
     );
     expect(find.text(harness.language.tr('loading_dot')), findsOneWidget);
     expect(find.byType(TextField), findsOneWidget);
+    expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
+    expect(find.text(harness.language.tr('asmr_empty_category')), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'ASMR queued empty category shows skeleton until empty is confirmed',
+    (tester) async {
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.resetForTest();
+      final controller = _QueuedEmptyAsmrLibraryController();
+      addTearDown(controller.dispose);
+      addTearDown(coordinator.resetForTest);
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+
+      await tester.pumpWidget(
+        harness.build(
+          const AsmrTab(),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      final recommendationLabel = harness.languageProvider.tr(
+        'asmr_category_recommendation',
+      );
+      await tester.tap(find.text(recommendationLabel));
+      await tester.pump();
+
+      final recommendationList = find.byKey(
+        const ValueKey(AsmrCategoryType.recommendation),
+      );
+      expect(recommendationList, findsOneWidget);
+      final recommendationSkeletons = find.descendant(
+        of: recommendationList,
+        matching: find.byType(LibraryLikeSkeletonCard),
+      );
+      final recommendationEmptyState = find.descendant(
+        of: recommendationList,
+        matching: find.text(harness.languageProvider.tr('asmr_empty_category')),
+      );
+      expect(controller.recommendationRefreshCount, 0);
+      expect(recommendationSkeletons, findsWidgets);
+      expect(recommendationEmptyState, findsNothing);
+
+      await tester.pump(const Duration(milliseconds: 600));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump();
+      expect(controller.recommendationRefreshCount, 1);
+      expect(recommendationSkeletons, findsWidgets);
+      expect(recommendationEmptyState, findsNothing);
+
+      controller.completeRecommendationRefresh();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 800));
+
+      expect(recommendationEmptyState, findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('startup overlay stays for 1.5 seconds while pages initialize', (
     tester,
@@ -749,6 +817,115 @@ final class _AppShellAudioDatabaseRepository extends AudioDatabaseRepository {
   @override
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
     return const <TimeSegmentLabel>[];
+  }
+}
+
+final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
+  _QueuedEmptyAsmrLibraryController()
+    : super(
+        preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+      );
+
+  final Completer<void> _recommendationRefresh = Completer<void>();
+  bool _recommendationLoading = false;
+  int _revision = 0;
+  int recommendationRefreshCount = 0;
+
+  static const AsmrWork _collectedWork = AsmrWork(
+    id: 1,
+    title: 'Loaded work',
+    circleName: 'Circle',
+    sourceId: 'RJ000001',
+    sourceType: 'DLSITE',
+    sourceUrl: '',
+    coverUrl: '',
+    thumbnailUrl: '',
+    mainCoverUrl: '',
+    releaseDate: null,
+    createDate: null,
+    duration: Duration.zero,
+    dlCount: 0,
+    reviewCount: 0,
+    rating: 0,
+    voiceActors: <String>[],
+    tags: <String>[],
+  );
+
+  @override
+  Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
+    scheduleMicrotask(notifyListeners);
+  }
+
+  @override
+  Future<void> restoreAsmrAccountSession({bool force = false}) async {}
+
+  @override
+  AsmrLibraryGlobalViewState get globalViewState =>
+      const AsmrLibraryGlobalViewState(
+        initialized: true,
+        lastError: null,
+        visibleCategories: kDefaultVisibleAsmrCategories,
+        contentLanguage: AsmrContentLanguage.zh,
+        contentLanguagePreference: ContentLanguagePreference.followPage,
+        revision: 0,
+      );
+
+  @override
+  List<AsmrWork> worksFor(AsmrCategoryType category) =>
+      category == AsmrCategoryType.collected
+      ? const <AsmrWork>[_collectedWork]
+      : const <AsmrWork>[];
+
+  @override
+  int totalCountFor(AsmrCategoryType category) => worksFor(category).length;
+
+  @override
+  String activeQueryFor(AsmrCategoryType category) => '';
+
+  @override
+  AsmrCategoryViewState categoryViewState(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+  }) {
+    final works = worksFor(category);
+    final isLoading =
+        category == AsmrCategoryType.recommendation && _recommendationLoading;
+    return AsmrCategoryViewState(
+      category: category,
+      works: works,
+      isLoading: isLoading,
+      isLoadingMore: false,
+      isRefreshing: isLoading && works.isNotEmpty,
+      isStale: isLoading && works.isNotEmpty,
+      hasAttemptedLoad: true,
+      hasMore: false,
+      totalCount: works.length,
+      activeQuery: searchQuery,
+      lastError: null,
+      operationError: null,
+      revision: _revision,
+    );
+  }
+
+  @override
+  Future<void> refreshCategory(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+  }) async {
+    if (category != AsmrCategoryType.recommendation) return;
+    recommendationRefreshCount++;
+    _recommendationLoading = true;
+    notifyListeners();
+    await _recommendationRefresh.future;
+    _recommendationLoading = false;
+    _revision++;
+    notifyListeners();
+  }
+
+  void completeRecommendationRefresh() {
+    if (!_recommendationRefresh.isCompleted) {
+      _recommendationRefresh.complete();
+    }
   }
 }
 

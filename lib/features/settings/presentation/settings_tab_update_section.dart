@@ -17,12 +17,12 @@ List<Widget> _buildSettingsUpdateSection({
           title: _settingsTitle(i18n.tr('permission_center')),
           leading: _settingsIcon(
             Icons.admin_panel_settings_rounded,
-            cs.onSurface,
+            cs.primary,
           ),
           trailing: Icon(
             Icons.chevron_right_rounded,
             size: 20,
-            color: cs.onSurfaceVariant,
+            color: cs.primary,
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           shape: const RoundedRectangleBorder(
@@ -59,7 +59,7 @@ List<Widget> _buildSettingsUpdateSection({
               value: autoCheckUpdates,
               onChanged: settings.setAutoCheckUpdates,
               title: _settingsTitle(i18n.tr('auto_check_updates')),
-              secondary: _settingsIcon(Icons.update_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.update_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,

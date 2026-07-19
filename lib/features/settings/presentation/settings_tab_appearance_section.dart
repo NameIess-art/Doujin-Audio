@@ -31,7 +31,7 @@ List<Widget> _buildSettingsAppearanceSection({
             };
             return ListTile(
               title: _settingsTitle(i18n.tr('dark_mode')),
-              leading: _settingsIcon(Icons.dark_mode_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.dark_mode_rounded, cs.primary),
               trailing: _settingsDropdown<ThemeMode>(
                 context,
                 value: themeMode,
@@ -66,7 +66,7 @@ List<Widget> _buildSettingsAppearanceSection({
               title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
               value: themeState.differentiateAsmrTheme,
               onChanged: (val) => provider.setDifferentiateAsmrTheme(val),
-              secondary: _settingsIcon(Icons.palette_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.palette_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -78,7 +78,7 @@ List<Widget> _buildSettingsAppearanceSection({
           title: _settingsTitle(i18n.tr('cover_image_resolution')),
           leading: _settingsIcon(
             Icons.photo_size_select_large_rounded,
-            cs.onSurface,
+            cs.primary,
           ),
           trailing: Consumer(
             builder: (context, ref, _) {
@@ -127,7 +127,7 @@ List<Widget> _buildSettingsAppearanceSection({
                 );
               },
               title: _settingsTitle(i18n.tr('bottom_navigation_style')),
-              secondary: _settingsIcon(Icons.space_bar_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.space_bar_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -146,7 +146,7 @@ List<Widget> _buildSettingsAppearanceSection({
               value: uiBlurEnabled,
               onChanged: settings.setUiBlurEffectEnabled,
               title: _settingsTitle(i18n.tr('ui_blur_effect')),
-              secondary: _settingsIcon(Icons.blur_linear_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.blur_linear_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -165,7 +165,7 @@ List<Widget> _buildSettingsAppearanceSection({
               value: blurEnabled,
               onChanged: settings.setBlurPlayerBackgroundEnabled,
               title: _settingsTitle(i18n.tr('blur_player_background')),
-              secondary: _settingsIcon(Icons.blur_on_rounded, cs.onSurface),
+              secondary: _settingsIcon(Icons.blur_on_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
@@ -186,7 +186,7 @@ List<Widget> _buildSettingsAppearanceSection({
               title: _settingsTitle(i18n.tr('show_playback_card')),
               secondary: _settingsIcon(
                 Icons.play_circle_outline_rounded,
-                cs.onSurface,
+                cs.primary,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -210,11 +210,11 @@ List<Widget> _buildSettingsAppearanceSection({
             return ListTile(
               title: _settingsTitle(i18n.tr('card_info_display')),
               subtitle: Text(summary, softWrap: true),
-              leading: _settingsIcon(Icons.badge_rounded, cs.onSurface),
+              leading: _settingsIcon(Icons.badge_rounded, cs.primary),
               trailing: Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
-                color: cs.onSurfaceVariant,
+                color: cs.primary,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
@@ -226,11 +226,11 @@ List<Widget> _buildSettingsAppearanceSection({
         ),
         ListTile(
           title: _settingsTitle(i18n.tr('subtitle_window_settings')),
-          leading: _settingsIcon(Icons.subtitles_rounded, cs.onSurface),
+          leading: _settingsIcon(Icons.subtitles_rounded, cs.primary),
           trailing: Icon(
             Icons.chevron_right_rounded,
             size: 20,
-            color: cs.onSurfaceVariant,
+            color: cs.primary,
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           shape: const RoundedRectangleBorder(

@@ -604,7 +604,6 @@ const Map<String, String> appLanguageJa = {
   'library_edit_empty': '追加済みライブラリはありません。',
   'subtitle_window_settings': '字幕ウィンドウ',
   'subtitle_window_preview': 'ライブプレビュー',
-  'subtitle_window_preview_hint': '下の設定をスクロールしても、ここは固定されたまま同期更新されます。',
   'subtitle_preview_sample': '波の音がゆっくり近づき、呼吸も少しずつ落ち着いていきます。',
   'font_setting': 'フォント設定',
   'system_default': 'システムデフォルト',

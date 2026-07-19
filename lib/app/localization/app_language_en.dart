@@ -662,8 +662,6 @@ const Map<String, String> appLanguageEn = {
   'library_edit_empty': 'No imported libraries yet.',
   'subtitle_window_settings': 'Subtitle window',
   'subtitle_window_preview': 'Live preview',
-  'subtitle_window_preview_hint':
-      'Pinned in place while you tune the controls below.',
   'subtitle_preview_sample':
       'The ocean comes closer, and your breathing settles with it.',
   'font_setting': 'Font Setting',

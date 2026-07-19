@@ -588,7 +588,6 @@ const Map<String, String> appLanguageZh = {
   'library_edit_empty': '还没有添加曲库。',
   'subtitle_window_settings': '字幕悬浮窗',
   'subtitle_window_preview': '实时预览',
-  'subtitle_window_preview_hint': '下方继续滚动调节参数，这里会固定位置并同步刷新。',
   'subtitle_preview_sample': '海浪声正在慢慢靠近，呼吸也跟着放松下来。',
   'font_setting': '字体设置',
   'system_default': '系统默认',

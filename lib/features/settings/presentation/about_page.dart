@@ -139,7 +139,7 @@ class AboutPage extends ConsumerWidget {
             left: 0,
             right: 0,
             child: TopPageHeader(
-              leading: const BackButton(),
+              leading: BackButton(color: Theme.of(context).colorScheme.primary),
               title: i18n.tr('about'),
               padding: const EdgeInsets.fromLTRB(8, 6, 16, 0),
             ),
@@ -244,7 +244,10 @@ class _AboutLinkTile extends StatelessWidget {
         title,
         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
       ),
-      trailing: const Icon(Icons.open_in_new_rounded),
+      trailing: Icon(
+        Icons.open_in_new_rounded,
+        color: Theme.of(context).colorScheme.primary,
+      ),
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: AppSpacing.xs),
     );
@@ -295,7 +298,7 @@ class _AboutIconContainer extends StatelessWidget {
       width: tokens.iconContainerSize,
       height: tokens.iconContainerSize,
       alignment: Alignment.center,
-      child: Icon(icon, color: cs.onSurface),
+      child: Icon(icon, color: cs.primary),
     );
   }
 }

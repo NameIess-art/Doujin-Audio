@@ -290,7 +290,7 @@ void main() {
     );
   });
 
-  testWidgets('settings pages use monochrome icons and a light surface', (
+  testWidgets('settings pages use theme-colored icons and a light surface', (
     tester,
   ) async {
     final harness = AppRuntimeWidgetTestFixture();
@@ -302,7 +302,7 @@ void main() {
     final rootTile = find.widgetWithText(ListTile, i18n.tr('section_common'));
     final rootContext = tester.element(rootTile);
     final rootIcon = tester.widget<ListTile>(rootTile).leading! as Icon;
-    expect(rootIcon.color, Theme.of(rootContext).colorScheme.onSurface);
+    expect(rootIcon.color, Theme.of(rootContext).colorScheme.primary);
     final rootSurface = tester
         .widgetList<Container>(
           find.ancestor(of: rootTile, matching: find.byType(Container)),
@@ -326,7 +326,7 @@ void main() {
     final detailContext = tester.element(detailTile);
     final detailIcon = tester.widget<ListTile>(detailTile).leading! as Icon;
     final colorScheme = Theme.of(detailContext).colorScheme;
-    expect(detailIcon.color, colorScheme.onSurface);
+    expect(detailIcon.color, colorScheme.primary);
     final detailSurface = tester
         .widgetList<Container>(
           find.ancestor(of: detailTile, matching: find.byType(Container)),
@@ -349,6 +349,31 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('subtitle window preview omits the explanatory hint', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+
+    final subtitleSettings = find.widgetWithText(
+      ListTile,
+      i18n.tr('subtitle_window_settings'),
+    );
+    await tester.ensureVisible(subtitleSettings);
+    await tester.pumpAndSettle();
+    await tester.tap(subtitleSettings);
+    await tester.pumpAndSettle();
+
+    expect(find.text(i18n.tr('subtitle_window_preview')), findsOneWidget);
+    expect(find.text('下方继续滚动调节参数，这里会固定位置并同步刷新。'), findsNothing);
   });
 
   testWidgets('settings bottom gap matches the shared mobile overlay inset', (

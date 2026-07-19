@@ -155,7 +155,7 @@ class _UpdateSettingsTile extends StatelessWidget {
 
     return ListTile(
       onTap: busy ? null : onCheck,
-      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.onSurface),
+      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.primary),
       title: _settingsTitle(i18n.tr('check_updates')),
       subtitle: _UpdateSubtitle(
         checking: checking,
@@ -313,7 +313,7 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
             ),
             if (currentColor != null)
               IconButton(
-                icon: const Icon(Icons.close_rounded, size: 18),
+                icon: Icon(Icons.close_rounded, size: 18, color: cs.primary),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                 onPressed: onReset,
@@ -592,7 +592,6 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
                   child: _SubtitleWindowPreviewCard(
                     settings: settings,
                     title: i18n.tr('subtitle_window_preview'),
-                    hint: i18n.tr('subtitle_window_preview_hint'),
                     sampleText: i18n.tr('subtitle_preview_sample'),
                   ),
                 ),
@@ -609,13 +608,11 @@ class _SubtitleWindowPreviewCard extends StatelessWidget {
   const _SubtitleWindowPreviewCard({
     required this.settings,
     required this.title,
-    required this.hint,
     required this.sampleText,
   });
 
   final SubtitleSettingsState settings;
   final String title;
-  final String hint;
   final String sampleText;
 
   @override
@@ -681,14 +678,6 @@ class _SubtitleWindowPreviewCard extends StatelessWidget {
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
                         fontWeight: FontWeight.w900,
                         color: cs.onSurface,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      hint,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: cs.onSurfaceVariant,
-                        height: 1.3,
                       ),
                     ),
                     const Spacer(),
@@ -1033,7 +1022,7 @@ class _AsmrDownloadFolderNameSettingsSheetState
                   ),
                   secondary: ReorderableDragStartListener(
                     index: index,
-                    child: const Icon(Icons.drag_handle_rounded),
+                    child: Icon(Icons.drag_handle_rounded, color: cs.primary),
                   ),
                   dense: true,
                   contentPadding: EdgeInsets.zero,

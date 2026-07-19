@@ -63,6 +63,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounceTimer;
   final Object _tabSwitchInteraction = Object();
+  final Map<AsmrCategoryType, String> _pendingCategoryLoads =
+      <AsmrCategoryType, String>{};
   int _lastHandledTabIndex = 0;
   String _searchQuery = '';
   final GlobalKey _headerKey = GlobalKey();
@@ -175,23 +177,78 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   void _handleTabChanged() {
     if (!mounted) return;
     final coordinator = UiInteractionCoordinator.instance;
+    final category = _currentCategory;
+    final searchQuery = _searchQuery;
+    final normalizedQuery = normalizeSearchQuery(searchQuery);
+    final controller = ref.read(asmrLibraryControllerProvider);
+    final needsRefresh =
+        controller != null &&
+        _categoryNeedsRefresh(controller, category, normalizedQuery);
     if (_tabController.indexIsChanging) {
       coordinator.beginInteraction(_tabSwitchInteraction);
+      if (needsRefresh) {
+        _pendingCategoryLoads[category] = normalizedQuery;
+      }
       setState(() {});
       return;
     }
     if (_lastHandledTabIndex == _tabController.index) return;
     _lastHandledTabIndex = _tabController.index;
+    if (needsRefresh) {
+      _pendingCategoryLoads[category] = normalizedQuery;
+    } else if (_pendingCategoryLoads[category] == normalizedQuery) {
+      _pendingCategoryLoads.remove(category);
+    }
     setState(() {});
-    final category = _currentCategory;
     final generation = coordinator.beginGeneration();
     coordinator.endInteraction(_tabSwitchInteraction);
-    coordinator.scheduleAfterIdle(
-      key: 'asmr_category_${category.name}_$_normalizedSearchQuery',
+    if (!needsRefresh) {
+      return;
+    }
+    final scheduled = coordinator.scheduleAfterIdle(
+      key: 'asmr_category_${category.name}_$normalizedQuery',
       generation: generation,
       priority: 0,
-      task: () => _ensureCategoryLoaded(category),
+      task: () async {
+        try {
+          await _ensureCategoryLoaded(
+            category,
+            searchQuery: searchQuery,
+            managePendingMarker: false,
+          );
+        } finally {
+          _clearPendingCategoryLoad(category, normalizedQuery);
+        }
+      },
     );
+    if (!scheduled) {
+      _clearPendingCategoryLoad(category, normalizedQuery);
+    }
+  }
+
+  bool _categoryNeedsRefresh(
+    AsmrLibraryController controller,
+    AsmrCategoryType category,
+    String normalizedQuery,
+  ) {
+    return controller.worksFor(category).isEmpty ||
+        controller.activeQueryFor(category) != normalizedQuery;
+  }
+
+  void _markPendingCategoryLoad(
+    AsmrCategoryType category,
+    String normalizedQuery,
+  ) {
+    if (_pendingCategoryLoads[category] == normalizedQuery) return;
+    setState(() => _pendingCategoryLoads[category] = normalizedQuery);
+  }
+
+  void _clearPendingCategoryLoad(
+    AsmrCategoryType category,
+    String normalizedQuery,
+  ) {
+    if (!mounted || _pendingCategoryLoads[category] != normalizedQuery) return;
+    setState(() => _pendingCategoryLoads.remove(category));
   }
 
   void _measureHeader() {
@@ -211,40 +268,60 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
   }
 
-  Future<void> _ensureCategoryLoaded(AsmrCategoryType category) async {
+  Future<void> _ensureCategoryLoaded(
+    AsmrCategoryType category, {
+    String? searchQuery,
+    bool managePendingMarker = true,
+  }) async {
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
-    final needsRefresh =
-        controller.worksFor(category).isEmpty ||
-        controller.activeQueryFor(category) != _normalizedSearchQuery;
-    if (!needsRefresh) {
+    final requestedQuery = searchQuery ?? _searchQuery;
+    final normalizedQuery = normalizeSearchQuery(requestedQuery);
+    if (!_categoryNeedsRefresh(controller, category, normalizedQuery)) {
       return;
     }
-    await _runAsmrOperation<void>(
-      scope: UiOperationScope.asmrCategory(
-        AsmrOperationKind.refresh,
-        category.name,
-      ),
-      labelKey: 'loading_dot',
-      task: () =>
-          controller.refreshCategory(category, searchQuery: _searchQuery),
+    await _runCategoryRefresh(
+      category,
+      searchQuery: requestedQuery,
+      managePendingMarker: managePendingMarker,
     );
+  }
+
+  Future<void> _runCategoryRefresh(
+    AsmrCategoryType category, {
+    required String searchQuery,
+    bool managePendingMarker = true,
+  }) async {
+    final normalizedQuery = normalizeSearchQuery(searchQuery);
+    final ownsPendingMarker =
+        managePendingMarker &&
+        _pendingCategoryLoads[category] != normalizedQuery;
+    if (ownsPendingMarker) {
+      _markPendingCategoryLoad(category, normalizedQuery);
+    }
+    try {
+      await _runAsmrOperation<void>(
+        scope: UiOperationScope.asmrCategory(
+          AsmrOperationKind.refresh,
+          category.name,
+        ),
+        labelKey: 'loading_dot',
+        task: () =>
+            ref
+                .read(asmrLibraryControllerProvider)
+                ?.refreshCategory(category, searchQuery: searchQuery) ??
+            Future<void>.value(),
+      );
+    } finally {
+      if (ownsPendingMarker) {
+        _clearPendingCategoryLoad(category, normalizedQuery);
+      }
+    }
   }
 
   Future<void> _refreshCurrentCategory() {
     final category = _currentCategory;
-    return _runAsmrOperation<void>(
-      scope: UiOperationScope.asmrCategory(
-        AsmrOperationKind.refresh,
-        category.name,
-      ),
-      labelKey: 'loading_dot',
-      task: () async {
-        final controller = ref.read(asmrLibraryControllerProvider);
-        if (controller == null) return;
-        await controller.refreshCategory(category, searchQuery: _searchQuery);
-      },
-    );
+    return _runCategoryRefresh(category, searchQuery: _searchQuery);
   }
 
   Future<void> _refreshCategoryWithFeedback(
@@ -269,15 +346,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       );
     }
 
-    await _runAsmrOperation<void>(
-      scope: UiOperationScope.asmrCategory(
-        AsmrOperationKind.refresh,
-        category.name,
-      ),
-      labelKey: 'loading_dot',
-      task: () =>
-          controller.refreshCategory(category, searchQuery: _searchQuery),
-    );
+    await _runCategoryRefresh(category, searchQuery: _searchQuery);
 
     if (!mounted) {
       return;
@@ -400,8 +469,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final collectedSubtitle =
         currentCategoryState == null ||
             (currentCategoryState.works.isEmpty &&
-                !currentCategoryState.hasAttemptedLoad &&
-                currentCategoryState.lastError == null) ||
+                !currentCategoryState.hasAttemptedLoad) ||
             currentCategoryState.isLoading
         ? i18n.tr('loading_dot')
         : i18n.tr('asmr_collected_count', {'count': collectedCount});
@@ -595,6 +663,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                             child: _AsmrCategoryList(
                               key: ValueKey(category),
                               category: category,
+                              isLoadPending:
+                                  _pendingCategoryLoads[category] ==
+                                  _normalizedSearchQuery,
                               scrollController: _scrollControllers[category]!,
                               searchQuery: _searchQuery,
                               topInset: headerContentHeight,

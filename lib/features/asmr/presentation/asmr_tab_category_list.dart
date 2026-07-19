@@ -4,6 +4,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   const _AsmrCategoryList({
     super.key,
     required this.category,
+    required this.isLoadPending,
     required this.scrollController,
     required this.searchQuery,
     required this.topInset,
@@ -12,6 +13,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   });
 
   final AsmrCategoryType category;
+  final bool isLoadPending;
   final ScrollController scrollController;
   final String searchQuery;
   final double topInset;
@@ -35,21 +37,22 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   Widget build(BuildContext context) {
     super.build(context);
     final normalizedSearchQuery = normalizeSearchQuery(widget.searchQuery);
+    final providerState = ref
+        .watch(
+          asmrCategoryStateProvider((
+            category: widget.category,
+            searchQuery: normalizedSearchQuery,
+          )),
+        )
+        .value;
     final state =
-        ref
-            .watch(
-              asmrCategoryStateProvider((
-                category: widget.category,
-                searchQuery: normalizedSearchQuery,
-              )),
-            )
-            .value ??
         ref
             .read(asmrLibraryControllerProvider)
             ?.categoryViewState(
               widget.category,
               searchQuery: normalizedSearchQuery,
             ) ??
+        providerState ??
         AsmrCategoryViewState(
           category: widget.category,
           works: const <AsmrWork>[],
@@ -68,8 +71,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final works = state.works;
     final showPlaceholder =
         works.isEmpty &&
-        (state.isLoading ||
-            (!state.hasAttemptedLoad && state.lastError == null));
+        (widget.isLoadPending || state.isLoading || !state.hasAttemptedLoad);
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);

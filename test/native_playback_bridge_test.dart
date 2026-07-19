@@ -209,6 +209,10 @@ void main() {
       sessionId: 'session-1',
       uri: Uri.file('/audio/one.mp3'),
       title: 'one',
+      candidateUris: <Uri>[
+        Uri.parse('https://api.asmr.one/audio/one.mp3'),
+        Uri.parse('https://api.asmr-100.com/audio/one.mp3'),
+      ],
       audioEffects: const NativeAudioEffects(
         state: AudioEffectsState(
           skipSilenceEnabled: true,
@@ -227,6 +231,10 @@ void main() {
       'frequencyHz': 1000,
       'gainDb': 2.5,
     });
+    expect(arguments!['candidateUris'], <String>[
+      'https://api.asmr.one/audio/one.mp3',
+      'https://api.asmr-100.com/audio/one.mp3',
+    ]);
   });
 
   test(

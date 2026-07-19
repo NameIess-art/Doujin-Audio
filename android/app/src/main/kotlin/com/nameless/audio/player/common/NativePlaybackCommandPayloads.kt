@@ -20,6 +20,7 @@ internal data class NativePrepareSessionArguments(
     val queueStartIndex: Int,
     val repeatAll: Boolean,
     val shuffle: Boolean,
+    val candidateUris: List<String>,
     val deferPlayerCreation: Boolean
 )
 
@@ -62,6 +63,7 @@ internal object NativePlaybackCommandPayloads {
         val audioEffects = parseAudioEffects(raw.requiredMap("audioEffects"))
         val queue = parseQueue(raw["queue"])
         val queueStartIndex = raw.optionalInt("queueStartIndex") ?: 0
+        val candidateUris = parseCandidateUris(raw["candidateUris"])
         require(queue.isEmpty() && queueStartIndex == 0 || queueStartIndex in queue.indices) {
             "Invalid queueStartIndex."
         }
@@ -84,8 +86,31 @@ internal object NativePlaybackCommandPayloads {
             queueStartIndex = queueStartIndex,
             repeatAll = raw.requiredBoolean("repeatAll"),
             shuffle = raw.requiredBoolean("shuffle"),
+            candidateUris = candidateUris,
             deferPlayerCreation = raw.requiredBoolean("deferPlayerCreation")
         )
+    }
+
+    internal fun parseCandidateUris(raw: Any?): List<String> {
+        if (raw == null) return emptyList()
+        val values = raw as? List<*>
+            ?: throw IllegalArgumentException("candidateUris must be a list.")
+        val candidates = LinkedHashSet<String>()
+        values.forEach { value ->
+            val candidate = (value as? String)?.trim()
+                ?.takeIf(String::isNotEmpty)
+                ?: throw IllegalArgumentException("candidateUris must contain non-empty strings.")
+            val uri = try {
+                URI(candidate)
+            } catch (_: Exception) {
+                throw IllegalArgumentException("Invalid candidate URI.")
+            }
+            require(uri.scheme?.lowercase() in setOf("http", "https") && !uri.host.isNullOrBlank()) {
+                "Candidate URI must use HTTP or HTTPS."
+            }
+            candidates += candidate
+        }
+        return candidates.toList()
     }
 
     fun parseQueue(rawQueue: Any?): List<NativeMediaItemDescriptor> {

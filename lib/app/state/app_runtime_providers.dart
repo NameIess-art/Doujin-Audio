@@ -127,25 +127,28 @@ final asmrLibraryGlobalStateProvider =
       return states.stream;
     });
 
-final asmrCategoryStateProvider =
-    StreamProvider.family<AsmrCategoryViewState?, AsmrCategoryType>((
-      ref,
-      category,
-    ) {
+typedef AsmrCategoryStateRequest = ({
+  AsmrCategoryType category,
+  String searchQuery,
+});
+
+final asmrCategoryStateProvider = StreamProvider.autoDispose
+    .family<AsmrCategoryViewState?, AsmrCategoryStateRequest>((ref, request) {
       final controller = ref.watch(asmrLibraryControllerProvider);
       if (controller == null) return Stream.value(null);
-      final states = StreamController<AsmrCategoryViewState?>.broadcast(
-        sync: true,
-      );
-
-      void emit() => states.add(controller.categoryViewState(category));
-      controller.addListener(emit);
-      emit();
-      ref.onDispose(() {
-        controller.removeListener(emit);
-        states.close();
+      return Stream<AsmrCategoryViewState?>.multi((events) {
+        void emit() => events.add(
+          controller.categoryViewState(
+            request.category,
+            searchQuery: request.searchQuery,
+          ),
+        );
+        controller.addListener(emit);
+        events.onCancel = () {
+          controller.removeListener(emit);
+        };
+        emit();
       });
-      return states.stream;
     });
 
 final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {

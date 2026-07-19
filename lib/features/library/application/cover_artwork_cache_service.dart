@@ -35,6 +35,7 @@ const int _resolvedFolderCoverLimit = 300;
 const int _resolvedRemoteCoverLimit = 300;
 const int _manualCoverValidityLimit = 1200;
 const int _maxConcurrentRemoteDownloads = 4;
+const int _maxConcurrentFolderCandidateResolutions = 4;
 const String _asmrOneAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
 
 class CoverArtworkCacheService {
@@ -44,6 +45,8 @@ class CoverArtworkCacheService {
     AudioDetailCacheService? audioDetailCacheService,
     FileCachePlatformGateway? fileCacheGateway,
     Future<String?> Function(String remoteUrl)? remoteCoverDownloader,
+    Duration requestTimeout = const Duration(seconds: 15),
+    Duration downloadIdleTimeout = const Duration(seconds: 30),
     DateTime Function()? now,
     Future<Directory> Function()? temporaryDirectory,
     bool Function(String coverSearchKey)? isActiveCoverKey,
@@ -54,6 +57,8 @@ class CoverArtworkCacheService {
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
        _remoteCoverDownloader = remoteCoverDownloader,
+       _requestTimeout = requestTimeout,
+       _downloadIdleTimeout = downloadIdleTimeout,
        _now = now ?? DateTime.now,
        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
        _isActiveCoverKey = isActiveCoverKey,
@@ -64,6 +69,8 @@ class CoverArtworkCacheService {
   final AudioDetailCacheService? _audioDetailCacheService;
   final FileCachePlatformGateway _fileCacheGateway;
   final Future<String?> Function(String remoteUrl)? _remoteCoverDownloader;
+  final Duration _requestTimeout;
+  final Duration _downloadIdleTimeout;
   final DateTime Function() _now;
   final Future<Directory> Function() _temporaryDirectory;
   final bool Function(String coverSearchKey)? _isActiveCoverKey;
@@ -1117,6 +1124,7 @@ class CoverArtworkCacheService {
   Future<String?> _downloadRemoteCover(String remoteUrl) async {
     File? partial;
     IOSink? sink;
+    HttpClientRequest? request;
     try {
       final cacheRoot = await _temporaryDirectory();
       final coverDirectory = Directory(
@@ -1139,11 +1147,14 @@ class CoverArtworkCacheService {
       }
 
       final client = _remoteHttpClient ??= HttpClient();
-      final request = await client.getUrl(Uri.parse(remoteUrl));
+      client.connectionTimeout = _requestTimeout;
+      request = await client
+          .getUrl(Uri.parse(remoteUrl))
+          .timeout(_requestTimeout);
       for (final header in remoteCoverRequestHeadersForUrl(remoteUrl).entries) {
         request.headers.set(header.key, header.value);
       }
-      final response = await request.close();
+      final response = await request.close().timeout(_requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
@@ -1154,7 +1165,7 @@ class CoverArtworkCacheService {
       sink = partial.openWrite();
       final headerBytes = <int>[];
       var totalBytes = 0;
-      await for (final chunk in response) {
+      await for (final chunk in response.timeout(_downloadIdleTimeout)) {
         totalBytes += chunk.length;
         if (totalBytes > maxCoverFileBytes) {
           throw const _RemoteCoverTooLargeException();
@@ -1176,6 +1187,7 @@ class CoverArtworkCacheService {
       AppCacheService.scheduleEnforce();
       return file.path;
     } catch (error, stackTrace) {
+      request?.abort(error, stackTrace);
       AppLogService.warning(
         'Unable to cache remote notification cover.',
         error: error,
@@ -1309,16 +1321,27 @@ class CoverArtworkCacheService {
     for (final imagePath in await _discoverFolderImages(folderPath)) {
       addCandidate(imagePath);
     }
-    for (final track in _tracksInCompleteCoverScope(folderPath)) {
-      if (track.isVideo) {
-        addCandidate(await _resolveVideoFramePathForTrack(track));
-      } else {
-        addCandidate(
-          await _resolvePlatformCoverPathForTrack(
-            track,
-            includeGroupCoverFallback: false,
-          ),
-        );
+    final tracks = _tracksInCompleteCoverScope(folderPath);
+    for (
+      var start = 0;
+      start < tracks.length;
+      start += _maxConcurrentFolderCandidateResolutions
+    ) {
+      final nextEnd = start + _maxConcurrentFolderCandidateResolutions;
+      final end = nextEnd < tracks.length ? nextEnd : tracks.length;
+      final batch = tracks.sublist(start, end);
+      final resolved = await Future.wait(
+        batch.map(
+          (track) => track.isVideo
+              ? _resolveVideoFramePathForTrack(track)
+              : _resolvePlatformCoverPathForTrack(
+                  track,
+                  includeGroupCoverFallback: false,
+                ),
+        ),
+      );
+      for (final candidate in resolved) {
+        addCandidate(candidate);
       }
     }
     return List<String>.unmodifiable(candidates);

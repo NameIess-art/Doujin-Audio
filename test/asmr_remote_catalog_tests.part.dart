@@ -477,4 +477,54 @@ void registerAsmrRemoteCatalogTests({
       expect(third.works.map((work) => work.id), <int>[42, 41]);
     },
   );
+
+  test(
+    'ASMR category provider keeps favorite and history searches isolated',
+    () async {
+      final favoriteMatch = _work(id: 51, title: 'Sleep Favorite');
+      final favoriteMiss = _work(id: 52, title: 'Morning Favorite');
+      final historyMatch = _work(id: 53, title: 'Sleep History');
+      final historyMiss = _work(id: 54, title: 'Morning History');
+      await resetPrefs();
+      await preferences.saveFavoriteWorks(<AsmrWork>[
+        favoriteMatch,
+        favoriteMiss,
+      ]);
+      await preferences.saveHistoryWorks(<AsmrWork>[historyMatch, historyMiss]);
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+      final container = ProviderContainer(
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      Future<List<int>> workIds(
+        AsmrCategoryType category,
+        String searchQuery,
+      ) async {
+        final request = (category: category, searchQuery: searchQuery);
+        final subscription = container.listen(
+          asmrCategoryStateProvider(request),
+          (_, _) {},
+        );
+        final state = await container.read(
+          asmrCategoryStateProvider(request).future,
+        );
+        subscription.close();
+        return state!.works.map((work) => work.id).toList(growable: false);
+      }
+
+      expect(await workIds(AsmrCategoryType.favorites, 'sleep'), <int>[51]);
+      expect(await workIds(AsmrCategoryType.history, 'sleep'), <int>[53]);
+      expect(await workIds(AsmrCategoryType.favorites, ''), <int>[51, 52]);
+      expect(await workIds(AsmrCategoryType.history, ''), <int>[53, 54]);
+    },
+  );
 }

@@ -52,8 +52,7 @@ AppRuntimeGraph createTestRuntimeGraph({
   CoverArtworkCacheService? coverArtworkCacheService,
   DlsiteMetadataService? dlsiteMetadataService,
   AsmrMetadataService? asmrMetadataService,
-  AsmrPlaybackCacheService asmrPlaybackCacheService =
-      const AsmrPlaybackCacheService(),
+  AsmrPlaybackCacheService? asmrPlaybackCacheService,
   NativePlaybackRepository? nativePlaybackRepository,
   PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
   PowerPlatformService? powerPlatformService,
@@ -92,7 +91,8 @@ AppRuntimeGraph createTestRuntimeGraph({
         databaseRepository: resolvedLibrary.databaseRepository,
         nativeRepository: nativePlaybackRepository,
         commandRunner: playbackCommandRunner,
-        playbackCacheService: asmrPlaybackCacheService,
+        playbackCacheService:
+            asmrPlaybackCacheService ?? AsmrPlaybackCacheService(),
         service: playbackService,
       );
   final graph = createAppRuntimeGraph(

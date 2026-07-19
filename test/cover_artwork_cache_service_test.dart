@@ -305,6 +305,61 @@ void main() {
     },
   );
 
+  test('stalled remote covers release a slot for the next request', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'remote_cover_timeout_',
+    );
+    final pngBytes = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+      '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var requests = 0;
+    final fifthStarted = Completer<void>();
+    server.listen((request) async {
+      requests++;
+      if (requests <= 4) {
+        request.response.headers.chunkedTransferEncoding = true;
+        request.response.add(pngBytes.take(8).toList());
+        await request.response.flush();
+        return;
+      }
+      if (!fifthStarted.isCompleted) fifthStarted.complete();
+      request.response.add(pngBytes);
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await server.close(force: true);
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      temporaryDirectory: () async => directory,
+      requestTimeout: const Duration(seconds: 1),
+      downloadIdleTimeout: const Duration(milliseconds: 50),
+    );
+    addTearDown(cache.dispose);
+    final baseUrl = 'http://${server.address.address}:${server.port}';
+
+    final futures = <Future<String?>>[
+      for (var index = 0; index < 5; index++)
+        cache.futureForRemoteCover('$baseUrl/$index.png'),
+    ];
+
+    await fifthStarted.future.timeout(const Duration(seconds: 2));
+    final results = await Future.wait(futures);
+    expect(requests, 5);
+    expect(results.take(4), everyElement(isNull));
+    expect(results.last, isNotNull);
+    expect(
+      directory
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((file) => file.path.endsWith('.part')),
+      isEmpty,
+    );
+  });
+
   test('evicted remote cover is downloaded again', () async {
     final firstCover = await _temporaryCoverFile('remote_evicted_first');
     final replacementCover = await _temporaryCoverFile(
@@ -922,6 +977,55 @@ void main() {
   );
 
   test(
+    'folder detail cover resolution uses four workers and keeps track order',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_candidate_concurrency_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final tracks = <MusicTrack>[
+        for (var index = 0; index < 10; index++)
+          _track(
+            path: '${directory.path}${Platform.pathSeparator}$index.flac',
+            groupKey: directory.path,
+          ),
+      ];
+      var active = 0;
+      var peak = 0;
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: const <String, String>{},
+        resolveTrackCoverHandler: (trackPath, _) async {
+          active++;
+          if (active > peak) peak = active;
+          final index = int.parse(
+            trackPath.split(Platform.pathSeparator).last.split('.').first,
+          );
+          await Future<void>.delayed(
+            Duration(milliseconds: (4 - index % 4) * 5),
+          );
+          active--;
+          return index == 7 ? '/cache/3.image' : '/cache/$index.image';
+        },
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService()..library.addAll(tracks),
+        fileCacheGateway: gateway,
+      );
+
+      expect(
+        await cache.discoverCoverCandidatesInFolder(directory.path),
+        <String>[
+          for (var index = 0; index < 10; index++)
+            if (index != 7) '/cache/$index.image',
+        ],
+      );
+      expect(peak, 4);
+    },
+  );
+
+  test(
     'folder detail audio candidates do not repeat the content folder image',
     () async {
       const root =
@@ -1242,11 +1346,14 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
     required this.coversByPath,
     this.videoFramesByPath = const <String, String>{},
     this.discoveredImages,
+    this.resolveTrackCoverHandler,
   });
 
   final Map<String, String> coversByPath;
   final Map<String, String> videoFramesByPath;
   final Future<List<String>> Function(String path)? discoveredImages;
+  final Future<String?> Function(String path, String? groupKey)?
+  resolveTrackCoverHandler;
   final List<String> resolveTrackCoverPaths = <String>[];
   final List<String?> resolveTrackCoverGroupKeys = <String?>[];
 
@@ -1258,6 +1365,8 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
   }) async {
     resolveTrackCoverPaths.add(path);
     resolveTrackCoverGroupKeys.add(groupKey);
+    final handler = resolveTrackCoverHandler;
+    if (handler != null) return handler(path, groupKey);
     return coversByPath[path];
   }
 

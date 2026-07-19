@@ -382,7 +382,12 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final hasDownloadManager = ref.watch(asmrDownloadManagerProvider) != null;
     final currentCategory = _currentCategory;
     final currentCategoryState = ref
-        .watch(asmrCategoryStateProvider(currentCategory))
+        .watch(
+          asmrCategoryStateProvider((
+            category: currentCategory,
+            searchQuery: _normalizedSearchQuery,
+          )),
+        )
         .value;
     final collectedCount =
         ref

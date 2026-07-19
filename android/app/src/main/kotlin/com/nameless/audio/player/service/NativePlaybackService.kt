@@ -745,7 +745,12 @@ class NativePlaybackService : MediaSessionService() {
 
     internal fun prepareSession(args: NativePrepareSessionArguments): Map<String, Any?> {
         val sessionId = args.sessionId
-        val queue = args.queue
+        val queue = args.queue.toMutableList()
+        if (args.candidateUris.isNotEmpty()) {
+            val currentIndex = args.queueStartIndex.coerceIn(0, queue.lastIndex)
+            queue[currentIndex] = queue[currentIndex]
+                .withPlaybackCandidateUris(args.candidateUris)
+        }
         val shouldAutoPlay = shouldAutoPlayWithAudioFocus(args.autoPlay) {
             requestAudioFocusIfNeeded()
         }
@@ -1368,6 +1373,7 @@ class NativePlaybackService : MediaSessionService() {
         playbackRecovery.onPlayerError(
             sessionId = sessionId,
             recoverable = isRecoverablePlaybackErrorCode(error.errorCode),
+            candidateFallbackEligible = isCandidateFallbackPlaybackErrorCode(error.errorCode),
             errorCodeName = error.errorCodeName,
             errorMessage = error.message,
             causeDescription = "${error.cause?.javaClass?.simpleName}:${error.cause?.message}",
@@ -2012,6 +2018,16 @@ internal fun isRecoverablePlaybackErrorCode(errorCode: Int): Boolean {
         PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
         PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
         PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED -> true
+        else -> false
+    }
+}
+
+internal fun isCandidateFallbackPlaybackErrorCode(errorCode: Int): Boolean {
+    return when (errorCode) {
+        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> true
         else -> false
     }
 }

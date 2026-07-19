@@ -96,6 +96,9 @@ Future<SubtitleTrack?> loadSubtitleTrackFromUrl({
   required String url,
   String? sourcePath,
   String? extension,
+  Duration requestTimeout = const Duration(seconds: 15),
+  Duration downloadIdleTimeout = const Duration(seconds: 30),
+  HttpClient Function()? httpClientFactory,
 }) async {
   final uri = Uri.tryParse(url);
   if (uri == null) return null;
@@ -106,20 +109,32 @@ Future<SubtitleTrack?> loadSubtitleTrackFromUrl({
   final resolvedExtension = _normalizedSubtitleExtension(
     extension ?? path.extension(resolvedSourcePath),
   );
-  final client = HttpClient();
+  final client = (httpClientFactory ?? HttpClient.new)();
+  HttpClientRequest? request;
   try {
-    final request = await client.getUrl(uri);
-    final response = await request.close();
+    try {
+      client.connectionTimeout = requestTimeout;
+    } catch (_) {
+      // Some injected clients do not expose socket options.
+    }
+    request = await client.getUrl(uri).timeout(requestTimeout);
+    final response = await request.close().timeout(requestTimeout);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       return null;
     }
-    final raw = await response.transform(utf8.decoder).join();
+    final raw = await response
+        .timeout(downloadIdleTimeout)
+        .transform(utf8.decoder)
+        .join();
     if (raw.trim().isEmpty) return null;
     return parseSubtitleTrackFromRaw(
       sourcePath: resolvedSourcePath,
       raw: raw,
       extension: resolvedExtension,
     );
+  } catch (error) {
+    request?.abort(error);
+    rethrow;
   } finally {
     client.close(force: true);
   }

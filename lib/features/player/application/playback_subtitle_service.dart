@@ -10,25 +10,31 @@ import '../../../core/media/subtitle_parser.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 
 typedef PlaybackTrackResolver = MusicTrack? Function(String trackPath);
+typedef PlaybackSubtitleLoader =
+    Future<SubtitleTrack?> Function(String trackPath, MusicTrack? track);
 
 final class PlaybackSubtitleService {
   PlaybackSubtitleService({
     required PlaybackTrackResolver trackResolver,
     FileCachePlatformGateway? fileCacheGateway,
     void Function(String trackPath, SubtitleTrack? track)? onTrackLoaded,
+    PlaybackSubtitleLoader? subtitleLoader,
   }) : _trackResolver = trackResolver,
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
-       _onTrackLoaded = onTrackLoaded;
+       _onTrackLoaded = onTrackLoaded,
+       _subtitleLoader = subtitleLoader;
 
   final PlaybackTrackResolver _trackResolver;
   final FileCachePlatformGateway _fileCacheGateway;
   final void Function(String trackPath, SubtitleTrack? track)? _onTrackLoaded;
+  final PlaybackSubtitleLoader? _subtitleLoader;
   final Map<String, Future<SubtitleTrack?>> _loading =
       <String, Future<SubtitleTrack?>>{};
   final Map<String, SubtitleTrack?> _tracks = <String, SubtitleTrack?>{};
   final Map<String, Future<SubtitleTrack?>> _results =
       <String, Future<SubtitleTrack?>>{};
+  int _generation = 0;
 
   bool hasResult(String trackPath) => _tracks.containsKey(trackPath);
   bool isLoading(String trackPath) => _loading.containsKey(trackPath);
@@ -40,30 +46,37 @@ final class PlaybackSubtitleService {
         () => SynchronousFuture<SubtitleTrack?>(_tracks[trackPath]),
       );
     }
-    return _loading.putIfAbsent(trackPath, () async {
+    final existing = _loading[trackPath];
+    if (existing != null) return existing;
+    final requestGeneration = _generation;
+    late final Future<SubtitleTrack?> task;
+    task = () async {
       try {
         final track = _trackResolver(trackPath);
-        final SubtitleTrack? subtitleTrack;
-        if (trackPath.startsWith('content://')) {
-          subtitleTrack = await _loadContentTrack(trackPath, track);
-        } else if (track?.remoteMetadataKind == 'asmr.one' && track != null) {
-          subtitleTrack = await _loadAsmrTrack(track);
-        } else {
-          subtitleTrack = await loadSubtitleTrackForAudio(trackPath);
+        final subtitleTrack =
+            await (_subtitleLoader?.call(trackPath, track) ??
+                _loadTrack(trackPath, track));
+        if (requestGeneration != _generation ||
+            !identical(_loading[trackPath], task)) {
+          return subtitleTrack;
         }
-        _tracks[trackPath] = subtitleTrack;
-        _results[trackPath] = SynchronousFuture<SubtitleTrack?>(subtitleTrack);
-        if (_tracks.length > 20) {
-          final oldestKey = _tracks.keys.first;
-          _tracks.remove(oldestKey);
-          unawaited(_results.remove(oldestKey));
+        if (subtitleTrack != null || !_hasRemoteSubtitleUrl(track)) {
+          _tracks[trackPath] = subtitleTrack;
+          _results[trackPath] = SynchronousFuture<SubtitleTrack?>(
+            subtitleTrack,
+          );
+          _trimResults();
         }
         _onTrackLoaded?.call(trackPath, subtitleTrack);
         return subtitleTrack;
       } finally {
-        unawaited(_loading.remove(trackPath));
+        if (identical(_loading[trackPath], task)) {
+          unawaited(_loading.remove(trackPath));
+        }
       }
-    });
+    }();
+    _loading[trackPath] = task;
+    return task;
   }
 
   SubtitleTrack? trackSync(String trackPath) => _tracks[trackPath];
@@ -79,9 +92,36 @@ final class PlaybackSubtitleService {
   }
 
   void clear() {
+    _generation++;
     _loading.clear();
     _tracks.clear();
     _results.clear();
+  }
+
+  Future<SubtitleTrack?> _loadTrack(String trackPath, MusicTrack? track) async {
+    if (trackPath.startsWith('content://')) {
+      return _loadContentTrack(trackPath, track);
+    }
+    if (track?.remoteMetadataKind == 'asmr.one' && track != null) {
+      return _loadAsmrTrack(track);
+    }
+    return loadSubtitleTrackForAudio(trackPath);
+  }
+
+  bool _hasRemoteSubtitleUrl(MusicTrack? track) {
+    if (track?.remoteMetadataKind != 'asmr.one') return false;
+    return track?.remoteMetadata?['subtitleUrl']
+            ?.toString()
+            .trim()
+            .isNotEmpty ==
+        true;
+  }
+
+  void _trimResults() {
+    if (_tracks.length <= 20) return;
+    final oldestKey = _tracks.keys.first;
+    _tracks.remove(oldestKey);
+    unawaited(_results.remove(oldestKey));
   }
 
   Future<SubtitleTrack?> _loadContentTrack(
@@ -134,7 +174,7 @@ final class PlaybackSubtitleService {
       subtitleTitle: metadata['subtitleTitle']?.toString(),
     );
     try {
-      return loadSubtitleTrackFromUrl(
+      return await loadSubtitleTrackFromUrl(
         url: subtitleUrl,
         sourcePath:
             metadata['subtitleSourcePath']?.toString().trim().isNotEmpty == true

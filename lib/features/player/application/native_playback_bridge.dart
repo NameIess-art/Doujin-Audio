@@ -573,6 +573,10 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       if (queueStartIndex != null) 'queueStartIndex': queueStartIndex,
       'repeatAll': repeatAll,
       'shuffle': shuffle,
+      if (candidateUris != null && candidateUris.isNotEmpty)
+        'candidateUris': candidateUris
+            .map((candidate) => candidate.toString())
+            .toList(growable: false),
       'deferPlayerCreation': deferPlayerCreation,
     });
   }

@@ -77,15 +77,14 @@ final class PlaybackFacade {
     required AudioDatabaseRepository databaseRepository,
     NativePlaybackRepository? nativeRepository,
     PlaybackCommandRunner commandRunner = const PlaybackCommandRunner(),
-    AsmrPlaybackCacheService playbackCacheService =
-        const AsmrPlaybackCacheService(),
+    AsmrPlaybackCacheService? playbackCacheService,
     PlaybackSessionService? service,
   }) {
     return PlaybackFacade(
       databaseRepository: databaseRepository,
       nativeRepository: nativeRepository ?? NativePlaybackRepository(),
       commandRunner: commandRunner,
-      playbackCacheService: playbackCacheService,
+      playbackCacheService: playbackCacheService ?? AsmrPlaybackCacheService(),
       service: service ?? PlaybackSessionService(),
     );
   }
@@ -1790,6 +1789,7 @@ final class PlaybackFacade {
     final persistenceTail = _sessionPersistenceTail;
     if (persistenceTail != null) await persistenceTail;
     await _sessionActivations.close();
+    await playbackCacheService.dispose();
     await nativeRepository.dispose();
     await service.dispose();
   }

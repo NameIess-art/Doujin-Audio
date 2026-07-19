@@ -34,13 +34,21 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final normalizedSearchQuery = normalizeSearchQuery(widget.searchQuery);
     final state =
-        ref.watch(asmrCategoryStateProvider(widget.category)).value ??
+        ref
+            .watch(
+              asmrCategoryStateProvider((
+                category: widget.category,
+                searchQuery: normalizedSearchQuery,
+              )),
+            )
+            .value ??
         ref
             .read(asmrLibraryControllerProvider)
             ?.categoryViewState(
               widget.category,
-              searchQuery: widget.searchQuery,
+              searchQuery: normalizedSearchQuery,
             ) ??
         AsmrCategoryViewState(
           category: widget.category,

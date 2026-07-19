@@ -124,6 +124,40 @@ class NativePlaybackCommandPayloadsTest {
         assertEquals("https://example.com/audio.mp3", parsed.uri)
         assertEquals(0, parsed.queueStartIndex)
         assertEquals(1, parsed.queue.size)
+        assertEquals(emptyList<String>(), parsed.candidateUris)
+    }
+
+    @Test
+    fun `prepare parser validates and deduplicates candidate uris`() {
+        val parsed = NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload().toMutableMap().apply {
+                put(
+                    "candidateUris",
+                    listOf(
+                        "https://api.asmr.one/audio.mp3",
+                        "https://api.asmr-100.com/audio.mp3",
+                        "https://api.asmr.one/audio.mp3"
+                    )
+                )
+            }
+        )
+
+        assertEquals(
+            listOf(
+                "https://api.asmr.one/audio.mp3",
+                "https://api.asmr-100.com/audio.mp3"
+            ),
+            parsed.candidateUris
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `prepare parser rejects non http candidate uri`() {
+        NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload().toMutableMap().apply {
+                put("candidateUris", listOf("file:///audio.mp3"))
+            }
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)

@@ -289,6 +289,7 @@ internal class NativePlaybackRecoveryController(
     private val healthStates = mutableMapOf<String, NativePlaybackHealthState>()
     private val recoveryBaselines = mutableMapOf<String, NativePlaybackHealthSample>()
     private val recovering = linkedSetOf<String>()
+    private val candidateFallbackPending = linkedSetOf<String>()
     private var triggerInProgress = false
     private val startedAt = mutableMapOf<String, Long>()
     private var listening = false
@@ -328,6 +329,7 @@ internal class NativePlaybackRecoveryController(
         healthStates.clear()
         recoveryBaselines.clear()
         recovering.clear()
+        candidateFallbackPending.clear()
         stopHealthCheck()
         stopListening()
     }
@@ -356,6 +358,7 @@ internal class NativePlaybackRecoveryController(
     fun onPlayerError(
         sessionId: String,
         recoverable: Boolean,
+        candidateFallbackEligible: Boolean = false,
         errorCodeName: String,
         errorMessage: String?,
         causeDescription: String?,
@@ -378,10 +381,17 @@ internal class NativePlaybackRecoveryController(
             return
         }
         pending += sessionId
+        if (candidateFallbackEligible && session?.hasAlternatePlaybackUri() == true) {
+            candidateFallbackPending += sessionId
+        }
         captureHealth(sessionId)?.let { recoveryBaselines[sessionId] = it }
         startListening()
         scheduleExpiry(sessionId)
-        scheduleRetry(sessionId, attempt)
+        scheduleRetry(
+            sessionId,
+            attempt,
+            immediate = sessionId in candidateFallbackPending
+        )
         ensureHealthCheck()
         host.syncForeground()
     }
@@ -416,10 +426,18 @@ internal class NativePlaybackRecoveryController(
 
     fun dispose() = clearAll()
 
-    private fun scheduleRetry(sessionId: String, attempt: Int) {
+    private fun scheduleRetry(
+        sessionId: String,
+        attempt: Int,
+        immediate: Boolean = false
+    ) {
         retryTasks.remove(sessionId)?.let(environment::remove)
         val recoveryStarted = startedAt.getOrPut(sessionId, environment::elapsedRealtimeMs)
-        val delayMs = playbackRecoveryDelayMs(attempt, recoveryStarted, environment.elapsedRealtimeMs())
+        val delayMs = if (immediate) {
+            0L
+        } else {
+            playbackRecoveryDelayMs(attempt, recoveryStarted, environment.elapsedRealtimeMs())
+        }
         attempts[sessionId] = attempt + 1
         val task = Runnable {
             retryTasks.remove(sessionId)
@@ -467,6 +485,12 @@ internal class NativePlaybackRecoveryController(
         try {
             host.focusSession(sessionId)
             session.applyFadeMultiplier(1f)
+            if (candidateFallbackPending.remove(sessionId) && session.advanceToNextPlaybackUri()) {
+                host.logInfo(
+                    "playback_candidate_advanced sessionId=$sessionId uri=${session.uri}",
+                    session
+                )
+            }
             session.reprepareCurrentMediaItem()
             host.ensurePlayer(session).play()
             (captureHealth(sessionId) ?: currentHealth)?.let {
@@ -514,6 +538,7 @@ internal class NativePlaybackRecoveryController(
         startedAt -= sessionId
         recoveryBaselines -= sessionId
         recovering -= sessionId
+        candidateFallbackPending -= sessionId
         retryTasks.remove(sessionId)?.let(environment::remove)
         expiryTasks.remove(sessionId)?.let(environment::remove)
         if (pending.isEmpty()) stopListening()

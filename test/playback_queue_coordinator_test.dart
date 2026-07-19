@@ -538,9 +538,7 @@ void main() {
           audioDatabaseRepository: AudioDatabaseRepository(
             database: AppDatabase.test(db),
           ),
-          asmrPlaybackCacheService: const _FakeAsmrPlaybackCacheService(
-            cachedPath,
-          ),
+          asmrPlaybackCacheService: _FakeAsmrPlaybackCacheService(cachedPath),
         );
         paths = AudioPathCoordinator(
           library: runtimeGraph.library,
@@ -654,7 +652,7 @@ class _RecordingCoverArtworkCacheService extends CoverArtworkCacheService {
 }
 
 class _FakeAsmrPlaybackCacheService extends AsmrPlaybackCacheService {
-  const _FakeAsmrPlaybackCacheService(this.cachedPath);
+  _FakeAsmrPlaybackCacheService(this.cachedPath);
 
   final String cachedPath;
 

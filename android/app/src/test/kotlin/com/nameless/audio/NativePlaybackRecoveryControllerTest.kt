@@ -153,6 +153,67 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
+    fun `network recovery advances playback candidate before repreparing`() {
+        val environment = FakeRecoveryEnvironment()
+        val session = NativePlaybackSession(
+            sessionId = "player",
+            createPlayer = { _, _ -> error("unused") },
+            logWarn = { _, _, _ -> },
+            elapsedRealtimeMs = { environment.now }
+        )
+        val descriptor = NativeMediaItemDescriptor(
+            path = "asmr://work/track",
+            uri = "https://api.asmr.one/audio.mp3",
+            title = "Track",
+            subtitle = null,
+            artUri = null
+        ).withPlaybackCandidateUris(
+            listOf(
+                "https://api.asmr.one/audio.mp3",
+                "https://api.asmr-100.com/audio.mp3"
+            )
+        )
+        session.configure(
+            descriptor = descriptor,
+            queue = listOf(descriptor),
+            queueStartIndex = 0,
+            startPositionMs = 8_000L,
+            volume = 1f,
+            speed = 1f,
+            repeatOne = false,
+            repeatAll = false,
+            shuffleModeEnabled = false,
+            autoPlay = true,
+            deferPlayerCreation = true
+        )
+        val controller = NativePlaybackRecoveryController(
+            FakeRecoveryHost(session),
+            environment,
+            recoveryWindowMs = 60_000L
+        )
+        controller.markIntended("player")
+
+        controller.onPlayerError(
+            sessionId = "player",
+            recoverable = true,
+            candidateFallbackEligible = true,
+            errorCodeName = "ERROR_CODE_IO_BAD_HTTP_STATUS",
+            errorMessage = "503",
+            causeDescription = null
+        )
+
+        assertTrue(environment.delays.contains(0L))
+        environment.runFirst(0L)
+        assertEquals("https://api.asmr-100.com/audio.mp3", session.uri)
+        assertEquals("asmr://work/track", session.path)
+        assertEquals(8_000L, session.lastPositionMs)
+        val snapshot = session.storedSnapshot()
+        assertEquals(1, snapshot.queue.size)
+        assertEquals("https://api.asmr-100.com/audio.mp3", snapshot.queue.single().uri)
+        assertTrue(snapshot.playWhenReady)
+    }
+
+    @Test
     fun `clearing playback intent cancels a health-only scheduled task`() {
         val environment = FakeRecoveryEnvironment()
         val controller = NativePlaybackRecoveryController(

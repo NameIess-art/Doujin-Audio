@@ -101,6 +101,7 @@ void main() {
     await tester.tap(find.text(i18n.tr('section_common')));
     await tester.pumpAndSettle();
     expect(find.text(i18n.tr('startup_page')), findsOneWidget);
+    expect(find.text(i18n.tr('portrait_lock')), findsOneWidget);
     expect(
       find.text(i18n.tr('startup_playback_restore_behavior')),
       findsOneWidget,
@@ -127,6 +128,14 @@ void main() {
       isNull,
     );
     expect(find.text(i18n.tr('haptic_feedback_enabled')), findsOneWidget);
+    final portraitLockTile = find.widgetWithText(
+      SwitchListTile,
+      i18n.tr('portrait_lock'),
+    );
+    expect(tester.widget<SwitchListTile>(portraitLockTile).value, isFalse);
+    await tester.tap(portraitLockTile);
+    await tester.pump();
+    expect(tester.widget<SwitchListTile>(portraitLockTile).value, isTrue);
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
 

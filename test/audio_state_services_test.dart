@@ -264,6 +264,7 @@ void main() {
       );
       expect(state.allowDuplicateWorks, isFalse);
       expect(state.reduceAnimations, isFalse);
+      expect(state.portraitLockEnabled, isFalse);
       expect(
         state.playbackDetailSubtitleStyle,
         PlaybackDetailSubtitleStyle.compact,
@@ -314,6 +315,27 @@ void main() {
         );
       },
     );
+
+    test('portrait lock persists and defaults to disabled', () async {
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      expect(repository.portraitLockEnabled, isFalse);
+      await repository.setPortraitLockEnabled(true);
+      final saved =
+          json.decode(
+                (await SharedPreferences.getInstance()).getString(
+                  'playback_settings_v1',
+                )!,
+              )
+              as Map<String, dynamic>;
+      expect(saved['portraitLockEnabled'], isTrue);
+
+      final restored = SettingsRepository();
+      addTearDown(restored.dispose);
+      await restored.loadPersistedState();
+      expect(restored.portraitLockEnabled, isTrue);
+    });
 
     test('ASMR.ONE download conflict policy defaults to overwrite', () {
       const state = SettingsState();

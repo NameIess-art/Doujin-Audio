@@ -33,6 +33,7 @@ class SettingsRepository {
   bool uiBlurEffectEnabled = true;
   bool hapticFeedbackEnabled = true;
   StartupPage startupPage = StartupPage.library;
+  bool portraitLockEnabled = false;
   BottomNavigationStyle bottomNavigationStyle = BottomNavigationStyle.capsule;
   PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle =
       PlaybackDetailSubtitleStyle.compact;
@@ -74,6 +75,7 @@ class SettingsRepository {
         (value) => value.name == playback['startupPage'],
         orElse: () => StartupPage.library,
       );
+      portraitLockEnabled = playback['portraitLockEnabled'] as bool? ?? false;
       bottomNavigationStyle = BottomNavigationStyle.values.firstWhere(
         (value) => value.name == playback['bottomNavigationStyle'],
         orElse: () => BottomNavigationStyle.capsule,
@@ -173,6 +175,7 @@ class SettingsRepository {
       'notificationsEnabled': notificationsEnabled,
       'showPlaybackCard': showPlaybackCard,
       'startupPage': startupPage.name,
+      'portraitLockEnabled': portraitLockEnabled,
       'bottomNavigationStyle': bottomNavigationStyle.name,
       'playbackDetailSubtitleStyle': playbackDetailSubtitleStyle.name,
       'autoPlayAddedSessions': autoPlayAddedSessions,
@@ -320,6 +323,11 @@ class SettingsRepository {
         update: () => bottomNavigationStyle = style,
       );
 
+  Future<void> setPortraitLockEnabled(bool enabled) => _setValue(
+    unchanged: portraitLockEnabled == enabled,
+    update: () => portraitLockEnabled = enabled,
+  );
+
   Future<void> setPlaybackDetailSubtitleStyle(
     PlaybackDetailSubtitleStyle style,
   ) => _setValue(
@@ -422,6 +430,7 @@ class SettingsRepository {
     uiBlurEffectEnabled = true;
     hapticFeedbackEnabled = true;
     startupPage = StartupPage.library;
+    portraitLockEnabled = false;
     bottomNavigationStyle = BottomNavigationStyle.capsule;
     playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact;
     coverImageResolution = CoverImageResolution.balanced;
@@ -472,6 +481,7 @@ class SettingsRepository {
         uiBlurEffectEnabled: uiBlurEffectEnabled,
         hapticFeedbackEnabled: hapticFeedbackEnabled,
         startupPage: startupPage,
+        portraitLockEnabled: portraitLockEnabled,
         bottomNavigationStyle: bottomNavigationStyle,
         playbackDetailSubtitleStyle: playbackDetailSubtitleStyle,
         coverImageResolution: coverImageResolution,

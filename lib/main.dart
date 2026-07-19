@@ -193,6 +193,16 @@ class AppOrientationPolicy {
   final List<DeviceOrientation> allowedOrientations;
 }
 
+void _applyOrientationPreference(bool portraitLockEnabled) {
+  unawaited(
+    SystemChrome.setPreferredOrientations(
+      portraitLockEnabled
+          ? AppOrientationPolicy.portrait.allowedOrientations
+          : AppOrientationPolicy.current.allowedOrientations,
+    ).catchError((_) {}),
+  );
+}
+
 class _StretchOverscrollBehavior extends MaterialScrollBehavior {
   const _StretchOverscrollBehavior();
 
@@ -218,6 +228,12 @@ class MusicPlayerApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<AsyncValue<SettingsState>>(settingsStateProvider, (_, next) {
+      final portraitLockEnabled = next.asData?.value.portraitLockEnabled;
+      if (portraitLockEnabled != null) {
+        _applyOrientationPreference(portraitLockEnabled);
+      }
+    });
     final themeProvider =
         ref.watch(themeStateProvider).value ??
         ThemeState.from(ref.read(themeProviderInstanceProvider));

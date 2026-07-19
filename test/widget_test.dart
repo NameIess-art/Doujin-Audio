@@ -742,6 +742,19 @@ void main() {
         find.byKey(const ValueKey('session_detail_background_blur')),
         findsOne,
       );
+      expect(
+        tester
+            .widgetList<TickerMode>(
+              find.descendant(
+                of: find.byKey(
+                  const ValueKey('session_detail_background_blur'),
+                ),
+                matching: find.byType(TickerMode),
+              ),
+            )
+            .any((tickerMode) => tickerMode.enabled),
+        isTrue,
+      );
 
       dismissGesture.onVerticalDragUpdate!(
         DragUpdateDetails(

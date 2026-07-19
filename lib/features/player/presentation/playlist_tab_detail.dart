@@ -606,7 +606,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
     final track = paths.trackByPath(session.currentTrackPath);
-    final isAsmrTrack = track?.remoteMetadataKind == 'asmr.one';
     final detailTheme = _detailThemeForTrack(context, track);
     final cs = detailTheme.colorScheme;
     final coverCacheWidth = coverCacheWidthForResolution(
@@ -711,38 +710,44 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           sigmaY: _kSessionDetailBackgroundBlurSigma,
                           tileMode: TileMode.decal,
                         ),
-                        child: AsyncCoverImage(
-                          future: coverPathFuture,
-                          requestKey: session.id,
-                          deferCommitDuringInteraction: isAsmrTrack,
-                          initialPath: library
-                              .resolvedPlaybackCoverPathForTrack(track),
-                          retryFutureBuilder: () => _coverFutureForTrack(
-                            ref.read(libraryFacadeProvider),
-                            track,
+                        child: TickerMode(
+                          // Keep the cover's frame fade running while the
+                          // surrounding detail content is paused for a drag.
+                          enabled: true,
+                          child: AsyncCoverImage(
+                            future: coverPathFuture,
+                            requestKey: session.id,
+                            deferCommitDuringInteraction: true,
+                            initialPath: library
+                                .resolvedPlaybackCoverPathForTrack(track),
+                            retryFutureBuilder: () => _coverFutureForTrack(
+                              ref.read(libraryFacadeProvider),
+                              track,
+                            ),
+                            fallbackBuilder: (_) => CoverFallbackArtwork(
+                              seed:
+                                  track?.displayName ??
+                                  session.currentTrackPath,
+                              showIcon: false,
+                            ),
+                            imageBuilder: (context, coverPath) {
+                              return RetryingFileImage(
+                                path: coverPath,
+                                cacheWidth: coverCacheWidth,
+                                useDefaultCacheWidth: coverCacheWidth != null,
+                                fit: BoxFit.cover,
+                                color: cs.surface.withValues(alpha: 0.45),
+                                colorBlendMode: BlendMode.darken,
+                                deferRetryDuringInteraction: true,
+                                fallbackBuilder: (_) => CoverFallbackArtwork(
+                                  seed:
+                                      track?.displayName ??
+                                      session.currentTrackPath,
+                                  showIcon: false,
+                                ),
+                              );
+                            },
                           ),
-                          fallbackBuilder: (_) => CoverFallbackArtwork(
-                            seed:
-                                track?.displayName ?? session.currentTrackPath,
-                            showIcon: false,
-                          ),
-                          imageBuilder: (context, coverPath) {
-                            return RetryingFileImage(
-                              path: coverPath,
-                              cacheWidth: coverCacheWidth,
-                              useDefaultCacheWidth: coverCacheWidth != null,
-                              fit: BoxFit.cover,
-                              color: cs.surface.withValues(alpha: 0.45),
-                              colorBlendMode: BlendMode.darken,
-                              deferRetryDuringInteraction: isAsmrTrack,
-                              fallbackBuilder: (_) => CoverFallbackArtwork(
-                                seed:
-                                    track?.displayName ??
-                                    session.currentTrackPath,
-                                showIcon: false,
-                              ),
-                            );
-                          },
                         ),
                       ),
                     ),
@@ -779,6 +784,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 children: [
                                   IconButton(
                                     onPressed: onClose,
+                                    tooltip: i18n.tr('close'),
                                     icon: Icon(
                                       Icons.keyboard_arrow_down_rounded,
                                       color: _sessionDetailForeground(

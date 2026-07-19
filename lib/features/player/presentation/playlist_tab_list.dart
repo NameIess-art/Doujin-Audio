@@ -113,10 +113,12 @@ class _SessionsEmptyState extends StatelessWidget {
   const _SessionsEmptyState({
     super.key,
     required this.bottomInset,
+    this.onOpenLibrary,
     this.topInset = 16,
   });
 
   final double bottomInset;
+  final VoidCallback? onOpenLibrary;
   final double topInset;
 
   @override
@@ -207,6 +209,14 @@ class _SessionsEmptyState extends StatelessWidget {
                       height: 1.4,
                     ),
                   ),
+                  if (onOpenLibrary != null) ...[
+                    const SizedBox(height: AppSpacing.lg),
+                    FilledButton.icon(
+                      onPressed: onOpenLibrary,
+                      icon: const Icon(Icons.library_music_rounded),
+                      label: Text(i18n.tr('open_library')),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -365,20 +375,18 @@ class _SessionListCard extends ConsumerWidget {
                         ],
                 ),
               ),
-              child: Semantics(
-                button: true,
-                label: displayName,
-                child: InkWell(
-                  onTap: () {
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.tap,
-                    );
-                    onOpen();
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
-                    child: Row(
-                      children: [
+              child: InkWell(
+                excludeFromSemantics: true,
+                onTap: () {
+                  AppInteractionFeedback.trigger(
+                    AppInteractionFeedbackType.tap,
+                  );
+                  onOpen();
+                },
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
+                  child: Row(
+                    children: [
                         if (showCover) ...[
                           _SessionCoverThumbnail(
                             sessionId: sessionId,
@@ -392,47 +400,52 @@ class _SessionListCard extends ConsumerWidget {
                           const SizedBox(width: 14),
                         ],
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                folderName,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: cs.onSurfaceVariant,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12,
+                          child: Semantics(
+                            button: true,
+                            label: i18n.tr('open_playback_details'),
+                            onTap: onOpen,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  folderName,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall
+                                      ?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12,
+                                      ),
+                                ),
+                                const SizedBox(height: 3),
+                                Text(
+                                  displayName,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 14,
+                                        height: 1.12,
+                                      ),
+                                ),
+                                const SizedBox(height: 4),
+                                Wrap(
+                                  spacing: 10,
+                                  runSpacing: 2,
+                                  children: [
+                                    _SessionMetaChip(
+                                      icon: Icons.repeat_rounded,
+                                      text: _loopModeSummary(
+                                        context,
+                                        cardState.loopMode,
+                                      ),
                                     ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                displayName,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium
-                                    ?.copyWith(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 14,
-                                      height: 1.12,
-                                    ),
-                              ),
-                              const SizedBox(height: 4),
-                              Wrap(
-                                spacing: 10,
-                                runSpacing: 2,
-                                children: [
-                                  _SessionMetaChip(
-                                    icon: Icons.repeat_rounded,
-                                    text: _loopModeSummary(
-                                      context,
-                                      cardState.loopMode,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                         const SizedBox(width: 10),

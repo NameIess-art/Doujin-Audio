@@ -42,6 +42,7 @@ class SettingsState {
     this.uiBlurEffectEnabled = true,
     this.hapticFeedbackEnabled = true,
     this.startupPage = StartupPage.library,
+    this.portraitLockEnabled = false,
     this.bottomNavigationStyle = BottomNavigationStyle.capsule,
     this.playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact,
     this.coverImageResolution = CoverImageResolution.balanced,
@@ -76,6 +77,7 @@ class SettingsState {
   final bool uiBlurEffectEnabled;
   final bool hapticFeedbackEnabled;
   final StartupPage startupPage;
+  final bool portraitLockEnabled;
   final BottomNavigationStyle bottomNavigationStyle;
   final PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle;
   final CoverImageResolution coverImageResolution;
@@ -112,6 +114,7 @@ class SettingsState {
         other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
         other.hapticFeedbackEnabled == hapticFeedbackEnabled &&
         other.startupPage == startupPage &&
+        other.portraitLockEnabled == portraitLockEnabled &&
         other.bottomNavigationStyle == bottomNavigationStyle &&
         other.playbackDetailSubtitleStyle == playbackDetailSubtitleStyle &&
         other.coverImageResolution == coverImageResolution &&
@@ -153,6 +156,7 @@ class SettingsState {
     uiBlurEffectEnabled,
     hapticFeedbackEnabled,
     startupPage,
+    portraitLockEnabled,
     bottomNavigationStyle,
     playbackDetailSubtitleStyle,
     coverImageResolution,

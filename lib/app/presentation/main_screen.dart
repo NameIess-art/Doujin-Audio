@@ -144,6 +144,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       LibraryTab(activeTabIndexListenable: _activePageIndex),
       PlaylistTab(
         onTimerTap: _openTimerFromPlaylist,
+        onOpenLibrary: () => _switchPage(1),
         activeTabIndexListenable: _activePageIndex,
       ),
       const SettingsTab(),

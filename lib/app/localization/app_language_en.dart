@@ -23,6 +23,9 @@ const Map<String, String> appLanguageEn = {
   'privacy_summary_diagnostics_body':
       'Sanitized diagnostics are created only when you choose to export them.',
   'nav_library': 'Library',
+  'open_library': 'Open library',
+  'open_playback_details': 'Open playback details',
+  'retry_playback': 'Retry playback',
   'nav_sessions': 'Playlist',
   'nav_settings': 'Settings',
   'timer': 'Timer',
@@ -70,7 +73,7 @@ const Map<String, String> appLanguageEn = {
   'playback_loading': 'Loading',
   'playback_state_playing': 'Playing',
   'playback_state_paused': 'Paused',
-  'playback_failed_retry': 'Playback failed. Tap to retry',
+  'playback_failed_retry': 'Playback failed. Tap play to retry',
   'asmr_playback_load_failed_retry': 'Loading failed. Tap to retry',
   'asmr_playback_network_failed_retry':
       'Network connection failed. Tap to retry',
@@ -580,6 +583,7 @@ const Map<String, String> appLanguageEn = {
   'interface_language': 'Interface language',
   'follow_system': 'Follow system',
   'startup_page': 'Startup page',
+  'portrait_lock': 'Portrait lock',
   'startup_page_asmrOne': 'ASMR.ONE',
   'startup_page_library': 'Library',
   'startup_page_playlist': 'Playlist',

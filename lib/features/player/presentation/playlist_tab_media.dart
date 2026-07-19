@@ -60,22 +60,26 @@ class _SessionHeroArtwork extends ConsumerWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  AsyncLocalCoverImage(
-                    future: coverPathFuture,
-                    requestKey: sessionId,
-                    deferCommitDuringInteraction:
-                        track?.remoteMetadataKind == 'asmr.one',
-                    initialPath: library.resolvedPlaybackCoverPathForTrack(
-                      track,
+                  TickerMode(
+                    // Do not freeze a cover image's loading fade mid-frame
+                    // while the detail route is being dragged.
+                    enabled: true,
+                    child: AsyncLocalCoverImage(
+                      future: coverPathFuture,
+                      requestKey: sessionId,
+                      deferCommitDuringInteraction: true,
+                      initialPath: library.resolvedPlaybackCoverPathForTrack(
+                        track,
+                      ),
+                      retryFutureBuilder: () => track == null
+                          ? Future<String?>.value()
+                          : library.playbackCoverPathFutureForTrack(track),
+                      seed: track?.displayName ?? track?.path ?? sessionId,
+                      cacheWidth: coverCacheWidth,
+                      useDefaultCacheWidth: coverCacheWidth != null,
+                      fit: BoxFit.cover,
+                      iconSize: 56,
                     ),
-                    retryFutureBuilder: () => track == null
-                        ? Future<String?>.value()
-                        : library.playbackCoverPathFutureForTrack(track),
-                    seed: track?.displayName ?? track?.path ?? sessionId,
-                    cacheWidth: coverCacheWidth,
-                    useDefaultCacheWidth: coverCacheWidth != null,
-                    fit: BoxFit.cover,
-                    iconSize: 56,
                   ),
                   Positioned.fill(
                     child: DecoratedBox(

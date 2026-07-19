@@ -72,6 +72,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     Widget buildCardBody(bool useBlur) => Material(
       color: Colors.transparent,
       child: InkWell(
+        excludeFromSemantics: true,
         borderRadius: BorderRadius.circular(cardRadius),
         onTap: onOpen,
         child: Ink(
@@ -149,12 +150,7 @@ class _ActiveSessionCard extends ConsumerWidget {
 
     final useBlur = blurEnabled;
     return Semantics(
-      button: true,
-      label: displayName,
-      value: isPlaying
-          ? i18n.tr('playback_state_playing')
-          : i18n.tr('playback_state_paused'),
-      selected: isPlaying,
+      container: true,
       child: ClipRRect(
         borderRadius: BorderRadius.circular(cardRadius),
         child: useBlur
@@ -198,32 +194,43 @@ class _ActiveSessionCard extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
       child: Row(
         children: [
-          if (showCover) ...[
-            _ActiveSessionCover(
-              sessionId: session.id,
-              track: currentTrack,
-              coverPathFuture: coverPathFuture,
-            ),
-            const SizedBox(width: 12),
-          ],
           Expanded(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _ActiveSessionTitleSubtitle(
-                  key: ValueKey('${session.id}:${view.trackPath}'),
-                  session: session,
-                  displayName: displayName,
-                  playbackError: view.error,
-                  useAsmrOneErrorText: hasAsmrOnePlaybackError,
-                ),
-                _ActiveSessionProgressStrip(
-                  session: session,
-                  activeColor: activeColor,
-                ),
-              ],
+            child: Semantics(
+              button: true,
+              label: i18n.tr('open_playback_details'),
+              onTap: onOpen,
+              child: Row(
+                children: [
+                  if (showCover) ...[
+                    _ActiveSessionCover(
+                      sessionId: session.id,
+                      track: currentTrack,
+                      coverPathFuture: coverPathFuture,
+                    ),
+                    const SizedBox(width: 12),
+                  ],
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _ActiveSessionTitleSubtitle(
+                          key: ValueKey('${session.id}:${view.trackPath}'),
+                          session: session,
+                          displayName: displayName,
+                          playbackError: view.error,
+                          useAsmrOneErrorText: hasAsmrOnePlaybackError,
+                        ),
+                        _ActiveSessionProgressStrip(
+                          session: session,
+                          activeColor: activeColor,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(width: 8),
@@ -252,6 +259,8 @@ class _ActiveSessionCard extends ConsumerWidget {
                       semanticLabel: i18n.tr(
                         view.loading
                             ? 'playback_loading'
+                            : view.error != null
+                            ? 'retry_playback'
                             : (isPlaying ? 'pause' : 'play'),
                       ),
                       onPressed: () {

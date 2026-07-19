@@ -349,10 +349,12 @@ class PlaylistTab extends ConsumerStatefulWidget {
   const PlaylistTab({
     super.key,
     this.onTimerTap,
+    this.onOpenLibrary,
     this.activeTabIndexListenable,
   });
 
   final VoidCallback? onTimerTap;
+  final VoidCallback? onOpenLibrary;
   final ValueListenable<int>? activeTabIndexListenable;
 
   @override
@@ -634,10 +636,11 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   clipBehavior: Clip.none,
                   children: [
                     if (!listState.hasSessions)
-                      const _SessionsEmptyState(
-                        key: ValueKey('empty_state'),
+                      _SessionsEmptyState(
+                        key: const ValueKey('empty_state'),
                         bottomInset: 100,
                         topInset: expansion + 64,
+                        onOpenLibrary: widget.onOpenLibrary,
                       ),
                     if (listState.hasSessions)
                       Theme(

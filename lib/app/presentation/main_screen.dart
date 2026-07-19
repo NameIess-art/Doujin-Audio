@@ -70,6 +70,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
+  Timer? _pageSwitchTimer;
+  int _pageSwitchGeneration = 0;
 
   bool _notificationPermissionCheckDone = false;
   bool _notificationPermissionCheckQueued = false;
@@ -208,6 +210,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelInteraction(_pageSwitchInteraction);
+    _pageSwitchTimer?.cancel();
     _metricsRecoveryTimer?.cancel();
     _notificationSessionNavigationTimer?.cancel();
     _notificationSessionNavigationTimer = null;
@@ -491,6 +494,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
 
     final coordinator = UiInteractionCoordinator.instance;
+    _pageSwitchTimer?.cancel();
+    final switchGeneration = ++_pageSwitchGeneration;
     coordinator.beginInteraction(_pageSwitchInteraction);
     final generation = coordinator.beginGeneration();
     setState(() {
@@ -501,7 +506,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
       unawaited(_showAsmrOnlineNoticeOnce());
     }
 
-    Timer(const Duration(milliseconds: 140), () {
+    _pageSwitchTimer = Timer(const Duration(milliseconds: 140), () {
+      if (!mounted ||
+          _currentIndex != index ||
+          switchGeneration != _pageSwitchGeneration) {
+        return;
+      }
       coordinator.endInteraction(_pageSwitchInteraction);
       coordinator.scheduleCommit(
         key: 'main_page_$index',
@@ -517,6 +527,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           warmup.schedule(currentPageIndex: index, immediate: true);
         },
       );
+      _pageSwitchTimer = null;
     });
   }
 

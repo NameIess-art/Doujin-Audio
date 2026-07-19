@@ -274,7 +274,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     }
 
     _ensureContentEnterStarted();
-    final routeAnimation = ModalRoute.of(context)?.animation;
+    final routeAnimation = MediaQuery.disableAnimationsOf(context)
+        ? null
+        : ModalRoute.of(context)?.animation;
     final animatedListenable = Listenable.merge([
       ?routeAnimation,
       _contentEnterController,

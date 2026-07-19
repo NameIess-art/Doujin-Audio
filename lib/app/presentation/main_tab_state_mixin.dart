@@ -51,6 +51,10 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
     if (controller.offset > animationStartOffset) {
       controller.jumpTo(animationStartOffset);
     }
+    if (MediaQuery.disableAnimationsOf(context)) {
+      controller.jumpTo(0);
+      return;
+    }
     controller.animateTo(
       0,
       duration: const Duration(milliseconds: 260),

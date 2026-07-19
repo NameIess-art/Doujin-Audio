@@ -196,7 +196,9 @@ extension _MainScreenLayout on _MainScreenState {
                     alignment: Alignment.center,
                     children: [
                       AnimatedContainer(
-                        duration: tokens.motionSlow,
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : tokens.motionSlow,
                         curve: Curves.easeOutQuint,
                         width: selected ? 56 : 0,
                         height: 26,
@@ -250,8 +252,11 @@ extension _MainScreenLayout on _MainScreenState {
     bool tinyMode = false,
   }) {
     final isBar = style == BottomNavigationStyle.bar;
+    final reducedMotion = MediaQuery.disableAnimationsOf(context);
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
+      duration: reducedMotion
+          ? Duration.zero
+          : const Duration(milliseconds: 300),
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
       transitionBuilder: (child, animation) {

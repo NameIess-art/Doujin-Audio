@@ -123,9 +123,18 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
     if (targetIndex < 0 || !_pageController.hasClients) return;
     _lastCarouselSnapSessionId = sessionId;
+    _moveToPage(targetIndex, duration: const Duration(milliseconds: 350));
+  }
+
+  void _moveToPage(int page, {required Duration duration}) {
+    if (!_pageController.hasClients) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pageController.jumpToPage(page);
+      return;
+    }
     _pageController.animateToPage(
-      targetIndex,
-      duration: const Duration(milliseconds: 350),
+      page,
+      duration: duration,
       curve: Curves.easeOutCubic,
     );
   }
@@ -189,11 +198,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         _lastCarouselSnapSessionId = snapSessionId;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted || !_pageController.hasClients) return;
-          _pageController.animateToPage(
-            targetIndex,
-            duration: const Duration(milliseconds: 350),
-            curve: Curves.easeOutCubic,
-          );
+          _moveToPage(targetIndex, duration: const Duration(milliseconds: 350));
         });
       }
     }
@@ -206,14 +211,14 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         onPointerSignal: (signal) {
           if (signal is PointerScrollEvent && sessions.length > 1) {
             if (signal.scrollDelta.dy > 0) {
-              _pageController.nextPage(
+              _moveToPage(
+                _pageNotifier.value.round() + 1,
                 duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOutCubic,
               );
             } else if (signal.scrollDelta.dy < 0) {
-              _pageController.previousPage(
+              _moveToPage(
+                _pageNotifier.value.round() - 1,
                 duration: const Duration(milliseconds: 250),
-                curve: Curves.easeOutCubic,
               );
             }
           }

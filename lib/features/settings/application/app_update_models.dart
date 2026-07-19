@@ -1,8 +1,13 @@
 class AppVersionInfo {
-  const AppVersionInfo({required this.versionName, required this.buildNumber});
+  const AppVersionInfo({
+    required this.versionName,
+    required this.buildNumber,
+    this.androidAssetVariant,
+  });
 
   final String versionName;
   final int buildNumber;
+  final String? androidAssetVariant;
 }
 
 enum AppUpdateStatus {
@@ -25,6 +30,15 @@ class ReleaseChannelConfig {
   final String androidAssetPrefix;
 
   String get platformAssetPrefix => androidAssetPrefix;
+
+  String androidAssetPrefixFor(String? variant) {
+    return switch (variant) {
+      'arm64' => 'NamelessAudio-android-arm64-',
+      'armv7' => 'NamelessAudio-android-armv7-',
+      'x64' => 'NamelessAudio-android-x64-',
+      _ => androidAssetPrefix,
+    };
+  }
 
   static const ReleaseChannelConfig stable = ReleaseChannelConfig(
     major: 0,

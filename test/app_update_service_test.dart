@@ -240,7 +240,7 @@ void main() {
     expect(selected?['tag_name'], 'v0.13.0');
   });
 
-  test('Android updater selects only the universal APK', () {
+  test('Android updater falls back to universal without ABI metadata', () {
     final selected =
         AppUpdateService.selectApkAssetForTesting(<Map<String, dynamic>>[
           githubAsset('NamelessAudio-android-arm64-v0.13.0.apk'),
@@ -257,6 +257,47 @@ void main() {
       ]),
       isNull,
     );
+  });
+
+  test('Android updater selects the APK matching the device ABI', () {
+    final assets = <Map<String, dynamic>>[
+      githubAsset('NamelessAudio-android-arm64-v0.13.0.apk'),
+      githubAsset('NamelessAudio-android-armv7-v0.13.0.apk'),
+      githubAsset('NamelessAudio-android-x64-v0.13.0.apk'),
+      githubAsset('NamelessAudio-android-universal-v0.13.0.apk'),
+    ];
+
+    expect(
+      AppUpdateService.selectApkAssetForTesting(
+        assets,
+        androidAssetVariant: 'arm64',
+      )?['name'],
+      'NamelessAudio-android-arm64-v0.13.0.apk',
+    );
+    expect(
+      AppUpdateService.selectApkAssetForTesting(
+        assets,
+        androidAssetVariant: 'armv7',
+      )?['name'],
+      'NamelessAudio-android-armv7-v0.13.0.apk',
+    );
+    expect(
+      AppUpdateService.selectApkAssetForTesting(
+        assets,
+        androidAssetVariant: 'x64',
+      )?['name'],
+      'NamelessAudio-android-x64-v0.13.0.apk',
+    );
+  });
+
+  test('unknown Android ABI falls back to the universal APK', () {
+    final selected =
+        AppUpdateService.selectApkAssetForTesting(<Map<String, dynamic>>[
+          githubAsset('NamelessAudio-android-arm64-v0.13.0.apk'),
+          githubAsset('NamelessAudio-android-universal-v0.13.0.apk'),
+        ], androidAssetVariant: 'unknown');
+
+    expect(selected?['name'], 'NamelessAudio-android-universal-v0.13.0.apk');
   });
 
   test('asset selection ignores missing, mistyped, and invalid URLs', () {
@@ -351,7 +392,11 @@ void main() {
   });
 
   test('update info reports missing asset and missing checksum states', () {
-    const current = AppVersionInfo(versionName: '0.12.4', buildNumber: 1204);
+    const current = AppVersionInfo(
+      versionName: '0.12.4',
+      buildNumber: 1204,
+      androidAssetVariant: 'arm64',
+    );
     final noAsset = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
       tagName: 'v0.13.0',
@@ -361,7 +406,7 @@ void main() {
     expect(noAsset.status, AppUpdateStatus.missingAsset);
     expect(noAsset.isUpdateAvailable, isFalse);
 
-    const platformAssetName = 'NamelessAudio-android-universal-v0.13.0.apk';
+    const platformAssetName = 'NamelessAudio-android-arm64-v0.13.0.apk';
     final missingChecksum = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
       tagName: 'v0.13.0',

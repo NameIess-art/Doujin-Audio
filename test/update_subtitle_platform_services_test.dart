@@ -29,6 +29,7 @@ void main() {
               UpdateMethod.getAppVersion => <String, Object?>{
                 'versionName': '1.2.3',
                 'buildNumber': 45,
+                'androidAssetVariant': 'arm64',
               },
               UpdateMethod.installApk => <String, Object?>{
                 'ok': false,
@@ -45,6 +46,7 @@ void main() {
 
       expect(version?.versionName, '1.2.3');
       expect(version?.buildNumber, 45);
+      expect(version?.androidAssetVariant, 'arm64');
       expect(install?.ok, isFalse);
       expect(install?.needsPermission, isTrue);
       expect(install?.message, 'permission_required');

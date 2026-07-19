@@ -296,7 +296,10 @@ class AppUpdateService {
     DateTime? publishedAt,
   }) {
     final latestVersionName = _versionNameFromTag(tagName);
-    final updateAsset = _selectUpdateAsset(assets);
+    final updateAsset = _selectUpdateAsset(
+      assets,
+      currentVersion.androidAssetVariant,
+    );
     if (updateAsset == null) {
       return AppUpdateInfo(
         currentVersion: currentVersion,
@@ -351,6 +354,7 @@ class AppUpdateService {
         : AppVersionInfo(
             versionName: version.versionName,
             buildNumber: version.buildNumber,
+            androidAssetVariant: version.androidAssetVariant,
           );
   }
 
@@ -612,25 +616,35 @@ class AppUpdateService {
     }
   }
 
-  static _GitHubAsset? _selectUpdateAsset(List<_GitHubAsset> assets) =>
-      _selectApkAsset(assets);
+  static _GitHubAsset? _selectUpdateAsset(
+    List<_GitHubAsset> assets,
+    String? androidAssetVariant,
+  ) => _selectApkAsset(assets, androidAssetVariant: androidAssetVariant);
 
-  static _GitHubAsset? _selectApkAsset(List<_GitHubAsset> assets) {
+  static _GitHubAsset? _selectApkAsset(
+    List<_GitHubAsset> assets, {
+    String? androidAssetVariant,
+  }) {
+    final assetPrefix = releaseChannel.androidAssetPrefixFor(
+      androidAssetVariant,
+    );
     return assets.cast<_GitHubAsset?>().firstWhere((asset) {
       final name = asset?.name ?? '';
-      return name.startsWith(releaseChannel.androidAssetPrefix) &&
+      return name.startsWith(assetPrefix) &&
           name.toLowerCase().endsWith('.apk');
     }, orElse: () => null);
   }
 
   @visibleForTesting
   static Map<String, dynamic>? selectApkAssetForTesting(
-    List<Map<String, dynamic>> assets,
-  ) => _selectApkAsset(
+    List<Map<String, dynamic>> assets, {
+    String? androidAssetVariant,
+  }) => _selectApkAsset(
     assets
         .map(_GitHubAsset.fromJson)
         .whereType<_GitHubAsset>()
         .toList(growable: false),
+    androidAssetVariant: androidAssetVariant,
   )?.toJson();
 
   static List<_GitHubAsset> _parseExpandedReleaseAssets(String html) {

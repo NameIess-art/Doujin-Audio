@@ -50,8 +50,18 @@ internal class UpdateMethodHandler(
         }
         return mapOf(
             "versionName" to (packageInfo.versionName ?: "unknown"),
-            "buildNumber" to buildNumber
+            "buildNumber" to buildNumber,
+            "androidAssetVariant" to currentAndroidAssetVariant()
         )
+    }
+
+    private fun currentAndroidAssetVariant(): String {
+        return when (Build.SUPPORTED_ABIS.firstOrNull()) {
+            "arm64-v8a" -> "arm64"
+            "armeabi-v7a", "armeabi" -> "armv7"
+            "x86_64" -> "x64"
+            else -> "universal"
+        }
     }
 
     private fun installDownloadedApk(apkPath: String): Map<String, Any?> {

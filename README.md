@@ -120,7 +120,7 @@ NamelessAudio-android-x64-<tag>.apk
 NamelessAudio-android-x64-<tag>.apk.sha256
 ```
 
-Android 应用内自动更新始终下载 universal APK 并交给系统安装器；其他 ABI 拆分包供用户在 GitHub Release 手动选择。
+Android 应用内自动更新会按设备 ABI 下载对应的 arm64、armv7 或 x64 APK，并校验同名 `.sha256` 后交给系统安装器；无法识别 ABI 时回退到 universal APK。
 
 ## 支持格式
 

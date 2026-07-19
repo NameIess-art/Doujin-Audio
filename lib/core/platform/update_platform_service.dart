@@ -8,10 +8,12 @@ class PlatformAppVersion {
   const PlatformAppVersion({
     required this.versionName,
     required this.buildNumber,
+    this.androidAssetVariant,
   });
 
   final String versionName;
   final int buildNumber;
+  final String? androidAssetVariant;
 }
 
 class PlatformUpdateInstallResult {
@@ -42,6 +44,7 @@ class UpdatePlatformService {
         return PlatformAppVersion(
           versionName: map['versionName'] as String,
           buildNumber: (map['buildNumber'] as num).toInt(),
+          androidAssetVariant: map['androidAssetVariant'] as String?,
         );
       },
     );

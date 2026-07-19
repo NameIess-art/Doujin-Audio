@@ -124,6 +124,37 @@ class _SettingsGroupCard extends StatelessWidget {
   }
 }
 
+class _SettingsSectionCard extends StatelessWidget {
+  const _SettingsSectionCard({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+            child: Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          _SettingsGroupCard(children: children),
+        ],
+      ),
+    );
+  }
+}
+
 class _UpdateSettingsTile extends StatelessWidget {
   const _UpdateSettingsTile({
     required this.checking,

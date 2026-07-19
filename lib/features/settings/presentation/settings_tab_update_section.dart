@@ -10,7 +10,8 @@ List<Widget> _buildSettingsUpdateSection({
   required VoidCallback onCheckForUpdates,
 }) {
   return <Widget>[
-    _SettingsGroupCard(
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_permissions'),
       children: [
         ListTile(
           onTap: onOpenPermissionCenter,
@@ -29,6 +30,11 @@ List<Widget> _buildSettingsUpdateSection({
             borderRadius: AppRadius.borderCard,
           ),
         ),
+      ],
+    ),
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_updates'),
+      children: [
         Consumer(
           builder: (context, ref, _) {
             final updateOperation = ref.watch(

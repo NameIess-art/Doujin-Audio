@@ -7,7 +7,8 @@ List<Widget> _buildSettingsPlaybackSection({
   required ColorScheme cs,
 }) {
   return <Widget>[
-    _SettingsGroupCard(
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_playback_behavior'),
       children: [
         Consumer(
           builder: (context, ref, _) {
@@ -95,6 +96,11 @@ List<Widget> _buildSettingsPlaybackSection({
             );
           },
         ),
+      ],
+    ),
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_audio_recovery'),
+      children: [
         Consumer(
           builder: (context, ref, _) {
             final behavior = ref.watch(

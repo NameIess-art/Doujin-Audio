@@ -16,7 +16,8 @@ List<Widget> _buildSettingsDataSection({
   required VoidCallback onClearApplicationCache,
 }) {
   return <Widget>[
-    _SettingsGroupCard(
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_data'),
       children: [
         ListTile(
           onTap: onOpenDataAndSupport,
@@ -32,6 +33,11 @@ List<Widget> _buildSettingsDataSection({
             borderRadius: AppRadius.borderCard,
           ),
         ),
+      ],
+    ),
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_cache'),
+      children: [
         Consumer(
           builder: (context, ref, _) {
             final maxCacheBytes = ref.watch(

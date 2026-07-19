@@ -17,7 +17,8 @@ List<Widget> _buildSettingsAppearanceSection({
   };
 
   return <Widget>[
-    _SettingsGroupCard(
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_theme_layout'),
       children: [
         Consumer(
           builder: (context, ref, _) {
@@ -50,9 +51,6 @@ List<Widget> _buildSettingsAppearanceSection({
                     .toList(),
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
             );
           },
         ),
@@ -65,55 +63,18 @@ List<Widget> _buildSettingsAppearanceSection({
             return SwitchListTile(
               title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
               value: themeState.differentiateAsmrTheme,
-              onChanged: (val) => provider.setDifferentiateAsmrTheme(val),
+              onChanged: provider.setDifferentiateAsmrTheme,
               secondary: _settingsIcon(Icons.palette_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
             );
           },
-        ),
-        ListTile(
-          title: _settingsTitle(i18n.tr('cover_image_resolution')),
-          leading: _settingsIcon(
-            Icons.photo_size_select_large_rounded,
-            cs.primary,
-          ),
-          trailing: Consumer(
-            builder: (context, ref, _) {
-              return _settingsDropdown<CoverImageResolution>(
-                context,
-                value: ref.watch(coverImageResolutionProvider),
-                onChanged: (value) {
-                  if (value != null) {
-                    settingsController.setCoverImageResolution(value);
-                  }
-                },
-                items: CoverImageResolution.values
-                    .map(
-                      (value) => DropdownMenuItem<CoverImageResolution>(
-                        value: value,
-                        child: _settingsDropdownText(
-                          coverResolutionLabels[value]!,
-                        ),
-                      ),
-                    )
-                    .toList(),
-              );
-            },
-          ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          shape: const RoundedRectangleBorder(
-            borderRadius: AppRadius.borderCard,
-          ),
         ),
         Consumer(
           builder: (context, ref, _) {
             final style = ref.watch(
               settingsStateProvider.select(
-                (s) =>
-                    s.value?.bottomNavigationStyle ??
+                (state) =>
+                    state.value?.bottomNavigationStyle ??
                     BottomNavigationStyle.capsule,
               ),
             );
@@ -129,31 +90,81 @@ List<Widget> _buildSettingsAppearanceSection({
               title: _settingsTitle(i18n.tr('bottom_navigation_style')),
               secondary: _settingsIcon(Icons.space_bar_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
+            );
+          },
+        ),
+      ],
+    ),
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_cover_background'),
+      children: [
+        ListTile(
+          title: _settingsTitle(i18n.tr('cover_image_resolution')),
+          leading: _settingsIcon(
+            Icons.photo_size_select_large_rounded,
+            cs.primary,
+          ),
+          trailing: Consumer(
+            builder: (context, ref, _) =>
+                _settingsDropdown<CoverImageResolution>(
+                  context,
+                  value: ref.watch(coverImageResolutionProvider),
+                  onChanged: (value) {
+                    if (value != null) {
+                      settingsController.setCoverImageResolution(value);
+                    }
+                  },
+                  items: CoverImageResolution.values
+                      .map(
+                        (value) => DropdownMenuItem<CoverImageResolution>(
+                          value: value,
+                          child: _settingsDropdownText(
+                            coverResolutionLabels[value]!,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final enabled = ref.watch(
+              settingsStateProvider.select(
+                (state) => state.value?.uiBlurEffectEnabled ?? true,
               ),
+            );
+            return SwitchListTile(
+              value: enabled,
+              onChanged: settings.setUiBlurEffectEnabled,
+              title: _settingsTitle(i18n.tr('ui_blur_effect')),
+              secondary: _settingsIcon(Icons.blur_linear_rounded, cs.primary),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
         Consumer(
           builder: (context, ref, _) {
-            final uiBlurEnabled = ref.watch(
+            final enabled = ref.watch(
               settingsStateProvider.select(
-                (s) => s.value?.uiBlurEffectEnabled ?? true,
+                (state) => state.value?.blurPlayerBackgroundEnabled ?? true,
               ),
             );
             return SwitchListTile(
-              value: uiBlurEnabled,
-              onChanged: settings.setUiBlurEffectEnabled,
-              title: _settingsTitle(i18n.tr('ui_blur_effect')),
-              secondary: _settingsIcon(Icons.blur_linear_rounded, cs.primary),
+              value: enabled,
+              onChanged: settings.setBlurPlayerBackgroundEnabled,
+              title: _settingsTitle(i18n.tr('blur_player_background')),
+              secondary: _settingsIcon(Icons.blur_on_rounded, cs.primary),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
             );
           },
         ),
+      ],
+    ),
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_playback_detail'),
+      children: [
         Consumer(
           builder: (context, ref, _) {
             final style = ref.watch(
@@ -192,40 +203,18 @@ List<Widget> _buildSettingsAppearanceSection({
                     .toList(),
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
             );
           },
         ),
         Consumer(
           builder: (context, ref, _) {
-            final blurEnabled = ref.watch(
+            final enabled = ref.watch(
               settingsStateProvider.select(
-                (s) => s.value?.blurPlayerBackgroundEnabled ?? true,
+                (state) => state.value?.showPlaybackCard ?? true,
               ),
             );
             return SwitchListTile(
-              value: blurEnabled,
-              onChanged: settings.setBlurPlayerBackgroundEnabled,
-              title: _settingsTitle(i18n.tr('blur_player_background')),
-              secondary: _settingsIcon(Icons.blur_on_rounded, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
-            );
-          },
-        ),
-        Consumer(
-          builder: (context, ref, _) {
-            final showPlaybackCard = ref.watch(
-              settingsStateProvider.select(
-                (s) => s.value?.showPlaybackCard ?? true,
-              ),
-            );
-            return SwitchListTile(
-              value: showPlaybackCard,
+              value: enabled,
               onChanged: settings.setShowPlaybackCard,
               title: _settingsTitle(i18n.tr('show_playback_card')),
               secondary: _settingsIcon(
@@ -233,9 +222,6 @@ List<Widget> _buildSettingsAppearanceSection({
                 cs.primary,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
             );
           },
         ),
@@ -243,7 +229,8 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final fields = ref.watch(
               settingsStateProvider.select(
-                (s) => s.value?.cardInfoFields ?? CardInfoField.defaults,
+                (state) =>
+                    state.value?.cardInfoFields ?? CardInfoField.defaults,
               ),
             );
             final summary = fields.isEmpty
@@ -261,9 +248,6 @@ List<Widget> _buildSettingsAppearanceSection({
                 color: cs.onSurfaceVariant,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              shape: const RoundedRectangleBorder(
-                borderRadius: AppRadius.borderCard,
-              ),
               onTap: onShowCardInfoFieldsSettings,
             );
           },
@@ -277,9 +261,6 @@ List<Widget> _buildSettingsAppearanceSection({
             color: cs.onSurfaceVariant,
           ),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          shape: const RoundedRectangleBorder(
-            borderRadius: AppRadius.borderCard,
-          ),
           onTap: onShowSubtitleWindowSettings,
         ),
       ],

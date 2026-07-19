@@ -128,7 +128,8 @@ List<Widget> _buildSettingsGeneralSection({
   required ColorScheme cs,
 }) {
   return <Widget>[
-    _SettingsGroupCard(
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_startup_behavior'),
       children: [
         Consumer(
           builder: (context, ref, _) {
@@ -205,6 +206,11 @@ List<Widget> _buildSettingsGeneralSection({
             );
           },
         ),
+      ],
+    ),
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_general_behavior'),
+      children: [
         Consumer(
           builder: (context, ref, _) {
             final enabled = ref.watch(

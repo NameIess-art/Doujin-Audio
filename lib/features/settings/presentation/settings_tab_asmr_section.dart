@@ -7,7 +7,8 @@ List<Widget> _buildSettingsAsmrSection({
   required VoidCallback onChooseAsmrDownloadDestination,
 }) {
   return <Widget>[
-    _SettingsGroupCard(
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_download'),
       children: [
         Consumer(
           builder: (context, ref, _) {
@@ -95,6 +96,11 @@ List<Widget> _buildSettingsAsmrSection({
             );
           },
         ),
+      ],
+    ),
+    _SettingsSectionCard(
+      title: i18n.tr('settings_group_download_files'),
+      children: [
         Consumer(
           builder: (context, ref, _) {
             final saveMetadata = ref.watch(

@@ -50,13 +50,14 @@ class ThemeProvider with ChangeNotifier {
   static final ColorScheme _lightScheme =
       ColorScheme.fromSeed(seedColor: const Color(0xFFC94D63)).copyWith(
         primary: const Color(0xFFC94D63),
-        onPrimary: Colors.white,
+        onPrimary: const Color(0xFFFFF7F9),
         secondary: const Color(0xFF526074),
-        onSecondary: Colors.white,
+        onSecondary: const Color(0xFFF8FAFD),
         tertiary: const Color(0xFF7A6C93),
-        onTertiary: Colors.white,
+        onTertiary: const Color(0xFFFCF8FF),
         surface: const Color(0xFFFBFAF8),
-        onSurface: const Color(0xFF1A1A1E),
+        onSurface: const Color(0xFF28262C),
+        onSurfaceVariant: const Color(0xFF69636D),
         surfaceContainerHighest: const Color(0xFFE8E5E9),
         surfaceContainerHigh: const Color(0xFFF0ECEF),
         surfaceContainer: const Color(0xFFF4F1F3),
@@ -84,7 +85,7 @@ class ThemeProvider with ChangeNotifier {
         tertiary: const Color(0xFFCFC6E6),
         onTertiary: const Color(0xFF20182C),
         surface: const Color(0xFF111114),
-        onSurface: const Color(0xFFFAFAFA),
+        onSurface: const Color(0xFFEEEAF0),
         surfaceDim: const Color(0xFF0B0B0D),
         surfaceBright: const Color(0xFF25252B),
         surfaceContainerLowest: const Color(0xFF09090A),
@@ -92,7 +93,7 @@ class ThemeProvider with ChangeNotifier {
         surfaceContainer: const Color(0xFF1E1E22),
         surfaceContainerHigh: const Color(0xFF25252A),
         surfaceContainerHighest: const Color(0xFF2D2D33),
-        onSurfaceVariant: const Color(0xFFB8B3BC),
+        onSurfaceVariant: const Color(0xFFBDB5C0),
         primaryContainer: const Color(0xFF3A2028),
         onPrimaryContainer: const Color(0xFFFFD9E0),
         secondaryContainer: const Color(0xFF29313D),
@@ -178,6 +179,26 @@ class ThemeProvider with ChangeNotifier {
     final largeShape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(tokens.radiusSection),
     );
+    final bodyColor = Color.alphaBlend(
+      scheme.onSurface.withValues(alpha: 0.88),
+      scheme.surface,
+    );
+    final textTheme = bodyText.copyWith(
+      headlineMedium: bodyText.headlineMedium?.copyWith(
+        color: scheme.onSurface,
+      ),
+      headlineSmall: bodyText.headlineSmall?.copyWith(color: scheme.onSurface),
+      titleLarge: bodyText.titleLarge?.copyWith(color: scheme.onSurface),
+      titleMedium: bodyText.titleMedium?.copyWith(color: scheme.onSurface),
+      bodyLarge: bodyText.bodyLarge?.copyWith(color: bodyColor),
+      bodyMedium: bodyText.bodyMedium?.copyWith(color: bodyColor),
+      bodySmall: bodyText.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+      labelLarge: bodyText.labelLarge?.copyWith(color: bodyColor),
+      labelMedium: bodyText.labelMedium?.copyWith(
+        color: scheme.onSurfaceVariant,
+      ),
+      labelSmall: bodyText.labelSmall?.copyWith(color: scheme.onSurfaceVariant),
+    );
 
     return ThemeData(
       useMaterial3: true,
@@ -185,10 +206,7 @@ class ThemeProvider with ChangeNotifier {
       extensions: <ThemeExtension<dynamic>>[tokens],
       visualDensity: VisualDensity.standard,
       colorScheme: scheme,
-      textTheme: bodyText.apply(
-        bodyColor: scheme.onSurface,
-        displayColor: scheme.onSurface,
-      ),
+      textTheme: textTheme,
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: {
           TargetPlatform.android: CenterScalePageTransitionsBuilder(),
@@ -277,6 +295,9 @@ class ThemeProvider with ChangeNotifier {
       listTileTheme: ListTileThemeData(
         dense: false,
         minLeadingWidth: 24,
+        textColor: scheme.onSurface,
+        titleTextStyle: textTheme.titleMedium,
+        subtitleTextStyle: textTheme.bodySmall,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(tokens.radiusCard),
         ),
@@ -303,6 +324,11 @@ class ThemeProvider with ChangeNotifier {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
+        labelStyle: textTheme.bodyMedium,
+        hintStyle: textTheme.bodyMedium?.copyWith(
+          color: scheme.onSurfaceVariant,
+        ),
+        helperStyle: textTheme.bodySmall,
         constraints: BoxConstraints(minHeight: tokens.minimumTapTarget),
         fillColor: scheme.surfaceContainer,
         border: OutlineInputBorder(

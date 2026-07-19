@@ -348,7 +348,7 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
                           child: Text(
                             '${_currentIndex + 1} / ${_images.length}',
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: Color(0xFFF8F5F7),
                               fontSize: 12,
                               fontWeight: FontWeight.w700,
                             ),
@@ -368,7 +368,7 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
                           child: Text(
                             i18n.tr('audio_detail_cover_swipe_hint'),
                             style: const TextStyle(
-                              color: Colors.white,
+                              color: Color(0xFFF8F5F7),
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
                             ),

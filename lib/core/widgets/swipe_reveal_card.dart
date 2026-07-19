@@ -72,6 +72,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool _dragRejected = false;
   bool _snapClosed = false;
   bool _actionPaneActive = false;
+  bool _tickerModeEnabled = true;
 
   bool get _hasSecondaryAction => widget.onSecondaryAction != null;
   bool get _hasTertiaryAction => widget.onTertiaryAction != null;
@@ -85,13 +86,33 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   bool get _isOpen => _revealedWidth > (_actionWidth * 0.5);
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final enabled = TickerMode.valuesOf(context).enabled;
+    if (_tickerModeEnabled && !enabled) {
+      _resetPaneState();
+    }
+    _tickerModeEnabled = enabled;
+  }
+
+  @override
   void didUpdateWidget(covariant SwipeRevealCard oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.key != widget.key &&
         (_revealedWidth != 0 || _actionPaneActive)) {
-      _revealedWidth = 0;
-      _actionPaneActive = false;
+      _resetPaneState();
     }
+  }
+
+  void _resetPaneState() {
+    _revealedWidth = 0;
+    _dragStartRevealedWidth = 0;
+    _dragDx = 0;
+    _dragDy = 0;
+    _dragAccepted = false;
+    _dragRejected = false;
+    _snapClosed = false;
+    _actionPaneActive = false;
   }
 
   void _closePane({bool immediate = false}) {
@@ -211,7 +232,13 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
             : SwipeRevealCard.darkPrimaryActionColor);
     final isBgDark =
         ThemeData.estimateBrightnessForColor(baseColor) == Brightness.dark;
-    final onColor = isBgDark ? Colors.white : Colors.black;
+    final onColor = isBgDark
+        ? const Color(0xFFF8F5F7)
+        : const Color(0xFF211F23);
+    final revealShape = switch (widget.shape) {
+      final OutlinedBorder shape => shape.copyWith(side: BorderSide.none),
+      final ShapeBorder shape => shape,
+    };
 
     final paneStartColor = Color.lerp(baseColor, onColor, 0.08)!;
     final paneEndColor = baseColor;
@@ -298,7 +325,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                           end: Alignment.bottomRight,
                           colors: [paneStartColor, paneEndColor],
                         ),
-                        shape: widget.shape,
+                        shape: revealShape,
                       ),
                       child: Stack(
                         children: [

@@ -41,6 +41,7 @@ void main() {
     expect(darkTokens, isNotNull);
     expect(lightTokens!.asmrAccent, const Color(0xFF1D4ED8));
     expect(darkTokens!.asmrAccent, const Color(0xFF60A5FA));
+    expect(lightTokens.onAsmrAccent, isNot(Colors.white));
     expect(lightTokens.radiusCard, darkTokens.radiusCard);
     expect(lightTokens.radiusOverlay, 24);
     expect(lightTokens.spaceXxs, 4);
@@ -90,4 +91,41 @@ void main() {
       tokens.minimumTapTarget,
     );
   });
+
+  test('light and dark text colors keep readable visual hierarchy', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+
+    for (final theme in <ThemeData>[provider.lightTheme, provider.darkTheme]) {
+      final scheme = theme.colorScheme;
+      final textTheme = theme.textTheme;
+      final titleColor = textTheme.titleMedium!.color!;
+      final bodyColor = textTheme.bodyMedium!.color!;
+      final supportingColor = textTheme.bodySmall!.color!;
+
+      expect(titleColor, scheme.onSurface);
+      expect(bodyColor, isNot(titleColor));
+      expect(supportingColor, scheme.onSurfaceVariant);
+      expect(supportingColor, isNot(bodyColor));
+      expect(titleColor, isNot(Colors.black));
+      expect(titleColor, isNot(Colors.white));
+      expect(scheme.onPrimary, isNot(Colors.white));
+      expect(_contrastRatio(titleColor, scheme.surface), greaterThan(4.5));
+      expect(_contrastRatio(bodyColor, scheme.surface), greaterThan(4.5));
+      expect(_contrastRatio(supportingColor, scheme.surface), greaterThan(4.5));
+    }
+  });
+}
+
+double _contrastRatio(Color foreground, Color background) {
+  final foregroundLuminance = foreground.computeLuminance();
+  final backgroundLuminance = background.computeLuminance();
+  final lighter = foregroundLuminance > backgroundLuminance
+      ? foregroundLuminance
+      : backgroundLuminance;
+  final darker = foregroundLuminance > backgroundLuminance
+      ? backgroundLuminance
+      : foregroundLuminance;
+  return (lighter + 0.05) / (darker + 0.05);
 }

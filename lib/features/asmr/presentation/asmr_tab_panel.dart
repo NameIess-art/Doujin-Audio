@@ -100,12 +100,12 @@ ThemeData _asmrPanelTheme(BuildContext context) {
         }
         return null;
       }),
-      checkColor: WidgetStateProperty.all(Colors.white),
+      checkColor: WidgetStateProperty.all(tokens.onAsmrAccent),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         backgroundColor: blue,
-        foregroundColor: Colors.white,
+        foregroundColor: tokens.onAsmrAccent,
       ),
     ),
     textButtonTheme: TextButtonThemeData(

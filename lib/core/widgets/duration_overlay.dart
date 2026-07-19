@@ -19,7 +19,7 @@ class DurationOverlay extends StatelessWidget {
       child: Text(
         formatDurationCompact(duration),
         style: const TextStyle(
-          color: Colors.white,
+          color: Color(0xFFF8F5F7),
           fontSize: 10,
           fontWeight: FontWeight.w600,
           height: 1.1,

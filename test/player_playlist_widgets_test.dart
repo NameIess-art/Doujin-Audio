@@ -9,8 +9,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/core/media/subtitle_parser.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
+import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
@@ -85,6 +87,88 @@ void _expectFixedSessionResetButtonStyle(WidgetTester tester, Finder finder) {
   expect(textStyle.fontSize, 14);
   expect(textStyle.fontWeight, FontWeight.w600);
   expect(textStyle.height, 1);
+}
+
+Future<({AppRuntimeWidgetTestFixture fixture, PlaybackSession session})>
+_pumpSubtitleDetail({
+  required WidgetTester tester,
+  required PlaybackDetailSubtitleStyle style,
+  required SubtitleTrack subtitleTrack,
+  required Duration initialPosition,
+}) async {
+  tester.view.devicePixelRatio = 3;
+  tester.view.physicalSize = const Size(1080, 2400);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  addTearDown(tester.view.resetPhysicalSize);
+
+  const track = MusicTrack(
+    path: '/library/subtitles/track.mp3',
+    displayName: 'Subtitle track',
+    groupKey: '/library/subtitles',
+    groupTitle: 'Subtitle album',
+    groupSubtitle: '/library/subtitles',
+    isSingle: false,
+  );
+  final fixture = AppRuntimeWidgetTestFixture(
+    configureSettingsRepository: (settings) {
+      settings.playbackDetailSubtitleStyle = style;
+      settings.syncSlice(isInitialized: true);
+    },
+  );
+  addTearDown(fixture.dispose);
+  fixture.runtimeGraph.library.addTracks(
+    const <MusicTrack>[track],
+    notify: false,
+    persist: false,
+  );
+  final session = PlaybackSession(
+    id: 'subtitle-session',
+    currentTrackPath: track.path,
+    loopMode: SessionLoopMode.single,
+    nonSingleLoopMode: SessionLoopMode.single,
+    volume: 1,
+    createdAt: DateTime(2026),
+    state: PlayerState(false, ProcessingState.ready),
+  )..setOptimisticPosition(initialPosition);
+  fixture.playbackService.registerSession(session);
+  fixture.playbackService.syncSlice(
+    activeSessions: <PlaybackSession>[session],
+    playingSessionCount: 0,
+    focusedSessionId: session.id,
+    multiThreadPlaybackEnabled: false,
+    coverGeneration: 0,
+    isInitialized: true,
+  );
+  final subtitleService = PlaybackSubtitleService(
+    trackResolver: (_) => track,
+    subtitleLoader: (_, _) async => subtitleTrack,
+  );
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(
+        nativePlaybackChannel,
+        (_) async => <String, Object?>{'ok': true, 'value': null},
+      );
+  addTearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(nativePlaybackChannel, null);
+  });
+
+  await tester.pumpWidget(
+    fixture.build(const PlaylistTab(), subtitleService: subtitleService),
+  );
+  await tester.pumpAndSettle();
+  unawaited(
+    Navigator.of(
+      tester.element(find.byType(PlaylistTab)),
+    ).push(buildSessionDetailRoute(sessionId: session.id)),
+  );
+  await tester.pumpAndSettle();
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 200)),
+  );
+  await tester.pump();
+
+  return (fixture: fixture, session: session);
 }
 
 void main() {
@@ -1060,4 +1144,122 @@ void main() {
       );
     },
   );
+
+  testWidgets('compact playback subtitle centers wrapped text', (tester) async {
+    const subtitleText = 'First line\nsecond centered line';
+    const subtitleTrack = SubtitleTrack(
+      sourcePath: '/library/subtitles/track.srt',
+      cues: <SubtitleCue>[
+        SubtitleCue(
+          start: Duration.zero,
+          end: Duration(seconds: 5),
+          text: subtitleText,
+        ),
+      ],
+    );
+    await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.compact,
+      subtitleTrack: subtitleTrack,
+      initialPosition: const Duration(seconds: 1),
+    );
+    await pumpUntilFound(tester, find.text(subtitleText));
+
+    final text = tester.widget<Text>(find.text(subtitleText));
+    expect(text.textAlign, TextAlign.center);
+    expect(text.maxLines, 2);
+  });
+
+  testWidgets('timeline subtitles scroll, return, and seek while paused', (
+    tester,
+  ) async {
+    const subtitleTrack = SubtitleTrack(
+      sourcePath: '/library/subtitles/track.srt',
+      cues: <SubtitleCue>[
+        SubtitleCue(
+          start: Duration.zero,
+          end: Duration(seconds: 2),
+          text: 'Cue zero',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 2),
+          end: Duration(seconds: 4),
+          text: 'Cue one wraps onto a centered second line',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 4),
+          end: Duration(seconds: 6),
+          text: 'Cue two',
+        ),
+      ],
+    );
+    final result = await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.timeline,
+      subtitleTrack: subtitleTrack,
+      initialPosition: const Duration(milliseconds: 2500),
+    );
+    final viewport = find.byKey(
+      const ValueKey<String>('subtitle_timeline_viewport'),
+    );
+    await pumpUntilFound(tester, viewport);
+    await tester.pumpAndSettle();
+
+    final cue0 = find.byKey(const ValueKey<String>('subtitle_timeline_cue_0'));
+    final cue1 = find.byKey(const ValueKey<String>('subtitle_timeline_cue_1'));
+    final cue2 = find.byKey(const ValueKey<String>('subtitle_timeline_cue_2'));
+    Opacity opacityFor(Finder cue) => tester.widget<Opacity>(
+      find.ancestor(of: cue, matching: find.byType(Opacity)).first,
+    );
+
+    expect(tester.getSize(viewport).height, 96);
+    expect(opacityFor(cue0).opacity, 0.45);
+    expect(opacityFor(cue1).opacity, 1);
+    expect(opacityFor(cue2).opacity, 0.45);
+    final viewportRect = tester.getRect(viewport);
+    expect(tester.getRect(cue0).bottom - viewportRect.top, closeTo(24, 0.1));
+    expect(viewportRect.bottom - tester.getRect(cue2).top, closeTo(24, 0.1));
+    expect(
+      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+      findsNothing,
+    );
+    expect(
+      tester.widget<Text>(find.text(subtitleTrack.cues[1].text)).textAlign,
+      TextAlign.center,
+    );
+
+    final list = find.byKey(const ValueKey<String>('subtitle_timeline_list'));
+    await tester.drag(list, const Offset(0, -52));
+    await tester.pumpAndSettle();
+    expect(opacityFor(cue2).opacity, 1);
+    expect(
+      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 2999));
+    expect(opacityFor(cue2).opacity, 1);
+    await tester.pump(const Duration(milliseconds: 1));
+    await tester.pumpAndSettle();
+    expect(opacityFor(cue1).opacity, 1);
+
+    await tester.drag(list, const Offset(0, -52));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+    );
+    await tester.pump();
+
+    expect(result.session.position, const Duration(seconds: 4));
+    expect(result.session.state.playing, isFalse);
+    expect(
+      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+      findsNothing,
+    );
+    await tester.pump(const Duration(milliseconds: 100));
+  });
 }

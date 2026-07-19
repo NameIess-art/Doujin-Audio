@@ -156,6 +156,50 @@ List<Widget> _buildSettingsAppearanceSection({
         ),
         Consumer(
           builder: (context, ref, _) {
+            final style = ref.watch(
+              settingsStateProvider.select(
+                (state) =>
+                    state.value?.playbackDetailSubtitleStyle ??
+                    PlaybackDetailSubtitleStyle.compact,
+              ),
+            );
+            final styleLabels = <PlaybackDetailSubtitleStyle, String>{
+              PlaybackDetailSubtitleStyle.compact: i18n.tr(
+                'playback_detail_subtitle_style_compact',
+              ),
+              PlaybackDetailSubtitleStyle.timeline: i18n.tr(
+                'playback_detail_subtitle_style_timeline',
+              ),
+            };
+            return ListTile(
+              title: _settingsTitle(i18n.tr('playback_detail_subtitle_style')),
+              leading: _settingsIcon(Icons.lyrics_rounded, cs.primary),
+              trailing: _settingsDropdown<PlaybackDetailSubtitleStyle>(
+                context,
+                value: style,
+                onChanged: (value) {
+                  if (value != null) {
+                    settings.setPlaybackDetailSubtitleStyle(value);
+                  }
+                },
+                items: PlaybackDetailSubtitleStyle.values
+                    .map(
+                      (value) => DropdownMenuItem<PlaybackDetailSubtitleStyle>(
+                        value: value,
+                        child: _settingsDropdownText(styleLabels[value]!),
+                      ),
+                    )
+                    .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              shape: const RoundedRectangleBorder(
+                borderRadius: AppRadius.borderCard,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
             final blurEnabled = ref.watch(
               settingsStateProvider.select(
                 (s) => s.value?.blurPlayerBackgroundEnabled ?? true,

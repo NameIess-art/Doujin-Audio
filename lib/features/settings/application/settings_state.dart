@@ -9,6 +9,8 @@ enum StartupPage { asmrOne, library, playlist }
 
 enum BottomNavigationStyle { capsule, bar }
 
+enum PlaybackDetailSubtitleStyle { compact, timeline }
+
 enum CoverImageResolution { memorySaver, balanced, high, original }
 
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
@@ -41,6 +43,7 @@ class SettingsState {
     this.hapticFeedbackEnabled = true,
     this.startupPage = StartupPage.library,
     this.bottomNavigationStyle = BottomNavigationStyle.capsule,
+    this.playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact,
     this.coverImageResolution = CoverImageResolution.balanced,
     this.asmrDownloadDestinationRoot,
     this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
@@ -74,6 +77,7 @@ class SettingsState {
   final bool hapticFeedbackEnabled;
   final StartupPage startupPage;
   final BottomNavigationStyle bottomNavigationStyle;
+  final PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle;
   final CoverImageResolution coverImageResolution;
   final String? asmrDownloadDestinationRoot;
   final AsmrDownloadConflictPolicy asmrDownloadConflictPolicy;
@@ -109,6 +113,7 @@ class SettingsState {
         other.hapticFeedbackEnabled == hapticFeedbackEnabled &&
         other.startupPage == startupPage &&
         other.bottomNavigationStyle == bottomNavigationStyle &&
+        other.playbackDetailSubtitleStyle == playbackDetailSubtitleStyle &&
         other.coverImageResolution == coverImageResolution &&
         other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
         other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy &&
@@ -149,6 +154,7 @@ class SettingsState {
     hapticFeedbackEnabled,
     startupPage,
     bottomNavigationStyle,
+    playbackDetailSubtitleStyle,
     coverImageResolution,
     asmrDownloadDestinationRoot,
     asmrDownloadConflictPolicy,

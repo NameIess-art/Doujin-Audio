@@ -264,7 +264,56 @@ void main() {
       );
       expect(state.allowDuplicateWorks, isFalse);
       expect(state.reduceAnimations, isFalse);
+      expect(
+        state.playbackDetailSubtitleStyle,
+        PlaybackDetailSubtitleStyle.compact,
+      );
     });
+
+    test(
+      'playback detail subtitle style persists with safe fallback',
+      () async {
+        final repository = SettingsRepository();
+        addTearDown(repository.dispose);
+
+        await repository.setPlaybackDetailSubtitleStyle(
+          PlaybackDetailSubtitleStyle.timeline,
+        );
+
+        final saved =
+            json.decode(
+                  (await SharedPreferences.getInstance()).getString(
+                    'playback_settings_v1',
+                  )!,
+                )
+                as Map<String, dynamic>;
+        expect(
+          saved['playbackDetailSubtitleStyle'],
+          PlaybackDetailSubtitleStyle.timeline.name,
+        );
+
+        final restored = SettingsRepository();
+        addTearDown(restored.dispose);
+        await restored.loadPersistedState();
+        expect(
+          restored.playbackDetailSubtitleStyle,
+          PlaybackDetailSubtitleStyle.timeline,
+        );
+
+        SharedPreferences.setMockInitialValues(<String, Object>{
+          'playback_settings_v1': json.encode(<String, Object?>{
+            'playbackDetailSubtitleStyle': 'unknown',
+          }),
+        });
+        final invalid = SettingsRepository();
+        addTearDown(invalid.dispose);
+        await invalid.loadPersistedState();
+        expect(
+          invalid.playbackDetailSubtitleStyle,
+          PlaybackDetailSubtitleStyle.compact,
+        );
+      },
+    );
 
     test('ASMR.ONE download conflict policy defaults to overwrite', () {
       const state = SettingsState();

@@ -766,6 +766,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
   final SubtitleTextCache _subtitleTextCache = SubtitleTextCache();
   SubtitleTrack? _subtitleTrack;
   String? _subtitleText;
+  int? _playbackSubtitleIndex;
   String? _loadedPath;
   bool _tickerModeEnabled = true;
 
@@ -818,6 +819,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
     setState(() {
       _subtitleTrack = null;
       _subtitleText = null;
+      _playbackSubtitleIndex = null;
     });
     ref.read(playbackSubtitleServiceProvider).load(trackPath).then((track) {
       if (!mounted || _loadedPath != trackPath) return;
@@ -829,15 +831,40 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
 
   void _updateSubtitleText(Duration position) {
     if (!_tickerModeEnabled) return;
+    final track = _subtitleTrack;
     final nextText = _subtitleTextCache.resolve(
       trackPath: widget.session.currentTrackPath,
       position: position,
-      track: _subtitleTrack,
+      track: track,
     );
-    if (_subtitleText == nextText) return;
+    final nextIndex = _timelineSubtitleIndexAt(track, position);
+    if (_subtitleText == nextText && _playbackSubtitleIndex == nextIndex) {
+      return;
+    }
     setState(() {
       _subtitleText = nextText;
+      _playbackSubtitleIndex = nextIndex;
     });
+  }
+
+  int? _timelineSubtitleIndexAt(SubtitleTrack? track, Duration position) {
+    final cues = track?.cues;
+    if (cues == null || cues.isEmpty) return null;
+    if (position < cues.first.start) return 0;
+
+    var low = 0;
+    var high = cues.length - 1;
+    var result = 0;
+    while (low <= high) {
+      final mid = low + ((high - low) >> 1);
+      if (cues[mid].start <= position) {
+        result = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return result;
   }
 
   @override
@@ -893,6 +920,29 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
       );
     }
 
+    final subtitleStyle = ref.watch(
+      settingsStateProvider.select(
+        (state) =>
+            state.value?.playbackDetailSubtitleStyle ??
+            PlaybackDetailSubtitleStyle.compact,
+      ),
+    );
+    final subtitleTrack = _subtitleTrack;
+    final playbackSubtitleIndex = _playbackSubtitleIndex;
+    if (subtitleStyle == PlaybackDetailSubtitleStyle.timeline &&
+        subtitleTrack != null &&
+        subtitleTrack.cues.isNotEmpty &&
+        playbackSubtitleIndex != null) {
+      return _TimelineSubtitleView(
+        key: ValueKey<Object>((widget.session.id, subtitleTrack)),
+        cues: subtitleTrack.cues,
+        playbackSubtitleIndex: playbackSubtitleIndex,
+        onSeek: (position) => ref
+            .read(playbackFacadeProvider)
+            .seekSession(widget.session.id, position),
+      );
+    }
+
     final subtitleText = _subtitleText;
     return AnimatedSize(
       duration: const Duration(milliseconds: 120),
@@ -904,7 +954,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
         switchOutCurve: Curves.easeInCubic,
         layoutBuilder: (currentChild, previousChildren) {
           return Stack(
-            alignment: Alignment.topLeft,
+            alignment: Alignment.topCenter,
             children: [...previousChildren, ?currentChild],
           );
         },
@@ -928,21 +978,286 @@ class _SubtitleChip extends StatelessWidget {
       width: double.infinity,
       height: 44,
       padding: EdgeInsets.zero,
-      alignment: Alignment.topLeft,
+      alignment: Alignment.topCenter,
       child: ClipRect(
-        child: Text(
-          text,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-            color: _sessionDetailForeground(
-              cs,
-              _SessionDetailForegroundLevel.medium,
-              darkFallback: cs.onSurface.withValues(alpha: 0.85),
+        child: SizedBox(
+          width: double.infinity,
+          child: Text(
+            text,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: _sessionDetailForeground(
+                cs,
+                _SessionDetailForegroundLevel.medium,
+                darkFallback: cs.onSurface.withValues(alpha: 0.85),
+              ),
+              fontWeight: FontWeight.w600,
+              fontSize: 16,
+              height: 1.3,
             ),
-            fontWeight: FontWeight.w600,
-            fontSize: 16,
-            height: 1.3,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimelineSubtitleView extends StatefulWidget {
+  const _TimelineSubtitleView({
+    super.key,
+    required this.cues,
+    required this.playbackSubtitleIndex,
+    required this.onSeek,
+  });
+
+  final List<SubtitleCue> cues;
+  final int playbackSubtitleIndex;
+  final Future<void> Function(Duration position) onSeek;
+
+  @override
+  State<_TimelineSubtitleView> createState() => _TimelineSubtitleViewState();
+}
+
+class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
+  static const double _itemExtent = 48;
+  static const double _viewportHeight = _itemExtent * 2;
+  static const Duration _returnDelay = Duration(seconds: 3);
+  static const Duration _scrollDuration = Duration(milliseconds: 180);
+
+  late final ScrollController _scrollController;
+  late int _focusedIndex;
+  Timer? _returnTimer;
+  bool _isBrowsing = false;
+  bool _isSnapping = false;
+  bool _isProgrammaticScroll = false;
+
+  int get _lastIndex => widget.cues.length - 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusedIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
+    _scrollController = ScrollController(
+      initialScrollOffset: _focusedIndex * _itemExtent,
+    )..addListener(_handleScrollOffsetChanged);
+  }
+
+  @override
+  void didUpdateWidget(covariant _TimelineSubtitleView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
+    if (_isBrowsing) {
+      if (_focusedIndex == playbackIndex) {
+        _returnTimer?.cancel();
+        _isBrowsing = false;
+      }
+      return;
+    }
+    if (oldWidget.playbackSubtitleIndex != widget.playbackSubtitleIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_isBrowsing) {
+          unawaited(_scrollToIndex(playbackIndex));
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _returnTimer?.cancel();
+    _scrollController
+      ..removeListener(_handleScrollOffsetChanged)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleScrollOffsetChanged() {
+    if (!_scrollController.hasClients) return;
+    final nextIndex = (_scrollController.offset / _itemExtent).round().clamp(
+      0,
+      _lastIndex,
+    );
+    if (nextIndex == _focusedIndex || !mounted) return;
+    setState(() => _focusedIndex = nextIndex);
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (_isProgrammaticScroll) return false;
+    if (notification is ScrollStartNotification ||
+        (notification is ScrollUpdateNotification &&
+            notification.scrollDelta != null &&
+            notification.scrollDelta!.abs() > 0)) {
+      _returnTimer?.cancel();
+      if (!_isBrowsing) {
+        setState(() => _isBrowsing = true);
+      }
+    } else if (notification is ScrollEndNotification &&
+        _isBrowsing &&
+        !_isSnapping) {
+      unawaited(_finishManualScroll());
+    }
+    return false;
+  }
+
+  Future<void> _finishManualScroll() async {
+    if (_isSnapping || !mounted) return;
+    _isSnapping = true;
+    try {
+      await _scrollToIndex(_focusedIndex);
+    } finally {
+      _isSnapping = false;
+    }
+    if (!mounted || !_isBrowsing) return;
+    final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
+    if (_focusedIndex == playbackIndex) {
+      setState(() => _isBrowsing = false);
+      return;
+    }
+    _returnTimer?.cancel();
+    _returnTimer = Timer(_returnDelay, _returnToPlaybackSubtitle);
+  }
+
+  void _returnToPlaybackSubtitle() {
+    _returnTimer = null;
+    if (!mounted) return;
+    final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
+    setState(() => _isBrowsing = false);
+    unawaited(_scrollToIndex(playbackIndex));
+  }
+
+  Future<void> _scrollToIndex(int index) async {
+    final targetIndex = index.clamp(0, _lastIndex);
+    if (!_scrollController.hasClients) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_scrollToIndex(targetIndex));
+      });
+      return;
+    }
+    final targetOffset = targetIndex * _itemExtent;
+    if ((_scrollController.offset - targetOffset).abs() < 0.5) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _isProgrammaticScroll = true;
+      try {
+        _scrollController.jumpTo(targetOffset);
+      } finally {
+        _isProgrammaticScroll = false;
+      }
+      return;
+    }
+    _isProgrammaticScroll = true;
+    try {
+      await _scrollController.animateTo(
+        targetOffset,
+        duration: _scrollDuration,
+        curve: Curves.easeOutCubic,
+      );
+    } finally {
+      _isProgrammaticScroll = false;
+    }
+  }
+
+  void _seekToFocusedSubtitle() {
+    _returnTimer?.cancel();
+    if (_isBrowsing) {
+      setState(() => _isBrowsing = false);
+    }
+    unawaited(widget.onSeek(widget.cues[_focusedIndex].start));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    return SizedBox(
+      key: const ValueKey('subtitle_timeline_viewport'),
+      width: double.infinity,
+      height: _viewportHeight,
+      child: ClipRect(
+        child: NotificationListener<ScrollNotification>(
+          onNotification: _handleScrollNotification,
+          child: ListView.builder(
+            key: const ValueKey('subtitle_timeline_list'),
+            controller: _scrollController,
+            padding: const EdgeInsets.symmetric(
+              vertical: (_viewportHeight - _itemExtent) / 2,
+            ),
+            itemExtent: _itemExtent,
+            itemCount: widget.cues.length,
+            itemBuilder: (context, index) {
+              final cue = widget.cues[index];
+              final isFocused = index == _focusedIndex;
+              final isPlaybackSubtitle = index == widget.playbackSubtitleIndex;
+              return Semantics(
+                selected: isFocused,
+                child: Opacity(
+                  opacity: isFocused ? 1 : 0.45,
+                  child: Stack(
+                    key: ValueKey('subtitle_timeline_cue_$index'),
+                    fit: StackFit.expand,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 48),
+                        child: Center(
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: Text(
+                              cue.text,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodyMedium
+                                  ?.copyWith(
+                                    color: _sessionDetailForeground(
+                                      cs,
+                                      isFocused
+                                          ? _SessionDetailForegroundLevel.medium
+                                          : _SessionDetailForegroundLevel.muted,
+                                      darkFallback: cs.onSurface.withValues(
+                                        alpha: isFocused ? 0.85 : 0.72,
+                                      ),
+                                    ),
+                                    fontWeight: isFocused
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                    fontSize: 16,
+                                    height: 1.3,
+                                  ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (isFocused && !isPlaybackSubtitle)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: IconButton(
+                              key: const ValueKey(
+                                'subtitle_timeline_seek_button',
+                              ),
+                              tooltip: i18n.tr('seek_to_subtitle'),
+                              onPressed: _seekToFocusedSubtitle,
+                              icon: Icon(
+                                Icons.play_arrow_rounded,
+                                color: _sessionDetailForeground(
+                                  cs,
+                                  _SessionDetailForegroundLevel.medium,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ),

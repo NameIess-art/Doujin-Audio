@@ -34,6 +34,8 @@ class SettingsRepository {
   bool hapticFeedbackEnabled = true;
   StartupPage startupPage = StartupPage.library;
   BottomNavigationStyle bottomNavigationStyle = BottomNavigationStyle.capsule;
+  PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle =
+      PlaybackDetailSubtitleStyle.compact;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
   String? asmrDownloadDestinationRoot;
   AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
@@ -76,6 +78,11 @@ class SettingsRepository {
         (value) => value.name == playback['bottomNavigationStyle'],
         orElse: () => BottomNavigationStyle.capsule,
       );
+      playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.values
+          .firstWhere(
+            (value) => value.name == playback['playbackDetailSubtitleStyle'],
+            orElse: () => PlaybackDetailSubtitleStyle.compact,
+          );
       autoPlayAddedSessions =
           playback['autoPlayAddedSessions'] as bool? ?? true;
       autoCheckUpdates = playback['autoCheckUpdates'] as bool? ?? false;
@@ -167,6 +174,7 @@ class SettingsRepository {
       'showPlaybackCard': showPlaybackCard,
       'startupPage': startupPage.name,
       'bottomNavigationStyle': bottomNavigationStyle.name,
+      'playbackDetailSubtitleStyle': playbackDetailSubtitleStyle.name,
       'autoPlayAddedSessions': autoPlayAddedSessions,
       'autoCheckUpdates': autoCheckUpdates,
       'recordPlaybackProgress': recordPlaybackProgress,
@@ -312,6 +320,13 @@ class SettingsRepository {
         update: () => bottomNavigationStyle = style,
       );
 
+  Future<void> setPlaybackDetailSubtitleStyle(
+    PlaybackDetailSubtitleStyle style,
+  ) => _setValue(
+    unchanged: playbackDetailSubtitleStyle == style,
+    update: () => playbackDetailSubtitleStyle = style,
+  );
+
   Future<void> setCoverImageResolution(CoverImageResolution resolution) =>
       _setValue(
         unchanged: coverImageResolution == resolution,
@@ -408,6 +423,7 @@ class SettingsRepository {
     hapticFeedbackEnabled = true;
     startupPage = StartupPage.library;
     bottomNavigationStyle = BottomNavigationStyle.capsule;
+    playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact;
     coverImageResolution = CoverImageResolution.balanced;
     asmrDownloadDestinationRoot = null;
     asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
@@ -457,6 +473,7 @@ class SettingsRepository {
         hapticFeedbackEnabled: hapticFeedbackEnabled,
         startupPage: startupPage,
         bottomNavigationStyle: bottomNavigationStyle,
+        playbackDetailSubtitleStyle: playbackDetailSubtitleStyle,
         coverImageResolution: coverImageResolution,
         asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
         asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,

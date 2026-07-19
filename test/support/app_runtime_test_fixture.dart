@@ -28,6 +28,7 @@ import 'package:nameless_audio/features/player/application/notification_facade.d
 import 'package:nameless_audio/features/player/application/playback_command_runner.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
+import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:nameless_audio/features/player/application/timer_facade.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
@@ -201,6 +202,7 @@ Widget buildAppRuntimeTestApp({
   required NotificationCoordinatorService notificationCoordinatorService,
   required SettingsRepository settingsRepository,
   required AppLanguageProvider languageProvider,
+  PlaybackSubtitleService? subtitleService,
   UiOperationService? uiOperationService,
   List<Override> overrides = const <Override>[],
   required Widget child,
@@ -216,7 +218,7 @@ Widget buildAppRuntimeTestApp({
         keepAlive: runtimeGraph.keepAlive,
         library: runtimeGraph.library,
         playback: runtimeGraph.playback,
-        subtitles: runtimeGraph.subtitles,
+        subtitles: subtitleService ?? runtimeGraph.subtitles,
         timer: runtimeGraph.timer,
         notifications: runtimeGraph.notifications,
         settings: runtimeGraph.settings,
@@ -297,22 +299,26 @@ final class AppRuntimeWidgetTestFixture {
 
   SettingsRepository get settings => settingsRepository;
 
-  Widget build(Widget child, {List<Override> overrides = const <Override>[]}) =>
-      buildAppRuntimeTestApp(
-        runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
-        nativePlaybackRepository: nativePlaybackRepository,
-        playbackCommandRunner: playbackCommandRunner,
-        libraryService: libraryService,
-        playbackService: playbackService,
-        timerService: timerService,
-        notificationCoordinatorService: notificationCoordinatorService,
-        settingsRepository: settingsRepository,
-        uiOperationService: uiOperationService,
-        languageProvider: languageProvider,
-        overrides: overrides,
-        child: child,
-      );
+  Widget build(
+    Widget child, {
+    PlaybackSubtitleService? subtitleService,
+    List<Override> overrides = const <Override>[],
+  }) => buildAppRuntimeTestApp(
+    runtimeGraph: runtimeGraph,
+    audioDatabaseRepository: audioDatabaseRepository,
+    nativePlaybackRepository: nativePlaybackRepository,
+    playbackCommandRunner: playbackCommandRunner,
+    libraryService: libraryService,
+    playbackService: playbackService,
+    timerService: timerService,
+    notificationCoordinatorService: notificationCoordinatorService,
+    settingsRepository: settingsRepository,
+    uiOperationService: uiOperationService,
+    languageProvider: languageProvider,
+    subtitleService: subtitleService,
+    overrides: overrides,
+    child: child,
+  );
 
   void dispose() {
     languageProvider.dispose();

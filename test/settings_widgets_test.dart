@@ -655,6 +655,34 @@ void main() {
     expect(ratingTile.onChanged, isNull);
   });
 
+  testWidgets('appearance changes playback detail subtitle style', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+
+    final title = find.text(i18n.tr('playback_detail_subtitle_style'));
+    await Scrollable.ensureVisible(tester.element(title), alignment: 0.5);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButton<PlaybackDetailSubtitleStyle>));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.text(i18n.tr('playback_detail_subtitle_style_timeline')).last,
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      harness.settingsRepository.playbackDetailSubtitleStyle,
+      PlaybackDetailSubtitleStyle.timeline,
+    );
+  });
+
   testWidgets('update tile reflects checking and download progress', (
     tester,
   ) async {

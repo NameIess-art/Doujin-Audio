@@ -565,7 +565,6 @@ class _SessionListCard extends ConsumerWidget {
             ),
           ),
         ),
-      ),
     );
   }
 }

@@ -764,6 +764,10 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           padding: const EdgeInsets.symmetric(horizontal: 8),
                           child: Builder(
                             builder: (context) {
+                              final i18n = ProviderScope.containerOf(
+                                context,
+                                listen: false,
+                              ).read(appLanguageProviderInstanceProvider);
                               final subtitles = ref.read(
                                 playbackSubtitleServiceProvider,
                               );

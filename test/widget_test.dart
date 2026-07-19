@@ -16,6 +16,7 @@ import 'package:nameless_audio/features/asmr/application/asmr_library_controller
 import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/features/asmr/presentation/asmr_tab.dart';
+import 'package:nameless_audio/features/library/presentation/library_tab.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
@@ -30,6 +31,7 @@ import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
+import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
@@ -88,8 +90,8 @@ void main() {
     expect(
       find.byWidgetPredicate(
         (widget) =>
-            widget is PageView &&
-            widget.key == const ValueKey<String>('main_page_view'),
+            widget is IndexedStack &&
+            widget.key == const ValueKey<String>('main_page_stack'),
       ),
       findsOneWidget,
     );
@@ -136,6 +138,46 @@ void main() {
     expect(find.text(harness.language.tr('asmr_empty_category')), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'ASMR and library switch atomically while both page states stay mounted',
+    (tester) async {
+      await _pumpAppShell(tester, includePlaybackSession: false);
+
+      final libraryFinder = find.byType(LibraryTab, skipOffstage: false);
+      final asmrFinder = find.byType(AsmrTab, skipOffstage: false);
+      final libraryState = tester.state(libraryFinder);
+      final asmrState = tester.state(asmrFinder);
+      final stackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
+
+      expect(tester.widget<IndexedStack>(stackFinder).children, hasLength(4));
+      expect(find.byType(TopPageHeader), findsOneWidget);
+
+      final asmrDestination = find.byKey(
+        const ValueKey<String>('main_destination_ASMR.ONE'),
+      );
+      await tester.tap(asmrDestination);
+      await tester.pump();
+
+      expect(tester.widget<IndexedStack>(stackFinder).index, 0);
+      expect(find.byType(TopPageHeader), findsOneWidget);
+      expect(tester.state(libraryFinder), same(libraryState));
+      expect(tester.state(asmrFinder), same(asmrState));
+
+      final libraryDestination = find.byKey(
+        const ValueKey<String>('main_destination_nav_library'),
+      );
+      await tester.tap(libraryDestination);
+      await tester.pump();
+
+      expect(tester.widget<IndexedStack>(stackFinder).index, 1);
+      expect(find.byType(TopPageHeader), findsOneWidget);
+      expect(tester.state(libraryFinder), same(libraryState));
+      expect(tester.state(asmrFinder), same(asmrState));
+      await tester.pump(const Duration(milliseconds: 180));
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'ASMR queued empty category shows skeleton until empty is confirmed',
@@ -206,7 +248,7 @@ void main() {
     const overlayKey = ValueKey<String>('main_bootstrap_overlay');
     expect(find.byKey(overlayKey), findsOneWidget);
     expect(
-      find.byKey(const ValueKey<String>('main_page_view')),
+      find.byKey(const ValueKey<String>('main_page_stack')),
       findsOneWidget,
     );
     expect(kBootstrapOverlayDuration, const Duration(milliseconds: 1500));
@@ -287,26 +329,32 @@ void main() {
       tester.view.resetPhysicalSize();
     });
     await _pumpAppShell(tester, includePlaybackSession: false);
+    final libraryState = tester.state(
+      find.byType(LibraryTab, skipOffstage: false),
+    );
+    final asmrState = tester.state(find.byType(AsmrTab, skipOffstage: false));
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
 
-    PageController mainPageController() => tester
-        .widget<PageView>(find.byKey(const ValueKey<String>('main_page_view')))
-        .controller!;
+    IndexedStack mainPageStack() => tester.widget<IndexedStack>(
+      find.byKey(const ValueKey<String>('main_page_stack')),
+    );
 
-    expect(mainPageController().page, 3);
-
-    // Reproduce the controller reset observed while Android reattaches the
-    // responsive PageView during a configuration change.
-    mainPageController().jumpToPage(1);
-    await tester.pump();
-    expect(mainPageController().page, 1);
+    expect(mainPageStack().index, 3);
 
     tester.view.physicalSize = const Size(2400, 1080);
     await tester.pump(const Duration(milliseconds: 32));
     await _pumpMainScreenAnimations(tester);
 
-    expect(mainPageController().page, 3);
+    expect(mainPageStack().index, 3);
+    expect(
+      tester.state(find.byType(LibraryTab, skipOffstage: false)),
+      same(libraryState),
+    );
+    expect(
+      tester.state(find.byType(AsmrTab, skipOffstage: false)),
+      same(asmrState),
+    );
     expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
 
     await tester.tap(
@@ -316,17 +364,21 @@ void main() {
       ),
     );
     await _pumpMainScreenAnimations(tester);
-    expect(mainPageController().page, 0);
-
-    mainPageController().jumpToPage(1);
-    await tester.pump();
-    expect(mainPageController().page, 1);
+    expect(mainPageStack().index, 0);
 
     tester.view.physicalSize = const Size(1080, 2400);
     await tester.pump(const Duration(milliseconds: 32));
     await _pumpMainScreenAnimations(tester);
 
-    expect(mainPageController().page, 0);
+    expect(mainPageStack().index, 0);
+    expect(
+      tester.state(find.byType(LibraryTab, skipOffstage: false)),
+      same(libraryState),
+    );
+    expect(
+      tester.state(find.byType(AsmrTab, skipOffstage: false)),
+      same(asmrState),
+    );
     expect(find.byKey(const ValueKey<String>('main_page_fade_0')), findsOne);
     debugDefaultTargetPlatformOverride = null;
     expect(tester.takeException(), isNull);
@@ -339,13 +391,11 @@ void main() {
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
 
-    PageView mainPageView() => tester
-        .widgetList<PageView>(find.byType(PageView))
-        .firstWhere(
-          (widget) => widget.key == const ValueKey<String>('main_page_view'),
-        );
+    IndexedStack mainPageStack() => tester.widget<IndexedStack>(
+      find.byKey(const ValueKey<String>('main_page_stack')),
+    );
 
-    expect(mainPageView().controller!.page, 3);
+    expect(mainPageStack().index, 3);
     tester.view.viewInsets = const FakeViewPadding(bottom: 600);
     tester.view.physicalSize = const Size(1080, 1800);
     addTearDown(() {
@@ -354,7 +404,7 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 32));
 
-    expect(mainPageView().controller!.page, 3);
+    expect(mainPageStack().index, 3);
     expect(find.byType(ActiveSessionCarousel), findsOneWidget);
     expect(tester.takeException(), isNull);
 
@@ -1094,19 +1144,17 @@ Future<void> _tapAsmrDestination(WidgetTester tester) async {
 }
 
 Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {
-  final pageViewFinder = find.byKey(const ValueKey<String>('main_page_view'));
+  final pageStackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
   for (var frame = 0; frame < 30; frame++) {
     await tester.pump(const Duration(milliseconds: 16));
-    final controller = tester.widget<PageView>(pageViewFinder).controller!;
-    if (controller.hasClients &&
-        ((controller.page ?? controller.initialPage) - targetPage).abs() <
-            0.001) {
+    final stack = tester.widget<IndexedStack>(pageStackFinder);
+    if (stack.index == targetPage) {
       return;
     }
   }
-  final controller = tester.widget<PageView>(pageViewFinder).controller!;
+  final stack = tester.widget<IndexedStack>(pageStackFinder);
   fail(
-    'Main PageController did not reach page $targetPage; '
-    'current page: ${controller.page}.',
+    'Main page stack did not reach page $targetPage; '
+    'current page: ${stack.index}.',
   );
 }

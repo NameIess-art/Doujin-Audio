@@ -67,7 +67,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   int _currentIndex = 1;
   bool _isMenuCollapsed = false;
   late final List<Widget> _pages;
-  late final PageController _pageController;
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
@@ -96,7 +95,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   DateTime? _lastOpenedNotificationAt;
   Timer? _metricsRecoveryTimer;
   Size? _lastRecoveredViewSize;
-  Orientation? _lastRecoveredOrientation;
   bool _appInForeground = true;
   bool _globalSubtitleOverlayRunning = false;
   bool _globalSubtitleOverlaySyncing = false;
@@ -140,7 +138,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       languageProvider: ref.read(appLanguageProviderInstanceProvider),
       updateService: ref.read(appUpdateServiceProvider),
     );
-    _pageController = PageController(initialPage: _currentIndex);
     _activePageIndex = ValueNotifier<int>(_currentIndex);
     _pages = [
       const AsmrTab(),
@@ -220,7 +217,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     unawaited(_stopGlobalSubtitleOverlay(immediate: true));
     _permissionActionController.dispose();
     _notificationsPlatformService.setOpenSessionHandler(null);
-    _pageController.dispose();
     _activePageIndex.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -266,44 +262,29 @@ class _MainScreenState extends ConsumerState<MainScreen>
     return _currentLogicalViewSize();
   }
 
-  Orientation _orientationForSize(Size size) {
-    return size.width > size.height
-        ? Orientation.landscape
-        : Orientation.portrait;
-  }
-
   void _rememberCurrentViewMetrics() {
-    final size = _currentLogicalViewSize();
-    _lastRecoveredViewSize = size;
-    _lastRecoveredOrientation = _orientationForSize(size);
+    _lastRecoveredViewSize = _currentLogicalViewSize();
   }
 
   bool _hasRecoverableViewMetricChange() {
     if (_isKeyboardVisible) return false;
 
     final size = _currentLogicalViewSize();
-    final orientation = _orientationForSize(size);
     final previousSize = _lastRecoveredViewSize;
-    final previousOrientation = _lastRecoveredOrientation;
 
     _lastRecoveredViewSize = size;
-    _lastRecoveredOrientation = orientation;
 
-    if (previousSize == null || previousOrientation == null) {
+    if (previousSize == null) {
       return false;
     }
 
     return (previousSize.width - size.width).abs() > 0.5 ||
-        (previousSize.height - size.height).abs() > 0.5 ||
-        previousOrientation != orientation;
+        (previousSize.height - size.height).abs() > 0.5;
   }
 
   void _recoverAfterMetricsChange() {
     if (!mounted) return;
     if (_isKeyboardVisible) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _restoreActivePageAfterMetricsChange();
-      });
       return;
     }
 
@@ -311,24 +292,16 @@ class _MainScreenState extends ConsumerState<MainScreen>
       return;
     }
 
-    // The cached view metrics were updated above. Rebuild the layout while
-    // preserving the PageView state and its currently selected page.
+    // Refresh the responsive chrome after the platform view settles. The
+    // persistent page stack keeps each tab's State mounted during this rebuild.
     setState(() {});
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      _restoreActivePageAfterMetricsChange();
       ref
           .read(audioUiWarmupCoordinatorProvider)
           .schedule(currentPageIndex: _currentIndex, immediate: true);
     });
-  }
-
-  void _restoreActivePageAfterMetricsChange() {
-    _activePageIndex.value = _currentIndex;
-    if (_pageController.hasClients) {
-      _pageController.jumpToPage(_currentIndex);
-    }
   }
 
   PlaybackSession? _globalSubtitleOverlaySession(
@@ -523,9 +496,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _currentIndex = index;
     });
     _activePageIndex.value = index;
-    if (_pageController.hasClients) {
-      _pageController.jumpToPage(index);
-    }
     if (index == 0) {
       unawaited(_showAsmrOnlineNoticeOnce());
     }
@@ -647,11 +617,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _currentIndex = startupPage.index;
       _activePageIndex.value = _currentIndex;
       _isDataReady = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _pageController.hasClients) {
-          _pageController.jumpToPage(_currentIndex);
-        }
-      });
     }
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
@@ -679,36 +644,33 @@ class _MainScreenState extends ConsumerState<MainScreen>
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      if (isDesktop)
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          if (isDesktop)
                             _buildDesktopNavigation(
                               context,
                               i18n,
                               visibleSessions,
-                            ),
-                            Expanded(
-                              child: _buildAnimatedBody(isDesktop: true),
-                            ),
-                          ],
-                        )
-                      else
-                        Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            MobileOverlayInset(
+                            )
+                          else
+                            const SizedBox.shrink(),
+                          Expanded(
+                            child: MobileOverlayInset(
                               bottomInset: mobileContentInset,
-                              child: _buildAnimatedBody(isDesktop: false),
+                              child: _buildAnimatedBody(isDesktop: isDesktop),
                             ),
-                            _buildMobileBottomDock(
-                              context,
-                              i18n: i18n,
-                              overlaySessions: visibleSessions,
-                              style: bottomNavigationStyle,
-                              tinyMode: isTinyWindow,
-                            ),
-                          ],
+                          ),
+                        ],
+                      ),
+
+                      if (!isDesktop)
+                        _buildMobileBottomDock(
+                          context,
+                          i18n: i18n,
+                          overlaySessions: visibleSessions,
+                          style: bottomNavigationStyle,
+                          tinyMode: isTinyWindow,
                         ),
 
                       if (_timerOverlayPrimed) const _ImmediateTimerScrim(),

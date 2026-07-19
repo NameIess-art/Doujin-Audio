@@ -39,11 +39,13 @@ extension _MainScreenLayout on _MainScreenState {
         key: ValueKey<String>('main_page_fade_$actualIndex'),
         child: Align(
           alignment: Alignment.topCenter,
-          child: isDesktop
-              ? Padding(
-                  padding: isLandscapeLayout ? EdgeInsets.zero : padding,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
+          child: Padding(
+            padding: isDesktop && !isLandscapeLayout
+                ? padding
+                : EdgeInsets.zero,
+            child: DecoratedBox(
+              decoration: isDesktop
+                  ? BoxDecoration(
                       color: isLandscapeLayout
                           ? cs.surface
                           : cs.surfaceContainerLow,
@@ -83,32 +85,33 @@ extension _MainScreenLayout on _MainScreenState {
                                 offset: const Offset(0, 12),
                               ),
                             ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: isLandscapeLayout
+                    )
+                  : const BoxDecoration(),
+              child: ClipRRect(
+                borderRadius: isDesktop
+                    ? (isLandscapeLayout
                           ? const BorderRadius.only(
                               topLeft: Radius.circular(AppRadius.medium),
                             )
-                          : radius,
-                      clipBehavior: Clip.hardEdge,
-                      child: ColoredBox(
-                        color: cs.surface,
-                        child: RepaintBoundary(child: page),
-                      ),
-                    ),
-                  ),
-                )
-              : RepaintBoundary(child: page),
+                          : radius)
+                    : BorderRadius.zero,
+                clipBehavior: isDesktop ? Clip.hardEdge : Clip.none,
+                child: ColoredBox(
+                  color: isDesktop ? cs.surface : Colors.transparent,
+                  child: RepaintBoundary(child: page),
+                ),
+              ),
+            ),
+          ),
         ),
       );
     }
 
-    return PageView.builder(
-      key: const ValueKey<String>('main_page_view'),
-      controller: _pageController,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: _pages.length,
-      itemBuilder: (context, index) => pageShell(index),
+    return IndexedStack(
+      key: const ValueKey<String>('main_page_stack'),
+      index: _currentIndex,
+      sizing: StackFit.expand,
+      children: List<Widget>.generate(_pages.length, pageShell),
     );
   }
 

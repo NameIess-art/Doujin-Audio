@@ -6,6 +6,9 @@ import '../platform/app_platform.dart';
 import 'app_feedback.dart';
 
 class SwipeRevealCard extends StatefulWidget {
+  static const Color darkDestructiveActionColor = Color(0xFF93000A);
+  static const Color darkPrimaryActionColor = Color(0xFFF08599);
+
   const SwipeRevealCard({
     super.key,
     required this.child,
@@ -327,16 +330,14 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final baseColor =
         widget.color ??
-        (widget.destructive ? cs.errorContainer : cs.primaryContainer);
+        (widget.destructive
+            ? SwipeRevealCard.darkDestructiveActionColor
+            : SwipeRevealCard.darkPrimaryActionColor);
     final isBgDark =
         ThemeData.estimateBrightnessForColor(baseColor) == Brightness.dark;
     final onColor = isBgDark ? Colors.white : Colors.black;
 
-    final paneStartColor = Color.lerp(
-      baseColor,
-      onColor,
-      isDark ? 0.08 : 0.04,
-    )!;
+    final paneStartColor = Color.lerp(baseColor, onColor, 0.08)!;
     final paneEndColor = baseColor;
 
     final accentColor = onColor;

@@ -9,6 +9,11 @@ import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('default reveal colors use the dark theme palette', () {
+    expect(SwipeRevealCard.darkDestructiveActionColor, const Color(0xFF93000A));
+    expect(SwipeRevealCard.darkPrimaryActionColor, const Color(0xFFF08599));
+  });
+
   testWidgets('closed card surface can differ from reveal action color', (
     tester,
   ) async {

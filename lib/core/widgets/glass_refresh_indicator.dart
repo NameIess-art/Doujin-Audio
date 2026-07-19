@@ -157,11 +157,9 @@ class GlassRefreshIndicator extends StatefulWidget {
     this.semanticsValue,
     this.strokeWidth = RefreshProgressIndicator.defaultStrokeWidth,
     this.triggerMode = GlassRefreshIndicatorTriggerMode.onEdge,
-    this.elevation = 2.0,
     required this.child,
   }) : _indicatorType = _IndicatorType.material,
-       onStatusChange = null,
-       assert(elevation >= 0.0);
+       onStatusChange = null;
 
   /// Creates an adaptive [RefreshIndicator] based on whether the target
   /// platform is iOS or macOS, following Material design's
@@ -191,11 +189,9 @@ class GlassRefreshIndicator extends StatefulWidget {
     this.semanticsValue,
     this.strokeWidth = RefreshProgressIndicator.defaultStrokeWidth,
     this.triggerMode = GlassRefreshIndicatorTriggerMode.onEdge,
-    this.elevation = 2.0,
     required this.child,
   }) : _indicatorType = _IndicatorType.adaptive,
-       onStatusChange = null,
-       assert(elevation >= 0.0);
+       onStatusChange = null;
 
   /// Creates a [RefreshIndicator] with no spinner and calls `onRefresh` when
   /// successfully armed by a drag event.
@@ -209,7 +205,6 @@ class GlassRefreshIndicator extends StatefulWidget {
     this.semanticsLabel,
     this.semanticsValue,
     this.triggerMode = GlassRefreshIndicatorTriggerMode.onEdge,
-    this.elevation = 2.0,
     required this.child,
   }) : _indicatorType = _IndicatorType.noSpinner,
        // The following parameters aren't used because [_IndicatorType.noSpinner] is being used,
@@ -219,8 +214,7 @@ class GlassRefreshIndicator extends StatefulWidget {
        edgeOffset = 0.0,
        color = null,
        backgroundColor = null,
-       strokeWidth = 0.0,
-       assert(elevation >= 0.0);
+       strokeWidth = 0.0;
 
   /// The widget below this widget in the tree.
   ///
@@ -309,11 +303,6 @@ class GlassRefreshIndicator extends StatefulWidget {
   ///
   /// Defaults to [GlassRefreshIndicatorTriggerMode.onEdge].
   final GlassRefreshIndicatorTriggerMode triggerMode;
-
-  /// Defines the elevation of the underlying [RefreshIndicator].
-  ///
-  /// Defaults to 2.0.
-  final double elevation;
 
   @override
   GlassRefreshIndicatorState createState() => GlassRefreshIndicatorState();
@@ -734,33 +723,20 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
                           elevation: 0.0,
                         );
 
-                        final Widget materialIndicator = Container(
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              if (widget.elevation > 0)
-                                BoxShadow(
-                                  color: cs.shadow.withValues(alpha: 0.12),
-                                  blurRadius: widget.elevation * 4,
-                                  offset: Offset(0, widget.elevation),
-                                ),
-                            ],
-                          ),
-                          child: RepaintBoundary(
-                            child: ClipOval(
-                              child: BackdropFilter(
-                                filter: ui.ImageFilter.blur(
-                                  sigmaX: 12,
-                                  sigmaY: 12,
-                                ),
-                                child: Container(
-                                  color:
-                                      widget.backgroundColor ??
-                                      cs.surfaceContainerHigh.withValues(
-                                        alpha: 0.6,
-                                      ),
-                                  child: innerIndicator,
-                                ),
+                        final Widget materialIndicator = RepaintBoundary(
+                          child: ClipOval(
+                            child: BackdropFilter(
+                              filter: ui.ImageFilter.blur(
+                                sigmaX: 12,
+                                sigmaY: 12,
+                              ),
+                              child: Container(
+                                color:
+                                    widget.backgroundColor ??
+                                    cs.surfaceContainerHigh.withValues(
+                                      alpha: 0.6,
+                                    ),
+                                child: innerIndicator,
                               ),
                             ),
                           ),

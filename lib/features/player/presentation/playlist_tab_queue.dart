@@ -35,6 +35,9 @@ class _PlaybackQueueCard extends StatelessWidget {
     final activeColor = cardState.queueColorValue == null
         ? cs.primary
         : Color(cardState.queueColorValue!);
+    final revealActionColor = cardState.queueColorValue == null
+        ? SwipeRevealCard.darkPrimaryActionColor
+        : activeColor;
     final hasCustomColor = cardState.queueColorValue != null;
     final isPlaying = cardState.isPlaying;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -69,7 +72,7 @@ class _PlaybackQueueCard extends StatelessWidget {
       key: ValueKey(session.id),
       margin: const EdgeInsets.only(bottom: 6),
       shape: shape,
-      color: activeColor,
+      color: revealActionColor,
       destructive: false,
       primaryActionIcon: Icons.edit_rounded,
       actionLabel: i18n.tr('edit'),

@@ -340,40 +340,22 @@ extension _TimerTabBody on _TimerTabState {
           height: compactHeight,
           child: Padding(
             padding: const EdgeInsets.fromLTRB(6, 4, 6, 6),
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 220),
-              switchInCurve: Curves.easeOutCubic,
-              switchOutCurve: Curves.easeInCubic,
-              transitionBuilder: (child, animation) {
-                final offsetTween = Tween<Offset>(
-                  begin: Offset(showCompactDetail ? 0.04 : -0.04, 0),
-                  end: Offset.zero,
-                );
-                return FadeTransition(
-                  opacity: animation,
-                  child: SlideTransition(
-                    position: offsetTween.animate(animation),
-                    child: child,
-                  ),
-                );
-              },
-              child: KeyedSubtree(
-                key: ValueKey<bool>(showCompactDetail),
-                child: showCompactDetail
-                    ? _buildCompactDetailPage(
-                        context: context,
-                        i18n: i18n,
-                        timer: timer,
-                        timerState: timerSlice,
-                        cs: cs,
-                        timerExpired: timerExpired,
-                        timerWaitingTrigger: timerWaitingTrigger,
-                        timerConfigured: timerConfigured,
-                        pickAutoResumeTime: pickAutoResumeTime,
-                        autoResumeAt: autoResumeCountdownTarget,
-                      )
-                    : buildConfiguratorSection(compactMode: true),
-              ),
+            child: KeyedSubtree(
+              key: ValueKey<bool>(showCompactDetail),
+              child: showCompactDetail
+                  ? _buildCompactDetailPage(
+                      context: context,
+                      i18n: i18n,
+                      timer: timer,
+                      timerState: timerSlice,
+                      cs: cs,
+                      timerExpired: timerExpired,
+                      timerWaitingTrigger: timerWaitingTrigger,
+                      timerConfigured: timerConfigured,
+                      pickAutoResumeTime: pickAutoResumeTime,
+                      autoResumeAt: autoResumeCountdownTarget,
+                    )
+                  : buildConfiguratorSection(compactMode: true),
             ),
           ),
         );

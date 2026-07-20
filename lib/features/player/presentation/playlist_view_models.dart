@@ -340,17 +340,9 @@ PlaylistHeaderState playlistHeaderStateFromSlices(
 List<PlaybackSession> overlaySessionsFromPlaybackState(
   PlaybackStateSliceData playbackState,
 ) {
-  final sessions = playbackState.activeSessions
+  return playbackState.activeSessions
       .where((session) => session.currentTrackPath.isNotEmpty)
       .toList(growable: false);
-  if (playbackState.multiThreadPlaybackEnabled || sessions.isEmpty) {
-    return sessions;
-  }
-  final retainedSession = sessions.firstWhere(
-    (session) => session.effectivePlaying || session.isLoading,
-    orElse: () => sessions.first,
-  );
-  return <PlaybackSession>[retainedSession];
 }
 
 SessionOrderState sessionOrderStateFromPlaybackState(

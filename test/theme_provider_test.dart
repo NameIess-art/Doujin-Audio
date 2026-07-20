@@ -51,6 +51,23 @@ void main() {
     expect(lightTokens.warning, isNot(darkTokens.warning));
   });
 
+  test('disabled ASMR colors follow the normal app color scheme', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+
+    await provider.setDifferentiateAsmrTheme(false);
+
+    for (final theme in <ThemeData>[provider.lightTheme, provider.darkTheme]) {
+      final scheme = theme.colorScheme;
+      final tokens = theme.extension<AppDesignTokens>()!;
+      expect(tokens.asmrAccent, scheme.primary);
+      expect(tokens.onAsmrAccent, scheme.onPrimary);
+      expect(tokens.asmrContainer, scheme.primaryContainer);
+      expect(tokens.onAsmrContainer, scheme.onPrimaryContainer);
+    }
+  });
+
   test('overlay surfaces share the design token radius', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();

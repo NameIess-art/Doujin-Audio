@@ -13,6 +13,7 @@ List<Widget> _buildSettingsAppearanceSection({
     CoverImageResolution.memorySaver: i18n.tr('cover_image_resolution_300'),
     CoverImageResolution.balanced: i18n.tr('cover_image_resolution_600'),
     CoverImageResolution.high: i18n.tr('cover_image_resolution_900'),
+    CoverImageResolution.ultraHigh: i18n.tr('cover_image_resolution_1200'),
     CoverImageResolution.original: i18n.tr('cover_image_resolution_original'),
   };
 

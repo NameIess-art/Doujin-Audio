@@ -725,6 +725,9 @@ void main() {
       isSingle: true,
     );
     await _pumpAppShell(tester, playbackTrack: track);
+    final expectedAccent = Theme.of(
+      tester.element(find.byType(Scaffold).first),
+    ).colorScheme.primary;
     unawaited(
       tester
           .state<NavigatorState>(find.byType(Navigator).first)
@@ -738,6 +741,10 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('segments_pinned_artwork')), findsNothing);
+    final detailThemeContext = tester.element(
+      find.byKey(const ValueKey('session_detail_background_blur')),
+    );
+    expect(Theme.of(detailThemeContext).colorScheme.primary, expectedAccent);
 
     await _settleSessionDetailAsyncWork(tester);
     await tester.pumpWidget(const SizedBox.shrink());

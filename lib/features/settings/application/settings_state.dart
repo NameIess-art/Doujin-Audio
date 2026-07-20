@@ -11,7 +11,7 @@ enum BottomNavigationStyle { capsule, bar }
 
 enum PlaybackDetailSubtitleStyle { compact, timeline }
 
-enum CoverImageResolution { memorySaver, balanced, high, original }
+enum CoverImageResolution { memorySaver, balanced, high, ultraHigh, original }
 
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 

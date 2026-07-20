@@ -20,6 +20,8 @@ int? coverCacheWidthForResolution(CoverImageResolution resolution) {
       return 600;
     case CoverImageResolution.high:
       return 900;
+    case CoverImageResolution.ultraHigh:
+      return 1200;
     case CoverImageResolution.original:
       return null;
   }

@@ -106,6 +106,7 @@ void main() {
 
   test('cover cache width follows explicit resolution', () {
     expect(coverCacheWidth(resolution: CoverImageResolution.high), 900);
+    expect(coverCacheWidth(resolution: CoverImageResolution.ultraHigh), 1200);
     expect(coverCacheWidth(resolution: CoverImageResolution.original), isNull);
   });
 

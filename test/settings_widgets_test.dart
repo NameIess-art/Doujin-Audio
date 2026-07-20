@@ -692,6 +692,36 @@ void main() {
     );
   });
 
+  testWidgets('appearance offers the 1200px cover resolution', (tester) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+
+    final title = find.text(i18n.tr('cover_image_resolution'));
+    await Scrollable.ensureVisible(tester.element(title), alignment: 0.5);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButton<CoverImageResolution>));
+    await tester.pumpAndSettle();
+
+    expect(find.text('300px'), findsWidgets);
+    expect(find.text('600px'), findsWidgets);
+    expect(find.text('900px'), findsWidgets);
+    expect(find.text('1200px'), findsOneWidget);
+    expect(find.text('原画'), findsOneWidget);
+
+    await tester.tap(find.text('1200px'));
+    await tester.pumpAndSettle();
+    expect(
+      harness.settingsRepository.coverImageResolution,
+      CoverImageResolution.ultraHigh,
+    );
+  });
+
   testWidgets('update tile reflects checking and download progress', (
     tester,
   ) async {

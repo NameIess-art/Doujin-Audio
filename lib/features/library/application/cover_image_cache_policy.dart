@@ -65,6 +65,11 @@ CoverImageCacheBudget coverImageCacheBudgetForResolution(
         maximumSize: 180,
         maximumSizeBytes: 96 * 1024 * 1024,
       );
+    case CoverImageResolution.ultraHigh:
+      return const CoverImageCacheBudget(
+        maximumSize: 120,
+        maximumSizeBytes: 96 * 1024 * 1024,
+      );
     case CoverImageResolution.original:
       return const CoverImageCacheBudget(
         maximumSize: 80,

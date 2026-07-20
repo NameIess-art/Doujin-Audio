@@ -500,6 +500,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
 
   ThemeData _detailThemeForTrack(BuildContext context, MusicTrack? track) {
     final base = Theme.of(context);
+    if (track?.remoteMetadataKind != 'asmr.one') return base;
     final tokens = AppDesignTokens.of(context);
     if (identical(_cachedBaseTheme, base) &&
         identical(_cachedDesignTokens, tokens) &&

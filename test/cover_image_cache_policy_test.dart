@@ -25,6 +25,12 @@ void main() {
     );
     expect(
       coverImageCacheBudgetForResolution(
+        CoverImageResolution.ultraHigh,
+      ).maximumSize,
+      120,
+    );
+    expect(
+      coverImageCacheBudgetForResolution(
         CoverImageResolution.original,
       ).maximumSize,
       80,

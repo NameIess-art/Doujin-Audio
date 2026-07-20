@@ -181,7 +181,7 @@ void main() {
     expect(nativeSize, isNot(first));
   });
 
-  test('overlay state keeps one visible session in single-thread playback', () {
+  test('overlay state shows every session in both playback modes', () {
     final paused = session(id: 'paused', path: '/tracks/a.mp3');
     final playing = session(
       id: 'playing',
@@ -191,14 +191,28 @@ void main() {
     addTearDown(paused.dispose);
     addTearDown(playing.dispose);
 
-    final overlay = overlaySessionsFromPlaybackState(
+    final singlePlaybackOverlay = overlaySessionsFromPlaybackState(
       PlaybackStateSliceData(
         activeSessions: [paused, playing],
         playingSessionCount: 1,
       ),
     );
+    final multiPlaybackOverlay = overlaySessionsFromPlaybackState(
+      PlaybackStateSliceData(
+        activeSessions: [paused, playing],
+        playingSessionCount: 1,
+        multiThreadPlaybackEnabled: true,
+      ),
+    );
 
-    expect(overlay.map((session) => session.id), ['playing']);
+    expect(singlePlaybackOverlay.map((session) => session.id), [
+      'paused',
+      'playing',
+    ]);
+    expect(multiPlaybackOverlay.map((session) => session.id), [
+      'paused',
+      'playing',
+    ]);
   });
 
   test('session detail view state tracks only detail page inputs', () {

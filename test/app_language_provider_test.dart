@@ -53,6 +53,30 @@ void main() {
     },
   );
 
+  test(
+    'cover resolution labels use pixel values and localized original',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final provider = AppLanguageProvider();
+      addTearDown(provider.dispose);
+
+      await provider.setLanguage(AppLanguage.zh);
+      expect(provider.tr('cover_image_resolution_300'), '300px');
+      expect(provider.tr('cover_image_resolution_600'), '600px');
+      expect(provider.tr('cover_image_resolution_900'), '900px');
+      expect(provider.tr('cover_image_resolution_1200'), '1200px');
+      expect(provider.tr('cover_image_resolution_original'), '原画');
+
+      await provider.setLanguage(AppLanguage.en);
+      expect(provider.tr('cover_image_resolution_1200'), '1200px');
+      expect(provider.tr('cover_image_resolution_original'), 'Original');
+
+      await provider.setLanguage(AppLanguage.ja);
+      expect(provider.tr('cover_image_resolution_1200'), '1200px');
+      expect(provider.tr('cover_image_resolution_original'), 'オリジナル');
+    },
+  );
+
   testWidgets('interface language defaults to and persists follow system', (
     tester,
   ) async {

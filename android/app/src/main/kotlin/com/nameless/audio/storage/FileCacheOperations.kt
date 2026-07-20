@@ -50,10 +50,12 @@ internal class FileCacheOperations(context: Context) {
         name: String,
         bytes: ByteArray,
         mimeType: String?
-    ): String? {
+    ): Map<String, String>? {
         val savedUri = documentStorage.writeFileBytesToFolder(folder, name, bytes, mimeType)
             ?: return null
-        return covers.cacheUri(Uri.parse(savedUri), name, "$folder/$name")
+        val cachedPath = covers.cacheUri(Uri.parse(savedUri), name, "$folder/$name")
+            ?: return null
+        return mapOf("path" to cachedPath, "sourcePath" to savedUri)
     }
 
     fun ensureFolderPath(folder: String, relativePath: String, overwrite: Boolean): Boolean =
@@ -81,7 +83,12 @@ internal class FileCacheOperations(context: Context) {
     fun resolveVideoFrame(path: String, modifiedAtMs: Long?): String? =
         mediaMetadata.resolveVideoFrame(path, modifiedAtMs)
 
-    fun discoverRootImages(path: String, groupKey: String?, rootFolder: String?, recursive: Boolean): List<String> =
+    fun discoverRootImages(
+        path: String,
+        groupKey: String?,
+        rootFolder: String?,
+        recursive: Boolean
+    ): List<Map<String, String>> =
         covers.discover(path, groupKey, rootFolder, recursive)
 
     fun maxApplicationCacheBytes(): Long = cachePolicy.maxBytes()

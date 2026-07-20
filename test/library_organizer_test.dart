@@ -130,6 +130,41 @@ void main() {
     expect((album.children.single as FolderNode).name, 'Disc');
   });
 
+  test('watched library groups nested audio under the work root', () {
+    const libraryRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3ALibrary';
+    const workRoot = '$libraryRoot::Work';
+    final workTrack = track(
+      '$libraryRoot/document/work-track.wav',
+      groupKey: '$workRoot/Work/音声',
+      groupTitle: '音声',
+    );
+
+    final cards = organizer.buildCardTree(
+      tracks: <MusicTrack>[workTrack],
+      watchedFolders: const <String>[],
+      watchedLibraries: const <String>[libraryRoot],
+      nodeOrder: const <String>[],
+    );
+    final tree = organizer.buildTree(
+      tracks: <MusicTrack>[workTrack],
+      watchedFolders: const <String>[],
+      watchedLibraries: const <String>[libraryRoot],
+      nodeOrder: const <String>[],
+    );
+
+    expect(cards.tree.single.path, workRoot);
+    expect(tree.tree.single.path, workRoot);
+    expect(
+      organizer.rootFolderPath(
+        '$workRoot/Work/音声',
+        const <String>[],
+        watchedLibraries: const <String>[libraryRoot],
+      ),
+      workRoot,
+    );
+  });
+
   test('node order wins over alphabetical order', () {
     final snapshot = organizer.buildTree(
       tracks: <MusicTrack>[

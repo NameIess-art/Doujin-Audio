@@ -380,7 +380,9 @@ void main() {
     final oldTarget = AudioDetailTarget.libraryRootFolder(oldFolder.path);
 
     final saved = await repository.save(
-      AudioDetail.empty(oldTarget).copyWith(cardCoverPath: oldCoverPath),
+      AudioDetail.empty(
+        oldTarget,
+      ).copyWith(cardCoverPath: oldCoverPath, cardCoverSelected: true),
     );
     expect(saved.backupSaved, isTrue);
 
@@ -396,6 +398,7 @@ void main() {
       '${newFolder.path}${Platform.pathSeparator}artwork'
       '${Platform.pathSeparator}selected.jpg',
     );
+    expect(restored.detail.cardCoverSelected, isTrue);
   });
 
   test('derived audio and video covers round-trip through JSON', () async {
@@ -414,9 +417,11 @@ void main() {
       final target = AudioDetailTarget.libraryRootFolder(workFolder.path);
 
       final saved = await repository.save(
-        AudioDetail.empty(
-          target,
-        ).copyWith(workTitle: sourceName, cardCoverPath: cacheFile.path),
+        AudioDetail.empty(target).copyWith(
+          workTitle: sourceName,
+          cardCoverPath: cacheFile.path,
+          cardCoverSelected: true,
+        ),
       );
       expect(saved.backupSaved, isTrue);
       expect(saved.detail.cardCoverPath, isNot(cacheFile.path));
@@ -429,6 +434,7 @@ void main() {
           json.decode(await backupFile.readAsString()) as Map<String, dynamic>;
       final embedded = backup['cardCoverEmbedded'] as Map<String, dynamic>;
       expect(backup['cardCoverRelativePath'], isNull);
+      expect(backup['cardCoverSelected'], isTrue);
       expect(embedded['mimeType'], 'image/png');
       expect(embedded['byteLength'], pngCoverBytes.length);
       expect(base64Decode(embedded['data'] as String), pngCoverBytes);
@@ -439,6 +445,7 @@ void main() {
 
       expect(restored.restoredFromBackup, isTrue);
       expect(restored.detail.workTitle, sourceName);
+      expect(restored.detail.cardCoverSelected, isTrue);
       final restoredCover = File(restored.detail.cardCoverPath!);
       expect(await restoredCover.exists(), isTrue);
       expect(await restoredCover.readAsBytes(), pngCoverBytes);
@@ -547,13 +554,20 @@ void main() {
       final oldTarget = AudioDetailTarget.libraryRootFolder(oldTargetPath);
 
       final saved = await contentRepository.save(
-        AudioDetail.empty(oldTarget).copyWith(cardCoverPath: oldCoverPath),
+        AudioDetail.empty(
+          oldTarget,
+        ).copyWith(cardCoverPath: oldCoverPath, cardCoverSelected: true),
       );
       expect(saved.backupSaved, isTrue);
       expect(
         (json.decode(gateway.backup!)
             as Map<String, dynamic>)['cardCoverRelativePath'],
         'artwork/selected.jpg',
+      );
+      expect(
+        (json.decode(gateway.backup!)
+            as Map<String, dynamic>)['cardCoverEmbedded'],
+        isNull,
       );
 
       final restored = await contentRepository.load(
@@ -562,6 +576,7 @@ void main() {
 
       expect(restored.restoredFromBackup, isTrue);
       expect(restored.detail.cardCoverPath, expectedCoverPath);
+      expect(restored.detail.cardCoverSelected, isTrue);
     },
   );
 
@@ -591,11 +606,23 @@ void main() {
     expect(backup['cardCoverRelativePath'], isNull);
     expect(backup['cardCoverEmbedded'], isA<Map<String, dynamic>>());
 
+    // Portable covers written by older versions did not have a reliable
+    // selection marker. The embedded payload itself remains authoritative.
+    backup['cardCoverSelected'] = false;
+    gateway.backup = json.encode(backup);
+    final upgraded = await contentRepository.load(target);
+    expect(upgraded.detail.cardCoverSelected, isTrue);
+    expect(
+      (await appDatabase.loadAudioDetail(target))?.cardCoverSelected,
+      isTrue,
+    );
+
     await cacheFile.delete();
     await contentRepository.delete(target);
     final restored = await contentRepository.load(target);
 
     expect(restored.restoredFromBackup, isTrue);
+    expect(restored.detail.cardCoverSelected, isTrue);
     expect(
       await File(restored.detail.cardCoverPath!).readAsBytes(),
       pngCoverBytes,

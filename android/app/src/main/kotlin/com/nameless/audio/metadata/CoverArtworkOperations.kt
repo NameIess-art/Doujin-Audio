@@ -41,7 +41,12 @@ internal class CoverArtworkOperations(
         return metadata.resolveEmbeddedCover(trackPath, trackPath)
     }
 
-    fun discover(trackPath: String, groupKey: String?, rootFolder: String?, recursive: Boolean): List<String> {
+    fun discover(
+        trackPath: String,
+        groupKey: String?,
+        rootFolder: String?,
+        recursive: Boolean
+    ): List<Map<String, String>> {
         val documentRoot = when {
             !rootFolder.isNullOrBlank() && rootFolder.startsWith("content://") -> rootFolder
             !groupKey.isNullOrBlank() && groupKey.startsWith("content://") -> groupKey.substringBefore("::")
@@ -51,7 +56,16 @@ internal class CoverArtworkOperations(
             val root = storage.resolveDocumentFileForFolderPath(documentRoot)
             val candidates = root?.let { documentImages(it, recursive) }.orEmpty()
             if (candidates.isNotEmpty()) {
-                return candidates.mapNotNull { cacheDocument(it.file, "$trackPath|${it.path}") }
+                return candidates.mapNotNull { candidate ->
+                    val cachedPath = cacheDocument(
+                        candidate.file,
+                        "$trackPath|${candidate.path}"
+                    ) ?: return@mapNotNull null
+                    mapOf(
+                        "path" to cachedPath,
+                        "sourcePath" to candidate.file.uri.toString()
+                    )
+                }
             }
             val localRoot = storage.contentUriToFilePath(documentRoot)
             if (localRoot != null) return fileImages(localRoot, trackPath, recursive)
@@ -105,7 +119,11 @@ internal class CoverArtworkOperations(
         }
     }
 
-    private fun fileImages(folderPath: String, cacheKey: String, recursive: Boolean): List<String> {
+    private fun fileImages(
+        folderPath: String,
+        cacheKey: String,
+        recursive: Boolean
+    ): List<Map<String, String>> {
         val root = File(folderPath)
         if (!root.isDirectory) return emptyList()
         val files = if (recursive) root.walkTopDown() else root.listFiles().orEmpty().asSequence()
@@ -118,7 +136,10 @@ internal class CoverArtworkOperations(
                 try {
                     if (!output.exists() || output.length() <= 0L) file.copyTo(output, overwrite = true)
                     cachePolicy.touch(output)
-                    output.absolutePath
+                    mapOf(
+                        "path" to output.absolutePath,
+                        "sourcePath" to file.absolutePath
+                    )
                 } catch (_: Exception) {
                     output.delete()
                     null

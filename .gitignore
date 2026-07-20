@@ -74,6 +74,5 @@ work2.json
 /test_duration.dart
 /test_works.json
 
-# Local planning notes and unreferenced presentation assets
-/docs/plans/
-/docs/screenshots/
+# Local documentation and planning assets
+/docs/

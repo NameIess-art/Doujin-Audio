@@ -46,6 +46,14 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
       'INTEGER NOT NULL DEFAULT 0',
     );
   }
+  if (oldVersion < 4) {
+    await _addColumnIfMissing(
+      db,
+      'audio_details',
+      'card_cover_selected',
+      'INTEGER NOT NULL DEFAULT 0',
+    );
+  }
 }
 
 Future<void> _addColumnIfMissing(
@@ -343,6 +351,7 @@ Future<void> _createAudioDetailsTable(Database db) async {
         voice_actors_json TEXT NOT NULL DEFAULT '[]',
         tags_json TEXT NOT NULL DEFAULT '[]',
         card_cover_path TEXT,
+        card_cover_selected INTEGER NOT NULL DEFAULT 0,
         release_date_ms INTEGER NOT NULL DEFAULT 0,
         duration_ms INTEGER NOT NULL DEFAULT 0,
         sales_count INTEGER,

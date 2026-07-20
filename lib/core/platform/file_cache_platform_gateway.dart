@@ -13,6 +13,43 @@ import '../media/path_display.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
 
+class CoverImageReference {
+  const CoverImageReference({
+    required this.displayPath,
+    required this.sourcePath,
+  });
+
+  final String displayPath;
+  final String sourcePath;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is CoverImageReference &&
+          displayPath == other.displayPath &&
+          sourcePath == other.sourcePath;
+
+  @override
+  int get hashCode => Object.hash(displayPath, sourcePath);
+
+  static CoverImageReference? fromPlatformValue(Object? value) {
+    if (value is String) {
+      final path = value.trim();
+      return path.isEmpty
+          ? null
+          : CoverImageReference(displayPath: path, sourcePath: path);
+    }
+    if (value is! Map) return null;
+    final path = value['path']?.toString().trim() ?? '';
+    final sourcePath = value['sourcePath']?.toString().trim() ?? '';
+    if (path.isEmpty) return null;
+    return CoverImageReference(
+      displayPath: path,
+      sourcePath: sourcePath.isEmpty ? path : sourcePath,
+    );
+  }
+}
+
 class FileCachePlatformGateway {
   FileCachePlatformGateway({
     MethodChannel? channel,
@@ -171,7 +208,7 @@ class FileCachePlatformGateway {
     return result.valueOrNull;
   }
 
-  Future<List<String>> discoverRootImages({
+  Future<List<CoverImageReference>> discoverRootImages({
     required String path,
     String? groupKey,
     required String rootFolder,
@@ -192,10 +229,10 @@ class FileCachePlatformGateway {
     }
     final raw = result.valueOrNull;
     return raw
-            ?.map((item) => item?.toString().trim() ?? '')
-            .where((item) => item.isNotEmpty)
+            ?.map(CoverImageReference.fromPlatformValue)
+            .whereType<CoverImageReference>()
             .toList(growable: false) ??
-        const <String>[];
+        const <CoverImageReference>[];
   }
 
   Future<String?> resolveTrackCover({
@@ -312,13 +349,13 @@ class FileCachePlatformGateway {
     return result.valueOrNull ?? false;
   }
 
-  Future<String?> writeFileBytesToFolder({
+  Future<CoverImageReference?> writeFileBytesToFolder({
     required String folder,
     required String name,
     required Uint8List bytes,
     String? mimeType,
   }) async {
-    final result = await _client.invoke<String?>(
+    final result = await _client.invoke<CoverImageReference?>(
       FileCacheMethod.writeFileBytesToFolder,
       arguments: <String, Object?>{
         'folder': folder,
@@ -326,7 +363,7 @@ class FileCachePlatformGateway {
         'bytes': bytes,
         'mimeType': mimeType,
       },
-      decode: (value) => value as String?,
+      decode: CoverImageReference.fromPlatformValue,
     );
     return result.valueOrNull;
   }

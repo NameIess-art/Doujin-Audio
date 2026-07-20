@@ -209,7 +209,7 @@ class DlsiteMetadataService {
     return const <String>[];
   }
 
-  Future<String> downloadCover({
+  Future<CoverImageReference> downloadCover({
     required String coverUrl,
     required String folderPath,
     required String rjCode,
@@ -247,16 +247,16 @@ class DlsiteMetadataService {
       }
       final mimeType =
           response.headers.contentType?.mimeType ?? _coverMimeType(extension);
-      final savedPath = await _fileCacheGateway.writeFileBytesToFolder(
+      final savedCover = await _fileCacheGateway.writeFileBytesToFolder(
         folder: folderPath,
         name: fileName,
         bytes: Uint8List.fromList(bytes),
         mimeType: mimeType,
       );
-      if (savedPath == null || savedPath.isEmpty) {
+      if (savedCover == null) {
         throw const DlsiteMetadataException('Content cover save failed');
       }
-      return savedPath;
+      return savedCover;
     }
 
     final destination = File(path.join(folderPath, fileName));
@@ -273,7 +273,10 @@ class DlsiteMetadataService {
       }
       await sink.flush();
       completed = true;
-      return destination.path;
+      return CoverImageReference(
+        displayPath: destination.path,
+        sourcePath: destination.path,
+      );
     } on TimeoutException {
       throw const DlsiteMetadataException(
         'Cover download timed out',

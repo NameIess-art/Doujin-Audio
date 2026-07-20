@@ -1,8 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/library/application/library_scan_models.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
@@ -95,6 +98,72 @@ void main() {
     },
   );
 
+  test('detail target uses the work root inside a watched library', () async {
+    const libraryRoot =
+        'content://com.android.externalstorage.documents/tree/'
+        'primary%3ADownload%2FASMR.ONE';
+    const firstWork = 'First work';
+    const nestedWork = 'Nested work';
+    final service = LibraryService()..watchedLibraries.add(libraryRoot);
+    final facade = LibraryFacade.create(service: service);
+    addTearDown(facade.dispose);
+
+    for (final track in <MusicTrack>[
+      const MusicTrack(
+        path: '$libraryRoot/document/first.wav',
+        displayName: 'first.wav',
+        groupKey: '$libraryRoot::$firstWork/wav',
+        groupTitle: 'wav',
+        groupSubtitle: '$firstWork/wav',
+        isSingle: false,
+      ),
+      const MusicTrack(
+        path: '$libraryRoot/document/nested.wav',
+        displayName: 'nested.wav',
+        groupKey: '$libraryRoot::$nestedWork/$nestedWork/音声',
+        groupTitle: '音声',
+        groupSubtitle: '$nestedWork/$nestedWork/音声',
+        isSingle: false,
+      ),
+    ]) {
+      expect(
+        facade.audioDetailTargetForTrack(track).targetPath,
+        '$libraryRoot::${track.groupKey.contains(firstWork) ? firstWork : nestedWork}',
+      );
+    }
+  });
+
+  test(
+    'detail operations never pass a child folder to the repository',
+    () async {
+      const libraryRoot =
+          'content://com.android.externalstorage.documents/tree/'
+          'primary%3ADownload%2FASMR.ONE';
+      const workRoot = '$libraryRoot::Work';
+      const childFolder = '$workRoot/Work/音声';
+      final repository = _RecordingAudioDetailRepository();
+      final service = LibraryService()..watchedLibraries.add(libraryRoot);
+      final facade = LibraryFacade.create(
+        service: service,
+        detailCacheService: AudioDetailCacheService(repository: repository),
+      );
+      addTearDown(facade.dispose);
+      final childTarget = AudioDetailTarget.libraryRootFolder(childFolder);
+
+      await facade.loadAudioDetail(childTarget);
+      await facade.saveAudioDetail(
+        AudioDetail.empty(childTarget).copyWith(workTitle: 'Work'),
+      );
+
+      expect(repository.loadedTargets, <AudioDetailTarget>[
+        AudioDetailTarget.libraryRootFolder(workRoot),
+      ]);
+      expect(repository.savedTargets, <AudioDetailTarget>[
+        AudioDetailTarget.libraryRootFolder(workRoot),
+      ]);
+    },
+  );
+
   test(
     'restored roots and tracks rebuild library cards without a scan',
     () async {
@@ -112,7 +181,10 @@ void main() {
       expect(facade.watchedFolders, <String>['/music']);
       expect(facade.watchedLibraries, <String>['/music']);
       expect(facade.library, hasLength(1));
-      expect(facade.libraryCards.single.path, '/music');
+      expect(
+        facade.libraryCards.single.path.replaceAll('\\', '/'),
+        '/music/album',
+      );
       expect(facade.isScanning, isFalse);
     },
   );
@@ -136,5 +208,32 @@ final class _RestoredLibraryRepository extends AudioDatabaseRepository {
   @override
   Future<List<LibraryEntry>> loadAllLibraryEntries() async {
     return const <LibraryEntry>[];
+  }
+}
+
+final class _RecordingAudioDetailRepository extends AudioDetailRepository {
+  _RecordingAudioDetailRepository()
+    : super(databaseRepository: _RestoredLibraryRepository());
+
+  final List<AudioDetailTarget> loadedTargets = <AudioDetailTarget>[];
+  final List<AudioDetailTarget> savedTargets = <AudioDetailTarget>[];
+
+  @override
+  Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
+    loadedTargets.add(target);
+    return AudioDetailLoadResult(detail: AudioDetail.empty(target));
+  }
+
+  @override
+  Future<AudioDetailSaveResult> save(
+    AudioDetail detail, {
+    AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
+  }) async {
+    savedTargets.add(detail.target);
+    return AudioDetailSaveResult(
+      detail: detail,
+      backupAttempted: true,
+      backupSaved: true,
+    );
   }
 }

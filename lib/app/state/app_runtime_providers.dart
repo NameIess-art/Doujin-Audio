@@ -491,9 +491,11 @@ final libraryDetailForTargetProvider =
       ref.watch(libraryCategoryRevisionProvider);
       ref.watch(libraryDetailRevisionProvider);
       final facade = ref.read(libraryFacadeProvider);
+      final canonicalTarget = facade.canonicalAudioDetailTarget(target);
       final snapshot = facade.categorySnapshot;
       final detail =
-          facade.resolvedAudioDetail(target) ?? snapshot?.detailFor(target);
+          facade.resolvedAudioDetail(canonicalTarget) ??
+          snapshot?.detailFor(canonicalTarget);
       return (detail: detail, isLoading: detail == null);
     });
 

@@ -27,8 +27,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 3', () {
-    expect(AppDatabase.schemaVersion, 3);
+  test('schema starts from version 4', () {
+    expect(AppDatabase.schemaVersion, 4);
   });
 
   test('version 3 migration adds audio detail duration', () async {
@@ -46,6 +46,28 @@ void main() {
 
     final columns = await db.rawQuery('PRAGMA table_info(audio_details)');
     expect(columns.map((row) => row['name']), contains('duration_ms'));
+  });
+
+  test('version 4 migration marks existing covers as automatic', () async {
+    await db.execute('DROP TABLE audio_details');
+    await db.execute('''
+      CREATE TABLE audio_details (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        card_cover_path TEXT,
+        duration_ms INTEGER NOT NULL DEFAULT 0
+      )
+    ''');
+
+    await AppDatabase.upgradeSchemaForTest(db, 3, 4);
+
+    final columns = await db.rawQuery('PRAGMA table_info(audio_details)');
+    expect(columns.map((row) => row['name']), contains('card_cover_selected'));
+    final selectedColumn = columns.singleWhere(
+      (row) => row['name'] == 'card_cover_selected',
+    );
+    expect(selectedColumn['dflt_value'], '0');
   });
 
   test(
@@ -922,6 +944,7 @@ void main() {
       voiceActors: const <String>['A', 'B'],
       tags: const <String>['tag'],
       cardCoverPath: '/library/root/cover.jpg',
+      cardCoverSelected: true,
       releaseDate: DateTime(2024, 5, 6),
       duration: const Duration(hours: 1, minutes: 2, seconds: 3),
       salesCount: 1234,
@@ -938,6 +961,7 @@ void main() {
     expect(loaded?.voiceActors, const <String>['A', 'B']);
     expect(loaded?.tags, const <String>['tag']);
     expect(loaded?.cardCoverPath, '/library/root/cover.jpg');
+    expect(loaded?.cardCoverSelected, isTrue);
     expect(loaded?.releaseDate, DateTime(2024, 5, 6));
     expect(loaded?.duration, const Duration(hours: 1, minutes: 2, seconds: 3));
     expect(loaded?.salesCount, 1234);
@@ -959,6 +983,7 @@ void main() {
       final target = AudioDetailTarget.libraryRootFolder('/library/root');
       final detail = AudioDetail.empty(target).copyWith(
         cardCoverPath: '/library/root/cover.jpg',
+        cardCoverSelected: true,
         releaseDate: DateTime(2024, 5, 6),
         duration: const Duration(hours: 1, minutes: 2, seconds: 3),
         salesCount: 1234,
@@ -978,6 +1003,7 @@ void main() {
       expect(restored.salesCount, 1234);
       expect(restored.rating, 4.5);
       expect(restored.cardCoverPath, '/library/root/cover.jpg');
+      expect(restored.cardCoverSelected, isTrue);
 
       final oldRestored = AudioDetail.fromBackupJson(target, {
         'schemaVersion': 1,
@@ -989,6 +1015,7 @@ void main() {
       expect(oldRestored.salesCount, isNull);
       expect(oldRestored.rating, isNull);
       expect(oldRestored.cardCoverPath, isNull);
+      expect(oldRestored.cardCoverSelected, isFalse);
     },
   );
 

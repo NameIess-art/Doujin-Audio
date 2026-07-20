@@ -74,4 +74,35 @@ void main() {
       snapshot.sortedLibraryTracks.map((item) => item.path),
     );
   });
+
+  test('watched library snapshot keeps nested groups under the work root', () {
+    const libraryRoot = '/library';
+    const workRoot = '$libraryRoot/Work';
+    const nestedGroup = '$workRoot/Work/voice';
+    const nestedTrack = '$nestedGroup/track.wav';
+
+    final snapshot = buildLibraryDerivedSnapshot(
+      const LibraryDerivedSnapshotPayload(
+        tracks: <MusicTrack>[
+          MusicTrack(
+            path: nestedTrack,
+            displayName: 'track',
+            groupKey: nestedGroup,
+            groupTitle: 'voice',
+            groupSubtitle: nestedGroup,
+            isSingle: false,
+          ),
+        ],
+        watchedFolders: <String>[],
+        watchedLibraries: <String>[libraryRoot],
+        nodeOrder: <String>[],
+      ),
+    );
+
+    expect(snapshot.cardSnapshot.tree, hasLength(1));
+    expect(
+      snapshot.cardSnapshot.tree.single.path.replaceAll('\\', '/'),
+      workRoot,
+    );
+  });
 }

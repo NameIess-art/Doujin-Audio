@@ -122,7 +122,8 @@ class AudioDetailRepository {
         databaseDetail,
         backupDetail,
       );
-      if (restored.cardCoverPath != databaseDetail.cardCoverPath) {
+      if (restored.cardCoverPath != databaseDetail.cardCoverPath ||
+          restored.cardCoverSelected != databaseDetail.cardCoverSelected) {
         if (_canCommit) {
           await _databaseRepository.upsertAudioDetail(restored);
         }
@@ -208,7 +209,8 @@ class AudioDetailRepository {
         databaseDetail,
         backupDetail,
       );
-      if (restored.cardCoverPath != databaseDetail.cardCoverPath) {
+      if (restored.cardCoverPath != databaseDetail.cardCoverPath ||
+          restored.cardCoverSelected != databaseDetail.cardCoverSelected) {
         detailsToUpsert.add(restored);
       }
       resultsByKey[entry.key] = AudioDetailLoadResult(detail: restored);
@@ -720,7 +722,10 @@ class AudioDetailRepository {
         relativePath,
       );
       if (restoredRelativeCover != null) {
-        return detail.copyWith(cardCoverPath: restoredRelativeCover);
+        return detail.copyWith(
+          cardCoverPath: restoredRelativeCover,
+          cardCoverSelected: true,
+        );
       }
     }
 
@@ -729,7 +734,10 @@ class AudioDetailRepository {
     );
     return embeddedCoverPath == null
         ? detail
-        : detail.copyWith(cardCoverPath: embeddedCoverPath);
+        : detail.copyWith(
+            cardCoverPath: embeddedCoverPath,
+            cardCoverSelected: true,
+          );
   }
 
   String? _restoreRelativeCoverPath(
@@ -926,7 +934,20 @@ class AudioDetailRepository {
     AudioDetail detail,
     AudioDetail? backupDetail,
   ) async {
-    if (!await _needsBackupCoverRestore(detail)) return detail;
+    if (!await _needsBackupCoverRestore(detail)) {
+      final backupCoverPath = backupDetail?.cardCoverPath;
+      if (!detail.cardCoverSelected &&
+          backupDetail?.cardCoverSelected == true &&
+          backupCoverPath != null &&
+          detail.cardCoverPath != null &&
+          PathMatcher.equalsNormalized(
+            backupCoverPath,
+            detail.cardCoverPath!,
+          )) {
+        return detail.copyWith(cardCoverSelected: true);
+      }
+      return detail;
+    }
     final coverPath = detail.cardCoverPath;
     final restoredCoverPath = backupDetail?.cardCoverPath;
     if (restoredCoverPath == null || restoredCoverPath == coverPath) {
@@ -938,7 +959,10 @@ class AudioDetailRepository {
       return detail;
     }
 
-    return detail.copyWith(cardCoverPath: restoredCoverPath);
+    return detail.copyWith(
+      cardCoverPath: restoredCoverPath,
+      cardCoverSelected: backupDetail?.cardCoverSelected ?? false,
+    );
   }
 
   bool _shouldPreferBackup(AudioDetail database, AudioDetail backup) {
@@ -997,6 +1021,9 @@ class AudioDetailRepository {
       cardCoverPath: usablePreferredCover
           ? preferredCover
           : fallback.cardCoverPath,
+      cardCoverSelected: usablePreferredCover
+          ? preferred.cardCoverSelected
+          : fallback.cardCoverSelected,
       releaseDate: preferred.releaseDate ?? fallback.releaseDate,
       duration: preferred.duration ?? fallback.duration,
       salesCount: preferred.salesCount ?? fallback.salesCount,

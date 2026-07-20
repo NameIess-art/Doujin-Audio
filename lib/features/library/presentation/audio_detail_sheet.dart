@@ -608,7 +608,10 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                   ),
                   onCoverSelected: (coverPath) {
                     setState(() {
-                      _detail = _detail?.copyWith(cardCoverPath: coverPath);
+                      _detail = _detail?.copyWith(
+                        cardCoverPath: coverPath,
+                        cardCoverSelected: true,
+                      );
                     });
                   },
                 ),

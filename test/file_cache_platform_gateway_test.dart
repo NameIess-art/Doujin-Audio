@@ -117,8 +117,11 @@ void main() {
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);
       return success(switch (call.method) {
-        FileCacheMethod.discoverRootImages => <String>[
-          ' content://cover-a ',
+        FileCacheMethod.discoverRootImages => <Object?>[
+          <String, String>{
+            'path': ' /cache/cover-a ',
+            'sourcePath': ' content://cover-a ',
+          },
           '',
           'content://cover-b',
         ],
@@ -137,7 +140,16 @@ void main() {
         path: 'content://track',
         rootFolder: 'content://folder',
       ),
-      <String>['content://cover-a', 'content://cover-b'],
+      const <CoverImageReference>[
+        CoverImageReference(
+          displayPath: '/cache/cover-a',
+          sourcePath: 'content://cover-a',
+        ),
+        CoverImageReference(
+          displayPath: 'content://cover-b',
+          sourcePath: 'content://cover-b',
+        ),
+      ],
     );
     expect(
       await gateway.resolveTrackSubtitle(path: 'content://track'),
@@ -154,7 +166,10 @@ void main() {
       calls.add(call);
       return success(switch (call.method) {
         FileCacheMethod.writeAudioDetailBackup => true,
-        FileCacheMethod.writeFileBytesToFolder => 'content://saved',
+        FileCacheMethod.writeFileBytesToFolder => <String, String>{
+          'path': '/cache/saved.jpg',
+          'sourcePath': 'content://saved',
+        },
         _ => null,
       });
     });
@@ -173,7 +188,10 @@ void main() {
         bytes: Uint8List.fromList(<int>[1, 2, 3]),
         mimeType: 'image/jpeg',
       ),
-      'content://saved',
+      const CoverImageReference(
+        displayPath: '/cache/saved.jpg',
+        sourcePath: 'content://saved',
+      ),
     );
     expect(calls.map((call) => call.method), <String>[
       FileCacheMethod.writeAudioDetailBackup,

@@ -160,20 +160,40 @@ class AudioDetailCacheService {
   }
 
   Future<String?> loadCardCoverPath(AudioDetailTarget target) async {
-    return (await load(target)).detail.cardCoverPath;
+    return (await loadCardCoverSelection(target)).path;
+  }
+
+  Future<({String? path, bool selected})> loadCardCoverSelection(
+    AudioDetailTarget target,
+  ) async {
+    final detail = (await load(target)).detail;
+    return (path: detail.cardCoverPath, selected: detail.cardCoverSelected);
   }
 
   Future<String?> saveCardCoverPath(
     AudioDetailTarget target,
-    String? coverPath,
-  ) async {
+    String? coverPath, {
+    bool? selected,
+  }) async {
     final current = (await load(target)).detail;
     final normalizedPath = coverPath?.trim();
     final nextPath = normalizedPath == null || normalizedPath.isEmpty
         ? null
         : normalizedPath;
-    if (current.cardCoverPath == nextPath) return current.cardCoverPath;
-    final result = await save(current.copyWith(cardCoverPath: nextPath));
+    final nextSelected = nextPath == null
+        ? false
+        : selected ??
+              (current.cardCoverPath == nextPath && current.cardCoverSelected);
+    if (current.cardCoverPath == nextPath &&
+        current.cardCoverSelected == nextSelected) {
+      return current.cardCoverPath;
+    }
+    final result = await save(
+      current.copyWith(
+        cardCoverPath: nextPath,
+        cardCoverSelected: nextSelected,
+      ),
+    );
     return result.detail.cardCoverPath;
   }
 

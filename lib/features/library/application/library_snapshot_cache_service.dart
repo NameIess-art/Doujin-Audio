@@ -17,11 +17,13 @@ class LibraryDerivedSnapshotPayload {
   const LibraryDerivedSnapshotPayload({
     required this.tracks,
     required this.watchedFolders,
+    this.watchedLibraries = const <String>[],
     required this.nodeOrder,
   });
 
   final List<MusicTrack> tracks;
   final List<String> watchedFolders;
+  final List<String> watchedLibraries;
   final List<String> nodeOrder;
 }
 
@@ -71,6 +73,7 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
   final cardSnapshot = organizer.buildCardTree(
     tracks: sortedTracks,
     watchedFolders: payload.watchedFolders,
+    watchedLibraries: payload.watchedLibraries,
     nodeOrder: payload.nodeOrder,
     tracksAlreadySorted: true,
   );
@@ -170,6 +173,9 @@ class LibrarySnapshotCacheService {
     final payload = _LibraryTreeBuildPayload(
       tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
       watchedFolders: List<String>.unmodifiable(_libraryService.watchedFolders),
+      watchedLibraries: List<String>.unmodifiable(
+        _libraryService.watchedLibraries,
+      ),
       nodeOrder: List<String>.unmodifiable(_libraryService.libraryNodeOrder),
     );
     final future = AppLogService.measureAsync(
@@ -237,6 +243,9 @@ class LibrarySnapshotCacheService {
     final payload = _LibraryTreeBuildPayload(
       tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
       watchedFolders: List<String>.unmodifiable(_libraryService.watchedFolders),
+      watchedLibraries: List<String>.unmodifiable(
+        _libraryService.watchedLibraries,
+      ),
       nodeOrder: List<String>.unmodifiable(_libraryService.libraryNodeOrder),
     );
     final future = AppLogService.measureAsync(
@@ -610,11 +619,13 @@ class _LibraryTreeBuildPayload {
   const _LibraryTreeBuildPayload({
     required this.tracks,
     required this.watchedFolders,
+    required this.watchedLibraries,
     required this.nodeOrder,
   });
 
   final List<MusicTrack> tracks;
   final List<String> watchedFolders;
+  final List<String> watchedLibraries;
   final List<String> nodeOrder;
 }
 
@@ -640,6 +651,7 @@ LibraryTreeSnapshot _buildLibraryTreeFromPayload(
   return const LibraryOrganizer().buildTree(
     tracks: payload.tracks,
     watchedFolders: payload.watchedFolders,
+    watchedLibraries: payload.watchedLibraries,
     nodeOrder: payload.nodeOrder,
   );
 }
@@ -650,6 +662,7 @@ LibraryTreeSnapshot _buildLibraryCardsFromPayload(
   return const LibraryOrganizer().buildCardTree(
     tracks: payload.tracks,
     watchedFolders: payload.watchedFolders,
+    watchedLibraries: payload.watchedLibraries,
     nodeOrder: payload.nodeOrder,
   );
 }

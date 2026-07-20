@@ -70,6 +70,7 @@ class AudioDetail {
     required this.voiceActors,
     required this.tags,
     this.cardCoverPath,
+    this.cardCoverSelected = false,
     this.releaseDate,
     this.duration,
     this.salesCount,
@@ -107,6 +108,7 @@ class AudioDetail {
       voiceActors: _decodeStringList(row['voice_actors_json']),
       tags: _decodeStringList(row['tags_json']),
       cardCoverPath: row['card_cover_path'] as String?,
+      cardCoverSelected: (row['card_cover_selected'] as num?)?.toInt() == 1,
       releaseDate: _dateTimeFromMs(row['release_date_ms']),
       duration: _durationFromMs(row['duration_ms']),
       salesCount: _intOrNull(row['sales_count']),
@@ -148,6 +150,7 @@ class AudioDetail {
             .whereType<String>(),
       ),
       cardCoverPath: json['cardCoverPath'] as String?,
+      cardCoverSelected: json['cardCoverSelected'] == true,
       releaseDate: _backupDate(json, 'releaseDate'),
       duration: _backupDuration(json),
       salesCount: _backupSalesCount(json),
@@ -164,6 +167,7 @@ class AudioDetail {
   final List<String> voiceActors;
   final List<String> tags;
   final String? cardCoverPath;
+  final bool cardCoverSelected;
   final DateTime? releaseDate;
   final Duration? duration;
   final int? salesCount;
@@ -207,6 +211,7 @@ class AudioDetail {
     List<String>? voiceActors,
     List<String>? tags,
     Object? cardCoverPath = _copyUnset,
+    bool? cardCoverSelected,
     Object? releaseDate = _copyUnset,
     Object? duration = _copyUnset,
     Object? salesCount = _copyUnset,
@@ -224,6 +229,7 @@ class AudioDetail {
       cardCoverPath: cardCoverPath == _copyUnset
           ? this.cardCoverPath
           : cardCoverPath as String?,
+      cardCoverSelected: cardCoverSelected ?? this.cardCoverSelected,
       releaseDate: releaseDate == _copyUnset
           ? this.releaseDate
           : releaseDate as DateTime?,
@@ -257,6 +263,8 @@ class AudioDetail {
       cardCoverPath: cardCoverPath?.trim().isEmpty == true
           ? null
           : cardCoverPath?.trim(),
+      cardCoverSelected:
+          cardCoverPath?.trim().isNotEmpty == true && cardCoverSelected,
       releaseDate: releaseDate,
       duration: duration,
       salesCount: salesCount,
@@ -276,6 +284,7 @@ class AudioDetail {
       'voice_actors_json': json.encode(voiceActors),
       'tags_json': json.encode(tags),
       'card_cover_path': cardCoverPath,
+      'card_cover_selected': cardCoverSelected ? 1 : 0,
       'release_date_ms': releaseDate?.millisecondsSinceEpoch ?? 0,
       'duration_ms': duration?.inMilliseconds ?? 0,
       'sales_count': salesCount,
@@ -297,6 +306,7 @@ class AudioDetail {
       'voiceActors': voiceActors,
       'tags': tags,
       'cardCoverPath': cardCoverPath,
+      'cardCoverSelected': cardCoverSelected,
       'releaseDate': releaseDate?.toIso8601String(),
       'durationMs': duration?.inMilliseconds,
       'salesCount': salesCount,

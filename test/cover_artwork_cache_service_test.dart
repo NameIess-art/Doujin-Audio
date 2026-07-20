@@ -498,18 +498,35 @@ void main() {
     'newly saved content cover does not wait for directory discovery',
     () async {
       const folder =
-          'content://com.android.externalstorage.documents/tree/primary%3AMusic::Work';
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/'
+          'document/primary%3AMusic%2FWork';
       const cover = '/cache/downloaded.image';
+      const source =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/'
+          'document/primary%3AMusic%2FWork%2Fdownloaded.jpg';
+      final details = _MemoryAudioDetailCacheService();
       final cache = CoverArtworkCacheService(
         libraryService: LibraryService(),
+        audioDetailCacheService: details,
         fileCacheGateway: _FakeFileCachePlatformGateway(coversByPath: const {}),
       );
       final previousGeneration = cache.generation;
 
-      await cache.setFolderCoverSelection(folder, cover, newlySaved: true);
+      await cache.setFolderCoverSelection(
+        folder,
+        cover,
+        newlySaved: true,
+        sourcePath: source,
+      );
 
       expect(cache.generation, greaterThan(previousGeneration));
       expect(cache.resolvedForFolder(folder), cover);
+      expect(
+        await details.loadCardCoverSelection(
+          AudioDetailTarget.libraryRootFolder(folder),
+        ),
+        (path: source, selected: true),
+      );
     },
   );
 
@@ -546,6 +563,200 @@ void main() {
 
     expect(await restored.futureForFolder(directory.path), cover.path);
   });
+
+  test(
+    'stale folder selection falls back to selected audio detail cover',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_selected_detail_restore_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final cover = File(
+        '${directory.path}${Platform.pathSeparator}restored.jpg',
+      );
+      await cover.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+      final track = _track(
+        path: '${directory.path}${Platform.pathSeparator}track.flac',
+        groupKey: directory.path,
+      );
+      final repository = _MemoryAudioDatabaseRepository();
+      await repository.saveAppSetting(
+        'folder_cover_selections_v1',
+        json.encode(<String, String>{
+          directory.path: '${directory.path}${Platform.pathSeparator}stale.jpg',
+        }),
+      );
+      final details = _MemoryAudioDetailCacheService();
+      await details.saveCardCoverPath(
+        AudioDetailTarget.libraryRootFolder(directory.path),
+        cover.path,
+        selected: true,
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService()..library.add(track),
+        databaseRepository: repository,
+        audioDetailCacheService: details,
+        fileCacheGateway: _FakeFileCachePlatformGateway(coversByPath: const {}),
+      );
+
+      expect(await cache.futureForTrack(track), cover.path);
+      expect(await cache.futureForFolder(directory.path), cover.path);
+    },
+  );
+
+  test('manual folder selection keeps the persisted portable path', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cover_cache_portable_selection_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final source = await _temporaryCoverFile('external_manual_selection');
+    final portable = File(
+      '${directory.path}${Platform.pathSeparator}portable.jpg',
+    );
+    await portable.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+    final track = _track(
+      path: '${directory.path}${Platform.pathSeparator}track.flac',
+      groupKey: directory.path,
+    );
+    final details = _MemoryAudioDetailCacheService(
+      persistedPathOverride: portable.path,
+    );
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService()..library.add(track),
+      audioDetailCacheService: details,
+      fileCacheGateway: _FakeFileCachePlatformGateway(coversByPath: const {}),
+    );
+
+    expect(
+      await cache.setFolderCoverSelection(
+        directory.path,
+        source.path,
+        newlySaved: true,
+      ),
+      portable.path,
+    );
+    expect(await cache.futureForTrack(track), portable.path);
+    expect(
+      await details.loadCardCoverSelection(
+        AudioDetailTarget.libraryRootFolder(directory.path),
+      ),
+      (path: portable.path, selected: true),
+    );
+  });
+
+  test('child folder covers never access audio detail JSON state', () async {
+    const libraryRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3ALibrary';
+    const workRoot = '$libraryRoot::Work';
+    const childFolder = '$workRoot/音声';
+    const childCover = 'content://covers/child.jpg';
+    final details = _MemoryAudioDetailCacheService();
+    final library = LibraryService()
+      ..watchedLibraries.add(libraryRoot)
+      ..library.add(
+        _track(path: '$libraryRoot/document/track.wav', groupKey: childFolder),
+      );
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      audioDetailCacheService: details,
+      fileCacheGateway: _FakeFileCachePlatformGateway(
+        coversByPath: const <String, String>{},
+        discoveredImages: (_) async => const <CoverImageReference>[
+          CoverImageReference(displayPath: childCover, sourcePath: childCover),
+        ],
+      ),
+    );
+
+    expect(await cache.futureForFolder(childFolder), childCover);
+    expect(
+      await cache.setFolderCoverSelection(
+        childFolder,
+        childCover,
+        newlySaved: true,
+      ),
+      childCover,
+    );
+    expect(details.loadedTargets, isEmpty);
+    expect(details.savedTargets, isEmpty);
+  });
+
+  test(
+    'folder image selection persists its source URI instead of cache path',
+    () async {
+      const folder =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/'
+          'document/primary%3AMusic%2FWork';
+      const source =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/'
+          'document/primary%3AMusic%2FWork%2Fimages%2Fcover.png';
+      final cachedCover = await _temporaryCoverFile('source_uri_selection');
+      final details = _MemoryAudioDetailCacheService();
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService(),
+        audioDetailCacheService: details,
+        fileCacheGateway: _FakeFileCachePlatformGateway(
+          coversByPath: const <String, String>{},
+          discoveredImages: (_) async => <CoverImageReference>[
+            CoverImageReference(
+              displayPath: cachedCover.path,
+              sourcePath: source,
+            ),
+          ],
+        ),
+      );
+
+      expect(
+        await cache.setFolderCoverSelection(folder, cachedCover.path),
+        cachedCover.path,
+      );
+      expect(
+        await details.loadCardCoverSelection(
+          AudioDetailTarget.libraryRootFolder(folder),
+        ),
+        (path: source, selected: true),
+      );
+    },
+  );
+
+  test(
+    'persisted source URI resolves to a fresh display cache on re-import',
+    () async {
+      const folder =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/'
+          'document/primary%3AMusic%2FWork';
+      const source =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic/'
+          'document/primary%3AMusic%2FWork%2Fimages%2Fcover.png';
+      final freshCache = await _temporaryCoverFile('source_uri_restore');
+      final target = AudioDetailTarget.libraryRootFolder(folder);
+      final details = _MemoryAudioDetailCacheService()
+        ..seedCardCover(target, source, selected: true);
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService(),
+        audioDetailCacheService: details,
+        fileCacheGateway: _FakeFileCachePlatformGateway(
+          coversByPath: const <String, String>{},
+          discoveredImages: (_) async => <CoverImageReference>[
+            CoverImageReference(
+              displayPath: freshCache.path,
+              sourcePath: source,
+            ),
+          ],
+        ),
+      );
+
+      expect(await cache.futureForFolder(folder), freshCache.path);
+      expect(cache.resolvedForFolder(folder), freshCache.path);
+      expect(await details.loadCardCoverSelection(target), (
+        path: source,
+        selected: true,
+      ));
+    },
+  );
 
   test('resolved folder card cover is reused from the persisted index', () async {
     const root =
@@ -1263,7 +1474,7 @@ void main() {
       const folder = 'content://library/work';
       const automaticCover = 'content://covers/automatic.jpg';
       const manualCover = 'content://covers/manual.jpg';
-      final discovery = Completer<List<String>>();
+      final discovery = Completer<List<CoverImageReference>>();
       final gateway = _FakeFileCachePlatformGateway(
         coversByPath: const <String, String>{},
         discoveredImages: (_) => discovery.future,
@@ -1282,7 +1493,12 @@ void main() {
         manualCover,
         newlySaved: true,
       );
-      discovery.complete(const <String>[automaticCover]);
+      discovery.complete(const <CoverImageReference>[
+        CoverImageReference(
+          displayPath: automaticCover,
+          sourcePath: automaticCover,
+        ),
+      ]);
 
       expect(await automaticLookup, manualCover);
       expect(cache.resolvedForFolder(folder), manualCover);
@@ -1358,7 +1574,8 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
 
   final Map<String, String> coversByPath;
   final Map<String, String> videoFramesByPath;
-  final Future<List<String>> Function(String path)? discoveredImages;
+  final Future<List<CoverImageReference>> Function(String path)?
+  discoveredImages;
   final Future<String?> Function(String path, String? groupKey)?
   resolveTrackCoverHandler;
   final List<String> resolveTrackCoverPaths = <String>[];
@@ -1378,12 +1595,12 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
   }
 
   @override
-  Future<List<String>> discoverRootImages({
+  Future<List<CoverImageReference>> discoverRootImages({
     required String path,
     String? groupKey,
     String? rootFolder,
     bool recursive = true,
-  }) async => discoveredImages?.call(path) ?? const <String>[];
+  }) async => discoveredImages?.call(path) ?? const <CoverImageReference>[];
 
   @override
   Future<String?> resolveVideoFrame({required String path, int? modifiedAtMs}) {
@@ -1408,17 +1625,32 @@ class _MemoryAudioDatabaseRepository extends AudioDatabaseRepository {
 }
 
 class _MemoryAudioDetailCacheService extends AudioDetailCacheService {
-  _MemoryAudioDetailCacheService()
+  _MemoryAudioDetailCacheService({this.persistedPathOverride})
     : super(
         repository: AudioDetailRepository(
           databaseRepository: _MemoryAudioDatabaseRepository(),
         ),
       );
 
+  final String? persistedPathOverride;
+
   final Map<String, String?> _cardCoverPaths = <String, String?>{};
+  final Map<String, bool> _cardCoverSelections = <String, bool>{};
+  final List<AudioDetailTarget> loadedTargets = <AudioDetailTarget>[];
+  final List<AudioDetailTarget> savedTargets = <AudioDetailTarget>[];
 
   String _key(AudioDetailTarget target) =>
       '${target.targetType.dbValue}|${PathMatcher.normalize(target.targetPath)}';
+
+  void seedCardCover(
+    AudioDetailTarget target,
+    String path, {
+    required bool selected,
+  }) {
+    final key = _key(target);
+    _cardCoverPaths[key] = path;
+    _cardCoverSelections[key] = selected;
+  }
 
   @override
   Future<String?> loadCardCoverPath(AudioDetailTarget target) async {
@@ -1426,12 +1658,35 @@ class _MemoryAudioDetailCacheService extends AudioDetailCacheService {
   }
 
   @override
+  Future<({String? path, bool selected})> loadCardCoverSelection(
+    AudioDetailTarget target,
+  ) async {
+    loadedTargets.add(target);
+    final key = _key(target);
+    return (
+      path: _cardCoverPaths[key],
+      selected: _cardCoverSelections[key] ?? false,
+    );
+  }
+
+  @override
   Future<String?> saveCardCoverPath(
     AudioDetailTarget target,
-    String? coverPath,
-  ) async {
-    _cardCoverPaths[_key(target)] = coverPath;
-    return coverPath;
+    String? coverPath, {
+    bool? selected,
+  }) async {
+    savedTargets.add(target);
+    final key = _key(target);
+    final previousPath = _cardCoverPaths[key];
+    final previousSelected = _cardCoverSelections[key] ?? false;
+    final persistedPath = coverPath == null
+        ? null
+        : persistedPathOverride ?? coverPath;
+    _cardCoverPaths[key] = persistedPath;
+    _cardCoverSelections[key] =
+        persistedPath != null &&
+        (selected ?? (previousPath == coverPath && previousSelected));
+    return persistedPath;
   }
 }
 

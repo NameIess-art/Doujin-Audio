@@ -72,7 +72,11 @@ class LibraryService {
   }
 
   List<String> currentTopLevelNodeIds() {
-    return organizer.topLevelNodeIds(library, watchedFolders);
+    return organizer.topLevelNodeIds(
+      library,
+      watchedFolders,
+      watchedLibraries: watchedLibraries,
+    );
   }
 
   void syncLibraryNodeOrder({bool persist = true, VoidCallback? onPersist}) {

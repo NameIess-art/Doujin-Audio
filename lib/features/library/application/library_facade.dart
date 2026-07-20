@@ -343,20 +343,23 @@ final class LibraryFacade implements LibraryCatalog {
   );
 
   Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) =>
-      detailCacheService.load(target);
+      detailCacheService.load(canonicalAudioDetailTarget(target));
 
   Future<AudioDetailSaveResult> saveAudioDetail(
     AudioDetail detail, {
     AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
   }) async {
-    final result = await detailCacheService.save(detail, origin: origin);
+    final result = await detailCacheService.save(
+      detail.copyWith(target: canonicalAudioDetailTarget(detail.target)),
+      origin: origin,
+    );
     snapshotCacheService.markDetailChanged(result.detail);
     _syncStateSlice();
     return result;
   }
 
   Future<void> deleteAudioDetail(AudioDetailTarget target) async {
-    await detailCacheService.delete(target);
+    await detailCacheService.delete(canonicalAudioDetailTarget(target));
     snapshotCacheService.markDetailChanged();
     _syncStateSlice();
   }
@@ -365,7 +368,10 @@ final class LibraryFacade implements LibraryCatalog {
     AudioDetailTarget target,
     String text,
   ) async {
-    final result = await detailCacheService.prefillRjCodeFromText(target, text);
+    final result = await detailCacheService.prefillRjCodeFromText(
+      canonicalAudioDetailTarget(target),
+      text,
+    );
     if (result != null) {
       snapshotCacheService.markDetailChanged(result.detail);
       _syncStateSlice();
@@ -388,10 +394,23 @@ final class LibraryFacade implements LibraryCatalog {
     if (track.isSingle) {
       return AudioDetailTarget.singleAudioFile(track.path);
     }
-    final watchedRoots = List<String>.of(service.watchedFolders)
-      ..sort((a, b) => b.length.compareTo(a.length));
     return AudioDetailTarget.libraryRootFolder(
-      const LibraryOrganizer().rootPathForTrack(track, watchedRoots),
+      const LibraryOrganizer().rootPathForTrack(
+        track,
+        service.watchedFolders,
+        watchedLibraries: service.watchedLibraries,
+      ),
+    );
+  }
+
+  AudioDetailTarget canonicalAudioDetailTarget(AudioDetailTarget target) {
+    if (!target.isLibraryRootFolder) return target;
+    return AudioDetailTarget.libraryRootFolder(
+      const LibraryOrganizer().rootFolderPath(
+        target.targetPath,
+        service.watchedFolders,
+        watchedLibraries: service.watchedLibraries,
+      ),
     );
   }
 
@@ -742,7 +761,7 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   AudioDetail? resolvedAudioDetail(AudioDetailTarget target) =>
-      detailCacheService.resolvedDetail(target);
+      detailCacheService.resolvedDetail(canonicalAudioDetailTarget(target));
   @override
   MusicTrack? trackByPath(String trackPath) => service.trackByPath(trackPath);
 
@@ -815,9 +834,15 @@ final class LibraryFacade implements LibraryCatalog {
     String folderPath,
     String imagePath, {
     bool newlySaved = false,
+    String? sourcePath,
   }) async {
     final storedCoverPath = await coverArtworkCacheService
-        .setFolderCoverSelection(folderPath, imagePath, newlySaved: newlySaved);
+        .setFolderCoverSelection(
+          folderPath,
+          imagePath,
+          newlySaved: newlySaved,
+          sourcePath: sourcePath,
+        );
     _coverChangeHandler?.call();
     return storedCoverPath;
   }
@@ -865,16 +890,18 @@ final class LibraryFacade implements LibraryCatalog {
         nextDetail.target.isLibraryRootFolder &&
         coverUrl != null) {
       try {
-        coverPath = await metadataService.downloadCover(
+        final downloadedCover = await metadataService.downloadCover(
           coverUrl: coverUrl,
           folderPath: nextDetail.target.targetPath,
           rjCode: metadata.rjCode,
           language: language,
         );
+        coverPath = downloadedCover.displayPath;
         await setFolderManualCover(
           nextDetail.target.targetPath,
           coverPath,
           newlySaved: true,
+          sourcePath: downloadedCover.sourcePath,
         );
       } catch (error) {
         coverError = error;
@@ -2301,6 +2328,9 @@ final class LibraryFacade implements LibraryCatalog {
           LibraryDerivedSnapshotPayload(
             tracks: List<MusicTrack>.unmodifiable(service.library),
             watchedFolders: List<String>.unmodifiable(service.watchedFolders),
+            watchedLibraries: List<String>.unmodifiable(
+              service.watchedLibraries,
+            ),
             nodeOrder: List<String>.unmodifiable(service.libraryNodeOrder),
           ),
         ),

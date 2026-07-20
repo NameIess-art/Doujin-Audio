@@ -364,6 +364,7 @@ void main() {
             json.decode(await backupFile.readAsString())
                 as Map<String, dynamic>;
         expect(selectedCoverBackup['cardCoverRelativePath'], 'folder.jpg');
+        expect(selectedCoverBackup['cardCoverSelected'], isTrue);
 
         final updatedTrack = runtimeGraph.library.trackByPath(trackPath);
         expect(updatedTrack?.manualCoverPath, isNull);
@@ -411,6 +412,89 @@ void main() {
             runtimeGraph.library.trackByPath(trackPath),
           ),
           replacementCoverPath,
+        );
+      },
+    );
+
+    test(
+      'removed folder restores its selected cover from JSON when re-added',
+      () async {
+        final workDir = await Directory.systemTemp.createTemp(
+          'folder_cover_reimport_',
+        );
+        addTearDown(() => workDir.delete(recursive: true));
+
+        final trackPath = '${workDir.path}${Platform.pathSeparator}01.mp3';
+        final coverPath = '${workDir.path}${Platform.pathSeparator}cover.jpg';
+        await File(trackPath).writeAsBytes(const <int>[1, 2, 3]);
+        await File(coverPath).writeAsBytes(const <int>[4, 5, 6]);
+        final track = MusicTrack(
+          path: trackPath,
+          displayName: '01',
+          groupKey: workDir.path,
+          groupTitle: 'Work',
+          groupSubtitle: workDir.path,
+          isSingle: false,
+        );
+
+        runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+        runtimeGraph.library.addTracks(
+          <MusicTrack>[track],
+          notify: false,
+          persist: false,
+        );
+        await runtimeGraph.library.setFolderManualCover(
+          workDir.path,
+          coverPath,
+        );
+
+        final backupFile = File(
+          '${workDir.path}${Platform.pathSeparator}'
+          '${AudioDetailRepository.backupFileName}',
+        );
+        expect(await backupFile.exists(), isTrue);
+        final backup =
+            json.decode(await backupFile.readAsString())
+                as Map<String, dynamic>;
+        expect(backup['cardCoverRelativePath'], 'cover.jpg');
+        expect(backup['cardCoverEmbedded'], isNull);
+        await runtimeGraph.library.removeFolderFromLibrary(workDir.path);
+        expect(await db.query('audio_details'), isEmpty);
+
+        await db.delete(
+          'app_kv_settings',
+          where: 'key = ?',
+          whereArgs: const <Object>['folder_cover_selections_v1'],
+        );
+        await runtimeGraph.runtime.dispose();
+        runtimeGraph = createTestRuntimeGraph(
+          notificationService: notificationService,
+          audioDatabaseRepository: AudioDatabaseRepository(
+            database: AppDatabase.test(db),
+          ),
+        );
+        runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+        runtimeGraph.library.addTracks(
+          <MusicTrack>[track],
+          notify: false,
+          persist: false,
+        );
+
+        expect(
+          await runtimeGraph.notifications.coverPathFutureForTrack(track),
+          coverPath,
+        );
+        expect(
+          await runtimeGraph.notifications.coverPathFutureForFolder(
+            workDir.path,
+          ),
+          coverPath,
+        );
+        expect(
+          await runtimeGraph.notifications.playbackCoverPathFutureForTrack(
+            track,
+          ),
+          coverPath,
         );
       },
     );

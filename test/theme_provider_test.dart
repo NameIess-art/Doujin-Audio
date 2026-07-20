@@ -19,6 +19,45 @@ void main() {
     expect(ThemeAccentPreset.values, hasLength(16));
   });
 
+  test('theme presets convert only the light primary palette', () {
+    expect(
+      ThemeAccentPreset.values.map((preset) => preset.primaryColor),
+      const <Color>[
+        Color(0xFFFFB4A9),
+        Color(0xFFFFB2BD),
+        Color(0xFFEBB5ED),
+        Color(0xFFD3BCFD),
+        Color(0xFFBAC3FF),
+        Color(0xFFA1C9FD),
+        Color(0xFF8BD0F0),
+        Color(0xFF83D2E4),
+        Color(0xFF82D5C7),
+        Color(0xFFA2D399),
+        Color(0xFFB0D18B),
+        Color(0xFFC3CD7B),
+        Color(0xFFF0BE6D),
+        Color(0xFFFFB77B),
+        Color(0xFFE7BDB0),
+        Color(0xFFC7C6C6),
+      ],
+    );
+    for (final preset in ThemeAccentPreset.values) {
+      final lightScheme = preset.colorScheme(Brightness.light);
+      final generatedLightScheme = ColorScheme.fromSeed(
+        seedColor: preset.primaryColor,
+      );
+      expect(lightScheme.primary, generatedLightScheme.primary);
+      expect(lightScheme.primary, isNot(preset.primaryColor));
+
+      final darkScheme = preset.colorScheme(Brightness.dark);
+      expect(darkScheme.primary, preset.primaryColor);
+      expect(
+        _contrastRatio(darkScheme.onPrimary, darkScheme.primary),
+        greaterThan(4.5),
+      );
+    }
+  });
+
   test('loads and saves the current theme mode preference', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       'themeMode': 'dark',

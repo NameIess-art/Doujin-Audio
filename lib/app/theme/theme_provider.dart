@@ -24,23 +24,23 @@ enum ThemeAccentPreset {
 }
 
 extension ThemeAccentPresetValue on ThemeAccentPreset {
-  Color get seedColor => switch (this) {
-    ThemeAccentPreset.coral => const Color(0xFFFFA69E),
-    ThemeAccentPreset.rose => const Color(0xFFC94D63),
-    ThemeAccentPreset.pink => const Color(0xFFECA1ED),
-    ThemeAccentPreset.lavender => const Color(0xFFC9A8F5),
-    ThemeAccentPreset.periwinkle => const Color(0xFFAAB9F9),
-    ThemeAccentPreset.blue => const Color(0xFF1D4ED8),
-    ThemeAccentPreset.sky => const Color(0xFF65C7E8),
-    ThemeAccentPreset.cyan => const Color(0xFF5BC8D8),
-    ThemeAccentPreset.mint => const Color(0xFF62CFBE),
-    ThemeAccentPreset.green => const Color(0xFF93D28E),
-    ThemeAccentPreset.lightGreen => const Color(0xFFA5D17D),
-    ThemeAccentPreset.lime => const Color(0xFFCBD36D),
-    ThemeAccentPreset.amber => const Color(0xFFFFB955),
-    ThemeAccentPreset.orange => const Color(0xFFFFAD6B),
-    ThemeAccentPreset.peach => const Color(0xFFF0B5A7),
-    ThemeAccentPreset.gray => const Color(0xFFC4C4C4),
+  Color get primaryColor => switch (this) {
+    ThemeAccentPreset.coral => const Color(0xFFFFB4A9),
+    ThemeAccentPreset.rose => const Color(0xFFFFB2BD),
+    ThemeAccentPreset.pink => const Color(0xFFEBB5ED),
+    ThemeAccentPreset.lavender => const Color(0xFFD3BCFD),
+    ThemeAccentPreset.periwinkle => const Color(0xFFBAC3FF),
+    ThemeAccentPreset.blue => const Color(0xFFA1C9FD),
+    ThemeAccentPreset.sky => const Color(0xFF8BD0F0),
+    ThemeAccentPreset.cyan => const Color(0xFF83D2E4),
+    ThemeAccentPreset.mint => const Color(0xFF82D5C7),
+    ThemeAccentPreset.green => const Color(0xFFA2D399),
+    ThemeAccentPreset.lightGreen => const Color(0xFFB0D18B),
+    ThemeAccentPreset.lime => const Color(0xFFC3CD7B),
+    ThemeAccentPreset.amber => const Color(0xFFF0BE6D),
+    ThemeAccentPreset.orange => const Color(0xFFFFB77B),
+    ThemeAccentPreset.peach => const Color(0xFFE7BDB0),
+    ThemeAccentPreset.gray => const Color(0xFFC7C6C6),
   };
 
   String get labelKey => switch (this) {
@@ -49,7 +49,20 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
   };
 
   ColorScheme colorScheme(Brightness brightness) {
-    return ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);
+    final generated = ColorScheme.fromSeed(
+      seedColor: primaryColor,
+      brightness: brightness,
+    );
+    if (brightness == Brightness.light) return generated;
+    final onPrimary =
+        ThemeData.estimateBrightnessForColor(primaryColor) == Brightness.dark
+        ? Colors.white
+        : const Color(0xFF1B1B1F);
+    return generated.copyWith(
+      primary: primaryColor,
+      onPrimary: onPrimary,
+      surfaceTint: primaryColor,
+    );
   }
 }
 

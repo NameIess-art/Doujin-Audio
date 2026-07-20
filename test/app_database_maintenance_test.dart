@@ -28,6 +28,7 @@ void main() {
         '${tempDirectory.path}${Platform.pathSeparator}audio_player.db';
     final database = await openManagedDatabase();
     await AppDatabase.createSchemaForTest(database);
+    await database.setVersion(AppDatabase.schemaVersion);
     appDatabase = AppDatabase.test(
       database,
       databaseOpener: openManagedDatabase,

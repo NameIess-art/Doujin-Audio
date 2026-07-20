@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/data_support/application/app_backup_service.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   late Directory tempDirectory;
@@ -15,24 +16,23 @@ void main() {
   late int closeCount;
   late int reopenCount;
 
-  setUp(() async {
-    tempDirectory = await Directory.systemTemp.createTemp('app_backup_test_');
-    databaseFile = File('${tempDirectory.path}/audio_player.db');
-    await databaseFile.writeAsString('original database');
-    preferences = <String, Object>{'language': 'zh', 'themeMode': 'dark'};
-    closeCount = 0;
-    reopenCount = 0;
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
   });
-
-  tearDown(() => tempDirectory.delete(recursive: true));
 
   AppBackupService createService({
     Future<void> Function(Map<String, Object?> values)? restorePreferences,
+    Future<void> Function()? reopenDatabase,
   }) {
     return AppBackupService(
       databasePathProvider: () async => databaseFile.path,
       closeDatabase: () async => closeCount++,
-      reopenDatabase: () async => reopenCount++,
+      reopenDatabase:
+          reopenDatabase ??
+          () async {
+            reopenCount++;
+          },
       exportPreferences: () async => Map<String, Object>.from(preferences),
       restorePreferences:
           restorePreferences ??
@@ -45,21 +45,101 @@ void main() {
     );
   }
 
-  Future<void> writePatternFile(File file, int byteCount) async {
-    final chunk = List<int>.generate(64 * 1024, (index) => index & 0xff);
-    final output = await file.open(mode: FileMode.write);
+  Future<void> createDatabase(
+    File file, {
+    required String marker,
+    int payloadBytes = 0,
+    int schemaVersion = AppDatabase.schemaVersion,
+  }) async {
+    if (await file.exists()) await file.delete();
+    final db = await databaseFactoryFfi.openDatabase(file.path);
     try {
-      var remaining = byteCount;
-      while (remaining > 0) {
-        final length = remaining < chunk.length ? remaining : chunk.length;
-        await output.writeFrom(chunk, 0, length);
-        remaining -= length;
+      await AppDatabase.createSchemaForTest(db);
+      await db.setVersion(schemaVersion);
+      await db.insert('app_kv_settings', <String, Object?>{
+        'key': 'test_marker',
+        'value': marker,
+      });
+      if (payloadBytes > 0) {
+        await db.execute('CREATE TABLE backup_test_payload (value BLOB)');
+        await db.rawInsert(
+          'INSERT INTO backup_test_payload(value) VALUES(zeroblob(?))',
+          <Object?>[payloadBytes],
+        );
       }
-      await output.flush();
     } finally {
-      await output.close();
+      await db.close();
     }
   }
+
+  Future<String?> readMarker(File file) async {
+    final db = await databaseFactoryFfi.openDatabase(
+      file.path,
+      options: OpenDatabaseOptions(readOnly: true),
+    );
+    try {
+      final rows = await db.query(
+        'app_kv_settings',
+        columns: <String>['value'],
+        where: 'key = ?',
+        whereArgs: <Object?>['test_marker'],
+        limit: 1,
+      );
+      return rows.isEmpty ? null : rows.single['value'] as String?;
+    } finally {
+      await db.close();
+    }
+  }
+
+  Future<File> replaceBackupDatabase(
+    File backup,
+    List<int> databaseBytes,
+  ) async {
+    final archive = ZipDecoder().decodeBytes(await backup.readAsBytes());
+    final manifest =
+        jsonDecode(
+              utf8.decode(
+                archive.findFile(AppBackupService.manifestEntry)!.content
+                    as List<int>,
+              ),
+            )
+            as Map<String, dynamic>;
+    final entries = manifest['entries'] as Map<String, dynamic>;
+    entries[AppBackupService.databaseEntry] = <String, Object?>{
+      'sha256': sha256.convert(databaseBytes).toString(),
+      'size': databaseBytes.length,
+    };
+    final updated = Archive();
+    for (final file in archive.files) {
+      if (file.name != AppBackupService.databaseEntry &&
+          file.name != AppBackupService.manifestEntry) {
+        updated.addFile(file);
+      }
+    }
+    updated
+      ..addFile(
+        ArchiveFile.bytes(AppBackupService.databaseEntry, databaseBytes),
+      )
+      ..addFile(
+        ArchiveFile.string(
+          AppBackupService.manifestEntry,
+          jsonEncode(manifest),
+        ),
+      );
+    await backup.writeAsBytes(ZipEncoder().encode(updated), flush: true);
+    return backup;
+  }
+
+  setUp(() async {
+    tempDirectory = await Directory.systemTemp.createTemp('app_backup_test_');
+    databaseFile = File('${tempDirectory.path}/audio_player.db');
+    await createDatabase(databaseFile, marker: 'original database');
+    preferences = <String, Object>{'language': 'zh', 'themeMode': 'dark'};
+    closeCount = 0;
+    reopenCount = 0;
+  });
+
+  tearDown(() => tempDirectory.delete(recursive: true));
 
   test('exports and validates a complete backup', () async {
     final service = createService();
@@ -81,7 +161,12 @@ void main() {
     'large database fixture exports validates and restores by stream',
     () async {
       const fixtureBytes = 16 * 1024 * 1024;
-      await writePatternFile(databaseFile, fixtureBytes);
+      await createDatabase(
+        databaseFile,
+        marker: 'large database',
+        payloadBytes: fixtureBytes,
+      );
+      final expectedLength = await databaseFile.length();
       final expectedDigest = await sha256.bind(databaseFile.openRead()).first;
       final service = createService();
 
@@ -89,16 +174,16 @@ void main() {
         '${tempDirectory.path}/large.nalbackup',
       );
       final validation = await service.validateBackup(output.path);
-      await databaseFile.writeAsString('changed');
+      await createDatabase(databaseFile, marker: 'changed');
       final restore = await service.restoreBackup(output.path);
 
       expect(validation.isValid, isTrue);
       expect(
         validation.manifest?.entries[AppBackupService.databaseEntry]?.size,
-        fixtureBytes,
+        expectedLength,
       );
       expect(restore.isValid, isTrue);
-      expect(await databaseFile.length(), fixtureBytes);
+      expect(await databaseFile.length(), expectedLength);
       expect(await sha256.bind(databaseFile.openRead()).first, expectedDigest);
       expect(preferences, containsPair('language', 'zh'));
     },
@@ -118,7 +203,9 @@ void main() {
   });
 
   test('restores legacy backups with a deflate-compressed database', () async {
-    final databaseBytes = utf8.encode('legacy compressed database');
+    final legacyDatabase = File('${tempDirectory.path}/legacy.db');
+    await createDatabase(legacyDatabase, marker: 'legacy compressed database');
+    final databaseBytes = await legacyDatabase.readAsBytes();
     final preferencesBytes = utf8.encode(
       jsonEncode(<String, Object>{'language': 'ja', 'themeMode': 'light'}),
     );
@@ -155,12 +242,12 @@ void main() {
       );
     final backup = File('${tempDirectory.path}/legacy_compressed.nalbackup');
     await backup.writeAsBytes(ZipEncoder().encode(archive), flush: true);
-    await databaseFile.writeAsString('current database');
+    await createDatabase(databaseFile, marker: 'current database');
 
     final result = await createService().restoreBackup(backup.path);
 
     expect(result.isValid, isTrue);
-    expect(await databaseFile.readAsString(), 'legacy compressed database');
+    expect(await readMarker(databaseFile), 'legacy compressed database');
     expect(preferences, containsPair('language', 'ja'));
   });
 
@@ -258,20 +345,105 @@ void main() {
     expect(result.error, 'unsupported_database_version');
   });
 
+  test('rejects corrupt SQLite before replacing current data', () async {
+    final service = createService();
+    final backup = await service.exportBackup(
+      '${tempDirectory.path}/corrupt_database.nalbackup',
+    );
+    await replaceBackupDatabase(backup, utf8.encode('not a sqlite database'));
+    await createDatabase(databaseFile, marker: 'current database');
+    preferences = <String, Object>{'language': 'en'};
+
+    final validation = await service.validateBackup(backup.path);
+    final restore = await service.restoreBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'invalid_database');
+    expect(restore.error, 'invalid_database');
+    expect(await readMarker(databaseFile), 'current database');
+    expect(preferences, containsPair('language', 'en'));
+  });
+
+  test('rejects SQLite without the app schema', () async {
+    final emptyDatabase = File('${tempDirectory.path}/empty.db');
+    final db = await databaseFactoryFfi.openDatabase(emptyDatabase.path);
+    await db.setVersion(AppDatabase.schemaVersion);
+    await db.close();
+    final service = createService();
+    final backup = await service.exportBackup(
+      '${tempDirectory.path}/missing_schema.nalbackup',
+    );
+    await replaceBackupDatabase(backup, await emptyDatabase.readAsBytes());
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'invalid_database');
+  });
+
+  test(
+    'rejects SQLite whose actual schema version differs from manifest',
+    () async {
+      final mismatchedDatabase = File('${tempDirectory.path}/mismatched.db');
+      await createDatabase(
+        mismatchedDatabase,
+        marker: 'mismatched',
+        schemaVersion: AppDatabase.schemaVersion - 1,
+      );
+      final service = createService();
+      final backup = await service.exportBackup(
+        '${tempDirectory.path}/mismatched_schema.nalbackup',
+      );
+      await replaceBackupDatabase(
+        backup,
+        await mismatchedDatabase.readAsBytes(),
+      );
+
+      final validation = await service.validateBackup(backup.path);
+
+      expect(validation.isValid, isFalse);
+      expect(validation.error, 'invalid_database');
+    },
+  );
+
   test('restores database and preferences after validation', () async {
     final service = createService();
     final output = await service.exportBackup(
       '${tempDirectory.path}/backup.nalbackup',
     );
-    await databaseFile.writeAsString('changed database');
+    await createDatabase(databaseFile, marker: 'changed database');
     preferences = <String, Object>{'language': 'en'};
 
     final result = await service.restoreBackup(output.path);
 
     expect(result.isValid, isTrue);
-    expect(await databaseFile.readAsString(), 'original database');
+    expect(await readMarker(databaseFile), 'original database');
     expect(preferences, containsPair('language', 'zh'));
     expect(preferences, containsPair('themeMode', 'dark'));
+    expect(await File('${databaseFile.path}.restore-backup').exists(), isFalse);
+  });
+
+  test('rolls database back when replacement cannot reopen', () async {
+    final output = await createService().exportBackup(
+      '${tempDirectory.path}/reopen_failure.nalbackup',
+    );
+    await createDatabase(databaseFile, marker: 'current database');
+    preferences = <String, Object>{'language': 'en'};
+    var attempts = 0;
+    final service = createService(
+      reopenDatabase: () async {
+        attempts++;
+        if (attempts == 1) throw StateError('open failed');
+      },
+    );
+
+    final result = await service.restoreBackup(output.path);
+
+    expect(result.isValid, isFalse);
+    expect(result.error, 'restore_failed');
+    expect(await readMarker(databaseFile), 'current database');
+    expect(preferences, containsPair('language', 'en'));
+    expect(attempts, 2);
   });
 
   test('rolls database back when restoring preferences fails', () async {
@@ -279,7 +451,7 @@ void main() {
     final output = await exportService.exportBackup(
       '${tempDirectory.path}/backup.nalbackup',
     );
-    await databaseFile.writeAsString('current database');
+    await createDatabase(databaseFile, marker: 'current database');
     preferences = <String, Object>{'language': 'en'};
     var attempts = 0;
     final restoreService = createService(
@@ -295,7 +467,7 @@ void main() {
 
     expect(result.isValid, isFalse);
     expect(result.error, 'restore_failed');
-    expect(await databaseFile.readAsString(), 'current database');
+    expect(await readMarker(databaseFile), 'current database');
     expect(preferences, containsPair('language', 'en'));
   });
 }

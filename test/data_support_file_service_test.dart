@@ -5,10 +5,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/data_support/application/app_backup_service.dart';
 import 'package:nameless_audio/features/data_support/application/data_support_file_service.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:path/path.dart' as path;
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -19,12 +21,17 @@ void main() {
   late Map<String, Object> preferences;
   final defaultFilePicker = FilePickerPlatform.instance;
 
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
+
   setUp(() async {
     temporaryDirectory = await Directory.systemTemp.createTemp(
       'data_support_file_service_test_',
     );
     databaseFile = File(path.join(temporaryDirectory.path, 'audio_player.db'));
-    await databaseFile.writeAsString('original database', flush: true);
+    await _createDatabase(databaseFile, marker: 'original database');
     preferences = <String, Object>{'language': 'zh', 'themeMode': 'dark'};
     FilePickerPlatform.instance = _TestFilePicker();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -102,7 +109,7 @@ void main() {
       final selectedBackup = await backupService.exportBackup(
         path.join(temporaryDirectory.path, 'picked.nalbackup'),
       );
-      await databaseFile.writeAsString('changed database', flush: true);
+      await _createDatabase(databaseFile, marker: 'changed database');
       preferences = <String, Object>{'language': 'en'};
       final picker = _TestFilePicker(selectedFile: selectedBackup);
       FilePickerPlatform.instance = picker;
@@ -114,13 +121,47 @@ void main() {
       final result = await service.pickAndRestoreBackup();
 
       expect(result?.isValid, isTrue);
-      expect(await databaseFile.readAsString(), 'original database');
+      expect(await _readMarker(databaseFile), 'original database');
       expect(preferences, containsPair('language', 'zh'));
       expect(preferences, containsPair('themeMode', 'dark'));
       expect(picker.clearTemporaryFilesCalled, isTrue);
       expect(await selectedBackup.exists(), isFalse);
     },
   );
+}
+
+Future<void> _createDatabase(File file, {required String marker}) async {
+  if (await file.exists()) await file.delete();
+  final db = await databaseFactoryFfi.openDatabase(file.path);
+  try {
+    await AppDatabase.createSchemaForTest(db);
+    await db.setVersion(AppDatabase.schemaVersion);
+    await db.insert('app_kv_settings', <String, Object?>{
+      'key': 'test_marker',
+      'value': marker,
+    });
+  } finally {
+    await db.close();
+  }
+}
+
+Future<String?> _readMarker(File file) async {
+  final db = await databaseFactoryFfi.openDatabase(
+    file.path,
+    options: OpenDatabaseOptions(readOnly: true),
+  );
+  try {
+    final rows = await db.query(
+      'app_kv_settings',
+      columns: <String>['value'],
+      where: 'key = ?',
+      whereArgs: <Object?>['test_marker'],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : rows.single['value'] as String?;
+  } finally {
+    await db.close();
+  }
 }
 
 final class _TestFilePicker extends FilePickerPlatform {

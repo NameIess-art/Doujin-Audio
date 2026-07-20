@@ -4,21 +4,74 @@ import '../../features/settings/application/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 import 'app_design_tokens.dart';
 
+enum ThemeAccentPreset {
+  coral,
+  rose,
+  pink,
+  lavender,
+  periwinkle,
+  blue,
+  sky,
+  cyan,
+  mint,
+  green,
+  lightGreen,
+  lime,
+  amber,
+  orange,
+  peach,
+  gray,
+}
+
+extension ThemeAccentPresetValue on ThemeAccentPreset {
+  Color get color => switch (this) {
+    ThemeAccentPreset.coral => const Color(0xFFFFA69E),
+    ThemeAccentPreset.rose => const Color(0xFFC94D63),
+    ThemeAccentPreset.pink => const Color(0xFFECA1ED),
+    ThemeAccentPreset.lavender => const Color(0xFFC9A8F5),
+    ThemeAccentPreset.periwinkle => const Color(0xFFAAB9F9),
+    ThemeAccentPreset.blue => const Color(0xFF1D4ED8),
+    ThemeAccentPreset.sky => const Color(0xFF65C7E8),
+    ThemeAccentPreset.cyan => const Color(0xFF5BC8D8),
+    ThemeAccentPreset.mint => const Color(0xFF62CFBE),
+    ThemeAccentPreset.green => const Color(0xFF93D28E),
+    ThemeAccentPreset.lightGreen => const Color(0xFFA5D17D),
+    ThemeAccentPreset.lime => const Color(0xFFCBD36D),
+    ThemeAccentPreset.amber => const Color(0xFFFFB955),
+    ThemeAccentPreset.orange => const Color(0xFFFFAD6B),
+    ThemeAccentPreset.peach => const Color(0xFFF0B5A7),
+    ThemeAccentPreset.gray => const Color(0xFFC4C4C4),
+  };
+
+  String get labelKey => switch (this) {
+    ThemeAccentPreset.lightGreen => 'theme_color_light_green',
+    _ => 'theme_color_$name',
+  };
+}
+
 class ThemeProvider with ChangeNotifier {
   static const _themeModeKey = 'themeMode';
+  static const _differentiateAsmrThemeKey = 'differentiateAsmrTheme';
+  static const _appThemeColorKey = 'appThemeColor';
+  static const _asmrThemeColorKey = 'asmrThemeColor';
 
   ThemeMode _themeMode = ThemeMode.system;
   bool _differentiateAsmrTheme = true;
-  late ThemeData _lightTheme = _buildTheme(_lightScheme);
-  late ThemeData _darkTheme = _buildTheme(_darkScheme);
+  ThemeAccentPreset _appThemeColor = ThemeAccentPreset.rose;
+  ThemeAccentPreset _asmrThemeColor = ThemeAccentPreset.blue;
+  late ThemeData _lightTheme;
+  late ThemeData _darkTheme;
 
   ThemeMode get themeMode => _themeMode;
   bool get differentiateAsmrTheme => _differentiateAsmrTheme;
+  ThemeAccentPreset get appThemeColor => _appThemeColor;
+  ThemeAccentPreset get asmrThemeColor => _asmrThemeColor;
   ThemeData get lightTheme => _lightTheme;
   ThemeData get darkTheme => _darkTheme;
 
   ThemeProvider() {
     _loadThemeSync();
+    _rebuildThemes();
   }
 
   void _loadThemeSync() {
@@ -28,7 +81,25 @@ class ThemeProvider with ChangeNotifier {
       orElse: () => ThemeMode.system,
     );
     _differentiateAsmrTheme =
-        AppPreferences.getBoolSync('differentiateAsmrTheme') ?? true;
+        AppPreferences.getBoolSync(_differentiateAsmrThemeKey) ?? true;
+    _appThemeColor = _readThemeColor(
+      AppPreferences.getStringSync(_appThemeColorKey),
+      ThemeAccentPreset.rose,
+    );
+    _asmrThemeColor = _readThemeColor(
+      AppPreferences.getStringSync(_asmrThemeColorKey),
+      ThemeAccentPreset.blue,
+    );
+  }
+
+  ThemeAccentPreset _readThemeColor(
+    String? storedValue,
+    ThemeAccentPreset fallback,
+  ) {
+    return ThemeAccentPreset.values.firstWhere(
+      (preset) => preset.name == storedValue,
+      orElse: () => fallback,
+    );
   }
 
   Future<void> setThemeMode(ThemeMode value) async {
@@ -41,10 +112,46 @@ class ThemeProvider with ChangeNotifier {
   Future<void> setDifferentiateAsmrTheme(bool value) async {
     if (_differentiateAsmrTheme == value) return;
     _differentiateAsmrTheme = value;
-    _lightTheme = _buildTheme(_lightScheme);
-    _darkTheme = _buildTheme(_darkScheme);
+    _rebuildThemes();
     notifyListeners();
-    await AppPreferences.setBool('differentiateAsmrTheme', value);
+    await AppPreferences.setBool(_differentiateAsmrThemeKey, value);
+  }
+
+  Future<void> setAppThemeColor(ThemeAccentPreset value) async {
+    if (_appThemeColor == value) return;
+    _appThemeColor = value;
+    _rebuildThemes();
+    notifyListeners();
+    await AppPreferences.setString(_appThemeColorKey, value.name);
+  }
+
+  Future<void> setAsmrThemeColor(ThemeAccentPreset value) async {
+    if (_asmrThemeColor == value) return;
+    _asmrThemeColor = value;
+    _rebuildThemes();
+    notifyListeners();
+    await AppPreferences.setString(_asmrThemeColorKey, value.name);
+  }
+
+  void _rebuildThemes() {
+    _lightTheme = _buildTheme(_schemeForAccent(_lightScheme, _appThemeColor));
+    _darkTheme = _buildTheme(_schemeForAccent(_darkScheme, _appThemeColor));
+  }
+
+  ColorScheme _schemeForAccent(ColorScheme base, ThemeAccentPreset accent) {
+    if (accent == ThemeAccentPreset.rose) return base;
+    final generated = ColorScheme.fromSeed(
+      seedColor: accent.color,
+      brightness: base.brightness,
+    );
+    return base.copyWith(
+      primary: generated.primary,
+      onPrimary: generated.onPrimary,
+      primaryContainer: generated.primaryContainer,
+      onPrimaryContainer: generated.onPrimaryContainer,
+      inversePrimary: generated.inversePrimary,
+      surfaceTint: generated.surfaceTint,
+    );
   }
 
   static final ColorScheme _lightScheme =
@@ -166,7 +273,24 @@ class ThemeProvider with ChangeNotifier {
         ? AppDesignTokens.dark
         : AppDesignTokens.light;
 
-    if (!_differentiateAsmrTheme) {
+    if (_differentiateAsmrTheme && _asmrThemeColor != ThemeAccentPreset.blue) {
+      final asmrScheme = ColorScheme.fromSeed(
+        seedColor: _asmrThemeColor.color,
+        brightness: scheme.brightness,
+      );
+      tokens = tokens.copyWith(
+        asmrAccent: asmrScheme.primary,
+        asmrContainer: asmrScheme.primaryContainer,
+        onAsmrContainer: asmrScheme.onPrimaryContainer,
+        onAsmrAccent: asmrScheme.onPrimary,
+        asmrSurface: Color.alphaBlend(
+          asmrScheme.primary.withValues(
+            alpha: scheme.brightness == Brightness.dark ? 0.12 : 0.05,
+          ),
+          scheme.surfaceContainerLow,
+        ),
+      );
+    } else if (!_differentiateAsmrTheme) {
       tokens = tokens.copyWith(
         asmrAccent: scheme.primary,
         asmrContainer: scheme.primaryContainer,
@@ -425,6 +549,8 @@ final class ThemeState {
   const ThemeState({
     required this.themeMode,
     required this.differentiateAsmrTheme,
+    required this.appThemeColor,
+    required this.asmrThemeColor,
     required this.lightTheme,
     required this.darkTheme,
   });
@@ -433,6 +559,8 @@ final class ThemeState {
     return ThemeState(
       themeMode: provider.themeMode,
       differentiateAsmrTheme: provider.differentiateAsmrTheme,
+      appThemeColor: provider.appThemeColor,
+      asmrThemeColor: provider.asmrThemeColor,
       lightTheme: provider.lightTheme,
       darkTheme: provider.darkTheme,
     );
@@ -440,6 +568,8 @@ final class ThemeState {
 
   final ThemeMode themeMode;
   final bool differentiateAsmrTheme;
+  final ThemeAccentPreset appThemeColor;
+  final ThemeAccentPreset asmrThemeColor;
   final ThemeData lightTheme;
   final ThemeData darkTheme;
 
@@ -448,6 +578,8 @@ final class ThemeState {
     return other is ThemeState &&
         other.themeMode == themeMode &&
         other.differentiateAsmrTheme == differentiateAsmrTheme &&
+        other.appThemeColor == appThemeColor &&
+        other.asmrThemeColor == asmrThemeColor &&
         identical(other.lightTheme, lightTheme) &&
         identical(other.darkTheme, darkTheme);
   }
@@ -456,6 +588,8 @@ final class ThemeState {
   int get hashCode => Object.hash(
     themeMode,
     differentiateAsmrTheme,
+    appThemeColor,
+    asmrThemeColor,
     identityHashCode(lightTheme),
     identityHashCode(darkTheme),
   );

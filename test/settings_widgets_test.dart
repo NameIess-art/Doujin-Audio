@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/app_language.dart';
 import 'support/runtime_test_models.dart';
@@ -12,6 +13,9 @@ import 'package:nameless_audio/features/settings/application/settings_repository
 import 'package:nameless_audio/features/settings/presentation/settings_tab.dart';
 import 'package:nameless_audio/features/settings/presentation/about_page.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/app/theme/theme_provider.dart';
+import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -720,6 +724,59 @@ void main() {
       harness.settingsRepository.coverImageResolution,
       CoverImageResolution.ultraHigh,
     );
+  });
+
+  testWidgets('appearance selects app and conditional ASMR theme colors', (
+    tester,
+  ) async {
+    await AppPreferences.init();
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+    final themeProvider = ProviderScope.containerOf(
+      tester.element(find.byType(SettingsTab)),
+      listen: false,
+    ).read(themeProviderInstanceProvider);
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('app_theme_color_tile')), findsOneWidget);
+    expect(find.byKey(const ValueKey('asmr_theme_color_tile')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey('app_theme_color_tile')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('theme_color_grid')), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('theme_color_grid')),
+        matching: find.byType(InkWell),
+      ),
+      findsNWidgets(16),
+    );
+    await tester.tap(find.byKey(const ValueKey('theme_color_mint')));
+    await tester.pumpAndSettle();
+    expect(themeProvider.appThemeColor, ThemeAccentPreset.mint);
+
+    final switchTile = find.widgetWithText(
+      SwitchListTile,
+      i18n.tr('differentiate_asmr_theme'),
+    );
+    await tester.tap(switchTile);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('app_theme_color_tile')), findsOneWidget);
+    expect(find.byKey(const ValueKey('asmr_theme_color_tile')), findsNothing);
+
+    await tester.tap(switchTile);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('asmr_theme_color_tile')), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('asmr_theme_color_tile')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('theme_color_orange')));
+    await tester.pumpAndSettle();
+    expect(themeProvider.asmrThemeColor, ThemeAccentPreset.orange);
   });
 
   testWidgets('update tile reflects checking and download progress', (

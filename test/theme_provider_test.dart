@@ -12,7 +12,11 @@ void main() {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();
 
-    expect(ThemeProvider().themeMode, ThemeMode.system);
+    final provider = ThemeProvider();
+    expect(provider.themeMode, ThemeMode.system);
+    expect(provider.appThemeColor, ThemeAccentPreset.rose);
+    expect(provider.asmrThemeColor, ThemeAccentPreset.blue);
+    expect(ThemeAccentPreset.values, hasLength(16));
   });
 
   test('loads and saves the current theme mode preference', () async {
@@ -66,6 +70,74 @@ void main() {
       expect(tokens.asmrContainer, scheme.primaryContainer);
       expect(tokens.onAsmrContainer, scheme.onPrimaryContainer);
     }
+  });
+
+  test('loads and saves app and ASMR theme colors', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'appThemeColor': 'mint',
+      'asmrThemeColor': 'orange',
+    });
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+
+    expect(provider.appThemeColor, ThemeAccentPreset.mint);
+    expect(provider.asmrThemeColor, ThemeAccentPreset.orange);
+
+    await provider.setAppThemeColor(ThemeAccentPreset.lavender);
+    await provider.setAsmrThemeColor(ThemeAccentPreset.green);
+
+    final preferences = await SharedPreferences.getInstance();
+    expect(preferences.getString('appThemeColor'), 'lavender');
+    expect(preferences.getString('asmrThemeColor'), 'green');
+  });
+
+  test('selected app color updates both brightness theme schemes', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+    final previousLightPrimary = provider.lightTheme.colorScheme.primary;
+    final previousDarkPrimary = provider.darkTheme.colorScheme.primary;
+
+    await provider.setAppThemeColor(ThemeAccentPreset.mint);
+
+    final expectedLight = ColorScheme.fromSeed(
+      seedColor: ThemeAccentPreset.mint.color,
+    );
+    final expectedDark = ColorScheme.fromSeed(
+      seedColor: ThemeAccentPreset.mint.color,
+      brightness: Brightness.dark,
+    );
+    expect(provider.lightTheme.colorScheme.primary, expectedLight.primary);
+    expect(provider.darkTheme.colorScheme.primary, expectedDark.primary);
+    expect(
+      provider.lightTheme.colorScheme.primary,
+      isNot(previousLightPrimary),
+    );
+    expect(provider.darkTheme.colorScheme.primary, isNot(previousDarkPrimary));
+  });
+
+  test('selected ASMR color updates independent design tokens', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final provider = ThemeProvider();
+
+    await provider.setAsmrThemeColor(ThemeAccentPreset.amber);
+
+    final expectedLight = ColorScheme.fromSeed(
+      seedColor: ThemeAccentPreset.amber.color,
+    );
+    final expectedDark = ColorScheme.fromSeed(
+      seedColor: ThemeAccentPreset.amber.color,
+      brightness: Brightness.dark,
+    );
+    expect(
+      provider.lightTheme.extension<AppDesignTokens>()!.asmrAccent,
+      expectedLight.primary,
+    );
+    expect(
+      provider.darkTheme.extension<AppDesignTokens>()!.asmrAccent,
+      expectedDark.primary,
+    );
   });
 
   test('overlay surfaces share the design token radius', () async {

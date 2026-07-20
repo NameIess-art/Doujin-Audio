@@ -11,9 +11,11 @@ internal fun shouldProcessVolumeBalance(panning: Float): Boolean = abs(panning) 
 internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
     @Volatile
     var panning: Float = 0f
+    @Volatile
+    var channelSwapEnabled: Boolean = false
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
-        if (!isPanningActive()) return AudioProcessor.AudioFormat.NOT_SET
+        if (!shouldProcessStereo()) return AudioProcessor.AudioFormat.NOT_SET
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT &&
             inputAudioFormat.encoding != C.ENCODING_PCM_FLOAT
         ) {
@@ -25,10 +27,6 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         return inputAudioFormat
     }
 
-    override fun isActive(): Boolean {
-        return isPanningActive() && inputAudioFormat != AudioProcessor.AudioFormat.NOT_SET
-    }
-
     override fun queueInput(inputBuffer: ByteBuffer) {
         val position = inputBuffer.position()
         val limit = inputBuffer.limit()
@@ -37,7 +35,7 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
         val outputBuffer = replaceOutputBuffer(remaining)
         outputBuffer.order(inputBuffer.order())
 
-        if (abs(p) < 0.001f) {
+        if (abs(p) < 0.001f && !channelSwapEnabled) {
             outputBuffer.put(inputBuffer)
             inputBuffer.position(limit)
             outputBuffer.flip()
@@ -52,15 +50,21 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
             while (i + 3 < limit) {
                 val left = inputBuffer.getShort(i)
                 val right = inputBuffer.getShort(i + 2)
-                outputBuffer.putShort(scalePcm16(left, leftMultiplier))
-                outputBuffer.putShort(scalePcm16(right, rightMultiplier))
+                val outputLeft = if (channelSwapEnabled) right else left
+                val outputRight = if (channelSwapEnabled) left else right
+                outputBuffer.putShort(scalePcm16(outputLeft, leftMultiplier))
+                outputBuffer.putShort(scalePcm16(outputRight, rightMultiplier))
                 i += 4
             }
         } else if (inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT) {
             var i = position
             while (i + 7 < limit) {
-                outputBuffer.putFloat(inputBuffer.getFloat(i) * leftMultiplier)
-                outputBuffer.putFloat(inputBuffer.getFloat(i + 4) * rightMultiplier)
+                val left = inputBuffer.getFloat(i)
+                val right = inputBuffer.getFloat(i + 4)
+                val outputLeft = if (channelSwapEnabled) right else left
+                val outputRight = if (channelSwapEnabled) left else right
+                outputBuffer.putFloat(outputLeft * leftMultiplier)
+                outputBuffer.putFloat(outputRight * rightMultiplier)
                 i += 8
             }
         }
@@ -70,6 +74,8 @@ internal class VolumeBalanceAudioProcessor : BaseAudioProcessor() {
     }
 
     private fun isPanningActive(): Boolean = shouldProcessVolumeBalance(panning)
+
+    private fun shouldProcessStereo(): Boolean = isPanningActive() || channelSwapEnabled
 
     private fun scalePcm16(value: Short, multiplier: Float): Short {
         return (value * multiplier)

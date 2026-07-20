@@ -12,6 +12,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Test
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 
 class NativePlaybackSessionStateTest {
     @Test
@@ -263,12 +265,43 @@ class NativePlaybackSessionStateTest {
     @Test
     fun `volume balance processor stays out of default playback path`() {
         val stereo16Bit = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT)
+        val mono16Bit = AudioProcessor.AudioFormat(48000, 1, C.ENCODING_PCM_16BIT)
 
         val defaultProcessor = VolumeBalanceAudioProcessor()
         assertEquals(AudioProcessor.AudioFormat.NOT_SET, defaultProcessor.configure(stereo16Bit))
         assertEquals(false, shouldProcessVolumeBalance(0f))
         assertEquals(false, shouldProcessVolumeBalance(0.0005f))
         assertEquals(true, shouldProcessVolumeBalance(0.5f))
+
+        val monoChannelSwapProcessor = VolumeBalanceAudioProcessor().apply {
+            channelSwapEnabled = true
+        }
+        assertEquals(AudioProcessor.AudioFormat.NOT_SET, monoChannelSwapProcessor.configure(mono16Bit))
+
+        val stereoChannelSwapProcessor = VolumeBalanceAudioProcessor().apply {
+            channelSwapEnabled = true
+        }
+        assertEquals(stereo16Bit, stereoChannelSwapProcessor.configure(stereo16Bit))
+    }
+
+    @Test
+    fun `stereo processor swaps pcm channels without affecting mono configuration`() {
+        val processor = VolumeBalanceAudioProcessor().apply {
+            channelSwapEnabled = true
+        }
+        val stereo16Bit = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT)
+        assertEquals(stereo16Bit, processor.configure(stereo16Bit))
+        processor.flush()
+
+        val input = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+        input.putShort(120)
+        input.putShort((-340).toShort())
+        input.flip()
+        processor.queueInput(input)
+
+        val output = processor.output.order(ByteOrder.nativeOrder())
+        assertEquals((-340).toShort(), output.short)
+        assertEquals(120.toShort(), output.short)
     }
 
     @Test

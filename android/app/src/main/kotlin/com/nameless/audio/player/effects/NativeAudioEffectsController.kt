@@ -4,7 +4,6 @@ import com.nameless.audio.player.session.*
 
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.audio.ChannelMappingAudioProcessor
 import androidx.media3.exoplayer.audio.SilenceSkippingAudioProcessor
 import kotlin.math.abs
 
@@ -14,7 +13,6 @@ internal data class NativeAudioEffectsChange(
 )
 
 internal class NativeAudioEffectsController {
-    private val channelMappingAudioProcessor = ChannelMappingAudioProcessor()
     private val volumeBalanceAudioProcessor = VolumeBalanceAudioProcessor()
 
     var channelSwapEnabled: Boolean = false
@@ -28,20 +26,11 @@ internal class NativeAudioEffectsController {
 
     fun audioProcessors(): Array<AudioProcessor> {
         syncProcessors()
-        return arrayOf(
-            channelMappingAudioProcessor,
-            volumeBalanceAudioProcessor
-        )
+        return arrayOf(volumeBalanceAudioProcessor)
     }
 
     fun applyChannelMap() {
-        channelMappingAudioProcessor.setChannelMap(
-            if (channelSwapEnabled) {
-                intArrayOf(1, 0)
-            } else {
-                intArrayOf(0, 1)
-            }
-        )
+        volumeBalanceAudioProcessor.channelSwapEnabled = channelSwapEnabled
     }
 
     fun apply(effects: NativeAudioEffects): NativeAudioEffectsChange {

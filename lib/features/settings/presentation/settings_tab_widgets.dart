@@ -96,29 +96,12 @@ class _SettingsGroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    final List<Widget> separatedChildren = [];
-    for (int i = 0; i < children.length; i++) {
-      separatedChildren.add(children[i]);
-      if (i < children.length - 1) {
-        separatedChildren.add(const SizedBox(height: 8));
-      }
-    }
-
     return Material(
       type: MaterialType.transparency,
-      child: Container(
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: separatedChildren,
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
       ),
     );
   }

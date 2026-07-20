@@ -4,10 +4,9 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
   const _SessionDetailContent({
     super.key,
     required this.session,
+    required this.artworkWidget,
     this.segmentPanelExpandedNotifier,
     this.isLandscape = false,
-    this.artworkWidget,
-    this.useArtworkConsole = false,
     this.detailPadding = EdgeInsets.zero,
     this.hasSubtitle = false,
     this.subtitleEnabled = true,
@@ -18,10 +17,9 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
   });
 
   final PlaybackSession session;
+  final Widget artworkWidget;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final bool isLandscape;
-  final Widget? artworkWidget;
-  final bool useArtworkConsole;
   final EdgeInsetsGeometry detailPadding;
   final bool hasSubtitle;
   final bool subtitleEnabled;
@@ -61,7 +59,6 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   bool get isSegmentPanelExpanded => _segmentPanelExpanded;
 
   void expandSegmentPanel() {
-    if (widget.useArtworkConsole) return;
     if (_segmentPanelExpanded) return;
     setState(() {
       _segmentPanelExpanded = true;
@@ -70,7 +67,6 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   }
 
   void collapseSegmentPanel() {
-    if (widget.useArtworkConsole) return;
     if (!_segmentPanelExpanded) return;
     setState(() {
       _segmentPanelExpanded = false;
@@ -92,11 +88,6 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   @override
   void didUpdateWidget(covariant _SessionDetailContent oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.useArtworkConsole && _segmentPanelExpanded) {
-      _segmentPanelExpanded = false;
-      _clearSegmentDraft();
-      widget.segmentPanelExpandedNotifier?.value = false;
-    }
     _syncSegmentTrack();
   }
 
@@ -399,30 +390,20 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
         playback: playback,
         paths: paths,
         hasSiblings: hasSiblings,
-        segmentPanelExpanded: _segmentPanelExpanded || widget.useArtworkConsole,
+        segmentPanelExpanded: _segmentPanelExpanded,
         hasSubtitle: widget.hasSubtitle,
         subtitleEnabled: widget.subtitleEnabled,
         subtitleGlobalEnabled: widget.subtitleGlobalEnabled,
         onShowTrackSwitcher: () => _showTrackSwitcher(context),
-        onToggleSegments: widget.useArtworkConsole
-            ? () {}
-            : (_segmentPanelExpanded
-                  ? collapseSegmentPanel
-                  : expandSegmentPanel),
+        onToggleSegments: _segmentPanelExpanded
+            ? collapseSegmentPanel
+            : expandSegmentPanel,
         onToggleSubtitle: widget.onToggleSubtitle,
         onToggleGlobalSubtitle: widget.onToggleGlobalSubtitle,
         onShowAudioDetail: widget.onShowAudioDetail,
       );
     }
 
-    final artworkConsole = widget.useArtworkConsole
-        ? _buildSegmentPanel(
-            playback: playback,
-            session: session,
-            key: const ValueKey('segments_pinned_artwork'),
-            expandToParent: true,
-          )
-        : null;
     final contentColumn = Padding(
       padding: widget.detailPadding,
       child: Column(
@@ -463,7 +444,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
             RepaintBoundary(child: _SessionSubtitlePanel(session: session)),
           RepaintBoundary(child: buildProgressBar()),
           buildTransportControls(),
-          if (!widget.isLandscape && !widget.useArtworkConsole)
+          if (!widget.isLandscape)
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 280),
               switchInCurve: Curves.easeOutCubic,
@@ -495,10 +476,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
           Expanded(
             child: Stack(
               children: [
-                if (artworkConsole != null)
-                  artworkConsole
-                else if (widget.artworkWidget != null)
-                  widget.artworkWidget!,
+                widget.artworkWidget,
                 Positioned.fill(
                   child: AnimatedSwitcher(
                     duration: const Duration(milliseconds: 280),
@@ -513,7 +491,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                         child: FadeTransition(opacity: animation, child: child),
                       );
                     },
-                    child: (_segmentPanelExpanded && !widget.useArtworkConsole)
+                    child: _segmentPanelExpanded
                         ? SizedBox.expand(
                             key: const ValueKey('segments_landscape_container'),
                             child: ClipRRect(
@@ -604,10 +582,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
 
     return Column(
       children: [
-        if (artworkConsole != null)
-          Expanded(child: artworkConsole)
-        else if (widget.artworkWidget != null)
-          Expanded(child: widget.artworkWidget!),
+        Expanded(child: widget.artworkWidget),
         contentColumn,
       ],
     );
@@ -617,7 +592,6 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     required PlaybackFacade playback,
     required PlaybackSession session,
     required Key key,
-    bool expandToParent = false,
   }) {
     return _TimeSegmentPanel(
       key: key,
@@ -643,7 +617,6 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
       onEditEnd: () => _editDraftTime(isStart: false),
       onDelete: _deleteSelectedSegment,
       onToggleLoop: _toggleSelectedSegmentLoop,
-      expandToParent: expandToParent,
       onClose: collapseSegmentPanel,
     );
   }

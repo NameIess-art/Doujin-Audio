@@ -662,6 +662,43 @@ void main() {
     );
   });
 
+  testWidgets('single audio detail uses the standard artwork layout', (
+    tester,
+  ) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    });
+    _setLogicalTestViewSize(tester, const Size(1080, 2400));
+    const track = MusicTrack(
+      path: '/imports/standalone.mp3',
+      displayName: 'Standalone audio',
+      groupKey: '__single_files__',
+      groupTitle: 'Imported files',
+      groupSubtitle: '',
+      isSingle: true,
+    );
+    await _pumpAppShell(tester, playbackTrack: track);
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+    );
+    await tester.pumpAndSettle();
+
+    final detail = find.byType(SessionDetailPage);
+    expect(
+      find.descendant(of: detail, matching: find.byType(AsyncLocalCoverImage)),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('segments_pinned_artwork')), findsNothing);
+
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
+
   testWidgets('ASMR session detail uses ASMR accent theme', (tester) async {
     final previousPlatform = debugDefaultTargetPlatformOverride;
     debugDefaultTargetPlatformOverride = TargetPlatform.android;

@@ -22,7 +22,6 @@ class _TimeSegmentPanel extends StatefulWidget {
     required this.onEditEnd,
     required this.onDelete,
     required this.onToggleLoop,
-    this.expandToParent = false,
     this.onClose,
   });
 
@@ -45,7 +44,6 @@ class _TimeSegmentPanel extends StatefulWidget {
   final VoidCallback onEditEnd;
   final VoidCallback onDelete;
   final VoidCallback onToggleLoop;
-  final bool expandToParent;
   final VoidCallback? onClose;
 
   @override
@@ -174,9 +172,6 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
         ],
       ),
     );
-    if (widget.expandToParent) {
-      return SizedBox.expand(child: content);
-    }
     return SizedBox(height: targetHeight, child: content);
   }
 

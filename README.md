@@ -4,7 +4,7 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 
 当前版本以 [`pubspec.yaml`](pubspec.yaml) 为唯一来源；正式安装包和更新均来自发布页：[GitHub Latest Release](https://github.com/NameIess-art/nameless-audio/releases/latest)。
 
-[MIT License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
+[GPL-3.0 License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
 
 如果 Nameless Audio 对你有帮助，欢迎通过[爱发电](https://ifdian.net/a/nameIess)自愿支持项目的开发与维护。赞助不解锁付费功能，应用主要功能会继续免费提供。
 

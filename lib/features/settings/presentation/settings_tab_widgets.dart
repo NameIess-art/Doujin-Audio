@@ -1,8 +1,8 @@
 part of 'settings_tab.dart';
 
-const double _settingsTileHeight = 52;
-const double _settingsTileTitleFontSize = 16.5;
-const double _settingsTileSubtitleFontSize = 14.0;
+const double _settingsTileHeight = 58;
+const double _settingsTileTitleFontSize = _settingsTileHeight * 18 / 68;
+const double _settingsTileSubtitleFontSize = _settingsTileHeight * 15 / 68;
 const double _settingsDropdownMinWidth = 128;
 const double _settingsDropdownMaxWidth = 180;
 
@@ -53,18 +53,29 @@ Widget _settingsDropdown<T>(
 }
 
 class _SettingsTileTheme extends StatelessWidget {
-  const _SettingsTileTheme({required this.child});
+  const _SettingsTileTheme({required this.child})
+    : minTileHeight = _settingsTileHeight,
+      titleFontSize = _settingsTileTitleFontSize,
+      subtitleFontSize = _settingsTileSubtitleFontSize;
+
+  const _SettingsTileTheme.categories({required this.child})
+    : minTileHeight = 68,
+      titleFontSize = 18,
+      subtitleFontSize = 15;
 
   final Widget child;
+  final double minTileHeight;
+  final double titleFontSize;
+  final double subtitleFontSize;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final titleTextStyle = theme.textTheme.titleMedium?.copyWith(
-      fontSize: _settingsTileTitleFontSize,
+      fontSize: titleFontSize,
     );
     final subtitleTextStyle = theme.textTheme.bodyMedium?.copyWith(
-      fontSize: _settingsTileSubtitleFontSize,
+      fontSize: subtitleFontSize,
     );
 
     return Theme(
@@ -76,7 +87,7 @@ class _SettingsTileTheme extends StatelessWidget {
       ),
       child: ListTileTheme.merge(
         visualDensity: const VisualDensity(horizontal: -1),
-        minTileHeight: _settingsTileHeight,
+        minTileHeight: minTileHeight,
         minVerticalPadding: 4,
         titleTextStyle: titleTextStyle,
         subtitleTextStyle: subtitleTextStyle,
@@ -114,15 +125,16 @@ class _SettingsSectionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.only(bottom: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 6),
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
             child: Text(
               title,
               style: theme.textTheme.titleSmall?.copyWith(
+                fontSize: 15,
                 color: theme.colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w700,
               ),

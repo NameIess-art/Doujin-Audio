@@ -4,7 +4,7 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 
 当前版本以 [`pubspec.yaml`](pubspec.yaml) 为唯一来源；正式安装包和更新均来自发布页：[GitHub Latest Release](https://github.com/NameIess-art/nameless-audio/releases/latest)。
 
-[GPL-3.0 License](LICENSE) · [隐私说明](PRIVACY.md) · [发行质量说明](docs/release-quality.md)
+[GPL-3.0 License](LICENSE) · [隐私说明](PRIVACY.md) · [安全说明](SECURITY.md)
 
 如果 Nameless Audio 对你有帮助，欢迎通过[爱发电](https://ifdian.net/a/nameIess)自愿支持项目的开发与维护。赞助不解锁付费功能，应用主要功能会继续免费提供。
 
@@ -61,7 +61,7 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 - 根据文件树构建层级媒体库，支持自然排序、搜索、刷新扫描、排除目录和手动拖动排序。
 - Android 原生目录扫描支持 chunk 事件回传；添加大型媒体库时按批次合并并提交到现有曲库状态，减少一次性累积大量扫描结果造成的内存峰值。
 - 支持封面发现、单独视频帧封面提取、作品详情编辑、封面候选选择、标题重命名和引用同步。
-- 封面显示按 300px、600px、900px 或原图策略解码，并根据分辨率设置调整 Flutter 图片缓存预算，切换分辨率时会清理旧尺寸缓存。
+- 封面显示按 300px、600px、900px、1200px 或原画策略解码，并根据分辨率设置调整 Flutter 图片缓存预算，切换分辨率时会清理旧尺寸缓存。
 - 文件夹或单文件重命名时会同步更新封面索引，失效路径自动回退到现有发现流程。
 - 详情页选定的封面会保存到数据库和目录内 `nameless-audio.json`：目录图片记录相对路径，音频内嵌封面和视频帧同时保存可恢复的图片数据，移除后重导入或恢复数据时仍会优先显示该封面。
 - 重新导入曲库或恢复 `.nalbackup` 后，会协调数据库与目录内 `nameless-audio.json` 的更新时间并合并缺失字段；恢复前的旧缓存和时长回填任务不会反向覆盖较新的 JSON 信息。
@@ -94,12 +94,12 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 
 ### 设置、数据与更新
 
-- 主题支持跟随系统、浅色和深色；界面支持中文、日文和英文。
+- 主题支持跟随系统、浅色和深色，可选择应用主题颜色；开启“ASMR.ONE 独立配色”后还可单独选择 ASMR.ONE 主题颜色，浅色与深色页面都会随主色融合变化。界面支持中文、日文和英文。
 - 可选择启动页（ASMR.ONE、本地音频库或播放列表）、底部导航样式、竖屏锁定、操作震动和减少动画。
 - 播放详情支持简洁字幕或时间轴字幕；可配置封面清晰度、背景模糊、界面毛玻璃和卡片显示字段。
 - Android 可分别设置耳机或蓝牙断开、短暂音频焦点丢失、通话等中断结束后的播放行为，并可选择启动恢复时继续播放或保持暂停。
 - 播放列表支持创建多个命名队列、拖动排序、编辑队列音频和卡片颜色；默认以作品为单位替换重复会话，也可允许相同作品并存。
-- 支持 `.nalbackup` 数据备份、验证、恢复和失败回滚；恢复失败会自动回滚到当前数据。
+- 支持 `.nalbackup` 数据备份、验证、恢复和失败回滚；本地媒体库只备份原始文件夹、文件和曲库路径，恢复时按这些路径重新导入并按需请求目录权限，避免恢复扫描缓存等派生脏数据；恢复失败会自动回滚到当前数据。
 - 普通 `.nalbackup` 只包含应用偏好和媒体库数据，不导出 ASMR.ONE 密码、JWT 或其他登录凭据；恢复后需要重新登录。
 - “数据与支持”可导出脱敏诊断报告，并提供隐私摘要，便于反馈问题时控制共享范围。
 - 缓存管理覆盖封面、ASMR.ONE 播放缓存、视频帧、更新包和下载临时文件。
@@ -141,8 +141,6 @@ Android 应用内自动更新会按设备 ABI 下载对应的 arm64、armv7 或 
 - `lib/core`：错误、日志、平台网关、SQLite 持久化、共享媒体对象和通用组件。
 - `lib/features`：library、player、ASMR、settings、data-support 和 video-converter 的 domain/application/presentation 代码。
 - Android 原生代码按 `channel`、`scanner`、`storage`、`metadata`、`subtitle`、`update` 和 `player/*` 分包；根包仅保留 `MainActivity`。
-
-详细边界和真实调用链参见 [`docs/architecture.md`](docs/architecture.md)、[`docs/platform-channels.md`](docs/platform-channels.md) 与 [`docs/library-scanning.md`](docs/library-scanning.md)。
 
 ## Android 权限
 

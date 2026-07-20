@@ -853,10 +853,7 @@ void main() {
         matching: find.byType(AsyncLocalCoverImage),
       ),
     );
-    final expectedAccent =
-        Theme.of(detailThemeContext).brightness == Brightness.dark
-        ? AppDesignTokens.dark.asmrAccent
-        : AppDesignTokens.light.asmrAccent;
+    final expectedAccent = AppDesignTokens.of(detailThemeContext).asmrAccent;
     expect(Theme.of(detailThemeContext).colorScheme.primary, expectedAccent);
     expect(backgroundCover.duration, kCoverImageFadeDuration);
     expect(backgroundCover.deferCommitDuringInteraction, isTrue);

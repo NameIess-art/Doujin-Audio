@@ -296,5 +296,5 @@ List<Widget> _buildSettingsGeneralSection({
 }
 
 Widget _settingsIcon(IconData icon, Color color) {
-  return Icon(icon, color: color, size: 24);
+  return Icon(icon, color: color, size: 30);
 }

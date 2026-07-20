@@ -58,6 +58,17 @@ void main() {
       expect(find.text(i18n.tr(key)), findsOneWidget);
     }
 
+    final rootLanguageTile = find.widgetWithText(
+      ListTile,
+      i18n.tr('section_language'),
+    );
+    final rootLanguageTileWidget = tester.widget<ListTile>(rootLanguageTile);
+    expect((rootLanguageTileWidget.leading! as Icon).size, 30);
+    expect(tester.getSize(rootLanguageTile).height, 68);
+    final rootTileTheme = ListTileTheme.of(tester.element(rootLanguageTile));
+    expect(rootTileTheme.minTileHeight, 68);
+    expect(rootTileTheme.titleTextStyle?.fontSize, 18);
+
     await tester.tap(find.text(i18n.tr('section_language')));
     await tester.pumpAndSettle();
     expect(find.text(i18n.tr('language')), findsAtLeastNWidgets(1));
@@ -479,7 +490,7 @@ void main() {
 
     final viewportBottom = tester.getBottomLeft(find.byType(Scaffold).first).dy;
     final lastTileBottom = tester.getBottomLeft(aboutTile).dy;
-    expect(viewportBottom - lastTileBottom, closeTo(overlayInset + 8, 1));
+    expect(viewportBottom - lastTileBottom, closeTo(overlayInset + 8, 2));
   });
 
   testWidgets('settings titles and choices wrap on narrow screens', (

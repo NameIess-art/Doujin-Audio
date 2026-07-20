@@ -204,7 +204,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               padding: EdgeInsets.fromLTRB(16, 80 + 4, 16, bottomInset),
               clipBehavior: Clip.none,
               children: [
-                _SettingsTileTheme(
+                _SettingsTileTheme.categories(
                   child: Column(
                     children: [
                       for (final category in _SettingsCategory.values)
@@ -296,21 +296,12 @@ class _SettingsCategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return _SettingsGroupCard(
-      children: [
-          ListTile(
-            onTap: onTap,
-            leading: _settingsIcon(category.icon, cs.primary),
-            title: _settingsTitle(i18n.tr(category.labelKey)),
-            trailing: Icon(
-              Icons.chevron_right_rounded,
-              color: cs.onSurfaceVariant,
-            ),
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 12,
-            ),
-          ),
-        ],
+    return ListTile(
+      onTap: onTap,
+      leading: _settingsIcon(category.icon, cs.primary),
+      title: _settingsTitle(i18n.tr(category.labelKey)),
+      trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
     );
   }
 }

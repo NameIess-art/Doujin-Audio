@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
@@ -43,6 +44,14 @@ class AudioDetailSaveResult {
   bool get backupFailed => backupAttempted && !backupSaved;
 }
 
+enum AudioDetailSaveOrigin { user, automatic }
+
+final class AudioDetailOperationCancelled implements Exception {
+  const AudioDetailOperationCancelled();
+}
+
+final Object _audioDetailCommitGuardZoneKey = Object();
+
 class AudioDetailRepository {
   AudioDetailRepository({
     AudioDatabaseRepository? databaseRepository,
@@ -64,6 +73,25 @@ class AudioDetailRepository {
   final DateTime Function() _now;
   final Future<Directory> Function() _portableCoverDirectory;
 
+  static Future<T> runWithCommitGuard<T>(
+    bool Function() canCommit,
+    Future<T> Function() operation,
+  ) {
+    return runZoned(
+      operation,
+      zoneValues: <Object, Object>{_audioDetailCommitGuardZoneKey: canCommit},
+    );
+  }
+
+  bool get _canCommit {
+    final guard = Zone.current[_audioDetailCommitGuardZoneKey];
+    return guard is! bool Function() || guard();
+  }
+
+  void _ensureCanCommit() {
+    if (!_canCommit) throw const AudioDetailOperationCancelled();
+  }
+
   static Future<Directory> _defaultPortableCoverDirectory() async {
     final supportDirectory = await getApplicationSupportDirectory();
     return Directory(path.join(supportDirectory.path, 'portable_card_covers'));
@@ -82,7 +110,9 @@ class AudioDetailRepository {
           backupDetail,
           databaseDetail,
         )).normalizedForSave(_now());
-        await _databaseRepository.upsertAudioDetail(restored);
+        if (_canCommit) {
+          await _databaseRepository.upsertAudioDetail(restored);
+        }
         return AudioDetailLoadResult(
           detail: restored,
           restoredFromBackup: true,
@@ -93,7 +123,9 @@ class AudioDetailRepository {
         backupDetail,
       );
       if (restored.cardCoverPath != databaseDetail.cardCoverPath) {
-        await _databaseRepository.upsertAudioDetail(restored);
+        if (_canCommit) {
+          await _databaseRepository.upsertAudioDetail(restored);
+        }
       }
       return AudioDetailLoadResult(detail: restored);
     }
@@ -104,7 +136,9 @@ class AudioDetailRepository {
     }
 
     final normalized = backupDetail.normalizedForSave(_now());
-    await _databaseRepository.upsertAudioDetail(normalized);
+    if (_canCommit) {
+      await _databaseRepository.upsertAudioDetail(normalized);
+    }
     return AudioDetailLoadResult(detail: normalized, restoredFromBackup: true);
   }
 
@@ -179,25 +213,32 @@ class AudioDetailRepository {
       }
       resultsByKey[entry.key] = AudioDetailLoadResult(detail: restored);
     }
-    await _databaseRepository.upsertAudioDetails(detailsToUpsert);
+    if (_canCommit) {
+      await _databaseRepository.upsertAudioDetails(detailsToUpsert);
+    }
     return <AudioDetailLoadResult>[
       for (final target in normalizedTargets)
         resultsByKey[_detailKeyForTarget(target)]!,
     ];
   }
 
-  Future<AudioDetailSaveResult> save(AudioDetail detail) async {
+  Future<AudioDetailSaveResult> save(
+    AudioDetail detail, {
+    AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
+  }) async {
     var candidate = detail.copyWith(target: _normalizeTarget(detail.target));
-    if (candidate.updatedAt != null) {
+    if (origin == AudioDetailSaveOrigin.automatic) {
       final backupDetail = await _readBackup(candidate.target);
       if (backupDetail != null && _isBackupNewer(candidate, backupDetail)) {
         candidate = await _mergePreferredDetail(backupDetail, candidate);
       }
     }
+    _ensureCanCommit();
     var normalized = candidate.normalizedForSave(_now());
     final persistedCover = await _persistDerivedCover(normalized);
     normalized = persistedCover.detail;
     final coverPortabilitySkipped = persistedCover.portabilitySkipped;
+    _ensureCanCommit();
     await _databaseRepository.upsertAudioDetail(normalized);
 
     if (!normalized.target.isLibraryRootFolder) {
@@ -205,6 +246,7 @@ class AudioDetailRepository {
       // using an array so multiple standalone files in the same folder each
       // have their own entry keyed by targetPath.
       try {
+        _ensureCanCommit();
         await _writeSingleFileBackup(normalized);
         return AudioDetailSaveResult(
           detail: normalized,
@@ -212,6 +254,8 @@ class AudioDetailRepository {
           backupSaved: true,
           coverPortabilitySkipped: coverPortabilitySkipped,
         );
+      } on AudioDetailOperationCancelled {
+        rethrow;
       } catch (error) {
         return AudioDetailSaveResult(
           detail: normalized,
@@ -227,6 +271,7 @@ class AudioDetailRepository {
       final payload = const JsonEncoder.withIndent(
         '  ',
       ).convert(await _backupJson(normalized));
+      _ensureCanCommit();
       if (PathMatcher.isContentUri(normalized.target.targetPath)) {
         final saved = await _fileCacheGateway.writeAudioDetailBackup(
           folder: normalized.target.targetPath,
@@ -245,6 +290,8 @@ class AudioDetailRepository {
         backupSaved: true,
         coverPortabilitySkipped: coverPortabilitySkipped,
       );
+    } on AudioDetailOperationCancelled {
+      rethrow;
     } catch (error) {
       return AudioDetailSaveResult(
         detail: normalized,
@@ -257,10 +304,12 @@ class AudioDetailRepository {
   }
 
   Future<void> delete(AudioDetailTarget target) {
+    _ensureCanCommit();
     return _databaseRepository.deleteAudioDetail(_normalizeTarget(target));
   }
 
   Future<void> deleteMany(Iterable<AudioDetailTarget> targets) {
+    _ensureCanCommit();
     return _databaseRepository.deleteAudioDetails(
       targets.map(_normalizeTarget),
     );
@@ -276,7 +325,10 @@ class AudioDetailRepository {
     final result = await load(target);
     if (result.detail.rjCode.trim().isNotEmpty) return null;
 
-    return save(result.detail.copyWith(rjCode: rjCode));
+    return save(
+      result.detail.copyWith(rjCode: rjCode),
+      origin: AudioDetailSaveOrigin.automatic,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -381,6 +433,7 @@ class AudioDetailRepository {
     }
 
     final payload = const JsonEncoder.withIndent('  ').convert(entries);
+    _ensureCanCommit();
     await backupFile.writeAsString(payload, flush: true);
   }
 
@@ -417,6 +470,7 @@ class AudioDetailRepository {
     }
 
     final payload = const JsonEncoder.withIndent('  ').convert(entries);
+    _ensureCanCommit();
     final saved = await _fileCacheGateway.writeSingleFileDetailBackup(
       filePath: detail.target.targetPath,
       json: payload,
@@ -798,6 +852,7 @@ class AudioDetailRepository {
     final bytes = coverData['bytes']! as Uint8List;
     final mimeType = coverData['mimeType']! as String;
     final digest = coverData['sha256']! as String;
+    _ensureCanCommit();
     final storedPath = await _writePortableCover(bytes, mimeType, digest);
     return (
       detail: detail.copyWith(cardCoverPath: storedPath),

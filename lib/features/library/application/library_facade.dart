@@ -197,10 +197,15 @@ final class LibraryFacade implements LibraryCatalog {
     _syncStateSlice(isInitialized: true);
   }
 
-  Future<void> resetForBackupRestore() async {
+  Future<void> prepareForBackupRestore() async {
     _maintenanceEpoch++;
     _missingDurationBackfill = null;
     _missingDurationBackfillRequestedAgain = false;
+    await detailCacheService.suspendAndWait();
+  }
+
+  Future<void> resetForBackupRestore() async {
+    await prepareForBackupRestore();
     service.scanProgressNotifyTimer?.cancel();
     service
       ..scanProgressNotifyTimer = null
@@ -231,8 +236,8 @@ final class LibraryFacade implements LibraryCatalog {
       ..libraryBatchPersistEntriesByKey.clear()
       ..markStructureChanged();
     snapshotCacheService.clear();
-    detailCacheService.clear();
     _coverArtworkCacheService?.invalidateAll();
+    detailCacheService.resume();
     _syncStateSlice(isInitialized: false);
   }
 
@@ -326,8 +331,11 @@ final class LibraryFacade implements LibraryCatalog {
   Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) =>
       detailCacheService.load(target);
 
-  Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) async {
-    final result = await detailCacheService.save(detail);
+  Future<AudioDetailSaveResult> saveAudioDetail(
+    AudioDetail detail, {
+    AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
+  }) async {
+    final result = await detailCacheService.save(detail, origin: origin);
     snapshotCacheService.markDetailChanged(result.detail);
     _syncStateSlice();
     return result;
@@ -453,20 +461,29 @@ final class LibraryFacade implements LibraryCatalog {
       );
       if (detail.duration != null && !hasMissingTrack) continue;
 
-      final duration = await _calculateDurationForTracks(
+      final probe = await _probeDurationForTracks(
         targetTracks,
         durationReader: durationReader,
       );
-      if (duration == null ||
-          _disposed ||
-          epoch != _maintenanceEpoch ||
-          detail.duration != null) {
-        continue;
-      }
+      if (_disposed || epoch != _maintenanceEpoch) return;
+      final committed = await _commitDurationUpdates(
+        probe.updatedTracks,
+        epoch: epoch,
+      );
+      if (!committed) return;
+      if (_disposed || epoch != _maintenanceEpoch) return;
+      final duration = probe.totalDuration;
+      if (duration == null || detail.duration != null) continue;
       final latestDetail =
           detailCacheService.resolvedDetail(detail.target) ?? detail;
       if (latestDetail.duration == null) {
-        await saveAudioDetail(latestDetail.copyWith(duration: duration));
+        final result = await detailCacheService.save(
+          latestDetail.copyWith(duration: duration),
+          origin: AudioDetailSaveOrigin.automatic,
+        );
+        if (_disposed || epoch != _maintenanceEpoch) return;
+        snapshotCacheService.markDetailChanged(result.detail);
+        _syncStateSlice();
       }
     }
   }
@@ -474,7 +491,8 @@ final class LibraryFacade implements LibraryCatalog {
   Future<Duration?> calculateMissingLibraryDuration(
     String targetPath, {
     Future<Duration?> Function(String path)? durationReader,
-  }) {
+  }) async {
+    final epoch = _maintenanceEpoch;
     final singleTracks = service.library
         .where(
           (track) =>
@@ -492,17 +510,25 @@ final class LibraryFacade implements LibraryCatalog {
                         PathMatcher.isWithinOrEqual(track.path, targetPath)),
               )
               .toList(growable: false);
-    return _calculateDurationForTracks(
+    final probe = await _probeDurationForTracks(
       targetTracks,
       durationReader: durationReader,
     );
+    final committed = await _commitDurationUpdates(
+      probe.updatedTracks,
+      epoch: epoch,
+    );
+    return committed ? probe.totalDuration : null;
   }
 
-  Future<Duration?> _calculateDurationForTracks(
+  Future<({Duration? totalDuration, List<MusicTrack> updatedTracks})>
+  _probeDurationForTracks(
     List<MusicTrack> targetTracks, {
     Future<Duration?> Function(String path)? durationReader,
   }) async {
-    if (targetTracks.isEmpty) return null;
+    if (targetTracks.isEmpty) {
+      return (totalDuration: null, updatedTracks: const <MusicTrack>[]);
+    }
 
     final tracksToUpdate = <MusicTrack>[];
     var totalDuration = Duration.zero;
@@ -555,21 +581,31 @@ final class LibraryFacade implements LibraryCatalog {
       }
     }
 
-    if (tracksToUpdate.isNotEmpty) {
-      for (final track in tracksToUpdate) {
-        final index = service.libraryIndexByPath[track.path];
-        if (index != null) service.library[index] = track;
-        service.libraryByPath[track.path] = track;
-      }
-      await databaseRepository.upsertTracks(tracksToUpdate);
-      service.rebuildLibraryIndexes();
-      snapshotCacheService.markStructureChanged();
-      _syncStateSlice();
-    }
+    return (
+      totalDuration: !hasUnknownDuration && totalDuration > Duration.zero
+          ? totalDuration
+          : null,
+      updatedTracks: List<MusicTrack>.unmodifiable(tracksToUpdate),
+    );
+  }
 
-    return !hasUnknownDuration && totalDuration > Duration.zero
-        ? totalDuration
-        : null;
+  Future<bool> _commitDurationUpdates(
+    List<MusicTrack> tracks, {
+    required int epoch,
+  }) async {
+    if (_disposed || epoch != _maintenanceEpoch) return false;
+    if (tracks.isEmpty) return true;
+    await databaseRepository.upsertTracks(tracks);
+    if (_disposed || epoch != _maintenanceEpoch) return false;
+    for (final track in tracks) {
+      final index = service.libraryIndexByPath[track.path];
+      if (index != null) service.library[index] = track;
+      service.libraryByPath[track.path] = track;
+    }
+    service.rebuildLibraryIndexes();
+    snapshotCacheService.markStructureChanged();
+    _syncStateSlice();
+    return true;
   }
 
   DlsiteMetadataQuery buildDlsiteMetadataQuery(AudioDetail detail) =>
@@ -2509,6 +2545,8 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<void> dispose() async {
     _disposed = true;
+    _maintenanceEpoch++;
+    await detailCacheService.suspendAndWait();
     UiInteractionCoordinator.instance.removeListener(
       _handleWarmupInteractionChanged,
     );

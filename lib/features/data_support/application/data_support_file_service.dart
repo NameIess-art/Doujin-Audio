@@ -50,7 +50,9 @@ class DataSupportFileService {
     }
   }
 
-  Future<BackupValidationResult?> pickAndRestoreBackup() async {
+  Future<BackupValidationResult?> pickAndRestoreBackup({
+    Future<void> Function()? beforeRestore,
+  }) async {
     final selection = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: const <String>['nalbackup'],
@@ -63,7 +65,10 @@ class DataSupportFileService {
       if (selectedPath == null || selectedPath.trim().isEmpty) {
         throw const FileSystemException('Selected backup is not readable.');
       }
-      return await _backupService.restoreBackup(selectedPath);
+      return await _backupService.restoreBackup(
+        selectedPath,
+        beforeCommit: beforeRestore,
+      );
     } finally {
       if (_isAndroid()) {
         try {

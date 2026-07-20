@@ -295,7 +295,10 @@ class AppBackupService {
     }
   }
 
-  Future<BackupValidationResult> restoreBackup(String backupPath) async {
+  Future<BackupValidationResult> restoreBackup(
+    String backupPath, {
+    Future<void> Function()? beforeCommit,
+  }) async {
     final prepared = await _prepareBackup(backupPath);
     final validation = prepared.validation;
     if (!validation.isValid) {
@@ -309,6 +312,7 @@ class AppBackupService {
     var originalMoved = false;
     var replacementInstalled = false;
     try {
+      await beforeCommit?.call();
       final result = await _runDatabaseMaintenance<BackupValidationResult>(
         replacesDatabase: true,
         action: (databasePath) async {

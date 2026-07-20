@@ -88,6 +88,7 @@ void main() {
       final cache = AudioDetailCacheService(repository: repository);
 
       final staleLoad = cache.load(target);
+      await Future<void>.delayed(Duration.zero);
       cache.clear();
       repository.pendingLoad = null;
       repository.loadResult = AudioDetail.empty(
@@ -104,6 +105,58 @@ void main() {
       expect(repository.loadCount, 2);
     },
   );
+
+  test('save waits for an older load of the same target', () async {
+    final target = AudioDetailTarget.libraryRootFolder('/library/work');
+    final pendingLoad = Completer<AudioDetail>();
+    final repository = _FakeAudioDetailRepository(
+      loadResult: AudioDetail.empty(target),
+      pendingLoad: pendingLoad,
+    );
+    final cache = AudioDetailCacheService(repository: repository);
+
+    final staleLoad = cache.load(target);
+    final save = cache.save(
+      AudioDetail.empty(target).copyWith(workTitle: 'User edit'),
+    );
+    pendingLoad.complete(
+      AudioDetail.empty(target).copyWith(workTitle: 'Stale load'),
+    );
+
+    await staleLoad;
+    await save;
+
+    expect((await cache.load(target)).detail.workTitle, 'User edit');
+    expect(repository.events, <String>['load:start', 'load:end', 'save']);
+  });
+
+  test(
+    'clear rejects an older in-flight save without repopulating cache',
+    () async {
+      final target = AudioDetailTarget.libraryRootFolder('/library/work');
+      final pendingSave = Completer<void>();
+      final repository = _FakeAudioDetailRepository(
+        loadResult: AudioDetail.empty(target),
+        pendingSave: pendingSave,
+      );
+      final cache = AudioDetailCacheService(repository: repository);
+
+      final staleSave = cache.save(
+        AudioDetail.empty(target).copyWith(workTitle: 'Stale save'),
+      );
+      cache.clear();
+      pendingSave.complete();
+
+      await expectLater(
+        staleSave,
+        throwsA(isA<AudioDetailOperationCancelled>()),
+      );
+      repository.loadResult = AudioDetail.empty(
+        target,
+      ).copyWith(workTitle: 'Restored');
+      expect((await cache.load(target)).detail.workTitle, 'Restored');
+    },
+  );
 }
 
 class _FakeAudioDetailRepository implements AudioDetailRepository {
@@ -111,19 +164,24 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
     required this.loadResult,
     AudioDetail? prefillResult,
     this.pendingLoad,
+    this.pendingSave,
   }) : _prefillResult = prefillResult;
 
   AudioDetail loadResult;
   Completer<AudioDetail>? pendingLoad;
+  Completer<void>? pendingSave;
   final AudioDetail? _prefillResult;
+  final List<String> events = <String>[];
   int loadCount = 0;
   int deleteCount = 0;
 
   @override
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
     loadCount++;
+    events.add('load:start');
     final pending = pendingLoad;
     final detail = pending == null ? loadResult : await pending.future;
+    events.add('load:end');
     return AudioDetailLoadResult(detail: detail.copyWith(target: target));
   }
 
@@ -135,7 +193,13 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   }
 
   @override
-  Future<AudioDetailSaveResult> save(AudioDetail detail) async {
+  Future<AudioDetailSaveResult> save(
+    AudioDetail detail, {
+    AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
+  }) async {
+    final pending = pendingSave;
+    if (pending != null) await pending.future;
+    events.add('save');
     loadResult = detail;
     return AudioDetailSaveResult(
       detail: detail,

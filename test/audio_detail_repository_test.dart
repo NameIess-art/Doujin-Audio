@@ -221,11 +221,9 @@ void main() {
     );
     await workFolder.create();
     final target = AudioDetailTarget.libraryRootFolder(workFolder.path);
-    final staleDetail = AudioDetail.empty(target).copyWith(
-      workTitle: 'Stale cached title',
-      createdAt: DateTime.utc(2026, 7, 18),
-      updatedAt: DateTime.utc(2026, 7, 18),
-    );
+    final staleDetail = AudioDetail.empty(
+      target,
+    ).copyWith(workTitle: 'Stale cached title');
     await File(
       '${workFolder.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
     ).writeAsString(
@@ -244,6 +242,7 @@ void main() {
 
     final saved = await repository.save(
       staleDetail.copyWith(duration: const Duration(minutes: 8)),
+      origin: AudioDetailSaveOrigin.automatic,
     );
 
     expect(saved.detail.rjCode, 'RJ998877');
@@ -260,6 +259,54 @@ void main() {
     expect(backup['rjCode'], 'RJ998877');
     expect(backup['workTitle'], 'Current JSON title');
     expect(backup['durationMs'], const Duration(minutes: 8).inMilliseconds);
+  });
+
+  test('explicit save can clear fields despite a newer JSON backup', () async {
+    final workFolder = Directory(
+      '${tempDir.path}${Platform.pathSeparator}explicit-save-work',
+    );
+    await workFolder.create();
+    final target = AudioDetailTarget.libraryRootFolder(workFolder.path);
+    final current = AudioDetail.empty(target).copyWith(
+      rjCode: 'RJ123456',
+      workTitle: 'Current title',
+      tags: const <String>['old'],
+      createdAt: DateTime.utc(2026, 7, 18),
+      updatedAt: DateTime.utc(2026, 7, 18),
+    );
+    await File(
+      '${workFolder.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+    ).writeAsString(
+      json.encode(
+        current.copyWith(updatedAt: DateTime.utc(2026, 7, 19)).toBackupJson(),
+      ),
+    );
+
+    final saved = await repository.save(
+      current.copyWith(workTitle: 'Edited title', tags: const <String>[]),
+    );
+
+    expect(saved.detail.workTitle, 'Edited title');
+    expect(saved.detail.tags, isEmpty);
+    final persisted = await appDatabase.loadAudioDetail(target);
+    expect(persisted?.workTitle, 'Edited title');
+    expect(persisted?.tags, isEmpty);
+  });
+
+  test('commit guard prevents stale save side effects', () async {
+    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+    final original = AudioDetail.empty(target).copyWith(workTitle: 'Original');
+    await appDatabase.upsertAudioDetail(
+      original.normalizedForSave(DateTime.utc(2026)),
+    );
+
+    final future = AudioDetailRepository.runWithCommitGuard(
+      () => false,
+      () => repository.save(original.copyWith(workTitle: 'Stale')),
+    );
+
+    await expectLater(future, throwsA(isA<AudioDetailOperationCancelled>()));
+    expect((await appDatabase.loadAudioDetail(target))?.workTitle, 'Original');
   });
 
   test('manual edits overwrite the local backup file', () async {

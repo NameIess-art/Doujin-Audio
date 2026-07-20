@@ -467,6 +467,13 @@ void main() {
         .loadAudioDetail(target);
     expect(persisted?.workTitle, 'Restored database title');
     expect(persisted?.duration, isNull);
+    expect(runtimeGraph.library.trackByPath(trackPath), isNull);
+    expect(
+      (await runtimeGraph.library.databaseRepository.loadAllTracks()).where(
+        (track) => track.path == trackPath,
+      ),
+      isEmpty,
+    );
   });
 
   // 鈹€鈹€ multi-session playback stability 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€

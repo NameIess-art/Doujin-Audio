@@ -13,8 +13,26 @@ final class BackupRestoreCoordinator {
   final List<PersistedStateReloader> _reloaders;
 
   Future<BackupValidationResult?> pickAndRestoreBackup() async {
-    final result = await _fileService.pickAndRestoreBackup();
-    if (result == null || !result.isValid) return result;
+    var prepared = false;
+    final result = await _fileService.pickAndRestoreBackup(
+      beforeRestore: () async {
+        prepared = true;
+        for (final reloader in _reloaders) {
+          if (reloader case final PersistedStateReplacementPreparer preparer) {
+            await preparer.prepareForPersistedStateReplacement();
+          }
+        }
+      },
+    );
+    if (result == null) return null;
+    if (!result.isValid) {
+      if (prepared) {
+        for (final reloader in _reloaders) {
+          await reloader.reloadPersistedState();
+        }
+      }
+      return result;
+    }
     for (final reloader in _reloaders) {
       await reloader.reloadPersistedState();
     }

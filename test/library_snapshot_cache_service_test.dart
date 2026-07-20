@@ -339,7 +339,10 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   }
 
   @override
-  Future<AudioDetailSaveResult> save(AudioDetail detail) async {
+  Future<AudioDetailSaveResult> save(
+    AudioDetail detail, {
+    AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
+  }) async {
     return AudioDetailSaveResult(
       detail: detail,
       backupAttempted: false,

@@ -48,24 +48,65 @@ void main() {
     final restored = await coordinator.pickAndRestoreBackup();
 
     expect(restored, same(result));
-    expect(events, <String>['app:start', 'app:end', 'asmr:start', 'asmr:end']);
+    expect(events, <String>[
+      'app:prepare',
+      'asmr:prepare',
+      'app:start',
+      'app:end',
+      'asmr:start',
+      'asmr:end',
+    ]);
+  });
+
+  test('failed restore reloads owners after preparation', () async {
+    final events = <String>[];
+    const result = BackupValidationResult.invalid('restore_failed');
+    final coordinator = BackupRestoreCoordinator(
+      fileService: _FakeDataSupportFileService(
+        result,
+        prepareBeforeReturning: true,
+      ),
+      reloaders: <PersistedStateReloader>[_RecordingReloader('app', events)],
+    );
+
+    final restored = await coordinator.pickAndRestoreBackup();
+
+    expect(restored, same(result));
+    expect(events, <String>['app:prepare', 'app:start', 'app:end']);
   });
 }
 
 final class _FakeDataSupportFileService extends DataSupportFileService {
-  _FakeDataSupportFileService(this.result) : super(isAndroid: () => false);
+  _FakeDataSupportFileService(
+    this.result, {
+    this.prepareBeforeReturning = false,
+  }) : super(isAndroid: () => false);
 
   final BackupValidationResult? result;
+  final bool prepareBeforeReturning;
 
   @override
-  Future<BackupValidationResult?> pickAndRestoreBackup() async => result;
+  Future<BackupValidationResult?> pickAndRestoreBackup({
+    Future<void> Function()? beforeRestore,
+  }) async {
+    if (result?.isValid == true || prepareBeforeReturning) {
+      await beforeRestore?.call();
+    }
+    return result;
+  }
 }
 
-final class _RecordingReloader implements PersistedStateReloader {
+final class _RecordingReloader
+    implements PersistedStateReloader, PersistedStateReplacementPreparer {
   _RecordingReloader(this.name, this.events);
 
   final String name;
   final List<String> events;
+
+  @override
+  Future<void> prepareForPersistedStateReplacement() async {
+    events.add('$name:prepare');
+  }
 
   @override
   Future<void> reloadPersistedState() async {

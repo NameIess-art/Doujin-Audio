@@ -104,10 +104,12 @@ void main() {
     coordinator.dispose();
   });
 
-  testWidgets('runs budgeted visible commits during interaction', (
+  testWidgets('runs at least one visible commit within interaction budget', (
     tester,
   ) async {
-    final coordinator = UiInteractionCoordinator();
+    final coordinator = UiInteractionCoordinator(
+      interactionFrameBudget: Duration.zero,
+    );
     final source = Object();
     var visibleCommitted = false;
     var deferredCommitted = false;

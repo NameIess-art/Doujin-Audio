@@ -156,12 +156,14 @@ class UiInteractionCoordinator extends ChangeNotifier {
       ..sort((a, b) => a.priority.compareTo(b.priority));
     final stopwatch = Stopwatch()..start();
     final budget = isInteracting ? interactionFrameBudget : frameBudget;
+    var committedAny = false;
     for (final pending in commits) {
-      if (stopwatch.elapsed >= budget) break;
+      if (committedAny && stopwatch.elapsed >= budget) break;
       if (isInteracting && !pending.allowDuringInteraction) continue;
       if (!identical(_pendingCommits[pending.key], pending)) continue;
       _pendingCommits.remove(pending.key);
       pending.commit();
+      committedAny = true;
     }
     if (_hasRunnableCommits) _scheduleCommitFrame();
   }

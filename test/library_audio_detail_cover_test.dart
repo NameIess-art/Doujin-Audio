@@ -770,17 +770,9 @@ void main() {
           notificationService: notificationService,
           audioDatabaseRepository: restoredRepository,
           skipPersistence: false,
-          startRuntime: true,
         );
         addTearDown(restoredGraph.runtime.dispose);
-
-        for (var i = 0; i < 100; i++) {
-          if (restoredGraph.playback.service.activeSessions.isNotEmpty) {
-            break;
-          }
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 120));
+        await restoredGraph.runtime.start();
 
         expect(restoredGraph.playback.service.activeSessions, hasLength(1));
         final restoredSession =
@@ -797,6 +789,13 @@ void main() {
             playback: restoredGraph.playback,
           ).rootFolderName(restoredSession.currentTrackPath),
           'New Folder',
+        );
+        expect(
+          await restoredGraph.notifications.playbackCoverPathFutureForTrack(
+            restoredTrack,
+            trackPath: restoredSession.currentTrackPath,
+          ),
+          newCoverPath,
         );
         expect(
           restoredGraph.notifications.coverPathForTrack(

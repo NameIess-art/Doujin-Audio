@@ -609,14 +609,26 @@ extension _MainScreenLayout on _MainScreenState {
     );
   }
 
-  double _mobileContentInset({required bool hasNowPlaying}) {
-    // Read the content column render box live so it stays accurate when the
-    // playback card appears or disappears without a metrics change.
+  double _mobileContentInset({
+    required bool hasNowPlaying,
+    required bool? previousHasNowPlaying,
+    required BottomNavigationStyle bottomNavigationStyle,
+  }) {
+    // The render box still has the previous frame's height while the playback
+    // card is entering or leaving, so compensate for that one transition.
     final contentBox =
         _dockContentKey.currentContext?.findRenderObject() as RenderBox?;
     if (contentBox != null && contentBox.hasSize) {
       final systemBottom = MediaQuery.of(context).padding.bottom;
-      return (max(systemBottom, 6.0) + contentBox.size.height).clamp(
+      var contentHeight = contentBox.size.height;
+      if (previousHasNowPlaying != null &&
+          previousHasNowPlaying != hasNowPlaying) {
+        final cardExtent = bottomNavigationStyle == BottomNavigationStyle.bar
+            ? kActiveSessionCarouselBarHeight
+            : kActiveSessionCarouselCapsuleHeight + 6;
+        contentHeight += hasNowPlaying ? cardExtent : -cardExtent;
+      }
+      return (max(systemBottom, 6.0) + contentHeight).clamp(
         0.0,
         double.infinity,
       );

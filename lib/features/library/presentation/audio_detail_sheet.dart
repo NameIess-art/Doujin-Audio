@@ -565,7 +565,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Expanded(
-                      child: FilledButton.tonalIcon(
+                      child: FilledButton.icon(
                         onPressed: _runningAction
                             ? null
                             : () => _confirmFetchInfo(detail),
@@ -581,7 +581,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: FilledButton.tonalIcon(
+                      child: FilledButton.icon(
                         onPressed: _runningAction
                             ? null
                             : () => _confirmRename(detail),

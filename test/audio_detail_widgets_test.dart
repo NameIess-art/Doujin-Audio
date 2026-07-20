@@ -8,7 +8,9 @@ import 'package:nameless_audio/features/library/presentation/audio_detail_sheet.
 import 'package:nameless_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 import 'package:nameless_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_metadata_service.dart';
+import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/dlsite_metadata_service.dart';
+import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -64,6 +66,32 @@ class _FakeAsmrMetadataService extends AsmrMetadataService {
   }) async {
     return <DlsiteMetadata>[await fetchByRjCode('RJ123456')];
   }
+}
+
+class _DetailCoverCacheService extends CoverArtworkCacheService {
+  _DetailCoverCacheService() : super(libraryService: LibraryService());
+
+  @override
+  Future<String?> futureForFolder(String folderPath) async => null;
+
+  @override
+  Future<List<String>> discoverCoverCandidatesInFolder(
+    String folderPath, {
+    String? selectedCoverPath,
+  }) async => const <String>['/covers/candidate.jpg'];
+}
+
+void _expectPrimaryFilledButton(WidgetTester tester, Finder finder) {
+  expect(finder, findsOneWidget);
+  final element = tester.element(finder);
+  final scheme = Theme.of(element).colorScheme;
+  final button = tester.widget<FilledButton>(finder);
+  final style = button.defaultStyleOf(element);
+  expect(style.backgroundColor?.resolve(const <WidgetState>{}), scheme.primary);
+  expect(
+    style.foregroundColor?.resolve(const <WidgetState>{}),
+    scheme.onPrimary,
+  );
 }
 
 void main() {
@@ -533,6 +561,21 @@ void main() {
     );
     await tester.pump();
 
+    _expectPrimaryFilledButton(
+      tester,
+      find.widgetWithText(
+        FilledButton,
+        languageProvider.tr('audio_detail_fetch_info'),
+      ),
+    );
+    _expectPrimaryFilledButton(
+      tester,
+      find.widgetWithText(
+        FilledButton,
+        languageProvider.tr('audio_detail_rename_folder_from_title'),
+      ),
+    );
+
     await tester.tap(find.text(languageProvider.tr('audio_detail_fetch_info')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
@@ -549,5 +592,37 @@ void main() {
       find.text(languageProvider.tr('metadata_scope_missing')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('audio detail cover action uses the primary button color', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture(
+      coverArtworkCacheService: _DetailCoverCacheService(),
+    );
+    addTearDown(fixture.dispose);
+    const target = AudioDetailTarget(
+      targetType: AudioDetailTargetType.libraryRootFolder,
+      targetPath: '/library/Work',
+    );
+    await tester.runAsync(
+      () => fixture.runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(target),
+      ),
+    );
+
+    await tester.pumpWidget(
+      fixture.build(const AudioDetailSheet(target: target)),
+    );
+    final label = fixture.languageProvider.tr('audio_detail_set_cover');
+    final button = find.widgetWithText(FilledButton, label);
+    for (var i = 0; i < 40 && button.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    _expectPrimaryFilledButton(tester, button);
   });
 }

@@ -88,7 +88,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   bool _bootstrapDone = false;
   bool _isDataReady = false;
-  bool? _lastShowCard;
+  bool? _lastHasNowPlaying;
   Timer? _notificationSessionNavigationTimer;
   String? _pendingNotificationSessionId;
   DateTime? _pendingNotificationSessionStartedAt;
@@ -602,12 +602,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
     final hasPlayingSession = overlayUi.hasPlayingSession;
     final activeSessionCount = overlayUi.activeSessionCount;
-    final showCard = overlayUi.showPlaybackCard;
     final visibleSessions = overlayUi.visibleSessions;
-    if (_lastShowCard != showCard) {
-      _lastShowCard = showCard;
-    }
     final hasNowPlaying = overlayUi.hasNowPlaying;
+    final previousHasNowPlaying = _lastHasNowPlaying;
+    _lastHasNowPlaying = hasNowPlaying;
     if (activeSessionCount > 0 &&
         !_notificationPermissionCheckDone &&
         !_notificationPermissionCheckQueued) {
@@ -638,7 +636,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final isTinyWindow = width < 300 || layoutSize.height < 300;
     final mobileContentInset = isDesktop
         ? 0.0
-        : _mobileContentInset(hasNowPlaying: hasNowPlaying);
+        : _mobileContentInset(
+            hasNowPlaying: hasNowPlaying,
+            previousHasNowPlaying: previousHasNowPlaying,
+            bottomNavigationStyle: bottomNavigationStyle,
+          );
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,

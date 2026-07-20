@@ -32,6 +32,7 @@ import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
+import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
@@ -707,6 +708,68 @@ void main() {
     );
   });
 
+  testWidgets('mobile content inset updates with playback card visibility', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(420, 840));
+    final harness = await _pumpAppShell(tester, includePlaybackSession: false);
+
+    double currentInset() => tester
+        .widget<MobileOverlayInset>(find.byType(MobileOverlayInset))
+        .bottomInset;
+
+    final withoutCard = currentInset();
+    final session = PlaybackSession(
+      id: 'inset-session',
+      currentTrackPath: '/audio/inset.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    addTearDown(session.dispose);
+    harness.playbackService.registerSession(session);
+    harness.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    for (
+      var frame = 0;
+      frame < 4 && find.byType(ActiveSessionCarousel).evaluate().isEmpty;
+      frame++
+    ) {
+      await tester.pump();
+    }
+    expect(find.byType(ActiveSessionCarousel), findsOneWidget);
+    final withCard = currentInset();
+    expect(withCard, greaterThan(withoutCard + 80));
+
+    harness.playbackService.syncSlice(
+      activeSessions: const <PlaybackSession>[],
+      playingSessionCount: 0,
+      focusedSessionId: null,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    for (
+      var frame = 0;
+      frame < 4 && find.byType(ActiveSessionCarousel).evaluate().isNotEmpty;
+      frame++
+    ) {
+      await tester.pump();
+    }
+    expect(find.byType(ActiveSessionCarousel), findsNothing);
+
+    expect(currentInset(), closeTo(withoutCard, 0.1));
+  });
+
   testWidgets('single audio detail uses the standard artwork layout', (
     tester,
   ) async {
@@ -1089,9 +1152,13 @@ void main() {
 }
 
 final class _AppShellHarness {
-  const _AppShellHarness({required this.language});
+  const _AppShellHarness({
+    required this.language,
+    required this.playbackService,
+  });
 
   final AppLanguageProvider language;
+  final PlaybackSessionService playbackService;
 }
 
 final class _AppShellAudioDatabaseRepository extends AudioDatabaseRepository {
@@ -1292,7 +1359,10 @@ Future<_AppShellHarness> _pumpAppShell(
     await _pumpMainScreenAnimations(tester, startup: true);
     await _waitForAppBootstrap(tester);
   }
-  return _AppShellHarness(language: languageProvider);
+  return _AppShellHarness(
+    language: languageProvider,
+    playbackService: playbackService,
+  );
 }
 
 Future<void> _waitForAppBootstrap(WidgetTester tester) async {

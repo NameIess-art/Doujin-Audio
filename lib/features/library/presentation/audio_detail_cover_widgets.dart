@@ -390,7 +390,7 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
                   icon: const Icon(Icons.check_circle_rounded),
                   label: Text(i18n.tr('audio_detail_current_cover')),
                 )
-              : FilledButton.tonalIcon(
+              : FilledButton.icon(
                   onPressed: _saving ? null : _commitSelection,
                   icon: const Icon(Icons.image_rounded),
                   label: Text(i18n.tr('audio_detail_set_cover')),

@@ -25,6 +25,9 @@ import 'playback_position_ui_gate.dart';
 
 part 'active_session_carousel_widgets.dart';
 
+const double kActiveSessionCarouselBarHeight = 74;
+const double kActiveSessionCarouselCapsuleHeight = 88;
+
 Future<String?> _sessionCoverFutureForTrack(
   LibraryFacade library,
   MusicTrack? track,
@@ -246,7 +249,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     _ensureLoopPageSeed(sessions.length);
 
     return SizedBox(
-      height: isBar ? 74 : 88,
+      height: isBar
+          ? kActiveSessionCarouselBarHeight
+          : kActiveSessionCarouselCapsuleHeight,
       child: Stack(
         children: [
           Listener(

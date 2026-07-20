@@ -57,6 +57,9 @@ class AppUpdateService {
 
   Future<AppUpdateInfo> checkLatest() async {
     final currentVersion = await currentAppVersion();
+    if (_parseVersion(currentVersion.versionName) == null) {
+      throw const FormatException('Current app version is unavailable.');
+    }
     final client = _httpClientFactory();
     try {
       client.connectionTimeout = _requestTimeout;
@@ -232,9 +235,7 @@ class AppUpdateService {
 
   static bool _isCompatibleTag(String tagName, AppVersionInfo currentVersion) {
     final version = _parseVersionFromTag(tagName);
-    if (version == null || version.major != releaseChannel.major) {
-      return false;
-    }
+    if (version == null) return false;
     final current = _parseVersion(currentVersion.versionName);
     final currentIsPrerelease = current?.isPreRelease == true;
     return currentIsPrerelease || !version.isPreRelease;

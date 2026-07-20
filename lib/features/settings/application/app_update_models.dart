@@ -20,12 +20,10 @@ enum AppUpdateStatus {
 
 class ReleaseChannelConfig {
   const ReleaseChannelConfig({
-    required this.major,
     required this.tagPrefix,
     required this.androidAssetPrefix,
   });
 
-  final int major;
   final String tagPrefix;
   final String androidAssetPrefix;
 
@@ -41,7 +39,6 @@ class ReleaseChannelConfig {
   }
 
   static const ReleaseChannelConfig stable = ReleaseChannelConfig(
-    major: 0,
     tagPrefix: '',
     androidAssetPrefix: 'NamelessAudio-android-universal-',
   );

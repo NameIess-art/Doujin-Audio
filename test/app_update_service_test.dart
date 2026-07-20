@@ -197,6 +197,15 @@ void main() {
     expect(selected?['tag_name'], 'v0.13.0');
   });
 
+  test('stable channel allows updates across major versions', () {
+    final selected = AppUpdateService.selectCompatibleReleaseForTesting(
+      <Map<String, dynamic>>[githubRelease('v1.0.0'), githubRelease('v0.14.3')],
+      const AppVersionInfo(versionName: '0.14.2', buildNumber: 1402),
+    );
+
+    expect(selected?['tag_name'], 'v1.0.0');
+  });
+
   test('stable channel ignores prereleases', () {
     final selected = AppUpdateService.selectCompatibleReleaseForTesting(
       <Map<String, dynamic>>[
@@ -207,6 +216,35 @@ void main() {
     );
 
     expect(selected?['tag_name'], 'v0.13.0');
+  });
+
+  test('prerelease clients can select newer prereleases', () {
+    final selected = AppUpdateService.selectCompatibleReleaseForTesting(
+      <Map<String, dynamic>>[
+        githubRelease('v1.0.0-rc.2', prerelease: true),
+        githubRelease('v0.14.2'),
+      ],
+      const AppVersionInfo(versionName: '1.0.0-rc.1', buildNumber: 1500),
+    );
+
+    expect(selected?['tag_name'], 'v1.0.0-rc.2');
+  });
+
+  test('checkLatest fails when the current version is unavailable', () async {
+    var requestCount = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(updateChannel, (call) async {
+          throw PlatformException(code: 'version_unavailable');
+        });
+    server.listen((request) async {
+      requestCount++;
+      request.response.statusCode = HttpStatus.ok;
+      await request.response.close();
+    });
+
+    await expectLater(service.checkLatest(), throwsFormatException);
+
+    expect(requestCount, 0);
   });
 
   test('release parser ignores malformed rows before version selection', () {

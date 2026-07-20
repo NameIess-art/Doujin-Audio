@@ -7,6 +7,8 @@ import 'package:nameless_audio/features/asmr/domain/asmr_download.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:nameless_audio/features/settings/application/app_preferences.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   test('ASMR media requests include the scoped gateway language header', () {
@@ -22,6 +24,35 @@ void main() {
       asmrMediaRequestHeadersForUrl('https://example.com/track.mp3'),
       isEmpty,
     );
+  });
+
+  test('partial download response must match the requested byte range', () {
+    expect(
+      isValidDownloadContentRange(
+        'bytes 128-255/256',
+        expectedStart: 128,
+        responseLength: 128,
+        expectedTotal: 256,
+      ),
+      isTrue,
+    );
+    for (final invalid in <String?>[
+      null,
+      'bytes 0-127/256',
+      'bytes 128-255/512',
+      'bytes 128-200/256',
+    ]) {
+      expect(
+        isValidDownloadContentRange(
+          invalid,
+          expectedStart: 128,
+          responseLength: 128,
+          expectedTotal: 256,
+        ),
+        isFalse,
+        reason: '$invalid',
+      );
+    }
   });
 
   test('destinationExists checks local download folders', () async {
@@ -421,6 +452,7 @@ void main() {
         cacheDirectoryRequests++;
         return Directory.systemTemp;
       },
+      persistTasks: false,
     );
     try {
       await manager.startDownload(
@@ -677,7 +709,7 @@ void main() {
   );
 
   test(
-    'canceling an active download removes task and downloaded files',
+    'canceling a paused download removes task and downloaded files',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_cancel_',
@@ -718,6 +750,8 @@ void main() {
 
         await _waitForLiveTask(manager);
         await Future<void>.delayed(const Duration(milliseconds: 100));
+        await manager.pauseTask(1);
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.paused);
         await manager.cancelTask(1).timeout(const Duration(seconds: 5));
 
         expect(manager.getTask(1), isNull);
@@ -965,6 +999,255 @@ void main() {
   );
 
   test(
+    'pausing preserves completed files and their recorded progress',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_pause_progress_',
+      );
+      const fastBytes = 1024;
+      const slowBytes = 256 * 1024;
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var fastRequests = 0;
+      unawaited(
+        server.forEach((request) async {
+          final isFast = request.uri.path.endsWith('/fast.mp3');
+          if (isFast) {
+            fastRequests++;
+            request.response.contentLength = fastBytes;
+            request.response.add(List<int>.filled(fastBytes, 3));
+            await request.response.close();
+            return;
+          }
+
+          final range = request.headers.value(HttpHeaders.rangeHeader);
+          final start = range == null
+              ? 0
+              : int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
+          if (start > 0) {
+            request.response.statusCode = HttpStatus.partialContent;
+            request.response.headers.set(
+              HttpHeaders.contentRangeHeader,
+              'bytes $start-${slowBytes - 1}/$slowBytes',
+            );
+          }
+          request.response.contentLength = slowBytes - start;
+          try {
+            for (var offset = start; offset < slowBytes; offset += 8192) {
+              final length = (slowBytes - offset).clamp(0, 8192);
+              request.response.add(List<int>.filled(length, 7));
+              await request.response.flush();
+              await Future<void>.delayed(const Duration(milliseconds: 4));
+            }
+          } catch (_) {
+            // Pausing closes the active response while retaining its progress.
+          } finally {
+            await request.response.close().catchError((_) {});
+          }
+        }),
+      );
+
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/fast.mp3',
+              size: fastBytes,
+              title: 'Fast.mp3',
+            ),
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/slow.mp3',
+              size: slowBytes,
+              title: 'Slow.mp3',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+
+        final workDir = Directory(
+          '${tempDir.path}${Platform.pathSeparator}Work',
+        );
+        final fastFile = File(
+          '${workDir.path}${Platform.pathSeparator}Fast.mp3',
+        );
+        final slowPart = File(
+          '${workDir.path}${Platform.pathSeparator}Slow.mp3.nameless.part',
+        );
+        final deadline = DateTime.now().add(const Duration(seconds: 5));
+        while ((!await fastFile.exists() ||
+                !await slowPart.exists() ||
+                await slowPart.length() < 32768) &&
+            DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+
+        await manager.pauseTask(1);
+        final paused = manager.getTask(1);
+        expect(paused?.status, AsmrDownloadTaskStatus.paused);
+        expect(paused?.completedFiles, 1);
+        expect(paused?.completedFilePaths, contains('Fast.mp3'));
+        expect(paused?.fileDownloadedBytes['Fast.mp3'], fastBytes);
+        expect(paused?.downloadedBytes, greaterThan(fastBytes));
+        expect(await fastFile.length(), fastBytes);
+
+        await manager.resumeTask(1);
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        final completed = manager.getTask(1);
+        expect(completed?.completedFiles, 2);
+        expect(completed?.skippedFiles, 0);
+        expect(fastRequests, 1);
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'paused download survives restart and resumes its partial file',
+    () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await AppPreferences.init();
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_resume_',
+      );
+      const totalBytes = 512 * 1024;
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final rangeStarts = <int>[];
+      var rejectedRange = false;
+      unawaited(
+        server.forEach((request) async {
+          final range = request.headers.value(HttpHeaders.rangeHeader);
+          final start = range == null
+              ? 0
+              : int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
+          rangeStarts.add(start);
+          if (start > 0 && !rejectedRange) {
+            rejectedRange = true;
+            request.response.statusCode =
+                HttpStatus.requestedRangeNotSatisfiable;
+            request.response.contentLength = 0;
+            await request.response.close();
+            return;
+          }
+          if (start > 0) {
+            request.response.statusCode = HttpStatus.partialContent;
+            request.response.headers.set(
+              HttpHeaders.contentRangeHeader,
+              'bytes $start-${totalBytes - 1}/$totalBytes',
+            );
+          }
+          request.response.contentLength = totalBytes - start;
+          try {
+            for (var offset = start; offset < totalBytes; offset += 8192) {
+              final length = (totalBytes - offset).clamp(0, 8192);
+              request.response.add(List<int>.filled(length, 7));
+              await request.response.flush();
+              await Future<void>.delayed(const Duration(milliseconds: 4));
+            }
+          } catch (_) {
+            // Pausing closes the first request while retaining its staging file.
+          } finally {
+            await request.response.close().catchError((_) {});
+          }
+        }),
+      );
+
+      final firstManager = AsmrDownloadManager(
+        temporaryDirectoryProvider: () async => Directory.systemTemp,
+      );
+      AsmrDownloadManager? restoredManager;
+      try {
+        final target = File(
+          '${tempDir.path}${Platform.pathSeparator}Work'
+          '${Platform.pathSeparator}Track.mp3',
+        );
+        await target.parent.create(recursive: true);
+        await target.writeAsBytes(const <int>[1, 2, 3], flush: true);
+        await firstManager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+              size: totalBytes,
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        final part = File(
+          '${tempDir.path}${Platform.pathSeparator}Work'
+          '${Platform.pathSeparator}Track.mp3.nameless.part',
+        );
+        final deadline = DateTime.now().add(const Duration(seconds: 5));
+        while ((!await part.exists() || await part.length() < 32768) &&
+            DateTime.now().isBefore(deadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        await firstManager.pauseTask(1);
+        await _waitForTaskStatus(
+          firstManager,
+          1,
+          AsmrDownloadTaskStatus.paused,
+        );
+        final pausedBytes = await part.length();
+        expect(pausedBytes, greaterThan(0));
+        expect(pausedBytes, lessThan(totalBytes));
+
+        final persistDeadline = DateTime.now().add(const Duration(seconds: 5));
+        while ((await AppPreferences.getString(
+                  AppPreferences.asmrDownloadTasksKey,
+                )) ==
+                null &&
+            DateTime.now().isBefore(persistDeadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        firstManager.dispose();
+
+        restoredManager = AsmrDownloadManager(
+          temporaryDirectoryProvider: () async => Directory.systemTemp,
+        );
+        await restoredManager.initialize();
+        final restoredTask = restoredManager.getTask(1);
+        expect(restoredTask?.status, AsmrDownloadTaskStatus.paused);
+        expect(restoredManager.taskIds, <int>[1]);
+        expect(restoredManager.buttonViewState.visible, isTrue);
+        expect(
+          restoredTask?.fileDownloadedBytes['Track.mp3'],
+          greaterThanOrEqualTo(pausedBytes),
+        );
+
+        await restoredManager.resumeTask(1);
+        await _waitForTaskStatus(
+          restoredManager,
+          1,
+          AsmrDownloadTaskStatus.completed,
+        );
+        expect(rangeStarts, contains(pausedBytes));
+        expect(rangeStarts.last, 0);
+        expect(await target.length(), totalBytes);
+        expect(
+          restoredManager.getTask(1)?.downloadedBytes,
+          restoredManager.getTask(1)?.totalBytes,
+        );
+      } finally {
+        firstManager.dispose();
+        restoredManager?.dispose();
+        await server.close(force: true);
+        await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
     'dispose cancels active downloads and does not start queued work',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
@@ -1035,6 +1318,7 @@ void main() {
 AsmrDownloadManager _manager() {
   return AsmrDownloadManager(
     temporaryDirectoryProvider: () async => Directory.systemTemp,
+    persistTasks: false,
   );
 }
 

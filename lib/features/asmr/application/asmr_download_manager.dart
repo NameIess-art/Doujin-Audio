@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
@@ -13,6 +14,7 @@ import '../domain/asmr_download.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_api_service.dart';
 import '../../settings/application/app_cache_service.dart';
+import '../../settings/application/app_preferences.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_display.dart';
@@ -27,6 +29,26 @@ Map<String, String> asmrMediaRequestHeadersForUrl(String url) {
           HttpHeaders.acceptLanguageHeader: _asmrMediaAcceptLanguage,
         }
       : const <String, String>{};
+}
+
+@visibleForTesting
+bool isValidDownloadContentRange(
+  String? value, {
+  required int expectedStart,
+  required int responseLength,
+  required int expectedTotal,
+}) {
+  final match = value == null
+      ? null
+      : RegExp(r'^bytes (\d+)-(\d+)/(\d+|\*)$').firstMatch(value);
+  final start = int.tryParse(match?.group(1) ?? '');
+  final end = int.tryParse(match?.group(2) ?? '');
+  final total = int.tryParse(match?.group(3) ?? '');
+  final rangeLength = start == null || end == null ? -1 : end - start + 1;
+  return start == expectedStart &&
+      rangeLength > 0 &&
+      (responseLength <= 0 || responseLength == rangeLength) &&
+      (expectedTotal <= 0 || total == null || total == expectedTotal);
 }
 
 typedef LocalFileRename =
@@ -113,6 +135,7 @@ class AsmrDownloadTaskSnapshot {
     this.error,
     this.fileDownloadedBytes = const {},
     this.fileTotalBytes = const {},
+    this.completedFilePaths = const {},
     this.selectedRoots = const [],
   });
 
@@ -134,6 +157,7 @@ class AsmrDownloadTaskSnapshot {
   final String? error;
   final Map<String, int> fileDownloadedBytes;
   final Map<String, int> fileTotalBytes;
+  final Set<String> completedFilePaths;
   final List<AsmrTrackFile> selectedRoots;
 
   String get workRootPath {
@@ -177,6 +201,7 @@ class AsmrDownloadTaskSnapshot {
     String? error,
     Map<String, int>? fileDownloadedBytes,
     Map<String, int>? fileTotalBytes,
+    Set<String>? completedFilePaths,
     List<AsmrTrackFile>? selectedRoots,
   }) {
     return AsmrDownloadTaskSnapshot(
@@ -198,6 +223,7 @@ class AsmrDownloadTaskSnapshot {
       error: error ?? this.error,
       fileDownloadedBytes: fileDownloadedBytes ?? this.fileDownloadedBytes,
       fileTotalBytes: fileTotalBytes ?? this.fileTotalBytes,
+      completedFilePaths: completedFilePaths ?? this.completedFilePaths,
       selectedRoots: selectedRoots ?? this.selectedRoots,
     );
   }
@@ -369,17 +395,23 @@ class AsmrDownloadManager extends ChangeNotifier {
   AsmrDownloadManager({
     FileCachePlatformGateway? fileCacheGateway,
     Future<Directory> Function()? temporaryDirectoryProvider,
+    Future<Directory> Function()? stagingDirectoryProvider,
+    bool persistTasks = true,
   }) : _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
-       _temporaryDirectoryProvider =
-           temporaryDirectoryProvider ?? getTemporaryDirectory;
+       _stagingDirectoryProvider =
+           stagingDirectoryProvider ??
+           temporaryDirectoryProvider ??
+           getApplicationSupportDirectory,
+       _persistTasks = persistTasks;
 
   static const Duration _progressNotifyMinInterval = Duration(
     milliseconds: 120,
   );
   static const int _progressNotifyMinByteDelta = 128 * 1024;
   final FileCachePlatformGateway _fileCacheGateway;
-  final Future<Directory> Function() _temporaryDirectoryProvider;
+  final Future<Directory> Function() _stagingDirectoryProvider;
+  final bool _persistTasks;
 
   final Map<int, AsmrDownloadTaskSnapshot> _tasks = {};
   List<int> _taskIdsSnapshot = const <int>[];
@@ -399,8 +431,10 @@ class AsmrDownloadManager extends ChangeNotifier {
   static const int _maxConcurrentDownloads = 3;
   static const int _maxConcurrentFilesPerTask = 3;
 
-  bool _initialized = false;
   bool _disposed = false;
+  Future<void>? _initializationFuture;
+  Future<void> _persistenceTail = Future<void>.value();
+  Timer? _deferredPersistenceTimer;
   Timer? _deferredProgressNotifyTimer;
   DateTime? _lastProgressNotifyAt;
   int _lastProgressNotifyBytes = 0;
@@ -469,9 +503,45 @@ class AsmrDownloadManager extends ChangeNotifier {
     );
   }
 
-  Future<void> initialize() async {
-    if (_initialized || _disposed) return;
-    _initialized = true;
+  Future<void> initialize() {
+    if (_disposed) return Future<void>.value();
+    return _initializationFuture ??= _initializeOnce();
+  }
+
+  Future<void> _initializeOnce() async {
+    if (_persistTasks) {
+      final raw = await AppPreferences.getString(
+        AppPreferences.asmrDownloadTasksKey,
+      );
+      if (!_disposed && raw != null && raw.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map && decoded['tasks'] is List) {
+            for (final value in decoded['tasks'] as List) {
+              if (value is! Map) continue;
+              final restored = _downloadTaskFromJson(
+                Map<String, dynamic>.from(value),
+              );
+              final task = restored.task;
+              _tasks[task.work.id] = task.copyWith(
+                status: AsmrDownloadTaskStatus.paused,
+                message: 'paused',
+              );
+              _workRootExistedBeforeTask[task.work.id] =
+                  restored.workRootExistedBeforeTask;
+              _createdOutputPaths[task.work.id] = restored.createdOutputPaths;
+            }
+          }
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'asmr_download_restore_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }
+    }
+    if (_disposed) return;
     _notifyTaskChanged();
   }
 
@@ -525,10 +595,12 @@ class AsmrDownloadManager extends ChangeNotifier {
       _createdOutputPaths.remove(workId);
       _tasks.remove(workId);
       _notifyTaskChanged();
+      await _persistenceTail;
       return;
     }
 
     if (_activeTasks.contains(workId)) {
+      _pauseRequested.remove(workId);
       _cancelRequested[workId] = true;
       _tasks[workId] = task.copyWith(message: 'canceling');
       _notifyTaskChanged();
@@ -543,16 +615,19 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
       _tasks.remove(workId);
       _notifyTaskChanged();
+      await _persistenceTail;
       return;
     }
 
-    if (task.status == AsmrDownloadTaskStatus.failed) {
+    if (task.status == AsmrDownloadTaskStatus.failed ||
+        task.status == AsmrDownloadTaskStatus.paused) {
       await _cleanupCancelledTask(workId, task.workRootPath);
     }
     _workRootExistedBeforeTask.remove(workId);
     _createdOutputPaths.remove(workId);
     _tasks.remove(workId);
     _notifyTaskChanged();
+    await _persistenceTail;
   }
 
   Future<void> deleteTask(int workId) async {
@@ -564,6 +639,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     } else {
       _tasks.remove(workId);
       _notifyTaskChanged();
+      await _persistenceTail;
     }
     await _deleteDownloadRoot(workRootPath);
     _workRootExistedBeforeTask.remove(workId);
@@ -576,7 +652,10 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     if (_activeTasks.contains(workId)) {
       _pauseRequested[workId] = true;
+      final completion = _downloadCompletions[workId]?.future;
       _activeHttpClients[workId]?.close(force: true);
+      if (completion != null) await completion;
+      await _persistenceTail;
     } else if (_queue.contains(workId)) {
       _queue.remove(workId);
       _tasks[workId] = task.copyWith(
@@ -584,6 +663,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         message: 'paused',
       );
       _notifyTaskChanged();
+      await _persistenceTail;
     }
   }
 
@@ -596,7 +676,6 @@ class AsmrDownloadManager extends ChangeNotifier {
     _tasks[workId] = task.copyWith(
       status: AsmrDownloadTaskStatus.idle,
       message: 'queued',
-      conflictPolicy: AsmrDownloadConflictPolicy.skip,
     );
     if (!_queue.contains(workId)) {
       _queue.add(workId);
@@ -691,6 +770,7 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     _queue.add(workId);
     _notifyTaskChanged();
+    await _persistenceTail;
     _processQueue();
   }
 
@@ -763,22 +843,30 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
       _throwIfCancelled(workId);
 
-      _tasks[workId] = _tasks[workId]!.copyWith(
+      final resumedTask = _tasks[workId]!;
+      var completed = resumedTask.completedFiles;
+      var skipped = resumedTask.skippedFiles;
+      var failed = 0;
+      var downloadedBytes = resumedTask.downloadedBytes;
+      if (saveMetadata && completed == 0) {
+        completed = 1;
+        downloadedBytes += backupBytes;
+      }
+      final fileDownloadedBytes = Map<String, int>.from(
+        resumedTask.fileDownloadedBytes,
+      );
+      final completedFilePaths = Set<String>.from(
+        resumedTask.completedFilePaths,
+      );
+
+      _tasks[workId] = resumedTask.copyWith(
         status: AsmrDownloadTaskStatus.downloading,
-        completedFiles: saveMetadata ? 1 : 0,
-        downloadedBytes: backupBytes,
+        completedFiles: completed,
+        failedFiles: 0,
+        downloadedBytes: downloadedBytes,
         message: saveMetadata ? 'downloading_work_detail' : 'downloading',
       );
       _notifyTaskChanged();
-
-      var completed = saveMetadata ? 1 : 0;
-      var skipped = 0;
-      var failed = 0;
-      var downloadedBytes = backupBytes;
-
-      final fileDownloadedBytes = Map<String, int>.from(
-        _tasks[workId]!.fileDownloadedBytes,
-      );
       _liveDownloadedBytes[workId] = downloadedBytes;
       _liveFileDownloadedBytes[workId] = fileDownloadedBytes;
       final fileTotalBytes = _tasks[workId]!.fileTotalBytes;
@@ -816,6 +904,11 @@ class AsmrDownloadManager extends ChangeNotifier {
               if (fileIndex >= plannedFiles!.length) return;
               nextFileIndex++;
               final item = plannedFiles[fileIndex];
+              final previousFileBytes =
+                  fileDownloadedBytes[item.relativePath] ?? 0;
+              final wasAlreadyAccounted = completedFilePaths.contains(
+                item.relativePath,
+              );
               _tasks[workId] = _tasks[workId]!.copyWith(
                 currentItemPath: item.relativePath,
                 message: item.relativePath,
@@ -826,30 +919,25 @@ class AsmrDownloadManager extends ChangeNotifier {
                 item,
                 workId: workId,
                 workRootPath: workRootPath,
-                conflictPolicy: conflictPolicy,
+                conflictPolicy: wasAlreadyAccounted
+                    ? AsmrDownloadConflictPolicy.skip
+                    : conflictPolicy,
                 client: client,
               );
 
-              if (result.saved) {
+              if (result.saved && !wasAlreadyAccounted) {
                 completed++;
-              } else if (result.skipped) {
+              } else if (result.skipped && !wasAlreadyAccounted) {
                 skipped++;
               } else {
-                failed++;
+                if (!result.saved && !result.skipped) failed++;
               }
-              downloadedBytes += result.bytesDownloaded;
-              final publishedFileBytes =
-                  fileDownloadedBytes[item.relativePath] ?? 0;
-              final unpublishedBytes =
-                  result.bytesDownloaded - publishedFileBytes;
-              if (unpublishedBytes > 0) {
-                _liveDownloadedBytes.update(
-                  workId,
-                  (value) => value + unpublishedBytes,
-                  ifAbsent: () => downloadedBytes,
-                );
-              }
+              downloadedBytes += result.bytesDownloaded - previousFileBytes;
+              _liveDownloadedBytes[workId] = downloadedBytes;
               fileDownloadedBytes[item.relativePath] = result.bytesDownloaded;
+              if (result.saved || result.skipped) {
+                completedFilePaths.add(item.relativePath);
+              }
 
               _tasks[workId] = _tasks[workId]!.copyWith(
                 completedFiles: completed,
@@ -858,6 +946,7 @@ class AsmrDownloadManager extends ChangeNotifier {
                 downloadedBytes:
                     _liveDownloadedBytes[workId] ?? downloadedBytes,
                 fileDownloadedBytes: fileDownloadedBytes,
+                completedFilePaths: completedFilePaths,
               );
               _notifyProgressChanged();
             }
@@ -943,7 +1032,9 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
     } finally {
       _plannedFilesMap.remove(workId);
-      if (_cancelRequested[workId] == true && _pauseRequested[workId] != true) {
+      if (!_disposed &&
+          _cancelRequested[workId] == true &&
+          _pauseRequested[workId] != true) {
         await _cleanupCancelledTask(workId, workRootPath);
       }
       if (_cancelRequested[workId] == true) {
@@ -1033,13 +1124,16 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
     }
 
+    final stagingFile = localTargetFile == null
+        ? await _persistentStagingFile(workRootPath, item.relativePath)
+        : File('${localTargetFile.path}.nameless.part');
+    final stagingExisted = await stagingFile.exists();
+    if (!stagingExisted) _createdOutputPaths[workId]?.add(stagingFile.path);
     final tempResult = await _downloadToTemporaryFile(
       item,
       workId: workId,
       client: client,
-      localStagingFile: localTargetFile == null
-          ? null
-          : File('${localTargetFile.path}.nameless.part'),
+      stagingFile: stagingFile,
     );
     if (tempResult == null) {
       return const _WriteResult.failure(bytesDownloaded: 0);
@@ -1092,7 +1186,9 @@ class AsmrDownloadManager extends ChangeNotifier {
       return _WriteResult.success(bytesDownloaded: tempResult.bytesDownloaded);
     } finally {
       try {
-        if (await tempResult.file.exists()) {
+        if (_pauseRequested[workId] != true &&
+            !_disposed &&
+            await tempResult.file.exists()) {
           await tempResult.file.delete();
         }
       } catch (_) {
@@ -1106,32 +1202,38 @@ class AsmrDownloadManager extends ChangeNotifier {
     _PlannedDownloadFile item, {
     required int workId,
     required HttpClient client,
-    File? localStagingFile,
+    required File stagingFile,
+    bool allowResume = true,
   }) async {
-    final File tempFile;
-    if (localStagingFile != null) {
-      tempFile = localStagingFile;
-    } else {
-      final tempDir = await _temporaryDirectoryProvider();
-      final downloadDir = Directory(path.join(tempDir.path, 'asmr_downloads'));
-      if (!await downloadDir.exists()) {
-        await downloadDir.create(recursive: true);
-      }
-      tempFile = File(
-        path.join(
-          downloadDir.path,
-          '${DateTime.now().microsecondsSinceEpoch}_${_safeFileName(item.node.title)}',
-        ),
-      );
-    }
-    if (await tempFile.exists()) {
-      await tempFile.delete();
-    }
+    final tempFile = stagingFile;
+    await tempFile.parent.create(recursive: true);
     final cacheLease = AppCacheService.protectPaths(<String>[tempFile.path]);
     var leaseTransferred = false;
 
     var received = 0;
     try {
+      received = await tempFile.length();
+    } on FileSystemException {
+      if (await tempFile.exists()) rethrow;
+    }
+    if (!allowResume && received > 0) {
+      await _deleteFileIfPresent(tempFile);
+      received = 0;
+    }
+    if (item.size > 0 && received > item.size) {
+      await _deleteFileIfPresent(tempFile);
+      received = 0;
+    }
+    try {
+      if (item.size > 0 && received == item.size) {
+        await tempFile.setLastModified(DateTime.now());
+        leaseTransferred = true;
+        return _TemporaryDownloadResult(
+          file: tempFile,
+          bytesDownloaded: received,
+          cacheLease: cacheLease,
+        );
+      }
       const requestTimeout = Duration(seconds: 15);
       const downloadIdleTimeout = Duration(seconds: 30);
       _throwIfCancelled(workId);
@@ -1145,12 +1247,60 @@ class AsmrDownloadManager extends ChangeNotifier {
       for (final header in asmrMediaRequestHeadersForUrl(item.url).entries) {
         request.headers.set(header.key, header.value);
       }
+      if (received > 0) {
+        request.headers.set(HttpHeaders.rangeHeader, 'bytes=$received-');
+      }
       final response = await request.close().timeout(requestTimeout);
+
+      Future<_TemporaryDownloadResult?> retryWithoutRange() async {
+        try {
+          await response.listen((_) {}).cancel();
+        } catch (_) {
+          // The retry uses a new response even if cancellation already won.
+        }
+        _discardLivePartialProgress(workId, item.relativePath, received);
+        await _deleteFileIfPresent(tempFile);
+        cacheLease.release();
+        leaseTransferred = true;
+        return _downloadToTemporaryFile(
+          item,
+          workId: workId,
+          client: client,
+          stagingFile: stagingFile,
+          allowResume: false,
+        );
+      }
+
+      if (response.statusCode == HttpStatus.requestedRangeNotSatisfiable &&
+          received > 0 &&
+          allowResume) {
+        return retryWithoutRange();
+      }
       if (response.statusCode < 200 || response.statusCode >= 300) {
         return null;
       }
 
-      final sink = tempFile.openWrite();
+      var responseStart = 0;
+      if (response.statusCode == HttpStatus.partialContent) {
+        if (!isValidDownloadContentRange(
+          response.headers.value(HttpHeaders.contentRangeHeader),
+          expectedStart: received,
+          responseLength: response.contentLength,
+          expectedTotal: item.size,
+        )) {
+          if (received <= 0 || !allowResume) return null;
+          return retryWithoutRange();
+        }
+        responseStart = received;
+      }
+      if (responseStart == 0 && received > 0) {
+        final discardedBytes = received;
+        received = 0;
+        _discardLivePartialProgress(workId, item.relativePath, discardedBytes);
+      }
+      final sink = tempFile.openWrite(
+        mode: responseStart > 0 ? FileMode.append : FileMode.write,
+      );
       try {
         await for (final chunk in response.timeout(downloadIdleTimeout)) {
           _throwIfCancelled(workId);
@@ -1168,11 +1318,10 @@ class AsmrDownloadManager extends ChangeNotifier {
       } finally {
         await sink.close();
       }
-      if ((response.contentLength > 0 && received != response.contentLength) ||
-          (item.size > 0 && received < item.size)) {
-        if (await tempFile.exists()) {
-          await tempFile.delete();
-        }
+      if ((response.contentLength > 0 &&
+              received - responseStart != response.contentLength) ||
+          (item.size > 0 && received != item.size)) {
+        await _deleteFileIfPresent(tempFile);
         return null;
       }
 
@@ -1194,14 +1343,14 @@ class AsmrDownloadManager extends ChangeNotifier {
         error: error,
         stackTrace: stackTrace,
       );
-      if (await tempFile.exists()) {
-        await tempFile.delete();
-      }
+      await _deleteFileIfPresent(tempFile);
       return null;
     } finally {
       if (!leaseTransferred) {
         try {
-          if (await tempFile.exists()) {
+          if (_pauseRequested[workId] != true &&
+              !_disposed &&
+              await tempFile.exists()) {
             await tempFile.delete();
           }
         } catch (_) {
@@ -1337,13 +1486,15 @@ class AsmrDownloadManager extends ChangeNotifier {
     return null;
   }
 
-  String _safeFileName(String value) {
-    return PathDisplay.safeFileName(
-      value,
-      replacement: '_',
-      collapseWhitespace: false,
-      fallback: 'file',
-    );
+  Future<File> _persistentStagingFile(
+    String workRootPath,
+    String relativePath,
+  ) async {
+    final root = await _stagingDirectoryProvider();
+    final key = sha256
+        .convert(utf8.encode('$workRootPath|$relativePath'))
+        .toString();
+    return File(path.join(root.path, 'asmr_downloads', '$key.nameless.part'));
   }
 
   String _trimRightSlash(String value) {
@@ -1354,14 +1505,73 @@ class AsmrDownloadManager extends ChangeNotifier {
     return result;
   }
 
-  void _notifyTaskChanged() {
+  void _notifyTaskChanged({bool deferPersistence = false}) {
     if (_disposed) return;
     _deferredProgressNotifyTimer?.cancel();
     _deferredProgressNotifyTimer = null;
     _publishLiveProgress();
     _refreshTaskIdsSnapshot();
     _markProgressNotified();
+    _scheduleTaskPersistence(deferred: deferPersistence);
     notifyListeners();
+  }
+
+  void _scheduleTaskPersistence({required bool deferred}) {
+    if (!_persistTasks) return;
+    if (deferred) {
+      _deferredPersistenceTimer ??= Timer(
+        const Duration(milliseconds: 400),
+        () {
+          _deferredPersistenceTimer = null;
+          _persistCurrentTasks();
+        },
+      );
+      return;
+    }
+    _deferredPersistenceTimer?.cancel();
+    _deferredPersistenceTimer = null;
+    _persistCurrentTasks();
+  }
+
+  void _persistCurrentTasks() {
+    if (!_persistTasks) return;
+    final tasks = _tasks.values
+        .where((task) => task.status != AsmrDownloadTaskStatus.completed)
+        .map(
+          (task) => _downloadTaskToJson(
+            task,
+            workRootExistedBeforeTask:
+                _workRootExistedBeforeTask[task.work.id] ?? true,
+            createdOutputPaths:
+                _createdOutputPaths[task.work.id] ?? const <String>{},
+          ),
+        )
+        .toList(growable: false);
+    final payload = tasks.isEmpty
+        ? null
+        : jsonEncode(<String, Object?>{'version': 1, 'tasks': tasks});
+    _persistenceTail = _persistenceTail.then(
+      (_) => _writePersistedTasks(payload),
+    );
+  }
+
+  Future<void> _writePersistedTasks(String? payload) async {
+    try {
+      if (payload == null) {
+        await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey);
+      } else {
+        await AppPreferences.setString(
+          AppPreferences.asmrDownloadTasksKey,
+          payload,
+        );
+      }
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'asmr_download_persist_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
   }
 
   void _refreshTaskIdsSnapshot() {
@@ -1409,7 +1619,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     final byteDelta = (totalDownloadedBytes - _lastProgressNotifyBytes).abs();
     if (byteDelta >= _progressNotifyMinByteDelta ||
         elapsed >= _progressNotifyMinInterval) {
-      _notifyTaskChanged();
+      _notifyTaskChanged(deferPersistence: true);
       return;
     }
 
@@ -1455,6 +1665,19 @@ class AsmrDownloadManager extends ChangeNotifier {
     _notifyProgressChanged();
   }
 
+  void _discardLivePartialProgress(
+    int workId,
+    String relativePath,
+    int discardedBytes,
+  ) {
+    if (discardedBytes <= 0) return;
+    _liveDownloadedBytes.update(
+      workId,
+      (value) => value > discardedBytes ? value - discardedBytes : 0,
+    );
+    _liveFileDownloadedBytes[workId]?[relativePath] = 0;
+  }
+
   void _publishLiveProgress() {
     for (final entry in _liveDownloadedBytes.entries) {
       final task = _tasks[entry.key];
@@ -1471,6 +1694,19 @@ class AsmrDownloadManager extends ChangeNotifier {
   @override
   void dispose() {
     if (_disposed) return;
+    _deferredPersistenceTimer?.cancel();
+    _deferredPersistenceTimer = null;
+    _publishLiveProgress();
+    for (final workId in <int>{..._queue, ..._activeTasks}) {
+      final task = _tasks[workId];
+      if (task != null) {
+        _tasks[workId] = task.copyWith(
+          status: AsmrDownloadTaskStatus.paused,
+          message: 'paused',
+        );
+      }
+    }
+    _persistCurrentTasks();
     _disposed = true;
     _deferredProgressNotifyTimer?.cancel();
     _deferredProgressNotifyTimer = null;
@@ -1518,6 +1754,14 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
   }
 
+  Future<void> _deleteFileIfPresent(File file) async {
+    try {
+      await file.delete();
+    } on FileSystemException {
+      if (await file.exists()) rethrow;
+    }
+  }
+
   Future<bool> _pathExists(String targetPath) async {
     if (PathMatcher.isContentUri(targetPath)) {
       try {
@@ -1552,6 +1796,157 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
     }
   }
+}
+
+Map<String, Object?> _downloadTaskToJson(
+  AsmrDownloadTaskSnapshot task, {
+  required bool workRootExistedBeforeTask,
+  required Set<String> createdOutputPaths,
+}) => <String, Object?>{
+  'work': task.work.toJson(),
+  'destinationRoot': task.destinationRoot,
+  'workFolderName': task.workFolderName,
+  'conflictPolicy': task.conflictPolicy.name,
+  'saveMetadata': task.saveMetadata,
+  'totalFiles': task.totalFiles,
+  'completedFiles': task.completedFiles,
+  'skippedFiles': task.skippedFiles,
+  'failedFiles': task.failedFiles,
+  'totalBytes': task.totalBytes,
+  'downloadedBytes': task.downloadedBytes,
+  'startedAt': task.startedAt.toIso8601String(),
+  'currentItemPath': task.currentItemPath,
+  'message': task.message,
+  'error': task.error,
+  'fileDownloadedBytes': task.fileDownloadedBytes,
+  'fileTotalBytes': task.fileTotalBytes,
+  'completedFilePaths': task.completedFilePaths.toList(growable: false),
+  'selectedRoots': task.selectedRoots.map(_downloadTrackToJson).toList(),
+  'workRootExistedBeforeTask': workRootExistedBeforeTask,
+  'createdOutputPaths': createdOutputPaths.toList(growable: false),
+};
+
+_PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
+  final workJson = json['work'];
+  if (workJson is! Map<Object?, Object?>) {
+    throw const FormatException('Missing download work.');
+  }
+  final work = AsmrWork.fromJson(Map<String, dynamic>.from(workJson));
+  if (work.id <= 0) throw const FormatException('Invalid download work.');
+  final selectedRoots = (json['selectedRoots'] as List? ?? const <Object>[])
+      .whereType<Map<Object?, Object?>>()
+      .map((value) => _downloadTrackFromJson(Map<String, dynamic>.from(value)))
+      .toList(growable: false);
+  if (selectedRoots.isEmpty) {
+    throw const FormatException('Missing selected download files.');
+  }
+  return _PersistedDownloadTask(
+    task: AsmrDownloadTaskSnapshot(
+      work: work,
+      destinationRoot: json['destinationRoot'] as String? ?? '',
+      workFolderName: json['workFolderName'] as String? ?? '',
+      conflictPolicy: _enumByName(
+        AsmrDownloadConflictPolicy.values,
+        json['conflictPolicy'],
+        AsmrDownloadConflictPolicy.skip,
+      ),
+      saveMetadata: json['saveMetadata'] as bool? ?? true,
+      status: AsmrDownloadTaskStatus.paused,
+      totalFiles: _jsonInt(json['totalFiles']),
+      completedFiles: _jsonInt(json['completedFiles']),
+      skippedFiles: _jsonInt(json['skippedFiles']),
+      failedFiles: _jsonInt(json['failedFiles']),
+      totalBytes: _jsonInt(json['totalBytes']),
+      downloadedBytes: _jsonInt(json['downloadedBytes']),
+      startedAt:
+          DateTime.tryParse(json['startedAt'] as String? ?? '') ??
+          DateTime.now(),
+      currentItemPath: json['currentItemPath'] as String?,
+      message: json['message'] as String?,
+      error: json['error'] as String?,
+      fileDownloadedBytes: _jsonIntMap(json['fileDownloadedBytes']),
+      fileTotalBytes: _jsonIntMap(json['fileTotalBytes']),
+      completedFilePaths:
+          (json['completedFilePaths'] as List? ?? const <Object>[])
+              .whereType<String>()
+              .toSet(),
+      selectedRoots: selectedRoots,
+    ),
+    workRootExistedBeforeTask:
+        json['workRootExistedBeforeTask'] as bool? ?? true,
+    createdOutputPaths: (json['createdOutputPaths'] as List? ?? const [])
+        .whereType<String>()
+        .toSet(),
+  );
+}
+
+Map<String, Object?> _downloadTrackToJson(AsmrTrackFile track) =>
+    <String, Object?>{
+      'hash': track.hash,
+      'title': track.title,
+      'type': track.type,
+      'streamUrl': track.streamUrl,
+      'downloadUrl': track.downloadUrl,
+      'lowQualityUrl': track.lowQualityUrl,
+      'durationMs': track.duration.inMilliseconds,
+      'size': track.size,
+      'workId': track.workId,
+      'workTitle': track.workTitle,
+      'sourceId': track.sourceId,
+      'relativePath': track.relativePath,
+      'children': track.children.map(_downloadTrackToJson).toList(),
+    };
+
+AsmrTrackFile _downloadTrackFromJson(Map<String, dynamic> json) =>
+    AsmrTrackFile(
+      hash: json['hash'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      type: json['type'] as String? ?? '',
+      streamUrl: json['streamUrl'] as String?,
+      downloadUrl: json['downloadUrl'] as String?,
+      lowQualityUrl: json['lowQualityUrl'] as String?,
+      duration: Duration(milliseconds: _jsonInt(json['durationMs'])),
+      size: _jsonInt(json['size']),
+      children: (json['children'] as List? ?? const <Object>[])
+          .whereType<Map<Object?, Object?>>()
+          .map(
+            (value) => _downloadTrackFromJson(Map<String, dynamic>.from(value)),
+          )
+          .toList(growable: false),
+      workId: _jsonInt(json['workId']),
+      workTitle: json['workTitle'] as String? ?? '',
+      sourceId: json['sourceId'] as String? ?? '',
+      relativePath: json['relativePath'] as String? ?? '',
+    );
+
+Map<String, int> _jsonIntMap(Object? value) {
+  if (value is! Map<Object?, Object?>) return const <String, int>{};
+  return <String, int>{
+    for (final entry in value.entries)
+      if (entry.key is String && entry.value is num)
+        entry.key as String: (entry.value as num).toInt(),
+  };
+}
+
+int _jsonInt(Object? value) => (value as num?)?.toInt() ?? 0;
+
+T _enumByName<T extends Enum>(List<T> values, Object? name, T fallback) {
+  for (final value in values) {
+    if (value.name == name) return value;
+  }
+  return fallback;
+}
+
+class _PersistedDownloadTask {
+  const _PersistedDownloadTask({
+    required this.task,
+    required this.workRootExistedBeforeTask,
+    required this.createdOutputPaths,
+  });
+
+  final AsmrDownloadTaskSnapshot task;
+  final bool workRootExistedBeforeTask;
+  final Set<String> createdOutputPaths;
 }
 
 class _PlannedDownloadFile {

@@ -1348,24 +1348,31 @@ class CoverArtworkCacheService {
   }
 
   Future<String?> _resolvePreferredFolderCover(String folderPath) async {
-    final images = await _discoverFolderImages(folderPath);
+    final images = await _discoverFolderImages(folderPath, recursive: false);
     if (images.isNotEmpty) return images.first;
 
     for (final track in _tracksInCoverScope(folderPath)) {
       final candidate = track.isVideo
           ? await _resolveVideoFramePathForTrack(track)
-          : await _resolvePlatformCoverPathForTrack(track);
+          : await _resolvePlatformCoverPathForTrack(
+              track,
+              includeGroupCoverFallback: false,
+            );
       if (candidate != null && candidate.trim().isNotEmpty) return candidate;
     }
     return null;
   }
 
-  Future<List<String>> _discoverFolderImages(String folderPath) async {
+  Future<List<String>> _discoverFolderImages(
+    String folderPath, {
+    bool recursive = true,
+  }) async {
     if (PathMatcher.isContentUri(folderPath)) {
       try {
         return await _fileCacheGateway.discoverRootImages(
           path: folderPath,
           rootFolder: folderPath,
+          recursive: recursive,
         );
       } on MissingPluginException {
         return const <String>[];
@@ -1387,7 +1394,10 @@ class CoverArtworkCacheService {
     );
     return List<String>.unmodifiable(
       indexedImages.where(
-        (imagePath) => PathMatcher.isWithinOrEqual(imagePath, normalizedFolder),
+        (imagePath) => recursive
+            ? PathMatcher.isWithinOrEqual(imagePath, normalizedFolder)
+            : PathMatcher.parentEquivalenceKey(imagePath) ==
+                  PathMatcher.equivalenceKey(normalizedFolder),
       ),
     );
   }
@@ -1451,7 +1461,7 @@ class CoverArtworkCacheService {
     for (final entry in _libraryService.tracksByGroup.entries) {
       final groupKey = PathMatcher.normalize(entry.key.trim());
       if (groupKey.isNotEmpty &&
-          PathMatcher.isWithinOrEqual(groupKey, normalizedFolderPath)) {
+          PathMatcher.equalsNormalized(groupKey, normalizedFolderPath)) {
         tracks.addAll(entry.value);
       }
     }

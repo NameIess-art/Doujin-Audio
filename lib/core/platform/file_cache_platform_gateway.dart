@@ -175,6 +175,7 @@ class FileCachePlatformGateway {
     required String path,
     String? groupKey,
     required String rootFolder,
+    bool recursive = true,
   }) async {
     final result = await _client.invoke<List<Object?>>(
       FileCacheMethod.discoverRootImages,
@@ -182,6 +183,7 @@ class FileCachePlatformGateway {
         'path': path,
         'groupKey': groupKey,
         'rootFolder': rootFolder,
+        'recursive': recursive,
       },
       decode: (value) => (value as List).cast<Object?>(),
     );

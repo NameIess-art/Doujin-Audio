@@ -719,7 +719,7 @@ void main() {
   });
 
   test(
-    'indexed content groups keep insertion order and visit all tracks only on miss',
+    'folder card embedded-cover lookup stays in its exact content group',
     () async {
       const root =
           'content://com.android.externalstorage.documents/tree/primary%3AMusic::Work';
@@ -747,10 +747,7 @@ void main() {
       );
 
       expect(await cache.futureForFolder(root), isNull);
-      expect(gateway.resolveTrackCoverPaths, <String>[
-        rootTrack.path,
-        subfolderTrack.path,
-      ]);
+      expect(gateway.resolveTrackCoverPaths, <String>[rootTrack.path]);
     },
   );
 
@@ -1309,10 +1306,20 @@ void main() {
       await child.create();
       final first = File('${child.path}${Platform.pathSeparator}first.jpg');
       await first.writeAsBytes(const <int>[1]);
+      final sibling = Directory('${root.path}${Platform.pathSeparator}sibling');
+      await sibling.create();
+      await File(
+        '${sibling.path}${Platform.pathSeparator}sibling.jpg',
+      ).writeAsBytes(const <int>[3]);
       final library = LibraryService()..watchedLibraries.add(root.path);
       final cache = CoverArtworkCacheService(libraryService: library);
 
+      expect(await cache.futureForFolder(root.path), isNull);
       expect(await cache.discoverCoverCandidatesInFolder(root.path), <String>[
+        first.path,
+        '${sibling.path}${Platform.pathSeparator}sibling.jpg',
+      ]);
+      expect(await cache.discoverCoverCandidatesInFolder(child.path), <String>[
         first.path,
       ]);
       final second = File('${child.path}${Platform.pathSeparator}second.png');
@@ -1375,6 +1382,7 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
     required String path,
     String? groupKey,
     String? rootFolder,
+    bool recursive = true,
   }) async => discoveredImages?.call(path) ?? const <String>[];
 
   @override

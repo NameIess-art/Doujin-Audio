@@ -41,7 +41,7 @@ internal class CoverArtworkOperations(
         return metadata.resolveEmbeddedCover(trackPath, trackPath)
     }
 
-    fun discover(trackPath: String, groupKey: String?, rootFolder: String?): List<String> {
+    fun discover(trackPath: String, groupKey: String?, rootFolder: String?, recursive: Boolean): List<String> {
         val documentRoot = when {
             !rootFolder.isNullOrBlank() && rootFolder.startsWith("content://") -> rootFolder
             !groupKey.isNullOrBlank() && groupKey.startsWith("content://") -> groupKey.substringBefore("::")
@@ -49,15 +49,15 @@ internal class CoverArtworkOperations(
         }
         if (documentRoot != null) {
             val root = storage.resolveDocumentFileForFolderPath(documentRoot)
-            val candidates = root?.let(::documentImages).orEmpty()
+            val candidates = root?.let { documentImages(it, recursive) }.orEmpty()
             if (candidates.isNotEmpty()) {
                 return candidates.mapNotNull { cacheDocument(it.file, "$trackPath|${it.path}") }
             }
             val localRoot = storage.contentUriToFilePath(documentRoot)
-            if (localRoot != null) return fileImages(localRoot, trackPath)
+            if (localRoot != null) return fileImages(localRoot, trackPath, recursive)
             return emptyList()
         }
-        if (!rootFolder.isNullOrBlank()) return fileImages(rootFolder, trackPath)
+        if (!rootFolder.isNullOrBlank()) return fileImages(rootFolder, trackPath, recursive)
         return emptyList()
     }
 
@@ -105,10 +105,11 @@ internal class CoverArtworkOperations(
         }
     }
 
-    private fun fileImages(folderPath: String, cacheKey: String): List<String> {
+    private fun fileImages(folderPath: String, cacheKey: String, recursive: Boolean): List<String> {
         val root = File(folderPath)
         if (!root.isDirectory) return emptyList()
-        return root.walkTopDown()
+        val files = if (recursive) root.walkTopDown() else root.listFiles().orEmpty().asSequence()
+        return files
             .filter { it.isFile && isImage(it.name, null) }
             .sortedWith(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
             .mapNotNull { file ->
@@ -125,22 +126,22 @@ internal class CoverArtworkOperations(
             }.toList()
     }
 
-    private fun preferredDocument(root: DocumentFile): DocumentCandidate? = documentImages(root).firstOrNull()
+    private fun preferredDocument(root: DocumentFile): DocumentCandidate? = documentImages(root, true).firstOrNull()
 
-    private fun documentImages(root: DocumentFile): List<DocumentCandidate> {
+    private fun documentImages(root: DocumentFile, recursive: Boolean): List<DocumentCandidate> {
         data class Node(val folder: DocumentFile, val path: String)
-        val pending = ArrayDeque<Node>()
         val found = mutableListOf<DocumentCandidate>()
-        pending += Node(root, "")
         try {
+            val pending = ArrayDeque<Node>()
+            pending += Node(root, "")
             while (pending.isNotEmpty()) {
                 val node = pending.removeFirst()
                 node.folder.listFiles().forEach { child ->
                     val name = MediaNameMetadata.normalizeDisplayName(child.name.orEmpty())
-                    val path = listOf(node.path, name).filter(String::isNotBlank).joinToString("/")
+                    val childPath = listOf(node.path, name).filter(String::isNotBlank).joinToString("/")
                     when {
-                        child.isDirectory -> pending += Node(child, path)
-                        child.isFile && isImage(name, child.type) -> found += DocumentCandidate(child, path)
+                        recursive && child.isDirectory -> pending += Node(child, childPath)
+                        child.isFile && isImage(name, child.type) -> found += DocumentCandidate(child, childPath)
                     }
                 }
             }

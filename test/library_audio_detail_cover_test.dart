@@ -48,11 +48,9 @@ void main() {
 
   group('folder image isolation', () {
     test(
-      'loose image files affect the folder but not the track cover',
+      'nested image files do not leak into parent folder or track covers',
       () async {
-        final tempDir = await Directory.systemTemp.createTemp(
-          'library_cover_',
-        );
+        final tempDir = await Directory.systemTemp.createTemp('library_cover_');
         addTearDown(() async {
           if (await tempDir.exists()) {
             await tempDir.delete(recursive: true);
@@ -92,7 +90,7 @@ void main() {
           await runtimeGraph.notifications.coverPathFutureForFolder(
             workDir.path,
           ),
-          coverPath,
+          isNull,
         );
         expect(
           await runtimeGraph.notifications.coverPathFutureForTrack(track),
@@ -205,7 +203,8 @@ void main() {
           }
           final arguments = call.arguments as Map<Object?, Object?>;
           return arguments['path'] == workScope &&
-              arguments['rootFolder'] == workScope;
+              arguments['rootFolder'] == workScope &&
+              arguments['recursive'] == false;
         }),
         isTrue,
       );
@@ -257,6 +256,12 @@ void main() {
         expect(
           await runtimeGraph.notifications.coverPathFutureForFolder(
             workDir.path,
+          ),
+          isNull,
+        );
+        expect(
+          await runtimeGraph.notifications.coverPathFutureForFolder(
+            nestedDir.path,
           ),
           coverFile.path,
         );

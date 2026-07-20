@@ -81,8 +81,8 @@ internal class FileCacheOperations(context: Context) {
     fun resolveVideoFrame(path: String, modifiedAtMs: Long?): String? =
         mediaMetadata.resolveVideoFrame(path, modifiedAtMs)
 
-    fun discoverRootImages(path: String, groupKey: String?, rootFolder: String?): List<String> =
-        covers.discover(path, groupKey, rootFolder)
+    fun discoverRootImages(path: String, groupKey: String?, rootFolder: String?, recursive: Boolean): List<String> =
+        covers.discover(path, groupKey, rootFolder, recursive)
 
     fun maxApplicationCacheBytes(): Long = cachePolicy.maxBytes()
 

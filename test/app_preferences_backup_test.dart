@@ -64,6 +64,7 @@ void main() {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       'language': 'zh',
       'session_order_v1': '["session-1"]',
+      AppPreferences.asmrDownloadTasksKey: '{"tasks":[]}',
     });
     await AppPreferences.init();
     final source = _FakeTokenStore(
@@ -85,6 +86,7 @@ void main() {
       isA<Map<Object?, Object?>>(),
     );
     expect(values, isNot(contains('session_order_v1')));
+    expect(values, isNot(contains(AppPreferences.asmrDownloadTasksKey)));
     expect(await restored.readToken(), 'backup-token');
     expect(await restored.readCredentials(), const <String, String>{
       'name': 'backup-name',

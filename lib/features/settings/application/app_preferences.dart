@@ -10,6 +10,7 @@ typedef JsonValueReader<T> = T Function(Object? value);
 class AppPreferences {
   static const onboardingCompletedKey = 'onboarding_completed_v1';
   static const asmrAccountBackupKey = '_backup_asmr_account_v1';
+  static const asmrDownloadTasksKey = 'asmr_download_tasks_v1';
   static SharedPreferences? _instance;
   const AppPreferences._();
 
@@ -107,7 +108,7 @@ class AppPreferences {
     final prefs = await _prefs;
     final values = <String, Object>{};
     for (final key in prefs.getKeys()) {
-      if (_isSensitiveKey(key) || _isPlaybackListKey(key)) continue;
+      if (_isSensitiveKey(key) || _isBackupExcludedKey(key)) continue;
       final value = prefs.get(key);
       if (value is String ||
           value is bool ||
@@ -157,7 +158,7 @@ class AppPreferences {
       }
       for (final entry in values.entries) {
         if (entry.key == asmrAccountBackupKey) continue;
-        if (_isSensitiveKey(entry.key) || _isPlaybackListKey(entry.key)) {
+        if (_isSensitiveKey(entry.key) || _isBackupExcludedKey(entry.key)) {
           continue;
         }
         final written = await _writeValue(prefs, entry.key, entry.value);
@@ -290,7 +291,8 @@ class AppPreferences {
         normalized == 'asmr_one_token_v1';
   }
 
-  static bool _isPlaybackListKey(String key) => key == 'session_order_v1';
+  static bool _isBackupExcludedKey(String key) =>
+      key == 'session_order_v1' || key == asmrDownloadTasksKey;
 
   static Future<T?> readJson<T>(String key, JsonValueReader<T> reader) async {
     final raw = await getString(key);

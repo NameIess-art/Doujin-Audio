@@ -79,7 +79,10 @@ List<Widget> _buildSettingsAppearanceSection({
             return _ThemeColorTile(
               key: const ValueKey<String>('app_theme_color_tile'),
               title: i18n.tr('app_theme_color'),
-              color: themeState.appThemeColor.color,
+              indicatorKey: const ValueKey<String>('app_theme_color_indicator'),
+              color: themeState.appThemeColor
+                  .colorScheme(Theme.of(context).brightness)
+                  .primary,
               iconColor: cs.primary,
               onTap: () => _showThemeColorPicker(
                 context: context,
@@ -103,7 +106,12 @@ List<Widget> _buildSettingsAppearanceSection({
             return _ThemeColorTile(
               key: const ValueKey<String>('asmr_theme_color_tile'),
               title: i18n.tr('asmr_theme_color'),
-              color: themeState.asmrThemeColor.color,
+              indicatorKey: const ValueKey<String>(
+                'asmr_theme_color_indicator',
+              ),
+              color: themeState.asmrThemeColor
+                  .colorScheme(Theme.of(context).brightness)
+                  .primary,
               iconColor: cs.primary,
               onTap: () => _showThemeColorPicker(
                 context: context,
@@ -321,15 +329,15 @@ void _showThemeColorPicker({
   required ThemeAccentPreset selected,
   required Future<void> Function(ThemeAccentPreset value) onSelected,
 }) {
-  AppBottomSheet.show<void>(
+  showDialog<void>(
     context: context,
-    builder: (sheetContext) => _ThemeColorPickerSheet(
+    builder: (dialogContext) => _ThemeColorPickerMenu(
       title: title,
       selected: selected,
       i18n: i18n,
       onSelected: (value) {
         onSelected(value);
-        Navigator.of(sheetContext).pop();
+        Navigator.of(dialogContext).pop();
       },
     ),
   );
@@ -339,12 +347,14 @@ class _ThemeColorTile extends StatelessWidget {
   const _ThemeColorTile({
     super.key,
     required this.title,
+    required this.indicatorKey,
     required this.color,
     required this.iconColor,
     required this.onTap,
   });
 
   final String title;
+  final Key indicatorKey;
   final Color color;
   final Color iconColor;
   final VoidCallback onTap;
@@ -359,7 +369,7 @@ class _ThemeColorTile extends StatelessWidget {
         dimension: 48,
         child: Center(
           child: Container(
-            key: ValueKey<String>('theme_color_indicator_$title'),
+            key: indicatorKey,
             width: 32,
             height: 32,
             decoration: BoxDecoration(
@@ -378,8 +388,8 @@ class _ThemeColorTile extends StatelessWidget {
   }
 }
 
-class _ThemeColorPickerSheet extends StatelessWidget {
-  const _ThemeColorPickerSheet({
+class _ThemeColorPickerMenu extends StatelessWidget {
+  const _ThemeColorPickerMenu({
     required this.title,
     required this.selected,
     required this.i18n,
@@ -396,90 +406,89 @@ class _ThemeColorPickerSheet extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
-    return SafeArea(
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-              tokens.spaceLg,
-              tokens.spaceXs,
-              tokens.spaceLg,
-              tokens.spaceXl,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  title,
-                  style: theme.textTheme.titleLarge,
-                  textAlign: TextAlign.center,
+    return Dialog(
+      key: const ValueKey<String>('theme_color_dialog'),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 340),
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spaceLg,
+            tokens.spaceLg,
+            tokens.spaceLg,
+            tokens.spaceLg,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleLarge,
+                textAlign: TextAlign.center,
+              ),
+              SizedBox(height: tokens.spaceLg),
+              GridView.builder(
+                key: const ValueKey<String>('theme_color_grid'),
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 4,
+                  mainAxisExtent: 56,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 4,
                 ),
-                SizedBox(height: tokens.spaceLg),
-                GridView.builder(
-                  key: const ValueKey<String>('theme_color_grid'),
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 4,
-                    mainAxisExtent: 64,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 8,
-                  ),
-                  itemCount: ThemeAccentPreset.values.length,
-                  itemBuilder: (context, index) {
-                    final preset = ThemeAccentPreset.values[index];
-                    final isSelected = preset == selected;
-                    final label = i18n.tr(preset.labelKey);
-                    final foreground =
-                        ThemeData.estimateBrightnessForColor(preset.color) ==
-                            Brightness.dark
-                        ? Colors.white
-                        : const Color(0xFF242126);
-                    return Semantics(
-                      button: true,
-                      selected: isSelected,
-                      label: label,
-                      child: Tooltip(
-                        message: label,
-                        child: InkWell(
-                          key: ValueKey<String>('theme_color_${preset.name}'),
-                          customBorder: const CircleBorder(),
-                          onTap: () => onSelected(preset),
-                          child: Center(
-                            child: AnimatedContainer(
-                              duration: tokens.motionFast,
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: preset.color,
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: isSelected
-                                      ? cs.onSurface
-                                      : cs.outlineVariant.withValues(
-                                          alpha: 0.7,
-                                        ),
-                                  width: isSelected ? 3 : 1,
-                                ),
+                itemCount: ThemeAccentPreset.values.length,
+                itemBuilder: (context, index) {
+                  final preset = ThemeAccentPreset.values[index];
+                  final isSelected = preset == selected;
+                  final label = i18n.tr(preset.labelKey);
+                  final color = preset.colorScheme(theme.brightness).primary;
+                  final foreground =
+                      ThemeData.estimateBrightnessForColor(color) ==
+                          Brightness.dark
+                      ? Colors.white
+                      : const Color(0xFF242126);
+                  return Semantics(
+                    button: true,
+                    selected: isSelected,
+                    label: label,
+                    child: Tooltip(
+                      message: label,
+                      child: InkWell(
+                        key: ValueKey<String>('theme_color_${preset.name}'),
+                        customBorder: const CircleBorder(),
+                        onTap: () => onSelected(preset),
+                        child: Center(
+                          child: AnimatedContainer(
+                            duration: tokens.motionFast,
+                            width: 48,
+                            height: 48,
+                            decoration: BoxDecoration(
+                              color: color,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected
+                                    ? cs.onSurface
+                                    : cs.outlineVariant.withValues(alpha: 0.7),
+                                width: isSelected ? 3 : 1,
                               ),
-                              child: isSelected
-                                  ? Icon(
-                                      Icons.check_rounded,
-                                      color: foreground,
-                                      size: 24,
-                                    )
-                                  : null,
                             ),
+                            child: isSelected
+                                ? Icon(
+                                    Icons.check_rounded,
+                                    color: foreground,
+                                    size: 24,
+                                  )
+                                : null,
                           ),
                         ),
                       ),
-                    );
-                  },
-                ),
-              ],
-            ),
+                    ),
+                  );
+                },
+              ),
+            ],
           ),
         ),
       ),

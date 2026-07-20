@@ -43,9 +43,18 @@ void main() {
 
     expect(lightTokens, isNotNull);
     expect(darkTokens, isNotNull);
-    expect(lightTokens!.asmrAccent, const Color(0xFF1D4ED8));
-    expect(darkTokens!.asmrAccent, const Color(0xFF60A5FA));
-    expect(lightTokens.onAsmrAccent, isNot(Colors.white));
+    expect(
+      lightTokens!.asmrAccent,
+      ThemeAccentPreset.blue.colorScheme(Brightness.light).primary,
+    );
+    expect(
+      darkTokens!.asmrAccent,
+      ThemeAccentPreset.blue.colorScheme(Brightness.dark).primary,
+    );
+    expect(
+      lightTokens.onAsmrAccent,
+      ThemeAccentPreset.blue.colorScheme(Brightness.light).onPrimary,
+    );
     expect(lightTokens.radiusCard, darkTokens.radiusCard);
     expect(lightTokens.radiusOverlay, 24);
     expect(lightTokens.spaceXxs, 4);
@@ -100,15 +109,16 @@ void main() {
 
     await provider.setAppThemeColor(ThemeAccentPreset.mint);
 
-    final expectedLight = ColorScheme.fromSeed(
-      seedColor: ThemeAccentPreset.mint.color,
-    );
-    final expectedDark = ColorScheme.fromSeed(
-      seedColor: ThemeAccentPreset.mint.color,
-      brightness: Brightness.dark,
-    );
+    final expectedLight = ThemeAccentPreset.mint.colorScheme(Brightness.light);
+    final expectedDark = ThemeAccentPreset.mint.colorScheme(Brightness.dark);
     expect(provider.lightTheme.colorScheme.primary, expectedLight.primary);
     expect(provider.darkTheme.colorScheme.primary, expectedDark.primary);
+    expect(provider.lightTheme.colorScheme.secondary, expectedLight.secondary);
+    expect(provider.lightTheme.colorScheme.tertiary, expectedLight.tertiary);
+    expect(
+      provider.lightTheme.colorScheme.surfaceContainer,
+      expectedLight.surfaceContainer,
+    );
     expect(
       provider.lightTheme.colorScheme.primary,
       isNot(previousLightPrimary),
@@ -123,13 +133,8 @@ void main() {
 
     await provider.setAsmrThemeColor(ThemeAccentPreset.amber);
 
-    final expectedLight = ColorScheme.fromSeed(
-      seedColor: ThemeAccentPreset.amber.color,
-    );
-    final expectedDark = ColorScheme.fromSeed(
-      seedColor: ThemeAccentPreset.amber.color,
-      brightness: Brightness.dark,
-    );
+    final expectedLight = ThemeAccentPreset.amber.colorScheme(Brightness.light);
+    final expectedDark = ThemeAccentPreset.amber.colorScheme(Brightness.dark);
     expect(
       provider.lightTheme.extension<AppDesignTokens>()!.asmrAccent,
       expectedLight.primary,
@@ -137,6 +142,10 @@ void main() {
     expect(
       provider.darkTheme.extension<AppDesignTokens>()!.asmrAccent,
       expectedDark.primary,
+    );
+    expect(
+      provider.lightTheme.extension<AppDesignTokens>()!.asmrSurface,
+      expectedLight.surfaceContainerLow,
     );
   });
 
@@ -199,7 +208,10 @@ void main() {
       expect(supportingColor, isNot(bodyColor));
       expect(titleColor, isNot(Colors.black));
       expect(titleColor, isNot(Colors.white));
-      expect(scheme.onPrimary, isNot(Colors.white));
+      expect(
+        _contrastRatio(scheme.onPrimary, scheme.primary),
+        greaterThan(4.5),
+      );
       expect(_contrastRatio(titleColor, scheme.surface), greaterThan(4.5));
       expect(_contrastRatio(bodyColor, scheme.surface), greaterThan(4.5));
       expect(_contrastRatio(supportingColor, scheme.surface), greaterThan(4.5));

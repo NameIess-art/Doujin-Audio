@@ -250,7 +250,7 @@ class MusicPlayerApp extends ConsumerWidget {
       title: languageProvider.tr('app_title'),
       debugShowCheckedModeBanner: false,
       navigatorObservers: [UiInteractionNavigatorObserver.instance],
-      color: const Color(0xFFC94D63),
+      color: themeProvider.lightTheme.colorScheme.primary,
       locale: languageState.locale,
       supportedLocales: AppLanguageProvider.supportedLocales,
       localizationsDelegates: const [

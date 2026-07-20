@@ -749,6 +749,12 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('app_theme_color_tile')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('theme_color_grid')), findsOneWidget);
+    expect(find.byKey(const ValueKey('theme_color_dialog')), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(
+      tester.getCenter(find.byKey(const ValueKey('theme_color_dialog'))),
+      tester.getCenter(find.byType(MaterialApp)),
+    );
     expect(
       find.descendant(
         of: find.byKey(const ValueKey('theme_color_grid')),
@@ -756,9 +762,24 @@ void main() {
       ),
       findsNWidgets(16),
     );
-    await tester.tap(find.byKey(const ValueKey('theme_color_mint')));
+    final mintChoice = find.byKey(const ValueKey('theme_color_mint'));
+    final mintSwatch = tester.widget<AnimatedContainer>(
+      find.descendant(of: mintChoice, matching: find.byType(AnimatedContainer)),
+    );
+    expect(
+      (mintSwatch.decoration! as BoxDecoration).color,
+      ThemeAccentPreset.mint.colorScheme(Brightness.light).primary,
+    );
+    await tester.tap(mintChoice);
     await tester.pumpAndSettle();
     expect(themeProvider.appThemeColor, ThemeAccentPreset.mint);
+    final appIndicator = tester.widget<Container>(
+      find.byKey(const ValueKey('app_theme_color_indicator')),
+    );
+    expect(
+      (appIndicator.decoration! as BoxDecoration).color,
+      themeProvider.lightTheme.colorScheme.primary,
+    );
 
     final switchTile = find.widgetWithText(
       SwitchListTile,

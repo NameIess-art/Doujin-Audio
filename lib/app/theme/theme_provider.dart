@@ -24,7 +24,7 @@ enum ThemeAccentPreset {
 }
 
 extension ThemeAccentPresetValue on ThemeAccentPreset {
-  Color get color => switch (this) {
+  Color get seedColor => switch (this) {
     ThemeAccentPreset.coral => const Color(0xFFFFA69E),
     ThemeAccentPreset.rose => const Color(0xFFC94D63),
     ThemeAccentPreset.pink => const Color(0xFFECA1ED),
@@ -47,6 +47,10 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
     ThemeAccentPreset.lightGreen => 'theme_color_light_green',
     _ => 'theme_color_$name',
   };
+
+  ColorScheme colorScheme(Brightness brightness) {
+    return ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);
+  }
 }
 
 class ThemeProvider with ChangeNotifier {
@@ -134,83 +138,9 @@ class ThemeProvider with ChangeNotifier {
   }
 
   void _rebuildThemes() {
-    _lightTheme = _buildTheme(_schemeForAccent(_lightScheme, _appThemeColor));
-    _darkTheme = _buildTheme(_schemeForAccent(_darkScheme, _appThemeColor));
+    _lightTheme = _buildTheme(_appThemeColor.colorScheme(Brightness.light));
+    _darkTheme = _buildTheme(_appThemeColor.colorScheme(Brightness.dark));
   }
-
-  ColorScheme _schemeForAccent(ColorScheme base, ThemeAccentPreset accent) {
-    if (accent == ThemeAccentPreset.rose) return base;
-    final generated = ColorScheme.fromSeed(
-      seedColor: accent.color,
-      brightness: base.brightness,
-    );
-    return base.copyWith(
-      primary: generated.primary,
-      onPrimary: generated.onPrimary,
-      primaryContainer: generated.primaryContainer,
-      onPrimaryContainer: generated.onPrimaryContainer,
-      inversePrimary: generated.inversePrimary,
-      surfaceTint: generated.surfaceTint,
-    );
-  }
-
-  static final ColorScheme _lightScheme =
-      ColorScheme.fromSeed(seedColor: const Color(0xFFC94D63)).copyWith(
-        primary: const Color(0xFFC94D63),
-        onPrimary: const Color(0xFFFFF7F9),
-        secondary: const Color(0xFF526074),
-        onSecondary: const Color(0xFFF8FAFD),
-        tertiary: const Color(0xFF7A6C93),
-        onTertiary: const Color(0xFFFCF8FF),
-        surface: const Color(0xFFFBFAF8),
-        onSurface: const Color(0xFF28262C),
-        onSurfaceVariant: const Color(0xFF69636D),
-        surfaceContainerHighest: const Color(0xFFE8E5E9),
-        surfaceContainerHigh: const Color(0xFFF0ECEF),
-        surfaceContainer: const Color(0xFFF4F1F3),
-        surfaceContainerLow: const Color(0xFFF8F6F7),
-        primaryContainer: const Color(0xFFF2D7DC),
-        onPrimaryContainer: const Color(0xFF4E1D28),
-        secondaryContainer: const Color(0xFFDEE5EF),
-        onSecondaryContainer: const Color(0xFF202835),
-        tertiaryContainer: const Color(0xFFE6DDF4),
-        onTertiaryContainer: const Color(0xFF2B213A),
-        outline: const Color(0xFF8B8891),
-        outlineVariant: const Color(0xFFD4D4D8),
-        shadow: const Color(0xFF18181B),
-      );
-
-  static final ColorScheme _darkScheme =
-      ColorScheme.fromSeed(
-        seedColor: const Color(0xFFE9788E),
-        brightness: Brightness.dark,
-      ).copyWith(
-        primary: const Color(0xFFF08599),
-        onPrimary: const Color(0xFF301017),
-        secondary: const Color(0xFFD4D9E2),
-        onSecondary: const Color(0xFF171D27),
-        tertiary: const Color(0xFFCFC6E6),
-        onTertiary: const Color(0xFF20182C),
-        surface: const Color(0xFF111114),
-        onSurface: const Color(0xFFEEEAF0),
-        surfaceDim: const Color(0xFF0B0B0D),
-        surfaceBright: const Color(0xFF25252B),
-        surfaceContainerLowest: const Color(0xFF09090A),
-        surfaceContainerLow: const Color(0xFF17171A),
-        surfaceContainer: const Color(0xFF1E1E22),
-        surfaceContainerHigh: const Color(0xFF25252A),
-        surfaceContainerHighest: const Color(0xFF2D2D33),
-        onSurfaceVariant: const Color(0xFFBDB5C0),
-        primaryContainer: const Color(0xFF3A2028),
-        onPrimaryContainer: const Color(0xFFFFD9E0),
-        secondaryContainer: const Color(0xFF29313D),
-        onSecondaryContainer: const Color(0xFFE6EBF5),
-        tertiaryContainer: const Color(0xFF332A43),
-        onTertiaryContainer: const Color(0xFFF2E8FF),
-        outline: const Color(0xFF71717A),
-        outlineVariant: const Color(0xFF3F3F46),
-        shadow: Colors.black,
-      );
 
   ThemeData _buildTheme(ColorScheme scheme) {
     final bodyText = const TextTheme().copyWith(
@@ -273,24 +203,16 @@ class ThemeProvider with ChangeNotifier {
         ? AppDesignTokens.dark
         : AppDesignTokens.light;
 
-    if (_differentiateAsmrTheme && _asmrThemeColor != ThemeAccentPreset.blue) {
-      final asmrScheme = ColorScheme.fromSeed(
-        seedColor: _asmrThemeColor.color,
-        brightness: scheme.brightness,
-      );
+    if (_differentiateAsmrTheme) {
+      final asmrScheme = _asmrThemeColor.colorScheme(scheme.brightness);
       tokens = tokens.copyWith(
         asmrAccent: asmrScheme.primary,
         asmrContainer: asmrScheme.primaryContainer,
         onAsmrContainer: asmrScheme.onPrimaryContainer,
         onAsmrAccent: asmrScheme.onPrimary,
-        asmrSurface: Color.alphaBlend(
-          asmrScheme.primary.withValues(
-            alpha: scheme.brightness == Brightness.dark ? 0.12 : 0.05,
-          ),
-          scheme.surfaceContainerLow,
-        ),
+        asmrSurface: asmrScheme.surfaceContainerLow,
       );
-    } else if (!_differentiateAsmrTheme) {
+    } else {
       tokens = tokens.copyWith(
         asmrAccent: scheme.primary,
         asmrContainer: scheme.primaryContainer,

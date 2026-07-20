@@ -1,11 +1,8 @@
 part of 'settings_tab.dart';
 
-const double _settingsTileHeight = 58;
-const double _settingsTileReferenceHeight = 68;
-const double _settingsTileTitleFontSize =
-    _settingsTileHeight * 18 / _settingsTileReferenceHeight;
-const double _settingsTileSubtitleFontSize =
-    _settingsTileHeight * 15 / _settingsTileReferenceHeight;
+const double _settingsTileHeight = 52;
+const double _settingsTileTitleFontSize = 16.5;
+const double _settingsTileSubtitleFontSize = 14.0;
 const double _settingsDropdownMinWidth = 128;
 const double _settingsDropdownMaxWidth = 180;
 
@@ -80,7 +77,7 @@ class _SettingsTileTheme extends StatelessWidget {
       child: ListTileTheme.merge(
         visualDensity: const VisualDensity(horizontal: -1),
         minTileHeight: _settingsTileHeight,
-        minVerticalPadding: 8,
+        minVerticalPadding: 4,
         titleTextStyle: titleTextStyle,
         subtitleTextStyle: subtitleTextStyle,
         child: child,

@@ -45,7 +45,6 @@ List<Widget> _buildSettingsAsmrSection({
                       )
                     : const Icon(Icons.drive_folder_upload_rounded, size: 20),
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
               ),

@@ -25,7 +25,6 @@ List<Widget> _buildSettingsUpdateSection({
             size: 20,
             color: cs.onSurfaceVariant,
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           shape: const RoundedRectangleBorder(
             borderRadius: AppRadius.borderCard,
           ),
@@ -66,7 +65,6 @@ List<Widget> _buildSettingsUpdateSection({
               onChanged: settings.setAutoCheckUpdates,
               title: _settingsTitle(i18n.tr('auto_check_updates')),
               secondary: _settingsIcon(Icons.update_rounded, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
               ),

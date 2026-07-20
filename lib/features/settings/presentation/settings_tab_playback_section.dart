@@ -22,7 +22,6 @@ List<Widget> _buildSettingsPlaybackSection({
               onChanged: settings.setAutoPlayAddedSessions,
               title: _settingsTitle(i18n.tr('auto_play_added_sessions')),
               secondary: _settingsIcon(Icons.playlist_play_rounded, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
               ),
@@ -41,7 +40,6 @@ List<Widget> _buildSettingsPlaybackSection({
               onChanged: settings.setAsmrPlaybackCacheEnabled,
               title: _settingsTitle(i18n.tr('asmr_playback_cache')),
               secondary: _settingsIcon(Icons.cached_rounded, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
               ),
@@ -60,7 +58,6 @@ List<Widget> _buildSettingsPlaybackSection({
               onChanged: settings.setRecordPlaybackProgress,
               title: _settingsTitle(i18n.tr('record_playback_progress')),
               secondary: _settingsIcon(Icons.restore_rounded, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
               ),
@@ -89,7 +86,6 @@ List<Widget> _buildSettingsPlaybackSection({
                 Icons.multitrack_audio_rounded,
                 cs.primary,
               ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               shape: const RoundedRectangleBorder(
                 borderRadius: AppRadius.borderCard,
               ),

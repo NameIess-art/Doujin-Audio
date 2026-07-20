@@ -296,10 +296,8 @@ class _SettingsCategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: _SettingsGroupCard(
-        children: [
+    return _SettingsGroupCard(
+      children: [
           ListTile(
             onTap: onTap,
             leading: _settingsIcon(category.icon, cs.primary),
@@ -310,11 +308,9 @@ class _SettingsCategoryTile extends StatelessWidget {
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
-              vertical: 4,
             ),
           ),
         ],
-      ),
     );
   }
 }

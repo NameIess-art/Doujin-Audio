@@ -28,7 +28,6 @@ List<Widget> _buildSettingsDataSection({
             size: 20,
             color: cs.onSurfaceVariant,
           ),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           shape: const RoundedRectangleBorder(
             borderRadius: AppRadius.borderCard,
           ),

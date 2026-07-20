@@ -58,6 +58,29 @@ void main() {
     ]);
   });
 
+  test(
+    'export flushes every state owner before creating the archive',
+    () async {
+      final events = <String>[];
+      final coordinator = BackupRestoreCoordinator(
+        fileService: _FakeDataSupportFileService(
+          null,
+          exportedPath: 'backup.nalbackup',
+          events: events,
+        ),
+        reloaders: <PersistedStateReloader>[
+          _RecordingReloader('app', events),
+          _RecordingReloader('asmr', events),
+        ],
+      );
+
+      final path = await coordinator.exportBackup(dialogTitle: 'Export');
+
+      expect(path, 'backup.nalbackup');
+      expect(events, <String>['app:export', 'asmr:export', 'archive:export']);
+    },
+  );
+
   test('failed restore reloads owners after preparation', () async {
     final events = <String>[];
     const result = BackupValidationResult.invalid('restore_failed');
@@ -80,10 +103,20 @@ final class _FakeDataSupportFileService extends DataSupportFileService {
   _FakeDataSupportFileService(
     this.result, {
     this.prepareBeforeReturning = false,
+    this.exportedPath,
+    this.events,
   }) : super(isAndroid: () => false);
 
   final BackupValidationResult? result;
   final bool prepareBeforeReturning;
+  final String? exportedPath;
+  final List<String>? events;
+
+  @override
+  Future<String?> exportBackup({required String dialogTitle}) async {
+    events?.add('archive:export');
+    return exportedPath;
+  }
 
   @override
   Future<BackupValidationResult?> pickAndRestoreBackup({
@@ -97,11 +130,19 @@ final class _FakeDataSupportFileService extends DataSupportFileService {
 }
 
 final class _RecordingReloader
-    implements PersistedStateReloader, PersistedStateReplacementPreparer {
+    implements
+        PersistedStateReloader,
+        PersistedStateExportPreparer,
+        PersistedStateReplacementPreparer {
   _RecordingReloader(this.name, this.events);
 
   final String name;
   final List<String> events;
+
+  @override
+  Future<void> prepareForPersistedStateExport() async {
+    events.add('$name:export');
+  }
 
   @override
   Future<void> prepareForPersistedStateReplacement() async {

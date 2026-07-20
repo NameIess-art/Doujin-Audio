@@ -15,7 +15,10 @@ import 'playback_keep_alive_coordinator.dart';
 
 /// Owns ordered startup loading and backup-restore runtime reloading.
 final class AppPersistenceCoordinator
-    implements PersistedStateReloader, PersistedStateReplacementPreparer {
+    implements
+        PersistedStateReloader,
+        PersistedStateExportPreparer,
+        PersistedStateReplacementPreparer {
   AppPersistenceCoordinator({
     required LibraryFacade library,
     required PlaybackFacade playback,
@@ -148,6 +151,12 @@ final class AppPersistenceCoordinator
     _notifications.stateService.syncSlice(
       activeQueueLength: _playback.service.activeSessions.length,
     );
+  }
+
+  @override
+  Future<void> prepareForPersistedStateExport() async {
+    if (_disposed) return;
+    await _library.prepareForBackupExport();
   }
 
   @override

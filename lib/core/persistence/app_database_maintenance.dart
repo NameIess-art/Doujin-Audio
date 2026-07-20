@@ -1,6 +1,21 @@
 part of 'app_database.dart';
 
 extension AppDatabaseMaintenance on AppDatabase {
+  Future<void> sanitizeBackupDatabase(String databasePath) async {
+    final candidate = await openDatabase(databasePath);
+    try {
+      await candidate.transaction((transaction) async {
+        final batch = transaction.batch();
+        for (final table in _playbackSessionTablesInDeleteOrder) {
+          batch.delete(table);
+        }
+        await batch.commit(noResult: true);
+      });
+    } finally {
+      await candidate.close();
+    }
+  }
+
   Future<bool> validateBackupDatabase(
     String databasePath, {
     required int expectedSchemaVersion,
@@ -92,6 +107,16 @@ extension AppDatabaseMaintenance on AppDatabase {
     }
   }
 }
+
+const List<String> _playbackSessionTablesInDeleteOrder = <String>[
+  'playback_queue_entry_tracks',
+  'playback_queue_entries',
+  'playback_queues',
+  'session_eq_bands',
+  'session_audio_effects',
+  'session_playback_state',
+  'sessions',
+];
 
 const Set<String> _requiredAppDatabaseTables = <String>{
   'app_kv_settings',

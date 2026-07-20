@@ -12,6 +12,7 @@ void main() {
       SharedPreferences.setMockInitialValues(const <String, Object>{
         'obsoleteSetting': true,
         'language': 'en',
+        'session_order_v1': '["current-session"]',
         'asmr_one_token_v1': 'secret',
         'asmr_auth_secure_storage_migrated_v2': true,
       });
@@ -20,6 +21,7 @@ void main() {
       await AppPreferences.restoreSafeValues(const <String, Object?>{
         'language': 'ja',
         'themeMode': 'system',
+        'session_order_v1': '["backup-session"]',
         'password': 'must-not-restore',
       }, tokenStore: _FakeTokenStore(token: 'secure-secret'));
 
@@ -34,6 +36,7 @@ void main() {
         isTrue,
       );
       expect(preferences.containsKey('password'), isFalse);
+      expect(preferences.containsKey('session_order_v1'), isFalse);
     },
   );
 
@@ -57,8 +60,40 @@ void main() {
     },
   );
 
+  test('backup round-trips ASMR token and stored credentials', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'language': 'zh',
+      'session_order_v1': '["session-1"]',
+    });
+    await AppPreferences.init();
+    final source = _FakeTokenStore(
+      token: 'backup-token',
+      name: 'backup-name',
+      password: 'backup-password',
+    );
+    final values = await AppPreferences.exportSafeValues(tokenStore: source);
+    final restored = _FakeTokenStore(
+      token: 'current-token',
+      name: 'current-name',
+      password: 'current-password',
+    );
+
+    await AppPreferences.restoreSafeValues(values, tokenStore: restored);
+
+    expect(
+      values[AppPreferences.asmrAccountBackupKey],
+      isA<Map<Object?, Object?>>(),
+    );
+    expect(values, isNot(contains('session_order_v1')));
+    expect(await restored.readToken(), 'backup-token');
+    expect(await restored.readCredentials(), const <String, String>{
+      'name': 'backup-name',
+      'password': 'backup-password',
+    });
+  });
+
   test(
-    'safe restore ignores secure ASMR credentials from old backups',
+    'safe restore removes plaintext ASMR credentials from old backups',
     () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       await AppPreferences.init();
@@ -75,7 +110,9 @@ void main() {
       }, tokenStore: store);
 
       final preferences = await SharedPreferences.getInstance();
-      expect(preferences.getString('asmr_one_pass_v1'), 'new-password');
+      expect(preferences.containsKey('asmr_one_name_v1'), isFalse);
+      expect(preferences.containsKey('asmr_one_pass_v1'), isFalse);
+      expect(preferences.containsKey('asmr_one_jwt_token_v1'), isFalse);
       expect(await store.readToken(), isNull);
       expect(await store.readCredentials(), isNull);
     },

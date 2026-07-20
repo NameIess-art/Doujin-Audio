@@ -442,11 +442,12 @@ const Map<String, String> appLanguageJa = {
   'data_and_support': 'データとサポート',
   'data_and_support_subtitle': 'バックアップと診断レポートの管理。',
   'export_backup': 'バックアップを出力',
-  'export_backup_subtitle': 'データベースと設定を出力します。',
+  'export_backup_subtitle':
+      'ライブラリ、設定、ASMR.ONE アカウントを出力します。再生リストは含まれません。バックアップは安全に保管してください。',
   'restore_backup': 'バックアップを復元',
-  'restore_backup_subtitle': 'データベースと設定を復元します。',
+  'restore_backup_subtitle': 'ライブラリ、設定、ASMR.ONE アカウントを復元します。再生リストは復元されません。',
   'restore_backup_confirm':
-      '復元すると現在の曲庫データベースと移行可能な設定が置き換わります。失敗時は自動的に元に戻します。続行しますか？',
+      '復元すると現在のライブラリ、設定、ASMR.ONE アカウントが置き換わり、再生リストは復元されません。失敗時は自動的に元に戻します。続行しますか？',
   'operation_completed': '完了',
   'operation_failed': '操作に失敗しました',
   'backup_exported': 'バックアップを出力しました。',

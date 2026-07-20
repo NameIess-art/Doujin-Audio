@@ -12,6 +12,15 @@ final class BackupRestoreCoordinator {
   final DataSupportFileService _fileService;
   final List<PersistedStateReloader> _reloaders;
 
+  Future<String?> exportBackup({required String dialogTitle}) async {
+    for (final reloader in _reloaders) {
+      if (reloader case final PersistedStateExportPreparer preparer) {
+        await preparer.prepareForPersistedStateExport();
+      }
+    }
+    return _fileService.exportBackup(dialogTitle: dialogTitle);
+  }
+
   Future<BackupValidationResult?> pickAndRestoreBackup() async {
     var prepared = false;
     final result = await _fileService.pickAndRestoreBackup(

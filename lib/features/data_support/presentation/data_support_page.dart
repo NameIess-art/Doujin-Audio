@@ -36,9 +36,9 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
       scope: UiOperationScope.dataSupportBackupExport,
       labelKey: 'export_backup',
       action: () async {
-        final savedPath = await _fileService.exportBackup(
-          dialogTitle: dialogTitle,
-        );
+        final savedPath = await ref
+            .read(backupRestoreCoordinatorProvider)
+            .exportBackup(dialogTitle: dialogTitle);
         if (savedPath != null && mounted) {
           _showSuccess(
             'backup_exported',

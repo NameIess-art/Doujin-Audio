@@ -46,6 +46,7 @@ final class LibraryFacade implements LibraryCatalog {
   static const _groupOrderPreferenceKey = 'group_order_v1';
   static const _libraryExclusionsPreferenceKey = 'library_exclusions_v1';
   Future<void>? _postStartupMaintenance;
+  Future<void> _preferenceWriteTail = Future<void>.value();
   LibraryFacade({
     required this.databaseRepository,
     required this.detailCacheService,
@@ -201,7 +202,20 @@ final class LibraryFacade implements LibraryCatalog {
     _maintenanceEpoch++;
     _missingDurationBackfill = null;
     _missingDurationBackfillRequestedAgain = false;
+    cancelScan();
+    await _preferenceWriteTail;
     await detailCacheService.suspendAndWait();
+  }
+
+  Future<void> prepareForBackupExport() async {
+    if (_disposed) return;
+    await Future.wait<void>(<Future<void>>[
+      _saveGroupOrder(),
+      _saveWatchedFolders(),
+      _saveWatchedLibraries(),
+      _saveLibraryExclusions(),
+      _saveLibraryNodeOrder(),
+    ]);
   }
 
   Future<void> resetForBackupRestore() async {
@@ -990,16 +1004,16 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   Future<void> _saveWatchedFolders() async {
-    await AppPreferences.setString(
-      _watchedFoldersPreferenceKey,
-      json.encode(service.watchedFolders),
+    final value = json.encode(service.watchedFolders);
+    await _queuePreferenceWrite(
+      () => AppPreferences.setString(_watchedFoldersPreferenceKey, value),
     );
   }
 
   Future<void> _saveWatchedLibraries() async {
-    await AppPreferences.setString(
-      _watchedLibrariesPreferenceKey,
-      json.encode(service.watchedLibraries),
+    final value = json.encode(service.watchedLibraries);
+    await _queuePreferenceWrite(
+      () => AppPreferences.setString(_watchedLibrariesPreferenceKey, value),
     );
   }
 
@@ -1022,9 +1036,9 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   Future<void> _saveLibraryNodeOrder() {
-    return AppPreferences.setString(
-      _libraryNodeOrderPreferenceKey,
-      json.encode(service.libraryNodeOrder),
+    final value = json.encode(service.libraryNodeOrder);
+    return _queuePreferenceWrite(
+      () => AppPreferences.setString(_libraryNodeOrderPreferenceKey, value),
     );
   }
 
@@ -2165,20 +2179,35 @@ final class LibraryFacade implements LibraryCatalog {
       );
     }
 
-    return AppPreferences.setString(
-      _libraryExclusionsPreferenceKey,
-      json.encode(<String, Object?>{
-        'folders': encode(service.excludedLibraryFolders),
-        'tracks': encode(service.excludedLibraryTracks),
-      }),
+    final value = json.encode(<String, Object?>{
+      'folders': encode(service.excludedLibraryFolders),
+      'tracks': encode(service.excludedLibraryTracks),
+    });
+    return _queuePreferenceWrite(
+      () => AppPreferences.setString(_libraryExclusionsPreferenceKey, value),
     );
   }
 
   Future<void> _saveGroupOrder() {
-    return AppPreferences.setString(
-      _groupOrderPreferenceKey,
-      json.encode(service.groupOrder),
+    final value = json.encode(service.groupOrder);
+    return _queuePreferenceWrite(
+      () => AppPreferences.setString(_groupOrderPreferenceKey, value),
     );
+  }
+
+  Future<void> _queuePreferenceWrite(Future<void> Function() write) {
+    final task = _preferenceWriteTail.then((_) => write());
+    _preferenceWriteTail = task.catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) {
+      AppLogService.error(
+        'library_preference_write_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    });
+    return task;
   }
 
   @override

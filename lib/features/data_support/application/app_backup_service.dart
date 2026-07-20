@@ -131,6 +131,7 @@ class AppBackupService {
     Future<void> Function()? reopenDatabase,
     Future<bool> Function(String path, int expectedSchemaVersion)?
     databaseValidator,
+    Future<void> Function(String path)? databaseSanitizer,
     String? platformName,
   }) : _database =
            database != null ||
@@ -160,6 +161,9 @@ class AppBackupService {
                  path,
                  expectedSchemaVersion: expectedSchemaVersion,
                )),
+       _databaseSanitizer =
+           databaseSanitizer ??
+           (database ?? AppDatabase.instance).sanitizeBackupDatabase,
        _platformName = platformName ?? 'android';
 
   static const int formatVersion = 2;
@@ -176,6 +180,7 @@ class AppBackupService {
   final Future<void> Function() _reopenDatabase;
   final Future<bool> Function(String path, int expectedSchemaVersion)
   _databaseValidator;
+  final Future<void> Function(String path) _databaseSanitizer;
   final String _platformName;
   final AppDatabase? _database;
 
@@ -222,6 +227,7 @@ class AppBackupService {
         action: (databasePath) =>
             _copyFile(File(databasePath), databaseSnapshot),
       );
+      await _databaseSanitizer(databaseSnapshot.path);
       final preferencesBytes = Uint8List.fromList(
         utf8.encode(jsonEncode(await _exportPreferences())),
       );
@@ -454,6 +460,7 @@ class AppBackupService {
       if (!validDatabase) {
         return _invalidPrepared('invalid_database', temporaryDirectory);
       }
+      await _databaseSanitizer(databaseFile.path);
       return _PreparedBackup(
         validation: BackupValidationResult.valid(manifest),
         temporaryDirectory: temporaryDirectory,

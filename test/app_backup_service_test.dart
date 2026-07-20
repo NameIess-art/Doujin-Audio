@@ -91,6 +91,44 @@ void main() {
     }
   }
 
+  Future<void> seedPlaybackList(File file, {String id = 'session-1'}) async {
+    final db = await databaseFactoryFfi.openDatabase(file.path);
+    try {
+      await db.insert('sessions', <String, Object?>{
+        'id': id,
+        'track_path': '/music/track.mp3',
+        'loop_mode': 0,
+        'sort_order': 0,
+      });
+      await db.insert('playback_queues', <String, Object?>{
+        'session_id': id,
+        'name': 'Restored queue',
+      });
+      await db.insert('playback_queue_entries', <String, Object?>{
+        'session_id': id,
+        'entry_id': 'entry-1',
+        'kind': 'tracks',
+        'title': 'Entry',
+        'sort_order': 0,
+      });
+    } finally {
+      await db.close();
+    }
+  }
+
+  Future<int> sessionCount(File file) async {
+    final db = await databaseFactoryFfi.openDatabase(
+      file.path,
+      options: OpenDatabaseOptions(readOnly: true),
+    );
+    try {
+      final rows = await db.rawQuery('SELECT COUNT(*) AS count FROM sessions');
+      return (rows.single['count'] as num?)?.toInt() ?? 0;
+    } finally {
+      await db.close();
+    }
+  }
+
   Future<File> replaceBackupDatabase(
     File backup,
     List<int> databaseBytes,
@@ -167,7 +205,6 @@ void main() {
         payloadBytes: fixtureBytes,
       );
       final expectedLength = await databaseFile.length();
-      final expectedDigest = await sha256.bind(databaseFile.openRead()).first;
       final service = createService();
 
       final output = await service.exportBackup(
@@ -184,7 +221,15 @@ void main() {
       );
       expect(restore.isValid, isTrue);
       expect(await databaseFile.length(), expectedLength);
-      expect(await sha256.bind(databaseFile.openRead()).first, expectedDigest);
+      final restoredDatabase = await databaseFactoryFfi.openDatabase(
+        databaseFile.path,
+        options: OpenDatabaseOptions(readOnly: true),
+      );
+      final payloadLength = await restoredDatabase.rawQuery(
+        'SELECT length(value) AS size FROM backup_test_payload',
+      );
+      await restoredDatabase.close();
+      expect(payloadLength.single['size'], fixtureBytes);
       expect(preferences, containsPair('language', 'zh'));
     },
   );
@@ -201,6 +246,44 @@ void main() {
       CompressionType.none,
     );
   });
+
+  test(
+    'export excludes playback sessions and queues from its database copy',
+    () async {
+      await seedPlaybackList(databaseFile);
+
+      final output = await createService().exportBackup(
+        '${tempDirectory.path}/without_playback_lists.nalbackup',
+      );
+      final archive = ZipDecoder().decodeBytes(await output.readAsBytes());
+      final exportedDatabase = File('${tempDirectory.path}/exported.db');
+      await exportedDatabase.writeAsBytes(
+        archive.findFile(AppBackupService.databaseEntry)!.content as List<int>,
+      );
+
+      expect(await sessionCount(databaseFile), 1);
+      expect(await sessionCount(exportedDatabase), 0);
+    },
+  );
+
+  test(
+    'restore strips playback lists from backups created by older builds',
+    () async {
+      final legacyDatabase = File('${tempDirectory.path}/legacy_with_queue.db');
+      await createDatabase(legacyDatabase, marker: 'legacy with queue');
+      await seedPlaybackList(legacyDatabase, id: 'legacy-session');
+      final backup = await createService().exportBackup(
+        '${tempDirectory.path}/legacy_with_queue.nalbackup',
+      );
+      await replaceBackupDatabase(backup, await legacyDatabase.readAsBytes());
+
+      final result = await createService().restoreBackup(backup.path);
+
+      expect(result.isValid, isTrue);
+      expect(await readMarker(databaseFile), 'legacy with queue');
+      expect(await sessionCount(databaseFile), 0);
+    },
+  );
 
   test('restores legacy backups with a deflate-compressed database', () async {
     final legacyDatabase = File('${tempDirectory.path}/legacy.db');

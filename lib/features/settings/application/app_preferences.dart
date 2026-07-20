@@ -9,6 +9,7 @@ typedef JsonValueReader<T> = T Function(Object? value);
 
 class AppPreferences {
   static const onboardingCompletedKey = 'onboarding_completed_v1';
+  static const asmrAccountBackupKey = '_backup_asmr_account_v1';
   static SharedPreferences? _instance;
   const AppPreferences._();
 
@@ -100,11 +101,13 @@ class AppPreferences {
     }
   }
 
-  static Future<Map<String, Object>> exportSafeValues() async {
+  static Future<Map<String, Object>> exportSafeValues({
+    AsmrTokenStore? tokenStore,
+  }) async {
     final prefs = await _prefs;
     final values = <String, Object>{};
     for (final key in prefs.getKeys()) {
-      if (_isSensitiveKey(key)) continue;
+      if (_isSensitiveKey(key) || _isPlaybackListKey(key)) continue;
       final value = prefs.get(key);
       if (value is String ||
           value is bool ||
@@ -113,6 +116,18 @@ class AppPreferences {
           value is List<String>) {
         values[key] = value as Object;
       }
+    }
+
+    final resolvedTokenStore = tokenStore ?? SecureAsmrTokenStore();
+    final token = await resolvedTokenStore.readToken();
+    final credentials = await resolvedTokenStore.readCredentials();
+    if ((token != null && token.trim().isNotEmpty) || credentials != null) {
+      values[asmrAccountBackupKey] = <String, Object>{
+        if (token != null && token.trim().isNotEmpty) 'token': token,
+        if (credentials?['name'] case final String name) 'name': name,
+        if (credentials?['password'] case final String password)
+          'password': password,
+      };
     }
 
     return values;
@@ -130,20 +145,21 @@ class AppPreferences {
     final resolvedTokenStore = tokenStore ?? SecureAsmrTokenStore();
     final previousToken = await resolvedTokenStore.readToken();
     final previousCredentials = await resolvedTokenStore.readCredentials();
+    final account = _decodeAsmrAccount(values[asmrAccountBackupKey]);
 
     try {
       for (final key in prefs.getKeys()) {
-        final normalizedKey = key.toLowerCase();
-        if (!_isSensitiveKey(key) ||
-            (normalizedKey.startsWith('asmr_') &&
-                normalizedKey.contains('token'))) {
+        if (!_isSensitiveKey(key) || _isLegacyAsmrCredentialKey(key)) {
           if (!await prefs.remove(key)) {
             throw StateError('Failed to remove preference: $key');
           }
         }
       }
       for (final entry in values.entries) {
-        if (_isSensitiveKey(entry.key)) continue;
+        if (entry.key == asmrAccountBackupKey) continue;
+        if (_isSensitiveKey(entry.key) || _isPlaybackListKey(entry.key)) {
+          continue;
+        }
         final written = await _writeValue(prefs, entry.key, entry.value);
         if (written == false) {
           throw StateError('Failed to restore preference: ${entry.key}');
@@ -151,6 +167,20 @@ class AppPreferences {
       }
       await resolvedTokenStore.clearToken();
       await resolvedTokenStore.clearCredentials();
+      final restoredToken = account?['token'];
+      if (restoredToken != null && restoredToken.trim().isNotEmpty) {
+        await resolvedTokenStore.writeToken(restoredToken);
+      }
+      final restoredName = account?['name'];
+      final restoredPassword = account?['password'];
+      if (restoredName != null &&
+          restoredName.trim().isNotEmpty &&
+          restoredPassword != null) {
+        await resolvedTokenStore.writeCredentials(
+          restoredName,
+          restoredPassword,
+        );
+      }
     } catch (error, stackTrace) {
       await _rollbackRestore(
         prefs,
@@ -161,6 +191,16 @@ class AppPreferences {
       );
       Error.throwWithStackTrace(error, stackTrace);
     }
+  }
+
+  static Map<String, String>? _decodeAsmrAccount(Object? value) {
+    if (value is! Map) return null;
+    final account = <String, String>{};
+    for (final key in const <String>['token', 'name', 'password']) {
+      final field = value[key];
+      if (field is String) account[key] = field;
+    }
+    return account.isEmpty ? null : account;
   }
 
   static Future<bool?> _writeValue(
@@ -233,7 +273,7 @@ class AppPreferences {
   static bool _isSensitiveKey(String key) {
     final normalized = key.toLowerCase();
 
-    return normalized == 'asmr_one_name_v1' ||
+    return _isLegacyAsmrCredentialKey(key) ||
         normalized.contains('token') ||
         normalized.contains('password') ||
         normalized.contains('passwd') ||
@@ -241,6 +281,16 @@ class AppPreferences {
         normalized.contains('authorization') ||
         normalized == 'asmr_auth_secure_storage_migrated_v2';
   }
+
+  static bool _isLegacyAsmrCredentialKey(String key) {
+    final normalized = key.toLowerCase();
+    return normalized == 'asmr_one_name_v1' ||
+        normalized == 'asmr_one_pass_v1' ||
+        normalized == 'asmr_one_jwt_token_v1' ||
+        normalized == 'asmr_one_token_v1';
+  }
+
+  static bool _isPlaybackListKey(String key) => key == 'session_order_v1';
 
   static Future<T?> readJson<T>(String key, JsonValueReader<T> reader) async {
     final raw = await getString(key);

@@ -28,6 +28,7 @@ import 'package:nameless_audio/features/player/application/native_playback_repos
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
@@ -118,6 +119,50 @@ void main() {
       findsNothing,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('update download progress stays visible at the top of the app', (
+    tester,
+  ) async {
+    final operations = UiOperationService.instance;
+    operations.clear(UiOperationScope.settingsUpdate);
+    addTearDown(() => operations.clear(UiOperationScope.settingsUpdate));
+    final harness = await _pumpAppShell(tester);
+    final pending = Completer<void>();
+
+    final download = operations.run<void>(
+      scope: UiOperationScope.settingsUpdate,
+      labelKey: 'downloading_update',
+      task: (progress) {
+        progress.report(0.37);
+        return pending.future;
+      },
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(
+      find.text(harness.language.tr('downloading_update', {'percent': '37'})),
+      findsOneWidget,
+    );
+    final indicator = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(indicator.value, 0.37);
+    final positioned = tester.widget<Positioned>(
+      find.ancestor(
+        of: find.byType(LinearProgressIndicator),
+        matching: find.byType(Positioned),
+      ),
+    );
+    expect(
+      positioned.top,
+      MediaQuery.paddingOf(tester.element(find.byType(MainScreen))).top + 8,
+    );
+
+    pending.complete();
+    await download;
+    await tester.pump();
   });
 
   testWidgets('ASMR initial shell keeps category and search controls visible', (

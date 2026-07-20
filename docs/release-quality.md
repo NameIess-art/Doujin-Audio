@@ -14,10 +14,18 @@ flutter build apk --debug
 dart run tool/verify_release.dart
 ```
 
-Run the device integration smoke test on an Android release candidate:
+Pull requests also run `integration_test/app_smoke_test.dart` on an API 35
+Google APIs x86_64 Pixel 7 emulator. Tag builds run that test plus
+`integration_test/android_native_smoke_test.dart`, which verifies the real app
+version/ABI platform channel and native playback progress, pause, seek, resume,
+background/foreground, and snapshot paths with a generated temporary WAV file.
+The tag release job cannot start unless this emulator job succeeds.
+
+Run both device integration tests manually on an Android release candidate:
 
 ```bash
 flutter test integration_test/app_smoke_test.dart -d <device-id>
+flutter test integration_test/android_native_smoke_test.dart -d <device-id>
 ```
 
 Use [`release-candidate-template.md`](release-candidate-template.md) for the
@@ -25,14 +33,18 @@ required device and performance evidence. A blank template is not evidence and
 does not satisfy release acceptance.
 
 Repository administrators must configure the `main` branch protection rule so
-the Ubuntu coverage job and Android JVM/debug-APK job are required before
-merge. This is GitHub state and
-must be verified in repository settings; the workflow file alone cannot enforce
-the rule.
+the Ubuntu coverage job, Android JVM/debug-APK job, and Android emulator job are
+required before merge. This is GitHub state and must be verified in repository
+settings; the workflow file alone cannot enforce the rule.
 
 Tag workflows must verify the generated APK names and their SHA-256 files
 before uploading them. Android assets must also pass `apksigner verify` and
 must not contain an Android Debug signing certificate.
+
+The system installer confirmation, physical notification-shade interaction,
+process/device restart recovery, and permission-settings handoff remain manual
+release-candidate blockers because the emulator job does not exercise those
+system-owned flows.
 
 ## Android Release Candidate Matrix
 

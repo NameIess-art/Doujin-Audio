@@ -19,6 +19,127 @@ void main() {
   );
 
   test(
+    'backup restore requests access and rebinds inaccessible SAF sources',
+    () async {
+      final dataSource = _BackupRestoreDataSource();
+      final scanner = LibraryScannerService(dataSource: dataSource);
+
+      final prepared = await scanner.prepareBackupRestoreSources(
+        sources: const LocalLibraryImportSources(
+          libraries: <String>['content://old/library'],
+          folders: <String>['C:/music/folder', 'content://old/folder'],
+          files: <String>['C:/music/song.mp3', 'content://old/song.mp3'],
+        ),
+        labels: labels,
+      );
+
+      expect(dataSource.permissionSources, <String>[
+        'C:/music/folder',
+        'C:/music/song.mp3',
+      ]);
+      expect(prepared?.libraries, <String>['content://new/library']);
+      expect(prepared?.folders, <String>[
+        'C:/music/folder',
+        'content://new/folder',
+      ]);
+      expect(prepared?.files, <String>[
+        'C:/music/song.mp3',
+        'content://new/song.mp3',
+      ]);
+    },
+  );
+
+  test(
+    'backup restore converts external-storage URIs without opening pickers',
+    () async {
+      final dataSource = _ResolvedBackupRestoreDataSource();
+
+      final prepared = await LibraryScannerService(dataSource: dataSource)
+          .prepareBackupRestoreSources(
+            sources: const LocalLibraryImportSources(
+              libraries: <String>['content://storage/tree/library'],
+              folders: <String>['content://storage/tree/folder'],
+              files: <String>['content://storage/document/song.mp3'],
+            ),
+            labels: labels,
+          );
+
+      expect(prepared?.libraries, <String>['C:/media/library']);
+      expect(prepared?.folders, <String>['C:/media/folder']);
+      expect(prepared?.files, <String>['C:/media/song.mp3']);
+      expect(dataSource.permissionSources, <String>[
+        'C:/media/library',
+        'C:/media/folder',
+        'C:/media/song.mp3',
+      ]);
+      expect(dataSource.folderPickerCalls, 0);
+      expect(dataSource.filePickerCalls, 0);
+    },
+  );
+
+  test(
+    'backup restore filters library children before opening access pickers',
+    () async {
+      const library =
+          'content://com.android.externalstorage.documents/tree/'
+          'primary%3AMusic';
+      final dataSource = _DerivedFolderRestoreDataSource();
+
+      final prepared = await LibraryScannerService(dataSource: dataSource)
+          .prepareBackupRestoreSources(
+            sources: const LocalLibraryImportSources(
+              libraries: <String>[library],
+              folders: <String>[
+                '$library::work-one',
+                '$library::work-two/audio',
+                'content://standalone/folder',
+              ],
+            ),
+            labels: labels,
+          );
+
+      expect(dataSource.folderPickerCalls, 2);
+      expect(prepared?.libraries, <String>['content://new/library']);
+      expect(prepared?.folders, <String>['content://new/standalone']);
+    },
+  );
+
+  test('cancelling source reauthorization cancels backup restore', () async {
+    final prepared =
+        await LibraryScannerService(
+          dataSource: _CancelledRestoreDataSource(),
+        ).prepareBackupRestoreSources(
+          sources: const LocalLibraryImportSources(
+            libraries: <String>['content://old/library'],
+          ),
+          labels: labels,
+        );
+
+    expect(prepared, isNull);
+  });
+
+  test('backup restore treats an already imported file as restored', () async {
+    const filePath = 'C:/music/song.mp3';
+    final catalog = _RefreshCatalog(
+      watchedFolders: const <String>[],
+      initialTracks: <MusicTrack>[_musicTrack(filePath)],
+    );
+
+    final outcome =
+        await LibraryScannerService(
+          dataSource: _PickedFilesDataSource(),
+        ).restoreSources(
+          sources: const LocalLibraryImportSources(files: <String>[filePath]),
+          provider: catalog,
+          labels: labels,
+        );
+
+    expect(outcome.code, LibraryScanOutcomeCode.importAdded);
+    expect(outcome.details['sourceCount'], 1);
+    expect(outcome.details['failureCount'], 0);
+  });
+
+  test(
     'file import always finishes scan when batch finalization fails',
     () async {
       final catalog = _FailingBatchCatalog();
@@ -497,6 +618,134 @@ class _PickedFilesDataSource implements LibraryScanDataSource {
       PickedAudioFile(uri: 'content://audio/track.mp3', name: 'track.mp3'),
     ]);
   }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _BackupRestoreDataSource implements LibraryScanDataSource {
+  final permissionSources = <String>[];
+  final _folderReplacements = <String>[
+    'content://new/library',
+    'content://new/folder',
+  ];
+
+  @override
+  Future<String> resolveRestorablePath(String source) async => source;
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    permissionSources.addAll(sources);
+    return true;
+  }
+
+  @override
+  Future<bool> sourceExists(String source) async {
+    return source == 'C:/music/folder' || source == 'C:/music/song.mp3';
+  }
+
+  @override
+  Future<String?> pickAudioFolder({required String dialogTitle}) async {
+    return _folderReplacements.removeAt(0);
+  }
+
+  @override
+  Future<List<PickedAudioFile>?> pickAudioFiles({
+    required String dialogTitle,
+  }) async {
+    return const <PickedAudioFile>[
+      PickedAudioFile(uri: 'content://new/song.mp3', name: 'song.mp3'),
+    ];
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ResolvedBackupRestoreDataSource implements LibraryScanDataSource {
+  final permissionSources = <String>[];
+  var folderPickerCalls = 0;
+  var filePickerCalls = 0;
+
+  @override
+  Future<String> resolveRestorablePath(String source) async {
+    return switch (source) {
+      'content://storage/tree/library' => 'C:/media/library',
+      'content://storage/tree/folder' => 'C:/media/folder',
+      'content://storage/document/song.mp3' => 'C:/media/song.mp3',
+      _ => source,
+    };
+  }
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    permissionSources.addAll(sources);
+    return true;
+  }
+
+  @override
+  Future<bool> sourceExists(String source) async => true;
+
+  @override
+  Future<String?> pickAudioFolder({required String dialogTitle}) async {
+    folderPickerCalls++;
+    return null;
+  }
+
+  @override
+  Future<List<PickedAudioFile>?> pickAudioFiles({
+    required String dialogTitle,
+  }) async {
+    filePickerCalls++;
+    return null;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _DerivedFolderRestoreDataSource implements LibraryScanDataSource {
+  final _replacements = <String>[
+    'content://new/library',
+    'content://new/standalone',
+  ];
+  var folderPickerCalls = 0;
+
+  @override
+  Future<String> resolveRestorablePath(String source) async => source;
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    return true;
+  }
+
+  @override
+  Future<bool> sourceExists(String source) async => false;
+
+  @override
+  Future<String?> pickAudioFolder({required String dialogTitle}) async {
+    folderPickerCalls++;
+    return _replacements.removeAt(0);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CancelledRestoreDataSource implements LibraryScanDataSource {
+  @override
+  Future<String> resolveRestorablePath(String source) async => source;
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    return true;
+  }
+
+  @override
+  Future<bool> sourceExists(String source) async => false;
+
+  @override
+  Future<String?> pickAudioFolder({required String dialogTitle}) async => null;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

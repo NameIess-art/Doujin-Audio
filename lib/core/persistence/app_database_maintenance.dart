@@ -9,8 +9,36 @@ extension AppDatabaseMaintenance on AppDatabase {
         for (final table in _playbackSessionTablesInDeleteOrder) {
           batch.delete(table);
         }
+        for (final table in _localLibraryTablesInDeleteOrder) {
+          batch.delete(table);
+        }
+        batch.delete(
+          'app_kv_settings',
+          where: 'key = ?',
+          whereArgs: const <Object?>['folder_cover_selections_v1'],
+        );
         await batch.commit(noResult: true);
       });
+    } finally {
+      await candidate.close();
+    }
+  }
+
+  Future<List<String>> readBackupManualFilePaths(String databasePath) async {
+    final candidate = await openDatabase(databasePath, readOnly: true);
+    try {
+      final rows = await candidate.query(
+        'tracks',
+        columns: const <String>['path'],
+        where: 'is_single = ? AND group_key = ?',
+        whereArgs: const <Object?>[1, '__single_files__'],
+        orderBy: 'path COLLATE NOCASE',
+      );
+      return rows
+          .map((row) => row['path'])
+          .whereType<String>()
+          .where((path) => path.trim().isNotEmpty)
+          .toList(growable: false);
     } finally {
       await candidate.close();
     }
@@ -116,6 +144,18 @@ const List<String> _playbackSessionTablesInDeleteOrder = <String>[
   'session_audio_effects',
   'session_playback_state',
   'sessions',
+];
+
+const List<String> _localLibraryTablesInDeleteOrder = <String>[
+  'time_segment_labels',
+  'library_entries',
+  'audio_details',
+  'track_tags',
+  'track_remote_metadata',
+  'track_assets',
+  'track_playback_state',
+  'track_scan_info',
+  'tracks',
 ];
 
 const Set<String> _requiredAppDatabaseTables = <String>{

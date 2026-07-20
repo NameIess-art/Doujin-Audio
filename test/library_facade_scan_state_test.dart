@@ -98,6 +98,44 @@ void main() {
     },
   );
 
+  test(
+    'backup source paths exclude derived library children and scanned tracks',
+    () {
+      final service = LibraryService()
+        ..watchedLibraries.add('/music/library')
+        ..watchedFolders.addAll(<String>[
+          '/music/library/work',
+          '/music/standalone',
+        ]);
+      service.addTracks(const <MusicTrack>[
+        MusicTrack(
+          path: '/music/library/work/01.wav',
+          displayName: '01.wav',
+          groupKey: '/music/library/work',
+          groupTitle: 'work',
+          groupSubtitle: 'work',
+          isSingle: false,
+        ),
+        MusicTrack(
+          path: '/music/manual.mp3',
+          displayName: 'manual.mp3',
+          groupKey: '__single_files__',
+          groupTitle: 'Imported',
+          groupSubtitle: 'Manual',
+          isSingle: true,
+        ),
+      ], persist: false);
+      final facade = LibraryFacade.create(service: service);
+      addTearDown(facade.dispose);
+
+      final sources = facade.backupImportSources;
+
+      expect(sources.libraries, <String>['/music/library']);
+      expect(sources.folders, <String>['/music/standalone']);
+      expect(sources.files, <String>['/music/manual.mp3']);
+    },
+  );
+
   test('detail target uses the work root inside a watched library', () async {
     const libraryRoot =
         'content://com.android.externalstorage.documents/tree/'

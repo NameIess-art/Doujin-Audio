@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 
+import '../../../core/media/local_library_import_sources.dart';
 import '../../../core/persistence/app_database.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../settings/application/app_preferences.dart';
@@ -84,18 +85,32 @@ class BackupValidationResult {
   const BackupValidationResult._({
     required this.isValid,
     this.manifest,
+    this.librarySources = const LocalLibraryImportSources(),
     this.error,
   });
 
-  const BackupValidationResult.valid(BackupManifest manifest)
-    : this._(isValid: true, manifest: manifest);
+  const BackupValidationResult.valid(
+    BackupManifest manifest, {
+    LocalLibraryImportSources librarySources =
+        const LocalLibraryImportSources(),
+  }) : this._(
+         isValid: true,
+         manifest: manifest,
+         librarySources: librarySources,
+       );
 
   const BackupValidationResult.invalid(String error)
     : this._(isValid: false, error: error);
 
+  const BackupValidationResult.cancelled()
+    : this._(isValid: false, error: 'restore_cancelled');
+
   final bool isValid;
   final BackupManifest? manifest;
+  final LocalLibraryImportSources librarySources;
   final String? error;
+
+  bool get isCancelled => error == 'restore_cancelled';
 }
 
 class _PreparedBackup {
@@ -104,12 +119,14 @@ class _PreparedBackup {
     this.temporaryDirectory,
     this.databaseFile,
     this.preferences,
+    this.librarySources,
   });
 
   final BackupValidationResult validation;
   final Directory? temporaryDirectory;
   final File? databaseFile;
   final Map<String, Object?>? preferences;
+  final LocalLibraryImportSources? librarySources;
 
   Future<void> dispose() async {
     final directory = temporaryDirectory;
@@ -132,6 +149,7 @@ class AppBackupService {
     Future<bool> Function(String path, int expectedSchemaVersion)?
     databaseValidator,
     Future<void> Function(String path)? databaseSanitizer,
+    Future<List<String>> Function(String path)? manualFilePathReader,
     String? platformName,
   }) : _database =
            database != null ||
@@ -164,12 +182,17 @@ class AppBackupService {
        _databaseSanitizer =
            databaseSanitizer ??
            (database ?? AppDatabase.instance).sanitizeBackupDatabase,
+       _manualFilePathReader =
+           manualFilePathReader ??
+           (database ?? AppDatabase.instance).readBackupManualFilePaths,
        _platformName = platformName ?? 'android';
 
-  static const int formatVersion = 2;
+  static const int formatVersion = 3;
+  static const int _legacyPathImportFormatVersion = 2;
   static const int dataEpoch = 1;
   static const String databaseEntry = 'data/audio_player.db';
   static const String preferencesEntry = 'data/preferences.json';
+  static const String librarySourcesEntry = 'data/local_library_sources.json';
   static const String manifestEntry = 'manifest.json';
 
   final Future<Map<String, Object>> Function() _exportPreferences;
@@ -181,6 +204,7 @@ class AppBackupService {
   final Future<bool> Function(String path, int expectedSchemaVersion)
   _databaseValidator;
   final Future<void> Function(String path) _databaseSanitizer;
+  final Future<List<String>> Function(String path) _manualFilePathReader;
   final String _platformName;
   final AppDatabase? _database;
 
@@ -213,7 +237,11 @@ class AppBackupService {
     }
   }
 
-  Future<File> exportBackup(String outputPath) async {
+  Future<File> exportBackup(
+    String outputPath, {
+    LocalLibraryImportSources librarySources =
+        const LocalLibraryImportSources(),
+  }) async {
     final output = File(outputPath);
     final temporaryDirectory = await Directory.systemTemp.createTemp(
       'nameless_audio_backup_export_',
@@ -229,7 +257,14 @@ class AppBackupService {
       );
       await _databaseSanitizer(databaseSnapshot.path);
       final preferencesBytes = Uint8List.fromList(
-        utf8.encode(jsonEncode(await _exportPreferences())),
+        utf8.encode(
+          jsonEncode(
+            _withoutLocalLibraryPreferences(await _exportPreferences()),
+          ),
+        ),
+      );
+      final librarySourcesBytes = Uint8List.fromList(
+        utf8.encode(jsonEncode(librarySources.toJson())),
       );
       final version = await _appVersionProvider();
       final manifest = BackupManifest(
@@ -247,6 +282,10 @@ class AppBackupService {
           preferencesEntry: BackupEntryManifest(
             sha256Hash: sha256.convert(preferencesBytes).toString(),
             size: preferencesBytes.length,
+          ),
+          librarySourcesEntry: BackupEntryManifest(
+            sha256Hash: sha256.convert(librarySourcesBytes).toString(),
+            size: librarySourcesBytes.length,
           ),
         },
       );
@@ -267,6 +306,9 @@ class AppBackupService {
         }
         encoder.addArchiveFile(
           ArchiveFile.bytes(preferencesEntry, preferencesBytes),
+        );
+        encoder.addArchiveFile(
+          ArchiveFile.bytes(librarySourcesEntry, librarySourcesBytes),
         );
         encoder.addArchiveFile(
           ArchiveFile.string(manifestEntry, jsonEncode(manifest.toJson())),
@@ -303,7 +345,8 @@ class AppBackupService {
 
   Future<BackupValidationResult> restoreBackup(
     String backupPath, {
-    Future<void> Function()? beforeCommit,
+    Future<LocalLibraryImportSources?> Function(LocalLibraryImportSources)?
+    beforeCommit,
   }) async {
     final prepared = await _prepareBackup(backupPath);
     final validation = prepared.validation;
@@ -313,12 +356,23 @@ class AppBackupService {
     }
     final preparedDatabase = prepared.databaseFile!;
     final preferences = prepared.preferences!;
+    var librarySources = prepared.librarySources!;
     final originalPreferences = await _exportPreferences();
     File? rollbackFile;
     var originalMoved = false;
     var replacementInstalled = false;
     try {
-      await beforeCommit?.call();
+      if (beforeCommit != null) {
+        final preparedSources = await beforeCommit(librarySources);
+        if (preparedSources == null) {
+          return const BackupValidationResult.cancelled();
+        }
+        librarySources = preparedSources;
+      }
+      final restoredResult = BackupValidationResult.valid(
+        validation.manifest!,
+        librarySources: librarySources,
+      );
       final result = await _runDatabaseMaintenance<BackupValidationResult>(
         replacesDatabase: true,
         action: (databasePath) async {
@@ -335,7 +389,7 @@ class AppBackupService {
           await replacementFile.rename(databaseFile.path);
           replacementInstalled = true;
           await _restorePreferences(preferences);
-          return validation;
+          return restoredResult;
         },
         recover: (databasePath) async {
           final databaseFile = File(databasePath);
@@ -401,11 +455,16 @@ class AppBackupService {
           !manifest.entries.containsKey(preferencesEntry)) {
         return _invalidPrepared('missing_required_entry', temporaryDirectory);
       }
+      if (manifest.formatVersion >= formatVersion &&
+          !manifest.entries.containsKey(librarySourcesEntry)) {
+        return _invalidPrepared('missing_required_entry', temporaryDirectory);
+      }
 
       final databaseFile = File(
         '${temporaryDirectory.path}${Platform.pathSeparator}audio_player.db',
       );
       Map<String, Object?>? preferences;
+      LocalLibraryImportSources? librarySources;
       for (final entry in manifest.entries.entries) {
         final archiveFile = archive.findFile(entry.key);
         if (archiveFile == null) {
@@ -428,6 +487,23 @@ class AppBackupService {
           }
           preferences = (jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>)
               .cast<String, Object?>();
+          continue;
+        }
+        if (entry.key == librarySourcesEntry) {
+          final bytes = archiveFile.content;
+          if (!_matchesManifest(
+            bytes.length,
+            sha256.convert(bytes),
+            entry.value,
+          )) {
+            return _invalidPrepared(
+              'checksum_mismatch:${entry.key}',
+              temporaryDirectory,
+            );
+          }
+          librarySources = LocalLibraryImportSources.fromJson(
+            jsonDecode(utf8.decode(bytes)),
+          );
           continue;
         }
 
@@ -460,12 +536,31 @@ class AppBackupService {
       if (!validDatabase) {
         return _invalidPrepared('invalid_database', temporaryDirectory);
       }
+      final restoredPreferences = preferences;
+      if (restoredPreferences == null) {
+        return _invalidPrepared('missing_required_entry', temporaryDirectory);
+      }
+      librarySources ??= LocalLibraryImportSources(
+        libraries: _preferencePaths(
+          restoredPreferences,
+          'watched_libraries_v1',
+        ),
+        folders: _preferencePaths(restoredPreferences, 'watched_folders_v1'),
+        files: await _manualFilePathReader(databaseFile.path),
+      );
+      final sanitizedPreferences = _withoutLocalLibraryPreferences(
+        restoredPreferences,
+      );
       await _databaseSanitizer(databaseFile.path);
       return _PreparedBackup(
-        validation: BackupValidationResult.valid(manifest),
+        validation: BackupValidationResult.valid(
+          manifest,
+          librarySources: librarySources,
+        ),
         temporaryDirectory: temporaryDirectory,
         databaseFile: databaseFile,
-        preferences: preferences,
+        preferences: sanitizedPreferences,
+        librarySources: librarySources,
       );
     } catch (error, stackTrace) {
       AppLogService.warning(
@@ -484,7 +579,8 @@ class AppBackupService {
   }
 
   String? _manifestCompatibilityError(BackupManifest manifest) {
-    if (manifest.formatVersion != formatVersion) {
+    if (manifest.formatVersion != formatVersion &&
+        manifest.formatVersion != _legacyPathImportFormatVersion) {
       return 'unsupported_format_version';
     }
     if (manifest.dataEpoch != dataEpoch) return 'unsupported_data_epoch';
@@ -527,4 +623,47 @@ class AppBackupService {
   Future<Digest> _sha256Digest(File file) async {
     return sha256.bind(file.openRead()).first;
   }
+}
+
+const Set<String> _localLibraryPreferenceKeys = <String>{
+  'watched_folders_v1',
+  'watched_libraries_v1',
+  'library_node_order_v1',
+  'group_order_v1',
+  'library_exclusions_v1',
+};
+
+Map<String, Object?> _withoutLocalLibraryPreferences(
+  Map<String, Object?> values,
+) {
+  return <String, Object?>{
+    for (final entry in values.entries)
+      if (!_localLibraryPreferenceKeys.contains(entry.key))
+        entry.key: entry.value,
+  };
+}
+
+List<String> _preferencePaths(Map<String, Object?> preferences, String key) {
+  final value = preferences[key];
+  if (value is List) return _distinctPaths(value.whereType<String>());
+  if (value is! String || value.trim().isEmpty) return const <String>[];
+  try {
+    final decoded = jsonDecode(value);
+    return decoded is Iterable
+        ? _distinctPaths(decoded.whereType<String>())
+        : const <String>[];
+  } catch (_) {
+    return const <String>[];
+  }
+}
+
+List<String> _distinctPaths(Iterable<String> values) {
+  final paths = <String>[];
+  final seen = <String>{};
+  for (final raw in values) {
+    final value = raw.trim();
+    if (value.isEmpty || !seen.add(value)) continue;
+    paths.add(value);
+  }
+  return List<String>.unmodifiable(paths);
 }

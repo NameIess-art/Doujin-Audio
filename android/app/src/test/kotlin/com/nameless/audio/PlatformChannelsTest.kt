@@ -40,6 +40,7 @@ class PlatformChannelsTest {
             FileCacheMethods.READ_AUDIO_DETAIL_BACKUP,
             FileCacheMethods.READ_SINGLE_FILE_DETAIL_BACKUP,
             FileCacheMethods.RENAME_DOCUMENT,
+            FileCacheMethods.RESOLVE_DOCUMENT_FILE_SYSTEM_PATH,
             FileCacheMethods.RESOLVE_TRACK_COVER,
             FileCacheMethods.RESOLVE_TRACK_SUBTITLE,
             FileCacheMethods.RESOLVE_VIDEO_FRAME,

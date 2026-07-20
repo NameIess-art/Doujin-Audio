@@ -33,6 +33,10 @@ bool _isGrantedOrLimited(PermissionStatus status) {
 abstract interface class LibraryScanDataSource {
   Future<bool> ensureReadPermissionForSources(Iterable<String> sources);
 
+  Future<String> resolveRestorablePath(String source);
+
+  Future<bool> sourceExists(String source);
+
   Future<NativeScanResult> scanFolder(String folderPath);
 
   Future<NativeScanResult> scanFolderChunked(
@@ -92,6 +96,27 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
         statuses[Permission.videos] ?? PermissionStatus.denied,
       ),
     );
+  }
+
+  @override
+  Future<String> resolveRestorablePath(String source) async {
+    final value = source.trim();
+    if (value.isEmpty || !PathMatcher.isContentUri(value) || !_isAndroid()) {
+      return value;
+    }
+    return await _platformGateway.resolveDocumentFileSystemPath(value) ?? value;
+  }
+
+  @override
+  Future<bool> sourceExists(String source) async {
+    final value = source.trim();
+    if (value.isEmpty) return false;
+    if (PathMatcher.isContentUri(value)) {
+      if (!_isAndroid()) return false;
+      return _platformGateway.documentPathExists(value);
+    }
+    return await FileSystemEntity.type(value, followLinks: false) !=
+        FileSystemEntityType.notFound;
   }
 
   @override

@@ -1,15 +1,19 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/library/application/library_scan_data_source.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   const channel = MethodChannel('flutter.baseflow.com/permissions/methods');
+  const fileCacheChannel = MethodChannel(FileCacheChannel.name);
 
   tearDown(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(fileCacheChannel, null);
   });
 
   test(
@@ -68,6 +72,43 @@ void main() {
       isTrue,
     );
     expect(requestCount, 0);
+  });
+
+  test('SAF audio file accessibility uses the native document check', () async {
+    const source =
+        'content://com.android.externalstorage.documents/document/'
+        'primary%3AMusic%2Ftrack.mp3';
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(fileCacheChannel, (call) async {
+          expect(call.method, FileCacheMethod.documentPathExists);
+          expect(call.arguments, <String, Object?>{'path': source});
+          return <String, Object?>{'ok': true, 'value': true};
+        });
+
+    final exists = await PlatformLibraryScanDataSource(
+      isAndroid: () => true,
+    ).sourceExists(source);
+
+    expect(exists, isTrue);
+  });
+
+  test('external-storage URI resolves to a durable filesystem path', () async {
+    const source =
+        'content://com.android.externalstorage.documents/document/'
+        'primary%3AMusic%2Ftrack.mp3';
+    const resolved = '/storage/emulated/0/Music/track.mp3';
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(fileCacheChannel, (call) async {
+          expect(call.method, FileCacheMethod.resolveDocumentFileSystemPath);
+          expect(call.arguments, <String, Object?>{'path': source});
+          return <String, Object?>{'ok': true, 'value': resolved};
+        });
+
+    final path = await PlatformLibraryScanDataSource(
+      isAndroid: () => true,
+    ).resolveRestorablePath(source);
+
+    expect(path, resolved);
   });
 }
 

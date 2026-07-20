@@ -35,6 +35,8 @@ import '../../features/settings/application/settings_repository.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../../features/data_support/application/backup_restore_coordinator.dart';
 import '../../features/data_support/application/data_support_file_service.dart';
+import '../../features/library/application/library_scan_coordinator.dart';
+import '../../features/library/application/library_scan_models.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
 import '../../features/asmr/application/asmr_playback_coordinator.dart';
@@ -104,9 +106,29 @@ final backupRestoreCoordinatorProvider = Provider<BackupRestoreCoordinator>((
   ];
   final asmr = ref.watch(asmrLibraryControllerProvider);
   if (asmr != null) reloaders.add(asmr);
+  final library = ref.watch(libraryFacadeProvider);
+  final scanCoordinator = LibraryScanCoordinator();
+  ref.onDispose(scanCoordinator.dispose);
   return BackupRestoreCoordinator(
     fileService: ref.watch(dataSupportFileServiceProvider),
     reloaders: reloaders,
+    readLibrarySources: () => library.backupImportSources,
+    prepareLibrarySources: (sources, labels) {
+      return scanCoordinator.prepareBackupRestoreSources(
+        sources: sources,
+        labels: labels,
+      );
+    },
+    restoreLibrarySources: (sources, labels) async {
+      final outcome = await scanCoordinator.restoreBackupSources(
+        sources: sources,
+        catalog: library,
+        labels: labels,
+      );
+      if (outcome?.code == LibraryScanOutcomeCode.failed) {
+        throw StateError('Local library sources could not be fully restored.');
+      }
+    },
   );
 });
 

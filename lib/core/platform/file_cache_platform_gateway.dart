@@ -377,6 +377,16 @@ class FileCachePlatformGateway {
     return result.valueOrNull ?? false;
   }
 
+  Future<String?> resolveDocumentFileSystemPath(String path) async {
+    final result = await _client.invoke<String?>(
+      FileCacheMethod.resolveDocumentFileSystemPath,
+      arguments: <String, Object?>{'path': path},
+      decode: (value) => value?.toString(),
+    );
+    final resolved = result.valueOrNull?.trim();
+    return resolved == null || resolved.isEmpty ? null : resolved;
+  }
+
   Future<bool> ensureFolderPath({
     required String folder,
     required String relativePath,

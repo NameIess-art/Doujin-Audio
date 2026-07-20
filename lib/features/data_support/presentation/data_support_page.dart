@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../application/data_support_file_service.dart';
+import '../../library/presentation/library_scan_feedback.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -69,8 +70,11 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
       action: () async {
         final result = await ref
             .read(backupRestoreCoordinatorProvider)
-            .pickAndRestoreBackup();
+            .pickAndRestoreBackup(
+              labels: LibraryScanPresentationMapper.labels(i18n),
+            );
         if (result == null) return;
+        if (result.isCancelled) return;
         if (!result.isValid) {
           if (!mounted) return;
           showAppSnackBar(

@@ -484,8 +484,22 @@ internal class DocumentStorageOperations(
         }
 
         fun documentPathExists(targetPath: String): Boolean {
-            val folder = resolveDocumentFileForFolderPath(targetPath) ?: return false
-            return folder.exists()
+            val trimmed = targetPath.trim()
+            if (!trimmed.startsWith("content://")) return false
+            if (trimmed.contains("::")) {
+                return runCatching {
+                    resolveDocumentFileForFolderPath(trimmed)?.exists() == true
+                }.getOrDefault(false)
+            }
+            val uri = Uri.parse(trimmed)
+            val document = DocumentFile.fromSingleUri(context, uri)
+            val documentExists = runCatching {
+                document?.exists() == true
+            }.getOrDefault(false)
+            if (documentExists) return true
+            return runCatching {
+                DocumentFile.fromTreeUri(context, uri)?.exists() == true
+            }.getOrDefault(false)
         }
 
         fun copyFileToFolder(

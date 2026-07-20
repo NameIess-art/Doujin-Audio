@@ -101,6 +101,8 @@ abstract final class FileCacheMethod {
       'writeSingleFileDetailBackup';
   static const String writeFileBytesToFolder = 'writeFileBytesToFolder';
   static const String documentPathExists = 'documentPathExists';
+  static const String resolveDocumentFileSystemPath =
+      'resolveDocumentFileSystemPath';
   static const String ensureFolderPath = 'ensureFolderPath';
   static const String copyFileToFolder = 'copyFileToFolder';
   static const String exportFile = 'exportFile';

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/core/media/local_library_import_sources.dart';
 import 'package:nameless_audio/features/data_support/application/app_backup_service.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
@@ -129,6 +130,45 @@ void main() {
     }
   }
 
+  Future<void> seedLocalLibrary(File file) async {
+    final db = await databaseFactoryFfi.openDatabase(file.path);
+    try {
+      await db.insert('tracks', <String, Object?>{
+        'path': '/music/manual.mp3',
+        'display_name': 'Manual',
+        'group_key': '__single_files__',
+        'group_title': 'Imported',
+        'group_subtitle': 'Manual files',
+        'is_single': 1,
+        'is_video': 0,
+        'duration_ms': 1000,
+      });
+      await db.insert('track_assets', <String, Object?>{
+        'path': '/music/manual.mp3',
+        'manual_cover_path': '/music/cover.jpg',
+      });
+      await db.insert('app_kv_settings', <String, Object?>{
+        'key': 'folder_cover_selections_v1',
+        'value': '{"/music":"/music/cover.jpg"}',
+      });
+    } finally {
+      await db.close();
+    }
+  }
+
+  Future<int> tableCount(File file, String table) async {
+    final db = await databaseFactoryFfi.openDatabase(
+      file.path,
+      options: OpenDatabaseOptions(readOnly: true),
+    );
+    try {
+      final rows = await db.rawQuery('SELECT COUNT(*) AS count FROM $table');
+      return (rows.single['count'] as num?)?.toInt() ?? 0;
+    } finally {
+      await db.close();
+    }
+  }
+
   Future<File> replaceBackupDatabase(
     File backup,
     List<int> databaseBytes,
@@ -194,6 +234,60 @@ void main() {
     expect(closeCount, 1);
     expect(reopenCount, 1);
   });
+
+  test(
+    'exports only local library source paths and removes derived data',
+    () async {
+      await seedLocalLibrary(databaseFile);
+      preferences.addAll(<String, Object>{
+        'watched_folders_v1': '["/music/work"]',
+        'watched_libraries_v1': '["/music/library"]',
+        'library_node_order_v1': '["dirty-order"]',
+      });
+      const sources = LocalLibraryImportSources(
+        libraries: <String>['/music/library'],
+        folders: <String>['/music/work'],
+        files: <String>['/music/manual.mp3'],
+      );
+
+      final output = await createService().exportBackup(
+        '${tempDirectory.path}/path_sources.nalbackup',
+        librarySources: sources,
+      );
+      final validation = await createService().validateBackup(output.path);
+      final archive = ZipDecoder().decodeBytes(await output.readAsBytes());
+      final sourceJson = jsonDecode(
+        utf8.decode(
+          archive.findFile(AppBackupService.librarySourcesEntry)!.content
+              as List<int>,
+        ),
+      );
+      final exportedDatabase = File('${tempDirectory.path}/path_sources.db');
+      await exportedDatabase.writeAsBytes(
+        archive.findFile(AppBackupService.databaseEntry)!.content as List<int>,
+      );
+      final exportedPreferences =
+          jsonDecode(
+                utf8.decode(
+                  archive.findFile(AppBackupService.preferencesEntry)!.content
+                      as List<int>,
+                ),
+              )
+              as Map<String, dynamic>;
+
+      expect(sourceJson, sources.toJson());
+      expect(validation.librarySources.toJson(), sources.toJson());
+      expect(await tableCount(databaseFile, 'tracks'), 1);
+      expect(await tableCount(exportedDatabase, 'tracks'), 0);
+      expect(await tableCount(exportedDatabase, 'track_assets'), 0);
+      expect(exportedPreferences.keys, isNot(contains('watched_folders_v1')));
+      expect(exportedPreferences.keys, isNot(contains('watched_libraries_v1')));
+      expect(
+        exportedPreferences.keys,
+        isNot(contains('library_node_order_v1')),
+      );
+    },
+  );
 
   test(
     'large database fixture exports validates and restores by stream',
@@ -288,12 +382,18 @@ void main() {
   test('restores legacy backups with a deflate-compressed database', () async {
     final legacyDatabase = File('${tempDirectory.path}/legacy.db');
     await createDatabase(legacyDatabase, marker: 'legacy compressed database');
+    await seedLocalLibrary(legacyDatabase);
     final databaseBytes = await legacyDatabase.readAsBytes();
     final preferencesBytes = utf8.encode(
-      jsonEncode(<String, Object>{'language': 'ja', 'themeMode': 'light'}),
+      jsonEncode(<String, Object>{
+        'language': 'ja',
+        'themeMode': 'light',
+        'watched_libraries_v1': '["/music/library"]',
+        'watched_folders_v1': '["/music/library/work","/music/folder"]',
+      }),
     );
     final manifest = <String, Object?>{
-      'formatVersion': AppBackupService.formatVersion,
+      'formatVersion': 2,
       'dataEpoch': AppBackupService.dataEpoch,
       'appVersion': '1.2.3+4',
       'createdAt': DateTime.now().toUtc().toIso8601String(),
@@ -331,7 +431,16 @@ void main() {
 
     expect(result.isValid, isTrue);
     expect(await readMarker(databaseFile), 'legacy compressed database');
+    expect(result.librarySources.libraries, <String>['/music/library']);
+    expect(result.librarySources.folders, <String>[
+      '/music/library/work',
+      '/music/folder',
+    ]);
+    expect(result.librarySources.files, <String>['/music/manual.mp3']);
+    expect(await tableCount(databaseFile, 'tracks'), 0);
     expect(preferences, containsPair('language', 'ja'));
+    expect(preferences, isNot(contains('watched_libraries_v1')));
+    expect(preferences, isNot(contains('watched_folders_v1')));
   });
 
   test('rejects a 0.x format backup', () async {
@@ -504,6 +613,28 @@ void main() {
     expect(preferences, containsPair('language', 'zh'));
     expect(preferences, containsPair('themeMode', 'dark'));
     expect(await File('${databaseFile.path}.restore-backup').exists(), isFalse);
+  });
+
+  test('cancelled source access leaves current data unchanged', () async {
+    final output = await createService().exportBackup(
+      '${tempDirectory.path}/cancelled_restore.nalbackup',
+      librarySources: const LocalLibraryImportSources(
+        libraries: <String>['content://old/library'],
+      ),
+    );
+    await createDatabase(databaseFile, marker: 'current database');
+    preferences = <String, Object>{'language': 'en'};
+
+    final result = await createService().restoreBackup(
+      output.path,
+      beforeCommit: (sources) async => null,
+    );
+
+    expect(result.isCancelled, isTrue);
+    expect(await readMarker(databaseFile), 'current database');
+    expect(preferences, containsPair('language', 'en'));
+    expect(closeCount, 1);
+    expect(reopenCount, 1);
   });
 
   test('rolls database back when replacement cannot reopen', () async {

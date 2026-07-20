@@ -80,6 +80,7 @@ internal object FileCacheMethods {
     const val DELETE_DOCUMENT_PATH = "deleteDocumentPath"
     const val DISCOVER_ROOT_IMAGES = "discoverRootImages"
     const val DOCUMENT_PATH_EXISTS = "documentPathExists"
+    const val RESOLVE_DOCUMENT_FILE_SYSTEM_PATH = "resolveDocumentFileSystemPath"
     const val ENFORCE_APPLICATION_CACHE_LIMIT = "enforceApplicationCacheLimit"
     const val ENSURE_FOLDER_PATH = "ensureFolderPath"
     const val EXPORT_FILE = "exportFile"

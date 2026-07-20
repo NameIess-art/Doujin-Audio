@@ -125,6 +125,27 @@ final class LibraryFacade implements LibraryCatalog {
   @override
   List<String> get watchedLibraries =>
       UnmodifiableListView<String>(service.watchedLibraries);
+  LocalLibraryImportSources get backupImportSources {
+    final libraries = _distinctImportPaths(service.watchedLibraries);
+    final folders = _distinctImportPaths(
+      service.watchedFolders.where(
+        (folder) => !libraries.any(
+          (library) => PathMatcher.isWithinOrEqual(folder, library),
+        ),
+      ),
+    );
+    final files = _distinctImportPaths(
+      service.library
+          .where((track) => track.groupKey == '__single_files__')
+          .map((track) => track.path),
+    );
+    return LocalLibraryImportSources(
+      libraries: libraries,
+      folders: folders,
+      files: files,
+    );
+  }
+
   @override
   bool get isScanning => service.isScanning;
   bool get isBackgroundScanning => service.isBackgroundScanning;
@@ -136,6 +157,15 @@ final class LibraryFacade implements LibraryCatalog {
   int get scanFailureCount => service.scanFailureCount;
   AudioLibraryCategorySnapshot? get categorySnapshot =>
       snapshotCacheService.categorySnapshotSync;
+
+  List<String> _distinctImportPaths(Iterable<String> values) {
+    final seen = <String>{};
+    return values
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .where((value) => seen.add(PathMatcher.equivalenceKey(value)))
+        .toList(growable: false);
+  }
 
   Future<void> loadPersistedState() async {
     final tracksFuture = databaseRepository.loadStartupTracks();

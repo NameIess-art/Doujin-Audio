@@ -39,6 +39,7 @@ void main() {
       FileCacheMethod.writeSingleFileDetailBackup,
       FileCacheMethod.writeFileBytesToFolder,
       FileCacheMethod.documentPathExists,
+      FileCacheMethod.resolveDocumentFileSystemPath,
       FileCacheMethod.ensureFolderPath,
       FileCacheMethod.copyFileToFolder,
       FileCacheMethod.exportFile,

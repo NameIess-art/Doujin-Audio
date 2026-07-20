@@ -63,6 +63,9 @@ internal class FileCacheOperations(context: Context) {
 
     fun documentPathExists(path: String): Boolean = documentStorage.documentPathExists(path)
 
+    fun resolveDocumentFileSystemPath(path: String): String? =
+        documentStorage.contentUriToFilePath(path)
+
     fun copyFileToFolder(
         sourcePath: String,
         folder: String,

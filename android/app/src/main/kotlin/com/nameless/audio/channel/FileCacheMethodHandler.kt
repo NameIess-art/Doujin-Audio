@@ -214,6 +214,12 @@ internal class FileCacheMethodHandler(
                     operations.documentPathExists(targetPath)
                 }
             }
+            FileCacheMethods.RESOLVE_DOCUMENT_FILE_SYSTEM_PATH -> {
+                val targetPath = arguments.requiredString("path")
+                runAsync(result, errorCode = { "document_path_resolve_failed" }) {
+                    operations.resolveDocumentFileSystemPath(targetPath)
+                }
+            }
             FileCacheMethods.ENSURE_FOLDER_PATH -> {
                 val folder = arguments.requiredString("folder")
                 val relativePath = arguments.requiredString("relativePath", allowBlank = true)

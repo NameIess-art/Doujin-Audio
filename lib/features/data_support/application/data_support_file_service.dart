@@ -5,6 +5,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/platform/app_platform.dart';
+import '../../../core/media/local_library_import_sources.dart';
 import 'app_backup_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'diagnostic_report_service.dart';
@@ -33,12 +34,19 @@ class DataSupportFileService {
   final FileCachePlatformGateway _fileCacheGateway;
   final bool Function() _isAndroid;
 
-  Future<String?> exportBackup({required String dialogTitle}) async {
+  Future<String?> exportBackup({
+    required String dialogTitle,
+    LocalLibraryImportSources librarySources =
+        const LocalLibraryImportSources(),
+  }) async {
     final temporary = await _temporaryFile(
       'NamelessAudio-${_timestamp()}.nalbackup',
     );
     try {
-      final backup = await _backupService.exportBackup(temporary.path);
+      final backup = await _backupService.exportBackup(
+        temporary.path,
+        librarySources: librarySources,
+      );
       return await _saveGeneratedFile(
         source: backup,
         dialogTitle: dialogTitle,
@@ -51,7 +59,8 @@ class DataSupportFileService {
   }
 
   Future<BackupValidationResult?> pickAndRestoreBackup({
-    Future<void> Function()? beforeRestore,
+    Future<LocalLibraryImportSources?> Function(LocalLibraryImportSources)?
+    beforeRestore,
   }) async {
     final selection = await FilePicker.pickFiles(
       type: FileType.custom,

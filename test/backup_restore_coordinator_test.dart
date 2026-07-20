@@ -3,6 +3,15 @@ import 'package:nameless_audio/app/application/persisted_state_reloader.dart';
 import 'package:nameless_audio/features/data_support/application/app_backup_service.dart';
 import 'package:nameless_audio/features/data_support/application/backup_restore_coordinator.dart';
 import 'package:nameless_audio/features/data_support/application/data_support_file_service.dart';
+import 'package:nameless_audio/features/library/application/library_scan_models.dart';
+
+const _labels = LibraryScanLabels(
+  chooseMusicFolder: 'folder',
+  chooseLibraryFolder: 'library',
+  chooseAudioFiles: 'files',
+  importedFiles: 'imported',
+  manuallySelectedFiles: 'manual',
+);
 
 void main() {
   final validManifest = BackupManifest(
@@ -22,12 +31,18 @@ void main() {
     final cancelled = await BackupRestoreCoordinator(
       fileService: _FakeDataSupportFileService(null),
       reloaders: <PersistedStateReloader>[reloader],
-    ).pickAndRestoreBackup();
+      readLibrarySources: () => const LocalLibraryImportSources(),
+      prepareLibrarySources: (sources, labels) async => sources,
+      restoreLibrarySources: (sources, labels) async {},
+    ).pickAndRestoreBackup(labels: _labels);
     const invalidResult = BackupValidationResult.invalid('invalid');
     final invalid = await BackupRestoreCoordinator(
       fileService: _FakeDataSupportFileService(invalidResult),
       reloaders: <PersistedStateReloader>[reloader],
-    ).pickAndRestoreBackup();
+      readLibrarySources: () => const LocalLibraryImportSources(),
+      prepareLibrarySources: (sources, labels) async => sources,
+      restoreLibrarySources: (sources, labels) async {},
+    ).pickAndRestoreBackup(labels: _labels);
 
     expect(cancelled, isNull);
     expect(invalid, same(invalidResult));
@@ -43,19 +58,50 @@ void main() {
         _RecordingReloader('app', events),
         _RecordingReloader('asmr', events),
       ],
+      readLibrarySources: () => const LocalLibraryImportSources(),
+      prepareLibrarySources: (sources, labels) async {
+        events.add('library:prepare');
+        return sources;
+      },
+      restoreLibrarySources: (sources, labels) async {
+        events.add('library:restore');
+      },
     );
 
-    final restored = await coordinator.pickAndRestoreBackup();
+    final restored = await coordinator.pickAndRestoreBackup(labels: _labels);
 
     expect(restored, same(result));
     expect(events, <String>[
+      'library:prepare',
       'app:prepare',
       'asmr:prepare',
       'app:start',
       'app:end',
       'asmr:start',
       'asmr:end',
+      'library:restore',
     ]);
+  });
+
+  test('source picker cancellation does not replace or reload state', () async {
+    final events = <String>[];
+    final coordinator = BackupRestoreCoordinator(
+      fileService: _FakeDataSupportFileService(
+        BackupValidationResult.valid(validManifest),
+      ),
+      reloaders: <PersistedStateReloader>[_RecordingReloader('app', events)],
+      readLibrarySources: () => const LocalLibraryImportSources(),
+      prepareLibrarySources: (sources, labels) async {
+        events.add('library:cancel');
+        return null;
+      },
+      restoreLibrarySources: (sources, labels) async {},
+    );
+
+    final result = await coordinator.pickAndRestoreBackup(labels: _labels);
+
+    expect(result?.isCancelled, isTrue);
+    expect(events, <String>['library:cancel']);
   });
 
   test(
@@ -72,12 +118,23 @@ void main() {
           _RecordingReloader('app', events),
           _RecordingReloader('asmr', events),
         ],
+        readLibrarySources: () {
+          events.add('library:read');
+          return const LocalLibraryImportSources(files: <String>['song.mp3']);
+        },
+        prepareLibrarySources: (sources, labels) async => sources,
+        restoreLibrarySources: (sources, labels) async {},
       );
 
       final path = await coordinator.exportBackup(dialogTitle: 'Export');
 
       expect(path, 'backup.nalbackup');
-      expect(events, <String>['app:export', 'asmr:export', 'archive:export']);
+      expect(events, <String>[
+        'app:export',
+        'asmr:export',
+        'library:read',
+        'archive:export',
+      ]);
     },
   );
 
@@ -90,12 +147,23 @@ void main() {
         prepareBeforeReturning: true,
       ),
       reloaders: <PersistedStateReloader>[_RecordingReloader('app', events)],
+      readLibrarySources: () => const LocalLibraryImportSources(),
+      prepareLibrarySources: (sources, labels) async {
+        events.add('library:prepare');
+        return sources;
+      },
+      restoreLibrarySources: (sources, labels) async {},
     );
 
-    final restored = await coordinator.pickAndRestoreBackup();
+    final restored = await coordinator.pickAndRestoreBackup(labels: _labels);
 
     expect(restored, same(result));
-    expect(events, <String>['app:prepare', 'app:start', 'app:end']);
+    expect(events, <String>[
+      'library:prepare',
+      'app:prepare',
+      'app:start',
+      'app:end',
+    ]);
   });
 }
 
@@ -113,17 +181,34 @@ final class _FakeDataSupportFileService extends DataSupportFileService {
   final List<String>? events;
 
   @override
-  Future<String?> exportBackup({required String dialogTitle}) async {
+  Future<String?> exportBackup({
+    required String dialogTitle,
+    LocalLibraryImportSources librarySources =
+        const LocalLibraryImportSources(),
+  }) async {
     events?.add('archive:export');
     return exportedPath;
   }
 
   @override
   Future<BackupValidationResult?> pickAndRestoreBackup({
-    Future<void> Function()? beforeRestore,
+    Future<LocalLibraryImportSources?> Function(LocalLibraryImportSources)?
+    beforeRestore,
   }) async {
     if (result?.isValid == true || prepareBeforeReturning) {
-      await beforeRestore?.call();
+      final sources = await beforeRestore?.call(
+        result?.librarySources ?? const LocalLibraryImportSources(),
+      );
+      if (result?.isValid == true && sources == null) {
+        return const BackupValidationResult.cancelled();
+      }
+      if (result?.isValid == true && sources != null) {
+        if (identical(sources, result!.librarySources)) return result;
+        return BackupValidationResult.valid(
+          result!.manifest!,
+          librarySources: sources,
+        );
+      }
     }
     return result;
   }

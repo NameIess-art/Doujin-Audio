@@ -5,7 +5,13 @@ import '../../../core/logging/app_log_service.dart';
 import 'library_catalog.dart';
 import 'library_scanner_service.dart';
 
-enum LibraryScanOperation { refresh, importFolder, importLibrary, importFiles }
+enum LibraryScanOperation {
+  refresh,
+  importFolder,
+  importLibrary,
+  importFiles,
+  restoreBackup,
+}
 
 enum LibraryScanPhase { idle, running, success, cancelled, failure }
 
@@ -64,6 +70,29 @@ class LibraryScanCoordinator extends ChangeNotifier {
   }) => _run(
     operation: LibraryScanOperation.importFiles,
     task: () => _scanner.addFiles(provider: catalog, labels: labels),
+  );
+
+  Future<LocalLibraryImportSources?> prepareBackupRestoreSources({
+    required LocalLibraryImportSources sources,
+    required LibraryScanLabels labels,
+  }) {
+    return _scanner.prepareBackupRestoreSources(
+      sources: sources,
+      labels: labels,
+    );
+  }
+
+  Future<LibraryScanOutcome?> restoreBackupSources({
+    required LocalLibraryImportSources sources,
+    required LibraryCatalog catalog,
+    required LibraryScanLabels labels,
+  }) => _run(
+    operation: LibraryScanOperation.restoreBackup,
+    task: () => _scanner.restoreSources(
+      sources: sources,
+      provider: catalog,
+      labels: labels,
+    ),
   );
 
   void cancel(LibraryCatalogWriter catalog) {

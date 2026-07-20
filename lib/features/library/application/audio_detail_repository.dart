@@ -75,9 +75,27 @@ class AudioDetailRepository {
       normalizedTarget,
     );
     if (databaseDetail != null) {
-      return AudioDetailLoadResult(
-        detail: await _restoreMissingDatabaseCover(databaseDetail),
+      final backupDetail = await _readBackup(normalizedTarget);
+      if (backupDetail != null &&
+          _shouldPreferBackup(databaseDetail, backupDetail)) {
+        final restored = (await _mergePreferredDetail(
+          backupDetail,
+          databaseDetail,
+        )).normalizedForSave(_now());
+        await _databaseRepository.upsertAudioDetail(restored);
+        return AudioDetailLoadResult(
+          detail: restored,
+          restoredFromBackup: true,
+        );
+      }
+      final restored = await _restoreMissingDatabaseCoverFromBackup(
+        databaseDetail,
+        backupDetail,
       );
+      if (restored.cardCoverPath != databaseDetail.cardCoverPath) {
+        await _databaseRepository.upsertAudioDetail(restored);
+      }
+      return AudioDetailLoadResult(detail: restored);
     }
 
     final backupDetail = await _readBackup(normalizedTarget);
@@ -116,14 +134,7 @@ class AudioDetailRepository {
         ),
     };
 
-    final backupTargetsByKey = <String, AudioDetailTarget>{};
-    for (final entry in targetsByKey.entries) {
-      final databaseDetail = databaseDetailsByKey[entry.key];
-      if (databaseDetail == null ||
-          await _needsBackupCoverRestore(databaseDetail)) {
-        backupTargetsByKey[entry.key] = entry.value;
-      }
-    }
+    final backupTargetsByKey = targetsByKey;
     final backupDetailsByKey = await _readBackupsForTargets(
       backupTargetsByKey.values,
     );
@@ -146,6 +157,19 @@ class AudioDetailRepository {
         );
         continue;
       }
+      if (backupDetail != null &&
+          _shouldPreferBackup(databaseDetail, backupDetail)) {
+        final restored = (await _mergePreferredDetail(
+          backupDetail,
+          databaseDetail,
+        )).normalizedForSave(_now());
+        detailsToUpsert.add(restored);
+        resultsByKey[entry.key] = AudioDetailLoadResult(
+          detail: restored,
+          restoredFromBackup: true,
+        );
+        continue;
+      }
       final restored = await _restoreMissingDatabaseCoverFromBackup(
         databaseDetail,
         backupDetail,
@@ -163,9 +187,14 @@ class AudioDetailRepository {
   }
 
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
-    var normalized = detail
-        .copyWith(target: _normalizeTarget(detail.target))
-        .normalizedForSave(_now());
+    var candidate = detail.copyWith(target: _normalizeTarget(detail.target));
+    if (candidate.updatedAt != null) {
+      final backupDetail = await _readBackup(candidate.target);
+      if (backupDetail != null && _isBackupNewer(candidate, backupDetail)) {
+        candidate = await _mergePreferredDetail(backupDetail, candidate);
+      }
+    }
+    var normalized = candidate.normalizedForSave(_now());
     final persistedCover = await _persistDerivedCover(normalized);
     normalized = persistedCover.detail;
     final coverPortabilitySkipped = persistedCover.portabilitySkipped;
@@ -830,19 +859,6 @@ class AudioDetailRepository {
     return segments.join('/');
   }
 
-  Future<AudioDetail> _restoreMissingDatabaseCover(AudioDetail detail) async {
-    if (!await _needsBackupCoverRestore(detail)) return detail;
-    final backupDetail = await _readBackup(detail.target);
-    final restored = await _restoreMissingDatabaseCoverFromBackup(
-      detail,
-      backupDetail,
-    );
-    if (restored.cardCoverPath != detail.cardCoverPath) {
-      await _databaseRepository.upsertAudioDetail(restored);
-    }
-    return restored;
-  }
-
   Future<bool> _needsBackupCoverRestore(AudioDetail detail) async {
     final coverPath = detail.cardCoverPath;
     return coverPath != null &&
@@ -855,6 +871,7 @@ class AudioDetailRepository {
     AudioDetail detail,
     AudioDetail? backupDetail,
   ) async {
+    if (!await _needsBackupCoverRestore(detail)) return detail;
     final coverPath = detail.cardCoverPath;
     final restoredCoverPath = backupDetail?.cardCoverPath;
     if (restoredCoverPath == null || restoredCoverPath == coverPath) {
@@ -867,6 +884,71 @@ class AudioDetailRepository {
     }
 
     return detail.copyWith(cardCoverPath: restoredCoverPath);
+  }
+
+  bool _shouldPreferBackup(AudioDetail database, AudioDetail backup) {
+    if (_isBackupNewer(database, backup)) return true;
+    if (database.updatedAt != null || backup.updatedAt != null) return false;
+    return _metadataScore(backup) > _metadataScore(database);
+  }
+
+  bool _isBackupNewer(AudioDetail detail, AudioDetail backup) {
+    final backupUpdatedAt = backup.updatedAt;
+    if (backupUpdatedAt == null) return false;
+    final detailUpdatedAt = detail.updatedAt;
+    return detailUpdatedAt == null || backupUpdatedAt.isAfter(detailUpdatedAt);
+  }
+
+  int _metadataScore(AudioDetail detail) {
+    var score = 0;
+    if (detail.rjCode.trim().isNotEmpty) score++;
+    if (detail.workTitle.trim().isNotEmpty) score++;
+    if (detail.circleName.trim().isNotEmpty) score++;
+    if (detail.voiceActors.isNotEmpty) score++;
+    if (detail.tags.isNotEmpty) score++;
+    if (detail.cardCoverPath != null) score++;
+    if (detail.releaseDate != null) score++;
+    if (detail.duration != null) score++;
+    if (detail.salesCount != null) score++;
+    if (detail.rating != null) score++;
+    return score;
+  }
+
+  Future<AudioDetail> _mergePreferredDetail(
+    AudioDetail preferred,
+    AudioDetail fallback,
+  ) async {
+    final preferredCover = preferred.cardCoverPath;
+    final usablePreferredCover =
+        preferredCover != null &&
+        (PathMatcher.isContentUri(preferredCover) ||
+            PathMatcher.isRemoteUri(preferredCover) ||
+            await File(preferredCover).exists());
+    return AudioDetail(
+      target: fallback.target,
+      rjCode: preferred.rjCode.trim().isNotEmpty
+          ? preferred.rjCode
+          : fallback.rjCode,
+      workTitle: preferred.workTitle.trim().isNotEmpty
+          ? preferred.workTitle
+          : fallback.workTitle,
+      circleName: preferred.circleName.trim().isNotEmpty
+          ? preferred.circleName
+          : fallback.circleName,
+      voiceActors: preferred.voiceActors.isNotEmpty
+          ? preferred.voiceActors
+          : fallback.voiceActors,
+      tags: preferred.tags.isNotEmpty ? preferred.tags : fallback.tags,
+      cardCoverPath: usablePreferredCover
+          ? preferredCover
+          : fallback.cardCoverPath,
+      releaseDate: preferred.releaseDate ?? fallback.releaseDate,
+      duration: preferred.duration ?? fallback.duration,
+      salesCount: preferred.salesCount ?? fallback.salesCount,
+      rating: preferred.rating ?? fallback.rating,
+      createdAt: preferred.createdAt ?? fallback.createdAt,
+      updatedAt: preferred.updatedAt ?? fallback.updatedAt,
+    );
   }
 
   AudioDetailTarget _normalizeTarget(AudioDetailTarget target) {

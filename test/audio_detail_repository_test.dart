@@ -136,6 +136,132 @@ void main() {
     expect(result.detail.workTitle, 'Normalized');
   });
 
+  test('load restores a newer local backup over stale database detail', () async {
+    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+    final databaseDetail = AudioDetail.empty(target).copyWith(
+      workTitle: 'Stale database title',
+      duration: const Duration(minutes: 12),
+      createdAt: DateTime.utc(2026, 7, 18),
+      updatedAt: DateTime.utc(2026, 7, 18),
+    );
+    await appDatabase.upsertAudioDetail(databaseDetail);
+    final backupFile = File(
+      '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+    );
+    await backupFile.writeAsString(
+      json.encode(
+        AudioDetail.empty(target)
+            .copyWith(
+              rjCode: 'RJ123456',
+              workTitle: 'Current JSON title',
+              circleName: 'Current circle',
+              voiceActors: const <String>['Voice actor'],
+              tags: const <String>['ASMR'],
+              createdAt: DateTime.utc(2026, 7, 18),
+              updatedAt: DateTime.utc(2026, 7, 19),
+            )
+            .toBackupJson(),
+      ),
+    );
+
+    final result = await repository.load(target);
+
+    expect(result.restoredFromBackup, isTrue);
+    expect(result.detail.rjCode, 'RJ123456');
+    expect(result.detail.workTitle, 'Current JSON title');
+    expect(result.detail.circleName, 'Current circle');
+    expect(result.detail.voiceActors, const <String>['Voice actor']);
+    expect(result.detail.tags, const <String>['ASMR']);
+    expect(result.detail.duration, const Duration(minutes: 12));
+    final persisted = await appDatabase.loadAudioDetail(target);
+    expect(persisted?.workTitle, 'Current JSON title');
+    expect(persisted?.duration, const Duration(minutes: 12));
+  });
+
+  test('loadMany restores newer JSON details before automatic updates', () async {
+    final workFolder = Directory(
+      '${tempDir.path}${Platform.pathSeparator}batch-work',
+    );
+    await workFolder.create();
+    final target = AudioDetailTarget.libraryRootFolder(workFolder.path);
+    await appDatabase.upsertAudioDetail(
+      AudioDetail.empty(target).copyWith(
+        workTitle: 'Stale batch title',
+        createdAt: DateTime.utc(2026, 7, 18),
+        updatedAt: DateTime.utc(2026, 7, 18),
+      ),
+    );
+    await File(
+      '${workFolder.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+    ).writeAsString(
+      json.encode(
+        AudioDetail.empty(target)
+            .copyWith(
+              rjCode: 'RJ654321',
+              workTitle: 'Current batch JSON title',
+              createdAt: DateTime.utc(2026, 7, 18),
+              updatedAt: DateTime.utc(2026, 7, 19),
+            )
+            .toBackupJson(),
+      ),
+    );
+
+    final result = (await repository.loadMany(<AudioDetailTarget>[
+      target,
+    ])).single;
+
+    expect(result.restoredFromBackup, isTrue);
+    expect(result.detail.rjCode, 'RJ654321');
+    expect(result.detail.workTitle, 'Current batch JSON title');
+  });
+
+  test('stale automatic save cannot erase a newer JSON backup', () async {
+    final workFolder = Directory(
+      '${tempDir.path}${Platform.pathSeparator}stale-save-work',
+    );
+    await workFolder.create();
+    final target = AudioDetailTarget.libraryRootFolder(workFolder.path);
+    final staleDetail = AudioDetail.empty(target).copyWith(
+      workTitle: 'Stale cached title',
+      createdAt: DateTime.utc(2026, 7, 18),
+      updatedAt: DateTime.utc(2026, 7, 18),
+    );
+    await File(
+      '${workFolder.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+    ).writeAsString(
+      json.encode(
+        AudioDetail.empty(target)
+            .copyWith(
+              rjCode: 'RJ998877',
+              workTitle: 'Current JSON title',
+              circleName: 'Current circle',
+              createdAt: DateTime.utc(2026, 7, 18),
+              updatedAt: DateTime.utc(2026, 7, 19),
+            )
+            .toBackupJson(),
+      ),
+    );
+
+    final saved = await repository.save(
+      staleDetail.copyWith(duration: const Duration(minutes: 8)),
+    );
+
+    expect(saved.detail.rjCode, 'RJ998877');
+    expect(saved.detail.workTitle, 'Current JSON title');
+    expect(saved.detail.circleName, 'Current circle');
+    expect(saved.detail.duration, const Duration(minutes: 8));
+    final backup =
+        json.decode(
+              await File(
+                '${workFolder.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+              ).readAsString(),
+            )
+            as Map<String, dynamic>;
+    expect(backup['rjCode'], 'RJ998877');
+    expect(backup['workTitle'], 'Current JSON title');
+    expect(backup['durationMs'], const Duration(minutes: 8).inMilliseconds);
+  });
+
   test('manual edits overwrite the local backup file', () async {
     final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
     final first = AudioDetail.empty(

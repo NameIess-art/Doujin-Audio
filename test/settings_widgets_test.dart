@@ -301,7 +301,7 @@ void main() {
     );
   });
 
-  testWidgets('settings pages use theme-colored icons and a light surface', (
+  testWidgets('settings pages use theme-colored icons without group cards', (
     tester,
   ) async {
     final harness = AppRuntimeWidgetTestFixture();
@@ -319,20 +319,20 @@ void main() {
       rootTrailing.color,
       Theme.of(rootContext).colorScheme.onSurfaceVariant,
     );
-    final rootSurface = tester
+    final rootSurfaces = tester
         .widgetList<Container>(
           find.ancestor(of: rootTile, matching: find.byType(Container)),
         )
-        .firstWhere(
+        .where(
           (container) =>
               container.decoration is BoxDecoration &&
               (container.decoration! as BoxDecoration).color ==
                   Theme.of(rootContext).colorScheme.surfaceContainerLow,
         );
     expect(
-      (rootSurface.decoration! as BoxDecoration).border,
-      isNull,
-      reason: 'Settings root items should not paint a card outline.',
+      rootSurfaces,
+      isEmpty,
+      reason: 'Settings root items should not paint a group card surface.',
     );
 
     await tester.tap(rootTile);
@@ -343,20 +343,20 @@ void main() {
     final detailIcon = tester.widget<ListTile>(detailTile).leading! as Icon;
     final colorScheme = Theme.of(detailContext).colorScheme;
     expect(detailIcon.color, colorScheme.primary);
-    final detailSurface = tester
+    final detailSurfaces = tester
         .widgetList<Container>(
           find.ancestor(of: detailTile, matching: find.byType(Container)),
         )
-        .firstWhere(
+        .where(
           (container) =>
               container.decoration is BoxDecoration &&
               (container.decoration! as BoxDecoration).color ==
                   colorScheme.surfaceContainerLow,
         );
     expect(
-      (detailSurface.decoration! as BoxDecoration).border,
-      isNull,
-      reason: 'Settings secondary-page items should remain borderless.',
+      detailSurfaces,
+      isEmpty,
+      reason: 'Settings secondary-page items should not paint group cards.',
     );
     expect(
       find.byWidgetPredicate(

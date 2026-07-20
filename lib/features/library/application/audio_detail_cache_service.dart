@@ -19,6 +19,7 @@ class AudioDetailCacheService {
   final LinkedHashMap<String, AudioDetailLoadResult> _resolved =
       LinkedHashMap<String, AudioDetailLoadResult>();
   int _revision = 0;
+  int _cacheEpoch = 0;
 
   int get revision => _revision;
 
@@ -30,33 +31,43 @@ class AudioDetailCacheService {
     final key = AudioLibraryDetailKey.forTarget(target);
     final cached = _takeResolved(key);
     if (cached != null) return Future<AudioDetailLoadResult>.value(cached);
-    return _loadFutures.putIfAbsent(key, () {
-      final future = () async {
-        final result = await _repository.load(target);
+    final existing = _loadFutures[key];
+    if (existing != null) return existing;
+    final epoch = _cacheEpoch;
+    late final Future<AudioDetailLoadResult> future;
+    future = () async {
+      final result = await _repository.load(target);
+      if (epoch == _cacheEpoch) {
         final resultKey = AudioLibraryDetailKey.forTarget(result.detail.target);
         _storeResolved(resultKey, result);
         if (resultKey != key) {
           _storeResolved(key, result);
         }
-        return result;
-      }();
-      unawaited(
-        future.then<void>(
-          (_) {
+      }
+      return result;
+    }();
+    _loadFutures[key] = future;
+    unawaited(
+      future.then<void>(
+        (_) {
+          if (identical(_loadFutures[key], future)) {
             _loadFutures.remove(key);
-          },
-          onError: (Object error, StackTrace stackTrace) {
+          }
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (identical(_loadFutures[key], future)) {
             _loadFutures.remove(key);
-          },
-        ),
-      );
-      return future;
-    });
+          }
+        },
+      ),
+    );
+    return future;
   }
 
   Future<List<AudioDetailLoadResult>> loadMany(
     Iterable<AudioDetailTarget> targets,
   ) async {
+    final epoch = _cacheEpoch;
     final orderedTargets = targets.toList(growable: false);
     if (orderedTargets.isEmpty) return const <AudioDetailLoadResult>[];
 
@@ -85,7 +96,7 @@ class AudioDetailCacheService {
               result.detail.target,
             )] =
             result;
-        _storeLoadResult(result);
+        if (epoch == _cacheEpoch) _storeLoadResult(result);
       }
     }
 
@@ -170,6 +181,7 @@ class AudioDetailCacheService {
   }
 
   void clear() {
+    _cacheEpoch++;
     _loadFutures.clear();
     _resolved.clear();
     _bumpRevision();

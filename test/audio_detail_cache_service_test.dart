@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
@@ -73,16 +75,46 @@ void main() {
     await cache.load(third);
     expect(repository.loadCount, 4);
   });
+
+  test(
+    'clear prevents an older in-flight load from repopulating cache',
+    () async {
+      final target = AudioDetailTarget.libraryRootFolder('/library/work');
+      final pendingLoad = Completer<AudioDetail>();
+      final repository = _FakeAudioDetailRepository(
+        loadResult: AudioDetail.empty(target),
+        pendingLoad: pendingLoad,
+      );
+      final cache = AudioDetailCacheService(repository: repository);
+
+      final staleLoad = cache.load(target);
+      cache.clear();
+      repository.pendingLoad = null;
+      repository.loadResult = AudioDetail.empty(
+        target,
+      ).copyWith(workTitle: 'Restored database title');
+      pendingLoad.complete(
+        AudioDetail.empty(target).copyWith(workTitle: 'Stale cached title'),
+      );
+      expect((await staleLoad).detail.workTitle, 'Stale cached title');
+
+      final reloaded = await cache.load(target);
+
+      expect(reloaded.detail.workTitle, 'Restored database title');
+      expect(repository.loadCount, 2);
+    },
+  );
 }
 
 class _FakeAudioDetailRepository implements AudioDetailRepository {
   _FakeAudioDetailRepository({
-    required AudioDetail loadResult,
+    required this.loadResult,
     AudioDetail? prefillResult,
-  }) : _loadResult = loadResult,
-       _prefillResult = prefillResult;
+    this.pendingLoad,
+  }) : _prefillResult = prefillResult;
 
-  AudioDetail _loadResult;
+  AudioDetail loadResult;
+  Completer<AudioDetail>? pendingLoad;
   final AudioDetail? _prefillResult;
   int loadCount = 0;
   int deleteCount = 0;
@@ -90,7 +122,9 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   @override
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
     loadCount++;
-    return AudioDetailLoadResult(detail: _loadResult.copyWith(target: target));
+    final pending = pendingLoad;
+    final detail = pending == null ? loadResult : await pending.future;
+    return AudioDetailLoadResult(detail: detail.copyWith(target: target));
   }
 
   @override
@@ -102,7 +136,7 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
 
   @override
   Future<AudioDetailSaveResult> save(AudioDetail detail) async {
-    _loadResult = detail;
+    loadResult = detail;
     return AudioDetailSaveResult(
       detail: detail,
       backupAttempted: false,
@@ -127,7 +161,7 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   ) async {
     final detail = _prefillResult;
     if (detail == null) return null;
-    _loadResult = detail;
+    loadResult = detail;
     return AudioDetailSaveResult(
       detail: detail,
       backupAttempted: false,

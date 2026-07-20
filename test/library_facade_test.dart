@@ -385,6 +385,90 @@ void main() {
     },
   );
 
+  test('backup restore resets cached audio details', () async {
+    final workDir = await Directory.systemTemp.createTemp(
+      'library_detail_restore_cache_',
+    );
+    addTearDown(() async {
+      if (await workDir.exists()) await workDir.delete(recursive: true);
+    });
+    final target = AudioDetailTarget.libraryRootFolder(workDir.path);
+    await runtimeGraph.library.saveAudioDetail(
+      AudioDetail.empty(target).copyWith(workTitle: 'Before restore'),
+    );
+    expect(
+      (await runtimeGraph.library.loadAudioDetail(target)).detail.workTitle,
+      'Before restore',
+    );
+    await runtimeGraph.library.databaseRepository.upsertAudioDetail(
+      AudioDetail.empty(target).copyWith(
+        workTitle: 'Restored database title',
+        createdAt: DateTime.utc(2100),
+        updatedAt: DateTime.utc(2100),
+      ),
+    );
+
+    await runtimeGraph.library.resetForBackupRestore();
+    final reloaded = await runtimeGraph.library.loadAudioDetail(target);
+
+    expect(reloaded.detail.workTitle, 'Restored database title');
+  });
+
+  test('backup restore cancels stale duration detail writes', () async {
+    final workDir = await Directory.systemTemp.createTemp(
+      'library_detail_restore_race_',
+    );
+    addTearDown(() async {
+      if (await workDir.exists()) await workDir.delete(recursive: true);
+    });
+    final target = AudioDetailTarget.libraryRootFolder(workDir.path);
+    final trackPath = path.join(workDir.path, '01.mp3');
+    runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+    runtimeGraph.library.addTracks(
+      <MusicTrack>[
+        MusicTrack(
+          path: trackPath,
+          displayName: '01',
+          groupKey: workDir.path,
+          groupTitle: 'Work',
+          groupSubtitle: workDir.path,
+          isSingle: false,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    await runtimeGraph.library.saveAudioDetail(
+      AudioDetail.empty(target).copyWith(workTitle: 'Before restore'),
+    );
+    final durationReadStarted = Completer<void>();
+    final releaseDurationRead = Completer<void>();
+    final backfill = runtimeGraph.library.backfillMissingLibraryDurations(
+      durationReader: (_) async {
+        durationReadStarted.complete();
+        await releaseDurationRead.future;
+        return const Duration(minutes: 5);
+      },
+    );
+    await durationReadStarted.future;
+
+    await runtimeGraph.library.resetForBackupRestore();
+    await runtimeGraph.library.databaseRepository.upsertAudioDetail(
+      AudioDetail.empty(target).copyWith(
+        workTitle: 'Restored database title',
+        createdAt: DateTime.utc(2100),
+        updatedAt: DateTime.utc(2100),
+      ),
+    );
+    releaseDurationRead.complete();
+    await backfill;
+
+    final persisted = await runtimeGraph.library.databaseRepository
+        .loadAudioDetail(target);
+    expect(persisted?.workTitle, 'Restored database title');
+    expect(persisted?.duration, isNull);
+  });
+
   // 鈹€鈹€ multi-session playback stability 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
 
   group('library folder restore', () {

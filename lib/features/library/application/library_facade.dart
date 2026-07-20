@@ -105,6 +105,7 @@ final class LibraryFacade implements LibraryCatalog {
   CoverArtworkCacheService? _coverArtworkCacheService;
   Future<void>? _missingDurationBackfill;
   bool _missingDurationBackfillRequestedAgain = false;
+  int _maintenanceEpoch = 0;
   bool _persistenceEnabled = true;
   bool _disposed = false;
   void Function(List<String> removedPaths)? _trackRemovalHandler;
@@ -197,6 +198,9 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   Future<void> resetForBackupRestore() async {
+    _maintenanceEpoch++;
+    _missingDurationBackfill = null;
+    _missingDurationBackfillRequestedAgain = false;
     service.scanProgressNotifyTimer?.cancel();
     service
       ..scanProgressNotifyTimer = null
@@ -227,6 +231,7 @@ final class LibraryFacade implements LibraryCatalog {
       ..libraryBatchPersistEntriesByKey.clear()
       ..markStructureChanged();
     snapshotCacheService.clear();
+    detailCacheService.clear();
     _coverArtworkCacheService?.invalidateAll();
     _syncStateSlice(isInitialized: false);
   }
@@ -384,11 +389,17 @@ final class LibraryFacade implements LibraryCatalog {
       return inFlight;
     }
 
+    final epoch = _maintenanceEpoch;
     final task = () async {
       do {
         _missingDurationBackfillRequestedAgain = false;
-        await _backfillMissingLibraryDurations(durationReader: durationReader);
-      } while (_missingDurationBackfillRequestedAgain && !_disposed);
+        await _backfillMissingLibraryDurations(
+          epoch: epoch,
+          durationReader: durationReader,
+        );
+      } while (_missingDurationBackfillRequestedAgain &&
+          !_disposed &&
+          epoch == _maintenanceEpoch);
     }();
     _missingDurationBackfill = task;
     unawaited(
@@ -409,6 +420,7 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   Future<void> _backfillMissingLibraryDurations({
+    required int epoch,
     Future<Duration?> Function(String path)? durationReader,
   }) async {
     final targetsByKey = <String, AudioDetailTarget>{};
@@ -426,8 +438,9 @@ final class LibraryFacade implements LibraryCatalog {
 
     final targets = targetsByKey.values.toList(growable: false);
     final loadResults = await detailCacheService.loadMany(targets);
+    if (_disposed || epoch != _maintenanceEpoch) return;
     for (var index = 0; index < targets.length; index++) {
-      if (_disposed) return;
+      if (_disposed || epoch != _maintenanceEpoch) return;
       final detail = loadResults[index].detail;
       final key = <String>[
         detail.target.targetType.dbValue,
@@ -444,7 +457,12 @@ final class LibraryFacade implements LibraryCatalog {
         targetTracks,
         durationReader: durationReader,
       );
-      if (duration == null || _disposed || detail.duration != null) continue;
+      if (duration == null ||
+          _disposed ||
+          epoch != _maintenanceEpoch ||
+          detail.duration != null) {
+        continue;
+      }
       final latestDetail =
           detailCacheService.resolvedDetail(detail.target) ?? detail;
       if (latestDetail.duration == null) {

@@ -249,7 +249,10 @@ void main() {
     );
 
     expect(find.byType(ReorderableListView), findsNothing);
-    expect(find.byKey(const ValueKey('locked_library_list')), findsOneWidget);
+    expect(
+      find.byKey(const PageStorageKey<String>('locked_library_list')),
+      findsOneWidget,
+    );
 
     await runtimeGraph.settings.setCardPositionsLocked(false);
     await tester.pump();

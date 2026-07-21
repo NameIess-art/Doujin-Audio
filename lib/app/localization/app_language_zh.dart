@@ -108,7 +108,7 @@ const Map<String, String> appLanguageZh = {
   'asmr_favorite_added': '已加入收藏。',
   'asmr_favorite_removed': '已取消收藏。',
   'asmr_category_sales': '销量',
-  'asmr_category_rating': '评价',
+  'asmr_category_rating': '评分',
   'asmr_category_reviews': '评论数',
   'asmr_category_release': '发售时间',
   'asmr_category_collected': '收录时间',

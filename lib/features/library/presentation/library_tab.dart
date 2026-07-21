@@ -927,7 +927,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               GlassRefreshIndicatorTriggerMode.anywhere,
                           child: cardPositionsLocked
                               ? ListView.builder(
-                                  key: const ValueKey('locked_library_list'),
+                                  key: const PageStorageKey<String>(
+                                    'locked_library_list',
+                                  ),
                                   controller: _scrollController,
                                   clipBehavior: Clip.none,
                                   padding: EdgeInsets.fromLTRB(
@@ -953,6 +955,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                   contentMarginTop: listTopPadding,
                                   contentMarginBottom: listBottomPadding,
                                   child: ReorderableListView.builder(
+                                    key: const PageStorageKey<String>(
+                                      'locked_library_list',
+                                    ),
                                     scrollController: _scrollController,
                                     // Clip.none allows items to be visible when scrolled into the
                                     // "empty" space above/below the restricted Positioned area.

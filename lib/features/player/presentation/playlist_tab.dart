@@ -655,6 +655,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           contentMarginBottom: bottomPadding,
                           child: cardPositionsLocked
                               ? ListView.builder(
+                                  key: const PageStorageKey<String>(
+                                    'playlist_card_positions_list',
+                                  ),
                                   controller: _scrollController,
                                   physics: const ClampingScrollPhysics(),
                                   padding: const EdgeInsets.fromLTRB(
@@ -671,6 +674,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   itemBuilder: buildSessionItem,
                                 )
                               : ReorderableListView.builder(
+                                  key: const PageStorageKey<String>(
+                                    'playlist_card_positions_list',
+                                  ),
                                   scrollController: _scrollController,
                                   physics: const ClampingScrollPhysics(),
                                   padding: const EdgeInsets.fromLTRB(

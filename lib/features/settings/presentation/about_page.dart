@@ -6,12 +6,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/widgets/app_brand_icon.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../application/app_update_service.dart';
-
-const _aboutIconAsset =
-    'android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png';
 
 class AboutPage extends ConsumerWidget {
   const AboutPage({super.key, required this.versionFuture});
@@ -182,7 +180,6 @@ class _AboutIdentity extends StatelessWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final cs = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.only(
         left: AppSpacing.lg,
@@ -191,26 +188,7 @@ class _AboutIdentity extends StatelessWidget {
       ),
       child: Row(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.card),
-            child: Image.asset(
-              _aboutIconAsset,
-              width: 84,
-              height: 84,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(
-                width: 84,
-                height: 84,
-                color: cs.primaryContainer,
-                alignment: Alignment.center,
-                child: Icon(
-                  Icons.graphic_eq_rounded,
-                  size: 48,
-                  color: cs.onPrimaryContainer,
-                ),
-              ),
-            ),
-          ),
+          const AppBrandIcon(size: 84),
           const SizedBox(width: AppSpacing.md),
           Flexible(
             child: Text(

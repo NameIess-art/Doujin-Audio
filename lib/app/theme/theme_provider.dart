@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../features/settings/application/app_preferences.dart';
+import '../../core/platform/app_icon_platform_service.dart';
 import '../../core/widgets/app_transitions.dart';
 import 'app_design_tokens.dart';
 
@@ -86,10 +89,15 @@ class ThemeProvider with ChangeNotifier {
   ThemeData get lightTheme => _lightTheme;
   ThemeData get darkTheme => _darkTheme;
 
-  ThemeProvider() {
+  ThemeProvider({AppIconPlatformService? appIconPlatformService})
+    : _appIconPlatformService =
+          appIconPlatformService ?? AppIconPlatformService() {
     _loadThemeSync();
     _rebuildThemes();
+    unawaited(_syncAppIconTheme());
   }
+
+  final AppIconPlatformService _appIconPlatformService;
 
   void _loadThemeSync() {
     final storedMode = AppPreferences.getStringSync(_themeModeKey);
@@ -124,6 +132,11 @@ class ThemeProvider with ChangeNotifier {
     _themeMode = value;
     notifyListeners();
     await AppPreferences.setString(_themeModeKey, value.name);
+    await _syncAppIconTheme();
+  }
+
+  Future<void> _syncAppIconTheme() {
+    return _appIconPlatformService.syncThemeMode(_themeMode);
   }
 
   Future<void> setDifferentiateAsmrTheme(bool value) async {

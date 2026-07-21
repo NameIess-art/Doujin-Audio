@@ -29,6 +29,7 @@ import 'package:nameless_audio/features/player/application/playback_notification
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
+import 'package:nameless_audio/core/widgets/app_brand_icon.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
@@ -293,6 +294,7 @@ void main() {
 
     const overlayKey = ValueKey<String>('main_bootstrap_overlay');
     expect(find.byKey(overlayKey), findsOneWidget);
+    expect(find.byType(AppBrandIcon), findsOneWidget);
     expect(
       find.byKey(const ValueKey<String>('main_page_stack')),
       findsOneWidget,

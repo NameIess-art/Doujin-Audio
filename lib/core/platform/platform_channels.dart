@@ -12,6 +12,14 @@ abstract final class NativePlaybackChannel {
   static const String eventName = 'nameless_audio/native_playback/events';
 }
 
+abstract final class AppIconChannel {
+  static const String name = 'nameless_audio/app_icon';
+}
+
+abstract final class AppIconMethod {
+  static const String syncThemeMode = 'syncThemeMode';
+}
+
 abstract final class PowerChannel {
   static const String name = 'nameless_audio/power';
 }

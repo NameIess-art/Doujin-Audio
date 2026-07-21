@@ -32,6 +32,7 @@ class MainActivity : FlutterFragmentActivity() {
     private var fileExportCoordinator: FileExportCoordinator? = null
     private var fileCacheScanStreamHandler: FileCacheScanStreamHandler? = null
     private var audioPickerCoordinator: AudioPickerCoordinator? = null
+    private var appIconThemeMethodHandler: AppIconThemeMethodHandler? = null
     private var pendingNotificationSessionId: String? = null
     private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
 
@@ -59,6 +60,11 @@ class MainActivity : FlutterFragmentActivity() {
             .setMethodCallHandler(UpdateMethodHandler(this))
         MethodChannel(messenger, PlatformChannelNames.SUBTITLE_OVERLAY)
             .setMethodCallHandler(SubtitleOverlayMethodHandler(subtitleOverlayCoordinator))
+        val appIconThemeMethodHandler = AppIconThemeMethodHandler(applicationContext)
+        this.appIconThemeMethodHandler = appIconThemeMethodHandler
+        appIconThemeMethodHandler.syncSystemThemeIfNeeded()
+        MethodChannel(messenger, PlatformChannelNames.APP_ICON)
+            .setMethodCallHandler(appIconThemeMethodHandler)
 
         notificationsMethodChannel = MethodChannel(messenger, PlatformChannelNames.NOTIFICATIONS)
         capturePendingNotificationSession(intent)
@@ -122,6 +128,11 @@ class MainActivity : FlutterFragmentActivity() {
         deliverNotificationSessionIntent(intent)
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        appIconThemeMethodHandler?.syncSystemThemeIfNeeded()
+    }
+
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         disposeNativePlaybackBridge()
         super.cleanUpFlutterEngine(flutterEngine)
@@ -130,6 +141,7 @@ class MainActivity : FlutterFragmentActivity() {
     override fun onDestroy() {
         disposeNativePlaybackBridge()
         notificationsMethodChannel = null
+        appIconThemeMethodHandler = null
         fileCacheMethodChannel?.setMethodCallHandler(null)
         fileCacheMethodChannel = null
         fileCacheMethodHandler?.shutdown()

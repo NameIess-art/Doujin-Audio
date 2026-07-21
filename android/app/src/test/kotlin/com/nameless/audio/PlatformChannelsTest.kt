@@ -10,6 +10,7 @@ class PlatformChannelsTest {
     fun `platform channel names stay unique`() {
         val names = listOf(
             PlatformChannelNames.FILE_CACHE,
+            PlatformChannelNames.APP_ICON,
             PlatformChannelNames.NATIVE_PLAYBACK,
             PlatformChannelNames.NATIVE_PLAYBACK_EVENTS,
             PlatformChannelNames.NOTIFICATIONS,
@@ -74,6 +75,7 @@ class PlatformChannelsTest {
         )
         assertEquals("installApk", UpdateMethods.INSTALL_APK)
         assertEquals("openReleasePage", UpdateMethods.OPEN_RELEASE_PAGE)
+        assertEquals("syncThemeMode", AppIconMethods.SYNC_THEME_MODE)
     }
 
     @Test

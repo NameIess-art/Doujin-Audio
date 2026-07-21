@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/core/platform/app_icon_platform_service.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
@@ -70,6 +71,18 @@ void main() {
     await provider.setThemeMode(ThemeMode.light);
     final preferences = await SharedPreferences.getInstance();
     expect(preferences.getString('themeMode'), 'light');
+  });
+
+  test('theme changes synchronize the launcher icon mode', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final appIconService = _RecordingAppIconPlatformService();
+    final provider = ThemeProvider(appIconPlatformService: appIconService);
+    appIconService.modes.clear();
+
+    await provider.setThemeMode(ThemeMode.dark);
+
+    expect(appIconService.modes, <ThemeMode>[ThemeMode.dark]);
   });
 
   test('light and dark themes expose the shared design tokens', () async {
@@ -256,6 +269,17 @@ void main() {
       expect(_contrastRatio(supportingColor, scheme.surface), greaterThan(4.5));
     }
   });
+}
+
+final class _RecordingAppIconPlatformService extends AppIconPlatformService {
+  _RecordingAppIconPlatformService() : super(isAndroidOverride: false);
+
+  final List<ThemeMode> modes = <ThemeMode>[];
+
+  @override
+  Future<void> syncThemeMode(ThemeMode mode) async {
+    modes.add(mode);
+  }
 }
 
 double _contrastRatio(Color foreground, Color background) {

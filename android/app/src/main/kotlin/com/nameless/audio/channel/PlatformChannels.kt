@@ -1,6 +1,7 @@
 package com.nameless.audio.channel
 
 internal object PlatformChannelNames {
+    const val APP_ICON = "nameless_audio/app_icon"
     const val FILE_CACHE = "nameless_audio/file_cache"
     const val FILE_CACHE_SCAN_EVENTS = "nameless_audio/file_cache/scan_events"
     const val NATIVE_PLAYBACK = "nameless_audio/native_playback"
@@ -9,6 +10,10 @@ internal object PlatformChannelNames {
     const val POWER = "nameless_audio/power"
     const val SUBTITLE_OVERLAY = "nameless_audio/subtitle_overlay"
     const val UPDATE = "nameless_audio/update"
+}
+
+internal object AppIconMethods {
+    const val SYNC_THEME_MODE = "syncThemeMode"
 }
 
 internal object NativePlaybackMethods {

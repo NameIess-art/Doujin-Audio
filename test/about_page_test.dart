@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/core/widgets/app_brand_icon.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/features/settings/presentation/about_page.dart';
 
@@ -36,6 +37,7 @@ void main() {
       expect(find.text(i18n.tr('about_wiki')), findsOneWidget);
       expect(find.text(i18n.tr('about_author')), findsOneWidget);
       expect(find.text(i18n.tr('about_reward')), findsOneWidget);
+      expect(find.byType(AppBrandIcon), findsOneWidget);
       final rewardButton = tester.widget<OutlinedButton>(
         find.widgetWithText(OutlinedButton, i18n.tr('about_reward')),
       );

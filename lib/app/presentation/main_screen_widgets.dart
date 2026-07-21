@@ -536,34 +536,7 @@ class _BootstrapOverlayState extends State<_BootstrapOverlay>
                     opacity: _logoOpacity.value.clamp(0.0, 1.0),
                     child: ScaleTransition(
                       scale: _logoScale,
-                      child: Container(
-                        width: 100,
-                        height: 100,
-                        decoration: BoxDecoration(
-                          color: cs.primary,
-                          borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: cs.primary.withValues(alpha: 0.3),
-                              blurRadius: 24,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                          gradient: LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              cs.primary,
-                              cs.primary.withValues(alpha: 0.8),
-                            ],
-                          ),
-                        ),
-                        child: const Icon(
-                          Icons.graphic_eq_rounded,
-                          color: Colors.white,
-                          size: 52,
-                        ),
-                      ),
+                      child: const AppBrandIcon(size: 100),
                     ),
                   ),
                   const SizedBox(height: 24),

@@ -1558,7 +1558,7 @@ class CoverArtworkCacheService {
     final images = await _discoverFolderImages(folderPath, recursive: false);
     if (images.isNotEmpty) return images.first;
 
-    for (final track in _tracksInCoverScope(folderPath)) {
+    for (final track in _tracksInCompleteCoverScope(folderPath)) {
       final candidate = track.isVideo
           ? await _resolveVideoFramePathForTrack(track)
           : await _resolvePlatformCoverPathForTrack(
@@ -1678,19 +1678,6 @@ class CoverArtworkCacheService {
         .toList(growable: false);
   }
 
-  List<MusicTrack> _tracksInCoverScope(String folderPath) {
-    final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    if (normalizedFolderPath.isEmpty) return const <MusicTrack>[];
-    final tracks = <MusicTrack>[];
-    for (final entry in _libraryService.tracksByGroup.entries) {
-      final groupKey = PathMatcher.normalize(entry.key.trim());
-      if (groupKey.isNotEmpty &&
-          PathMatcher.equalsNormalized(groupKey, normalizedFolderPath)) {
-        tracks.addAll(entry.value);
-      }
-    }
-    return tracks;
-  }
 }
 
 final class _RemoteCoverFailure {

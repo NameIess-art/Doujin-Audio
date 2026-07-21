@@ -211,6 +211,61 @@ void main() {
     });
 
     test(
+      'work card auto-resolves a cover from a track in a child folder',
+      () async {
+        final workDir = await Directory.systemTemp.createTemp(
+          'library_work_cover_',
+        );
+        addTearDown(() async {
+          if (await workDir.exists()) await workDir.delete(recursive: true);
+        });
+        final audioDir = Directory(
+          '${workDir.path}${Platform.pathSeparator}Disc1',
+        );
+        await audioDir.create(recursive: true);
+        final trackPath = '${audioDir.path}${Platform.pathSeparator}01.mp3';
+        const generatedCover = '/cache/embedded-work-cover.jpg';
+
+        runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+        runtimeGraph.library.addTracks(
+          <MusicTrack>[
+            MusicTrack(
+              path: trackPath,
+              displayName: '01',
+              groupKey: audioDir.path,
+              groupTitle: 'Disc1',
+              groupSubtitle: 'Work/Disc1',
+              isSingle: false,
+            ),
+          ],
+          notify: false,
+          persist: false,
+        );
+
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(fileCacheChannel, (call) async {
+              if (call.method == FileCacheMethod.resolveTrackCover) {
+                return <String, Object?>{'ok': true, 'value': generatedCover};
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+
+        expect(
+          await runtimeGraph.notifications.coverPathFutureForFolder(
+            workDir.path,
+          ),
+          generatedCover,
+        );
+        final rows = await db.query(
+          'audio_details',
+          where: 'target_type = ? AND target_path = ?',
+          whereArgs: <Object>['libraryRootFolder', workDir.path],
+        );
+        expect(rows.single['card_cover_path'], generatedCover);
+      },
+    );
+
+    test(
       'filesystem track does not inherit an image from its work folder',
       () async {
         final workDir = await Directory.systemTemp.createTemp('cover_scope_');

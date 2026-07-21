@@ -977,7 +977,7 @@ void main() {
   });
 
   test(
-    'folder card embedded-cover lookup stays in its exact content group',
+    'folder card embedded-cover lookup stays in its work tree',
     () async {
       const root =
           'content://com.android.externalstorage.documents/tree/primary%3AMusic::Work';
@@ -1005,7 +1005,10 @@ void main() {
       );
 
       expect(await cache.futureForFolder(root), isNull);
-      expect(gateway.resolveTrackCoverPaths, <String>[rootTrack.path]);
+      expect(gateway.resolveTrackCoverPaths, <String>[
+        subfolderTrack.path,
+        rootTrack.path,
+      ]);
     },
   );
 

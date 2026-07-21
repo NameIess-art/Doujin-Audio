@@ -39,6 +39,22 @@ class UnifiedPlaybackNotificationRoutingTest {
     }
 
     @Test
+    fun `notification icon follows the active launcher icon variant`() {
+        assertEquals(
+            R.drawable.ic_launcher_blue_dark,
+            notificationIconResourceForAlias("com.nameless.audio.MainActivityBlueDark")
+        )
+        assertEquals(
+            R.drawable.ic_launcher_neutral_light,
+            notificationIconResourceForAlias("com.nameless.audio.MainActivityNeutralLight")
+        )
+        assertEquals(
+            R.drawable.ic_launcher_warm_light,
+            notificationIconResourceForAlias("unknown")
+        )
+    }
+
+    @Test
     fun `transport toggle follows real playing state and omits unavailable skips`() {
         val actions = notificationTransportActionSpecs(
             playing = true,

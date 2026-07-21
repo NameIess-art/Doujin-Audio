@@ -100,7 +100,7 @@ internal class NativeForegroundNotificationFactory(
 
     private fun baseBuilder(): NotificationCompat.Builder {
         return NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_notification_small)
+            .setSmallIcon(notificationSmallIconResource(context))
             .setContentIntent(launchPendingIntent())
             .setShowWhen(false)
             .setOngoing(true)

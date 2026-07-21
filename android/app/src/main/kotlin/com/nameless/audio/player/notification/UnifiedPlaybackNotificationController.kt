@@ -1,13 +1,18 @@
 package com.nameless.audio.player.notification
 
 import com.nameless.audio.*
+import com.nameless.audio.channel.ICON_GROUP_WARM
+import com.nameless.audio.channel.appIconAliasName
+import com.nameless.audio.channel.launcherAliasNames
 import com.nameless.audio.player.service.*
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -128,6 +133,38 @@ internal fun addNotificationTransportActions(
     }
 }
 
+internal fun notificationIconResourceForAlias(aliasName: String): Int {
+    return when (aliasName.substringAfter("MainActivity", "")) {
+        "WarmLight" -> R.drawable.ic_launcher_warm_light
+        "WarmDark" -> R.drawable.ic_launcher_warm_dark
+        "PurpleLight" -> R.drawable.ic_launcher_purple_light
+        "PurpleDark" -> R.drawable.ic_launcher_purple_dark
+        "BlueLight" -> R.drawable.ic_launcher_blue_light
+        "BlueDark" -> R.drawable.ic_launcher_blue_dark
+        "GreenLight" -> R.drawable.ic_launcher_green_light
+        "GreenDark" -> R.drawable.ic_launcher_green_dark
+        "SunsetLight" -> R.drawable.ic_launcher_sunset_light
+        "SunsetDark" -> R.drawable.ic_launcher_sunset_dark
+        "NeutralLight" -> R.drawable.ic_launcher_neutral_light
+        "NeutralDark" -> R.drawable.ic_launcher_neutral_dark
+        else -> R.drawable.ic_launcher_warm_light
+    }
+}
+
+internal fun notificationSmallIconResource(context: Context): Int {
+    val packageName = context.packageName
+    val enabledAlias = launcherAliasNames(packageName).firstOrNull { aliasName ->
+        context.packageManager.getComponentEnabledSetting(
+            ComponentName(packageName, aliasName)
+        ) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+    } ?: appIconAliasName(
+        packageName,
+        dark = false,
+        colorGroup = ICON_GROUP_WARM
+    )
+    return notificationIconResourceForAlias(enabledAlias)
+}
+
 private fun UnifiedPlaybackNotificationItem.hasSameStableNotification(
     other: UnifiedPlaybackNotificationItem
 ): Boolean {
@@ -214,6 +251,18 @@ internal object UnifiedPlaybackNotificationController {
 
     fun hasUnifiedNotifications(): Boolean {
         return activeNotificationCount > 0
+    }
+
+    @Synchronized
+    fun refreshThemeIcon(context: Context) {
+        if (dismissPending) return
+        latestSyncRequest?.let { request ->
+            lastSummarySignature = null
+            lastStyleVariant = null
+            lastNotifyTimestampsMs.clear()
+            render(context.applicationContext, request, forceArtworkPath = null)
+        }
+        NativePlaybackService.controller()?.refreshForegroundNotificationForTheme()
     }
 
     fun shouldRemoveForegroundNotification(removeNotification: Boolean): Boolean {
@@ -605,7 +654,7 @@ internal object UnifiedPlaybackNotificationController {
         ongoing: Boolean
     ): NotificationCompat.Builder {
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(R.drawable.ic_notification_small)
+            .setSmallIcon(notificationSmallIconResource(context))
             .setContentTitle(item.title)
             .setShowWhen(false)
             .setOnlyAlertOnce(true)

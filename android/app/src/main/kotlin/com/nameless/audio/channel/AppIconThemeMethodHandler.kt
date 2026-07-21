@@ -1,5 +1,7 @@
 package com.nameless.audio.channel
 
+import com.nameless.audio.player.notification.UnifiedPlaybackNotificationController
+
 import android.content.ComponentName
 import android.content.Context
 import android.content.res.Configuration
@@ -53,6 +55,7 @@ internal class AppIconThemeMethodHandler(
         val dark = isDarkThemeMode(mode, context.resources.configuration.uiMode)
         iconColorGroupAliasSuffix(colorGroup)
         setLauncherAliasEnabled(dark, colorGroup)
+        UnifiedPlaybackNotificationController.refreshThemeIcon(context)
         lastThemeMode = mode
         lastColorGroup = colorGroup
     }

@@ -13,6 +13,7 @@ internal class AppIconThemeMethodHandler(
 ) : MethodChannel.MethodCallHandler {
     private val context = context.applicationContext
     private var lastThemeMode = THEME_MODE_SYSTEM
+    private var lastColorGroup = ICON_GROUP_WARM
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         val envelope = ChannelEnvelopeResult(result)
@@ -20,7 +21,8 @@ internal class AppIconThemeMethodHandler(
             when (call.method) {
                 AppIconMethods.SYNC_THEME_MODE -> {
                     val mode = call.argumentReader().requiredString("mode")
-                    syncThemeMode(mode)
+                    val colorGroup = call.argumentReader().requiredString("colorGroup")
+                    syncThemeMode(mode, colorGroup)
                     envelope.success(null)
                 }
                 else -> result.notImplemented()
@@ -42,56 +44,58 @@ internal class AppIconThemeMethodHandler(
 
     fun syncSystemThemeIfNeeded() {
         if (lastThemeMode == THEME_MODE_SYSTEM) {
-            syncThemeMode(THEME_MODE_SYSTEM)
+            syncThemeMode(THEME_MODE_SYSTEM, lastColorGroup)
         }
     }
 
-    private fun syncThemeMode(mode: String) {
+    private fun syncThemeMode(mode: String, colorGroup: String) {
         val dark = isDarkThemeMode(mode, context.resources.configuration.uiMode)
-        setLauncherAliasEnabled(dark)
+        iconColorGroupAliasSuffix(colorGroup)
+        setLauncherAliasEnabled(dark, colorGroup)
         lastThemeMode = mode
+        lastColorGroup = colorGroup
     }
 
-    private fun setLauncherAliasEnabled(dark: Boolean) {
+    private fun setLauncherAliasEnabled(dark: Boolean, colorGroup: String) {
         val packageManager = context.packageManager
-        val lightAlias = appIconAliasComponent(context.packageName, dark = false)
-        val darkAlias = appIconAliasComponent(context.packageName, dark = true)
+        val aliases = ICON_COLOR_GROUPS.flatMap { group ->
+            listOf(
+                appIconAliasComponent(context.packageName, dark = false, colorGroup = group),
+                appIconAliasComponent(context.packageName, dark = true, colorGroup = group)
+            )
+        }
+        val enabledAlias = appIconAliasComponent(
+            context.packageName,
+            dark = dark,
+            colorGroup = colorGroup
+        )
         val flags = PackageManager.DONT_KILL_APP
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.setComponentEnabledSettings(
-                listOf(
+                aliases.map { alias ->
                     PackageManager.ComponentEnabledSetting(
-                        lightAlias,
-                        if (dark) {
-                            PackageManager.COMPONENT_ENABLED_STATE_DISABLED
-                        } else {
-                            PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-                        },
-                        flags
-                    ),
-                    PackageManager.ComponentEnabledSetting(
-                        darkAlias,
-                        if (dark) {
+                        alias,
+                        if (alias == enabledAlias) {
                             PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                         } else {
                             PackageManager.COMPONENT_ENABLED_STATE_DISABLED
                         },
                         flags
                     )
-                )
+                }
             )
             return
         }
-        val enabled = if (dark) darkAlias else lightAlias
-        val disabled = if (dark) lightAlias else darkAlias
+        aliases.filterNot { it == enabledAlias }.forEach { alias ->
+            packageManager.setComponentEnabledSetting(
+                alias,
+                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                flags
+            )
+        }
         packageManager.setComponentEnabledSetting(
-            enabled,
+            enabledAlias,
             PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-            flags
-        )
-        packageManager.setComponentEnabledSetting(
-            disabled,
-            PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
             flags
         )
     }
@@ -100,6 +104,20 @@ internal class AppIconThemeMethodHandler(
 internal const val THEME_MODE_SYSTEM = "system"
 private const val THEME_MODE_LIGHT = "light"
 private const val THEME_MODE_DARK = "dark"
+internal const val ICON_GROUP_WARM = "warm"
+private const val ICON_GROUP_PURPLE = "purple"
+private const val ICON_GROUP_BLUE = "blue"
+private const val ICON_GROUP_GREEN = "green"
+private const val ICON_GROUP_SUNSET = "sunset"
+private const val ICON_GROUP_NEUTRAL = "neutral"
+internal val ICON_COLOR_GROUPS = listOf(
+    ICON_GROUP_WARM,
+    ICON_GROUP_PURPLE,
+    ICON_GROUP_BLUE,
+    ICON_GROUP_GREEN,
+    ICON_GROUP_SUNSET,
+    ICON_GROUP_NEUTRAL
+)
 
 internal fun isDarkThemeMode(mode: String, uiMode: Int): Boolean {
     return when (mode) {
@@ -113,11 +131,33 @@ internal fun isDarkThemeMode(mode: String, uiMode: Int): Boolean {
     }
 }
 
-internal fun appIconAliasComponent(packageName: String, dark: Boolean): ComponentName {
-    return ComponentName(packageName, appIconAliasName(packageName, dark))
+internal fun appIconAliasComponent(
+    packageName: String,
+    dark: Boolean,
+    colorGroup: String
+): ComponentName {
+    return ComponentName(packageName, appIconAliasName(packageName, dark, colorGroup))
 }
 
-internal fun appIconAliasName(packageName: String, dark: Boolean): String {
-    val aliasName = if (dark) "MainActivityDark" else "MainActivityLight"
+internal fun appIconAliasName(
+    packageName: String,
+    dark: Boolean,
+    colorGroup: String
+): String {
+    val groupSuffix = iconColorGroupAliasSuffix(colorGroup)
+    val modeSuffix = if (dark) "Dark" else "Light"
+    val aliasName = "MainActivity${groupSuffix}${modeSuffix}"
     return "$packageName.$aliasName"
+}
+
+internal fun iconColorGroupAliasSuffix(colorGroup: String): String {
+    return when (colorGroup) {
+        ICON_GROUP_WARM -> "Warm"
+        ICON_GROUP_PURPLE -> "Purple"
+        ICON_GROUP_BLUE -> "Blue"
+        ICON_GROUP_GREEN -> "Green"
+        ICON_GROUP_SUNSET -> "Sunset"
+        ICON_GROUP_NEUTRAL -> "Neutral"
+        else -> throw IllegalArgumentException("Unsupported icon color group: $colorGroup")
+    }
 }

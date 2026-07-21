@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/platform/app_icon_platform_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
+import 'package:nameless_audio/core/ui/app_icon_color_group.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -23,10 +24,13 @@ void main() {
     await AppIconPlatformService(
       channel: channel,
       isAndroidOverride: true,
-    ).syncThemeMode(ThemeMode.dark);
+    ).syncThemeMode(ThemeMode.dark, AppIconColorGroup.blue);
 
     expect(receivedCall?.method, AppIconMethod.syncThemeMode);
-    expect(receivedCall?.arguments, <String, Object?>{'mode': 'dark'});
+    expect(receivedCall?.arguments, <String, Object?>{
+      'mode': 'dark',
+      'colorGroup': 'blue',
+    });
   });
 
   test('does not invoke a platform channel outside Android', () async {
@@ -45,7 +49,7 @@ void main() {
     await AppIconPlatformService(
       channel: channel,
       isAndroidOverride: false,
-    ).syncThemeMode(ThemeMode.light);
+    ).syncThemeMode(ThemeMode.light, AppIconColorGroup.warm);
 
     expect(invoked, isFalse);
   });

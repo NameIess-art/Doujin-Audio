@@ -1,7 +1,9 @@
 package com.nameless.audio
 
 import android.content.res.Configuration
+import com.nameless.audio.channel.ICON_COLOR_GROUPS
 import com.nameless.audio.channel.appIconAliasName
+import com.nameless.audio.channel.iconColorGroupAliasSuffix
 import com.nameless.audio.channel.isDarkThemeMode
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -30,12 +32,23 @@ class AppIconThemeMethodHandlerTest {
     fun `alias component names stay stable`() {
         val packageName = "com.nameless.audio"
         assertEquals(
-            "$packageName.MainActivityLight",
-            appIconAliasName(packageName, dark = false)
+            "$packageName.MainActivityWarmLight",
+            appIconAliasName(packageName, dark = false, colorGroup = "warm")
         )
         assertEquals(
-            "$packageName.MainActivityDark",
-            appIconAliasName(packageName, dark = true)
+            "$packageName.MainActivityBlueDark",
+            appIconAliasName(packageName, dark = true, colorGroup = "blue")
         )
+    }
+
+    @Test
+    fun `six color groups expose stable alias suffixes`() {
+        assertEquals(6, ICON_COLOR_GROUPS.size)
+        assertEquals("Neutral", iconColorGroupAliasSuffix("neutral"))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `unsupported color group is rejected`() {
+        iconColorGroupAliasSuffix("teal")
     }
 }

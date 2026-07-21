@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../errors/native_result.dart';
 import '../logging/app_log_service.dart';
+import '../ui/app_icon_color_group.dart';
 import 'app_platform.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
@@ -21,11 +22,17 @@ class AppIconPlatformService {
 
   bool get _isAndroid => _isAndroidOverride ?? AppPlatform.isAndroid;
 
-  Future<void> syncThemeMode(ThemeMode mode) async {
+  Future<void> syncThemeMode(
+    ThemeMode mode,
+    AppIconColorGroup colorGroup,
+  ) async {
     if (!_isAndroid) return;
     final result = await _client.invoke<void>(
       AppIconMethod.syncThemeMode,
-      arguments: <String, Object?>{'mode': mode.name},
+      arguments: <String, Object?>{
+        'mode': mode.name,
+        'colorGroup': colorGroup.name,
+      },
       decode: (_) {},
     );
     if (result case NativeFailure<void>(
@@ -39,6 +46,7 @@ class AppIconPlatformService {
           'message': message,
           'details': details,
           'themeMode': mode.name,
+          'colorGroup': colorGroup.name,
         },
       );
     }

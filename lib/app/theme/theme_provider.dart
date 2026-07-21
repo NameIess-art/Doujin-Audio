@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/platform/app_icon_platform_service.dart';
+import '../../core/ui/app_icon_color_group.dart';
 import '../../core/widgets/app_transitions.dart';
 import 'app_design_tokens.dart';
 
@@ -49,6 +50,25 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
   String get labelKey => switch (this) {
     ThemeAccentPreset.lightGreen => 'theme_color_light_green',
     _ => 'theme_color_$name',
+  };
+
+  AppIconColorGroup get iconColorGroup => switch (this) {
+    ThemeAccentPreset.coral ||
+    ThemeAccentPreset.rose ||
+    ThemeAccentPreset.pink => AppIconColorGroup.warm,
+    ThemeAccentPreset.lavender ||
+    ThemeAccentPreset.periwinkle => AppIconColorGroup.purple,
+    ThemeAccentPreset.blue ||
+    ThemeAccentPreset.sky ||
+    ThemeAccentPreset.cyan => AppIconColorGroup.blue,
+    ThemeAccentPreset.mint ||
+    ThemeAccentPreset.green ||
+    ThemeAccentPreset.lightGreen => AppIconColorGroup.green,
+    ThemeAccentPreset.lime ||
+    ThemeAccentPreset.amber ||
+    ThemeAccentPreset.orange ||
+    ThemeAccentPreset.peach => AppIconColorGroup.sunset,
+    ThemeAccentPreset.gray => AppIconColorGroup.neutral,
   };
 
   ColorScheme colorScheme(Brightness brightness) {
@@ -136,7 +156,10 @@ class ThemeProvider with ChangeNotifier {
   }
 
   Future<void> _syncAppIconTheme() {
-    return _appIconPlatformService.syncThemeMode(_themeMode);
+    return _appIconPlatformService.syncThemeMode(
+      _themeMode,
+      _appThemeColor.iconColorGroup,
+    );
   }
 
   Future<void> setDifferentiateAsmrTheme(bool value) async {
@@ -153,6 +176,7 @@ class ThemeProvider with ChangeNotifier {
     _rebuildThemes();
     notifyListeners();
     await AppPreferences.setString(_appThemeColorKey, value.name);
+    await _syncAppIconTheme();
   }
 
   Future<void> setAsmrThemeColor(ThemeAccentPreset value) async {
@@ -275,7 +299,13 @@ class ThemeProvider with ChangeNotifier {
     return ThemeData(
       useMaterial3: true,
       materialTapTargetSize: MaterialTapTargetSize.padded,
-      extensions: <ThemeExtension<dynamic>>[tokens],
+      extensions: <ThemeExtension<dynamic>>[
+        tokens,
+        AppBrandIconTheme.forGroup(
+          _appThemeColor.iconColorGroup,
+          scheme.brightness,
+        ),
+      ],
       visualDensity: VisualDensity.standard,
       colorScheme: scheme,
       textTheme: textTheme,

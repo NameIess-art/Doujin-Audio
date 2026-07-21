@@ -4,6 +4,7 @@ import 'package:nameless_audio/core/platform/app_icon_platform_service.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
+import 'package:nameless_audio/core/ui/app_icon_color_group.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -78,12 +79,31 @@ void main() {
     await AppPreferences.init();
     final appIconService = _RecordingAppIconPlatformService();
     final provider = ThemeProvider(appIconPlatformService: appIconService);
-    appIconService.modes.clear();
+    appIconService.syncs.clear();
 
     await provider.setThemeMode(ThemeMode.dark);
 
-    expect(appIconService.modes, <ThemeMode>[ThemeMode.dark]);
+    expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
+      (ThemeMode.dark, AppIconColorGroup.warm),
+    ]);
   });
+
+  test(
+    'app theme color synchronizes its six-group launcher icon color',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final appIconService = _RecordingAppIconPlatformService();
+      final provider = ThemeProvider(appIconPlatformService: appIconService);
+      appIconService.syncs.clear();
+
+      await provider.setAppThemeColor(ThemeAccentPreset.cyan);
+
+      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
+        (ThemeMode.system, AppIconColorGroup.blue),
+      ]);
+    },
+  );
 
   test('light and dark themes expose the shared design tokens', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -274,11 +294,15 @@ void main() {
 final class _RecordingAppIconPlatformService extends AppIconPlatformService {
   _RecordingAppIconPlatformService() : super(isAndroidOverride: false);
 
-  final List<ThemeMode> modes = <ThemeMode>[];
+  final List<(ThemeMode, AppIconColorGroup)> syncs =
+      <(ThemeMode, AppIconColorGroup)>[];
 
   @override
-  Future<void> syncThemeMode(ThemeMode mode) async {
-    modes.add(mode);
+  Future<void> syncThemeMode(
+    ThemeMode mode,
+    AppIconColorGroup colorGroup,
+  ) async {
+    syncs.add((mode, colorGroup));
   }
 }
 

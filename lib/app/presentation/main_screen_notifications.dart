@@ -118,9 +118,9 @@ extension _MainScreenNotifications on _MainScreenState {
 
     if (status.isDenied) {
       status = await Permission.notification.request();
-      if (!context.mounted) return;
+      if (!mounted) return;
       enabled = await _areNotificationsEnabled();
-      if (!context.mounted) return;
+      if (!mounted) return;
       if (status.isGranted && enabled) {
         notifications.refreshState();
         _showNotificationPermissionEnabledSnack();

@@ -108,24 +108,20 @@ void main() {
         );
 
         final beforeBackground = await _nativeSession(playback, session.id);
-        tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        _transitionToPaused(tester);
         await Future<void>.delayed(const Duration(milliseconds: 500));
         nativeSession = await _nativeSession(playback, session.id);
         expect(nativeSession.playWhenReady, isTrue);
         expect(nativeSession.position, greaterThan(beforeBackground.position));
 
-        tester.binding.handleAppLifecycleStateChanged(
-          AppLifecycleState.resumed,
-        );
+        _transitionToResumed(tester);
         await _waitFor(
           tester,
           () => session.position > nativeSession.position,
           'playback did not reconcile after foreground resume',
         );
       } finally {
-        tester.binding.handleAppLifecycleStateChanged(
-          AppLifecycleState.resumed,
-        );
+        _transitionToResumed(tester);
         await playback.clearAllSessions();
         if (await wav.exists()) await wav.delete();
         await tester.pumpWidget(const SizedBox.shrink());
@@ -135,6 +131,46 @@ void main() {
     skip: !Platform.isAndroid,
     timeout: const Timeout(Duration(minutes: 3)),
   );
+}
+
+void _transitionToPaused(WidgetTester tester) {
+  switch (tester.binding.lifecycleState) {
+    case AppLifecycleState.resumed:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    case AppLifecycleState.inactive:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    case AppLifecycleState.hidden:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    case AppLifecycleState.paused:
+      return;
+    case AppLifecycleState.detached:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      _transitionToPaused(tester);
+    case null:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+  }
+}
+
+void _transitionToResumed(WidgetTester tester) {
+  switch (tester.binding.lifecycleState) {
+    case AppLifecycleState.paused:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    case AppLifecycleState.hidden:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    case AppLifecycleState.inactive:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    case AppLifecycleState.resumed:
+      return;
+    case AppLifecycleState.detached:
+    case null:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+  }
 }
 
 Future<void> _waitFor(

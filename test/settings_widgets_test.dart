@@ -62,8 +62,13 @@ void main() {
       ListTile,
       i18n.tr('section_language'),
     );
-    final rootLanguageTileWidget = tester.widget<ListTile>(rootLanguageTile);
-    expect((rootLanguageTileWidget.leading! as Icon).size, 30);
+    final rootLanguageIcon = tester.widget<Icon>(
+      find.descendant(
+        of: rootLanguageTile,
+        matching: find.byIcon(Icons.language_rounded),
+      ),
+    );
+    expect(rootLanguageIcon.size, 30);
     expect(tester.getSize(rootLanguageTile).height, 68);
     final rootTileTheme = ListTileTheme.of(tester.element(rootLanguageTile));
     expect(rootTileTheme.minTileHeight, 68);
@@ -85,9 +90,13 @@ void main() {
       ListTile,
       i18n.tr('interface_language'),
     );
-    final languageTileWidget = tester.widget<ListTile>(firstLanguageTile);
-    expect(languageTileWidget.leading, isA<Icon>());
-    expect((languageTileWidget.leading! as Icon).size, 30);
+    final languageIcon = tester.widget<Icon>(
+      find.descendant(
+        of: firstLanguageTile,
+        matching: find.byIcon(Icons.language_rounded),
+      ),
+    );
+    expect(languageIcon.size, 30);
     final languageTileHeight = tester.getSize(firstLanguageTile).height;
     expect(languageTileHeight, greaterThanOrEqualTo(58));
     expect(languageTileHeight, lessThan(68));
@@ -256,6 +265,40 @@ void main() {
     },
   );
 
+  testWidgets('setting row icons share one horizontal center', (tester) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    final asmrCategory = find.text(i18n.tr('section_asmr_download'));
+    await tester.ensureVisible(asmrCategory);
+    await tester.tap(asmrCategory);
+    await tester.pumpAndSettle();
+
+    _expectIconCentersAligned(tester, const [
+      Icons.folder_rounded,
+      Icons.rule_folder_rounded,
+      Icons.description_outlined,
+      Icons.drive_file_rename_outline,
+    ]);
+
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+
+    final updatesCategory = find.text(i18n.tr('section_updates_permissions'));
+    await tester.ensureVisible(updatesCategory);
+    await tester.tap(updatesCategory);
+    await tester.pumpAndSettle();
+
+    _expectIconCentersAligned(tester, const [
+      Icons.admin_panel_settings_rounded,
+      Icons.system_update_alt_rounded,
+      Icons.update_rounded,
+    ]);
+  });
+
   testWidgets('ASMR folder name reorder keeps tap identity', (tester) async {
     final settingsRepository = _DeferredFolderNameSettingsRepository();
     final harness = AppRuntimeWidgetTestFixture(
@@ -327,7 +370,9 @@ void main() {
     final i18n = harness.languageProvider;
     final rootTile = find.widgetWithText(ListTile, i18n.tr('section_common'));
     final rootContext = tester.element(rootTile);
-    final rootIcon = tester.widget<ListTile>(rootTile).leading! as Icon;
+    final rootIcon = tester.widget<Icon>(
+      find.descendant(of: rootTile, matching: find.byIcon(Icons.tune_rounded)),
+    );
     expect(rootIcon.color, Theme.of(rootContext).colorScheme.primary);
     final rootTrailing = tester.widget<ListTile>(rootTile).trailing! as Icon;
     expect(
@@ -355,7 +400,12 @@ void main() {
 
     final detailTile = find.widgetWithText(ListTile, i18n.tr('startup_page'));
     final detailContext = tester.element(detailTile);
-    final detailIcon = tester.widget<ListTile>(detailTile).leading! as Icon;
+    final detailIcon = tester.widget<Icon>(
+      find.descendant(
+        of: detailTile,
+        matching: find.byIcon(Icons.home_rounded),
+      ),
+    );
     final colorScheme = Theme.of(detailContext).colorScheme;
     expect(detailIcon.color, colorScheme.primary);
     final detailSurfaces = tester
@@ -870,6 +920,17 @@ void main() {
     await download;
     await tester.pump();
   });
+}
+
+void _expectIconCentersAligned(WidgetTester tester, List<IconData> icons) {
+  final expectedCenter = tester.getCenter(find.byIcon(icons.first)).dx;
+  for (final icon in icons.skip(1)) {
+    expect(
+      tester.getCenter(find.byIcon(icon)).dx,
+      closeTo(expectedCenter, 0.01),
+      reason: '$icon should use the same leading slot as ${icons.first}.',
+    );
+  }
 }
 
 final class _DeferredFolderNameSettingsRepository extends SettingsRepository {

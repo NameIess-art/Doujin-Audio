@@ -41,7 +41,7 @@ void main() {
 
       await provider.setLanguage(AppLanguage.zh);
       expect(provider.tr('add_playback_queue'), '创建播放队列');
-      expect(provider.tr('asmr_detail_other'), '其他详细');
+      expect(provider.tr('asmr_detail_other'), '其他信息');
 
       await provider.setLanguage(AppLanguage.en);
       expect(provider.tr('add_playback_queue'), 'Create playback queue');

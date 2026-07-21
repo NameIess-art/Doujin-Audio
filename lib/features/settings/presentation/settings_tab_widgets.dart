@@ -87,6 +87,7 @@ class _SettingsTileTheme extends StatelessWidget {
       ),
       child: ListTileTheme.merge(
         visualDensity: const VisualDensity(horizontal: -1),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         minTileHeight: minTileHeight,
         minVerticalPadding: 4,
         titleTextStyle: titleTextStyle,

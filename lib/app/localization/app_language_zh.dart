@@ -160,7 +160,7 @@ const Map<String, String> appLanguageZh = {
   'asmr_detail_readonly_hint': '只读模式，不支持编辑或拖拽排序。',
   'asmr_detail_load_failed': '读取作品信息失败，请稍后重试。',
   'asmr_detail_basic_info': '基础信息',
-  'asmr_detail_other': '其他详细',
+  'asmr_detail_other': '其他信息',
   'asmr_detail_statistics': '统计信息',
   'asmr_detail_release_date': '发售日期',
   'asmr_detail_duration': '时长',

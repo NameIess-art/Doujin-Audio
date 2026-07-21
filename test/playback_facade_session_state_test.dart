@@ -272,6 +272,59 @@ void main() {
     expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
   });
 
+  test(
+    'sequential play pauses instead of auto-advancing on completion',
+    () async {
+      final library = LibraryFacade.create();
+      final playback = PlaybackFacade.create(
+        databaseRepository: library.databaseRepository,
+      )..configurePersistence(enabled: false);
+      final session = _session('sequential_once')
+        ..loopMode = SessionLoopMode.folderOnce;
+      var completedCount = 0;
+      addTearDown(() async {
+        session.dispose();
+        await playback.dispose();
+        await library.dispose();
+      });
+      playback
+        ..attachSessionRuntime(
+          onSessionRegistered: (_) {},
+          onSessionsReordered: () {},
+          onSessionStateChanged: () {},
+          onSessionCompleted: (_) => completedCount++,
+        )
+        ..attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async => true,
+          pauseSession: (_) async {},
+          startSession: (_, {required shouldStartTriggerCountdown}) async =>
+              true,
+          resolveAdvance: (_, {required forward}) =>
+              const PlaybackAdvanceResult(path: '/tracks/next.mp3'),
+          hasAdjacent: (_, {required forward}) => true,
+        )
+        ..registerSession(session);
+
+      session.setOptimisticState(
+        playing: false,
+        processingState: ProcessingState.completed,
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(completedCount, 0);
+      expect(session.isLoading, isFalse);
+      expect(session.isAdvancingAfterCompletion, isFalse);
+    },
+  );
+
   test('PlaybackFacade owns loop mode state and synchronization', () async {
     final library = LibraryFacade.create();
     final playback = PlaybackFacade.create(
@@ -309,16 +362,16 @@ void main() {
     await playback.toggleSessionSingleLoop(session.id);
     await Future<void>.delayed(Duration.zero);
 
-    expect(session.loopMode, SessionLoopMode.folderSequential);
-    expect(session.nonSingleLoopMode, SessionLoopMode.folderSequential);
+    expect(session.loopMode, SessionLoopMode.folderRandom);
+    expect(session.nonSingleLoopMode, SessionLoopMode.folderRandom);
     expect(settingsChanges, 6);
     expect(synchronizedModes, <SessionLoopMode>[
       SessionLoopMode.crossSequential,
-      SessionLoopMode.crossRandom,
+      SessionLoopMode.crossOnce,
+      SessionLoopMode.folderOnce,
       SessionLoopMode.folderRandom,
-      SessionLoopMode.folderSequential,
       SessionLoopMode.single,
-      SessionLoopMode.folderSequential,
+      SessionLoopMode.folderRandom,
     ]);
   });
 

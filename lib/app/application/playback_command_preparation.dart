@@ -331,7 +331,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
               session,
               currentPath: target.resolvedPath,
             ),
-        repeatAll: session.loopMode != SessionLoopMode.single,
+        repeatAll:
+            session.loopMode != SessionLoopMode.single &&
+            !session.loopMode.isOneShot,
         shuffle: session.loopMode.isShuffle,
         candidateUris: target.candidateUris,
       );

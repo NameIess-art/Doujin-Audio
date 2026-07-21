@@ -218,11 +218,13 @@ class PlaybackQueueResolver {
         return <String>[currentPath];
       case SessionLoopMode.crossSequential:
       case SessionLoopMode.crossRandom:
+      case SessionLoopMode.crossOnce:
         return sortedLibraryTrackPaths.isEmpty
             ? <String>[currentPath]
             : sortedLibraryTrackPaths;
       case SessionLoopMode.folderSequential:
       case SessionLoopMode.folderRandom:
+      case SessionLoopMode.folderOnce:
         final scope =
             tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[];
         return scope.isEmpty

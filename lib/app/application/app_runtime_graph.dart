@@ -219,7 +219,7 @@ AppRuntimeGraph createAppRuntimeGraph({
         session,
         currentPath: session.currentTrackPath,
       ),
-      repeatAll: mode != SessionLoopMode.single,
+      repeatAll: mode != SessionLoopMode.single && !mode.isOneShot,
       shuffle: mode.isShuffle,
     );
   });

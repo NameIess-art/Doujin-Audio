@@ -687,6 +687,7 @@ final class PlaybackFacade {
       final currentGeneration = session.playbackCommandGeneration;
       final shouldAutoAdvanceAfterCompletion =
           isNewCompletion &&
+          !session.loopMode.isOneShot &&
           !session.isLoading &&
           !session.isAdvancingAfterCompletion &&
           session.playbackError == null &&
@@ -1004,27 +1005,13 @@ final class PlaybackFacade {
   Future<void> toggleSessionShuffle(String sessionId) async {
     final session = service.sessions[sessionId];
     if (session == null || session.loopMode == SessionLoopMode.single) return;
-    final nextMode = session.loopMode.isShuffle
-        ? (session.loopMode.isCrossFolder
-              ? SessionLoopMode.crossSequential
-              : SessionLoopMode.folderSequential)
-        : (session.loopMode.isCrossFolder
-              ? SessionLoopMode.crossRandom
-              : SessionLoopMode.folderRandom);
-    await setSessionLoopMode(sessionId, nextMode);
+    await setSessionLoopMode(sessionId, session.loopMode.nextOrderMode);
   }
 
   Future<void> toggleSessionCrossFolder(String sessionId) async {
     final session = service.sessions[sessionId];
     if (session == null || session.loopMode == SessionLoopMode.single) return;
-    final nextMode = session.loopMode.isCrossFolder
-        ? (session.loopMode.isShuffle
-              ? SessionLoopMode.folderRandom
-              : SessionLoopMode.folderSequential)
-        : (session.loopMode.isShuffle
-              ? SessionLoopMode.crossRandom
-              : SessionLoopMode.crossSequential);
-    await setSessionLoopMode(sessionId, nextMode);
+    await setSessionLoopMode(sessionId, session.loopMode.toggledScopeMode);
   }
 
   Future<void> setSessionChannelSwap(String sessionId, bool enabled) {

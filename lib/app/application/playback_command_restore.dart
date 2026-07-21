@@ -64,7 +64,9 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
               session,
               currentPath: session.currentTrackPath,
             ),
-            repeatAll: session.loopMode != SessionLoopMode.single,
+            repeatAll:
+                session.loopMode != SessionLoopMode.single &&
+                !session.loopMode.isOneShot,
             shuffle: session.loopMode.isShuffle,
             candidateUris: _candidatePlaybackUrisForTrack(track),
             deferPlayerCreation: !shouldPrepareNow,

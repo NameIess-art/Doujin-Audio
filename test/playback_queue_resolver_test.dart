@@ -54,6 +54,21 @@ void main() {
     );
   });
 
+  test('sequential play keeps current-folder scope for manual navigation', () {
+    expect(resolve(a1, mode: SessionLoopMode.folderOnce), 'a2');
+    expect(resolve(a1, mode: SessionLoopMode.folderOnce, forward: false), 'a2');
+    expect(SessionLoopMode.folderOnce.isOneShot, isTrue);
+    expect(SessionLoopMode.folderOnce.isCrossFolder, isFalse);
+    expect(
+      SessionLoopMode.folderSequential.nextOrderMode,
+      SessionLoopMode.folderOnce,
+    );
+    expect(
+      SessionLoopMode.folderOnce.nextOrderMode,
+      SessionLoopMode.folderRandom,
+    );
+  });
+
   test('cross sequential walks groups and wraps across boundaries', () {
     expect(resolve(a2, mode: SessionLoopMode.crossSequential), 'b1');
     expect(
@@ -73,6 +88,16 @@ void main() {
         nextInt: (_) => 0,
       ),
       'a2',
+    );
+  });
+
+  test('cross-folder sequential play keeps the full library scope', () {
+    expect(resolve(a2, mode: SessionLoopMode.crossOnce), 'b1');
+    expect(SessionLoopMode.crossOnce.isOneShot, isTrue);
+    expect(SessionLoopMode.crossOnce.isCrossFolder, isTrue);
+    expect(
+      SessionLoopMode.crossOnce.toggledScopeMode,
+      SessionLoopMode.folderOnce,
     );
   });
 

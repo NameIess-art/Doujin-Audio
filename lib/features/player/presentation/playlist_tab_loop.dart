@@ -40,8 +40,11 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
   bool get _shuffleButtonHighlighted => !_singleActive;
   bool get _scopeButtonHighlighted => !_singleActive;
 
-  IconData get _orderIcon =>
-      _shuffleActive ? Icons.shuffle_rounded : Icons.repeat_rounded;
+  IconData get _orderIcon {
+    if (_effectiveNonSingleMode.isOneShot) return Icons.play_arrow_rounded;
+    return _shuffleActive ? Icons.shuffle_rounded : Icons.repeat_rounded;
+  }
+
   IconData get _scopeIcon =>
       _crossFolderActive ? Icons.folder_copy_rounded : Icons.folder_rounded;
 
@@ -127,15 +130,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
     final current = widget.session.loopMode == SessionLoopMode.single
         ? widget.session.nonSingleLoopMode
         : widget.session.loopMode;
-    final isCrossFolder = _isCross(current);
-    final isShuffle = _isShuffle(current);
-    final nextMode = isShuffle
-        ? (isCrossFolder
-              ? SessionLoopMode.crossSequential
-              : SessionLoopMode.folderSequential)
-        : (isCrossFolder
-              ? SessionLoopMode.crossRandom
-              : SessionLoopMode.folderRandom);
+    final nextMode = current.nextOrderMode;
     await _refreshImmediately(
       widget.playback.setSessionLoopMode(widget.session.id, nextMode),
     );
@@ -145,15 +140,7 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
     final current = widget.session.loopMode == SessionLoopMode.single
         ? widget.session.nonSingleLoopMode
         : widget.session.loopMode;
-    final isCrossFolder = _isCross(current);
-    final isShuffle = _isShuffle(current);
-    final nextMode = isCrossFolder
-        ? (isShuffle
-              ? SessionLoopMode.folderRandom
-              : SessionLoopMode.folderSequential)
-        : (isShuffle
-              ? SessionLoopMode.crossRandom
-              : SessionLoopMode.crossSequential);
+    final nextMode = current.toggledScopeMode;
     await _refreshImmediately(
       widget.playback.setSessionLoopMode(widget.session.id, nextMode),
     );

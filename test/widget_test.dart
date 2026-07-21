@@ -1083,6 +1083,38 @@ void main() {
     final loopSize = tester.getSize(loopCapsule);
     final loopBottom = tester.getBottomLeft(loopCapsule).dy;
 
+    final orderButton = find.descendant(
+      of: loopCapsule,
+      matching: find.byIcon(Icons.repeat_rounded),
+    );
+    expect(orderButton, findsWidgets);
+    await tester.tap(orderButton.first);
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: loopCapsule,
+        matching: find.byIcon(Icons.play_arrow_rounded),
+      ),
+      findsWidgets,
+    );
+
+    await tester.tap(
+      find
+          .descendant(
+            of: loopCapsule,
+            matching: find.byIcon(Icons.play_arrow_rounded),
+          )
+          .first,
+    );
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: loopCapsule,
+        matching: find.byIcon(Icons.shuffle_rounded),
+      ),
+      findsWidgets,
+    );
+
     await tester.tapAt(const Offset(2, 2));
     await tester.pump(const Duration(milliseconds: 300));
     await tester.tap(

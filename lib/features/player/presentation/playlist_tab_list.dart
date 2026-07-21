@@ -272,9 +272,13 @@ class _SessionListCard extends ConsumerWidget {
     if (mode == SessionLoopMode.single) return i18n.tr('single_loop');
     final scope =
         mode == SessionLoopMode.crossRandom ||
-            mode == SessionLoopMode.crossSequential
+            mode == SessionLoopMode.crossSequential ||
+            mode == SessionLoopMode.crossOnce
         ? i18n.tr('cross_folder')
         : i18n.tr('current_folder');
+    if (mode.isOneShot) {
+      return '${i18n.tr('sequential_play')} - $scope';
+    }
     final order =
         mode == SessionLoopMode.crossRandom ||
             mode == SessionLoopMode.folderRandom

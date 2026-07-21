@@ -621,11 +621,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           !listStateIsScanning &&
           !listStateIsBackgroundScanning,
     );
-    _ensureCategorySnapshot(
-      libraryFacade: libraryFacade,
-      structureRevision: listStateStructureRevision,
-      detailRevision: detailRevision,
-    );
+    if (_categoryType != AudioLibraryCategoryType.all ||
+        _startupLibraryRefreshCompleted) {
+      _ensureCategorySnapshot(
+        libraryFacade: libraryFacade,
+        structureRevision: listStateStructureRevision,
+        detailRevision: detailRevision,
+      );
+    }
     final searchQuery = _effectiveSearchQuery;
     _ensureFilteredSearchSnapshot(
       libraryFacade: libraryFacade,

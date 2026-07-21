@@ -224,7 +224,9 @@ final class LibraryFacade implements LibraryCatalog {
     service
       ..syncGroupOrderFromLibrary()
       ..syncLibraryNodeOrder(persist: false);
-    await loadLibraryTree();
+    // The startup batch already builds and caches the shallow card tree used
+    // by the library page. Build the nested tree lazily when a folder is
+    // expanded or a search actually needs it.
     _syncStateSlice(isInitialized: true);
   }
 

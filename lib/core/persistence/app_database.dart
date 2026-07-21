@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -214,17 +215,25 @@ final class _DatabaseOperationLease {
 }
 
 final class _DatabaseLifecycleGate {
-  Future<void> _tail = Future<void>.value();
+  final Queue<Completer<void>> _waiters = Queue<Completer<void>>();
+  bool _locked = false;
 
   Future<T> run<T>(Future<T> Function() action) async {
-    final previous = _tail;
-    final done = Completer<void>();
-    _tail = done.future;
-    await previous;
+    if (_locked) {
+      final ready = Completer<void>();
+      _waiters.addLast(ready);
+      await ready.future;
+    } else {
+      _locked = true;
+    }
     try {
       return await action();
     } finally {
-      if (!done.isCompleted) done.complete();
+      if (_waiters.isEmpty) {
+        _locked = false;
+      } else {
+        _waiters.removeFirst().complete();
+      }
     }
   }
 }

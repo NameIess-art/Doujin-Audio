@@ -1090,6 +1090,9 @@ class _LibraryEditFolderTreeTileState
     final content = Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
+        key: PageStorageKey<String>(
+          'library-edit-folder:${widget.libraryPath}:$folderPath',
+        ),
         controller: _expansionController,
         initiallyExpanded: widget.initiallyExpanded,
         onExpansionChanged: (expanded) {

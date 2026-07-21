@@ -14,6 +14,7 @@ internal class AppIconThemeMethodHandler(
     private val context = context.applicationContext
     private var lastThemeMode = THEME_MODE_SYSTEM
     private var lastColorGroup = ICON_GROUP_WARM
+    private var lastEnabledAliasName: String? = null
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         val envelope = ChannelEnvelopeResult(result)
@@ -58,24 +59,22 @@ internal class AppIconThemeMethodHandler(
 
     private fun setLauncherAliasEnabled(dark: Boolean, colorGroup: String) {
         val packageManager = context.packageManager
-        val aliases = ICON_COLOR_GROUPS.flatMap { group ->
-            listOf(
-                appIconAliasComponent(context.packageName, dark = false, colorGroup = group),
-                appIconAliasComponent(context.packageName, dark = true, colorGroup = group)
-            )
+        val packageName = context.packageName
+        val enabledAliasName = appIconAliasName(packageName, dark, colorGroup)
+        val currentAliasName = lastEnabledAliasName
+            ?: findCurrentEnabledAliasName(packageManager, packageName)
+        val updates = launcherAliasUpdates(currentAliasName, enabledAliasName)
+        if (updates.isEmpty()) {
+            lastEnabledAliasName = enabledAliasName
+            return
         }
-        val enabledAlias = appIconAliasComponent(
-            context.packageName,
-            dark = dark,
-            colorGroup = colorGroup
-        )
         val flags = PackageManager.DONT_KILL_APP
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.setComponentEnabledSettings(
-                aliases.map { alias ->
+                updates.map { (aliasName, enabled) ->
                     PackageManager.ComponentEnabledSetting(
-                        alias,
-                        if (alias == enabledAlias) {
+                        ComponentName(packageName, aliasName),
+                        if (enabled) {
                             PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                         } else {
                             PackageManager.COMPONENT_ENABLED_STATE_DISABLED
@@ -84,20 +83,31 @@ internal class AppIconThemeMethodHandler(
                     )
                 }
             )
-            return
+        } else {
+            updates.forEach { (aliasName, enabled) ->
+                packageManager.setComponentEnabledSetting(
+                    ComponentName(packageName, aliasName),
+                    if (enabled) {
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+                    } else {
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED
+                    },
+                    flags
+                )
+            }
         }
-        aliases.filterNot { it == enabledAlias }.forEach { alias ->
-            packageManager.setComponentEnabledSetting(
-                alias,
-                PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
-                flags
-            )
-        }
-        packageManager.setComponentEnabledSetting(
-            enabledAlias,
-            PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
-            flags
-        )
+        lastEnabledAliasName = enabledAliasName
+    }
+
+    private fun findCurrentEnabledAliasName(
+        packageManager: PackageManager,
+        packageName: String
+    ): String {
+        return launcherAliasNames(packageName).firstOrNull { aliasName ->
+            packageManager.getComponentEnabledSetting(
+                ComponentName(packageName, aliasName)
+            ) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        } ?: appIconAliasName(packageName, dark = false, colorGroup = ICON_GROUP_WARM)
     }
 }
 
@@ -131,12 +141,21 @@ internal fun isDarkThemeMode(mode: String, uiMode: Int): Boolean {
     }
 }
 
-internal fun appIconAliasComponent(
-    packageName: String,
-    dark: Boolean,
-    colorGroup: String
-): ComponentName {
-    return ComponentName(packageName, appIconAliasName(packageName, dark, colorGroup))
+internal fun launcherAliasNames(packageName: String): List<String> {
+    return ICON_COLOR_GROUPS.flatMap { colorGroup ->
+        listOf(
+            appIconAliasName(packageName, dark = false, colorGroup = colorGroup),
+            appIconAliasName(packageName, dark = true, colorGroup = colorGroup)
+        )
+    }
+}
+
+internal fun launcherAliasUpdates(
+    currentAliasName: String,
+    enabledAliasName: String
+): List<Pair<String, Boolean>> {
+    if (currentAliasName == enabledAliasName) return emptyList()
+    return listOf(enabledAliasName to true, currentAliasName to false)
 }
 
 internal fun appIconAliasName(

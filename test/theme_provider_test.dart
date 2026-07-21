@@ -89,6 +89,24 @@ void main() {
   });
 
   test(
+    'launcher icon synchronization starts before preference persistence',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final appIconService = _RecordingAppIconPlatformService();
+      final provider = ThemeProvider(appIconPlatformService: appIconService);
+      appIconService.syncs.clear();
+
+      final update = provider.setThemeMode(ThemeMode.dark);
+
+      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
+        (ThemeMode.dark, AppIconColorGroup.warm),
+      ]);
+      await update;
+    },
+  );
+
+  test(
     'app theme color synchronizes its six-group launcher icon color',
     () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});

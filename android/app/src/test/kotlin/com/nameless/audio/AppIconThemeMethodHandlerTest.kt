@@ -5,6 +5,8 @@ import com.nameless.audio.channel.ICON_COLOR_GROUPS
 import com.nameless.audio.channel.appIconAliasName
 import com.nameless.audio.channel.iconColorGroupAliasSuffix
 import com.nameless.audio.channel.isDarkThemeMode
+import com.nameless.audio.channel.launcherAliasNames
+import com.nameless.audio.channel.launcherAliasUpdates
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -45,6 +47,16 @@ class AppIconThemeMethodHandlerTest {
     fun `six color groups expose stable alias suffixes`() {
         assertEquals(6, ICON_COLOR_GROUPS.size)
         assertEquals("Neutral", iconColorGroupAliasSuffix("neutral"))
+        val aliases = launcherAliasNames("com.nameless.audio")
+        assertEquals(12, aliases.size)
+        assertEquals(12, aliases.toSet().size)
+    }
+
+    @Test
+    fun `icon switches update only the target and current aliases`() {
+        val updates = launcherAliasUpdates("current", "target")
+        assertEquals(listOf("target" to true, "current" to false), updates)
+        assertTrue(launcherAliasUpdates("same", "same").isEmpty())
     }
 
     @Test(expected = IllegalArgumentException::class)

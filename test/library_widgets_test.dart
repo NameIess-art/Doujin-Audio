@@ -170,6 +170,43 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
+  testWidgets('library folder expansion does not collide with list storage', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    final libraryService = fixture.libraryService;
+
+    runtimeGraph.library.addTracks(
+      [
+        testMusicTrack(
+          name: 'Stored track',
+          path: '/library/root/stored.mp3',
+          groupKey: '/library/root',
+          groupTitle: 'Root',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(
+      tester,
+      runtimeGraph.library,
+      waitForCategorySnapshot: true,
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ExpansionTile), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 100));
+  });
+
   testWidgets('library tab search submits asynchronously and removes misses', (
     WidgetTester tester,
   ) async {

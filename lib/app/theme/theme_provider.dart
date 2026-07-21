@@ -151,8 +151,9 @@ class ThemeProvider with ChangeNotifier {
     if (_themeMode == value) return;
     _themeMode = value;
     notifyListeners();
+    final iconSync = _syncAppIconTheme();
     await AppPreferences.setString(_themeModeKey, value.name);
-    await _syncAppIconTheme();
+    await iconSync;
   }
 
   Future<void> _syncAppIconTheme() {
@@ -175,8 +176,9 @@ class ThemeProvider with ChangeNotifier {
     _appThemeColor = value;
     _rebuildThemes();
     notifyListeners();
+    final iconSync = _syncAppIconTheme();
     await AppPreferences.setString(_appThemeColorKey, value.name);
-    await _syncAppIconTheme();
+    await iconSync;
   }
 
   Future<void> setAsmrThemeColor(ThemeAccentPreset value) async {

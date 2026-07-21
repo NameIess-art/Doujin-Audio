@@ -20,6 +20,20 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
 internal fun nativePlaybackWakeMode(): Int = C.WAKE_MODE_NETWORK
 
+/**
+ * Keep the player's channel layout untouched by Android's optional spatializer.
+ *
+ * The library is responsible for the explicit audio effects below. Letting the
+ * platform spatializer pick a layout can turn a separated stereo source into a
+ * device-dependent center/mono image on some Android audio routes.
+ */
+internal fun nativePlaybackAudioAttributes(): androidx.media3.common.AudioAttributes =
+    androidx.media3.common.AudioAttributes.Builder()
+        .setUsage(C.USAGE_MEDIA)
+        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+        .setSpatializationBehavior(C.SPATIALIZATION_BEHAVIOR_NEVER)
+        .build()
+
 private const val ASMR_ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en;q=0.8"
 
 internal fun nativePlaybackRequestHeadersForHost(host: String?): Map<String, String> {
@@ -94,10 +108,7 @@ internal class NativePlayerFactory(
             .build()
             .also { player ->
                 player.setAudioAttributes(
-                    androidx.media3.common.AudioAttributes.Builder()
-                        .setUsage(C.USAGE_MEDIA)
-                        .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                        .build(),
+                    nativePlaybackAudioAttributes(),
                     /* handleAudioFocus = */ false,
                 )
                 player.addListener(object : Player.Listener {

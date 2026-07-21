@@ -14,6 +14,15 @@ class NativePlayerFactoryTest {
     }
 
     @Test
+    fun `native playback keeps platform spatialization from changing stereo layout`() {
+        val attributes = nativePlaybackAudioAttributes()
+
+        assertEquals(C.USAGE_MEDIA, attributes.usage)
+        assertEquals(C.AUDIO_CONTENT_TYPE_MUSIC, attributes.contentType)
+        assertEquals(C.SPATIALIZATION_BEHAVIOR_NEVER, attributes.spatializationBehavior)
+    }
+
+    @Test
     fun `ASMR media hosts receive the gateway language header`() {
         val headers = nativePlaybackRequestHeadersForHost("raw.kiko-play-niptan.one")
 

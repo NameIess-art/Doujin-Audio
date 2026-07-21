@@ -305,6 +305,26 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `stereo processor keeps left and right samples independent while balancing`() {
+        val processor = VolumeBalanceAudioProcessor().apply {
+            panning = 0.5f
+        }
+        val stereo16Bit = AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT)
+        assertEquals(stereo16Bit, processor.configure(stereo16Bit))
+        processor.flush()
+
+        val input = ByteBuffer.allocateDirect(4).order(ByteOrder.nativeOrder())
+        input.putShort(120)
+        input.putShort((-340).toShort())
+        input.flip()
+        processor.queueInput(input)
+
+        val output = processor.output.order(ByteOrder.nativeOrder())
+        assertEquals(60.toShort(), output.short)
+        assertEquals((-340).toShort(), output.short)
+    }
+
+    @Test
     fun `publishing session state retries audio session sync before snapshot`() {
         val events = mutableListOf<String>()
         val session = object : NativePlaybackSessionSnapshotSource {

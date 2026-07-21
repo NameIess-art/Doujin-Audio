@@ -13,6 +13,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
@@ -1405,17 +1406,20 @@ class NativePlaybackService : MediaSessionService() {
             }
             return existingSession
         }
-        val launchIntent = packageManager.getLaunchIntentForPackage(packageName)?.apply {
-            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val pendingIntent = launchIntent?.let {
+        val launchIntent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setComponent(ComponentName(packageName, activeLauncherAliasName(this)))
+            .apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+        val pendingIntent = if (packageManager.resolveActivity(launchIntent, 0) != null) {
             val pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 PendingIntent.FLAG_IMMUTABLE
             } else {
                 0
             }
-            PendingIntent.getActivity(this, 0, it, pendingIntentFlags)
-        }
+            PendingIntent.getActivity(this, 0, launchIntent, pendingIntentFlags)
+        } else null
         val builder = MediaSession.Builder(this, player)
             .setId("Nameless Audio")
             .setCallback(mediaSessionCallback)

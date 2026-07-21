@@ -224,7 +224,7 @@ void main() {
     },
   );
 
-  test('completed tasks leave active tasks visible in the task UI', () {
+  test('completed task bytes remain in aggregate progress while active', () {
     final manager = _manager();
     final startedAt = DateTime(2026);
     manager.debugSetCurrentTaskForTesting(
@@ -262,7 +262,7 @@ void main() {
 
     expect(manager.taskIds, <int>[2]);
     expect(manager.buttonViewState.visible, isTrue);
-    expect(manager.buttonViewState.progress, 0.25);
+    expect(manager.buttonViewState.progress, 0.5);
     expect(manager.taskShellViewState.hasTask, isTrue);
     manager.dispose();
   });
@@ -433,6 +433,67 @@ void main() {
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     }
   });
+
+  test(
+    'parallel file completion does not reset aggregate byte progress',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_parallel_progress_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      unawaited(
+        server.forEach((request) async {
+          request.response.headers.contentLength = 1024;
+          for (var chunk = 0; chunk < 4; chunk++) {
+            request.response.add(List<int>.filled(256, chunk));
+            await request.response.flush();
+            await Future<void>.delayed(const Duration(milliseconds: 8));
+          }
+          await request.response.close();
+        }),
+      );
+      final manager = _manager();
+      final observed = <int>[];
+      manager.addListener(() {
+        final task = manager.getTask(1);
+        if (task != null && task.status == AsmrDownloadTaskStatus.downloading) {
+          observed.add(task.downloadedBytes);
+        }
+      });
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            for (var index = 0; index < 3; index++)
+              _file(
+                title: 'Track $index.mp3',
+                downloadUrl:
+                    'http://${server.address.host}:${server.port}/track-$index.mp3',
+                size: 1024,
+              ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        expect(observed, isNotEmpty);
+        for (var index = 1; index < observed.length; index++) {
+          expect(
+            observed[index],
+            greaterThanOrEqualTo(observed[index - 1]),
+            reason: 'aggregate progress regressed: $observed',
+          );
+        }
+        expect(manager.getTask(1)?.downloadedBytes, 3072);
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
 
   test('local downloads stage beside the target without using cache', () async {
     final tempDir = await Directory.systemTemp.createTemp(

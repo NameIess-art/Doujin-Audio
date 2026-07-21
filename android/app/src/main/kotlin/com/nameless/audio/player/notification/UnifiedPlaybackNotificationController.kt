@@ -135,25 +135,44 @@ internal fun addNotificationTransportActions(
 
 internal fun notificationIconResourceForAlias(aliasName: String): Int {
     return when (aliasName.substringAfter("MainActivity", "")) {
-        "WarmLight" -> R.drawable.ic_launcher_warm_light
-        "WarmDark" -> R.drawable.ic_launcher_warm_dark
-        "PurpleLight" -> R.drawable.ic_launcher_purple_light
-        "PurpleDark" -> R.drawable.ic_launcher_purple_dark
-        "BlueLight" -> R.drawable.ic_launcher_blue_light
-        "BlueDark" -> R.drawable.ic_launcher_blue_dark
-        "GreenLight" -> R.drawable.ic_launcher_green_light
-        "GreenDark" -> R.drawable.ic_launcher_green_dark
-        "SunsetLight" -> R.drawable.ic_launcher_sunset_light
-        "SunsetDark" -> R.drawable.ic_launcher_sunset_dark
-        "NeutralLight" -> R.drawable.ic_launcher_neutral_light
-        "NeutralDark" -> R.drawable.ic_launcher_neutral_dark
-        else -> R.drawable.ic_launcher_warm_light
+        "WarmLight", "WarmDark" -> R.drawable.ic_launcher_warm_light_foreground
+        "PurpleLight", "PurpleDark" -> R.drawable.ic_launcher_purple_light_foreground
+        "BlueLight", "BlueDark" -> R.drawable.ic_launcher_blue_light_foreground
+        "GreenLight", "GreenDark" -> R.drawable.ic_launcher_green_light_foreground
+        "SunsetLight", "SunsetDark" -> R.drawable.ic_launcher_sunset_light_foreground
+        "NeutralLight", "NeutralDark" -> R.drawable.ic_launcher_neutral_light_foreground
+        else -> R.drawable.ic_launcher_warm_light_foreground
     }
 }
 
-internal fun notificationSmallIconResource(context: Context): Int {
+internal data class NotificationIconSpec(
+    val resourceId: Int,
+    val color: Int
+)
+
+internal fun notificationIconSpecForAlias(aliasName: String): NotificationIconSpec {
+    val suffix = aliasName.substringAfter("MainActivity", "")
+    val color = when (suffix) {
+        "PurpleLight", "PurpleDark" -> 0xFFA867F1.toInt()
+        "BlueLight", "BlueDark" -> 0xFF4B78EF.toInt()
+        "GreenLight", "GreenDark" -> 0xFF63C636.toInt()
+        "SunsetLight", "SunsetDark" -> 0xFFFB833C.toInt()
+        "NeutralLight", "NeutralDark" -> 0xFFA6B0BE.toInt()
+        else -> 0xFFFF5F5C.toInt()
+    }
+    return NotificationIconSpec(
+        resourceId = notificationIconResourceForAlias(aliasName),
+        color = color
+    )
+}
+
+internal fun notificationIconSpec(context: Context): NotificationIconSpec {
+    return notificationIconSpecForAlias(activeLauncherAliasName(context))
+}
+
+internal fun activeLauncherAliasName(context: Context): String {
     val packageName = context.packageName
-    val enabledAlias = launcherAliasNames(packageName).firstOrNull { aliasName ->
+    return launcherAliasNames(packageName).firstOrNull { aliasName ->
         context.packageManager.getComponentEnabledSetting(
             ComponentName(packageName, aliasName)
         ) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
@@ -162,7 +181,6 @@ internal fun notificationSmallIconResource(context: Context): Int {
         dark = false,
         colorGroup = ICON_GROUP_WARM
     )
-    return notificationIconResourceForAlias(enabledAlias)
 }
 
 private fun UnifiedPlaybackNotificationItem.hasSameStableNotification(
@@ -257,6 +275,10 @@ internal object UnifiedPlaybackNotificationController {
     fun refreshThemeIcon(context: Context) {
         if (dismissPending) return
         latestSyncRequest?.let { request ->
+            // A theme change affects every notification's small icon, including
+            // multi-session children that may supply the system group header icon.
+            // Invalidate their stable-content cache so they are all rebuilt.
+            activeItemsById.clear()
             lastSummarySignature = null
             lastStyleVariant = null
             lastNotifyTimestampsMs.clear()
@@ -653,8 +675,10 @@ internal object UnifiedPlaybackNotificationController {
         notificationId: Int,
         ongoing: Boolean
     ): NotificationCompat.Builder {
+        val appIcon = notificationIconSpec(context)
         val builder = NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(notificationSmallIconResource(context))
+            .setSmallIcon(appIcon.resourceId)
+            .setColor(appIcon.color)
             .setContentTitle(item.title)
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
@@ -741,9 +765,10 @@ internal object UnifiedPlaybackNotificationController {
         context: Context,
         sessionId: String? = null
     ): PendingIntent? {
-        val launchIntent = context.packageManager
-            .getLaunchIntentForPackage(context.packageName)
-            ?.apply {
+        val launchIntent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setComponent(ComponentName(context.packageName, activeLauncherAliasName(context)))
+            .apply {
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_SINGLE_TOP or
@@ -756,7 +781,7 @@ internal object UnifiedPlaybackNotificationController {
                     putExtra(MainActivity.notificationSessionIdExtra, sessionId)
                 }
             }
-            ?: return null
+        if (context.packageManager.resolveActivity(launchIntent, 0) == null) return null
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or (
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 PendingIntent.FLAG_IMMUTABLE

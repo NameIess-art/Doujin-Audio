@@ -452,7 +452,11 @@ class AsmrDownloadManager extends ChangeNotifier {
     int totalBytes = 0;
     int downloadedBytes = 0;
     for (final t in _tasks.values) {
-      if (t.isActive) {
+      // Keep completed bytes in the aggregate while another task is still
+      // running. Completed snapshots are retained briefly, and dropping them
+      // here makes the circular progress jump backwards as soon as one task
+      // finishes.
+      if (t.isActive || t.status == AsmrDownloadTaskStatus.completed) {
         totalBytes += t.totalBytes;
         downloadedBytes += t.downloadedBytes;
       }
@@ -932,8 +936,26 @@ class AsmrDownloadManager extends ChangeNotifier {
               } else {
                 if (!result.saved && !result.skipped) failed++;
               }
-              downloadedBytes += result.bytesDownloaded - previousFileBytes;
-              _liveDownloadedBytes[workId] = downloadedBytes;
+              // Chunks are accounted for eagerly in `_liveDownloadedBytes`.
+              // A completed/skipped file may not have emitted chunks (for
+              // example when resuming an already complete staging file), so
+              // only apply the difference that is not already represented by
+              // the live per-file counter. Never replace the aggregate with
+              // the local value: another worker may still be downloading.
+              final liveFileProgress = _liveFileDownloadedBytes.putIfAbsent(
+                workId,
+                () => Map<String, int>.from(fileDownloadedBytes),
+              );
+              final liveFileBytes =
+                  liveFileProgress[item.relativePath] ?? previousFileBytes;
+              final unaccountedBytes = result.bytesDownloaded - liveFileBytes;
+              if (unaccountedBytes != 0) {
+                final liveBytes =
+                    _liveDownloadedBytes[workId] ?? downloadedBytes;
+                _liveDownloadedBytes[workId] = liveBytes + unaccountedBytes;
+              }
+              downloadedBytes = _liveDownloadedBytes[workId] ?? downloadedBytes;
+              liveFileProgress[item.relativePath] = result.bytesDownloaded;
               fileDownloadedBytes[item.relativePath] = result.bytesDownloaded;
               if (result.saved || result.skipped) {
                 completedFilePaths.add(item.relativePath);

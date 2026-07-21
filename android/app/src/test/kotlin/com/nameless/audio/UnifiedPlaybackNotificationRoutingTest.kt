@@ -41,16 +41,24 @@ class UnifiedPlaybackNotificationRoutingTest {
     @Test
     fun `notification icon follows the active launcher icon variant`() {
         assertEquals(
-            R.drawable.ic_launcher_blue_dark,
+            R.drawable.ic_launcher_blue_light_foreground,
             notificationIconResourceForAlias("com.nameless.audio.MainActivityBlueDark")
         )
         assertEquals(
-            R.drawable.ic_launcher_neutral_light,
+            R.drawable.ic_launcher_neutral_light_foreground,
             notificationIconResourceForAlias("com.nameless.audio.MainActivityNeutralLight")
         )
         assertEquals(
-            R.drawable.ic_launcher_warm_light,
+            R.drawable.ic_launcher_warm_light_foreground,
             notificationIconResourceForAlias("unknown")
+        )
+        assertEquals(
+            0xFF4B78EF.toInt(),
+            notificationIconSpecForAlias("com.nameless.audio.MainActivityBlueDark").color
+        )
+        assertEquals(
+            0xFFFF5F5C.toInt(),
+            notificationIconSpecForAlias("com.nameless.audio.MainActivityWarmLight").color
         )
     }
 

@@ -19,6 +19,7 @@ import 'package:nameless_audio/features/library/application/cover_artwork_cache_
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/duration_overlay.dart';
+import 'package:nameless_audio/core/widgets/app_feedback.dart';
 import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -1261,5 +1262,59 @@ void main() {
       findsNothing,
     );
     await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  testWidgets('timeline subtitle focus changes provide rate-limited haptics', (
+    tester,
+  ) async {
+    final calls = <MethodCall>[];
+    AppInteractionFeedback.resetContinuous();
+    AppInteractionFeedback.hapticFeedbackEnabled = true;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          calls.add(call);
+          return null;
+        });
+    addTearDown(() {
+      AppInteractionFeedback.resetContinuous();
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    const subtitleTrack = SubtitleTrack(
+      sourcePath: '/library/subtitles/track.srt',
+      cues: <SubtitleCue>[
+        SubtitleCue(
+          start: Duration.zero,
+          end: Duration(seconds: 2),
+          text: 'Cue zero',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 2),
+          end: Duration(seconds: 4),
+          text: 'Cue one',
+        ),
+        SubtitleCue(
+          start: Duration(seconds: 4),
+          end: Duration(seconds: 6),
+          text: 'Cue two',
+        ),
+      ],
+    );
+    await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.timeline,
+      subtitleTrack: subtitleTrack,
+      initialPosition: const Duration(seconds: 2),
+    );
+
+    final list = find.byKey(const ValueKey<String>('subtitle_timeline_list'));
+    await tester.drag(list, const Offset(0, -52));
+    await tester.pumpAndSettle();
+
+    expect(
+      calls.where((call) => call.method == 'HapticFeedback.vibrate'),
+      hasLength(1),
+    );
   });
 }

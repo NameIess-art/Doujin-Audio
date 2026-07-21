@@ -4,6 +4,7 @@ import com.nameless.audio.R
 
 import android.app.Notification
 import android.app.PendingIntent
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -99,8 +100,10 @@ internal class NativeForegroundNotificationFactory(
     }
 
     private fun baseBuilder(): NotificationCompat.Builder {
+        val appIcon = notificationIconSpec(context)
         return NotificationCompat.Builder(context, channelId)
-            .setSmallIcon(notificationSmallIconResource(context))
+            .setSmallIcon(appIcon.resourceId)
+            .setColor(appIcon.color)
             .setContentIntent(launchPendingIntent())
             .setShowWhen(false)
             .setOngoing(true)
@@ -112,18 +115,21 @@ internal class NativeForegroundNotificationFactory(
     }
 
     private fun launchPendingIntent(): PendingIntent? {
-        val launchIntent = context.packageManager
-            .getLaunchIntentForPackage(context.packageName)
-            ?.apply {
+        val launchIntent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setComponent(ComponentName(context.packageName, activeLauncherAliasName(context)))
+            .apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
-        return launchIntent?.let {
+        return if (context.packageManager.resolveActivity(launchIntent, 0) != null) {
             PendingIntent.getActivity(
                 context,
                 0,
-                it,
+                launchIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
             )
+        } else {
+            null
         }
     }
 

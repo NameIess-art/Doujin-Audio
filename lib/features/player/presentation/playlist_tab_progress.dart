@@ -1025,6 +1025,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   static const double _viewportHeight = _itemExtent * 2;
   static const Duration _returnDelay = Duration(seconds: 3);
   static const Duration _scrollDuration = Duration(milliseconds: 180);
+  static const Duration _focusHapticInterval = Duration(milliseconds: 110);
 
   late final ScrollController _scrollController;
   late int _focusedIndex;
@@ -1081,6 +1082,17 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     );
     if (nextIndex == _focusedIndex || !mounted) return;
     setState(() => _focusedIndex = nextIndex);
+    // Give each subtitle paragraph a light, rate-limited detent while the
+    // user browses.  The shared feedback service respects the user's haptic
+    // setting and suppresses rapid duplicate pulses.
+    if (_isBrowsing) {
+      unawaited(
+        AppInteractionFeedback.continuous(
+          '${widget.key}:$nextIndex',
+          interval: _focusHapticInterval,
+        ),
+      );
+    }
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
@@ -1091,6 +1103,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
             notification.scrollDelta!.abs() > 0)) {
       _returnTimer?.cancel();
       if (!_isBrowsing) {
+        AppInteractionFeedback.resetContinuous();
         setState(() => _isBrowsing = true);
       }
     } else if (notification is ScrollEndNotification &&
@@ -1196,64 +1209,81 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
                 selected: isFocused,
                 child: Opacity(
                   opacity: isFocused ? 1 : 0.45,
-                  child: Stack(
-                    key: ValueKey('subtitle_timeline_cue_$index'),
-                    fit: StackFit.expand,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 48),
-                        child: Center(
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: Text(
-                              cue.text,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(
-                                    color: _sessionDetailForeground(
-                                      cs,
-                                      isFocused
-                                          ? _SessionDetailForegroundLevel.medium
-                                          : _SessionDetailForegroundLevel.muted,
-                                      darkFallback: cs.onSurface.withValues(
-                                        alpha: isFocused ? 0.85 : 0.72,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    curve: Curves.easeOutCubic,
+                    decoration: BoxDecoration(
+                      color: isFocused
+                          ? cs.primary.withValues(alpha: 0.08)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Stack(
+                      key: ValueKey('subtitle_timeline_cue_$index'),
+                      fit: StackFit.expand,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 42),
+                          child: Center(
+                            child: AnimatedScale(
+                              scale: isFocused ? 1.03 : 1,
+                              duration: const Duration(milliseconds: 120),
+                              curve: Curves.easeOutCubic,
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: Text(
+                                  cue.text,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.center,
+                                  style: Theme.of(context).textTheme.bodyMedium
+                                      ?.copyWith(
+                                        color: _sessionDetailForeground(
+                                          cs,
+                                          isFocused
+                                              ? _SessionDetailForegroundLevel
+                                                    .medium
+                                              : _SessionDetailForegroundLevel
+                                                    .muted,
+                                          darkFallback: cs.onSurface.withValues(
+                                            alpha: isFocused ? 0.85 : 0.72,
+                                          ),
+                                        ),
+                                        fontWeight: isFocused
+                                            ? FontWeight.w600
+                                            : FontWeight.w500,
+                                        fontSize: 16,
+                                        height: 1.3,
                                       ),
-                                    ),
-                                    fontWeight: isFocused
-                                        ? FontWeight.w600
-                                        : FontWeight.w500,
-                                    fontSize: 16,
-                                    height: 1.3,
-                                  ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (isFocused && !isPlaybackSubtitle)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: SizedBox(
-                            width: 48,
-                            height: 48,
-                            child: IconButton(
-                              key: const ValueKey(
-                                'subtitle_timeline_seek_button',
-                              ),
-                              tooltip: i18n.tr('seek_to_subtitle'),
-                              onPressed: _seekToFocusedSubtitle,
-                              icon: Icon(
-                                Icons.play_arrow_rounded,
-                                color: _sessionDetailForeground(
-                                  cs,
-                                  _SessionDetailForegroundLevel.medium,
                                 ),
                               ),
                             ),
                           ),
                         ),
-                    ],
+                        if (isFocused && !isPlaybackSubtitle)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: SizedBox(
+                              width: 48,
+                              height: 48,
+                              child: IconButton(
+                                key: const ValueKey(
+                                  'subtitle_timeline_seek_button',
+                                ),
+                                tooltip: i18n.tr('seek_to_subtitle'),
+                                onPressed: _seekToFocusedSubtitle,
+                                icon: Icon(
+                                  Icons.play_arrow_rounded,
+                                  color: _sessionDetailForeground(
+                                    cs,
+                                    _SessionDetailForegroundLevel.medium,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
                 ),
               );

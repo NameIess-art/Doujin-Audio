@@ -53,10 +53,23 @@ class AppIconThemeMethodHandlerTest {
     }
 
     @Test
-    fun `icon switches update only the target and current aliases`() {
-        val updates = launcherAliasUpdates("current", "target")
-        assertEquals(listOf("target" to true, "current" to false), updates)
-        assertTrue(launcherAliasUpdates("same", "same").isEmpty())
+    fun `icon switches leave exactly one launcher alias enabled`() {
+        val aliases = launcherAliasNames("com.nameless.audio")
+        val target = "com.nameless.audio.MainActivityGreenDark"
+        val updates = launcherAliasUpdates(aliases, target)
+
+        assertEquals(aliases.size, updates.size)
+        assertEquals(target to true, updates.first())
+        assertEquals(listOf(target), updates.filter { it.second }.map { it.first })
+        assertEquals(aliases.toSet(), updates.map { it.first }.toSet())
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `unregistered launcher alias is rejected`() {
+        launcherAliasUpdates(
+            launcherAliasNames("com.nameless.audio"),
+            "com.nameless.audio.MainActivityMissing"
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)

@@ -16,7 +16,6 @@ internal class AppIconThemeMethodHandler(
     private val context = context.applicationContext
     private var lastThemeMode = THEME_MODE_SYSTEM
     private var lastColorGroup = ICON_GROUP_WARM
-    private var lastEnabledAliasName: String? = null
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         val envelope = ChannelEnvelopeResult(result)
@@ -64,13 +63,10 @@ internal class AppIconThemeMethodHandler(
         val packageManager = context.packageManager
         val packageName = context.packageName
         val enabledAliasName = appIconAliasName(packageName, dark, colorGroup)
-        val currentAliasName = lastEnabledAliasName
-            ?: findCurrentEnabledAliasName(packageManager, packageName)
-        val updates = launcherAliasUpdates(currentAliasName, enabledAliasName)
-        if (updates.isEmpty()) {
-            lastEnabledAliasName = enabledAliasName
-            return
-        }
+        val updates = launcherAliasUpdates(
+            launcherAliasNames(packageName),
+            enabledAliasName
+        )
         val flags = PackageManager.DONT_KILL_APP
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.setComponentEnabledSettings(
@@ -99,18 +95,6 @@ internal class AppIconThemeMethodHandler(
                 )
             }
         }
-        lastEnabledAliasName = enabledAliasName
-    }
-
-    private fun findCurrentEnabledAliasName(
-        packageManager: PackageManager,
-        packageName: String
-    ): String {
-        return launcherAliasNames(packageName).firstOrNull { aliasName ->
-            packageManager.getComponentEnabledSetting(
-                ComponentName(packageName, aliasName)
-            ) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-        } ?: appIconAliasName(packageName, dark = false, colorGroup = ICON_GROUP_WARM)
     }
 }
 
@@ -154,11 +138,18 @@ internal fun launcherAliasNames(packageName: String): List<String> {
 }
 
 internal fun launcherAliasUpdates(
-    currentAliasName: String,
+    aliasNames: List<String>,
     enabledAliasName: String
 ): List<Pair<String, Boolean>> {
-    if (currentAliasName == enabledAliasName) return emptyList()
-    return listOf(enabledAliasName to true, currentAliasName to false)
+    require(enabledAliasName in aliasNames) {
+        "Launcher alias is not registered: $enabledAliasName"
+    }
+    return buildList {
+        add(enabledAliasName to true)
+        aliasNames.forEach { aliasName ->
+            if (aliasName != enabledAliasName) add(aliasName to false)
+        }
+    }
 }
 
 internal fun appIconAliasName(

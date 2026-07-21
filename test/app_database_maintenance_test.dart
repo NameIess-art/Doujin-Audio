@@ -111,4 +111,35 @@ void main() {
       );
     },
   );
+
+  test(
+    'a maintenance request cannot close a database before a read registers',
+    () async {
+      final registrationEntered = Completer<void>();
+      final releaseRegistration = Completer<void>();
+      final gatedDatabase = AppDatabase.test(
+        await openManagedDatabase(),
+        databaseOpener: openManagedDatabase,
+        filePathProvider: () async => databasePath,
+        beforeOperationRegistration: () async {
+          if (!registrationEntered.isCompleted) {
+            registrationEntered.complete();
+          }
+          await releaseRegistration.future;
+        },
+      );
+      addTearDown(gatedDatabase.close);
+
+      final read = gatedDatabase.loadAllTracks();
+      await registrationEntered.future;
+      final maintenance = gatedDatabase.runExclusiveMaintenance<void>(
+        replacesDatabase: true,
+        action: (_) async {},
+      );
+
+      releaseRegistration.complete();
+      await Future.wait<void>(<Future<void>>[read, maintenance]);
+      expect(await gatedDatabase.loadAllTracks(), isEmpty);
+    },
+  );
 }

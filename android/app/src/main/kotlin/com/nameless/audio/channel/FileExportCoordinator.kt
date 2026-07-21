@@ -14,7 +14,7 @@ internal class FileExportCoordinator(
     private val taskExecutor: FileCacheTaskExecutor
 ) {
     private val requestCode = 7004
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var pendingRequest: PendingExportRequest? = null
     private var generation = 0L
     private var disposed = false
@@ -104,9 +104,11 @@ internal class FileExportCoordinator(
     }
 
     fun dispose() {
+        val request = pendingRequest
         disposed = true
         generation++
         pendingRequest = null
+        request?.result?.success(null)
     }
 
     private data class PendingExportRequest(

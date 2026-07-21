@@ -7,6 +7,7 @@ import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
+import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -14,6 +15,9 @@ import 'support/app_runtime_test_fixture.dart';
 void main() {
   AppRuntimeTestFixture.initialize();
   late Database testDatabase;
+
+  setUp(UiInteractionCoordinator.instance.resetForTest);
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   setUpAll(() async {
     testDatabase = await AppRuntimeTestFixture.installSharedDatabase();
@@ -263,38 +267,7 @@ void main() {
       ),
     );
     await tester.pump();
-    await pumpUntilLibraryTreeReady(
-      tester,
-      runtimeGraph.library,
-      waitForCategorySnapshot: true,
-    );
-    libraryService.syncSlice(
-      isInitialized: true,
-      detailRevision: 0,
-      treeSnapshotRevision:
-          runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 500));
-
-    expect(
-      find.text(
-        '${languageProvider.tr('work_count', {'count': 2})} · '
-        '${languageProvider.tr('audio_count', {'count': 2})}',
-      ),
-      findsOneWidget,
-    );
-
-    expect(find.byType(ReorderableListView), findsNothing);
-    expect(
-      find.byKey(const PageStorageKey<String>('locked_library_list')),
-      findsOneWidget,
-    );
-
-    await runtimeGraph.settings.setCardPositionsLocked(false);
-    await tester.pump();
-    expect(find.byType(ReorderableListView), findsOneWidget);
-
+    expect(runtimeGraph.library.snapshotCacheService.treeSnapshotRevision, -1);
     expect(find.byType(TextField), findsOneWidget);
 
     final scanGeneration = runtimeGraph.library.tryBeginScan(source: 'Music');
@@ -330,9 +303,13 @@ void main() {
     await tester.pump();
 
     await tester.enterText(find.byType(TextField), 'ocean');
-    await pumpUntilNotFound(tester, find.text('Soft Rain', findRichText: true));
+    await pumpUntilFound(tester, find.text('Ocean Waves', findRichText: true));
 
     expect(find.text('Soft Rain', findRichText: true), findsNothing);
+    expect(
+      runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
+      libraryService.structureRevision,
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 1));

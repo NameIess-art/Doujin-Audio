@@ -23,6 +23,7 @@ import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
 
 const String _folderCoverSelectionsKey = 'folder_cover_selections_v1';
+const Duration _remoteCoverTouchInterval = Duration(minutes: 5);
 const Set<String> _folderCoverImageExtensions = <String>{
   '.jpg',
   '.jpeg',
@@ -92,6 +93,9 @@ class CoverArtworkCacheService {
   final Map<String, Future<String?>> _remoteCoverFutures =
       <String, Future<String?>>{};
   final Map<String, String?> _resolvedRemoteCovers = <String, String?>{};
+  final Map<String, Future<String?>> _resolvedRemoteCoverFutures =
+      <String, Future<String?>>{};
+  final Map<String, DateTime> _remoteCoverLastTouchedAt = <String, DateTime>{};
   final Map<String, _RemoteCoverFailure> _remoteCoverFailures = {};
   final Queue<Completer<void>> _remoteDownloadWaiters = Queue();
   final Map<String, bool> _manualCoverPathValidityCache = <String, bool>{};
@@ -239,6 +243,18 @@ class CoverArtworkCacheService {
   Future<String?> futureForRemoteCover(String url) {
     final remoteKey = remoteCoverSearchKey(url);
     if (remoteKey == null) return Future<String?>.value();
+    final resolvedFuture = _resolvedRemoteCoverFutures[remoteKey];
+    if (resolvedFuture != null) {
+      final resolvedPath = _resolvedRemoteCovers[remoteKey];
+      if (resolvedPath != null &&
+          _isResolvedRemoteCoverPathPresent(resolvedPath)) {
+        unawaited(_touchResolvedRemoteCover(remoteKey, resolvedPath));
+        return resolvedFuture;
+      }
+      _resolvedRemoteCovers.remove(remoteKey);
+      _resolvedRemoteCoverFutures.remove(remoteKey);
+      _remoteCoverLastTouchedAt.remove(remoteKey);
+    }
     return _resolveRemoteCover(
       remoteKey,
       normalizedRemoteUrlFromKey(remoteKey),
@@ -484,6 +500,8 @@ class CoverArtworkCacheService {
     _removeTrackCoverEntriesInScope(normalizedScope);
     _remoteCoverFutures.remove(normalizedScope);
     _resolvedRemoteCovers.remove(normalizedScope);
+    _resolvedRemoteCoverFutures.remove(normalizedScope);
+    _remoteCoverLastTouchedAt.remove(normalizedScope);
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
   }
@@ -516,6 +534,8 @@ class CoverArtworkCacheService {
       _removeTrackCoverEntriesInScope(scope);
       _remoteCoverFutures.remove(scope);
       _resolvedRemoteCovers.remove(scope);
+      _resolvedRemoteCoverFutures.remove(scope);
+      _remoteCoverLastTouchedAt.remove(scope);
       _remoteCoverFailures.remove(scope);
     }
   }
@@ -535,6 +555,8 @@ class CoverArtworkCacheService {
     _resolvedTrackCoverFutures.clear();
     _remoteCoverFutures.clear();
     _resolvedRemoteCovers.clear();
+    _resolvedRemoteCoverFutures.clear();
+    _remoteCoverLastTouchedAt.clear();
     _remoteCoverFailures.clear();
     _manualCoverPathValidityCache.clear();
     _manualCoverValidationFutures.clear();
@@ -612,7 +634,14 @@ class CoverArtworkCacheService {
   }
 
   void _trimResolvedRemoteCovers() {
-    _trimResolvedCache(_resolvedRemoteCovers, _resolvedRemoteCoverLimit);
+    _trimResolvedCache(
+      _resolvedRemoteCovers,
+      _resolvedRemoteCoverLimit,
+      futures: _resolvedRemoteCoverFutures,
+    );
+    _remoteCoverLastTouchedAt.removeWhere(
+      (key, _) => !_resolvedRemoteCovers.containsKey(key),
+    );
   }
 
   void _removeTrackCoverEntriesInScope(String normalizedScope) {
@@ -1141,6 +1170,8 @@ class CoverArtworkCacheService {
 
   Future<String?> _resolveRemoteCover(String remoteKey, String remoteUrl) {
     if (_disposed) return Future<String?>.value();
+    final resolvedFuture = _resolvedRemoteCoverFutures[remoteKey];
+    if (resolvedFuture != null) return resolvedFuture;
     final inFlight = _remoteCoverFutures[remoteKey];
     if (inFlight != null) return inFlight;
     final failure = _remoteCoverFailures[remoteKey];
@@ -1153,6 +1184,13 @@ class CoverArtworkCacheService {
         var coverPath = previous;
         if (coverPath == null || !await _isUsableRemoteCoverPath(coverPath)) {
           _resolvedRemoteCovers.remove(remoteKey);
+          final removedResolvedFuture = _resolvedRemoteCoverFutures.remove(
+            remoteKey,
+          );
+          if (removedResolvedFuture != null) {
+            unawaited(removedResolvedFuture);
+          }
+          _remoteCoverLastTouchedAt.remove(remoteKey);
           final downloader = _remoteCoverDownloader;
           coverPath = await _runRemoteDownload(
             () => downloader == null
@@ -1164,11 +1202,20 @@ class CoverArtworkCacheService {
         if (_disposed) return null;
         if (coverPath == null) {
           _resolvedRemoteCovers.remove(remoteKey);
+          final removedResolvedFuture = _resolvedRemoteCoverFutures.remove(
+            remoteKey,
+          );
+          if (removedResolvedFuture != null) {
+            unawaited(removedResolvedFuture);
+          }
+          _remoteCoverLastTouchedAt.remove(remoteKey);
           _recordRemoteCoverFailure(remoteKey);
         } else {
           _remoteCoverFailures.remove(remoteKey);
           _resolvedRemoteCovers.remove(remoteKey);
           _resolvedRemoteCovers[remoteKey] = coverPath;
+          final resolvedFuture = Future<String?>.value(coverPath);
+          _resolvedRemoteCoverFutures[remoteKey] = resolvedFuture;
           _trimResolvedRemoteCovers();
         }
 
@@ -1224,6 +1271,45 @@ class CoverArtworkCacheService {
     }
   }
 
+  Future<void> _touchResolvedRemoteCover(
+    String remoteKey,
+    String coverPath,
+  ) async {
+    if (PathMatcher.isContentUri(coverPath) ||
+        PathMatcher.isRemoteUri(coverPath)) {
+      return;
+    }
+    final now = _now();
+    final lastTouchedAt = _remoteCoverLastTouchedAt[remoteKey];
+    if (lastTouchedAt != null &&
+        now.difference(lastTouchedAt) < _remoteCoverTouchInterval) {
+      return;
+    }
+    _remoteCoverLastTouchedAt[remoteKey] = now;
+    try {
+      final file = File(coverPath);
+      if (!await file.exists() || await file.length() <= 0) {
+        _remoteCoverLastTouchedAt.remove(remoteKey);
+        return;
+      }
+      await file.setLastModified(now);
+    } catch (_) {
+      _remoteCoverLastTouchedAt.remove(remoteKey);
+    }
+  }
+
+  bool _isResolvedRemoteCoverPathPresent(String coverPath) {
+    if (PathMatcher.isContentUri(coverPath) ||
+        PathMatcher.isRemoteUri(coverPath)) {
+      return true;
+    }
+    try {
+      return File(coverPath).existsSync();
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<bool> _isUsableRemoteCoverPath(String? coverPath) async {
     final value = coverPath?.trim();
     if (value == null || value.isEmpty) return false;
@@ -1233,7 +1319,6 @@ class CoverArtworkCacheService {
     try {
       final file = File(value);
       if (!await file.exists() || await file.length() <= 0) return false;
-      await file.setLastModified(DateTime.now());
       return true;
     } catch (_) {
       return false;
@@ -1330,6 +1415,9 @@ class CoverArtworkCacheService {
       _remoteDownloadWaiters.removeFirst().complete();
     }
     _remoteCoverFutures.clear();
+    _resolvedRemoteCoverFutures.clear();
+    _resolvedRemoteCovers.clear();
+    _remoteCoverLastTouchedAt.clear();
     _remoteCoverFailures.clear();
   }
 

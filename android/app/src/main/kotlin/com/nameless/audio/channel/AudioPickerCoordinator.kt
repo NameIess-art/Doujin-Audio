@@ -17,7 +17,7 @@ internal class AudioPickerCoordinator(
     private val pickAudioSourceRequestCode = 7001
     private val pickAudioFilesRequestCode = 7002
     private val pickAudioFolderRequestCode = 7003
-    private val mainHandler = Handler(Looper.getMainLooper())
+    private val mainHandler by lazy { Handler(Looper.getMainLooper()) }
     private var pendingRequest: PendingPickAudioRequest? = null
     private var generation = 0L
     private var disposed = false
@@ -316,9 +316,11 @@ internal class AudioPickerCoordinator(
     }
 
     fun dispose() {
+        val request = pendingRequest
         disposed = true
         generation++
         pendingRequest = null
+        request?.result?.success(null)
     }
 
     private data class PendingPickAudioRequest(

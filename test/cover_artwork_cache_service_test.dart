@@ -58,6 +58,23 @@ void main() {
     );
   });
 
+  test('resolved remote cover reuses its completed future', () async {
+    final cover = await _temporaryCoverFile('remote_resolved_future');
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      remoteCoverDownloader: (_) async => cover.path,
+    );
+    addTearDown(cache.dispose);
+    const url = 'https://example.com/resolved-cover.jpg';
+
+    await cache.futureForRemoteCover(url);
+    final second = cache.futureForRemoteCover(url);
+    final third = cache.futureForRemoteCover(url);
+
+    expect(identical(second, third), isTrue);
+    expect(await second, cover.path);
+  });
+
   test('ASMR remote covers use the gateway language header', () {
     expect(
       remoteCoverRequestHeadersForUrl(
@@ -401,6 +418,36 @@ void main() {
     await cache.futureForRemoteCover(url);
 
     expect(downloads, 1);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect((await cover.lastModified()).isAfter(oldModified), isTrue);
+  });
+
+  test('remote cover recency touch is throttled for five minutes', () async {
+    final cover = await _temporaryCoverFile('remote_touch_throttle');
+    final oldModified = DateTime(2020);
+    var now = DateTime(2026, 1, 1, 12);
+    final cache = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      now: () => now,
+      remoteCoverDownloader: (_) async => cover.path,
+    );
+    addTearDown(cache.dispose);
+    const url = 'https://example.com/throttled-cover.jpg';
+
+    await cache.futureForRemoteCover(url);
+    await cover.setLastModified(oldModified);
+    await cache.futureForRemoteCover(url);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect((await cover.lastModified()).isAfter(oldModified), isTrue);
+
+    await cover.setLastModified(oldModified);
+    await cache.futureForRemoteCover(url);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(await cover.lastModified(), oldModified);
+
+    now = now.add(const Duration(minutes: 5));
+    await cache.futureForRemoteCover(url);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
     expect((await cover.lastModified()).isAfter(oldModified), isTrue);
   });
 

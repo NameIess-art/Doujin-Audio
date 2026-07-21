@@ -26,7 +26,7 @@ part 'app_database_row_codecs.dart';
 const int _sqliteInClauseBatchSize = 900;
 
 class AppDatabase {
-  AppDatabase._();
+  AppDatabase._() : _beforeOperationRegistration = null;
 
   static const int schemaVersion = 4;
   static const String fileName = 'audio_player.db';
@@ -36,9 +36,11 @@ class AppDatabase {
     Database db, {
     Future<Database> Function()? databaseOpener,
     Future<String> Function()? filePathProvider,
+    Future<void> Function()? beforeOperationRegistration,
   }) : _db = db,
        _databaseOpener = databaseOpener,
-       _databasePathProvider = filePathProvider;
+       _databasePathProvider = filePathProvider,
+       _beforeOperationRegistration = beforeOperationRegistration;
 
   static AppDatabase? _instance;
   static AppDatabase get instance => _instance ??= AppDatabase._();
@@ -51,9 +53,11 @@ class AppDatabase {
   Database? _db;
   Future<Database> Function()? _databaseOpener;
   Future<String> Function()? _databasePathProvider;
+  final Future<void> Function()? _beforeOperationRegistration;
   Future<Database>? _openFuture;
   Future<void>? _maintenanceBarrier;
   Future<void> _maintenanceTail = Future<void>.value();
+  final _DatabaseLifecycleGate _lifecycleGate = _DatabaseLifecycleGate();
   int _databaseEpoch = 0;
   int _activeOperations = 0;
   Completer<void>? _operationsDrained;
@@ -111,45 +115,76 @@ class AppDatabase {
     Future<void> Function(Database db) operation,
   ) async {
     final submittedEpoch = _databaseEpoch;
-    var db = await _database;
-    final maintenance = _maintenanceBarrier;
-    if (maintenance != null) {
-      await maintenance;
-      db = await _database;
-    }
-    if (submittedEpoch != _databaseEpoch) {
-      return;
-    }
-    _activeOperations++;
+    final lease = await _acquireDatabaseOperation(
+      submittedEpoch: submittedEpoch,
+      rejectStaleWrites: true,
+    );
+    if (lease == null) return;
     try {
-      await operation(db);
+      await operation(lease.database);
     } finally {
-      _activeOperations--;
-      if (_activeOperations == 0) {
-        _operationsDrained?.complete();
-        _operationsDrained = null;
-      }
+      lease.release();
     }
   }
 
   Future<T> _runDatabaseRead<T>(
     Future<T> Function(Database db) operation,
   ) async {
-    var db = await _database;
-    final maintenance = _maintenanceBarrier;
-    if (maintenance != null) {
-      await maintenance;
-      db = await _database;
-    }
-    _activeOperations++;
-    try {
-      return await operation(db);
-    } finally {
-      _activeOperations--;
-      if (_activeOperations == 0) {
-        _operationsDrained?.complete();
-        _operationsDrained = null;
+    while (true) {
+      final lease = await _acquireDatabaseOperation();
+      if (lease == null) continue;
+      try {
+        return await operation(lease.database);
+      } finally {
+        lease.release();
       }
+    }
+  }
+
+  Future<_DatabaseOperationLease?> _acquireDatabaseOperation({
+    int? submittedEpoch,
+    bool rejectStaleWrites = false,
+  }) async {
+    while (true) {
+      Future<void>? barrierToWait;
+      final lease = await _lifecycleGate.run<_DatabaseOperationLease?>(
+        () async {
+          final barrier = _maintenanceBarrier;
+          if (barrier != null) {
+            barrierToWait = barrier;
+            return null;
+          }
+
+          final db = await _openIgnoringMaintenance();
+          await _beforeOperationRegistration?.call();
+          final barrierAfterOpen = _maintenanceBarrier;
+          if (barrierAfterOpen != null) {
+            barrierToWait = barrierAfterOpen;
+            return null;
+          }
+          if (rejectStaleWrites && submittedEpoch != _databaseEpoch) {
+            return null;
+          }
+
+          _activeOperations++;
+          return _DatabaseOperationLease(this, db);
+        },
+      );
+      if (lease != null) return lease;
+      if (rejectStaleWrites && submittedEpoch != _databaseEpoch) return null;
+      if (barrierToWait != null) {
+        await barrierToWait;
+      } else {
+        await Future<void>.delayed(Duration.zero);
+      }
+    }
+  }
+
+  void _releaseDatabaseOperation() {
+    _activeOperations--;
+    if (_activeOperations == 0) {
+      _operationsDrained?.complete();
+      _operationsDrained = null;
     }
   }
 
@@ -162,4 +197,34 @@ class AppDatabase {
     int oldVersion,
     int newVersion,
   ) => _onUpgrade(db, oldVersion, newVersion);
+}
+
+final class _DatabaseOperationLease {
+  _DatabaseOperationLease(this._owner, this.database);
+
+  final AppDatabase _owner;
+  final Database database;
+  bool _released = false;
+
+  void release() {
+    if (_released) return;
+    _released = true;
+    _owner._releaseDatabaseOperation();
+  }
+}
+
+final class _DatabaseLifecycleGate {
+  Future<void> _tail = Future<void>.value();
+
+  Future<T> run<T>(Future<T> Function() action) async {
+    final previous = _tail;
+    final done = Completer<void>();
+    _tail = done.future;
+    await previous;
+    try {
+      return await action();
+    } finally {
+      if (!done.isCompleted) done.complete();
+    }
+  }
 }

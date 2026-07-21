@@ -83,56 +83,58 @@ extension AppDatabaseMaintenance on AppDatabase {
     _maintenanceTail = turnDone.future;
     await previous;
 
-    final barrier = Completer<void>();
-    _maintenanceBarrier = barrier.future;
-    try {
-      final opening = _openFuture;
-      if (opening != null) {
-        await opening;
-      }
-      if (_activeOperations > 0) {
-        _operationsDrained ??= Completer<void>();
-        await _operationsDrained!.future;
-      }
-      final db = _db;
-      _db = null;
-      await db?.close();
-      final databasePath = await filePath;
+    return _lifecycleGate.run<T>(() async {
+      final barrier = Completer<void>();
+      _maintenanceBarrier = barrier.future;
       try {
-        final result = await action(databasePath);
-        final opened = await _openIgnoringMaintenance();
-        if (replacesDatabase) {
-          final valid = await _isValidAppDatabase(
-            opened,
-            expectedSchemaVersion: AppDatabase.schemaVersion,
-          );
-          if (!valid) {
-            throw StateError('Replacement database validation failed.');
-          }
-          _databaseEpoch++;
+        final opening = _openFuture;
+        if (opening != null) {
+          await opening;
         }
-        return result;
-      } catch (error, stackTrace) {
-        final opened = _db;
+        if (_activeOperations > 0) {
+          _operationsDrained ??= Completer<void>();
+          await _operationsDrained!.future;
+        }
+        final db = _db;
         _db = null;
-        await opened?.close();
-        if (recover != null) {
-          await recover(databasePath);
-          await _openIgnoringMaintenance();
-        }
-        Error.throwWithStackTrace(error, stackTrace);
-      }
-    } finally {
-      try {
-        if (_db == null) {
-          await _openIgnoringMaintenance();
+        await db?.close();
+        final databasePath = await filePath;
+        try {
+          final result = await action(databasePath);
+          final opened = await _openIgnoringMaintenance();
+          if (replacesDatabase) {
+            final valid = await _isValidAppDatabase(
+              opened,
+              expectedSchemaVersion: AppDatabase.schemaVersion,
+            );
+            if (!valid) {
+              throw StateError('Replacement database validation failed.');
+            }
+            _databaseEpoch++;
+          }
+          return result;
+        } catch (error, stackTrace) {
+          final opened = _db;
+          _db = null;
+          await opened?.close();
+          if (recover != null) {
+            await recover(databasePath);
+            await _openIgnoringMaintenance();
+          }
+          Error.throwWithStackTrace(error, stackTrace);
         }
       } finally {
-        _maintenanceBarrier = null;
-        barrier.complete();
-        turnDone.complete();
+        try {
+          if (_db == null) {
+            await _openIgnoringMaintenance();
+          }
+        } finally {
+          _maintenanceBarrier = null;
+          barrier.complete();
+          turnDone.complete();
+        }
       }
-    }
+    });
   }
 }
 

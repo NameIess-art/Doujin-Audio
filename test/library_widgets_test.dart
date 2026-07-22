@@ -175,6 +175,97 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
+  testWidgets('library keeps partial scan results behind skeleton cards', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    var trackCoverLookups = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(fileCacheChannel, (call) async {
+          if (call.method == FileCacheMethod.resolveTrackCover) {
+            trackCoverLookups++;
+          }
+          return <String, Object?>{'ok': true, 'value': null};
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(fileCacheChannel, null),
+    );
+    runtimeGraph.library.addWatchedFolder('/library', notify: false);
+    runtimeGraph.library.addTracks(
+      [
+        testMusicTrack(
+          name: 'Partially loaded work',
+          path: '/library/work/track.mp3',
+          groupKey: '/library/work/track.mp3',
+          groupTitle: 'Partially loaded work',
+          isSingle: true,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    final scanGeneration = runtimeGraph.library.tryBeginScan(source: 'Music');
+    runtimeGraph.library.setScanProgress(
+      generation: scanGeneration,
+      stage: FolderScanStage.enumerating,
+      processed: 1,
+      total: 10,
+      foundCount: 1,
+    );
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+
+    expect(find.byType(LibraryLikeSkeletonCard), findsNWidgets(5));
+    expect(
+      find.text('Partially loaded work', findRichText: true),
+      findsNothing,
+    );
+    expect(trackCoverLookups, 0);
+
+    runtimeGraph.library.finishScan(scanGeneration);
+    await tester.pump();
+
+    expect(find.byType(LibraryLikeSkeletonCard), findsNWidgets(5));
+    expect(
+      find.text('Partially loaded work', findRichText: true),
+      findsNothing,
+    );
+    expect(runtimeGraph.library.categorySnapshot, isNull);
+
+    await pumpUntilFound(
+      tester,
+      find.text('Partially loaded work', findRichText: true),
+    );
+
+    expect(runtimeGraph.library.categorySnapshot, isNotNull);
+    await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+    expect(find.byType(LibraryLikeSkeletonCard), findsNothing);
+
+    final refreshGeneration = runtimeGraph.library.tryBeginScan(
+      source: 'Pull to refresh',
+    );
+    runtimeGraph.library.setScanProgress(
+      generation: refreshGeneration,
+      stage: FolderScanStage.enumerating,
+      processed: 1,
+      total: 10,
+      foundCount: 1,
+    );
+    await tester.pump();
+
+    expect(find.byType(LibraryLikeSkeletonCard), findsNothing);
+    expect(
+      find.text('Partially loaded work', findRichText: true),
+      findsOneWidget,
+    );
+    runtimeGraph.library.finishScan(refreshGeneration);
+  });
+
   testWidgets('library cover lookups wait until scrolling becomes idle', (
     WidgetTester tester,
   ) async {
@@ -230,7 +321,7 @@ void main() {
     expect(trackCoverLookups, 0);
 
     UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
-    for (var i = 0; i < 20 && trackCoverLookups == 0; i++) {
+    for (var i = 0; i < 200 && trackCoverLookups == 0; i++) {
       await tester.pump(const Duration(milliseconds: 20));
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 5)),

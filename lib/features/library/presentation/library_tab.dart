@@ -127,6 +127,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Timer? _startupRefreshIdleTimer;
   bool _startupRefreshWaiting = false;
   bool _startupLibraryRefreshCompleted = false;
+  bool _initialLibraryContentReady = false;
   FilteredLibraryTreeResult? _visibleSearchResult;
   String _visibleSearchQuery = '';
   int? _visibleSearchRevision;
@@ -683,13 +684,23 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     // scroll/swipe performance.
     const listCacheExtent = 320.0;
     final hasLibrary = listStateHasLibrary || libraryHeaderAudioCount > 0;
+    final categorySnapshot = libraryFacade.categorySnapshot;
+    final libraryCardDetailsReady =
+        categorySnapshot != null &&
+        categorySnapshot.structureRevision == listStateStructureRevision &&
+        categorySnapshot.detailRevision == detailRevision;
+    if (!_initialLibraryContentReady &&
+        _startupLibraryRefreshCompleted &&
+        libraryCardDetailsReady) {
+      _initialLibraryContentReady = true;
+    }
     final showLibrarySkeleton =
-        !hasLibrary &&
         _effectiveSearchQuery.isEmpty &&
-        libraryRefreshBusy &&
-        libraryHeaderHasWatchedSources;
+        (libraryHeaderHasWatchedSources || hasLibrary) &&
+        !_initialLibraryContentReady;
     if (_categoryType == AudioLibraryCategoryType.all &&
         _effectiveSearchQuery.isEmpty &&
+        !showLibrarySkeleton &&
         listStateIsInitialized) {
       _scheduleLibraryCoverWarmup(
         libraryFacade: libraryFacade,

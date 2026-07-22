@@ -98,7 +98,6 @@ Future<ProcessResult> _runVerifier({
   await baselineFile.writeAsString(jsonEncode(baseline));
   await lcovFile.writeAsString(lcov);
   return Process.run(Platform.isWindows ? 'dart.bat' : 'dart', <String>[
-    'run',
     verifierPath,
     lcovFile.path,
     baselineFile.path,

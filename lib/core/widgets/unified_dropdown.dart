@@ -52,6 +52,11 @@ class UnifiedDropdownButton<T> extends StatelessWidget {
       child: DropdownButton<T>(
         value: value,
         items: _alignItems(items, alignment, multilineItems),
+        selectedItemBuilder: multilineItems
+            ? (context) => items
+                  .map((item) => Align(alignment: alignment, child: item.child))
+                  .toList(growable: false)
+            : null,
         onChanged: onChanged,
         isExpanded: isExpanded,
         isDense: isDense,

@@ -119,6 +119,11 @@ void main() {
             TopPageHeader(
               title: 'Library',
               subtitle: '198 audio',
+              trailing: IconButton(
+                key: const ValueKey('top_page_header_trailing'),
+                onPressed: () {},
+                icon: const Icon(Icons.more_horiz),
+              ),
               collapseController: controller,
               collapseDistance: 56,
               floatingReveal: true,
@@ -140,6 +145,15 @@ void main() {
     controller.jumpTo(120);
     await tester.pump();
     final collapsedHeight = tester.getSize(find.byType(TopPageHeader)).height;
+    final collapsedTrailing = find.byKey(
+      const ValueKey('top_page_header_trailing'),
+    );
+    final collapsedOpacity = tester.widget<Opacity>(
+      find
+          .ancestor(of: collapsedTrailing, matching: find.byType(Opacity))
+          .first,
+    );
+    expect(collapsedOpacity.opacity, 0);
 
     controller.jumpTo(104);
     await tester.pump();
@@ -150,6 +164,12 @@ void main() {
     controller.jumpTo(40);
     await tester.pump();
     final revealedHeight = tester.getSize(find.byType(TopPageHeader)).height;
+    final revealedOpacity = tester.widget<Opacity>(
+      find
+          .ancestor(of: collapsedTrailing, matching: find.byType(Opacity))
+          .first,
+    );
+    expect(revealedOpacity.opacity, greaterThan(0));
 
     expect(additionalChildBuilds, 1);
 

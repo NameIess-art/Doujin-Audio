@@ -181,27 +181,34 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
     final resolvedTitle = widget.title;
 
     Widget buildHeaderContent(double collapseT) {
+      final titleCollapseT = Curves.easeOutCubic.transform(collapseT);
+      final auxiliaryCollapseT = Curves.easeInOutCubic.transform(collapseT);
       final expandedTitleStyle = Theme.of(context).textTheme.headlineMedium
           ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0);
       final collapsedTitleStyle = Theme.of(context).textTheme.titleMedium
           ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0);
       final titleStyle =
-          TextStyle.lerp(expandedTitleStyle, collapsedTitleStyle, collapseT) ??
+          TextStyle.lerp(
+            expandedTitleStyle,
+            collapsedTitleStyle,
+            titleCollapseT,
+          ) ??
           expandedTitleStyle;
       final titleHeight =
           (titleStyle?.fontSize ?? 28) * (titleStyle?.height ?? 1.2);
       final resolvedPadding = EdgeInsetsGeometry.lerp(
         widget.padding,
         widget.collapsedPadding,
-        collapseT,
+        titleCollapseT,
       )!;
       final resolvedBottomSpacing = dart_ui.lerpDouble(
         widget.bottomSpacing,
         widget.collapsedBottomSpacing,
-        collapseT,
+        titleCollapseT,
       )!;
-      final subtitleFactor = 1 - collapseT;
-      final trailingFactor = 1 - collapseT;
+      final subtitleFactor = 1 - auxiliaryCollapseT;
+      final trailingFactor = 1 - auxiliaryCollapseT;
+      final trailingOffset = (1 - trailingFactor) * 6;
       final prefersExpandedText =
           MediaQuery.textScalerOf(context).scale(1) > 1.3;
 
@@ -252,11 +259,14 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                       alignment: Alignment.centerRight,
                       child: Opacity(
                         opacity: trailingFactor,
-                        child: IgnorePointer(
-                          ignoring: trailingFactor < 0.05,
-                          child: ExcludeSemantics(
-                            excluding: trailingFactor < 0.05,
-                            child: widget.trailing!,
+                        child: Transform.translate(
+                          offset: Offset(trailingOffset, 0),
+                          child: IgnorePointer(
+                            ignoring: trailingFactor < 0.05,
+                            child: ExcludeSemantics(
+                              excluding: trailingFactor < 0.05,
+                              child: widget.trailing!,
+                            ),
                           ),
                         ),
                       ),

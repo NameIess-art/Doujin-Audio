@@ -32,6 +32,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: height),
           child: Container(
+            key: ValueKey('session_detail_cover_$sessionId'),
             width: displayWidth,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(16),

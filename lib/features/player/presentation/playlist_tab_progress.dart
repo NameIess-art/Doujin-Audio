@@ -872,19 +872,23 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
     final detail = ref.watch(sessionDetailTransportProvider(widget.session.id));
     final playbackError = detail?.playbackError ?? widget.session.playbackError;
     final isLoading = detail?.isLoading ?? widget.session.isPlaybackLoading;
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final transitionDuration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : AppDesignTokens.of(context).motionStandard;
 
+    late final Widget content;
     if (isLoading) {
-      return Container(
+      content = Container(
+        key: const ValueKey('subtitle_loading'),
         width: double.infinity,
         height: 44,
         padding: EdgeInsets.zero,
         alignment: Alignment.topLeft,
         child: ClipRect(
           child: Text(
-            ProviderScope.containerOf(
-              context,
-              listen: false,
-            ).read(appLanguageProviderInstanceProvider).tr('playback_loading'),
+            i18n.tr('playback_loading'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -896,12 +900,9 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
           ),
         ),
       );
-    }
-
-    if (playbackError != null) {
-      ref.watch(appLanguageStateProvider);
-      final i18n = ref.read(appLanguageProviderInstanceProvider);
-      return Container(
+    } else if (playbackError != null) {
+      content = Container(
+        key: const ValueKey('subtitle_error'),
         width: double.infinity,
         height: 44,
         padding: EdgeInsets.zero,
@@ -920,49 +921,56 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
           ),
         ),
       );
-    }
-
-    final subtitleStyle = ref.watch(
-      settingsStateProvider.select(
-        (state) =>
-            state.value?.playbackDetailSubtitleStyle ??
-            PlaybackDetailSubtitleStyle.compact,
-      ),
-    );
-    final subtitleTrack = _subtitleTrack;
-    final playbackSubtitleIndex = _playbackSubtitleIndex;
-    if (subtitleStyle == PlaybackDetailSubtitleStyle.timeline &&
-        subtitleTrack != null &&
-        subtitleTrack.cues.isNotEmpty &&
-        playbackSubtitleIndex != null) {
-      return _TimelineSubtitleView(
-        key: ValueKey<Object>((widget.session.id, subtitleTrack)),
-        cues: subtitleTrack.cues,
-        playbackSubtitleIndex: playbackSubtitleIndex,
-        onSeek: (position) => ref
-            .read(playbackFacadeProvider)
-            .seekSession(widget.session.id, position),
+    } else {
+      final subtitleStyle = ref.watch(
+        settingsStateProvider.select(
+          (state) =>
+              state.value?.playbackDetailSubtitleStyle ??
+              PlaybackDetailSubtitleStyle.compact,
+        ),
       );
+      final subtitleTrack = _subtitleTrack;
+      final playbackSubtitleIndex = _playbackSubtitleIndex;
+      if (subtitleStyle == PlaybackDetailSubtitleStyle.timeline &&
+          subtitleTrack != null &&
+          subtitleTrack.cues.isNotEmpty &&
+          playbackSubtitleIndex != null) {
+        content = _TimelineSubtitleView(
+          key: ValueKey<Object>((widget.session.id, subtitleTrack)),
+          cues: subtitleTrack.cues,
+          playbackSubtitleIndex: playbackSubtitleIndex,
+          onSeek: (position) => ref
+              .read(playbackFacadeProvider)
+              .seekSession(widget.session.id, position),
+        );
+      } else {
+        final subtitleText = _subtitleText;
+        content = subtitleText == null
+            ? const SizedBox.shrink(key: ValueKey('subtitle_empty'))
+            : _SubtitleChip(key: ValueKey(subtitleText), text: subtitleText);
+      }
     }
 
-    final subtitleText = _subtitleText;
     return AnimatedSize(
-      duration: const Duration(milliseconds: 120),
+      duration: transitionDuration,
       curve: Curves.easeOutCubic,
       alignment: Alignment.topCenter,
       child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 120),
+        duration: transitionDuration,
         switchInCurve: Curves.easeOutCubic,
         switchOutCurve: Curves.easeInCubic,
+        transitionBuilder: (child, animation) => FadeTransition(
+          key: ValueKey<Object>(('subtitle_fade', child.key)),
+          opacity: animation,
+          child: child,
+        ),
         layoutBuilder: (currentChild, previousChildren) {
           return Stack(
             alignment: Alignment.topCenter,
             children: [...previousChildren, ?currentChild],
           );
         },
-        child: subtitleText == null
-            ? const SizedBox.shrink(key: ValueKey('subtitle_empty'))
-            : _SubtitleChip(key: ValueKey(subtitleText), text: subtitleText),
+        child: content,
       ),
     );
   }

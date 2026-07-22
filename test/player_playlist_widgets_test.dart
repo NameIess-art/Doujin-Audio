@@ -1232,6 +1232,86 @@ void main() {
     expect(text.maxLines, 2);
   });
 
+  testWidgets('detail loading subtitle fades while the cover resizes', (
+    tester,
+  ) async {
+    const subtitleTrack = SubtitleTrack(
+      sourcePath: '/library/subtitles/empty.srt',
+      cues: <SubtitleCue>[],
+    );
+    final result = await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.compact,
+      subtitleTrack: subtitleTrack,
+      initialPosition: Duration.zero,
+    );
+    final loadingText = result.fixture.languageProvider.tr('playback_loading');
+    final cover = find.byKey(
+      const ValueKey('session_detail_cover_subtitle-session'),
+    );
+    final initialCoverHeight = tester.getSize(cover).height;
+
+    result.session.isLoading = true;
+    result.fixture.playbackService.markActiveSessionsDirty();
+    result.fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[result.session],
+      playingSessionCount: 0,
+      focusedSessionId: result.session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await pumpUntilFound(tester, find.text(loadingText));
+    await tester.pump(const Duration(milliseconds: 110));
+
+    final fadeIn = tester.widget<FadeTransition>(
+      find.byKey(
+        const ValueKey<Object>((
+          'subtitle_fade',
+          ValueKey<String>('subtitle_loading'),
+        )),
+      ),
+    );
+    expect(fadeIn.opacity.value, greaterThan(0));
+    expect(fadeIn.opacity.value, lessThan(1));
+    final midCoverHeight = tester.getSize(cover).height;
+
+    await tester.pump(const Duration(milliseconds: 220));
+    final loadingCoverHeight = tester.getSize(cover).height;
+    expect(initialCoverHeight, greaterThan(midCoverHeight));
+    expect(midCoverHeight, greaterThan(loadingCoverHeight));
+
+    result.session.isLoading = false;
+    result.fixture.playbackService.markActiveSessionsDirty();
+    result.fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[result.session],
+      playingSessionCount: 0,
+      focusedSessionId: result.session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await pumpUntilFound(tester, find.byKey(const ValueKey('subtitle_empty')));
+    await tester.pump(const Duration(milliseconds: 110));
+
+    expect(find.text(loadingText), findsOneWidget);
+    final fadeOut = tester.widget<FadeTransition>(
+      find.byKey(
+        const ValueKey<Object>((
+          'subtitle_fade',
+          ValueKey<String>('subtitle_loading'),
+        )),
+      ),
+    );
+    expect(fadeOut.opacity.value, greaterThan(0));
+    expect(fadeOut.opacity.value, lessThan(1));
+
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(find.text(loadingText), findsNothing);
+    await tester.pump(const Duration(milliseconds: 250));
+    expect(tester.getSize(cover).height, greaterThan(loadingCoverHeight));
+  });
+
   testWidgets('timeline subtitles scroll, return, and seek while paused', (
     tester,
   ) async {
@@ -1340,7 +1420,7 @@ void main() {
       find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
       findsNothing,
     );
-    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(PlaybackSession.seekLoadingIndicatorThreshold);
   });
 
   testWidgets('timeline subtitles expand beyond two lines without clipping', (

@@ -1021,18 +1021,27 @@ class _TimelineSubtitleView extends StatefulWidget {
 }
 
 class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
-  static const double _itemExtent = 48;
-  static const double _viewportHeight = _itemExtent * 2;
+  static const double _minimumItemExtent = 48;
+  static const double _minimumViewportHeight = _minimumItemExtent * 2;
+  static const double _textHorizontalPadding = 20;
+  static const double _textVerticalPadding = 6;
   static const Duration _returnDelay = Duration(seconds: 3);
   static const Duration _scrollDuration = Duration(milliseconds: 180);
   static const Duration _focusHapticInterval = Duration(milliseconds: 110);
 
   late final ScrollController _scrollController;
   late int _focusedIndex;
+  List<double> _itemExtents = const <double>[];
+  List<double> _itemCenters = const <double>[];
+  double _viewportHeight = _minimumViewportHeight;
+  double _leadingPadding = _minimumItemExtent / 2;
+  double _trailingPadding = _minimumItemExtent / 2;
+  (Object, double, TextScaler, TextDirection, TextStyle)? _layoutSignature;
   Timer? _returnTimer;
   bool _isBrowsing = false;
   bool _isSnapping = false;
   bool _isProgrammaticScroll = false;
+  bool _layoutAlignmentScheduled = false;
 
   int get _lastIndex => widget.cues.length - 1;
 
@@ -1040,9 +1049,8 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   void initState() {
     super.initState();
     _focusedIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
-    _scrollController = ScrollController(
-      initialScrollOffset: _focusedIndex * _itemExtent,
-    )..addListener(_handleScrollOffsetChanged);
+    _scrollController = ScrollController()
+      ..addListener(_handleScrollOffsetChanged);
   }
 
   @override
@@ -1075,11 +1083,9 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   }
 
   void _handleScrollOffsetChanged() {
-    if (!_scrollController.hasClients) return;
-    final nextIndex = (_scrollController.offset / _itemExtent).round().clamp(
-      0,
-      _lastIndex,
-    );
+    if (!_scrollController.hasClients || _itemCenters.isEmpty) return;
+    final viewportCenter = _scrollController.offset + (_viewportHeight / 2);
+    final nextIndex = _nearestItemIndex(viewportCenter);
     if (nextIndex == _focusedIndex || !mounted) return;
     setState(() => _focusedIndex = nextIndex);
     // Give each subtitle paragraph a light, rate-limited detent while the
@@ -1142,13 +1148,16 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
 
   Future<void> _scrollToIndex(int index) async {
     final targetIndex = index.clamp(0, _lastIndex);
-    if (!_scrollController.hasClients) {
+    if (!_scrollController.hasClients || _itemCenters.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_scrollToIndex(targetIndex));
       });
       return;
     }
-    final targetOffset = targetIndex * _itemExtent;
+    final position = _scrollController.position;
+    final targetOffset = (_itemCenters[targetIndex] - (_viewportHeight / 2))
+        .clamp(position.minScrollExtent, position.maxScrollExtent)
+        .toDouble();
     if ((_scrollController.offset - targetOffset).abs() < 0.5) return;
     if (MediaQuery.disableAnimationsOf(context)) {
       _isProgrammaticScroll = true;
@@ -1179,118 +1188,225 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     unawaited(widget.onSeek(widget.cues[_focusedIndex].start));
   }
 
+  int _nearestItemIndex(double viewportCenter) {
+    var low = 0;
+    var high = _itemCenters.length;
+    while (low < high) {
+      final mid = low + ((high - low) >> 1);
+      if (_itemCenters[mid] < viewportCenter) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+    if (low == 0) return 0;
+    if (low == _itemCenters.length) return _itemCenters.length - 1;
+    final previous = low - 1;
+    return viewportCenter - _itemCenters[previous] <=
+            _itemCenters[low] - viewportCenter
+        ? previous
+        : low;
+  }
+
+  void _updateLayoutMetrics(List<double> itemExtents) {
+    final viewportHeight = max(_minimumViewportHeight, itemExtents.reduce(max));
+    final leadingPadding = max(0.0, (viewportHeight - itemExtents.first) / 2);
+    final trailingPadding = max(0.0, (viewportHeight - itemExtents.last) / 2);
+    var offset = leadingPadding;
+    final itemCenters = <double>[];
+    for (final extent in itemExtents) {
+      itemCenters.add(offset + (extent / 2));
+      offset += extent;
+    }
+    _itemExtents = itemExtents;
+    _itemCenters = itemCenters;
+    _viewportHeight = viewportHeight;
+    _leadingPadding = leadingPadding;
+    _trailingPadding = trailingPadding;
+    _scheduleLayoutAlignment();
+  }
+
+  void _scheduleLayoutAlignment() {
+    if (_layoutAlignmentScheduled) return;
+    _layoutAlignmentScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _layoutAlignmentScheduled = false;
+      if (!mounted || _isBrowsing || !_scrollController.hasClients) return;
+      final position = _scrollController.position;
+      final targetOffset = (_itemCenters[_focusedIndex] - (_viewportHeight / 2))
+          .clamp(position.minScrollExtent, position.maxScrollExtent)
+          .toDouble();
+      if ((_scrollController.offset - targetOffset).abs() < 0.5) return;
+      _isProgrammaticScroll = true;
+      try {
+        _scrollController.jumpTo(targetOffset);
+      } finally {
+        _isProgrammaticScroll = false;
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final baseTextStyle =
+        Theme.of(context).textTheme.bodyMedium ?? const TextStyle();
+    final focusedTextStyle = baseTextStyle.copyWith(
+      color: _sessionDetailForeground(
+        cs,
+        _SessionDetailForegroundLevel.medium,
+        darkFallback: cs.onSurface.withValues(alpha: 0.85),
+      ),
+      fontWeight: FontWeight.w600,
+      fontSize: 16,
+      height: 1.3,
+    );
+    final unfocusedTextStyle = focusedTextStyle.copyWith(
+      color: _sessionDetailForeground(
+        cs,
+        _SessionDetailForegroundLevel.muted,
+        darkFallback: cs.onSurface.withValues(alpha: 0.72),
+      ),
+      fontWeight: FontWeight.w500,
+      fontSize: 14,
+    );
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    return SizedBox(
-      key: const ValueKey('subtitle_timeline_viewport'),
-      width: double.infinity,
-      height: _viewportHeight,
-      child: ClipRect(
-        child: NotificationListener<ScrollNotification>(
-          onNotification: _handleScrollNotification,
-          child: ListView.builder(
-            key: const ValueKey('subtitle_timeline_list'),
-            controller: _scrollController,
-            padding: const EdgeInsets.symmetric(
-              vertical: (_viewportHeight - _itemExtent) / 2,
-            ),
-            itemExtent: _itemExtent,
-            itemCount: widget.cues.length,
-            itemBuilder: (context, index) {
-              final cue = widget.cues[index];
-              final isFocused = index == _focusedIndex;
-              final isPlaybackSubtitle = index == widget.playbackSubtitleIndex;
-              return Semantics(
-                selected: isFocused,
-                child: Opacity(
-                  opacity: isFocused ? 1 : 0.45,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    curve: Curves.easeOutCubic,
-                    decoration: BoxDecoration(
-                      color: isFocused
-                          ? cs.primary.withValues(alpha: 0.08)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Stack(
-                      key: ValueKey('subtitle_timeline_cue_$index'),
-                      fit: StackFit.expand,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 42),
-                          child: Center(
-                            child: AnimatedScale(
-                              scale: isFocused ? 1.03 : 1,
-                              duration: const Duration(milliseconds: 120),
-                              curve: Curves.easeOutCubic,
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: Text(
-                                  cue.text,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  textAlign: TextAlign.center,
-                                  style: Theme.of(context).textTheme.bodyMedium
-                                      ?.copyWith(
-                                        color: _sessionDetailForeground(
-                                          cs,
-                                          isFocused
-                                              ? _SessionDetailForegroundLevel
-                                                    .medium
-                                              : _SessionDetailForegroundLevel
-                                                    .muted,
-                                          darkFallback: cs.onSurface.withValues(
-                                            alpha: isFocused ? 0.85 : 0.72,
-                                          ),
-                                        ),
-                                        fontWeight: isFocused
-                                            ? FontWeight.w600
-                                            : FontWeight.w500,
-                                        fontSize: 16,
-                                        height: 1.3,
-                                      ),
-                                ),
-                              ),
-                            ),
-                          ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textWidth = max(
+          0.0,
+          constraints.maxWidth - (_textHorizontalPadding * 2),
+        );
+        final textScaler = MediaQuery.textScalerOf(context);
+        final textDirection = Directionality.of(context);
+        final layoutSignature = (
+          widget.cues,
+          textWidth,
+          textScaler,
+          textDirection,
+          focusedTextStyle,
+        );
+        if (_layoutSignature != layoutSignature) {
+          _layoutSignature = layoutSignature;
+          final itemExtents = widget.cues
+              .map((cue) {
+                final painter = TextPainter(
+                  text: TextSpan(text: cue.text, style: focusedTextStyle),
+                  textAlign: TextAlign.center,
+                  textDirection: textDirection,
+                  textScaler: textScaler,
+                )..layout(maxWidth: textWidth);
+                return max(
+                  _minimumItemExtent,
+                  (painter.height * 1.03) + (_textVerticalPadding * 2),
+                );
+              })
+              .toList(growable: false);
+          _updateLayoutMetrics(itemExtents);
+        }
+        return SizedBox(
+          key: const ValueKey('subtitle_timeline_viewport'),
+          width: double.infinity,
+          height: _viewportHeight,
+          child: ClipRect(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: _handleScrollNotification,
+              child: ListView.builder(
+                key: const ValueKey('subtitle_timeline_list'),
+                controller: _scrollController,
+                padding: EdgeInsets.only(
+                  top: _leadingPadding,
+                  bottom: _trailingPadding,
+                ),
+                itemExtentBuilder: (index, _) => _itemExtents[index],
+                itemCount: widget.cues.length,
+                itemBuilder: (context, index) {
+                  final cue = widget.cues[index];
+                  final isFocused = index == _focusedIndex;
+                  final isPlaybackSubtitle =
+                      index == widget.playbackSubtitleIndex;
+                  return Semantics(
+                    selected: isFocused,
+                    child: Opacity(
+                      opacity: isFocused ? 1 : 0.45,
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 120),
+                        curve: Curves.easeOutCubic,
+                        decoration: BoxDecoration(
+                          color: isFocused
+                              ? cs.primary.withValues(alpha: 0.08)
+                              : Colors.transparent,
+                          borderRadius: BorderRadius.circular(14),
                         ),
-                        if (isFocused && !isPlaybackSubtitle)
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: SizedBox(
-                              width: 48,
-                              height: 48,
-                              child: IconButton(
-                                key: const ValueKey(
-                                  'subtitle_timeline_seek_button',
-                                ),
-                                tooltip: i18n.tr('seek_to_subtitle'),
-                                onPressed: _seekToFocusedSubtitle,
-                                icon: Icon(
-                                  Icons.play_arrow_rounded,
-                                  color: _sessionDetailForeground(
-                                    cs,
-                                    _SessionDetailForegroundLevel.medium,
+                        child: Stack(
+                          key: ValueKey('subtitle_timeline_cue_$index'),
+                          fit: StackFit.expand,
+                          children: [
+                            Padding(
+                              key: ValueKey(
+                                'subtitle_timeline_text_padding_$index',
+                              ),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: _textHorizontalPadding,
+                                vertical: _textVerticalPadding,
+                              ),
+                              child: Center(
+                                child: AnimatedScale(
+                                  scale: isFocused ? 1.03 : 1,
+                                  duration: const Duration(milliseconds: 120),
+                                  curve: Curves.easeOutCubic,
+                                  child: SizedBox(
+                                    width: double.infinity,
+                                    child: Text(
+                                      cue.text,
+                                      key: ValueKey(
+                                        'subtitle_timeline_text_$index',
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      style: isFocused
+                                          ? focusedTextStyle
+                                          : unfocusedTextStyle,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                      ],
+                            if (isFocused && !isPlaybackSubtitle)
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: SizedBox(
+                                  width: 48,
+                                  height: 48,
+                                  child: IconButton(
+                                    key: const ValueKey(
+                                      'subtitle_timeline_seek_button',
+                                    ),
+                                    tooltip: i18n.tr('seek_to_subtitle'),
+                                    onPressed: _seekToFocusedSubtitle,
+                                    icon: Icon(
+                                      Icons.play_arrow_rounded,
+                                      color: _sessionDetailForeground(
+                                        cs,
+                                        _SessionDetailForegroundLevel.medium,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              );
-            },
+                  );
+                },
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

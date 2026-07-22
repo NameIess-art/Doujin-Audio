@@ -1217,9 +1217,10 @@ void main() {
     expect(opacityFor(cue0).opacity, 0.45);
     expect(opacityFor(cue1).opacity, 1);
     expect(opacityFor(cue2).opacity, 0.45);
-    final viewportRect = tester.getRect(viewport);
-    expect(tester.getRect(cue0).bottom - viewportRect.top, closeTo(24, 0.1));
-    expect(viewportRect.bottom - tester.getRect(cue2).top, closeTo(24, 0.1));
+    expect(
+      tester.getCenter(cue1).dy,
+      closeTo(tester.getCenter(viewport).dy, 0.1),
+    );
     expect(
       find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
       findsNothing,
@@ -1227,6 +1228,23 @@ void main() {
     expect(
       tester.widget<Text>(find.text(subtitleTrack.cues[1].text)).textAlign,
       TextAlign.center,
+    );
+    final focusedText = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('subtitle_timeline_text_1')),
+    );
+    final unfocusedText = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('subtitle_timeline_text_0')),
+    );
+    final textPadding = tester.widget<Padding>(
+      find.byKey(const ValueKey<String>('subtitle_timeline_text_padding_1')),
+    );
+    expect(focusedText.style?.fontSize, 16);
+    expect(unfocusedText.style?.fontSize, 14);
+    expect(focusedText.maxLines, isNull);
+    expect(focusedText.overflow, isNull);
+    expect(
+      textPadding.padding,
+      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
     );
 
     final list = find.byKey(const ValueKey<String>('subtitle_timeline_list'));
@@ -1262,6 +1280,44 @@ void main() {
       findsNothing,
     );
     await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  testWidgets('timeline subtitles expand beyond two lines without clipping', (
+    tester,
+  ) async {
+    const subtitleText = 'Line one\nLine two\nLine three\nLine four\nLine five';
+    const subtitleTrack = SubtitleTrack(
+      sourcePath: '/library/subtitles/long-track.srt',
+      cues: <SubtitleCue>[
+        SubtitleCue(
+          start: Duration.zero,
+          end: Duration(seconds: 5),
+          text: subtitleText,
+        ),
+      ],
+    );
+    await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.timeline,
+      subtitleTrack: subtitleTrack,
+      initialPosition: const Duration(seconds: 1),
+    );
+
+    final viewport = find.byKey(
+      const ValueKey<String>('subtitle_timeline_viewport'),
+    );
+    final cue = find.byKey(const ValueKey<String>('subtitle_timeline_cue_0'));
+    final text = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('subtitle_timeline_text_0')),
+    );
+
+    expect(text.maxLines, isNull);
+    expect(text.overflow, isNull);
+    expect(tester.getSize(cue).height, greaterThan(96));
+    expect(
+      tester.getSize(viewport).height,
+      greaterThanOrEqualTo(tester.getSize(cue).height),
+    );
   });
 
   testWidgets('timeline subtitle focus changes provide rate-limited haptics', (

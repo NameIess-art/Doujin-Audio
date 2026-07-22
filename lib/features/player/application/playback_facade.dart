@@ -872,6 +872,7 @@ final class PlaybackFacade {
         !identical(service.sessions[session.id], session)) {
       return;
     }
+    session.beginSeekLoadingIndicatorThreshold();
     session.setOptimisticPosition(position);
     session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
     _onSessionPositionChanged?.call(session, position);

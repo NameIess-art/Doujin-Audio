@@ -117,6 +117,30 @@ void main() {
     expect(session.state.processingState, ProcessingState.ready);
   });
 
+  test('seek buffering waits for the loading indicator threshold', () async {
+    final session = PlaybackSession(
+      id: 'session_1',
+      currentTrackPath: '/audio/one.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(true, ProcessingState.ready),
+    );
+    addTearDown(session.dispose);
+
+    session.beginSeekLoadingIndicatorThreshold(
+      threshold: const Duration(milliseconds: 20),
+    );
+    session.setOptimisticState(processingState: ProcessingState.buffering);
+
+    expect(session.isPlaybackLoading, isFalse);
+
+    await session.stateStream.first;
+
+    expect(session.isPlaybackLoading, isTrue);
+  });
+
   test('transport intent is immediate and stale snapshots are ignored', () {
     final session = PlaybackSession(
       id: 'session_1',

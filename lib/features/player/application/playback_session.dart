@@ -9,6 +9,8 @@ import '../domain/playback_queue.dart';
 import 'native_playback_bridge.dart';
 
 class PlaybackSession {
+  static const seekLoadingIndicatorThreshold = Duration(milliseconds: 600);
+
   PlaybackSession({
     required this.id,
     required this.currentTrackPath,
@@ -33,6 +35,8 @@ class PlaybackSession {
       StreamController<Duration?>.broadcast();
   final StreamController<Duration> _bufferedPositionController =
       StreamController<Duration>.broadcast();
+  Timer? _seekLoadingIndicatorTimer;
+  bool _suppressTransientSeekLoading = false;
   List<MusicTrack>? customQueueTracks;
   PlaybackQueueDefinition? playbackQueue;
   int currentQueueIndex;
@@ -83,8 +87,9 @@ class PlaybackSession {
     final processingState = state.processingState;
     return isLoading ||
         isPlaybackStarting ||
-        processingState == ProcessingState.loading ||
-        processingState == ProcessingState.buffering;
+        (!_suppressTransientSeekLoading &&
+            (processingState == ProcessingState.loading ||
+                processingState == ProcessingState.buffering));
   }
 
   bool get hasPendingAudioEffectsSync => pendingNativeAudioEffects != null;
@@ -219,6 +224,20 @@ class PlaybackSession {
     _positionController.add(position);
   }
 
+  void beginSeekLoadingIndicatorThreshold({
+    Duration threshold = seekLoadingIndicatorThreshold,
+  }) {
+    if (isDisposed) return;
+    _seekLoadingIndicatorTimer?.cancel();
+    _suppressTransientSeekLoading = true;
+    _seekLoadingIndicatorTimer = Timer(threshold, () {
+      _seekLoadingIndicatorTimer = null;
+      if (isDisposed) return;
+      _suppressTransientSeekLoading = false;
+      _stateController.add(state);
+    });
+  }
+
   void setOptimisticDuration(Duration? nextDuration) {
     if (isDisposed) return;
     if (duration == nextDuration) return;
@@ -239,6 +258,8 @@ class PlaybackSession {
   void dispose() {
     if (isDisposed) return;
     isDisposed = true;
+    _seekLoadingIndicatorTimer?.cancel();
+    _seekLoadingIndicatorTimer = null;
     for (final subscription in subscriptions) {
       subscription.cancel();
     }

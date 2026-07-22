@@ -72,6 +72,13 @@ android {
         versionName = flutter.versionName
     }
 
+    lint {
+        abortOnError = true
+        // local.properties contains machine-local Windows paths and is not a
+        // shipped resource; Windows path escaping varies by Flutter tooling.
+        disable += "PropertyEscape"
+    }
+
     signingConfigs {
         if (releaseSigningConfigured) {
             create("release") {

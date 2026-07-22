@@ -39,6 +39,7 @@ import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/marquee_text.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import 'playback_position_ui_gate.dart';
+import 'playback_error_text.dart';
 import '../../../core/widgets/reorder_auto_scroller.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/shimmer_loading.dart';

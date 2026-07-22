@@ -861,15 +861,15 @@ class _QueueSourceAudioTile extends ConsumerWidget {
       track: track,
       title: track.displayName,
       subtitle: track.groupTitle,
-      trailing: Column(
+      trailingWidth: track.isSingle ? 48 : 96,
+      trailing: Row(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           IconButton(
             tooltip: i18n.tr('add_audio_to_queue'),
-            constraints: const BoxConstraints.tightFor(width: 40, height: 28),
+            constraints: const BoxConstraints.tightFor(width: 48, height: 48),
             padding: EdgeInsets.zero,
-            visualDensity: VisualDensity.compact,
             icon: const Icon(Icons.add_circle_outline_rounded, size: 22),
             onPressed: () =>
                 playback.addTrackToPlaybackQueue(queueSessionId, track),
@@ -877,9 +877,8 @@ class _QueueSourceAudioTile extends ConsumerWidget {
           if (!track.isSingle)
             IconButton(
               tooltip: i18n.tr('add_work_to_queue'),
-              constraints: const BoxConstraints.tightFor(width: 40, height: 28),
+              constraints: const BoxConstraints.tightFor(width: 48, height: 48),
               padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.library_add_rounded, size: 22),
               onPressed: () => queueCoordinator.addWork(queueSessionId, track),
             ),
@@ -895,12 +894,14 @@ class _QueueAudioEditCard extends ConsumerWidget {
     required this.title,
     required this.subtitle,
     required this.trailing,
+    this.trailingWidth = 44,
   });
 
   final MusicTrack? track;
   final String title;
   final String subtitle;
   final Widget trailing;
+  final double trailingWidth;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -983,7 +984,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              SizedBox(width: 44, child: trailing),
+              SizedBox(width: trailingWidth, child: trailing),
             ],
           ),
         ),

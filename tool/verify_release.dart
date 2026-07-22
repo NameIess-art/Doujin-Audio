@@ -80,6 +80,24 @@ void main(List<String> args) {
       );
     }
   }
+
+  for (final required in <String>[
+    'actions: read',
+    'fetch-depth: 0',
+    'git fetch origin main --no-tags',
+    'git merge-base --is-ancestor "\$GITHUB_SHA" origin/main',
+    'gh run list',
+    '--workflow flutter.yml',
+    '--branch main',
+    '--commit "\$GITHUB_SHA"',
+    '--event push',
+    '--status success',
+    './gradlew :app:lintDebug',
+  ]) {
+    if (!workflow.contains(required)) {
+      _fail('Release workflow is missing required quality gate: $required');
+    }
+  }
   if (workflow.contains('--latest=false')) {
     _fail('Stable release workflow must publish the release as Latest.');
   }

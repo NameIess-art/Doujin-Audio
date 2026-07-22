@@ -30,6 +30,7 @@ import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 import 'asmr_download_page.dart';
+import 'asmr_error_text.dart';
 import 'asmr_work_detail_sheet.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
 
@@ -709,7 +710,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                             )
                           : null,
                       icon: const Icon(Icons.refresh_rounded),
-                      tooltip: 'Refresh',
+                      tooltip: i18n.tr('refresh'),
                     ),
                   if (hasDownloadManager)
                     const _AsmrDownloadProgressInlineButton(),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_manager.dart';
@@ -14,22 +15,24 @@ class AsmrDownloadDetailsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final task = ref.watch(asmrDownloadTaskProvider(workId));
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
     final cs = Theme.of(context).colorScheme;
 
     if (task == null) {
-      return const Scaffold(
+      return Scaffold(
         body: Stack(
           children: [
-            Center(child: Text('Task not found')),
+            Center(child: Text(i18n.tr('asmr_download_task_not_found'))),
             Positioned(
               top: 0,
               left: 0,
               right: 0,
               child: TopPageHeader(
-                leading: BackButton(),
-                title: 'Download Details',
+                leading: const BackButton(),
+                title: i18n.tr('asmr_download_details_title'),
               ),
             ),
           ],
@@ -84,9 +87,11 @@ class AsmrDownloadDetailsPage extends ConsumerWidget {
                 ),
               ),
               if (tracks.isEmpty)
-                const SliverFillRemaining(
+                SliverFillRemaining(
                   hasScrollBody: false,
-                  child: Center(child: Text('No files selected')),
+                  child: Center(
+                    child: Text(i18n.tr('asmr_download_no_files_selected')),
+                  ),
                 )
               else
                 SliverPadding(
@@ -100,17 +105,21 @@ class AsmrDownloadDetailsPage extends ConsumerWidget {
                         node: tracks[index],
                         depth: 0,
                         task: task,
+                        i18n: i18n,
                       );
                     },
                   ),
                 ),
             ],
           ),
-          const Positioned(
+          Positioned(
             top: 0,
             left: 0,
             right: 0,
-            child: TopPageHeader(leading: BackButton(), title: ''),
+            child: TopPageHeader(
+              leading: const BackButton(),
+              title: i18n.tr('asmr_download_details_title'),
+            ),
           ),
         ],
       ),
@@ -135,11 +144,13 @@ class _AsmrDownloadDetailsNodeTile extends StatefulWidget {
     required this.node,
     required this.depth,
     required this.task,
+    required this.i18n,
   });
 
   final AsmrTrackFile node;
   final int depth;
   final AsmrDownloadTaskSnapshot task;
+  final AppLanguageProvider i18n;
 
   @override
   State<_AsmrDownloadDetailsNodeTile> createState() =>
@@ -201,6 +212,7 @@ class _AsmrDownloadDetailsNodeTileState
                       node: child,
                       depth: widget.depth + 1,
                       task: widget.task,
+                      i18n: widget.i18n,
                     ),
                 ]
               : [
@@ -211,7 +223,7 @@ class _AsmrDownloadDetailsNodeTileState
                       bottom: 8,
                     ),
                     child: Text(
-                      'Empty folder',
+                      widget.i18n.tr('asmr_download_empty_folder'),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant.withValues(alpha: 0.7),
                       ),

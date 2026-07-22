@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.testing.Test
+
 val useAliyunMavenMirrors = System.getenv("GITHUB_ACTIONS") != "true"
 
 allprojects {
@@ -28,7 +30,7 @@ subprojects {
     }
     project.layout.buildDirectory.value(newSubprojectBuildDir)
     if (!isInRepository) {
-        tasks.matching { it.name.contains("UnitTest") }.configureEach {
+        tasks.withType<Test>().configureEach {
             enabled = false
         }
     }

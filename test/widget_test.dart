@@ -543,6 +543,7 @@ void main() {
       find.text(languageProvider.tr('asmr_playback_network_failed_retry')),
       findsOneWidget,
     );
+    expect(find.text('network failed'), findsNothing);
     expect(find.byIcon(Icons.pause_rounded), findsNothing);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(find.byType(SessionFeatureBadgeStack), findsNothing);

@@ -22,6 +22,7 @@ import '../domain/audio_effects.dart';
 import '../../library/application/library_facade.dart';
 import 'playlist_tab.dart';
 import 'playback_position_ui_gate.dart';
+import 'playback_error_text.dart';
 
 part 'active_session_carousel_widgets.dart';
 

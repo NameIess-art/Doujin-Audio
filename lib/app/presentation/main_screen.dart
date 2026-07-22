@@ -501,18 +501,27 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _lastGlobalSubtitleOverlayText = null;
     }
     if (_globalSubtitleOverlayTrackPath != session.currentTrackPath) {
-      _globalSubtitleOverlayTrackPath = session.currentTrackPath;
+      final trackPath = session.currentTrackPath;
+      _globalSubtitleOverlayTrackPath = trackPath;
       _lastGlobalSubtitleOverlayText = null;
-      unawaited(
-        subtitles.load(session.currentTrackPath).then((_) {
+      unawaited(() async {
+        try {
+          await subtitles.load(trackPath);
           if (mounted &&
+              _globalSubtitleOverlayTrackPath == trackPath &&
               shouldRunGlobalSubtitleOverlay(
                 appInForeground: _appInForeground,
               )) {
             _updateGlobalSubtitleOverlay();
           }
-        }),
-      );
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'global_subtitle_load_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      }());
     }
 
     final subtitleTrack = subtitles.trackSync(session.currentTrackPath);

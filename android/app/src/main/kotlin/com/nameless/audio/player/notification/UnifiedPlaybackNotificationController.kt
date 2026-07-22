@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package com.nameless.audio.player.notification
 
 import com.nameless.audio.*
@@ -8,7 +10,9 @@ import com.nameless.audio.player.service.*
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.Notification
 import android.app.PendingIntent
+import android.Manifest
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -18,6 +22,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.media3.session.MediaStyleNotificationHelper
 
@@ -311,6 +316,29 @@ internal object UnifiedPlaybackNotificationController {
         lastNotifyTimestampsMs[notificationId] = android.os.SystemClock.elapsedRealtime()
     }
 
+    private fun postNotification(
+        context: Context,
+        manager: NotificationManagerCompat,
+        notificationId: Int,
+        notification: Notification
+    ): Boolean {
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return false
+        }
+        return try {
+            manager.notify(notificationId, notification)
+            true
+        } catch (_: SecurityException) {
+            false
+        }
+    }
+
     @Synchronized
     fun sync(
         context: Context,
@@ -438,8 +466,9 @@ internal object UnifiedPlaybackNotificationController {
         ) {
             if (item.artPath == forceArtworkPath || !isNotifyThrottled(notificationId, item)) {
                 val notification = buildSingleSessionNotification(context, item)
-                manager.notify(notificationId, notification)
-                markNotified(notificationId)
+                if (postNotification(context, manager, notificationId, notification)) {
+                    markNotified(notificationId)
+                }
             }
         }
 
@@ -513,11 +542,16 @@ internal object UnifiedPlaybackNotificationController {
                     summaryText,
                     summaryLines
                 )
-                manager.notify(
-                    summaryNotificationId,
-                    notification
-                )
-                markNotified(summaryNotificationId)
+                if (
+                    postNotification(
+                        context,
+                        manager,
+                        summaryNotificationId,
+                        notification
+                    )
+                ) {
+                    markNotified(summaryNotificationId)
+                }
             }
         }
 
@@ -530,11 +564,16 @@ internal object UnifiedPlaybackNotificationController {
                     !postedNotificationIds.contains(notificationId)
             ) {
                 if (item.artPath == forceArtworkPath || !isNotifyThrottled(notificationId, item)) {
-                    manager.notify(
-                        notificationId,
-                        buildMultiSessionChildNotification(context, item)
-                    )
-                    markNotified(notificationId)
+                    if (
+                        postNotification(
+                            context,
+                            manager,
+                            notificationId,
+                            buildMultiSessionChildNotification(context, item)
+                        )
+                    ) {
+                        markNotified(notificationId)
+                    }
                 }
             }
             nextIds.add(notificationId)

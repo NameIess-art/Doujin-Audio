@@ -13,6 +13,7 @@ import android.os.Build
 import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
+import androidx.annotation.RequiresApi
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
@@ -27,6 +28,13 @@ internal data class PlaybackTimerSyncArguments(
     val autoResumeAtMs: Long?,
     val pausedSessionIds: List<String>,
     val generation: Int
+)
+
+private data class ApplicationExitDiagnostics(
+    val reason: Int,
+    val subReason: Int?,
+    val description: String?,
+    val timestampMs: Long
 )
 
 internal fun parsePlaybackTimerSyncArguments(call: MethodCall): PlaybackTimerSyncArguments {
@@ -201,9 +209,7 @@ internal class PowerMethodHandler(
 
     private fun getBackgroundRunDiagnostics(): Map<String, Any?> {
         val lastExit = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            (activity.getSystemService(Activity.ACTIVITY_SERVICE) as? ActivityManager)
-                ?.getHistoricalProcessExitReasons(activity.packageName, 0, 1)
-                ?.firstOrNull()
+            getApplicationExitDiagnostics()
         } else {
             null
         }
@@ -213,13 +219,27 @@ internal class PowerMethodHandler(
             "vendorBackgroundSettingsAvailable" to
                 vivoBackgroundSettingsIntents().any(::canOpenSettings),
             "lastExitReason" to lastExit?.reason,
-            "lastExitSubReason" to applicationExitSubReason(lastExit),
+            "lastExitSubReason" to lastExit?.subReason,
             "lastExitDescription" to lastExit?.description,
-            "lastExitTimestampMs" to lastExit?.timestamp,
+            "lastExitTimestampMs" to lastExit?.timestampMs,
             "cleanerForceStopDetected" to isCleanerForceStop(
                 reason = lastExit?.reason,
                 description = lastExit?.description
             )
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.R)
+    private fun getApplicationExitDiagnostics(): ApplicationExitDiagnostics? {
+        val exit = (activity.getSystemService(Activity.ACTIVITY_SERVICE) as? ActivityManager)
+            ?.getHistoricalProcessExitReasons(activity.packageName, 0, 1)
+            ?.firstOrNull()
+            ?: return null
+        return ApplicationExitDiagnostics(
+            reason = exit.reason,
+            subReason = applicationExitSubReason(exit),
+            description = exit.description,
+            timestampMs = exit.timestamp
         )
     }
 

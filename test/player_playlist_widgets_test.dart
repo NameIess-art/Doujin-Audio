@@ -956,6 +956,67 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
   });
 
+  testWidgets('queue add buttons keep 48px touch targets without overflow', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    const track = MusicTrack(
+      path: '/library/work/track.mp3',
+      displayName: 'Track',
+      groupKey: '/library/work',
+      groupTitle: 'Work',
+      groupSubtitle: '/library/work',
+      isSingle: false,
+    );
+    fixture.runtimeGraph.library.addTracks(
+      const <MusicTrack>[track],
+      notify: false,
+      persist: false,
+    );
+    final sourceSession = PlaybackSession(
+      id: 'queue-source',
+      currentTrackPath: track.path,
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.single,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    final queueSession = fixture.runtimeGraph.playback.createPlaybackQueue(
+      'Queue',
+    );
+    fixture.playbackService.registerSession(sourceSession);
+    fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[sourceSession, queueSession],
+      playingSessionCount: 0,
+      focusedSessionId: sourceSession.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(
+      fixture.build(PlaybackQueueAudioEditPage(sessionId: queueSession.id)),
+    );
+    await tester.pumpAndSettle();
+
+    final addAudio = find.byTooltip(
+      fixture.languageProvider.tr('add_audio_to_queue'),
+    );
+    final addWork = find.byTooltip(
+      fixture.languageProvider.tr('add_work_to_queue'),
+    );
+    expect(tester.getSize(addAudio), const Size(48, 48));
+    expect(tester.getSize(addWork), const Size(48, 48));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('playlist resolves ASMR metadata from the session queue', (
     tester,
   ) async {

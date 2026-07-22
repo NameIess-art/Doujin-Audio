@@ -27,6 +27,7 @@ import 'cover_artwork_cache_service.dart';
 import 'dlsite_metadata_query.dart';
 import 'dlsite_metadata_service.dart';
 import 'library_snapshot_cache_service.dart';
+import 'library_startup_maintenance_coordinator.dart';
 import 'library_catalog.dart';
 import 'library_scan_models.dart';
 import 'library_organizer.dart';
@@ -45,7 +46,6 @@ final class LibraryFacade implements LibraryCatalog {
   static const _libraryNodeOrderPreferenceKey = 'library_node_order_v1';
   static const _groupOrderPreferenceKey = 'group_order_v1';
   static const _libraryExclusionsPreferenceKey = 'library_exclusions_v1';
-  Future<void>? _postStartupMaintenance;
   Future<void> _preferenceWriteTail = Future<void>.value();
   LibraryFacade({
     required this.databaseRepository,
@@ -114,6 +114,13 @@ final class LibraryFacade implements LibraryCatalog {
   final WarmupScheduler _coverWarmupScheduler = WarmupScheduler();
   final Map<String, Completer<String?>> _deferredCoverCompleters =
       <String, Completer<String?>>{};
+  late final LibraryStartupMaintenanceCoordinator
+  _startupMaintenanceCoordinator = LibraryStartupMaintenanceCoordinator(
+    waitForUiIdle: _waitForContinuousUiIdle,
+    cleanupOrphanedImports: (retainedPaths) =>
+        AppCacheService.cleanupOrphanedPersistentImports(retainedPaths),
+    ensureEntries: _ensureEntriesForLoadedTracks,
+  );
 
   LibraryState get state => service.slice.state;
   Stream<LibraryState> get states => service.slice.stream;
@@ -237,6 +244,7 @@ final class LibraryFacade implements LibraryCatalog {
     _missingDurationBackfill = null;
     _missingDurationBackfillRequestedAgain = false;
     cancelScan();
+    await _startupMaintenanceCoordinator.cancelAndWait();
     await _preferenceWriteTail;
     await detailCacheService.suspendAndWait();
   }
@@ -2621,31 +2629,10 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   void schedulePostStartupMaintenance() {
-    if (_postStartupMaintenance != null) return;
     final retainedPaths = service.library
         .map((track) => track.path)
         .toList(growable: false);
-    late final Future<void> task;
-    task = _waitForContinuousUiIdle(const Duration(seconds: 3))
-        .then((idleReached) async {
-          if (!idleReached) return;
-          await AppLogService.measureAsync(
-            'library_post_startup_maintenance',
-            () async {
-              await AppCacheService.cleanupOrphanedPersistentImports(
-                retainedPaths,
-              );
-              await _ensureEntriesForLoadedTracks();
-            },
-            details: <String, Object?>{'tracks': retainedPaths.length},
-          );
-        })
-        .whenComplete(() {
-          if (identical(_postStartupMaintenance, task)) {
-            _postStartupMaintenance = null;
-          }
-        });
-    _postStartupMaintenance = task;
+    _startupMaintenanceCoordinator.schedule(retainedPaths);
   }
 
   Future<bool> _waitForContinuousUiIdle(Duration quietWindow) async {
@@ -2662,7 +2649,8 @@ final class LibraryFacade implements LibraryCatalog {
     return false;
   }
 
-  Future<void> _ensureEntriesForLoadedTracks() async {
+  Future<void> _ensureEntriesForLoadedTracks(int epoch) async {
+    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
     final knownLibraries = <String>{
       ...service.watchedLibraries,
       ...service.watchedFolders,
@@ -2682,6 +2670,7 @@ final class LibraryFacade implements LibraryCatalog {
       entriesToPersist.addAll(service.buildLibraryEntries(libraryPath, tracks));
     }
     if (entriesToPersist.isEmpty) return;
+    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
     service.replaceLibraryEntries(entriesToPersist);
     await databaseRepository.upsertLibraryEntries(entriesToPersist);
   }
@@ -2699,6 +2688,7 @@ final class LibraryFacade implements LibraryCatalog {
   Future<void> dispose() async {
     _disposed = true;
     _maintenanceEpoch++;
+    await _startupMaintenanceCoordinator.dispose();
     await detailCacheService.suspendAndWait();
     UiInteractionCoordinator.instance.removeListener(
       _handleWarmupInteractionChanged,

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">Nameless Audio</string>
+    <string name="app_name" translatable="false">Nameless Audio</string>
     <string name="keep_alive_timer_active">Sleep timer running</string>
     <string name="keep_alive_playback_active">Playing</string>
     <string name="playback_notification_channel_name">Playback</string>

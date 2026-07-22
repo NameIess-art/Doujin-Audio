@@ -460,8 +460,12 @@ class _ActiveSessionTitleSubtitleState
     final secondaryText = widget.playbackError == null
         ? _subtitleText
         : widget.useAsmrOneErrorText
-        ? _asmrOnePlaybackErrorText(i18n, widget.playbackError)
-        : i18n.tr('playback_failed_retry');
+        ? localizedPlaybackErrorText(
+            i18n,
+            widget.playbackError,
+            useAsmrOneText: true,
+          )
+        : localizedPlaybackErrorText(i18n, widget.playbackError);
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -508,27 +512,6 @@ class _ActiveSessionTitleSubtitleState
       ],
     );
   }
-}
-
-String _asmrOnePlaybackErrorText(AppLanguageProvider i18n, String? error) {
-  final normalized = error?.toLowerCase() ?? '';
-  final isNetworkError =
-      normalized.contains('network') ||
-      normalized.contains('socket') ||
-      normalized.contains('connection') ||
-      normalized.contains('timeout') ||
-      normalized.contains('timed out') ||
-      normalized.contains('host') ||
-      normalized.contains('http') ||
-      normalized.contains('dns') ||
-      normalized.contains('tls') ||
-      normalized.contains('ssl') ||
-      normalized.contains('internet');
-  return i18n.tr(
-    isNetworkError
-        ? 'asmr_playback_network_failed_retry'
-        : 'asmr_playback_load_failed_retry',
-  );
 }
 
 class _ActiveSessionProgressStrip extends StatefulWidget {

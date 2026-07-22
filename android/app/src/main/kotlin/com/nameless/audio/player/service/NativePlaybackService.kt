@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package com.nameless.audio.player.service
 
 import com.nameless.audio.channel.*

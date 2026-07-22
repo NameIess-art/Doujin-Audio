@@ -5,6 +5,8 @@ class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appLanguageStateProvider);
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
     final manager = ref.read(asmrDownloadManagerProvider);
     final state = ref.watch(asmrDownloadStateProvider).value != null
         ? manager?.buttonViewState ??
@@ -32,7 +34,7 @@ class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
             ),
         ],
       ),
-      tooltip: 'Downloads',
+      tooltip: i18n.tr('downloads'),
       onPressed: () {
         Navigator.of(
           context,

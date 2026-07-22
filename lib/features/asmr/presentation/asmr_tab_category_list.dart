@@ -184,7 +184,12 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                             ((state.isLoadingMore || state.hasMore) ? 1 : 0),
                   itemBuilder: (context, index) {
                     if (works.isEmpty) {
-                      final errorText = state.lastError?.toString();
+                      final errorText = state.lastError == null
+                          ? null
+                          : localizedAsmrCatalogErrorText(
+                              i18n,
+                              state.lastError,
+                            );
                       return Padding(
                         padding: const EdgeInsets.only(top: 80),
                         child: AppEmptyView(

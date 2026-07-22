@@ -80,6 +80,10 @@ jobs:
         working-directory: android
         run: ./gradlew testDebugUnitTest
 
+      - name: Android lint
+        working-directory: android
+        run: ./gradlew :app:lintDebug
+
       - name: Build debug APK
         run: flutter build apk --debug
 
@@ -137,10 +141,37 @@ jobs:
       - android-device
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
       - name: Check out repository
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag source and main CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git fetch origin main --no-tags
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+          main_ci_run="$(
+            gh run list \
+              --workflow flutter.yml \
+              --branch main \
+              --commit "$GITHUB_SHA" \
+              --event push \
+              --status success \
+              --limit 20 \
+              --json databaseId \
+              --jq '.[0].databaseId // empty'
+          )"
+          if [ -z "$main_ci_run" ]; then
+            echo "No successful main-branch Flutter CI run found for $GITHUB_SHA"
+            exit 1
+          fi
+          echo "Verified successful main-branch Flutter CI run: $main_ci_run"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0

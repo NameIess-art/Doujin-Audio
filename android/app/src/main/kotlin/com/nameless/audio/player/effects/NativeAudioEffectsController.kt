@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
 package com.nameless.audio.player.effects
 
 import com.nameless.audio.player.session.*

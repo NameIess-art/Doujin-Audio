@@ -74,9 +74,14 @@ const Map<String, String> appLanguageEn = {
   'playback_state_playing': 'Playing',
   'playback_state_paused': 'Paused',
   'playback_failed_retry': 'Playback failed. Tap play to retry',
+  'playback_network_failed_retry':
+      'Network connection failed. Tap play to retry',
   'asmr_playback_load_failed_retry': 'Loading failed. Tap to retry',
   'asmr_playback_network_failed_retry':
       'Network connection failed. Tap to retry',
+  'asmr_network_failed_retry': 'Network connection failed. Pull down to retry.',
+  'asmr_authentication_failed_retry':
+      'Your session has expired. Sign in and try again.',
   'scan_cancel': 'Cancel scan',
   'scan_cancelled': 'Scan cancelled.',
   'scan_stage_preparing': 'Reading folder...',
@@ -212,6 +217,9 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_confirm': 'Confirm download',
   'asmr_download_added_to_list': 'Added to download list',
   'asmr_download_task_title': 'Download tasks',
+  'asmr_download_task_not_found': 'Download task not found',
+  'asmr_download_details_title': 'Download details',
+  'asmr_download_no_files_selected': 'No files selected',
   'asmr_download_cancel_and_clear':
       'Cancel download and clear downloaded content',
   'asmr_download_no_tasks': 'No download tasks',
@@ -233,6 +241,8 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_status_completed': 'Completed',
   'asmr_download_status_failed': 'Failed',
   'asmr_download_status_idle': 'Idle',
+  'refresh': 'Refresh',
+  'downloads': 'Downloads',
   'choose_music_folder': 'Choose music folder',
   'import_done_added': 'Added {count} new tracks.',
   'library_folder_exists': 'Duplicate folder exists.',

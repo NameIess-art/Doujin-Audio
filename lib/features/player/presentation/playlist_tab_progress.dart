@@ -899,6 +899,8 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
     }
 
     if (playbackError != null) {
+      ref.watch(appLanguageStateProvider);
+      final i18n = ref.read(appLanguageProviderInstanceProvider);
       return Container(
         width: double.infinity,
         height: 44,
@@ -906,7 +908,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
         alignment: Alignment.topLeft,
         child: ClipRect(
           child: Text(
-            playbackError,
+            localizedPlaybackErrorText(i18n, playbackError),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(

@@ -29,4 +29,26 @@ void main() {
       expect(appLanguageEn[key], isNotNull, reason: 'en:$key');
     }
   });
+
+  test(
+    'download and safe error localization keys are present in every language',
+    () {
+      const requiredKeys = <String>[
+        'asmr_download_task_not_found',
+        'asmr_download_details_title',
+        'asmr_download_no_files_selected',
+        'refresh',
+        'downloads',
+        'asmr_network_failed_retry',
+        'asmr_authentication_failed_retry',
+        'playback_network_failed_retry',
+      ];
+
+      for (final key in requiredKeys) {
+        expect(appLanguageZh[key], isNotNull, reason: 'zh:$key');
+        expect(appLanguageJa[key], isNotNull, reason: 'ja:$key');
+        expect(appLanguageEn[key], isNotNull, reason: 'en:$key');
+      }
+    },
+  );
 }

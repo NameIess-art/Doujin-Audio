@@ -871,7 +871,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
   Widget build(BuildContext context) {
     final detail = ref.watch(sessionDetailTransportProvider(widget.session.id));
     final playbackError = detail?.playbackError ?? widget.session.playbackError;
-    final isLoading = detail?.isLoading ?? widget.session.isLoading;
+    final isLoading = detail?.isLoading ?? widget.session.isPlaybackLoading;
 
     if (isLoading) {
       return Container(

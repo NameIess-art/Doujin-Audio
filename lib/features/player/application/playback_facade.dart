@@ -881,12 +881,16 @@ final class PlaybackFacade {
   Future<void> toggleSessionPlayPause(String sessionId) async {
     final session = service.sessions[sessionId];
     if (session == null || session.currentTrackPath.isEmpty) return;
-    if (session.playbackError != null || session.isLoading) {
+    if (session.playbackError != null) {
       await _prepareSession?.call(session, nextPath: session.currentTrackPath);
       return;
     }
     if (session.effectivePlaying) {
       await _pauseSession?.call(session);
+      return;
+    }
+    if (session.isLoading) {
+      await _prepareSession?.call(session, nextPath: session.currentTrackPath);
       return;
     }
     if (session.state.processingState == ProcessingState.completed ||

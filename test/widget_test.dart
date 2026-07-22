@@ -569,6 +569,29 @@ void main() {
 
     session.isLoading = false;
     session.isPlaybackStarting = false;
+    session.setOptimisticState(
+      playing: false,
+      processingState: ProcessingState.buffering,
+    );
+    playbackService.markActiveSessionsDirty();
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 0,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text(languageProvider.tr('playback_loading')), findsOneWidget);
+    expect(find.byIcon(Icons.pause_rounded), findsNothing);
+
+    session.setOptimisticState(
+      playing: true,
+      processingState: ProcessingState.ready,
+    );
     playbackService.markActiveSessionsDirty();
     playbackService.syncSlice(
       activeSessions: [session],

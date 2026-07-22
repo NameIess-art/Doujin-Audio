@@ -79,6 +79,14 @@ class PlaybackSession {
       _bufferedPositionController.stream;
   Duration get position => lastKnownPosition;
   bool get effectivePlaying => pendingPlayingIntent ?? state.playing;
+  bool get isPlaybackLoading {
+    final processingState = state.processingState;
+    return isLoading ||
+        isPlaybackStarting ||
+        processingState == ProcessingState.loading ||
+        processingState == ProcessingState.buffering;
+  }
+
   bool get hasPendingAudioEffectsSync => pendingNativeAudioEffects != null;
 
   bool applyNativeSnapshot(NativePlaybackSnapshot snapshot) {

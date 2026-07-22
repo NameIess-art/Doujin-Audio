@@ -183,6 +183,60 @@ void main() {
     await library.dispose();
   });
 
+  test(
+    'loading playback intent can be paused from the spinner control',
+    () async {
+      final library = LibraryFacade.create();
+      final playback = PlaybackFacade.create(
+        databaseRepository: library.databaseRepository,
+      )..configurePersistence(enabled: false);
+      final session = _session('loading_toggle')
+        ..setOptimisticState(
+          playing: true,
+          processingState: ProcessingState.loading,
+        )
+        ..isLoading = true;
+      var pauseCount = 0;
+      var prepareCount = 0;
+      addTearDown(() async {
+        session.dispose();
+        await playback.dispose();
+        await library.dispose();
+      });
+      playback
+        ..attachSessionRuntime(
+          onSessionRegistered: (_) {},
+          onSessionsReordered: () {},
+          onSessionStateChanged: () {},
+        )
+        ..attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async {
+                prepareCount++;
+                return true;
+              },
+          pauseSession: (_) async => pauseCount++,
+          startSession: (_, {required shouldStartTriggerCountdown}) async =>
+              true,
+          resolveAdvance: (_, {required forward}) => null,
+          hasAdjacent: (_, {required forward}) => false,
+        )
+        ..registerSession(session);
+
+      await playback.toggleSessionPlayPause(session.id);
+
+      expect(pauseCount, 1);
+      expect(prepareCount, 0);
+    },
+  );
+
   test('PlaybackFacade owns transport command decisions', () async {
     final library = LibraryFacade.create();
     final native = _RecordingNativePlaybackRepository();

@@ -476,17 +476,12 @@ class _SessionListCard extends ConsumerWidget {
                                     tooltip: isPlaying
                                         ? i18n.tr('pause')
                                         : i18n.tr('play'),
-                                    onPressed: cardState.isLoading
-                                        ? null
-                                        : () {
-                                            AppInteractionFeedback.trigger(
-                                              AppInteractionFeedbackType
-                                                  .selection,
-                                            );
-                                            playback.toggleSessionPlayPause(
-                                              sessionId,
-                                            );
-                                          },
+                                    onPressed: () {
+                                      AppInteractionFeedback.trigger(
+                                        AppInteractionFeedbackType.selection,
+                                      );
+                                      playback.toggleSessionPlayPause(sessionId);
+                                    },
                                     style: IconButton.styleFrom(
                                       foregroundColor: isPlaying
                                           ? activeColor
@@ -536,13 +531,20 @@ class _SessionListCard extends ConsumerWidget {
                                     ),
                                   ),
                                 ),
-                                if (cardState.playbackError != null)
+                                if (cardState.isLoading ||
+                                    cardState.playbackError != null)
                                   Text(
-                                    i18n.tr('playback_failed_retry'),
+                                    cardState.isLoading
+                                        ? i18n.tr('playback_loading')
+                                        : i18n.tr('playback_failed_retry'),
                                     style: Theme.of(context)
                                         .textTheme
                                         .labelSmall
-                                        ?.copyWith(color: cs.error),
+                                        ?.copyWith(
+                                          color: cardState.isLoading
+                                              ? activeColor
+                                              : cs.error,
+                                        ),
                                   ),
                               ],
                             ),

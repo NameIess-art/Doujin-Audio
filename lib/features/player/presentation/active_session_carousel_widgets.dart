@@ -40,8 +40,7 @@ class _ActiveSessionCard extends ConsumerWidget {
             session;
         return (
           playing: currentSession.effectivePlaying,
-          loading:
-              currentSession.isLoading || currentSession.isPlaybackStarting,
+          loading: currentSession.isPlaybackLoading,
           trackPath: currentSession.currentTrackPath,
           channelSwapEnabled: currentSession.channelSwapEnabled,
           audioEffects: currentSession.audioEffects,
@@ -249,7 +248,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                   return _ActiveSessionPlayPauseButton(
                     showPauseIcon: isPlaying,
                     isLoading: view.loading,
-                    enabled: view.trackPath.isNotEmpty && !view.loading,
+                    enabled: view.trackPath.isNotEmpty,
                     activeColor: activeColor,
                     semanticLabel: i18n.tr(
                       view.loading
@@ -459,7 +458,7 @@ class _ActiveSessionTitleSubtitleState
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final secondaryText = widget.playbackError == null
-        ? (widget.session.isLoading || widget.session.isPlaybackStarting
+        ? (widget.session.isPlaybackLoading
               ? i18n.tr('playback_loading')
               : _subtitleText)
         : widget.useAsmrOneErrorText

@@ -42,8 +42,9 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
       showPauseIcon:
           transport?.showPauseIcon ??
           (session.effectivePlaying ||
-              session.isLoading ||
+              session.isPlaybackLoading ||
               session.playbackError != null),
+      isLoading: transport?.isLoading ?? session.isPlaybackLoading,
       hasSiblings: hasSiblings,
       segmentPanelExpanded: segmentPanelExpanded,
       hasSubtitle: hasSubtitle,
@@ -64,6 +65,7 @@ class _PlaybackControlPanel extends StatelessWidget {
     required this.playback,
     required this.paths,
     required this.showPauseIcon,
+    required this.isLoading,
     required this.hasSiblings,
     required this.segmentPanelExpanded,
     required this.hasSubtitle,
@@ -80,6 +82,7 @@ class _PlaybackControlPanel extends StatelessWidget {
   final PlaybackFacade playback;
   final AudioPathCoordinator paths;
   final bool showPauseIcon;
+  final bool isLoading;
   final bool hasSiblings;
   final bool segmentPanelExpanded;
   final bool hasSubtitle;
@@ -100,6 +103,7 @@ class _PlaybackControlPanel extends StatelessWidget {
           playback: playback,
           paths: paths,
           showPauseIcon: showPauseIcon,
+          isLoading: isLoading,
         ),
         _PlaybackSecondaryControls(
           session: session,
@@ -126,12 +130,14 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     required this.playback,
     required this.paths,
     required this.showPauseIcon,
+    required this.isLoading,
   });
 
   final PlaybackSession session;
   final PlaybackFacade playback;
   final AudioPathCoordinator paths;
   final bool showPauseIcon;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -236,16 +242,28 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                         child: FadeTransition(opacity: animation, child: child),
                       );
                     },
-                    child: Icon(
-                      showPauseIcon
-                          ? Icons.pause_rounded
-                          : Icons.play_arrow_rounded,
-                      key: ValueKey(showPauseIcon),
-                      size: playIconSize * 0.75,
-                      color: enabled
-                          ? onPrimaryColor
-                          : cs.onSurface.withValues(alpha: 0.35),
-                    ),
+                    child: isLoading
+                        ? SizedBox(
+                            key: const ValueKey('loading'),
+                            width: playIconSize * 0.48,
+                            height: playIconSize * 0.48,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 3.0,
+                              color: enabled
+                                  ? onPrimaryColor
+                                  : cs.onSurface.withValues(alpha: 0.35),
+                            ),
+                          )
+                        : Icon(
+                            showPauseIcon
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            key: ValueKey(showPauseIcon),
+                            size: playIconSize * 0.75,
+                            color: enabled
+                                ? onPrimaryColor
+                                : cs.onSurface.withValues(alpha: 0.35),
+                          ),
                   ),
                 ),
               ),

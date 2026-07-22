@@ -138,6 +138,14 @@ class _PlaybackQueueCard extends ConsumerWidget {
                                 height: 1.12,
                               ),
                         ),
+                        if (cardState.isLoading)
+                          Text(
+                            i18n.tr('playback_loading'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: activeColor),
+                          ),
                       ],
                     ),
                   ),
@@ -181,13 +189,22 @@ class _PlaybackQueueCard extends ConsumerWidget {
                               ),
                             );
                           },
-                          child: Icon(
-                            isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            key: ValueKey(isPlaying),
-                            size: 28,
-                          ),
+                          child: cardState.isLoading
+                              ? const SizedBox(
+                                  key: ValueKey('loading'),
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.3,
+                                  ),
+                                )
+                              : Icon(
+                                  isPlaying
+                                      ? Icons.pause_rounded
+                                      : Icons.play_arrow_rounded,
+                                  key: ValueKey(isPlaying),
+                                  size: 28,
+                                ),
                         ),
                       ),
                       if (!cardPositionsLocked) ...[

@@ -387,7 +387,7 @@ void main() {
     },
   );
 
-  test('prepared transport intent changes icon without showing loading', () {
+  test('prepared transport intent shows loading in detail and card state', () {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3')
       ..loadedPath = '/tracks/detail.mp3'
       ..beginTransportCommand(commandId: 1, playing: true);
@@ -402,11 +402,14 @@ void main() {
     )['detail'];
 
     expect(detailState?.isPlaying, isTrue);
-    expect(detailState?.isLoading, isFalse);
+    expect(detailState?.isLoading, isTrue);
     expect(cardState?.isPlaying, isTrue);
-    expect(cardState?.isLoading, isFalse);
+    expect(cardState?.isLoading, isTrue);
 
-    detailSession.isLoading = true;
+    detailSession
+      ..isLoading = false
+      ..isPlaybackStarting = false
+      ..state = PlayerState(false, ProcessingState.buffering);
     final loadingState = sessionDetailViewStateFromPlaybackState(
       PlaybackStateSliceData(activeSessions: [detailSession]),
       'detail',

@@ -112,6 +112,8 @@ final class LibraryFacade implements LibraryCatalog {
   void Function(List<String> removedPaths)? _trackRemovalHandler;
   void Function()? _coverChangeHandler;
   final WarmupScheduler _coverWarmupScheduler = WarmupScheduler();
+  final Map<String, Completer<String?>> _deferredCoverCompleters =
+      <String, Completer<String?>>{};
 
   LibraryState get state => service.slice.state;
   Stream<LibraryState> get states => service.slice.stream;
@@ -852,6 +854,66 @@ final class LibraryFacade implements LibraryCatalog {
   );
   Future<String?> coverPathFutureForFolder(String folderPath) =>
       coverArtworkCacheService.futureForFolder(folderPath);
+  Future<String?> deferredCoverPathFutureForFolder(String folderPath) {
+    final normalizedPath = PathMatcher.normalize(folderPath);
+    final generation = coverArtworkCacheService.generation;
+    return _deferredCardCoverLookup(
+      key: 'folder:$normalizedPath:$generation',
+      lookup: () => coverPathFutureForFolder(folderPath),
+    );
+  }
+
+  Future<String?> deferredCoverPathFutureForTrack(MusicTrack track) {
+    final coverKey =
+        coverArtworkCacheService.coverSearchKeyForTrack(track) ?? track.path;
+    final generation = coverArtworkCacheService.generation;
+    return _deferredCardCoverLookup(
+      key: 'track:$coverKey:$generation',
+      lookup: () => coverPathFutureForTrack(track),
+    );
+  }
+
+  Future<String?> _deferredCardCoverLookup({
+    required String key,
+    required Future<String?> Function() lookup,
+  }) {
+    if (_disposed) return Future<String?>.value();
+    final existing = _deferredCoverCompleters[key];
+    if (existing != null) return existing.future;
+
+    final completer = Completer<String?>();
+    _deferredCoverCompleters[key] = completer;
+    Future<void> run() async {
+      try {
+        final value = await lookup();
+        if (!completer.isCompleted) completer.complete(value);
+      } catch (error, stackTrace) {
+        if (!completer.isCompleted) completer.completeError(error, stackTrace);
+      } finally {
+        if (identical(_deferredCoverCompleters[key], completer)) {
+          _deferredCoverCompleters.remove(key);
+        }
+      }
+    }
+
+    Future<void> scheduleWhenAvailable() async {
+      while (!_disposed && !completer.isCompleted) {
+        final scheduled = _coverWarmupScheduler.schedule(
+          key: 'visible_library_cover:$key',
+          priority: -1,
+          generation: _coverWarmupScheduler.currentGeneration,
+          group: 'visible_library_cover',
+          task: run,
+        );
+        if (scheduled) return;
+        await _coverWarmupScheduler.idle;
+      }
+    }
+
+    unawaited(scheduleWhenAvailable());
+    return completer.future;
+  }
+
   Future<String?> coverPathFutureForRemoteCover(String url) =>
       coverArtworkCacheService.futureForRemoteCover(url);
   Future<List<String>> discoverCoverCandidatesInFolder(
@@ -2641,6 +2703,10 @@ final class LibraryFacade implements LibraryCatalog {
     UiInteractionCoordinator.instance.removeListener(
       _handleWarmupInteractionChanged,
     );
+    for (final completer in _deferredCoverCompleters.values) {
+      if (!completer.isCompleted) completer.complete(null);
+    }
+    _deferredCoverCompleters.clear();
     await _coverWarmupScheduler.shutdown();
     service.scanProgressNotifyTimer?.cancel();
     service.scanProgressNotifyTimer = null;

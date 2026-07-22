@@ -8,6 +8,7 @@ import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -172,6 +173,71 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  testWidgets('library cover lookups wait until scrolling becomes idle', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    final interactionSource = Object();
+    addTearDown(() {
+      UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(fileCacheChannel, null);
+    });
+
+    const folderPath = '/library/deferred-cover';
+    runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+    runtimeGraph.library.addTracks(
+      [
+        testMusicTrack(
+          name: 'Deferred cover',
+          path: '$folderPath/track.mp3',
+          groupKey: '$folderPath/track.mp3',
+          groupTitle: 'Deferred cover',
+          isSingle: true,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    await tester.runAsync(
+      () => runtimeGraph.library.snapshotCacheService.cardSnapshot(
+        onCommitted: () {},
+      ),
+    );
+    UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+
+    var trackCoverLookups = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(fileCacheChannel, (call) async {
+          if (call.method == FileCacheMethod.resolveTrackCover) {
+            trackCoverLookups++;
+          }
+          return <String, Object?>{'ok': true, 'value': null};
+        });
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pump();
+
+    expect(trackCoverLookups, 0);
+
+    UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
+    for (var i = 0; i < 20 && trackCoverLookups == 0; i++) {
+      await tester.pump(const Duration(milliseconds: 20));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+    }
+
+    expect(trackCoverLookups, greaterThan(0));
   });
 
   testWidgets('library folder expansion does not collide with list storage', (

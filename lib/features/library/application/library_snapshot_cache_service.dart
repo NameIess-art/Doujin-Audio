@@ -91,6 +91,8 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
 }
 
 class LibrarySnapshotCacheService {
+  static const int _categoryDetailBatchSize = 24;
+
   LibrarySnapshotCacheService({
     required LibraryService libraryService,
     required AudioDetailCacheService detailCacheService,
@@ -511,20 +513,54 @@ class LibrarySnapshotCacheService {
   ) async {
     final orderedTargets = targets.toList(growable: false);
     if (orderedTargets.isEmpty) return const <AudioDetail>[];
-    try {
-      final results = await _detailCacheService.loadMany(orderedTargets);
-      return results.map((result) => result.detail).toList(growable: false);
-    } catch (_) {
-      return Future.wait(
-        orderedTargets.map((target) async {
-          try {
-            return (await _detailCacheService.load(target)).detail;
-          } catch (_) {
-            return AudioDetail.empty(target);
-          }
-        }),
+
+    final details = <AudioDetail>[];
+    for (
+      var start = 0;
+      start < orderedTargets.length;
+      start += _categoryDetailBatchSize
+    ) {
+      await _waitForInteractionIdle();
+      final end = (start + _categoryDetailBatchSize).clamp(
+        0,
+        orderedTargets.length,
       );
+      final batch = orderedTargets.sublist(start, end);
+      try {
+        final results = await _detailCacheService.loadMany(batch);
+        details.addAll(results.map((result) => result.detail));
+      } catch (_) {
+        details.addAll(
+          await Future.wait(
+            batch.map((target) async {
+              try {
+                return (await _detailCacheService.load(target)).detail;
+              } catch (_) {
+                return AudioDetail.empty(target);
+              }
+            }),
+          ),
+        );
+      }
+      await Future<void>.delayed(Duration.zero);
     }
+    return List<AudioDetail>.unmodifiable(details);
+  }
+
+  Future<void> _waitForInteractionIdle() {
+    if (!_interactionCoordinator.isInteracting) return Future<void>.value();
+    final completer = Completer<void>();
+    void handleInteractionChanged() {
+      if (_interactionCoordinator.isInteracting || completer.isCompleted) {
+        return;
+      }
+      _interactionCoordinator.removeListener(handleInteractionChanged);
+      completer.complete();
+    }
+
+    _interactionCoordinator.addListener(handleInteractionChanged);
+    handleInteractionChanged();
+    return completer.future;
   }
 
   void _applyDetailToCategorySnapshot(AudioDetail detail) {

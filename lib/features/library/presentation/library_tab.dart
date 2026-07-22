@@ -70,6 +70,23 @@ String _displayTrackName(String trackPath) {
   return PathDisplay.fileName(trackPath, withoutExtension: true);
 }
 
+Future<String?> _deferLibraryCardCoverLookup({
+  required bool Function() isMounted,
+  required Future<String?> Function() lookup,
+}) {
+  final completer = Completer<String?>();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!isMounted()) {
+      completer.complete(null);
+      return;
+    }
+    unawaited(
+      lookup().then(completer.complete, onError: completer.completeError),
+    );
+  });
+  return completer.future;
+}
+
 enum _LibraryMoreAction {
   manageLibraries,
   batchMetadata,

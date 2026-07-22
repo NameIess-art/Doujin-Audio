@@ -675,8 +675,10 @@ class _LibraryCoverThumbnailState
         _lastCoverGeneration != coverGeneration) {
       _lastFolderPath = widget.folderPath;
       _lastCoverGeneration = coverGeneration;
-      _coverPathFuture = libraryFacade.coverPathFutureForFolder(
-        widget.folderPath,
+      _coverPathFuture = _deferLibraryCardCoverLookup(
+        isMounted: () => mounted,
+        lookup: () =>
+            libraryFacade.deferredCoverPathFutureForFolder(widget.folderPath),
       );
     }
     return _coverPathFuture!;
@@ -720,8 +722,8 @@ class _LibraryCoverThumbnailState
                   initialPath: libraryFacade.resolvedCoverPathForFolder(
                     widget.folderPath,
                   ),
-                  retryFutureBuilder: () =>
-                      libraryFacade.coverPathFutureForFolder(widget.folderPath),
+                  retryFutureBuilder: () => libraryFacade
+                      .deferredCoverPathFutureForFolder(widget.folderPath),
                   seed: widget.folderPath,
                   cacheWidth: coverCacheWidth,
                   useDefaultCacheWidth: false,
@@ -775,7 +777,11 @@ class _LibraryTrackCoverThumbnailState
         _lastCoverGeneration != coverGeneration) {
       _lastTrackPath = widget.track.path;
       _lastCoverGeneration = coverGeneration;
-      _coverPathFuture = libraryFacade.coverPathFutureForTrack(widget.track);
+      _coverPathFuture = _deferLibraryCardCoverLookup(
+        isMounted: () => mounted,
+        lookup: () =>
+            libraryFacade.deferredCoverPathFutureForTrack(widget.track),
+      );
     }
     return _coverPathFuture!;
   }
@@ -816,7 +822,7 @@ class _LibraryTrackCoverThumbnailState
                 requestKey: track.path,
                 initialPath: libraryFacade.resolvedCoverPathForTrack(track),
                 retryFutureBuilder: () =>
-                    libraryFacade.coverPathFutureForTrack(track),
+                    libraryFacade.deferredCoverPathFutureForTrack(track),
                 seed: track.displayName,
                 cacheWidth: coverCacheWidth,
                 useDefaultCacheWidth: false,

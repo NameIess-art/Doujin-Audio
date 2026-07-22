@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/features/library/domain/library_node.dart';
@@ -9,6 +11,8 @@ import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/features/library/application/library_snapshot_cache_service.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test(
     'tree snapshot reuses the in-flight future for the same revision',
     () async {
@@ -181,26 +185,86 @@ void main() {
         _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
       )
       ..markStructureChanged();
+    final repository = _FakeAudioDetailRepository();
     final service = LibrarySnapshotCacheService(
       libraryService: library,
-      detailCacheService: AudioDetailCacheService(
-        repository: _FakeAudioDetailRepository(),
-      ),
+      detailCacheService: AudioDetailCacheService(repository: repository),
       interactionCoordinator: interactionCoordinator,
     );
     var committed = false;
+    var completed = false;
 
     final first = service.categorySnapshot(onCommitted: () => committed = true);
-    await first;
+    unawaited(first.then((_) => completed = true));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(repository.loadCount, 0);
+    expect(completed, isFalse);
     expect(committed, isFalse);
     final repeated = service.categorySnapshot(
       onCommitted: () => committed = true,
     );
     expect(identical(first, repeated), isTrue);
 
-    interactionCoordinator.finishInteractionsForTest();
+    interactionCoordinator.cancelInteraction(interactionSource);
+    await first;
+    await Future<void>.delayed(Duration.zero);
+    interactionCoordinator.flushPendingCommitsForTest();
+
+    expect(repository.loadCount, 1);
     expect(committed, isTrue);
   });
+
+  test(
+    'category detail loading pauses between batches while scrolling',
+    () async {
+      final interactionCoordinator = UiInteractionCoordinator(
+        idleDelay: const Duration(days: 1),
+      );
+      addTearDown(interactionCoordinator.dispose);
+      final interactionSource = Object();
+      late final _FakeAudioDetailRepository repository;
+      repository = _FakeAudioDetailRepository(
+        onBatchLoad: () {
+          if (repository.batchLoadCount == 1) {
+            interactionCoordinator.beginInteraction(interactionSource);
+          }
+        },
+      );
+      final library = LibraryService();
+      for (var index = 0; index < 30; index++) {
+        final folderPath = '/library_$index';
+        library.watchedFolders.add(folderPath);
+        library.library.add(
+          _track(path: '$folderPath/track.mp3', groupKey: folderPath),
+        );
+      }
+      library.markStructureChanged();
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(repository: repository),
+        interactionCoordinator: interactionCoordinator,
+      );
+      var completed = false;
+
+      final snapshotFuture = service.categorySnapshot(onCommitted: () {});
+      unawaited(snapshotFuture.then((_) => completed = true));
+      while (repository.batchLoadCount == 0) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+
+      expect(repository.batchLoadCount, 1);
+      expect(repository.loadCount, 24);
+      expect(completed, isFalse);
+
+      interactionCoordinator.cancelInteraction(interactionSource);
+      final snapshot = await snapshotFuture;
+
+      expect(repository.batchLoadCount, 2);
+      expect(snapshot.entries, hasLength(30));
+    },
+  );
 
   test('tree cache updates only after async snapshot commits', () async {
     final library = LibraryService();
@@ -311,11 +375,14 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   _FakeAudioDetailRepository({
     Map<String, String>? details,
     this.failBatchLoad = false,
+    this.onBatchLoad,
   }) : _details = details ?? const <String, String>{};
 
   final Map<String, String> _details;
   final bool failBatchLoad;
+  final void Function()? onBatchLoad;
   int loadCount = 0;
+  int batchLoadCount = 0;
 
   @override
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
@@ -330,6 +397,8 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   Future<List<AudioDetailLoadResult>> loadMany(
     Iterable<AudioDetailTarget> targets,
   ) {
+    batchLoadCount++;
+    onBatchLoad?.call();
     if (failBatchLoad) {
       return Future<List<AudioDetailLoadResult>>.error(
         StateError('batch load failed'),

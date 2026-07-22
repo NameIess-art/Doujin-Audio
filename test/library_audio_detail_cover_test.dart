@@ -1071,11 +1071,14 @@ void main() {
           AudioDetail.empty(target).copyWith(rjCode: 'RJ333333'),
         );
 
-        await runtimeGraph.library.audioLibraryCategorySnapshot();
+        final snapshotFuture = runtimeGraph.library
+            .audioLibraryCategorySnapshot();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
 
         expect(runtimeGraph.library.categorySnapshot, isNull);
 
         coordinator.cancelInteraction(interactionSource);
+        await snapshotFuture;
         coordinator.flushPendingCommitsForTest();
         expect(
           runtimeGraph.library.categorySnapshot?.detailFor(target)?.rjCode,

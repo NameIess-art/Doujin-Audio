@@ -129,6 +129,34 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
+    fun `terminal playback errors stop after the recovery window`() {
+        val environment = FakeRecoveryEnvironment()
+        val host = FakeRecoveryHost()
+        val controller = NativePlaybackRecoveryController(
+            host = host,
+            environment = environment,
+            recoveryWindowMs = 60_000L
+        )
+        controller.markIntended("player")
+
+        controller.onPlayerError(
+            sessionId = "player",
+            recoverable = true,
+            stopAfterRecoveryWindow = true,
+            errorCodeName = "ERROR_CODE_DECODER_INIT_FAILED",
+            errorMessage = "decoder",
+            causeDescription = null
+        )
+
+        environment.runFirst(60_000L)
+
+        assertFalse(controller.isIntended("player"))
+        assertFalse(controller.isPending("player"))
+        assertFalse(environment.listening)
+        assertTrue(environment.tasks.isEmpty())
+    }
+
+    @Test
     fun staleScheduledTasksAreRemovedWhenIntentIsCleared() {
         val environment = FakeRecoveryEnvironment()
         val controller = NativePlaybackRecoveryController(

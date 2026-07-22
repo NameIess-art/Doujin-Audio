@@ -308,6 +308,16 @@ class NativePlaybackFocusRecoveryPolicyTest {
                 PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED
             )
         )
+        assertFalse(
+            shouldStopAfterPlaybackRecoveryWindow(
+                PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED
+            )
+        )
+        assertTrue(
+            shouldStopAfterPlaybackRecoveryWindow(
+                PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED
+            )
+        )
     }
 
     @Test

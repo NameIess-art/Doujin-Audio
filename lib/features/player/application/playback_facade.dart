@@ -108,7 +108,7 @@ final class PlaybackFacade {
   void Function()? _onRuntimeStateChanged;
   void Function(PlaybackSession session, Duration position)?
   _onSessionPositionChanged;
-  void Function(String sessionId)? _onSessionCompleted;
+  FutureOr<void> Function(String sessionId)? _onSessionCompleted;
   void Function(String sessionId)? _onSessionDurationChanged;
   void Function()? _onSessionSettingsChanged;
   PlaybackQueueSessionSynchronizer? _synchronizePlaybackQueueSession;
@@ -616,7 +616,7 @@ final class PlaybackFacade {
     void Function()? onRuntimeStateChanged,
     void Function(PlaybackSession session, Duration position)?
     onSessionPositionChanged,
-    void Function(String sessionId)? onSessionCompleted,
+    FutureOr<void> Function(String sessionId)? onSessionCompleted,
     void Function(String sessionId)? onSessionDurationChanged,
     void Function()? onSessionSettingsChanged,
   }) {
@@ -715,7 +715,7 @@ final class PlaybackFacade {
       }
 
       if (isNewCompletion && shouldAutoAdvanceAfterCompletion) {
-        _onSessionCompleted?.call(session.id);
+        _dispatchSessionCompleted(session.id);
       }
     });
     session.subscriptions.add(stateSub);
@@ -1779,6 +1779,30 @@ final class PlaybackFacade {
     await playbackCacheService.dispose();
     await nativeRepository.dispose();
     await service.dispose();
+  }
+
+  void _dispatchSessionCompleted(String sessionId) {
+    final callback = _onSessionCompleted;
+    if (callback == null) return;
+    unawaited(() async {
+      try {
+        await callback(sessionId);
+      } catch (error, stackTrace) {
+        final session = service.sessions[sessionId];
+        if (session != null) {
+          session.isLoading = false;
+          session.isAdvancingAfterCompletion = false;
+          session.playbackError = error.toString();
+          _onRuntimeStateChanged?.call();
+          _onSessionStateChanged?.call();
+        }
+        AppLogService.error(
+          'PlaybackFacade.sessionCompleted error',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      }
+    }());
   }
 }
 

@@ -1381,6 +1381,7 @@ class NativePlaybackService : MediaSessionService() {
             sessionId = sessionId,
             recoverable = isRecoverablePlaybackErrorCode(error.errorCode),
             candidateFallbackEligible = isCandidateFallbackPlaybackErrorCode(error.errorCode),
+            stopAfterRecoveryWindow = shouldStopAfterPlaybackRecoveryWindow(error.errorCode),
             errorCodeName = error.errorCodeName,
             errorMessage = error.message,
             causeDescription = "${error.cause?.javaClass?.simpleName}:${error.cause?.message}",
@@ -2038,6 +2039,15 @@ internal fun isCandidateFallbackPlaybackErrorCode(errorCode: Int): Boolean {
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
         PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> true
+        else -> false
+    }
+}
+
+internal fun shouldStopAfterPlaybackRecoveryWindow(errorCode: Int): Boolean {
+    return when (errorCode) {
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED -> true
         else -> false
     }
 }

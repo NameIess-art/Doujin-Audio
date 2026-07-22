@@ -290,6 +290,7 @@ internal class NativePlaybackRecoveryController(
     private val recoveryBaselines = mutableMapOf<String, NativePlaybackHealthSample>()
     private val recovering = linkedSetOf<String>()
     private val candidateFallbackPending = linkedSetOf<String>()
+    private val stopAfterRecoveryWindow = linkedSetOf<String>()
     private var triggerInProgress = false
     private val startedAt = mutableMapOf<String, Long>()
     private var listening = false
@@ -330,6 +331,7 @@ internal class NativePlaybackRecoveryController(
         recoveryBaselines.clear()
         recovering.clear()
         candidateFallbackPending.clear()
+        stopAfterRecoveryWindow.clear()
         stopHealthCheck()
         stopListening()
     }
@@ -359,6 +361,7 @@ internal class NativePlaybackRecoveryController(
         sessionId: String,
         recoverable: Boolean,
         candidateFallbackEligible: Boolean = false,
+        stopAfterRecoveryWindow: Boolean = false,
         errorCodeName: String,
         errorMessage: String?,
         causeDescription: String?,
@@ -383,6 +386,11 @@ internal class NativePlaybackRecoveryController(
         pending += sessionId
         if (candidateFallbackEligible && session?.hasAlternatePlaybackUri() == true) {
             candidateFallbackPending += sessionId
+        }
+        if (stopAfterRecoveryWindow) {
+            this.stopAfterRecoveryWindow += sessionId
+        } else {
+            this.stopAfterRecoveryWindow -= sessionId
         }
         captureHealth(sessionId)?.let { recoveryBaselines[sessionId] = it }
         startListening()
@@ -520,6 +528,15 @@ internal class NativePlaybackRecoveryController(
         val task = Runnable {
             expiryTasks.remove(sessionId)
             if (sessionId !in pending) return@Runnable
+            if (sessionId in stopAfterRecoveryWindow) {
+                val session = host.session(sessionId)
+                clear(sessionId)
+                session?.playerOrNull()?.pause()
+                host.publishSession(sessionId)
+                host.persistNow()
+                host.syncForeground()
+                return@Runnable
+            }
             host.logInfo(
                 "playback_recovery_low_frequency sessionId=$sessionId " +
                     "attempts=${attempts.getOrDefault(sessionId, 0)}"
@@ -539,6 +556,7 @@ internal class NativePlaybackRecoveryController(
         recoveryBaselines -= sessionId
         recovering -= sessionId
         candidateFallbackPending -= sessionId
+        stopAfterRecoveryWindow -= sessionId
         retryTasks.remove(sessionId)?.let(environment::remove)
         expiryTasks.remove(sessionId)?.let(environment::remove)
         if (pending.isEmpty()) stopListening()

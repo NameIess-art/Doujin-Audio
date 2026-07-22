@@ -325,6 +325,56 @@ void main() {
     },
   );
 
+  test('completion callback failures are contained and surfaced', () async {
+    final library = LibraryFacade.create();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+    )..configurePersistence(enabled: false);
+    final session = _session('completion_failure');
+    addTearDown(() async {
+      session.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback
+      ..attachSessionRuntime(
+        onSessionRegistered: (_) {},
+        onSessionsReordered: () {},
+        onSessionStateChanged: () {},
+        onSessionCompleted: (_) async {
+          throw StateError('next track failed');
+        },
+      )
+      ..attachPlaybackCommands(
+        prepareSession:
+            (
+              session, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async => true,
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+        resolveAdvance: (_, {required forward}) =>
+            const PlaybackAdvanceResult(path: '/tracks/next.mp3'),
+        hasAdjacent: (_, {required forward}) => true,
+      )
+      ..registerSession(session);
+
+    session.setOptimisticState(
+      playing: false,
+      processingState: ProcessingState.completed,
+    );
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.isLoading, isFalse);
+    expect(session.isAdvancingAfterCompletion, isFalse);
+    expect(session.playbackError, contains('next track failed'));
+  });
+
   test('PlaybackFacade owns loop mode state and synchronization', () async {
     final library = LibraryFacade.create();
     final playback = PlaybackFacade.create(

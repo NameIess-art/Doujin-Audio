@@ -233,7 +233,10 @@ typedef _AsmrCategoryRequestKey = ({
 });
 
 class AsmrLibraryController extends ChangeNotifier
-    implements AsmrPlaybackSource, PersistedStateReloader {
+    implements
+        AsmrPlaybackSource,
+        PersistedStateReloader,
+        PersistedStateExportPreparer {
   AsmrLibraryController({
     AsmrApiService? apiService,
     AsmrAuthService? authService,
@@ -682,6 +685,14 @@ class AsmrLibraryController extends ChangeNotifier
         isCurrent: () => requestEpoch == _authEpoch,
       );
     }
+  }
+
+  @override
+  Future<void> prepareForPersistedStateExport() async {
+    await initialize();
+    await _preferencesStore.saveContentLanguagePreference(
+      _contentLanguagePreference,
+    );
   }
 
   @override

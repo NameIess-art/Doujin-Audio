@@ -210,6 +210,13 @@ class SettingsRepository {
     });
   }
 
+  Future<void> prepareForBackupExport() async {
+    await Future.wait<void>(<Future<void>>[
+      persist(),
+      _persistConverterSettings(),
+    ]);
+  }
+
   Future<void> setConverterSettings({String? format, String? bitrate}) async {
     var changed = false;
     if (format != null &&
@@ -226,6 +233,10 @@ class SettingsRepository {
     }
     if (!changed) return;
     syncSlice(isInitialized: slice.state.isInitialized);
+    await _persistConverterSettings();
+  }
+
+  Future<void> _persistConverterSettings() async {
     await AppPreferences.writeJson(_converterSettingsKey, <String, Object?>{
       'format': converterFormat,
       'bitrate': converterBitrate,

@@ -160,4 +160,42 @@ void main() {
     expect(prefs.containsKey('subtitle_font_color'), isFalse);
     expect(prefs.containsKey('subtitle_background_color'), isFalse);
   });
+
+  test(
+    'backup preparation materializes and reloads every subtitle option',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final notifier = SubtitleSettingsNotifier();
+      addTearDown(notifier.dispose);
+      await Future<void>.delayed(Duration.zero);
+
+      await notifier.prepareForPersistedStateExport();
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getStringList('subtitle_show_map'), isEmpty);
+      expect(preferences.getStringList('subtitle_global_map'), isEmpty);
+      expect(preferences.getStringList('subtitle_positions'), isEmpty);
+      expect(preferences.getString('subtitle_font_family'), '');
+      expect(preferences.getString('subtitle_font_color'), '');
+      expect(preferences.getString('subtitle_background_opacity'), '0.2');
+      expect(preferences.getString('subtitle_background_color'), '');
+      expect(preferences.getString('subtitle_border_depth'), '0.5');
+      expect(preferences.getString('subtitle_font_size'), '16.0');
+
+      await preferences.setString('subtitle_font_family', 'Rounded');
+      await preferences.setString('subtitle_font_color', 'ff123456');
+      await preferences.setString('subtitle_background_opacity', '0.7');
+      await preferences.setString('subtitle_background_color', 'aa654321');
+      await preferences.setString('subtitle_border_depth', '1.5');
+      await preferences.setString('subtitle_font_size', '24');
+      await notifier.reloadPersistedState();
+
+      expect(notifier.state.fontFamily, 'Rounded');
+      expect(notifier.state.fontColor, const Color(0xFF123456));
+      expect(notifier.state.backgroundOpacity, 0.7);
+      expect(notifier.state.backgroundColor, const Color(0xAA654321));
+      expect(notifier.state.borderDepth, 1.5);
+      expect(notifier.state.fontSize, 24);
+    },
+  );
 }

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/application/app_persistence_coordinator.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
@@ -136,6 +138,48 @@ void main() {
     expect(library.state.isInitialized, isTrue);
     expect(playback.state.isInitialized, isTrue);
     expect(timer.state.isInitialized, isTrue);
+
+    await coordinator.prepareForPersistedStateExport();
+    final preferences = await SharedPreferences.getInstance();
+    final playbackSettings =
+        jsonDecode(preferences.getString('playback_settings_v1')!)
+            as Map<String, dynamic>;
+    expect(playbackSettings.keys.toSet(), <String>{
+      'multiThreadPlaybackEnabled',
+      'notificationsEnabled',
+      'showPlaybackCard',
+      'startupPage',
+      'portraitLockEnabled',
+      'bottomNavigationStyle',
+      'playbackDetailSubtitleStyle',
+      'autoPlayAddedSessions',
+      'autoCheckUpdates',
+      'recordPlaybackProgress',
+      'asmrPlaybackCacheEnabled',
+      'blurPlayerBackgroundEnabled',
+      'uiBlurEffectEnabled',
+      'hapticFeedbackEnabled',
+      'coverImageResolution',
+      'asmrDownloadDestinationRoot',
+      'asmrDownloadConflictPolicy',
+      'asmrDownloadSaveMetadata',
+      'asmrDownloadFolderNameFields',
+      'dlsiteMetadataLanguage',
+      'cardInfoFields',
+      'cardPositionsLocked',
+      'customEqPresets',
+      'maxCacheBytes',
+      'audioDeviceDisconnectBehavior',
+      'transientAudioFocusLossBehavior',
+      'interruptionResumeBehavior',
+      'startupPlaybackRestoreBehavior',
+      'allowDuplicateWorks',
+      'reduceAnimations',
+    });
+    expect(
+      jsonDecode(preferences.getString('converter_settings_v1')!),
+      <String, Object?>{'format': 'mp3', 'bitrate': '320k'},
+    );
 
     await coordinator.reloadPersistedState();
 

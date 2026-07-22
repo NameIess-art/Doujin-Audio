@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../application/persisted_state_reloader.dart';
 import '../../core/app_language.dart';
 import '../../features/settings/application/app_preferences.dart';
 
@@ -60,7 +61,9 @@ class AppLanguageState {
   int get hashCode => Object.hash(preference, language);
 }
 
-class AppLanguageProvider with ChangeNotifier, WidgetsBindingObserver {
+class AppLanguageProvider
+    with ChangeNotifier, WidgetsBindingObserver
+    implements PersistedStateReloader, PersistedStateExportPreparer {
   static const _prefsKey = 'app_language';
 
   static const supportedLocales = [Locale('zh'), Locale('ja'), Locale('en')];
@@ -69,11 +72,12 @@ class AppLanguageProvider with ChangeNotifier, WidgetsBindingObserver {
   late AppLanguage _language;
   int _preferenceRevision = 0;
   bool _disposed = false;
+  late Future<void> _loadFuture;
 
   AppLanguageProvider() {
     _language = _resolveSystemLanguage();
     WidgetsBinding.instance.addObserver(this);
-    _loadLanguage();
+    _loadFuture = _loadLanguage();
   }
 
   AppLanguagePreference get preference => _preference;
@@ -115,6 +119,19 @@ class AppLanguageProvider with ChangeNotifier, WidgetsBindingObserver {
       notifyListeners();
     }
     await AppPreferences.setString(_prefsKey, preference.name);
+  }
+
+  @override
+  Future<void> prepareForPersistedStateExport() async {
+    await _loadFuture;
+    await AppPreferences.setString(_prefsKey, _preference.name);
+  }
+
+  @override
+  Future<void> reloadPersistedState() async {
+    _preferenceRevision++;
+    _loadFuture = _loadLanguage();
+    await _loadFuture;
   }
 
   Future<void> _loadLanguage() async {

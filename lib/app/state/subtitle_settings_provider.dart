@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter_riverpod/legacy.dart';
+import '../application/persisted_state_reloader.dart';
 import '../../features/settings/application/app_preferences.dart';
 
 final subtitleSettingsProvider =
@@ -66,10 +67,13 @@ class SubtitleSettingsState {
   }
 }
 
-class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
+class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
+    implements PersistedStateReloader, PersistedStateExportPreparer {
   SubtitleSettingsNotifier() : super(SubtitleSettingsState()) {
-    _load();
+    _loadFuture = _load();
   }
+
+  late Future<void> _loadFuture;
 
   Future<void> _load() async {
     final showList =
@@ -141,6 +145,50 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState> {
       borderDepth: borderDepth,
       fontSize: fontSize,
     );
+  }
+
+  @override
+  Future<void> prepareForPersistedStateExport() async {
+    await _loadFuture;
+    final showList = state.showSubtitlesMap.entries
+        .map((entry) => '${entry.key}|${entry.value}')
+        .toList(growable: false);
+    final globalList = state.globalSubtitlesMap.entries
+        .map((entry) => '${entry.key}|${entry.value}')
+        .toList(growable: false);
+    final positions = state.positions.entries
+        .map((entry) => '${entry.key}|${entry.value}')
+        .toList(growable: false);
+    await Future.wait<bool>(<Future<bool>>[
+      AppPreferences.setStringList('subtitle_show_map', showList),
+      AppPreferences.setStringList('subtitle_global_map', globalList),
+      AppPreferences.setStringList('subtitle_positions', positions),
+      AppPreferences.setString('subtitle_font_family', state.fontFamily),
+      AppPreferences.setString(
+        'subtitle_font_color',
+        state.fontColor?.toARGB32().toRadixString(16).padLeft(8, '0') ?? '',
+      ),
+      AppPreferences.setString(
+        'subtitle_background_opacity',
+        state.backgroundOpacity.toString(),
+      ),
+      AppPreferences.setString(
+        'subtitle_background_color',
+        state.backgroundColor?.toARGB32().toRadixString(16).padLeft(8, '0') ??
+            '',
+      ),
+      AppPreferences.setString(
+        'subtitle_border_depth',
+        state.borderDepth.toString(),
+      ),
+      AppPreferences.setString('subtitle_font_size', state.fontSize.toString()),
+    ]);
+  }
+
+  @override
+  Future<void> reloadPersistedState() {
+    _loadFuture = _load();
+    return _loadFuture;
   }
 
   void toggleShowSubtitles(String sessionId) {

@@ -429,6 +429,20 @@ class _BlockingAsmrPreferencesStore extends AsmrPreferencesStore {
   }
 }
 
+class _RecordingAsmrPreferencesStore extends AsmrPreferencesStore {
+  _RecordingAsmrPreferencesStore({required super.database});
+
+  ContentLanguagePreference? savedContentLanguage;
+
+  @override
+  Future<void> saveContentLanguagePreference(
+    ContentLanguagePreference preference,
+  ) async {
+    savedContentLanguage = preference;
+    await super.saveContentLanguagePreference(preference);
+  }
+}
+
 class _BlockingAsmrAuthService extends AsmrAuthService {
   _BlockingAsmrAuthService() : super(apiService: _FakeAsmrApiService());
 

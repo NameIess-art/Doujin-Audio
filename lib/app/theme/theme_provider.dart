@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../application/persisted_state_reloader.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/platform/app_icon_platform_service.dart';
 import '../../core/ui/app_icon_color_group.dart';
@@ -89,7 +90,9 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
   }
 }
 
-class ThemeProvider with ChangeNotifier {
+class ThemeProvider
+    with ChangeNotifier
+    implements PersistedStateReloader, PersistedStateExportPreparer {
   static const _themeModeKey = 'themeMode';
   static const _differentiateAsmrThemeKey = 'differentiateAsmrTheme';
   static const _appThemeColorKey = 'appThemeColor';
@@ -187,6 +190,27 @@ class ThemeProvider with ChangeNotifier {
     _rebuildThemes();
     notifyListeners();
     await AppPreferences.setString(_asmrThemeColorKey, value.name);
+  }
+
+  @override
+  Future<void> prepareForPersistedStateExport() async {
+    await Future.wait<bool>(<Future<bool>>[
+      AppPreferences.setString(_themeModeKey, _themeMode.name),
+      AppPreferences.setBool(
+        _differentiateAsmrThemeKey,
+        _differentiateAsmrTheme,
+      ),
+      AppPreferences.setString(_appThemeColorKey, _appThemeColor.name),
+      AppPreferences.setString(_asmrThemeColorKey, _asmrThemeColor.name),
+    ]);
+  }
+
+  @override
+  Future<void> reloadPersistedState() async {
+    _loadThemeSync();
+    _rebuildThemes();
+    notifyListeners();
+    await _syncAppIconTheme();
   }
 
   void _rebuildThemes() {

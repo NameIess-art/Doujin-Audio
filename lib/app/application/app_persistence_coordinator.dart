@@ -156,6 +156,7 @@ final class AppPersistenceCoordinator
   @override
   Future<void> prepareForPersistedStateExport() async {
     if (_disposed) return;
+    await _settings.prepareForBackupExport();
     await _library.prepareForBackupExport();
   }
 

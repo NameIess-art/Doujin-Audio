@@ -103,6 +103,9 @@ final backupRestoreCoordinatorProvider = Provider<BackupRestoreCoordinator>((
 ) {
   final reloaders = <PersistedStateReloader>[
     ref.watch(appPersistenceCoordinatorProvider),
+    ref.watch(themeProviderInstanceProvider),
+    ref.watch(appLanguageProviderInstanceProvider),
+    ref.watch(subtitleSettingsProvider.notifier),
   ];
   final asmr = ref.watch(asmrLibraryControllerProvider);
   if (asmr != null) reloaders.add(asmr);

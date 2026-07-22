@@ -74,6 +74,34 @@ void main() {
     expect(preferences.getString('themeMode'), 'light');
   });
 
+  test(
+    'backup preparation materializes and reloads every theme option',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final appIconService = _RecordingAppIconPlatformService();
+      final provider = ThemeProvider(appIconPlatformService: appIconService);
+
+      await provider.prepareForPersistedStateExport();
+      final preferences = await SharedPreferences.getInstance();
+      expect(preferences.getString('themeMode'), 'system');
+      expect(preferences.getBool('differentiateAsmrTheme'), isTrue);
+      expect(preferences.getString('appThemeColor'), 'rose');
+      expect(preferences.getString('asmrThemeColor'), 'blue');
+
+      await preferences.setString('themeMode', 'dark');
+      await preferences.setBool('differentiateAsmrTheme', false);
+      await preferences.setString('appThemeColor', 'mint');
+      await preferences.setString('asmrThemeColor', 'amber');
+      await provider.reloadPersistedState();
+
+      expect(provider.themeMode, ThemeMode.dark);
+      expect(provider.differentiateAsmrTheme, isFalse);
+      expect(provider.appThemeColor, ThemeAccentPreset.mint);
+      expect(provider.asmrThemeColor, ThemeAccentPreset.amber);
+    },
+  );
+
   test('theme changes synchronize the launcher icon mode', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();

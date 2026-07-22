@@ -11,6 +11,52 @@ void main() {
     expect(appLanguageEn.keys.toSet(), zhKeys);
   });
 
+  test('localized values preserve the placeholders used in Chinese', () {
+    final placeholderPattern = RegExp(r'\{[^{}]+\}');
+
+    List<String> placeholders(String value) {
+      final matches = placeholderPattern
+          .allMatches(value)
+          .map((match) => match.group(0)!)
+          .toList();
+      return matches..sort();
+    }
+
+    for (final entry in appLanguageZh.entries) {
+      final expected = placeholders(entry.value);
+
+      expect(
+        placeholders(appLanguageJa[entry.key]!),
+        expected,
+        reason: 'ja:${entry.key}',
+      );
+      expect(
+        placeholders(appLanguageEn[entry.key]!),
+        expected,
+        reason: 'en:${entry.key}',
+      );
+    }
+  });
+
+  test('localized values are non-empty and have no edge whitespace', () {
+    final languageTables = <String, Map<String, String>>{
+      'zh': appLanguageZh,
+      'ja': appLanguageJa,
+      'en': appLanguageEn,
+    };
+
+    for (final language in languageTables.entries) {
+      for (final entry in language.value.entries) {
+        expect(entry.value, isNotEmpty, reason: '${language.key}:${entry.key}');
+        expect(
+          entry.value.trim(),
+          entry.value,
+          reason: '${language.key}:${entry.key}',
+        );
+      }
+    }
+  });
+
   test('about page localization keys are present in every language', () {
     const requiredKeys = <String>[
       'about',

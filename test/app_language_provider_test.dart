@@ -23,11 +23,11 @@ void main() {
       expect(provider.tr('background_transparency'), '背景透明度');
       expect(
         provider.tr('volume_warning_message'),
-        '音量ブーストはクリッピングや歪みの原因になることがあります',
+        '音量ブーストはクリッピングや歪みの原因になることがあります。',
       );
 
       await provider.setLanguage(AppLanguage.en);
-      expect(provider.tr('background_transparency'), 'Background Transparency');
+      expect(provider.tr('background_transparency'), 'Background transparency');
       expect(provider.tr('exact_alarm_permission_title'), 'Allow exact alarms');
     },
   );
@@ -47,11 +47,11 @@ void main() {
 
       await provider.setLanguage(AppLanguage.en);
       expect(provider.tr('add_playback_queue'), 'Create playback queue');
-      expect(provider.tr('asmr_detail_other'), 'Other details');
+      expect(provider.tr('asmr_detail_other'), 'Other information');
 
       await provider.setLanguage(AppLanguage.ja);
       expect(provider.tr('add_playback_queue'), '再生キューを作成');
-      expect(provider.tr('asmr_detail_other'), 'その他の詳細');
+      expect(provider.tr('asmr_detail_other'), 'その他の情報');
     },
   );
 

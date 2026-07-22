@@ -547,6 +547,41 @@ void main() {
     expect(find.byIcon(Icons.pause_rounded), findsNothing);
     expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
     expect(find.byType(SessionFeatureBadgeStack), findsNothing);
+
+    session.playbackError = null;
+    session.isLoading = true;
+    session.isPlaybackStarting = true;
+    session.setOptimisticState(playing: true);
+    playbackService.markActiveSessionsDirty();
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 1,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.text(languageProvider.tr('playback_loading')), findsOneWidget);
+    expect(find.byIcon(Icons.pause_rounded), findsNothing);
+
+    session.isLoading = false;
+    session.isPlaybackStarting = false;
+    playbackService.markActiveSessionsDirty();
+    playbackService.syncSlice(
+      activeSessions: [session],
+      playingSessionCount: 1,
+      focusedSessionId: session.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pump();
+
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
     expect(
       find.byWidgetPredicate(
         (widget) => widget is Semantics && widget.properties.value == '1 / 1',

@@ -76,6 +76,12 @@ void main() {
     }
   });
 
+  test('download conflict overwrite labels stay concise across languages', () {
+    expect(appLanguageZh['asmr_download_conflict_overwrite'], '覆盖');
+    expect(appLanguageJa['asmr_download_conflict_overwrite'], '上書き');
+    expect(appLanguageEn['asmr_download_conflict_overwrite'], 'Overwrite');
+  });
+
   test(
     'download and safe error localization keys are present in every language',
     () {

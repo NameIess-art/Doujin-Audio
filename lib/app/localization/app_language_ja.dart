@@ -185,7 +185,7 @@ const Map<String, String> appLanguageJa = {
   'asmr_download_conflict_title': '同名項目の処理',
   'asmr_download_conflict_message': '保存先に同名のファイルやフォルダがある場合、どう処理しますか？',
   'asmr_download_conflict_skip': 'スキップ',
-  'asmr_download_conflict_overwrite': '既存ファイルを置換',
+  'asmr_download_conflict_overwrite': '上書き',
   'asmr_download_task_running': '現在実行中のダウンロードタスクがあります',
   'asmr_download_select_required': 'ダウンロードするファイルまたはフォルダを先に選択してください',
   'asmr_download_completed_with_failures': 'ダウンロードは完了しましたが、一部のファイルに失敗しました',

@@ -185,7 +185,7 @@ const Map<String, String> appLanguageZh = {
   'asmr_download_conflict_title': '同名项处理',
   'asmr_download_conflict_message': '目标路径里如果有同名文件或文件夹，要怎么处理？',
   'asmr_download_conflict_skip': '跳过',
-  'asmr_download_conflict_overwrite': '覆盖原文件',
+  'asmr_download_conflict_overwrite': '覆盖',
   'asmr_download_task_running': '当前已有下载任务在运行',
   'asmr_download_select_required': '请先选择要下载的文件或文件夹',
   'asmr_download_completed_with_failures': '下载完成，但有部分文件失败',

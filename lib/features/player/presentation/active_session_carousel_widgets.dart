@@ -40,7 +40,8 @@ class _ActiveSessionCard extends ConsumerWidget {
             session;
         return (
           playing: currentSession.effectivePlaying,
-          loading: currentSession.isLoading,
+          loading:
+              currentSession.isLoading || currentSession.isPlaybackStarting,
           trackPath: currentSession.currentTrackPath,
           channelSwapEnabled: currentSession.channelSwapEnabled,
           audioEffects: currentSession.audioEffects,
@@ -458,7 +459,9 @@ class _ActiveSessionTitleSubtitleState
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final secondaryText = widget.playbackError == null
-        ? _subtitleText
+        ? (widget.session.isLoading || widget.session.isPlaybackStarting
+              ? i18n.tr('playback_loading')
+              : _subtitleText)
         : widget.useAsmrOneErrorText
         ? localizedPlaybackErrorText(
             i18n,

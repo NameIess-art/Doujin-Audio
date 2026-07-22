@@ -206,7 +206,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_conflict_message':
       'What should happen if the target path has a file or folder with the same name?',
   'asmr_download_conflict_skip': 'Skip',
-  'asmr_download_conflict_overwrite': 'Replace existing',
+  'asmr_download_conflict_overwrite': 'Overwrite',
   'asmr_download_task_running': 'A download task is already running',
   'asmr_download_select_required': 'Select files or folders to download first',
   'asmr_download_completed_with_failures':

@@ -1,13 +1,18 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_en.dart';
 import 'package:nameless_audio/app/localization/app_language_zh.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/core/media/card_info_field.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
+import 'package:nameless_audio/core/widgets/scroll_activity_gate.dart';
+import 'package:nameless_audio/core/widgets/top_page_header.dart';
+import 'package:nameless_audio/features/settings/application/settings_state.dart';
 
 Widget _buildSurface(Widget child) => MaterialApp(
   theme: ThemeData.dark(useMaterial3: true),
@@ -15,6 +20,39 @@ Widget _buildSurface(Widget child) => MaterialApp(
     body: Center(child: SizedBox(width: 360, child: child)),
   ),
 );
+
+Widget _buildScrollableHeader({required bool blurEnabled}) {
+  return ProviderScope(
+    overrides: [
+      settingsStateProvider.overrideWith(
+        (ref) => Stream<SettingsState>.value(
+          SettingsState(uiBlurEffectEnabled: blurEnabled),
+        ),
+      ),
+    ],
+    child: MaterialApp(
+      theme: ThemeData.light(useMaterial3: true),
+      home: Scaffold(
+        body: ScrollActivityGate(
+          child: Stack(
+            children: [
+              ListView(
+                key: const ValueKey('header_scroll_list'),
+                children: const [SizedBox(height: 1400)],
+              ),
+              const Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: TopPageHeader(title: 'Library'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
 
 LibraryLikeWorkCardContent _buildFeaturedCard({
   required String title,
@@ -43,6 +81,43 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
 }
 
 void main() {
+  testWidgets('top header pauses blur while scrolling and restores it idle', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_buildScrollableHeader(blurEnabled: true));
+    await tester.pump();
+
+    expect(find.byType(BackdropFilter), findsOneWidget);
+
+    await tester.drag(
+      find.byKey(const ValueKey('header_scroll_list')),
+      const Offset(0, -240),
+    );
+    await tester.pump();
+
+    expect(find.byType(BackdropFilter), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 170));
+    expect(find.byType(BackdropFilter), findsOneWidget);
+  });
+
+  testWidgets('top header keeps blur disabled when the setting is off', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_buildScrollableHeader(blurEnabled: false));
+    await tester.pump();
+
+    expect(find.byType(BackdropFilter), findsNothing);
+
+    await tester.drag(
+      find.byKey(const ValueKey('header_scroll_list')),
+      const Offset(0, -240),
+    );
+    await tester.pump(const Duration(milliseconds: 170));
+
+    expect(find.byType(BackdropFilter), findsNothing);
+  });
+
   testWidgets('placeholder content fades over the shared 750ms duration', (
     tester,
   ) async {

@@ -543,6 +543,26 @@ final playlistListUiProvider = Provider<PlaylistListState>((ref) {
   );
 });
 
+final playlistStructureUiProvider = Provider<PlaylistStructureState>((ref) {
+  final playbackState =
+      ref.watch(playbackStateProvider).value ??
+      ref.watch(playbackFacadeProvider).state;
+  return playlistStructureStateFromPlaybackState(playbackState);
+});
+
+final playlistSessionCardStateProvider =
+    Provider.family<PlaylistSessionCardState?, String>((ref, sessionId) {
+      final playbackState =
+          ref.watch(playbackStateProvider).value ??
+          ref.watch(playbackFacadeProvider).state;
+      for (final session in playbackState.activeSessions) {
+        if (session.id == sessionId) {
+          return playlistSessionCardStateFromSession(session);
+        }
+      }
+      return null;
+    });
+
 final coverGenerationProvider = Provider<int>((ref) {
   return ref.watch(playbackStateProvider).value?.coverGeneration ??
       ref.watch(playbackFacadeProvider).state.coverGeneration;

@@ -410,22 +410,24 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   void _schedulePlaybackCoverWarmup(
-    PlaylistListState listState,
+    PlaylistStructureState structureState,
     AudioPathCoordinator paths,
     AudioUiWarmupCoordinator warmup,
   ) {
-    if (_isReordering || !listState.isInitialized || !listState.hasSessions) {
+    if (_isReordering ||
+        !structureState.isInitialized ||
+        !structureState.hasSessions) {
       return;
     }
     final tracks = <MusicTrack?>[];
     final signatureParts = <String>[
-      listState.coverGeneration.toString(),
-      listState.sessions.length.toString(),
+      structureState.coverGeneration.toString(),
+      structureState.entries.length.toString(),
     ];
-    for (final session in listState.sessions.take(10)) {
-      signatureParts.add(session.id);
-      final cardState = listState.cardStateFor(session.id);
-      if (session.isPlaybackQueue) {
+    for (final structure in structureState.entries.take(10)) {
+      final session = structure.session;
+      signatureParts.add(structure.sessionId);
+      if (structure.isPlaybackQueue) {
         for (final entry in session.playbackQueue!.entries.take(4)) {
           final track = entry.tracks.firstOrNull;
           if (track == null) continue;
@@ -434,9 +436,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         }
         continue;
       }
-      final trackPath = cardState?.trackPath ?? session.currentTrackPath;
-      signatureParts.add(trackPath);
-      tracks.add(paths.sessionTrackForPath(session.id, trackPath));
+      signatureParts.add(structure.trackPath);
+      tracks.add(
+        paths.sessionTrackForPath(structure.sessionId, structure.trackPath),
+      );
     }
     if (tracks.isEmpty) return;
     final signature = signatureParts.join('|');
@@ -515,13 +518,18 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final playback = ref.read(playbackFacadeProvider);
     final settings = ref.read(settingsRepositoryProvider);
     final warmup = ref.read(audioUiWarmupCoordinatorProvider);
-    final PlaylistListState listState;
+    final PlaylistListState? reorderSnapshot;
+    final PlaylistStructureState structureState;
     if (_isReordering) {
-      listState = _reorderSnapshot ?? ref.read(playlistListUiProvider);
+      final PlaylistListState snapshot =
+          _reorderSnapshot ?? ref.read(playlistListUiProvider);
+      reorderSnapshot = snapshot;
+      structureState = playlistStructureStateFromListState(snapshot);
     } else {
-      listState = _isActive
-          ? ref.watch(playlistListUiProvider)
-          : ref.read(playlistListUiProvider);
+      reorderSnapshot = null;
+      structureState = _isActive
+          ? ref.watch(playlistStructureUiProvider)
+          : ref.read(playlistStructureUiProvider);
     }
     final settingsState =
         (_isReordering
@@ -537,39 +545,42 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               ? ref.watch(subtitleSettingsProvider)
               : ref.read(subtitleSettingsProvider));
     _scheduleInitialPlaceholderDismissal(
-      isInitialized: listState.isInitialized,
+      isInitialized: structureState.isInitialized,
     );
-    _schedulePlaybackCoverWarmup(listState, paths, warmup);
+    _schedulePlaybackCoverWarmup(structureState, paths, warmup);
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final coverCacheWidth = coverCacheWidthForResolution(
       settingsState.coverImageResolution,
     );
     final listBottomInset = MobileOverlayInset.of(context);
-    final listCacheExtent = (headerHeight + 800)
-        .clamp(headerHeight + 4, 1600.0)
-        .toDouble();
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
+    final listCacheExtent = playlistListCacheExtent(
+      headerHeight: headerHeight,
+      viewportWidth: MediaQuery.sizeOf(context).width,
+      isLandscape: isLandscape,
+    );
     const double expansion = 320.0;
     const topPadding = 4.0 + expansion;
     const bottomPadding = 16.0 + expansion;
 
     Widget buildSessionItem(BuildContext context, int index) {
-      if (index == listState.sessions.length) {
+      if (index == structureState.entries.length) {
         return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
       }
-      final session = listState.sessions[index];
-      final cardState = listState.cardStateFor(session.id);
-      if (cardState == null) {
+      final structure = structureState.entries[index];
+      final session = structure.session;
+      final cardStateOverride = reorderSnapshot?.cardStateFor(session.id);
+      if (reorderSnapshot != null && cardStateOverride == null) {
         return SizedBox.shrink(key: ValueKey(session.id));
       }
-      final track = paths.sessionTrackForPath(session.id, cardState.trackPath);
+      final track = paths.sessionTrackForPath(session.id, structure.trackPath);
       final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
       final child = RepaintBoundary(
-        child: session.isPlaybackQueue
+        child: structure.isPlaybackQueue
             ? _PlaybackQueueCard(
                 session: session,
-                cardState: cardState,
+                cardStateOverride: cardStateOverride,
                 library: library,
                 playback: playback,
                 index: index,
@@ -587,10 +598,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               )
             : _SessionListCard(
                 sessionId: session.id,
-                cardState: cardState,
+                cardStateOverride: cardStateOverride,
                 track: track,
                 coverPath: coverPath,
-                coverGeneration: listState.coverGeneration,
+                coverGeneration: structureState.coverGeneration,
                 coverCacheWidth: coverCacheWidth,
                 showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 library: library,
@@ -625,7 +636,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               scrollbarMainAxisMargin: isLandscape ? 12 : 0,
               child: PlaceholderContentTransition(
                 showPlaceholder:
-                    !_initialPlaceholderDismissed || !listState.isInitialized,
+                    !_initialPlaceholderDismissed ||
+                    !structureState.isInitialized,
                 placeholder: const _PlaylistLoadingSkeleton(
                   key: ValueKey('playlist_initial_placeholder'),
                   topPadding: topPadding,
@@ -635,14 +647,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   key: const ValueKey('playlist_loaded_content'),
                   clipBehavior: Clip.none,
                   children: [
-                    if (!listState.hasSessions)
+                    if (!structureState.hasSessions)
                       _SessionsEmptyState(
                         key: const ValueKey('empty_state'),
                         bottomInset: 100,
                         topInset: expansion + 64,
                         onOpenLibrary: widget.onOpenLibrary,
                       ),
-                    if (listState.hasSessions)
+                    if (structureState.hasSessions)
                       Theme(
                         data: Theme.of(
                           context,
@@ -670,7 +682,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   clipBehavior: Clip.none,
                                   keyboardDismissBehavior:
                                       ScrollViewKeyboardDismissBehavior.onDrag,
-                                  itemCount: listState.sessions.length + 1,
+                                  itemCount: structureState.entries.length + 1,
                                   itemBuilder: buildSessionItem,
                                 )
                               : ReorderableListView.builder(
@@ -702,7 +714,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   },
                                   onReorderStart: (_) {
                                     setState(() {
-                                      _reorderSnapshot = listState;
+                                      _reorderSnapshot = ref.read(
+                                        playlistListUiProvider,
+                                      );
                                       _isReordering = true;
                                     });
                                     unawaited(
@@ -725,7 +739,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                         child,
                                         animation,
                                       ),
-                                  itemCount: listState.sessions.length + 1,
+                                  itemCount: structureState.entries.length + 1,
                                   itemBuilder: buildSessionItem,
                                 ),
                         ),
@@ -793,14 +807,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               value: 'pause_all',
                               icon: Icons.pause_circle_outline_rounded,
                               label: i18n.tr('pause_all_sessions'),
-                              enabled: listState.hasSessions,
+                              enabled: structureState.hasSessions,
                             ),
                             UnifiedMenuEntry<String>.action(
                               value: 'clear_all',
                               icon: Icons.delete_sweep_rounded,
                               label: i18n.tr('clear_all_sessions'),
                               destructive: true,
-                              enabled: listState.hasSessions,
+                              enabled: structureState.hasSessions,
                             ),
                             const UnifiedMenuEntry<String>.divider(),
                             UnifiedMenuEntry<String>.action(
@@ -814,8 +828,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           ],
                           onSelected: (value) {
                             if (value == 'add_playback_queue') {
-                              final queueCount = listState.sessions
-                                  .where((session) => session.isPlaybackQueue)
+                              final queueCount = structureState.entries
+                                  .where((entry) => entry.isPlaybackQueue)
                                   .length;
                               ref
                                   .read(playbackFacadeProvider)

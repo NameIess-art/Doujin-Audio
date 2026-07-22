@@ -230,7 +230,7 @@ class _SessionsEmptyState extends StatelessWidget {
 class _SessionListCard extends ConsumerWidget {
   const _SessionListCard({
     required this.sessionId,
-    required this.cardState,
+    this.cardStateOverride,
     required this.track,
     required this.coverPath,
     required this.coverGeneration,
@@ -244,7 +244,7 @@ class _SessionListCard extends ConsumerWidget {
   });
 
   final String sessionId;
-  final PlaylistSessionCardState cardState;
+  final PlaylistSessionCardState? cardStateOverride;
   final MusicTrack? track;
   final String? coverPath;
   final int coverGeneration;
@@ -289,6 +289,10 @@ class _SessionListCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final cardState =
+        cardStateOverride ??
+        ref.watch(playlistSessionCardStateProvider(sessionId));
+    if (cardState == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -562,13 +566,13 @@ class _SessionListCard extends ConsumerWidget {
                           ],
                         ),
                       ],
-                    ),
-                  ),
+                      ),
                 ),
               ),
             ),
           ),
         ),
+      ),
     );
   }
 }

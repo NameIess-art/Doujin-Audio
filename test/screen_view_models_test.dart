@@ -181,6 +181,74 @@ void main() {
     expect(nativeSize, isNot(first));
   });
 
+  test(
+    'playlist structure ignores card-only state but tracks path changes',
+    () {
+      final playbackSession = session(id: 'structure', path: '/tracks/a.mp3');
+      addTearDown(playbackSession.dispose);
+
+      final pausedStructure = playlistStructureStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [playbackSession],
+          sessionStateVersion: 1,
+          isInitialized: true,
+        ),
+      );
+      final pausedCard = playlistSessionCardStateFromSession(playbackSession);
+
+      playbackSession.state = PlayerState(true, ProcessingState.ready);
+      final playingStructure = playlistStructureStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [playbackSession],
+          playingSessionCount: 1,
+          sessionStateVersion: 2,
+          isInitialized: true,
+        ),
+      );
+      final playingCard = playlistSessionCardStateFromSession(playbackSession);
+
+      expect(playingStructure, pausedStructure);
+      expect(playingCard, isNot(pausedCard));
+
+      playbackSession.currentTrackPath = '/tracks/b.mp3';
+      final nextTrackStructure = playlistStructureStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [playbackSession],
+          sessionStateVersion: 3,
+          isInitialized: true,
+        ),
+      );
+      expect(nextTrackStructure, isNot(playingStructure));
+    },
+  );
+
+  test('playlist cache extent uses a smaller mobile portrait budget', () {
+    expect(
+      playlistListCacheExtent(
+        headerHeight: 96,
+        viewportWidth: 430,
+        isLandscape: false,
+      ),
+      320,
+    );
+    expect(
+      playlistListCacheExtent(
+        headerHeight: 96,
+        viewportWidth: 900,
+        isLandscape: false,
+      ),
+      896,
+    );
+    expect(
+      playlistListCacheExtent(
+        headerHeight: 96,
+        viewportWidth: 430,
+        isLandscape: true,
+      ),
+      896,
+    );
+  });
+
   test('overlay state shows every session in both playback modes', () {
     final paused = session(id: 'paused', path: '/tracks/a.mp3');
     final playing = session(

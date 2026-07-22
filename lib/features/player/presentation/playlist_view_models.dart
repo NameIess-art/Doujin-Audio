@@ -90,6 +90,71 @@ class PlaylistListState {
 }
 
 @immutable
+class PlaylistStructureEntry {
+  const PlaylistStructureEntry({
+    required this.session,
+    required this.sessionId,
+    required this.trackPath,
+    required this.isPlaybackQueue,
+    required this.queueColorValue,
+    required this.queueContentSignature,
+  });
+
+  final PlaybackSession session;
+  final String sessionId;
+  final String trackPath;
+  final bool isPlaybackQueue;
+  final int? queueColorValue;
+  final int? queueContentSignature;
+
+  @override
+  bool operator ==(Object other) {
+    return other is PlaylistStructureEntry &&
+        other.sessionId == sessionId &&
+        other.trackPath == trackPath &&
+        other.isPlaybackQueue == isPlaybackQueue &&
+        other.queueColorValue == queueColorValue &&
+        other.queueContentSignature == queueContentSignature;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    sessionId,
+    trackPath,
+    isPlaybackQueue,
+    queueColorValue,
+    queueContentSignature,
+  );
+}
+
+@immutable
+class PlaylistStructureState {
+  const PlaylistStructureState({
+    required this.entries,
+    required this.coverGeneration,
+    required this.isInitialized,
+  });
+
+  final List<PlaylistStructureEntry> entries;
+  final int coverGeneration;
+  final bool isInitialized;
+
+  bool get hasSessions => entries.isNotEmpty;
+
+  @override
+  bool operator ==(Object other) {
+    return other is PlaylistStructureState &&
+        listEquals(other.entries, entries) &&
+        other.coverGeneration == coverGeneration &&
+        other.isInitialized == isInitialized;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(Object.hashAll(entries), coverGeneration, isInitialized);
+}
+
+@immutable
 class MainOverlayUiState {
   const MainOverlayUiState({
     required this.overlaySessions,
@@ -323,6 +388,15 @@ String buildSessionCoverPrecacheKey({
   return '$sessionId|$trackPath|$widthKey|$heightKey|$coverGeneration';
 }
 
+double playlistListCacheExtent({
+  required double headerHeight,
+  required double viewportWidth,
+  required bool isLandscape,
+}) {
+  if (!isLandscape && viewportWidth < 760) return 320;
+  return (headerHeight + 800).clamp(headerHeight + 4, 1600.0).toDouble();
+}
+
 PlaylistHeaderState playlistHeaderStateFromSlices(
   PlaybackStateSliceData playbackState,
   TimerStateSliceData timerState,
@@ -384,17 +458,88 @@ playlistSessionCardStatesFromPlaybackState(
 ) {
   return Map<String, PlaylistSessionCardState>.unmodifiable({
     for (final session in playbackState.activeSessions)
-      session.id: PlaylistSessionCardState(
-        sessionId: session.id,
-        trackPath: session.currentTrackPath,
-        loopMode: session.loopMode,
-        isPlaying: session.effectivePlaying,
-        isLoading: session.isLoading,
-        channelSwapEnabled: session.channelSwapEnabled,
-        audioEffects: session.audioEffects,
-        speed: session.speed,
-        playbackError: session.playbackError,
-        queueColorValue: session.playbackQueue?.colorValue,
-      ),
+      session.id: playlistSessionCardStateFromSession(session),
   });
+}
+
+PlaylistSessionCardState playlistSessionCardStateFromSession(
+  PlaybackSession session,
+) {
+  return PlaylistSessionCardState(
+    sessionId: session.id,
+    trackPath: session.currentTrackPath,
+    loopMode: session.loopMode,
+    isPlaying: session.effectivePlaying,
+    isLoading: session.isLoading,
+    channelSwapEnabled: session.channelSwapEnabled,
+    audioEffects: session.audioEffects,
+    speed: session.speed,
+    playbackError: session.playbackError,
+    queueColorValue: session.playbackQueue?.colorValue,
+  );
+}
+
+PlaylistStructureState playlistStructureStateFromPlaybackState(
+  PlaybackStateSliceData playbackState,
+) {
+  return PlaylistStructureState(
+    entries: List<PlaylistStructureEntry>.unmodifiable(
+      playbackState.activeSessions.map(_playlistStructureEntry),
+    ),
+    coverGeneration: playbackState.coverGeneration,
+    isInitialized: playbackState.isInitialized,
+  );
+}
+
+PlaylistStructureState playlistStructureStateFromListState(
+  PlaylistListState listState,
+) {
+  return PlaylistStructureState(
+    entries: List<PlaylistStructureEntry>.unmodifiable(
+      listState.sessions.map((session) {
+        final cardState = listState.cardStateFor(session.id);
+        return PlaylistStructureEntry(
+          session: session,
+          sessionId: session.id,
+          trackPath: cardState?.trackPath ?? session.currentTrackPath,
+          isPlaybackQueue: session.isPlaybackQueue,
+          queueColorValue:
+              cardState?.queueColorValue ?? session.playbackQueue?.colorValue,
+          queueContentSignature: _playlistQueueContentSignature(session),
+        );
+      }),
+    ),
+    coverGeneration: listState.coverGeneration,
+    isInitialized: listState.isInitialized,
+  );
+}
+
+PlaylistStructureEntry _playlistStructureEntry(PlaybackSession session) {
+  return PlaylistStructureEntry(
+    session: session,
+    sessionId: session.id,
+    trackPath: session.currentTrackPath,
+    isPlaybackQueue: session.isPlaybackQueue,
+    queueColorValue: session.playbackQueue?.colorValue,
+    queueContentSignature: _playlistQueueContentSignature(session),
+  );
+}
+
+int? _playlistQueueContentSignature(PlaybackSession session) {
+  final queue = session.playbackQueue;
+  if (queue == null) return null;
+  return Object.hash(
+    queue.name,
+    Object.hashAll(
+      queue.entries.map(
+        (entry) => Object.hash(
+          entry.id,
+          entry.kind,
+          entry.title,
+          entry.workRootPath,
+          Object.hashAll(entry.tracks.map((track) => track.path)),
+        ),
+      ),
+    ),
+  );
 }

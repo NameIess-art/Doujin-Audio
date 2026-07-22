@@ -152,6 +152,29 @@ class _MainScreenState extends ConsumerState<MainScreen>
       ),
       const SettingsTab(),
     ];
+    ref.listenManual<bool>(
+      mainOverlayUiProvider.select((state) => state.startupReady),
+      (_, startupReady) => _handleStartupReadyChanged(startupReady),
+      fireImmediately: true,
+    );
+    ref.listenManual<int>(
+      mainOverlayUiProvider.select((state) => state.activeSessionCount),
+      (_, activeSessionCount) =>
+          _handleActiveSessionCountChanged(activeSessionCount),
+      fireImmediately: true,
+    );
+    ref.listenManual<bool>(
+      mainOverlayUiProvider.select((state) => state.hasPlayingSession),
+      (_, hasPlayingSession) => _handlePlayingSessionChanged(hasPlayingSession),
+      fireImmediately: true,
+    );
+    ref.listenManual<bool>(
+      settingsStateProvider.select(
+        (value) => value.value?.autoCheckUpdates ?? false,
+      ),
+      (_, _) => _queueAutoUpdateCheckIfReady(),
+      fireImmediately: true,
+    );
     AppPreferences.getBool('desktop_menu_collapsed').then((collapsed) {
       if (mounted) {
         setState(() {
@@ -173,6 +196,59 @@ class _MainScreenState extends ConsumerState<MainScreen>
         if (!mounted) return;
         warmup.schedule(currentPageIndex: _currentIndex, immediate: true);
       });
+    });
+  }
+
+  void _handleStartupReadyChanged(bool startupReady) {
+    if (!mounted || !startupReady) return;
+    if (!_isDataReady) {
+      final startupPage =
+          ref.read(settingsStateProvider).value?.startupPage ??
+          StartupPage.library;
+      setState(() {
+        _currentIndex = startupPage.index;
+        _isDataReady = true;
+      });
+      _activePageIndex.value = _currentIndex;
+    }
+    _queueAutoUpdateCheckIfReady();
+  }
+
+  void _handleActiveSessionCountChanged(int activeSessionCount) {
+    if (!mounted) return;
+    if (activeSessionCount > 0 &&
+        !_notificationPermissionCheckDone &&
+        !_notificationPermissionCheckQueued) {
+      _notificationPermissionCheckQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _ensureNotificationPermission();
+      });
+    }
+  }
+
+  void _handlePlayingSessionChanged(bool hasPlayingSession) {
+    if (!mounted) return;
+    if (Platform.isAndroid &&
+        hasPlayingSession &&
+        !_backgroundPlaybackPromptShownThisLaunch &&
+        !_backgroundPlaybackPromptQueued) {
+      _backgroundPlaybackPromptQueued = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        unawaited(_maybePromptForBackgroundPlaybackReliability());
+      });
+    }
+  }
+
+  void _queueAutoUpdateCheckIfReady() {
+    if (!mounted || _autoUpdateCheckQueued) return;
+    final autoCheckUpdates =
+        ref.read(settingsStateProvider).value?.autoCheckUpdates ?? false;
+    if (!autoCheckUpdates || !ref.read(mainOverlayUiProvider).startupReady) {
+      return;
+    }
+    _autoUpdateCheckQueued = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(_checkForUpdatesOnLaunch());
     });
   }
 
@@ -578,57 +654,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
             systemStatusBarContrastEnforced: false,
             systemNavigationBarContrastEnforced: false,
           );
-    final overlayUi = ref.watch(mainOverlayUiProvider);
-    final startupPage = ref.watch(
-      settingsStateProvider.select(
-        (value) => value.value?.startupPage ?? StartupPage.library,
-      ),
-    );
     final bottomNavigationStyle = ref.watch(
       settingsStateProvider.select(
         (value) =>
             value.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
       ),
     );
-    final autoCheckUpdates = ref.watch(
-      settingsStateProvider.select(
-        (value) => value.value?.autoCheckUpdates ?? false,
-      ),
+    final hasNowPlaying = ref.watch(
+      mainOverlayUiProvider.select((state) => state.hasNowPlaying),
     );
-    if (autoCheckUpdates && overlayUi.startupReady && !_autoUpdateCheckQueued) {
-      _autoUpdateCheckQueued = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_checkForUpdatesOnLaunch());
-      });
-    }
-    final hasPlayingSession = overlayUi.hasPlayingSession;
-    final activeSessionCount = overlayUi.activeSessionCount;
-    final visibleSessions = overlayUi.visibleSessions;
-    final hasNowPlaying = overlayUi.hasNowPlaying;
     final previousHasNowPlaying = _lastHasNowPlaying;
     _lastHasNowPlaying = hasNowPlaying;
-    if (activeSessionCount > 0 &&
-        !_notificationPermissionCheckDone &&
-        !_notificationPermissionCheckQueued) {
-      _notificationPermissionCheckQueued = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _ensureNotificationPermission();
-      });
-    }
-    if (Platform.isAndroid &&
-        hasPlayingSession &&
-        !_backgroundPlaybackPromptShownThisLaunch &&
-        !_backgroundPlaybackPromptQueued) {
-      _backgroundPlaybackPromptQueued = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        unawaited(_maybePromptForBackgroundPlaybackReliability());
-      });
-    }
-    if (!_isDataReady && overlayUi.startupReady) {
-      _currentIndex = startupPage.index;
-      _activePageIndex.value = _currentIndex;
-      _isDataReady = true;
-    }
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
     final isDesktop =
@@ -663,10 +699,19 @@ class _MainScreenState extends ConsumerState<MainScreen>
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           if (isDesktop)
-                            _buildDesktopNavigation(
-                              context,
-                              i18n,
-                              visibleSessions,
+                            Consumer(
+                              builder: (context, ref, _) {
+                                final visibleSessions = ref.watch(
+                                  mainOverlayUiProvider.select(
+                                    (state) => state.visibleSessions,
+                                  ),
+                                );
+                                return _buildDesktopNavigation(
+                                  context,
+                                  i18n,
+                                  visibleSessions,
+                                );
+                              },
                             )
                           else
                             const SizedBox.shrink(),
@@ -680,12 +725,21 @@ class _MainScreenState extends ConsumerState<MainScreen>
                       ),
 
                       if (!isDesktop)
-                        _buildMobileBottomDock(
-                          context,
-                          i18n: i18n,
-                          overlaySessions: visibleSessions,
-                          style: bottomNavigationStyle,
-                          tinyMode: isTinyWindow,
+                        Consumer(
+                          builder: (context, ref, _) {
+                            final visibleSessions = ref.watch(
+                              mainOverlayUiProvider.select(
+                                (state) => state.visibleSessions,
+                              ),
+                            );
+                            return _buildMobileBottomDock(
+                              context,
+                              i18n: i18n,
+                              overlaySessions: visibleSessions,
+                              style: bottomNavigationStyle,
+                              tinyMode: isTinyWindow,
+                            );
+                          },
                         ),
 
                       if (_timerOverlayPrimed) const _ImmediateTimerScrim(),

@@ -1,9 +1,9 @@
 part of 'playlist_tab.dart';
 
-class _PlaybackQueueCard extends StatelessWidget {
+class _PlaybackQueueCard extends ConsumerWidget {
   const _PlaybackQueueCard({
     required this.session,
-    required this.cardState,
+    this.cardStateOverride,
     required this.library,
     required this.playback,
     required this.index,
@@ -14,7 +14,7 @@ class _PlaybackQueueCard extends StatelessWidget {
   });
 
   final PlaybackSession session;
-  final PlaylistSessionCardState cardState;
+  final PlaylistSessionCardState? cardStateOverride;
   final LibraryFacade library;
   final PlaybackFacade playback;
   final int index;
@@ -24,7 +24,11 @@ class _PlaybackQueueCard extends StatelessWidget {
   final VoidCallback onEdit;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cardState =
+        cardStateOverride ??
+        ref.watch(playlistSessionCardStateProvider(session.id));
+    if (cardState == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -141,7 +145,7 @@ class _PlaybackQueueCard extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       IconButton(
-                        tooltip: session.effectivePlaying
+                        tooltip: cardState.isPlaying
                             ? i18n.tr('pause')
                             : i18n.tr('play'),
                         onPressed: tracks.isEmpty

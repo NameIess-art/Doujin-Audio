@@ -251,7 +251,7 @@ const Map<String, String> appLanguageJa = {
   'create_another_session': 'もう1つ作成',
   'remove_audio': '音声を削除',
   'audio_detail': '詳細情報',
-  'audio_detail_title': '音声詳細情報',
+  'audio_detail_title': '詳細情報',
   'audio_detail_library_root': 'ライブラリのルートフォルダ',
   'audio_detail_single_file': '単独追加音声',
   'audio_detail_cover_image': 'カバー画像',

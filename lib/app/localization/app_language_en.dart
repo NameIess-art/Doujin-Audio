@@ -277,7 +277,7 @@ const Map<String, String> appLanguageEn = {
   'create_another_session': 'Create another session',
   'remove_audio': 'Remove audio',
   'audio_detail': 'Details',
-  'audio_detail_title': 'Audio details',
+  'audio_detail_title': 'Details',
   'audio_detail_library_root': 'Library root folder',
   'audio_detail_single_file': 'Single imported audio',
   'audio_detail_cover_image': 'Cover image',

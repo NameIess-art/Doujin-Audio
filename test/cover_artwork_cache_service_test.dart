@@ -1580,7 +1580,7 @@ void main() {
       final library = LibraryService()..watchedLibraries.add(root.path);
       final cache = CoverArtworkCacheService(libraryService: library);
 
-      expect(await cache.futureForFolder(root.path), isNull);
+      expect(await cache.futureForFolder(root.path), first.path);
       expect(await cache.discoverCoverCandidatesInFolder(root.path), <String>[
         first.path,
         '${sibling.path}${Platform.pathSeparator}sibling.jpg',

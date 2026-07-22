@@ -1558,6 +1558,9 @@ class CoverArtworkCacheService {
     final images = await _discoverFolderImages(folderPath, recursive: false);
     if (images.isNotEmpty) return images.first;
 
+    final nestedImages = await _discoverFolderImages(folderPath);
+    if (nestedImages.isNotEmpty) return nestedImages.first;
+
     for (final track in _tracksInCompleteCoverScope(folderPath)) {
       final candidate = track.isVideo
           ? await _resolveVideoFramePathForTrack(track)

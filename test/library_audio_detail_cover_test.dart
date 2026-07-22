@@ -46,9 +46,9 @@ void main() {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
 
-  group('folder image isolation', () {
+  group('folder image selection', () {
     test(
-      'nested image files do not leak into parent folder or track covers',
+      'work card selects a nested image without assigning it to the track',
       () async {
         final tempDir = await Directory.systemTemp.createTemp('library_cover_');
         addTearDown(() async {
@@ -90,7 +90,7 @@ void main() {
           await runtimeGraph.notifications.coverPathFutureForFolder(
             workDir.path,
           ),
-          isNull,
+          coverPath,
         );
         expect(
           await runtimeGraph.notifications.coverPathFutureForTrack(track),
@@ -98,6 +98,30 @@ void main() {
         );
       },
     );
+
+    test('work card prefers a root image over nested images', () async {
+      final workDir = await Directory.systemTemp.createTemp(
+        'library_root_cover_',
+      );
+      addTearDown(() async {
+        if (await workDir.exists()) await workDir.delete(recursive: true);
+      });
+      final nestedDir = Directory(
+        '${workDir.path}${Platform.pathSeparator}Disc1',
+      );
+      await nestedDir.create(recursive: true);
+      final rootCover = '${workDir.path}${Platform.pathSeparator}cover.jpg';
+      final nestedCover =
+          '${nestedDir.path}${Platform.pathSeparator}folder.jpg';
+      await File(rootCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+      await File(nestedCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+      runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+
+      expect(
+        await runtimeGraph.notifications.coverPathFutureForFolder(workDir.path),
+        rootCover,
+      );
+    });
   });
 
   group('cover scope consistency', () {
@@ -312,7 +336,7 @@ void main() {
           await runtimeGraph.notifications.coverPathFutureForFolder(
             workDir.path,
           ),
-          isNull,
+          coverFile.path,
         );
         expect(
           await runtimeGraph.notifications.coverPathFutureForFolder(

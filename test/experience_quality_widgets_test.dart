@@ -81,9 +81,7 @@ LibraryLikeWorkCardContent _buildFeaturedCard({
 }
 
 void main() {
-  testWidgets('top header pauses blur while scrolling and restores it idle', (
-    tester,
-  ) async {
+  testWidgets('top header keeps blur while scrolling', (tester) async {
     await tester.pumpWidget(_buildScrollableHeader(blurEnabled: true));
     await tester.pump();
 
@@ -95,7 +93,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byType(BackdropFilter), findsNothing);
+    expect(find.byType(BackdropFilter), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 170));
     expect(find.byType(BackdropFilter), findsOneWidget);

@@ -7,7 +7,6 @@ import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'marquee_text.dart';
-import 'scroll_activity_gate.dart';
 
 class TopPageHeader extends ConsumerStatefulWidget {
   const TopPageHeader({
@@ -173,7 +172,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
     final blurEnabled = ref.watch(
       settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
-    final useBlur = blurEnabled && !ScrollActivityGate.isScrollingOf(context);
+    final useBlur = blurEnabled;
     final currentAlpha = useBlur ? (isDark ? 0.82 : 0.88) : 1.0;
     final topPadding = widget.useSafeAreaTop
         ? MediaQuery.paddingOf(context).top

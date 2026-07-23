@@ -1480,6 +1480,60 @@ void main() {
     await tester.pump(PlaybackSession.loadingIndicatorThreshold);
   });
 
+  testWidgets('timeline subtitles lazily expand a bounded cue window', (
+    tester,
+  ) async {
+    const cueCount = 240;
+    const playbackIndex = 120;
+    final subtitleTrack = SubtitleTrack(
+      sourcePath: '/library/subtitles/large-track.srt',
+      cues: List<SubtitleCue>.generate(cueCount, (index) {
+        final start = Duration(seconds: index * 2);
+        return SubtitleCue(
+          start: start,
+          end: start + const Duration(seconds: 2),
+          text: 'Cue $index',
+        );
+      }),
+    );
+    await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.timeline,
+      subtitleTrack: subtitleTrack,
+      initialPosition: const Duration(seconds: playbackIndex * 2),
+    );
+    final listFinder = find.byKey(
+      const ValueKey<String>('subtitle_timeline_list'),
+    );
+    await pumpUntilFound(tester, listFinder);
+    await tester.pumpAndSettle();
+
+    final initialItemCount = tester
+        .widget<ListView>(listFinder)
+        .childrenDelegate
+        .estimatedChildCount!;
+    expect(initialItemCount, lessThan(cueCount));
+    expect(
+      find.byKey(
+        const ValueKey<String>('subtitle_timeline_text_$playbackIndex'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.drag(listFinder, const Offset(0, -10000));
+    await tester.pumpAndSettle();
+
+    final expandedItemCount = tester
+        .widget<ListView>(listFinder)
+        .childrenDelegate
+        .estimatedChildCount!;
+    expect(expandedItemCount, greaterThan(initialItemCount));
+    expect(expandedItemCount, lessThan(cueCount));
+
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+  });
+
   testWidgets('timeline subtitles expand beyond two lines without clipping', (
     tester,
   ) async {

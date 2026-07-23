@@ -1031,6 +1031,9 @@ class _TimelineSubtitleView extends StatefulWidget {
 }
 
 class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
+  static const int _initialWindowRadius = 30;
+  static const int _windowExpansionSize = 30;
+  static const int _windowExpansionThreshold = 4;
   static const double _minimumItemExtent = 48;
   static const double _minimumViewportHeight = _minimumItemExtent * 2;
   static const double _textHorizontalPadding = 20;
@@ -1041,12 +1044,15 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
 
   late final ScrollController _scrollController;
   late int _focusedIndex;
+  int _windowStart = 0;
+  int _windowEnd = 0;
   List<double> _itemExtents = const <double>[];
   List<double> _itemCenters = const <double>[];
   double _viewportHeight = _minimumViewportHeight;
   double _leadingPadding = _minimumItemExtent / 2;
   double _trailingPadding = _minimumItemExtent / 2;
-  (Object, double, TextScaler, TextDirection, TextStyle)? _layoutSignature;
+  (Object, int, int, double, TextScaler, TextDirection, TextStyle)?
+  _layoutSignature;
   Timer? _returnTimer;
   bool _isBrowsing = false;
   bool _isSnapping = false;
@@ -1054,11 +1060,13 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   bool _layoutAlignmentScheduled = false;
 
   int get _lastIndex => widget.cues.length - 1;
+  int get _windowLength => _windowEnd - _windowStart;
 
   @override
   void initState() {
     super.initState();
     _focusedIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
+    _resetWindowAround(_focusedIndex);
     _scrollController = ScrollController()
       ..addListener(_handleScrollOffsetChanged);
   }
@@ -1067,6 +1075,11 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   void didUpdateWidget(covariant _TimelineSubtitleView oldWidget) {
     super.didUpdateWidget(oldWidget);
     final playbackIndex = widget.playbackSubtitleIndex.clamp(0, _lastIndex);
+    if (!identical(oldWidget.cues, widget.cues)) {
+      _focusedIndex = playbackIndex;
+      _resetWindowAround(playbackIndex);
+      return;
+    }
     if (_isBrowsing) {
       if (_focusedIndex == playbackIndex) {
         _returnTimer?.cancel();
@@ -1095,7 +1108,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
   void _handleScrollOffsetChanged() {
     if (!_scrollController.hasClients || _itemCenters.isEmpty) return;
     final viewportCenter = _scrollController.offset + (_viewportHeight / 2);
-    final nextIndex = _nearestItemIndex(viewportCenter);
+    final nextIndex = _windowStart + _nearestWindowItemIndex(viewportCenter);
     if (nextIndex == _focusedIndex || !mounted) return;
     setState(() => _focusedIndex = nextIndex);
     // Give each subtitle paragraph a light, rate-limited detent while the
@@ -1134,6 +1147,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     if (_isSnapping || !mounted) return;
     _isSnapping = true;
     try {
+      _extendWindowNearFocusedIndex();
       await _scrollToIndex(_focusedIndex);
     } finally {
       _isSnapping = false;
@@ -1158,6 +1172,9 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
 
   Future<void> _scrollToIndex(int index) async {
     final targetIndex = index.clamp(0, _lastIndex);
+    if (!_windowContains(targetIndex)) {
+      setState(() => _resetWindowAround(targetIndex));
+    }
     if (!_scrollController.hasClients || _itemCenters.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_scrollToIndex(targetIndex));
@@ -1165,7 +1182,8 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
       return;
     }
     final position = _scrollController.position;
-    final targetOffset = (_itemCenters[targetIndex] - (_viewportHeight / 2))
+    final localIndex = targetIndex - _windowStart;
+    final targetOffset = (_itemCenters[localIndex] - (_viewportHeight / 2))
         .clamp(position.minScrollExtent, position.maxScrollExtent)
         .toDouble();
     if ((_scrollController.offset - targetOffset).abs() < 0.5) return;
@@ -1198,7 +1216,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     unawaited(widget.onSeek(widget.cues[_focusedIndex].start));
   }
 
-  int _nearestItemIndex(double viewportCenter) {
+  int _nearestWindowItemIndex(double viewportCenter) {
     var low = 0;
     var high = _itemCenters.length;
     while (low < high) {
@@ -1216,6 +1234,61 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
             _itemCenters[low] - viewportCenter
         ? previous
         : low;
+  }
+
+  bool _windowContains(int index) =>
+      index >= _windowStart && index < _windowEnd;
+
+  void _resetWindowAround(int index) {
+    final targetIndex = index.clamp(0, _lastIndex);
+    _windowStart = max(0, targetIndex - _initialWindowRadius);
+    _windowEnd = min(
+      widget.cues.length,
+      targetIndex + _initialWindowRadius + 1,
+    );
+    _invalidateLayoutMetrics();
+  }
+
+  void _extendWindowNearFocusedIndex() {
+    var nextStart = _windowStart;
+    var nextEnd = _windowEnd;
+    if (_focusedIndex - _windowStart <= _windowExpansionThreshold) {
+      nextStart = max(0, _windowStart - _windowExpansionSize);
+    }
+    if ((_windowEnd - 1) - _focusedIndex <= _windowExpansionThreshold) {
+      nextEnd = min(widget.cues.length, _windowEnd + _windowExpansionSize);
+    }
+    if (nextStart == _windowStart && nextEnd == _windowEnd) return;
+    setState(() {
+      _windowStart = nextStart;
+      _windowEnd = nextEnd;
+      _invalidateLayoutMetrics();
+    });
+  }
+
+  void _invalidateLayoutMetrics() {
+    _layoutSignature = null;
+    _itemExtents = const <double>[];
+    _itemCenters = const <double>[];
+  }
+
+  double _measureCueExtent(
+    SubtitleCue cue, {
+    required double textWidth,
+    required TextStyle textStyle,
+    required TextDirection textDirection,
+    required TextScaler textScaler,
+  }) {
+    final painter = TextPainter(
+      text: TextSpan(text: cue.text, style: textStyle),
+      textAlign: TextAlign.center,
+      textDirection: textDirection,
+      textScaler: textScaler,
+    )..layout(maxWidth: textWidth);
+    return max(
+      _minimumItemExtent,
+      (painter.height * 1.03) + (_textVerticalPadding * 2),
+    );
   }
 
   void _updateLayoutMetrics(List<double> itemExtents) {
@@ -1242,8 +1315,13 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _layoutAlignmentScheduled = false;
       if (!mounted || _isBrowsing || !_scrollController.hasClients) return;
+      if (!_windowContains(_focusedIndex) ||
+          _itemCenters.length != _windowLength) {
+        return;
+      }
       final position = _scrollController.position;
-      final targetOffset = (_itemCenters[_focusedIndex] - (_viewportHeight / 2))
+      final localIndex = _focusedIndex - _windowStart;
+      final targetOffset = (_itemCenters[localIndex] - (_viewportHeight / 2))
           .clamp(position.minScrollExtent, position.maxScrollExtent)
           .toDouble();
       if ((_scrollController.offset - targetOffset).abs() < 0.5) return;
@@ -1294,6 +1372,8 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
         final textDirection = Directionality.of(context);
         final layoutSignature = (
           widget.cues,
+          _windowStart,
+          _windowEnd,
           textWidth,
           textScaler,
           textDirection,
@@ -1301,20 +1381,16 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
         );
         if (_layoutSignature != layoutSignature) {
           _layoutSignature = layoutSignature;
-          final itemExtents = widget.cues
-              .map((cue) {
-                final painter = TextPainter(
-                  text: TextSpan(text: cue.text, style: focusedTextStyle),
-                  textAlign: TextAlign.center,
-                  textDirection: textDirection,
-                  textScaler: textScaler,
-                )..layout(maxWidth: textWidth);
-                return max(
-                  _minimumItemExtent,
-                  (painter.height * 1.03) + (_textVerticalPadding * 2),
-                );
-              })
-              .toList(growable: false);
+          final itemExtents = <double>[
+            for (var index = _windowStart; index < _windowEnd; index++)
+              _measureCueExtent(
+                widget.cues[index],
+                textWidth: textWidth,
+                textStyle: focusedTextStyle,
+                textDirection: textDirection,
+                textScaler: textScaler,
+              ),
+          ];
           _updateLayoutMetrics(itemExtents);
         }
         return SizedBox(
@@ -1332,8 +1408,9 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
                   bottom: _trailingPadding,
                 ),
                 itemExtentBuilder: (index, _) => _itemExtents[index],
-                itemCount: widget.cues.length,
-                itemBuilder: (context, index) {
+                itemCount: _windowLength,
+                itemBuilder: (context, localIndex) {
+                  final index = _windowStart + localIndex;
                   final cue = widget.cues[index];
                   final isFocused = index == _focusedIndex;
                   final isPlaybackSubtitle =

@@ -33,7 +33,6 @@ import '../../features/settings/presentation/app_update_flow.dart';
 import '../../features/player/presentation/timer_tab.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
 import '../../core/widgets/app_feedback.dart';
-import '../../core/widgets/app_brand_icon.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/confirm_action_dialog.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
@@ -42,9 +41,6 @@ part 'main_screen_notifications.dart';
 part 'main_screen_layout.dart';
 part 'main_screen_widgets.dart';
 part 'main_screen_timer_scrim.dart';
-
-@visibleForTesting
-const kBootstrapOverlayDuration = Duration(milliseconds: 1500);
 
 @visibleForTesting
 bool shouldRunGlobalSubtitleOverlay({required bool appInForeground}) {
@@ -87,7 +83,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   late final SubtitleOverlayController _subtitleOverlay;
   bool _timerOverlayPrimed = false;
 
-  bool _bootstrapDone = false;
   bool _isDataReady = false;
   bool? _lastHasNowPlaying;
   Timer? _notificationSessionNavigationTimer;
@@ -752,15 +747,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                         ),
 
                       if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
-
-                      if (!_bootstrapDone)
-                        _BootstrapOverlay(
-                          key: const ValueKey<String>('main_bootstrap_overlay'),
-                          visible: !_isDataReady,
-                          onAnimationEnd: () {
-                            if (mounted) setState(() => _bootstrapDone = true);
-                          },
-                        ),
                     ],
                   ),
                 ),

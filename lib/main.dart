@@ -44,7 +44,8 @@ import 'core/persistence/app_database.dart';
 
 Future<void> main() async {
   await runZonedGuarded<Future<void>>(() async {
-    WidgetsFlutterBinding.ensureInitialized();
+    final binding = WidgetsFlutterBinding.ensureInitialized();
+    binding.deferFirstFrame();
     await AppLogService.initialize();
     AppLogService.installFlutterErrorHandler();
     AppLogService.installPlatformErrorHandler();
@@ -64,6 +65,7 @@ Future<void> main() async {
           initializer: _initializeAudioPlayerApp,
         ),
         appBuilder: _createAudioPlayerApp,
+        onBootstrapSettled: binding.allowFirstFrame,
       ),
     );
   }, AppLogService.logZoneError);

@@ -20,6 +20,7 @@ class AppBootstrapHost extends StatefulWidget {
     this.exportDiagnostics,
     this.disposeController = true,
     this.locale,
+    this.onBootstrapSettled,
     super.key,
   });
 
@@ -28,6 +29,7 @@ class AppBootstrapHost extends StatefulWidget {
   final Future<void> Function()? exportDiagnostics;
   final bool disposeController;
   final Locale? locale;
+  final VoidCallback? onBootstrapSettled;
 
   @override
   State<AppBootstrapHost> createState() => _AppBootstrapHostState();
@@ -35,6 +37,7 @@ class AppBootstrapHost extends StatefulWidget {
 
 class _AppBootstrapHostState extends State<AppBootstrapHost> {
   Widget? _readyApp;
+  bool _bootstrapSettledScheduled = false;
 
   @override
   void initState() {
@@ -50,6 +53,7 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
     oldWidget.controller.removeListener(_handleStateChanged);
     if (oldWidget.disposeController) oldWidget.controller.dispose();
     _readyApp = null;
+    _bootstrapSettledScheduled = false;
     widget.controller.addListener(_handleStateChanged);
     unawaited(widget.controller.initialize());
   }
@@ -68,6 +72,9 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
   @override
   Widget build(BuildContext context) {
     final state = widget.controller.state;
+    if (state.phase != AppBootstrapPhase.initializing) {
+      _scheduleBootstrapSettled();
+    }
     if (state.phase == AppBootstrapPhase.ready) {
       return _readyApp ??= widget.appBuilder();
     }
@@ -132,5 +139,13 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
               ),
             ),
     );
+  }
+
+  void _scheduleBootstrapSettled() {
+    if (_bootstrapSettledScheduled) return;
+    _bootstrapSettledScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) widget.onBootstrapSettled?.call();
+    });
   }
 }

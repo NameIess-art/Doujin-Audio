@@ -32,6 +32,7 @@ void main() {
   ) async {
     var attempts = 0;
     var appBuilds = 0;
+    var bootstrapSettledCalls = 0;
     final controller = AppBootstrapController(
       initializer: () async {
         attempts++;
@@ -43,6 +44,7 @@ void main() {
       AppBootstrapHost(
         controller: controller,
         locale: const Locale('zh'),
+        onBootstrapSettled: () => bootstrapSettledCalls++,
         appBuilder: () {
           appBuilds++;
           return const MaterialApp(home: Text('ready app'));
@@ -57,6 +59,7 @@ void main() {
     );
     expect(find.text('Nameless Audio 启动失败'), findsOneWidget);
     expect(appBuilds, 0);
+    expect(bootstrapSettledCalls, 1);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('startup_retry_button')),
@@ -67,6 +70,36 @@ void main() {
     expect(find.text('ready app'), findsOneWidget);
     expect(attempts, 2);
     expect(appBuilds, 1);
+    expect(bootstrapSettledCalls, 1);
+  });
+
+  testWidgets('successful startup releases the native splash once', (
+    tester,
+  ) async {
+    final initialization = Completer<void>();
+    var bootstrapSettledCalls = 0;
+    final controller = AppBootstrapController(
+      initializer: () => initialization.future,
+    );
+
+    await tester.pumpWidget(
+      AppBootstrapHost(
+        controller: controller,
+        locale: const Locale('en'),
+        onBootstrapSettled: () => bootstrapSettledCalls++,
+        appBuilder: () => const MaterialApp(home: Text('ready app')),
+      ),
+    );
+    expect(bootstrapSettledCalls, 0);
+
+    initialization.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('ready app'), findsOneWidget);
+    expect(bootstrapSettledCalls, 1);
+    await tester.pump();
+    expect(bootstrapSettledCalls, 1);
   });
 
   testWidgets('startup diagnostics export failures stay in the error shell', (

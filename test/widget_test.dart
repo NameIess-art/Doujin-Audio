@@ -29,7 +29,6 @@ import 'package:nameless_audio/features/player/application/playback_notification
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
-import 'package:nameless_audio/core/widgets/app_brand_icon.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
@@ -312,39 +311,20 @@ void main() {
     },
   );
 
-  testWidgets('startup overlay stays for 1.5 seconds while pages initialize', (
+  testWidgets('app shell does not render a custom startup overlay', (
     tester,
   ) async {
     await _pumpAppShell(tester, waitForStartup: false);
     await tester.pump();
 
     const overlayKey = ValueKey<String>('main_bootstrap_overlay');
-    expect(find.byKey(overlayKey), findsOneWidget);
-    expect(find.byType(AppBrandIcon), findsOneWidget);
+    expect(find.byKey(overlayKey), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('main_page_stack')),
       findsOneWidget,
     );
-    expect(kBootstrapOverlayDuration, const Duration(milliseconds: 1500));
-
-    const entranceDuration = Duration(milliseconds: 750);
-    await tester.pump(entranceDuration);
+    await tester.pump(const Duration(milliseconds: 750));
     await tester.pump();
-    await tester.pump(
-      kBootstrapOverlayDuration -
-          entranceDuration -
-          const Duration(milliseconds: 1),
-    );
-    expect(find.byKey(overlayKey), findsOneWidget);
-
-    for (
-      var frame = 0;
-      frame < 60 && find.byKey(overlayKey).evaluate().isNotEmpty;
-      frame++
-    ) {
-      await tester.pump(const Duration(milliseconds: 16));
-    }
-    expect(find.byKey(overlayKey), findsNothing);
   });
 
   testWidgets('app shell supports Android landscape navigation', (
@@ -1472,27 +1452,11 @@ Future<_AppShellHarness> _pumpAppShell(
   );
   if (waitForStartup) {
     await _pumpMainScreenAnimations(tester, startup: true);
-    await _waitForAppBootstrap(tester);
   }
   return _AppShellHarness(
     language: languageProvider,
     playbackService: playbackService,
   );
-}
-
-Future<void> _waitForAppBootstrap(WidgetTester tester) async {
-  final overlay = find.byKey(const ValueKey<String>('main_bootstrap_overlay'));
-  for (
-    var attempt = 0;
-    attempt < 20 && overlay.evaluate().isNotEmpty;
-    attempt++
-  ) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 10)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
-  expect(overlay, findsNothing, reason: 'App bootstrap did not complete.');
 }
 
 Future<void> _pumpMainScreenAnimations(

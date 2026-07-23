@@ -161,10 +161,19 @@ final class NotificationFacade {
     if (stateService.synchronizationPaused == paused) return;
     stateService.synchronizationPaused = paused;
     if (paused) {
+      final hasPendingSynchronization =
+          _unifiedNotificationSyncTimer != null ||
+          _notificationProgressRefreshTimer != null ||
+          _queuedNotificationRefreshSessionId != null ||
+          _unifiedNotificationSyncPending;
+      if (hasPendingSynchronization) {
+        stateService.synchronizationPendingWhilePaused = true;
+      }
       _unifiedNotificationSyncTimer?.cancel();
       _unifiedNotificationSyncTimer = null;
       _notificationProgressRefreshTimer?.cancel();
       _notificationProgressRefreshTimer = null;
+      _queuedNotificationRefreshSessionId = null;
       return;
     }
     if (!stateService.synchronizationPendingWhilePaused) return;

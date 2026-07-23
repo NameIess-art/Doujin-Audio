@@ -97,6 +97,7 @@ extension NotificationFacadeSync on NotificationFacade {
 
   void _requestUnifiedPlaybackNotificationFlush() {
     if (stateService.synchronizationPaused) {
+      _unifiedNotificationSyncPending = false;
       stateService.synchronizationPendingWhilePaused = true;
       return;
     }
@@ -111,6 +112,11 @@ extension NotificationFacadeSync on NotificationFacade {
   Future<void> _flushUnifiedPlaybackNotificationState() async {
     try {
       while (_unifiedNotificationSyncPending) {
+        if (stateService.synchronizationPaused) {
+          _unifiedNotificationSyncPending = false;
+          stateService.synchronizationPendingWhilePaused = true;
+          break;
+        }
         _unifiedNotificationSyncPending = false;
         final shouldShowUnifiedNotifications =
             _notificationsEnabled && !_notificationsDismissedWhilePaused;

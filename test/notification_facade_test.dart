@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/core/errors/native_result.dart';
@@ -14,61 +16,86 @@ import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 
 void main() {
   test('notification synchronization coalesces while paused', () async {
-    final library = LibraryFacade.create();
-    final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
-    );
     final service = _RecordingPlaybackNotificationService();
-    final facade = NotificationFacade.create(service: service);
-    library.attachCoverArtworkCacheService(
-      () => CoverArtworkCacheService(libraryService: library.service),
-    );
-    final session = PlaybackSession(
-      id: 'paused-notification-session',
-      currentTrackPath: '/tracks/paused.mp3',
-      loopMode: SessionLoopMode.folderSequential,
-      nonSingleLoopMode: SessionLoopMode.folderSequential,
-      volume: 1,
-      createdAt: DateTime(2026),
-      state: PlayerState(true, ProcessingState.ready),
-    );
-    playback.registerSession(session);
-    facade.attachActions(
-      playback: playback,
-      resolveSession: ([sessionId]) => session,
-      resolveActionSession: () => session,
-      resumeSession: (_) async {},
-      multiThreadPlaybackEnabled: () => false,
-      setFocusSessionId: (_) {},
-      notify: () {},
-      syncKeepAlive: () {},
-      hasPlaybackToKeepAlive: () => true,
-      clearUnifiedNotifications: () async {},
-      preferredSessionId: () => session.id,
-      notifyNotificationChanged: () {},
-    );
-    facade.attachSynchronization(
-      playbackCommands: _NoopNotificationPlaybackCommands(),
-      subtitles: PlaybackSubtitleService(trackResolver: (_) => null),
-      trackByPath: (_) => null,
-      coverArtworkCacheService: library.coverArtworkCacheService,
-      notificationsEnabled: () => true,
-    );
+    final fixture = _createNotificationFixture(service);
+    addTearDown(fixture.dispose);
 
-    facade.setSynchronizationPaused(true);
-    facade.syncPlaybackState(immediateUnifiedSync: true);
-    facade.syncPlaybackState(immediateUnifiedSync: true);
+    fixture.facade.setSynchronizationPaused(true);
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(service.syncCount, 0);
 
-    facade.setSynchronizationPaused(false);
+    fixture.facade.setSynchronizationPaused(false);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(service.syncCount, 1);
+  });
 
-    session.dispose();
-    await facade.dispose();
-    await playback.dispose();
-    await library.dispose();
+  test('queued debounce survives synchronization pause', () async {
+    final service = _RecordingPlaybackNotificationService();
+    final fixture = _createNotificationFixture(service);
+    addTearDown(fixture.dispose);
+
+    fixture.facade.syncPlaybackState();
+    expect(fixture.facade.stateService.unifiedNotificationSyncTimer, isNotNull);
+
+    fixture.facade.setSynchronizationPaused(true);
+    expect(fixture.facade.stateService.unifiedNotificationSyncTimer, isNull);
+    expect(
+      fixture.facade.stateService.synchronizationPendingWhilePaused,
+      isTrue,
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    expect(service.syncCount, 0);
+
+    fixture.facade.setSynchronizationPaused(false);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(service.syncCount, 1);
+    expect(
+      fixture.facade.stateService.synchronizationPendingWhilePaused,
+      isFalse,
+    );
+  });
+
+  test('queued in-flight synchronization waits for resume', () async {
+    final service = _BlockingPlaybackNotificationService();
+    final fixture = _createNotificationFixture(service);
+    addTearDown(fixture.dispose);
+
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    await service.firstSyncStarted.future;
+
+    fixture.session.setOptimisticState(playing: false);
+    fixture.facade.syncPlaybackState(immediateUnifiedSync: true);
+    fixture.facade.setSynchronizationPaused(true);
+    service.releaseFirstSync.complete();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(service.syncCount, 1);
+    expect(
+      fixture.facade.stateService.synchronizationPendingWhilePaused,
+      isTrue,
+    );
+
+    fixture.facade.setSynchronizationPaused(false);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(service.syncCount, 2);
+    expect(
+      (service.payloads.last['items'] as List<dynamic>).single['playing'],
+      isFalse,
+    );
+  });
+
+  test('pause and resume without pending work does not synchronize', () async {
+    final service = _RecordingPlaybackNotificationService();
+    final fixture = _createNotificationFixture(service);
+    addTearDown(fixture.dispose);
+
+    fixture.facade.setSynchronizationPaused(true);
+    fixture.facade.setSynchronizationPaused(false);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+
+    expect(service.syncCount, 0);
   });
 
   test('NotificationFacade owns foreground notification recovery', () async {
@@ -194,6 +221,72 @@ void main() {
   );
 }
 
+_NotificationFixture _createNotificationFixture(
+  PlaybackNotificationService service,
+) {
+  final library = LibraryFacade.create();
+  final playback = PlaybackFacade.create(
+    databaseRepository: library.databaseRepository,
+  );
+  final facade = NotificationFacade.create(service: service);
+  library.attachCoverArtworkCacheService(
+    () => CoverArtworkCacheService(libraryService: library.service),
+  );
+  final session = PlaybackSession(
+    id: 'paused-notification-session',
+    currentTrackPath: '/tracks/paused.mp3',
+    loopMode: SessionLoopMode.folderSequential,
+    nonSingleLoopMode: SessionLoopMode.folderSequential,
+    volume: 1,
+    createdAt: DateTime(2026),
+    state: PlayerState(true, ProcessingState.ready),
+  );
+  playback.registerSession(session);
+  facade.attachActions(
+    playback: playback,
+    resolveSession: ([sessionId]) => session,
+    resolveActionSession: () => session,
+    resumeSession: (_) async {},
+    multiThreadPlaybackEnabled: () => false,
+    setFocusSessionId: (_) {},
+    notify: () {},
+    syncKeepAlive: () {},
+    hasPlaybackToKeepAlive: () => true,
+    clearUnifiedNotifications: () async {},
+    preferredSessionId: () => session.id,
+    notifyNotificationChanged: () {},
+  );
+  facade.attachSynchronization(
+    playbackCommands: _NoopNotificationPlaybackCommands(),
+    subtitles: PlaybackSubtitleService(trackResolver: (_) => null),
+    trackByPath: (_) => null,
+    coverArtworkCacheService: library.coverArtworkCacheService,
+    notificationsEnabled: () => true,
+  );
+  return _NotificationFixture(library, playback, facade, session);
+}
+
+final class _NotificationFixture {
+  const _NotificationFixture(
+    this.library,
+    this.playback,
+    this.facade,
+    this.session,
+  );
+
+  final LibraryFacade library;
+  final PlaybackFacade playback;
+  final NotificationFacade facade;
+  final PlaybackSession session;
+
+  Future<void> dispose() async {
+    session.dispose();
+    await facade.dispose();
+    await playback.dispose();
+    await library.dispose();
+  }
+}
+
 final class _RecordingPlaybackNotificationService
     extends PlaybackNotificationService {
   int syncCount = 0;
@@ -201,6 +294,23 @@ final class _RecordingPlaybackNotificationService
   @override
   Future<void> syncUnifiedNotifications(Map<String, dynamic> payload) async {
     syncCount++;
+  }
+}
+
+final class _BlockingPlaybackNotificationService
+    extends PlaybackNotificationService {
+  final Completer<void> firstSyncStarted = Completer<void>();
+  final Completer<void> releaseFirstSync = Completer<void>();
+  final List<Map<String, dynamic>> payloads = <Map<String, dynamic>>[];
+  int syncCount = 0;
+
+  @override
+  Future<void> syncUnifiedNotifications(Map<String, dynamic> payload) async {
+    payloads.add(payload);
+    syncCount++;
+    if (syncCount != 1) return;
+    firstSyncStarted.complete();
+    await releaseFirstSync.future;
   }
 }
 

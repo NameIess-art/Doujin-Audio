@@ -568,6 +568,30 @@ void main() {
             ),
       );
     });
+
+    test('syncSlice publishes detached paused session snapshots', () async {
+      final service = TimerService();
+      addTearDown(service.dispose);
+
+      service.pausedByTimerSessionIds.add('session-a');
+      service.syncSlice(isInitialized: true);
+      final firstState = service.slice.state;
+      final nextStateFuture = service.slice.stream
+          .skip(1)
+          .first
+          .timeout(const Duration(seconds: 1));
+      await Future<void>.delayed(Duration.zero);
+
+      service.pausedByTimerSessionIds.clear();
+      expect(firstState.pausedByTimerSessionIds, <String>['session-a']);
+
+      service.syncSlice(isInitialized: true);
+      final nextState = await nextStateFuture;
+
+      expect(nextState, isNot(same(firstState)));
+      expect(nextState.pausedByTimerSessionIds, isEmpty);
+      expect(firstState.pausedByTimerSessionIds, <String>['session-a']);
+    });
   });
 
   group('PlaybackSessionService', () {

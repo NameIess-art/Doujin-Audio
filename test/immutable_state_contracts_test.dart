@@ -1,10 +1,82 @@
+import 'dart:collection';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/core/immutable_collections.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/features/library/domain/library_node.dart';
 import 'package:nameless_audio/features/player/domain/audio_effects.dart';
 
 void main() {
+  test('immutable collection helpers detach external read-only views', () {
+    final listBacking = <String>['one'];
+    final mapBacking = <String, int>{'one': 1};
+    final setBacking = <String>{'one'};
+
+    final listSnapshot = immutableList<String>(
+      UnmodifiableListView<String>(listBacking),
+    );
+    final mapSnapshot = immutableMap<String, int>(
+      UnmodifiableMapView<String, int>(mapBacking),
+    );
+    final setSnapshot = immutableSet<String>(
+      UnmodifiableSetView<String>(setBacking),
+    );
+
+    listBacking.add('two');
+    mapBacking['two'] = 2;
+    setBacking.add('two');
+
+    expect(listSnapshot, <String>['one']);
+    expect(mapSnapshot, <String, int>{'one': 1});
+    expect(setSnapshot, <String>{'one'});
+    expect(() => listSnapshot.add('blocked'), throwsUnsupportedError);
+    expect(() => mapSnapshot['blocked'] = 3, throwsUnsupportedError);
+    expect(() => setSnapshot.add('blocked'), throwsUnsupportedError);
+    expect(immutableList<String>(listSnapshot), same(listSnapshot));
+    expect(immutableMap<String, int>(mapSnapshot), same(mapSnapshot));
+    expect(immutableSet<String>(setSnapshot), same(setSnapshot));
+  });
+
+  test('immutableJsonMap recursively detaches external read-only views', () {
+    final listBacking = <Object?>['one'];
+    final mapBacking = <Object?, Object?>{'one': 1};
+    final setBacking = <Object?>{'one'};
+    final jsonBacking = <String, Object?>{
+      'list': UnmodifiableListView<Object?>(listBacking),
+      'map': UnmodifiableMapView<Object?, Object?>(mapBacking),
+      'set': UnmodifiableSetView<Object?>(setBacking),
+    };
+
+    final shallowSnapshot = immutableMap<String, Object?>(jsonBacking);
+    final snapshot = immutableJsonMap(shallowSnapshot)!;
+
+    expect(snapshot, isNot(same(shallowSnapshot)));
+
+    listBacking.add('two');
+    mapBacking['two'] = 2;
+    setBacking.add('two');
+    jsonBacking['late'] = true;
+
+    expect(snapshot['list'], <Object?>['one']);
+    expect(snapshot['map'], <Object?, Object?>{'one': 1});
+    expect(snapshot['set'], <Object?>{'one'});
+    expect(snapshot, isNot(contains('late')));
+    expect(
+      () => (snapshot['list'] as List<Object?>).add('blocked'),
+      throwsUnsupportedError,
+    );
+    expect(
+      () => (snapshot['map'] as Map<Object?, Object?>)['blocked'] = true,
+      throwsUnsupportedError,
+    );
+    expect(
+      () => (snapshot['set'] as Set<Object?>).add('blocked'),
+      throwsUnsupportedError,
+    );
+    expect(immutableJsonMap(snapshot), same(snapshot));
+  });
+
   test('value objects copy and protect collection inputs', () {
     final tags = <String>['rain'];
     final metadata = <String, Object?>{

@@ -118,7 +118,7 @@ class PlaybackSessionService {
   }) {
     slice.update(
       PlaybackStateSliceData(
-        activeSessions: UnmodifiableListView<PlaybackSession>(activeSessions),
+        activeSessions: activeSessions,
         playingSessionCount: playingSessionCount,
         focusedSessionId: focusedSessionId,
         multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
@@ -165,9 +165,7 @@ class TimerService {
         autoResumeHour: autoResumeHour,
         autoResumeMinute: autoResumeMinute,
         autoResumeAt: autoResumeAt,
-        pausedByTimerSessionIds: UnmodifiableListView<String>(
-          pausedByTimerSessionIds,
-        ),
+        pausedByTimerSessionIds: pausedByTimerSessionIds,
         isInitialized: isInitialized,
       ),
     );

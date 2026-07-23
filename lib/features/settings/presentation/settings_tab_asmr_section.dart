@@ -31,7 +31,7 @@ List<Widget> _buildSettingsAsmrSection({
                     : PathDisplay.displayPathFor(destinationRoot),
                 softWrap: true,
               ),
-              leading: _settingsIcon(Icons.folder_rounded, cs.primary),
+              leading: _settingsIcon(Icons.folder_rounded, cs.onSurface),
               trailing: IconButton(
                 onPressed: asmrDownloadPathOperation.isBusy
                     ? null
@@ -70,7 +70,7 @@ List<Widget> _buildSettingsAsmrSection({
             };
             return ListTile(
               title: _settingsTitle(i18n.tr('asmr_download_conflict_setting')),
-              leading: _settingsIcon(Icons.rule_folder_rounded, cs.primary),
+              leading: _settingsIcon(Icons.rule_folder_rounded, cs.onSurface),
               trailing: _settingsDropdown<AsmrDownloadConflictPolicy>(
                 context,
                 value: conflictPolicy,
@@ -110,7 +110,10 @@ List<Widget> _buildSettingsAsmrSection({
               title: _settingsTitle(
                 i18n.tr('asmr_download_save_metadata_setting'),
               ),
-              secondary: _settingsIcon(Icons.description_outlined, cs.primary),
+              secondary: _settingsIcon(
+                Icons.description_outlined,
+                cs.onSurface,
+              ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
@@ -142,7 +145,7 @@ List<Widget> _buildSettingsAsmrSection({
               ),
               leading: _settingsIcon(
                 Icons.drive_file_rename_outline,
-                cs.primary,
+                cs.onSurface,
               ),
               trailing: Icon(
                 Icons.chevron_right_rounded,

@@ -22,7 +22,7 @@ List<Widget> _buildSettingsDataSection({
         ListTile(
           onTap: onOpenDataAndSupport,
           title: _settingsTitle(i18n.tr('data_and_support')),
-          leading: _settingsIcon(Icons.health_and_safety_rounded, cs.primary),
+          leading: _settingsIcon(Icons.health_and_safety_rounded, cs.onSurface),
           trailing: Icon(
             Icons.chevron_right_rounded,
             size: 20,
@@ -52,7 +52,7 @@ List<Widget> _buildSettingsDataSection({
                 AppCacheService.formatBytes(maxCacheBytes),
                 softWrap: true,
               ),
-              leading: _settingsIcon(Icons.storage_rounded, cs.primary),
+              leading: _settingsIcon(Icons.storage_rounded, cs.onSurface),
               trailing: _settingsDropdown<int>(
                 context,
                 value: _settingsCacheLimitOptions.contains(maxCacheBytes)
@@ -88,7 +88,7 @@ List<Widget> _buildSettingsDataSection({
               title: _settingsTitle(i18n.tr('clear_app_cache')),
               leading: _settingsIcon(
                 Icons.cleaning_services_rounded,
-                cs.primary,
+                cs.onSurface,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               trailing: cacheOperation.isBusy

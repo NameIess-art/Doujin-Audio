@@ -128,6 +128,10 @@ void main() {
     expect(languageTileHeight, 78);
     final languageTileContext = tester.element(firstLanguageTile);
     final languageTileTheme = ListTileTheme.of(languageTileContext);
+    expect(
+      languageIcon.color,
+      Theme.of(languageTileContext).colorScheme.onSurface,
+    );
     expect(languageTileTheme.minTileHeight, 78);
     expect(languageTileTheme.titleTextStyle?.fontSize, closeTo(16, 0.001));
     expect(languageTileTheme.subtitleTextStyle?.fontSize, closeTo(13, 0.001));
@@ -460,7 +464,7 @@ void main() {
       ),
     );
     final colorScheme = Theme.of(detailContext).colorScheme;
-    expect(detailIcon.color, colorScheme.primary);
+    expect(detailIcon.color, colorScheme.onSurface);
     expect(
       find.ancestor(of: detailTile, matching: find.byType(Card)),
       findsOneWidget,

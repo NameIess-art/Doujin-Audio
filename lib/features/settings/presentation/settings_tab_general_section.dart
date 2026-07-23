@@ -11,7 +11,7 @@ List<Widget> _buildSettingsLanguageSection({
       children: [
         ListTile(
           title: _settingsTitle(i18n.tr('interface_language')),
-          leading: _settingsIcon(Icons.language_rounded, cs.primary),
+          leading: _settingsIcon(Icons.language_rounded, cs.onSurface),
           trailing: _settingsDropdown<AppLanguagePreference>(
             context,
             value: i18n.preference,
@@ -44,7 +44,7 @@ List<Widget> _buildSettingsLanguageSection({
             );
             return ListTile(
               title: _settingsTitle(i18n.tr('dlsite_metadata_language')),
-              leading: _settingsIcon(Icons.public_rounded, cs.primary),
+              leading: _settingsIcon(Icons.public_rounded, cs.onSurface),
               trailing: _settingsDropdown<ContentLanguagePreference>(
                 context,
                 value: dlsiteLanguage,
@@ -79,7 +79,7 @@ List<Widget> _buildSettingsLanguageSection({
             final controller = ref.read(asmrLibraryControllerProvider);
             return ListTile(
               title: _settingsTitle(i18n.tr('asmr_page_language')),
-              leading: _settingsIcon(Icons.public_rounded, cs.primary),
+              leading: _settingsIcon(Icons.public_rounded, cs.onSurface),
               trailing: _settingsDropdown<ContentLanguagePreference>(
                 context,
                 value: preference,
@@ -131,7 +131,7 @@ List<Widget> _buildSettingsGeneralSection({
             );
             return ListTile(
               title: _settingsTitle(i18n.tr('startup_page')),
-              leading: _settingsIcon(Icons.home_rounded, cs.primary),
+              leading: _settingsIcon(Icons.home_rounded, cs.onSurface),
               trailing: _settingsDropdown<StartupPage>(
                 context,
                 value: startupPage,
@@ -166,7 +166,7 @@ List<Widget> _buildSettingsGeneralSection({
               title: _settingsTitle(
                 i18n.tr('startup_playback_restore_behavior'),
               ),
-              leading: _settingsIcon(Icons.restore_rounded, cs.primary),
+              leading: _settingsIcon(Icons.restore_rounded, cs.onSurface),
               trailing: _settingsDropdown<StartupPlaybackRestoreBehavior>(
                 context,
                 value: behavior,
@@ -209,7 +209,7 @@ List<Widget> _buildSettingsGeneralSection({
               onChanged: settings.setPortraitLockEnabled,
               secondary: _settingsIcon(
                 Icons.screen_lock_portrait_rounded,
-                cs.primary,
+                cs.onSurface,
               ),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
@@ -226,7 +226,7 @@ List<Widget> _buildSettingsGeneralSection({
               title: _settingsTitle(i18n.tr('allow_duplicate_works')),
               value: enabled,
               onChanged: settings.setAllowDuplicateWorks,
-              secondary: _settingsIcon(Icons.copy_all_rounded, cs.primary),
+              secondary: _settingsIcon(Icons.copy_all_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
@@ -242,7 +242,7 @@ List<Widget> _buildSettingsGeneralSection({
               title: _settingsTitle(i18n.tr('reduce_animations')),
               value: enabled,
               onChanged: settings.setReduceAnimations,
-              secondary: _settingsIcon(Icons.animation_rounded, cs.primary),
+              secondary: _settingsIcon(Icons.animation_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
@@ -258,7 +258,7 @@ List<Widget> _buildSettingsGeneralSection({
               title: _settingsTitle(i18n.tr('haptic_feedback_enabled')),
               value: enabled,
               onChanged: settings.setHapticFeedbackEnabled,
-              secondary: _settingsIcon(Icons.vibration_rounded, cs.primary),
+              secondary: _settingsIcon(Icons.vibration_rounded, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },

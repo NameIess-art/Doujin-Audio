@@ -227,7 +227,7 @@ class _UpdateSettingsTile extends StatelessWidget {
 
     return ListTile(
       onTap: busy ? null : onCheck,
-      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.primary),
+      leading: _settingsIcon(Icons.system_update_alt_rounded, cs.onSurface),
       title: _settingsTitle(i18n.tr('check_updates')),
       subtitle: _UpdateSubtitle(
         checking: checking,

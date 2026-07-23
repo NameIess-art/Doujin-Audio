@@ -70,7 +70,7 @@ class _SettingsTileTheme extends StatelessWidget {
       subtitleFontWeight = null;
 
   const _SettingsTileTheme.categories({required this.child})
-    : minTileHeight = 60,
+    : minTileHeight = 78,
       titleFontSize = 18,
       subtitleFontSize = 14,
       titleFontWeight = FontWeight.normal,
@@ -148,9 +148,9 @@ Widget _settingsCard({
   final cs = theme.colorScheme;
   final tokens = AppDesignTokens.of(context);
   final outerRadius = tokens.radiusCard;
-  final innerRadius = tokens.radiusSmall;
+  const innerRadius = 2.0;
   return Padding(
-    padding: EdgeInsets.only(bottom: isLast ? 0 : 4),
+    padding: EdgeInsets.only(bottom: isLast ? 0 : 2),
     child: Card(
       clipBehavior: Clip.antiAlias,
       color: cs.surfaceContainerLow,

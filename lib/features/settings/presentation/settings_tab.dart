@@ -339,8 +339,8 @@ class _SettingsCategoryTile extends StatelessWidget {
         leading: _settingsIcon(category.icon, cs.onSurface),
         title: _settingsTitle(i18n.tr(category.labelKey)),
         subtitle: _settingsSubtitle(i18n.tr(category.subtitleKey)),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        minTileHeight: 56,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        minTileHeight: 78,
       ),
     );
   }

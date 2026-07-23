@@ -70,10 +70,9 @@ void main() {
       ),
     );
     expect(rootLanguageIcon.size, 30);
-    expect(tester.getSize(rootLanguageTile).height, greaterThan(56));
-    expect(tester.getSize(rootLanguageTile).height, lessThan(72));
+    expect(tester.getSize(rootLanguageTile).height, 78);
     final rootTileTheme = ListTileTheme.of(tester.element(rootLanguageTile));
-    expect(rootTileTheme.minTileHeight, 60);
+    expect(rootTileTheme.minTileHeight, 78);
     expect(rootTileTheme.titleTextStyle?.fontSize, 18);
     expect(rootTileTheme.titleTextStyle?.fontWeight, FontWeight.normal);
     expect(rootTileTheme.subtitleTextStyle?.fontSize, 14);
@@ -392,14 +391,14 @@ void main() {
     final commonCard = find.ancestor(of: rootTile, matching: find.byType(Card));
     expect(
       tester.getTopLeft(commonCard).dy - tester.getBottomLeft(languageCard).dy,
-      closeTo(4, 0.001),
+      closeTo(2, 0.001),
     );
     final firstCardShape =
         tester.widget<Card>(languageCard.first).shape!
             as RoundedRectangleBorder;
     final firstBorderRadius = firstCardShape.borderRadius as BorderRadius;
     expect(firstBorderRadius.topLeft, const Radius.circular(16));
-    expect(firstBorderRadius.bottomLeft, const Radius.circular(12));
+    expect(firstBorderRadius.bottomLeft, const Radius.circular(2));
     final aboutCard = find.ancestor(
       of: find.widgetWithText(ListTile, i18n.tr('about')),
       matching: find.byType(Card),
@@ -407,7 +406,7 @@ void main() {
     final lastCardShape =
         tester.widget<Card>(aboutCard.first).shape! as RoundedRectangleBorder;
     final lastBorderRadius = lastCardShape.borderRadius as BorderRadius;
-    expect(lastBorderRadius.topLeft, const Radius.circular(12));
+    expect(lastBorderRadius.topLeft, const Radius.circular(2));
     expect(lastBorderRadius.bottomLeft, const Radius.circular(16));
 
     await tester.tap(rootTile);

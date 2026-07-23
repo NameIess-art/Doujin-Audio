@@ -264,21 +264,43 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
 }
 
 enum _SettingsCategory {
-  language('section_language', Icons.language_rounded),
-  common('section_common', Icons.tune_rounded),
-  appearance('section_appearance', Icons.palette_outlined),
-  playback('section_playback', Icons.play_circle_outline_rounded),
-  asmrDownload('section_asmr_download', Icons.download_rounded),
-  dataStorage('section_data_storage', Icons.storage_rounded),
+  language(
+    'section_language',
+    'section_language_subtitle',
+    Icons.language_rounded,
+  ),
+  common('section_common', 'section_common_subtitle', Icons.tune_rounded),
+  appearance(
+    'section_appearance',
+    'section_appearance_subtitle',
+    Icons.palette_outlined,
+  ),
+  playback(
+    'section_playback',
+    'section_playback_subtitle',
+    Icons.play_circle_outline_rounded,
+  ),
+  asmrDownload(
+    'section_asmr_download',
+    'section_asmr_download_subtitle',
+    Icons.download_rounded,
+  ),
+  dataStorage(
+    'section_data_storage',
+    'section_data_storage_subtitle',
+    Icons.storage_rounded,
+  ),
   updatesPermissions(
     'section_updates_permissions',
+    'section_updates_permissions_subtitle',
     Icons.system_update_alt_rounded,
   ),
-  about('about', Icons.info_outline_rounded);
+  about('about', 'about_subtitle', Icons.info_outline_rounded);
 
-  const _SettingsCategory(this.labelKey, this.icon);
+  const _SettingsCategory(this.labelKey, this.subtitleKey, this.icon);
 
   final String labelKey;
+  final String subtitleKey;
   final IconData icon;
 }
 
@@ -296,12 +318,34 @@ class _SettingsCategoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return ListTile(
-      onTap: onTap,
-      leading: _settingsIcon(category.icon, cs.primary),
-      title: _settingsTitle(i18n.tr(category.labelKey)),
-      trailing: Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+    final tokens = AppDesignTokens.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        color: cs.surfaceContainerLow,
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(tokens.radiusCard),
+          side: BorderSide(
+            color: cs.outlineVariant.withValues(
+              alpha: tokens.subtleBorderAlpha,
+            ),
+          ),
+        ),
+        child: ListTile(
+          onTap: onTap,
+          leading: _settingsIcon(category.icon, cs.onSurface),
+          title: _settingsTitle(i18n.tr(category.labelKey)),
+          subtitle: _settingsSubtitle(i18n.tr(category.subtitleKey)),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 10,
+          ),
+          minTileHeight: 72,
+        ),
+      ),
     );
   }
 }

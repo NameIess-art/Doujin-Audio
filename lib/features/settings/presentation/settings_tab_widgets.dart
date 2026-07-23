@@ -10,6 +10,15 @@ Widget _settingsTitle(String text) {
   return Text(text, softWrap: true, overflow: TextOverflow.visible);
 }
 
+Widget _settingsSubtitle(String text) {
+  return Text(
+    text,
+    maxLines: 2,
+    softWrap: true,
+    overflow: TextOverflow.ellipsis,
+  );
+}
+
 Widget _settingsDropdownText(
   String text, {
   TextStyle? style,
@@ -60,7 +69,7 @@ class _SettingsTileTheme extends StatelessWidget {
 
   const _SettingsTileTheme.categories({required this.child})
     : minTileHeight = 68,
-      titleFontSize = 18,
+      titleFontSize = 20,
       subtitleFontSize = 15;
 
   final Widget child;

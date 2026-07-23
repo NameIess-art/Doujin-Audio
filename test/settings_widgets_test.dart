@@ -70,10 +70,14 @@ void main() {
       ),
     );
     expect(rootLanguageIcon.size, 30);
-    expect(tester.getSize(rootLanguageTile).height, 92);
+    expect(tester.getSize(rootLanguageTile).height, greaterThan(60));
+    expect(tester.getSize(rootLanguageTile).height, lessThan(72));
     final rootTileTheme = ListTileTheme.of(tester.element(rootLanguageTile));
-    expect(rootTileTheme.minTileHeight, 68);
-    expect(rootTileTheme.titleTextStyle?.fontSize, 20);
+    expect(rootTileTheme.minTileHeight, 60);
+    expect(rootTileTheme.titleTextStyle?.fontSize, 18);
+    expect(rootTileTheme.titleTextStyle?.fontWeight, FontWeight.normal);
+    expect(rootTileTheme.subtitleTextStyle?.fontSize, 14);
+    expect(rootTileTheme.subtitleTextStyle?.fontWeight, FontWeight.normal);
     final rootCards = find.ancestor(
       of: rootLanguageTile,
       matching: find.byType(Card),

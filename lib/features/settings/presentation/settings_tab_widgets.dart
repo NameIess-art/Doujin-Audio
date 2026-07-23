@@ -65,26 +65,34 @@ class _SettingsTileTheme extends StatelessWidget {
   const _SettingsTileTheme({required this.child})
     : minTileHeight = _settingsTileHeight,
       titleFontSize = _settingsTileTitleFontSize,
-      subtitleFontSize = _settingsTileSubtitleFontSize;
+      subtitleFontSize = _settingsTileSubtitleFontSize,
+      titleFontWeight = null,
+      subtitleFontWeight = null;
 
   const _SettingsTileTheme.categories({required this.child})
-    : minTileHeight = 68,
-      titleFontSize = 20,
-      subtitleFontSize = 15;
+    : minTileHeight = 60,
+      titleFontSize = 18,
+      subtitleFontSize = 14,
+      titleFontWeight = FontWeight.normal,
+      subtitleFontWeight = FontWeight.normal;
 
   final Widget child;
   final double minTileHeight;
   final double titleFontSize;
   final double subtitleFontSize;
+  final FontWeight? titleFontWeight;
+  final FontWeight? subtitleFontWeight;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final titleTextStyle = theme.textTheme.titleMedium?.copyWith(
       fontSize: titleFontSize,
+      fontWeight: titleFontWeight,
     );
     final subtitleTextStyle = theme.textTheme.bodyMedium?.copyWith(
       fontSize: subtitleFontSize,
+      fontWeight: subtitleFontWeight,
     );
 
     return Theme(

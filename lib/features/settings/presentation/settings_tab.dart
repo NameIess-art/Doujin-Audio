@@ -327,7 +327,7 @@ class _SettingsCategoryTile extends StatelessWidget {
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(tokens.radiusCard),
+          borderRadius: BorderRadius.circular(tokens.radiusSmall),
           side: BorderSide(
             color: cs.outlineVariant.withValues(
               alpha: tokens.subtleBorderAlpha,
@@ -341,9 +341,9 @@ class _SettingsCategoryTile extends StatelessWidget {
           subtitle: _settingsSubtitle(i18n.tr(category.subtitleKey)),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 16,
-            vertical: 10,
+            vertical: 6,
           ),
-          minTileHeight: 72,
+          minTileHeight: 60,
         ),
       ),
     );

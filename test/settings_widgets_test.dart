@@ -56,6 +56,7 @@ void main() {
       'about',
     ]) {
       expect(find.text(i18n.tr(key)), findsOneWidget);
+      expect(find.text(i18n.tr('${key}_subtitle')), findsOneWidget);
     }
 
     final rootLanguageTile = find.widgetWithText(
@@ -69,10 +70,16 @@ void main() {
       ),
     );
     expect(rootLanguageIcon.size, 30);
-    expect(tester.getSize(rootLanguageTile).height, 68);
+    expect(tester.getSize(rootLanguageTile).height, 92);
     final rootTileTheme = ListTileTheme.of(tester.element(rootLanguageTile));
     expect(rootTileTheme.minTileHeight, 68);
-    expect(rootTileTheme.titleTextStyle?.fontSize, 18);
+    expect(rootTileTheme.titleTextStyle?.fontSize, 20);
+    final rootCards = find.ancestor(
+      of: rootLanguageTile,
+      matching: find.byType(Card),
+    );
+    expect(rootCards, findsOneWidget);
+    expect(tester.widget<ListTile>(rootLanguageTile).subtitle, isA<Text>());
 
     await tester.tap(find.text(i18n.tr('section_language')));
     await tester.pumpAndSettle();
@@ -359,9 +366,7 @@ void main() {
     );
   });
 
-  testWidgets('settings pages use theme-colored icons without group cards', (
-    tester,
-  ) async {
+  testWidgets('settings home uses separated category cards', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
     await tester.pumpWidget(harness.build(const SettingsTab()));
@@ -373,26 +378,23 @@ void main() {
     final rootIcon = tester.widget<Icon>(
       find.descendant(of: rootTile, matching: find.byIcon(Icons.tune_rounded)),
     );
-    expect(rootIcon.color, Theme.of(rootContext).colorScheme.primary);
-    final rootTrailing = tester.widget<ListTile>(rootTile).trailing! as Icon;
-    expect(
-      rootTrailing.color,
-      Theme.of(rootContext).colorScheme.onSurfaceVariant,
+    expect(rootIcon.color, Theme.of(rootContext).colorScheme.onSurface);
+    expect(tester.widget<ListTile>(rootTile).trailing, isNull);
+    final rootCard = tester.widget<Card>(
+      find.ancestor(of: rootTile, matching: find.byType(Card)).first,
     );
-    final rootSurfaces = tester
-        .widgetList<Container>(
-          find.ancestor(of: rootTile, matching: find.byType(Container)),
-        )
-        .where(
-          (container) =>
-              container.decoration is BoxDecoration &&
-              (container.decoration! as BoxDecoration).color ==
-                  Theme.of(rootContext).colorScheme.surfaceContainerLow,
-        );
     expect(
-      rootSurfaces,
-      isEmpty,
-      reason: 'Settings root items should not paint a group card surface.',
+      rootCard.color,
+      Theme.of(rootContext).colorScheme.surfaceContainerLow,
+    );
+    final languageCard = find.ancestor(
+      of: find.widgetWithText(ListTile, i18n.tr('section_language')),
+      matching: find.byType(Card),
+    );
+    final commonCard = find.ancestor(of: rootTile, matching: find.byType(Card));
+    expect(
+      tester.getTopLeft(commonCard).dy - tester.getBottomLeft(languageCard).dy,
+      closeTo(8, 0.001),
     );
 
     await tester.tap(rootTile);

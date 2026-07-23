@@ -177,7 +177,7 @@ void main() {
 
     final result = await NativePlaybackBridge.instance.setAudioEffects(
       'session-1',
-      const NativeAudioEffects(
+      NativeAudioEffects(
         state: AudioEffectsState(
           skipSilenceEnabled: true,
           noiseReductionEnabled: true,
@@ -213,7 +213,7 @@ void main() {
         Uri.parse('https://api.asmr.one/audio/one.mp3'),
         Uri.parse('https://api.asmr-100.com/audio/one.mp3'),
       ],
-      audioEffects: const NativeAudioEffects(
+      audioEffects: NativeAudioEffects(
         state: AudioEffectsState(
           skipSilenceEnabled: true,
           eqEnabled: true,

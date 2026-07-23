@@ -1,18 +1,20 @@
+import '../immutable_collections.dart';
 import 'audio_detail.dart';
 
 class DlsiteMetadata {
-  const DlsiteMetadata({
+  DlsiteMetadata({
     required this.rjCode,
     required this.workTitle,
     required this.circleName,
-    required this.voiceActors,
-    required this.tags,
+    required List<String> voiceActors,
+    required List<String> tags,
     this.releaseDate,
     this.duration,
     this.salesCount,
     this.rating,
     this.coverUrl,
-  });
+  }) : voiceActors = immutableList(voiceActors),
+       tags = immutableList(tags);
 
   factory DlsiteMetadata.fromProductJson(Map<String, dynamic> json) {
     final rjCode =

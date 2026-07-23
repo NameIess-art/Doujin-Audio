@@ -22,6 +22,15 @@ class AsmrApiService {
   final HttpClient _httpClient;
   late final List<String> _candidateDomains;
   int _currentDomainIndex = 0;
+  bool _closed = false;
+
+  bool get isClosed => _closed;
+
+  void close({bool force = true}) {
+    if (_closed) return;
+    _closed = true;
+    _httpClient.close(force: force);
+  }
 
   static const List<String> defaultDomains = [
     'https://api.asmr-300.com',

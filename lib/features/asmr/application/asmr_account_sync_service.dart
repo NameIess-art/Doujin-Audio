@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_api_service.dart';
 import 'asmr_auth_service.dart';
@@ -23,14 +24,17 @@ class AsmrSyncCancelled implements Exception {
 }
 
 class AsmrAccountSnapshot {
-  const AsmrAccountSnapshot({
+  AsmrAccountSnapshot({
     this.session,
-    this.favoriteWorks = const <AsmrWork>[],
-    this.historyWorks = const <AsmrWork>[],
-    this.pendingOperations = const <AsmrSyncOperation>[],
-    this.remoteProgressByWorkId = const <int, String>{},
+    List<AsmrWork> favoriteWorks = const <AsmrWork>[],
+    List<AsmrWork> historyWorks = const <AsmrWork>[],
+    List<AsmrSyncOperation> pendingOperations = const <AsmrSyncOperation>[],
+    Map<int, String> remoteProgressByWorkId = const <int, String>{},
     this.lastSyncAt,
-  });
+  }) : favoriteWorks = immutableList(favoriteWorks),
+       historyWorks = immutableList(historyWorks),
+       pendingOperations = immutableList(pendingOperations),
+       remoteProgressByWorkId = immutableMap(remoteProgressByWorkId);
 
   final AsmrAuthSession? session;
   final List<AsmrWork> favoriteWorks;
@@ -39,7 +43,8 @@ class AsmrAccountSnapshot {
   final Map<int, String> remoteProgressByWorkId;
   final DateTime? lastSyncAt;
 
-  Set<int> get favoriteIds => favoriteWorks.map((work) => work.id).toSet();
+  Set<int> get favoriteIds =>
+      immutableSet(favoriteWorks.map((work) => work.id));
 
   AsmrAccountSnapshot copyWith({
     AsmrAuthSession? session,
@@ -85,7 +90,7 @@ class AsmrAccountSyncService {
   final AsmrAuthService _authService;
   final AsmrApiService _apiService;
   final AsmrPreferencesStore _preferencesStore;
-  AsmrAccountSnapshot _snapshot = const AsmrAccountSnapshot();
+  AsmrAccountSnapshot _snapshot = AsmrAccountSnapshot();
   Future<void> _mutationTail = Future<void>.value();
 
   AsmrAccountSnapshot get snapshot => _snapshot;

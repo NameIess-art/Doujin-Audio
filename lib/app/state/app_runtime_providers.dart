@@ -16,6 +16,7 @@ import '../application/playback_command_coordinator.dart';
 import '../application/playback_keep_alive_coordinator.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/library/application/library_state_models.dart';
+import '../../features/library/presentation/library_cover_ui_controller.dart';
 import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
@@ -26,6 +27,7 @@ import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../presentation/audio_ui_controllers.dart';
+import '../presentation/app_interaction_effects_controller.dart';
 import '../presentation/screen_view_models.dart';
 import '../theme/theme_provider.dart';
 import '../localization/app_language_provider.dart';
@@ -42,6 +44,7 @@ import '../../features/asmr/application/asmr_library_controller.dart';
 import '../../features/asmr/application/asmr_playback_coordinator.dart';
 import '../../features/asmr/domain/asmr_models.dart';
 import 'subtitle_settings_provider.dart';
+import 'interaction_deferred_stream.dart';
 
 final themeProviderInstanceProvider = Provider<ThemeProvider>((ref) {
   throw UnimplementedError(
@@ -139,17 +142,10 @@ final asmrLibraryGlobalStateProvider =
     StreamProvider<AsmrLibraryGlobalViewState?>((ref) {
       final controller = ref.watch(asmrLibraryControllerProvider);
       if (controller == null) return Stream.value(null);
-      final states = StreamController<AsmrLibraryGlobalViewState>.broadcast(
-        sync: true,
+      return interactionDeferredListenableStream(
+        source: controller,
+        read: () => controller.globalViewState,
       );
-      void emit() => states.add(controller.globalViewState);
-      controller.addListener(emit);
-      emit();
-      ref.onDispose(() {
-        controller.removeListener(emit);
-        states.close();
-      });
-      return states.stream;
     });
 
 typedef AsmrCategoryStateRequest = ({
@@ -161,62 +157,41 @@ final asmrCategoryStateProvider = StreamProvider.autoDispose
     .family<AsmrCategoryViewState?, AsmrCategoryStateRequest>((ref, request) {
       final controller = ref.watch(asmrLibraryControllerProvider);
       if (controller == null) return Stream.value(null);
-      return Stream<AsmrCategoryViewState?>.multi((events) {
-        void emit() => events.add(
-          controller.categoryViewState(
-            request.category,
-            searchQuery: request.searchQuery,
-          ),
-        );
-        controller.addListener(emit);
-        events.onCancel = () {
-          controller.removeListener(emit);
-        };
-        emit();
-      });
+      return interactionDeferredListenableStream(
+        source: controller,
+        read: () => controller.categoryViewState(
+          request.category,
+          searchQuery: request.searchQuery,
+        ),
+      );
     });
 
 final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
   final controller = ref.watch(asmrLibraryControllerProvider);
   if (controller == null) return Stream.value(null);
-  return Stream<AsmrAuthViewState?>.multi((events) {
-    void emit() => events.add(controller.authViewState);
-    controller.addListener(emit);
-    events.onCancel = () {
-      controller.removeListener(emit);
-    };
-    emit();
-  });
+  return interactionDeferredListenableStream(
+    source: controller,
+    read: () => controller.authViewState,
+  );
 });
 
 final asmrTrackTreeStateProvider =
     StreamProvider.family<AsmrTrackTreeViewState?, int>((ref, workId) {
       final controller = ref.watch(asmrLibraryControllerProvider);
       if (controller == null) return Stream.value(null);
-      final states = StreamController<AsmrTrackTreeViewState?>.broadcast(
-        sync: true,
+      return interactionDeferredListenableStream(
+        source: controller,
+        read: () => controller.trackTreeViewState(workId),
       );
-      void emit() => states.add(controller.trackTreeViewState(workId));
-      controller.addListener(emit);
-      emit();
-      ref.onDispose(() {
-        controller.removeListener(emit);
-        states.close();
-      });
-      return states.stream;
     });
 
 final asmrSyncStateProvider = StreamProvider<AsmrSyncViewState?>((ref) {
   final controller = ref.watch(asmrLibraryControllerProvider);
   if (controller == null) return Stream.value(null);
-  return Stream<AsmrSyncViewState?>.multi((events) {
-    void emit() => events.add(controller.syncViewState);
-    controller.addListener(emit);
-    events.onCancel = () {
-      controller.removeListener(emit);
-    };
-    emit();
-  });
+  return interactionDeferredListenableStream(
+    source: controller,
+    read: () => controller.syncViewState,
+  );
 });
 
 final asmrPlaybackCoordinatorProvider = Provider<AsmrPlaybackCoordinator?>(
@@ -405,8 +380,32 @@ final uiOperationForScopeProvider =
     });
 
 final libraryStateProvider = StreamProvider<LibraryState>((ref) {
-  return ref.watch(libraryFacadeProvider).states;
+  return interactionDeferredValueStream(
+    ref.watch(libraryFacadeProvider).states,
+  );
 });
+
+final libraryCoverUiControllerProvider = Provider<LibraryCoverUiController>((
+  ref,
+) {
+  final controller = LibraryCoverUiController(
+    library: ref.watch(libraryFacadeProvider),
+  );
+  ref.onDispose(() => unawaited(controller.dispose()));
+  return controller;
+});
+
+final appInteractionEffectsControllerProvider =
+    Provider<AppInteractionEffectsController>((ref) {
+      final controller = AppInteractionEffectsController(
+        library: ref.watch(libraryFacadeProvider),
+        libraryCovers: ref.watch(libraryCoverUiControllerProvider),
+        notifications: ref.watch(notificationFacadeProvider),
+        warmup: ref.watch(audioUiWarmupCoordinatorProvider),
+      );
+      ref.onDispose(controller.dispose);
+      return controller;
+    });
 
 final playbackStateProvider = StreamProvider<PlaybackStateSliceData>((ref) {
   return ref.watch(playbackFacadeProvider).states;

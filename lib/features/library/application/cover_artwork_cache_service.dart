@@ -1680,7 +1680,6 @@ class CoverArtworkCacheService {
         })
         .toList(growable: false);
   }
-
 }
 
 final class _RemoteCoverFailure {

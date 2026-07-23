@@ -6,7 +6,7 @@ extension _TimerTabBody on _TimerTabState {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final timer = ref.read(timerFacadeProvider);
     final timerSlice =
-        ref.watch(timerStateProvider).value ?? const TimerStateSliceData();
+        ref.watch(timerStateProvider).value ?? TimerStateSliceData();
     // Rebuild only on timer/auto-resume state changes, not playback/persistence events.
     final timerHash = Object.hash(
       timerSlice.mode,

@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../../core/app_language.dart';
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/card_info_field.dart';
 import '../../asmr/domain/asmr_download.dart';
 import '../../player/domain/audio_effects.dart';
@@ -23,7 +24,7 @@ enum StartupPlaybackRestoreBehavior { resume, pause }
 
 @immutable
 class SettingsState {
-  const SettingsState({
+  SettingsState({
     this.converterFormat = 'mp3',
     this.converterBitrate = '320k',
     this.multiThreadPlaybackEnabled = false,
@@ -32,9 +33,9 @@ class SettingsState {
     this.autoPlayAddedSessions = true,
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = ContentLanguagePreference.followPage,
-    this.cardInfoFields = CardInfoField.defaults,
+    List<CardInfoField> cardInfoFields = CardInfoField.defaults,
     this.cardPositionsLocked = true,
-    this.customEqPresets = const <EqPreset>[],
+    List<EqPreset> customEqPresets = const <EqPreset>[],
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.asmrPlaybackCacheEnabled = false,
     this.recordPlaybackProgress = true,
@@ -49,7 +50,8 @@ class SettingsState {
     this.asmrDownloadDestinationRoot,
     this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
     this.asmrDownloadSaveMetadata = true,
-    this.asmrDownloadFolderNameFields = kDefaultAsmrDownloadFolderNameFields,
+    List<AsmrDownloadFolderNameField> asmrDownloadFolderNameFields =
+        kDefaultAsmrDownloadFolderNameFields,
     this.audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.pause,
     this.transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck,
     this.interruptionResumeBehavior = InterruptionResumeBehavior.resume,
@@ -57,7 +59,11 @@ class SettingsState {
     this.allowDuplicateWorks = false,
     this.reduceAnimations = false,
     this.isInitialized = false,
-  });
+  }) : cardInfoFields = immutableList(cardInfoFields),
+       customEqPresets = immutableList(customEqPresets),
+       asmrDownloadFolderNameFields = immutableList(
+         asmrDownloadFolderNameFields,
+       );
 
   final String converterFormat;
   final String converterBitrate;

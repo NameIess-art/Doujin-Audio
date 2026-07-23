@@ -62,6 +62,43 @@ void main() {
     resetPrefs: resetPrefs,
     preferencesStore: () => preferences,
   );
+
+  test('default ASMR controller creates one shared HTTP client', () {
+    final overrides = _CountingHttpOverrides();
+    HttpOverrides.global = overrides;
+    try {
+      final controller = AsmrLibraryController(preferencesStore: preferences);
+      expect(overrides.createdClients, 1);
+      controller.dispose();
+    } finally {
+      HttpOverrides.global = null;
+    }
+  });
+
+  test('controller does not close an injected API service', () {
+    final apiService = AsmrApiService();
+    final controller = AsmrLibraryController(
+      apiService: apiService,
+      preferencesStore: preferences,
+    );
+
+    controller.dispose();
+    expect(apiService.isClosed, isFalse);
+
+    apiService.close();
+    apiService.close();
+    expect(apiService.isClosed, isTrue);
+  });
+}
+
+final class _CountingHttpOverrides extends HttpOverrides {
+  int createdClients = 0;
+
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    createdClients++;
+    return super.createHttpClient(context);
+  }
 }
 
 class _FakeAsmrApiService extends AsmrApiService {

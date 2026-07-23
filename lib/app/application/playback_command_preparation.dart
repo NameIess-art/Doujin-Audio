@@ -1,17 +1,19 @@
 part of 'playback_command_coordinator.dart';
 
 class _PlaybackPreparationTarget {
-  const _PlaybackPreparationTarget({
+  _PlaybackPreparationTarget({
     required this.logicalPath,
     required this.resolvedPath,
     required this.uri,
     required this.track,
-    required this.candidateUris,
+    required List<Uri>? candidateUris,
     required this.coverPath,
     required this.isNewTrack,
     required this.isInitialLoad,
     required this.startPosition,
-  });
+  }) : candidateUris = candidateUris == null
+           ? null
+           : immutableList(candidateUris);
 
   final String logicalPath;
   final String resolvedPath;

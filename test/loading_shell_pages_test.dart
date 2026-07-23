@@ -55,7 +55,7 @@ void main() {
     expect(find.byType(OperationSkeletonList), findsOneWidget);
 
     metadataCompleter.complete(
-      const DlsiteMetadata(
+      DlsiteMetadata(
         rjCode: 'RJ123456',
         workTitle: 'Loaded title',
         circleName: 'Circle',

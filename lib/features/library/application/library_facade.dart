@@ -16,8 +16,6 @@ import '../../../core/media/path_display.dart';
 import '../../../core/persistence/audio_database_repository.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
-import '../../../core/ui/ui_interaction_coordinator.dart';
-import '../../../core/ui/warmup_scheduler.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
 import '../../settings/application/app_preferences.dart';
 import '../../settings/application/app_cache_service.dart';
@@ -55,12 +53,7 @@ final class LibraryFacade implements LibraryCatalog {
     required this.service,
     required this.snapshotCacheService,
     CoverArtworkCacheService? coverArtworkCacheService,
-  }) : _coverArtworkCacheService = coverArtworkCacheService {
-    UiInteractionCoordinator.instance.addListener(
-      _handleWarmupInteractionChanged,
-    );
-    _handleWarmupInteractionChanged();
-  }
+  }) : _coverArtworkCacheService = coverArtworkCacheService;
 
   factory LibraryFacade.create({
     AudioDatabaseRepository? databaseRepository,
@@ -109,11 +102,9 @@ final class LibraryFacade implements LibraryCatalog {
   int _maintenanceEpoch = 0;
   bool _persistenceEnabled = true;
   bool _disposed = false;
+  bool _interactionPaused = false;
   void Function(List<String> removedPaths)? _trackRemovalHandler;
   void Function()? _coverChangeHandler;
-  final WarmupScheduler _coverWarmupScheduler = WarmupScheduler();
-  final Map<String, Completer<String?>> _deferredCoverCompleters =
-      <String, Completer<String?>>{};
   late final LibraryStartupMaintenanceCoordinator
   _startupMaintenanceCoordinator = LibraryStartupMaintenanceCoordinator(
     waitForUiIdle: _waitForContinuousUiIdle,
@@ -862,66 +853,6 @@ final class LibraryFacade implements LibraryCatalog {
   );
   Future<String?> coverPathFutureForFolder(String folderPath) =>
       coverArtworkCacheService.futureForFolder(folderPath);
-  Future<String?> deferredCoverPathFutureForFolder(String folderPath) {
-    final normalizedPath = PathMatcher.normalize(folderPath);
-    final generation = coverArtworkCacheService.generation;
-    return _deferredCardCoverLookup(
-      key: 'folder:$normalizedPath:$generation',
-      lookup: () => coverPathFutureForFolder(folderPath),
-    );
-  }
-
-  Future<String?> deferredCoverPathFutureForTrack(MusicTrack track) {
-    final coverKey =
-        coverArtworkCacheService.coverSearchKeyForTrack(track) ?? track.path;
-    final generation = coverArtworkCacheService.generation;
-    return _deferredCardCoverLookup(
-      key: 'track:$coverKey:$generation',
-      lookup: () => coverPathFutureForTrack(track),
-    );
-  }
-
-  Future<String?> _deferredCardCoverLookup({
-    required String key,
-    required Future<String?> Function() lookup,
-  }) {
-    if (_disposed) return Future<String?>.value();
-    final existing = _deferredCoverCompleters[key];
-    if (existing != null) return existing.future;
-
-    final completer = Completer<String?>();
-    _deferredCoverCompleters[key] = completer;
-    Future<void> run() async {
-      try {
-        final value = await lookup();
-        if (!completer.isCompleted) completer.complete(value);
-      } catch (error, stackTrace) {
-        if (!completer.isCompleted) completer.completeError(error, stackTrace);
-      } finally {
-        if (identical(_deferredCoverCompleters[key], completer)) {
-          _deferredCoverCompleters.remove(key);
-        }
-      }
-    }
-
-    Future<void> scheduleWhenAvailable() async {
-      while (!_disposed && !completer.isCompleted) {
-        final scheduled = _coverWarmupScheduler.schedule(
-          key: 'visible_library_cover:$key',
-          priority: -1,
-          generation: _coverWarmupScheduler.currentGeneration,
-          group: 'visible_library_cover',
-          task: run,
-        );
-        if (scheduled) return;
-        await _coverWarmupScheduler.idle;
-      }
-    }
-
-    unawaited(scheduleWhenAvailable());
-    return completer.future;
-  }
-
   Future<String?> coverPathFutureForRemoteCover(String url) =>
       coverArtworkCacheService.futureForRemoteCover(url);
   Future<List<String>> discoverCoverCandidatesInFolder(
@@ -1017,37 +948,9 @@ final class LibraryFacade implements LibraryCatalog {
     );
   }
 
-  void warmupCoversForTracks(Iterable<MusicTrack?> tracks) {
-    final generation = _coverWarmupScheduler.currentGeneration;
-    final scheduledKeys = <String>{};
-    var priority = 0;
-    for (final track in tracks) {
-      if (track == null || track.isVideo) continue;
-      if (resolvedCoverPathForTrack(track) != null) continue;
-      final coverSearchKey = coverArtworkCacheService.coverSearchKeyForTrack(
-        track,
-      );
-      if (coverSearchKey == null || !scheduledKeys.add(coverSearchKey)) {
-        continue;
-      }
-      _coverWarmupScheduler.schedule(
-        key: 'library_track_cover:$coverSearchKey',
-        priority: priority++,
-        generation: generation,
-        group: 'library_cover',
-        task: () async {
-          if (resolvedCoverPathForTrack(track) == null) {
-            await coverPathFutureForTrack(track);
-          }
-        },
-      );
-    }
-  }
-
-  void _handleWarmupInteractionChanged() {
-    _coverWarmupScheduler.setPaused(
-      UiInteractionCoordinator.instance.isInteracting,
-    );
+  void setInteractionPaused(bool paused) {
+    if (_interactionPaused == paused) return;
+    _interactionPaused = paused;
   }
 
   String? libraryEntryDisplayNameForPath(
@@ -2440,10 +2343,16 @@ final class LibraryFacade implements LibraryCatalog {
       );
       if (derivedGeneration == service.libraryDerivedGeneration) {
         service
-          ..library = derivedSnapshot.library
-          ..libraryByPath = derivedSnapshot.libraryByPath
-          ..libraryIndexByPath = derivedSnapshot.libraryIndexByPath
-          ..tracksByGroup = derivedSnapshot.tracksByGroup
+          ..library = List<MusicTrack>.of(derivedSnapshot.library)
+          ..libraryByPath = Map<String, MusicTrack>.of(
+            derivedSnapshot.libraryByPath,
+          )
+          ..libraryIndexByPath = Map<String, int>.of(
+            derivedSnapshot.libraryIndexByPath,
+          )
+          ..tracksByGroup = Map<String, List<MusicTrack>>.of(
+            derivedSnapshot.tracksByGroup,
+          )
           ..sortedLibraryTracks = derivedSnapshot.sortedLibraryTracks
           ..sortedLibraryTrackPaths = derivedSnapshot.sortedLibraryTrackPaths
           ..markStructureChanged();
@@ -2638,7 +2547,7 @@ final class LibraryFacade implements LibraryCatalog {
   Future<bool> _waitForContinuousUiIdle(Duration quietWindow) async {
     DateTime? idleSince;
     while (!_disposed) {
-      if (UiInteractionCoordinator.instance.isInteracting) {
+      if (_interactionPaused) {
         idleSince = null;
       } else {
         idleSince ??= DateTime.now();
@@ -2690,14 +2599,6 @@ final class LibraryFacade implements LibraryCatalog {
     _maintenanceEpoch++;
     await _startupMaintenanceCoordinator.dispose();
     await detailCacheService.suspendAndWait();
-    UiInteractionCoordinator.instance.removeListener(
-      _handleWarmupInteractionChanged,
-    );
-    for (final completer in _deferredCoverCompleters.values) {
-      if (!completer.isCompleted) completer.complete(null);
-    }
-    _deferredCoverCompleters.clear();
-    await _coverWarmupScheduler.shutdown();
     service.scanProgressNotifyTimer?.cancel();
     service.scanProgressNotifyTimer = null;
     _coverArtworkCacheService?.dispose();

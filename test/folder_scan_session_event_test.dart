@@ -99,18 +99,18 @@ void main() {
   });
 
   test('scan results are complete only when enumeration is proven clean', () {
-    const complete = NativeScanResult.success(
+    final complete = NativeScanResult.success(
       <ScannedTrack>[],
       <String>{},
       completenessKnown: true,
     );
-    const partial = NativeScanResult.success(
+    final partial = NativeScanResult.success(
       <ScannedTrack>[],
       <String>{},
       failureCount: 1,
       completenessKnown: true,
     );
-    const legacy = NativeScanResult.success(<ScannedTrack>[], <String>{});
+    final legacy = NativeScanResult.success(<ScannedTrack>[], <String>{});
 
     expect(complete.isComplete, isTrue);
     expect(partial.isComplete, isFalse);
@@ -118,7 +118,7 @@ void main() {
   });
 
   test('partial refresh never generates removal paths', () {
-    const existing = MusicTrack(
+    final existing = MusicTrack(
       path: '/music/work/missing.mp3',
       displayName: 'missing',
       groupKey: '/music/work',
@@ -128,7 +128,7 @@ void main() {
     );
 
     final partial = processScannedTracksInIsolate(
-      const ScanMergeIsolatePayload(
+      ScanMergeIsolatePayload(
         scannedTracks: <ScannedTrack>[],
         library: <MusicTrack>[existing],
         libraryRoot: '/music',
@@ -141,7 +141,7 @@ void main() {
       ),
     );
     final complete = processScannedTracksInIsolate(
-      const ScanMergeIsolatePayload(
+      ScanMergeIsolatePayload(
         scannedTracks: <ScannedTrack>[],
         library: <MusicTrack>[existing],
         libraryRoot: '/music',

@@ -228,6 +228,7 @@ class MusicPlayerApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(appInteractionEffectsControllerProvider);
     ref.listen<AsyncValue<SettingsState>>(settingsStateProvider, (_, next) {
       final portraitLockEnabled = next.asData?.value.portraitLockEnabled;
       if (portraitLockEnabled != null) {

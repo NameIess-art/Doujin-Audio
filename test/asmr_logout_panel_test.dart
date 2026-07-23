@@ -66,15 +66,14 @@ class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
   bool get isAsmrAccountLoggedIn => true;
 
   @override
-  AsmrLibraryGlobalViewState get globalViewState =>
-      const AsmrLibraryGlobalViewState(
-        initialized: true,
-        lastError: null,
-        visibleCategories: kDefaultVisibleAsmrCategories,
-        contentLanguage: AsmrContentLanguage.zh,
-        contentLanguagePreference: ContentLanguagePreference.followPage,
-        revision: 0,
-      );
+  AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
+    initialized: true,
+    lastError: null,
+    visibleCategories: kDefaultVisibleAsmrCategories,
+    contentLanguage: AsmrContentLanguage.zh,
+    contentLanguagePreference: ContentLanguagePreference.followPage,
+    revision: 0,
+  );
 
   @override
   AsmrAuthViewState get authViewState => const AsmrAuthViewState(

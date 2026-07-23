@@ -43,7 +43,7 @@ void main() {
     test(
       'runtime restore keeps a surviving native session authoritative',
       () async {
-        const track = MusicTrack(
+        final track = MusicTrack(
           path: '/music/native-survives.mp3',
           displayName: 'Native Survives',
           groupKey: '/music',
@@ -59,7 +59,7 @@ void main() {
           volume: 0.4,
           createdAt: DateTime(2026),
           state: PlayerState(false, ProcessingState.idle),
-          customQueueTracks: const <MusicTrack>[track],
+          customQueueTracks: <MusicTrack>[track],
         );
         runtimeGraph.playback.service.sessions[session.id] = session;
         runtimeGraph.playback.service.markActiveSessionsDirty();
@@ -116,7 +116,7 @@ void main() {
     test(
       'runtime restore prepares sessions missing from native snapshot',
       () async {
-        const track = MusicTrack(
+        final track = MusicTrack(
           path: '/music/native-missing.mp3',
           displayName: 'Native Missing',
           groupKey: '/music',
@@ -132,7 +132,7 @@ void main() {
           volume: 1,
           createdAt: DateTime(2026),
           state: PlayerState(false, ProcessingState.idle),
-          customQueueTracks: const <MusicTrack>[track],
+          customQueueTracks: <MusicTrack>[track],
         );
         runtimeGraph.playback.service.sessions[session.id] = session;
         runtimeGraph.playback.service.markActiveSessionsDirty();
@@ -181,7 +181,7 @@ void main() {
     test(
       'runtime restore does not prepare when native snapshot is unavailable',
       () async {
-        const track = MusicTrack(
+        final track = MusicTrack(
           path: '/music/native-snapshot-unavailable.mp3',
           displayName: 'Native Snapshot Unavailable',
           groupKey: '/music',
@@ -197,7 +197,7 @@ void main() {
           volume: 1,
           createdAt: DateTime(2026),
           state: PlayerState(false, ProcessingState.idle),
-          customQueueTracks: const <MusicTrack>[track],
+          customQueueTracks: <MusicTrack>[track],
         );
         runtimeGraph.playback.service.sessions[session.id] = session;
         runtimeGraph.playback.service.markActiveSessionsDirty();
@@ -236,7 +236,7 @@ void main() {
             }
             return <String, Object?>{'ok': true, 'value': null};
           });
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/music/auto-play-setting.mp3',
         displayName: 'Auto Play Setting',
         groupKey: '/music',
@@ -322,7 +322,7 @@ void main() {
             }
             return <String, Object?>{'ok': true, 'value': null};
           });
-      const firstTrack = MusicTrack(
+      final firstTrack = MusicTrack(
         path: '/music/exclusive-first.mp3',
         displayName: 'First',
         groupKey: '/music',
@@ -330,7 +330,7 @@ void main() {
         groupSubtitle: '',
         isSingle: true,
       );
-      const secondTrack = MusicTrack(
+      final secondTrack = MusicTrack(
         path: '/music/exclusive-second.mp3',
         displayName: 'Second',
         groupKey: '/music',
@@ -438,7 +438,7 @@ void main() {
             }
             return <String, Object?>{'ok': true, 'value': null};
           });
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/music/rapid-toggle.mp3',
         displayName: 'Rapid Toggle',
         groupKey: '/music',
@@ -514,7 +514,7 @@ void main() {
     test(
       'stale prepare cannot target a replacement session with the same id',
       () async {
-        const oldTrack = MusicTrack(
+        final oldTrack = MusicTrack(
           path: '/music/old-session.mp3',
           displayName: 'Old session',
           groupKey: '/music',
@@ -522,7 +522,7 @@ void main() {
           groupSubtitle: '',
           isSingle: true,
         );
-        const replacementTrack = MusicTrack(
+        final replacementTrack = MusicTrack(
           path: '/music/replacement-session.mp3',
           displayName: 'Replacement session',
           groupKey: '/music',
@@ -566,7 +566,7 @@ void main() {
           volume: 1,
           createdAt: DateTime(2026),
           state: PlayerState(false, ProcessingState.idle),
-          customQueueTracks: const <MusicTrack>[oldTrack],
+          customQueueTracks: <MusicTrack>[oldTrack],
         );
         runtimeGraph.playback.registerSession(oldSession);
 
@@ -585,7 +585,7 @@ void main() {
           volume: 1,
           createdAt: DateTime(2026, 1, 2),
           state: PlayerState(false, ProcessingState.idle),
-          customQueueTracks: const <MusicTrack>[replacementTrack],
+          customQueueTracks: <MusicTrack>[replacementTrack],
         );
         runtimeGraph.playback.registerSession(replacementSession);
 
@@ -631,7 +631,7 @@ void main() {
           ),
         );
         runtimeGraph.playback.configurePersistence(enabled: false);
-        const track = MusicTrack(
+        final track = MusicTrack(
           path: '/music/notification-scroll.mp3',
           displayName: 'Notification Scroll',
           groupKey: '/music',
@@ -666,23 +666,23 @@ void main() {
       'failed queue prepare restores the previous native track without committing target state',
       () async {
         runtimeGraph.playback.configurePersistence(enabled: true);
-        const first = MusicTrack(
+        final first = MusicTrack(
           path: 'https://example.com/transaction-a.mp3',
           displayName: 'A',
           groupKey: 'transaction',
           groupTitle: 'Transaction',
           groupSubtitle: 'Transaction',
           isSingle: false,
-          duration: Duration(minutes: 3),
+          duration: const Duration(minutes: 3),
         );
-        const second = MusicTrack(
+        final second = MusicTrack(
           path: 'https://example.com/transaction-b.mp3',
           displayName: 'B',
           groupKey: 'transaction',
           groupTitle: 'Transaction',
           groupSubtitle: 'Transaction',
           isSingle: false,
-          duration: Duration(minutes: 4),
+          duration: const Duration(minutes: 4),
         );
         final preparedPaths = <String>[];
         var restoreCalls = 0;
@@ -751,7 +751,7 @@ void main() {
           notify: false,
           persist: false,
         );
-        await runtimeGraph.playback.spawnSessionWithQueue(const <MusicTrack>[
+        await runtimeGraph.playback.spawnSessionWithQueue(<MusicTrack>[
           first,
           second,
         ], autoPlay: false);
@@ -782,7 +782,7 @@ void main() {
     );
 
     test('timer fallback records only sessions that actually paused', () async {
-      const first = MusicTrack(
+      final first = MusicTrack(
         path: 'https://example.com/timer-a.mp3',
         displayName: 'A',
         groupKey: 'timer',
@@ -790,7 +790,7 @@ void main() {
         groupSubtitle: 'Timer',
         isSingle: false,
       );
-      const second = MusicTrack(
+      final second = MusicTrack(
         path: 'https://example.com/timer-b.mp3',
         displayName: 'B',
         groupKey: 'timer',
@@ -877,7 +877,7 @@ void main() {
     test(
       'overdue auto-resume retains only sessions that failed to restart',
       () async {
-        const first = MusicTrack(
+        final first = MusicTrack(
           path: 'https://example.com/resume-a.mp3',
           displayName: 'A',
           groupKey: 'resume',
@@ -885,7 +885,7 @@ void main() {
           groupSubtitle: 'Resume',
           isSingle: false,
         );
-        const second = MusicTrack(
+        final second = MusicTrack(
           path: 'https://example.com/resume-b.mp3',
           displayName: 'B',
           groupKey: 'resume',
@@ -1119,15 +1119,15 @@ void main() {
       second.stateStream.listen(secondStates.add);
 
       first.applyNativeSnapshot(
-        const NativePlaybackSnapshot(
+        NativePlaybackSnapshot(
           sessionId: 'native_1',
           uri: 'file:///audio/first.mp3',
           playing: true,
           playWhenReady: true,
           processingState: 'ready',
-          position: Duration(seconds: 5),
-          bufferedPosition: Duration(seconds: 10),
-          duration: Duration(minutes: 2),
+          position: const Duration(seconds: 5),
+          bufferedPosition: const Duration(seconds: 10),
+          duration: const Duration(minutes: 2),
           volume: 0.8,
           boostGain: 1.0,
           channelSwapEnabled: false,

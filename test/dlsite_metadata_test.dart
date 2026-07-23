@@ -249,7 +249,7 @@ void main() {
   });
 
   test('scores metadata by matched title keywords', () {
-    const metadata = DlsiteMetadata(
+    final metadata = DlsiteMetadata(
       rjCode: 'RJ01014447',
       workTitle: '雨音と耳かき ASMR',
       circleName: 'Circle',

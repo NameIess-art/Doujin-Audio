@@ -304,16 +304,16 @@ void registerAsmrControllerStateTests({
       await resetPrefs();
       const rawUrl =
           'https://raw.kiko-play-niptan.one/media/stream/work/track.mp3';
-      const node = AsmrTrackFile(
+      final node = AsmrTrackFile(
         hash: '1/2',
         title: 'track.mp3',
         type: 'audio',
         streamUrl: rawUrl,
         downloadUrl: null,
         lowQualityUrl: null,
-        duration: Duration(minutes: 1),
+        duration: const Duration(minutes: 1),
         size: 1024,
-        children: <AsmrTrackFile>[],
+        children: const <AsmrTrackFile>[],
         workId: 1,
         workTitle: 'Work',
         sourceId: 'RJ000001',
@@ -321,7 +321,7 @@ void registerAsmrControllerStateTests({
       );
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
-        apiService: _FakeAsmrApiService(trackTree: const <AsmrTrackFile>[node]),
+        apiService: _FakeAsmrApiService(trackTree: <AsmrTrackFile>[node]),
       );
 
       final tracks = await controller.loadPlayableTracks(
@@ -660,42 +660,33 @@ void registerAsmrControllerStateTests({
     },
   );
 
-  test(
-    'pagination commit is dropped after UI generation changes without leaving loading stuck',
-    () async {
-      await resetPrefs();
-      final coordinator = UiInteractionCoordinator.instance;
-      coordinator.resetForTest();
-      addTearDown(coordinator.resetForTest);
-      final controller = AsmrLibraryController(
-        preferencesStore: preferences,
-        apiService: _FakeAsmrApiService(largeRecommendationPool: true),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
-          const <MusicTrack>[],
-        ),
-      );
-      await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
-      await controller.refreshCategory(AsmrCategoryType.release);
-      expect(controller.worksFor(AsmrCategoryType.release), hasLength(40));
+  test('pagination data commits despite UI generation changes', () async {
+    await resetPrefs();
+    final coordinator = UiInteractionCoordinator.instance;
+    coordinator.resetForTest();
+    addTearDown(coordinator.resetForTest);
+    final controller = AsmrLibraryController(
+      preferencesStore: preferences,
+      apiService: _FakeAsmrApiService(largeRecommendationPool: true),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.refreshCategory(AsmrCategoryType.release);
+    expect(controller.worksFor(AsmrCategoryType.release), hasLength(40));
 
-      final interactionSource = Object();
-      coordinator.beginInteraction(interactionSource);
-      await controller.loadMoreCategory(AsmrCategoryType.release);
-      expect(
-        controller.isLoadingMoreCategory(AsmrCategoryType.release),
-        isTrue,
-      );
+    final interactionSource = Object();
+    coordinator.beginInteraction(interactionSource);
+    await controller.loadMoreCategory(AsmrCategoryType.release);
+    expect(controller.isLoadingMoreCategory(AsmrCategoryType.release), isFalse);
 
-      coordinator.beginGeneration();
-      coordinator.finishInteractionsForTest();
+    coordinator.beginGeneration();
+    coordinator.finishInteractionsForTest();
 
-      expect(controller.worksFor(AsmrCategoryType.release), hasLength(40));
-      expect(
-        controller.isLoadingMoreCategory(AsmrCategoryType.release),
-        isFalse,
-      );
-    },
-  );
+    expect(controller.worksFor(AsmrCategoryType.release), hasLength(80));
+    expect(controller.isLoadingMoreCategory(AsmrCategoryType.release), isFalse);
+  });
 
   test(
     'restoring a different token invalidates and refreshes a loaded category',

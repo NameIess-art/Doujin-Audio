@@ -73,7 +73,7 @@ void main() {
   test(
     'ASMR work list and outbox roll back together on write failure',
     () async {
-      const originalWork = AsmrWork(
+      final originalWork = AsmrWork(
         id: 1,
         title: 'Original',
         circleName: 'Circle',
@@ -89,10 +89,10 @@ void main() {
         dlCount: 0,
         reviewCount: 0,
         rating: 0,
-        voiceActors: <String>[],
-        tags: <String>[],
+        voiceActors: const <String>[],
+        tags: const <String>[],
       );
-      const replacementWork = AsmrWork(
+      final replacementWork = AsmrWork(
         id: 2,
         title: 'Replacement',
         circleName: 'Circle',
@@ -108,8 +108,8 @@ void main() {
         dlCount: 0,
         reviewCount: 0,
         rating: 0,
-        voiceActors: <String>[],
-        tags: <String>[],
+        voiceActors: const <String>[],
+        tags: const <String>[],
       );
       final originalOperation = AsmrSyncOperation(
         type: AsmrSyncOperationType.favoriteAdd,
@@ -125,7 +125,7 @@ void main() {
       );
       await appDatabase.saveAsmrWorkListAndSyncOperations(
         'favorites',
-        const <AsmrWork>[originalWork],
+        <AsmrWork>[originalWork],
         <AsmrSyncOperation>[originalOperation],
       );
       await db.execute('''
@@ -139,7 +139,7 @@ void main() {
       await expectLater(
         appDatabase.saveAsmrWorkListAndSyncOperations(
           'favorites',
-          const <AsmrWork>[replacementWork],
+          <AsmrWork>[replacementWork],
           <AsmrSyncOperation>[replacementOperation],
         ),
         throwsA(isA<DatabaseException>()),
@@ -187,7 +187,7 @@ void main() {
             'playbackUrls': <String>['https://example.com/a.mp3'],
           },
         ),
-        const MusicTrack(
+        MusicTrack(
           path: 'content://media/external/audio/media/42',
           displayName: 'Content Track',
           groupKey: 'content://media',
@@ -243,7 +243,7 @@ void main() {
   test(
     'insertTracks replaces existing rows and deleteTracks removes by path',
     () async {
-      const original = MusicTrack(
+      final original = MusicTrack(
         path: '/library/a.mp3',
         displayName: 'A',
         groupKey: '/library',
@@ -251,7 +251,7 @@ void main() {
         groupSubtitle: 'old',
         isSingle: false,
       );
-      const replacement = MusicTrack(
+      final replacement = MusicTrack(
         path: '/library/a.mp3',
         displayName: 'A renamed',
         groupKey: '/library',
@@ -276,7 +276,7 @@ void main() {
   );
 
   test('replaceTrackPaths only rewrites affected track rows', () async {
-    const original = MusicTrack(
+    final original = MusicTrack(
       path: '/library/old/a.flac',
       displayName: 'A',
       groupKey: '/library/old',
@@ -288,7 +288,7 @@ void main() {
       remoteMetadataKind: 'asmr.one',
       remoteMetadata: <String, Object?>{'workId': 1},
     );
-    const untouched = MusicTrack(
+    final untouched = MusicTrack(
       path: '/library/other/b.flac',
       displayName: 'B',
       groupKey: '/library/other',
@@ -297,7 +297,7 @@ void main() {
       isSingle: false,
       tags: <String>['sleep'],
     );
-    const replacement = MusicTrack(
+    final replacement = MusicTrack(
       path: '/library/new/a.flac',
       displayName: 'A',
       groupKey: '/library/new',
@@ -309,7 +309,7 @@ void main() {
       remoteMetadataKind: 'asmr.one',
       remoteMetadata: <String, Object?>{'workId': 1},
     );
-    await appDatabase.saveAllTracks(const <MusicTrack>[original, untouched]);
+    await appDatabase.saveAllTracks(<MusicTrack>[original, untouched]);
 
     await appDatabase.replaceTrackPaths(<String, MusicTrack>{
       original.path: replacement,
@@ -334,7 +334,7 @@ void main() {
   test(
     'replaceTrackPaths rejects duplicate destinations before writing',
     () async {
-      const first = MusicTrack(
+      final first = MusicTrack(
         path: '/library/a.flac',
         displayName: 'A',
         groupKey: '/library',
@@ -342,7 +342,7 @@ void main() {
         groupSubtitle: 'Library',
         isSingle: false,
       );
-      const second = MusicTrack(
+      final second = MusicTrack(
         path: '/library/b.flac',
         displayName: 'B',
         groupKey: '/library',
@@ -350,11 +350,11 @@ void main() {
         groupSubtitle: 'Library',
         isSingle: false,
       );
-      await appDatabase.saveAllTracks(const <MusicTrack>[first, second]);
+      await appDatabase.saveAllTracks(<MusicTrack>[first, second]);
 
       await expectLater(
         appDatabase.replaceTrackPaths(<String, MusicTrack>{
-          first.path: const MusicTrack(
+          first.path: MusicTrack(
             path: '/library/same.flac',
             displayName: 'A',
             groupKey: '/library',
@@ -362,7 +362,7 @@ void main() {
             groupSubtitle: 'Library',
             isSingle: false,
           ),
-          second.path: const MusicTrack(
+          second.path: MusicTrack(
             path: '/library/same.flac',
             displayName: 'B',
             groupKey: '/library',
@@ -419,7 +419,7 @@ void main() {
   );
 
   test('scan generation helpers keep only the current scan snapshot', () async {
-    const first = MusicTrack(
+    final first = MusicTrack(
       path: '/library/first.mp3',
       displayName: 'First',
       groupKey: '/library',
@@ -427,7 +427,7 @@ void main() {
       groupSubtitle: '1 track',
       isSingle: false,
     );
-    const second = MusicTrack(
+    final second = MusicTrack(
       path: '/library/second.mp3',
       displayName: 'Second',
       groupKey: '/library',
@@ -504,14 +504,14 @@ void main() {
   });
 
   test('loadTrackSummaries reads only main track table fields', () async {
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: '/library/meta.flac',
       displayName: 'Meta',
       groupKey: '/library',
       groupTitle: 'Library',
       groupSubtitle: '1 track',
       isSingle: false,
-      lastPlayedPosition: Duration(minutes: 5),
+      lastPlayedPosition: const Duration(minutes: 5),
       isFavorite: true,
       tags: <String>['focus'],
       coverCachePath: '/cache/meta.png',
@@ -534,14 +534,14 @@ void main() {
   test(
     'loadStartupTracks keeps UI fields without eager metadata JSON',
     () async {
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/library/startup.flac',
         displayName: 'Startup',
         groupKey: '/library',
         groupTitle: 'Library',
         groupSubtitle: '1 track',
         isSingle: false,
-        lastPlayedPosition: Duration(minutes: 3),
+        lastPlayedPosition: const Duration(minutes: 3),
         isFavorite: true,
         tags: <String>['focus'],
         coverCachePath: '/cache/startup.png',
@@ -569,7 +569,7 @@ void main() {
   );
 
   test('sessions persist custom queue tracks', () async {
-    const queueTrack = MusicTrack(
+    final queueTrack = MusicTrack(
       path: 'https://example.com/track.mp3',
       displayName: 'Track',
       groupKey: 'asmr-work-1',
@@ -585,7 +585,7 @@ void main() {
     );
 
     await appDatabase.saveAllSessions(<PersistedSession>[
-      const PersistedSession(
+      PersistedSession(
         id: 'session_1',
         trackPath: 'https://example.com/track.mp3',
         loopModeIndex: 1,
@@ -624,7 +624,7 @@ void main() {
   test(
     'sessions persist playback queue definition and duplicate index',
     () async {
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/library/work/01.mp3',
         displayName: '01',
         groupKey: '/library/work',
@@ -632,7 +632,7 @@ void main() {
         groupSubtitle: 'Work',
         isSingle: false,
       );
-      const queue = PlaybackQueueDefinition(
+      final queue = PlaybackQueueDefinition(
         name: 'Night queue',
         colorValue: 0xFF336699,
         entries: <PlaybackQueueEntry>[
@@ -681,7 +681,7 @@ void main() {
   test(
     'loadAllSessions restores multiple sessions with queues and effects',
     () async {
-      const firstTrack = MusicTrack(
+      final firstTrack = MusicTrack(
         path: '/library/work-a/01.mp3',
         displayName: 'A 01',
         groupKey: '/library/work-a',
@@ -689,7 +689,7 @@ void main() {
         groupSubtitle: 'A',
         isSingle: false,
       );
-      const secondTrack = MusicTrack(
+      final secondTrack = MusicTrack(
         path: '/library/work-a/02.mp3',
         displayName: 'A 02',
         groupKey: '/library/work-a',
@@ -697,7 +697,7 @@ void main() {
         groupSubtitle: 'A',
         isSingle: false,
       );
-      const thirdTrack = MusicTrack(
+      final thirdTrack = MusicTrack(
         path: '/library/work-b/01.mp3',
         displayName: 'B 01',
         groupKey: '/library/work-b',
@@ -705,7 +705,7 @@ void main() {
         groupSubtitle: 'B',
         isSingle: false,
       );
-      const firstQueue = PlaybackQueueDefinition(
+      final firstQueue = PlaybackQueueDefinition(
         name: 'Queue A',
         colorValue: 0xFFAA5500,
         entries: <PlaybackQueueEntry>[
@@ -723,7 +723,7 @@ void main() {
           ),
         ],
       );
-      const secondQueue = PlaybackQueueDefinition(
+      final secondQueue = PlaybackQueueDefinition(
         name: 'Queue B',
         entries: <PlaybackQueueEntry>[
           PlaybackQueueEntry(
@@ -737,7 +737,7 @@ void main() {
       );
 
       await appDatabase.saveAllSessions(<PersistedSession>[
-        const PersistedSession(
+        PersistedSession(
           id: 'session_b',
           trackPath: '/library/work-b/01.mp3',
           loopModeIndex: 2,
@@ -754,7 +754,7 @@ void main() {
           ),
           sortOrder: 0,
         ),
-        const PersistedSession(
+        PersistedSession(
           id: 'session_a',
           trackPath: '/library/work-a/01.mp3',
           loopModeIndex: 1,
@@ -773,7 +773,7 @@ void main() {
           ),
           sortOrder: 1,
         ),
-        const PersistedSession(
+        PersistedSession(
           id: 'session_c',
           trackPath: '/library/work-a/02.mp3',
           loopModeIndex: 1,
@@ -828,7 +828,7 @@ void main() {
 
   test('updateSessionOrder only changes session sort order', () async {
     await appDatabase.saveAllSessions(<PersistedSession>[
-      const PersistedSession(
+      PersistedSession(
         id: 'session_1',
         trackPath: '/library/a.mp3',
         loopModeIndex: 1,
@@ -839,7 +839,7 @@ void main() {
         channelSwapEnabled: false,
         sortOrder: 0,
       ),
-      const PersistedSession(
+      PersistedSession(
         id: 'session_2',
         trackPath: '/library/b.mp3',
         loopModeIndex: 1,
@@ -864,7 +864,7 @@ void main() {
   test(
     'updatePlaybackQueueEntryOrder only changes queue entry order',
     () async {
-      const firstTrack = MusicTrack(
+      final firstTrack = MusicTrack(
         path: '/library/work/01.mp3',
         displayName: '01',
         groupKey: '/library/work',
@@ -872,7 +872,7 @@ void main() {
         groupSubtitle: 'Work',
         isSingle: false,
       );
-      const secondTrack = MusicTrack(
+      final secondTrack = MusicTrack(
         path: '/library/work/02.mp3',
         displayName: '02',
         groupKey: '/library/work',
@@ -880,7 +880,7 @@ void main() {
         groupSubtitle: 'Work',
         isSingle: false,
       );
-      const queue = PlaybackQueueDefinition(
+      final queue = PlaybackQueueDefinition(
         name: 'Night queue',
         entries: <PlaybackQueueEntry>[
           PlaybackQueueEntry(

@@ -8,7 +8,7 @@ import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
 
 void main() {
   test('ASMR tracks persist ordered deduplicated playback candidates', () {
-    const node = AsmrTrackFile(
+    final node = AsmrTrackFile(
       hash: 'hash',
       title: 'track.m4a',
       type: 'audio',
@@ -36,7 +36,7 @@ void main() {
   test(
     'ASMR matches URL-based subtitle extensions even when titles omit suffixes',
     () {
-      const work = AsmrWork(
+      final work = AsmrWork(
         id: 1,
         title: 'Work',
         circleName: 'Circle',
@@ -121,7 +121,7 @@ void main() {
   );
 
   test('ASMR matches double-extension subtitle filenames to audio tracks', () {
-    const work = AsmrWork(
+    final work = AsmrWork(
       id: 2,
       title: 'Work 2',
       circleName: 'Circle',
@@ -204,7 +204,7 @@ void main() {
   });
 
   test('ASMR only treats whitelisted audio file extensions as playable', () {
-    const audioNode = AsmrTrackFile(
+    final audioNode = AsmrTrackFile(
       hash: 'mp3',
       title: 'track.mp3',
       type: 'audio',
@@ -219,7 +219,7 @@ void main() {
       sourceId: 'RJ000001',
       relativePath: 'track.mp3',
     );
-    const imageNode = AsmrTrackFile(
+    final imageNode = AsmrTrackFile(
       hash: 'jpg',
       title: 'cover.jpg',
       type: 'audio',
@@ -234,7 +234,7 @@ void main() {
       sourceId: 'RJ000001',
       relativePath: 'cover.jpg',
     );
-    const textNode = AsmrTrackFile(
+    final textNode = AsmrTrackFile(
       hash: 'txt',
       title: 'readme.txt',
       type: 'text',

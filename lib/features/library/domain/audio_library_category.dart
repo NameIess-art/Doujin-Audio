@@ -1,5 +1,6 @@
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
+import '../../../core/immutable_collections.dart';
 
 enum AudioLibraryCategoryType { all, tags, voiceActors, circles }
 
@@ -10,8 +11,8 @@ class AudioLibraryCategoryEntry {
     required this.path,
     required this.isFolder,
     required this.detail,
-    required this.tracks,
-  });
+    required List<MusicTrack> tracks,
+  }) : tracks = immutableList(tracks);
 
   final AudioDetailTarget target;
   final String title;
@@ -71,14 +72,17 @@ class AudioLibraryCategoryEntry {
 }
 
 class AudioLibraryCategorySnapshot {
-  const AudioLibraryCategorySnapshot({
-    required this.entries,
-    required this.tagTerms,
-    required this.voiceActorTerms,
-    required this.circleTerms,
+  AudioLibraryCategorySnapshot({
+    required List<AudioLibraryCategoryEntry> entries,
+    required List<String> tagTerms,
+    required List<String> voiceActorTerms,
+    required List<String> circleTerms,
     required this.structureRevision,
     required this.detailRevision,
-  });
+  }) : entries = immutableList(entries),
+       tagTerms = immutableList(tagTerms),
+       voiceActorTerms = immutableList(voiceActorTerms),
+       circleTerms = immutableList(circleTerms);
 
   final List<AudioLibraryCategoryEntry> entries;
   final List<String> tagTerms;

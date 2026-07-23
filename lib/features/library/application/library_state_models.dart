@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
@@ -184,20 +186,23 @@ class LibraryEntrySnapshot {
     required String libraryPath,
     Iterable<LibraryEntry> entries = const <LibraryEntry>[],
   }) : libraryPath = PathMatcher.normalize(libraryPath),
-       entriesByPath = <String, LibraryEntry>{
+       _entriesByPath = <String, LibraryEntry>{
          for (final entry in entries) PathMatcher.normalize(entry.path): entry,
-       };
+       } {
+    entriesByPath = UnmodifiableMapView<String, LibraryEntry>(_entriesByPath);
+  }
 
   final String libraryPath;
-  final Map<String, LibraryEntry> entriesByPath;
+  final Map<String, LibraryEntry> _entriesByPath;
+  late final Map<String, LibraryEntry> entriesByPath;
 
   LibraryEntry? entryForPath(String entryPath) {
-    return entriesByPath[PathMatcher.normalize(entryPath)];
+    return _entriesByPath[PathMatcher.normalize(entryPath)];
   }
 
   void remember(Iterable<LibraryEntry> entries) {
     for (final entry in entries) {
-      entriesByPath[PathMatcher.normalize(entry.path)] = entry;
+      _entriesByPath[PathMatcher.normalize(entry.path)] = entry;
     }
   }
 

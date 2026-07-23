@@ -17,7 +17,7 @@ void main() {
     LibraryScanLabels? receivedLabels;
     final scanner = _FakeScanner((_, actualLabels) async {
       receivedLabels = actualLabels;
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.refreshAdded,
         source: 'refresh',
         details: <String, Object?>{'count': 2},
@@ -44,7 +44,7 @@ void main() {
     () async {
       final coordinator = LibraryScanCoordinator(
         scanner: _FakeScanner(
-          (_, _) async => const LibraryScanOutcome(
+          (_, _) async => LibraryScanOutcome(
             code: LibraryScanOutcomeCode.permissionDenied,
             source: 'refresh',
           ),

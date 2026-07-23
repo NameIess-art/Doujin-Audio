@@ -57,7 +57,7 @@ void main() {
       );
       await actionEntered.future;
 
-      final staleWrite = appDatabase.insertTracks(const <MusicTrack>[
+      final staleWrite = appDatabase.insertTracks(<MusicTrack>[
         MusicTrack(
           path: '/library/stale.mp3',
           displayName: 'stale',
@@ -91,7 +91,7 @@ void main() {
       final maintenanceExpectation = expectLater(maintenance, throwsStateError);
       await actionEntered.future;
 
-      final queuedWrite = appDatabase.insertTracks(const <MusicTrack>[
+      final queuedWrite = appDatabase.insertTracks(<MusicTrack>[
         MusicTrack(
           path: '/library/queued.mp3',
           displayName: 'queued',

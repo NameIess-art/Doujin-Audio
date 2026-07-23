@@ -103,7 +103,7 @@ class LibraryScannerService {
     final watchedFolders = provider.watchedFolders;
     final watchedLibraries = provider.watchedLibraries;
     if (watchedFolders.isEmpty && watchedLibraries.isEmpty) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.noSources,
         source: 'refresh',
       );
@@ -114,7 +114,7 @@ class LibraryScannerService {
       ...watchedLibraries,
     ]);
     if (!permissionGranted) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.permissionDenied,
         source: 'refresh',
       );
@@ -129,7 +129,7 @@ class LibraryScannerService {
       background: true,
     );
     if (generation == 0) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.alreadyRunning,
         source: 'refresh',
       );
@@ -268,7 +268,7 @@ class LibraryScannerService {
       provider.finishScan(generation);
     }
     if (wasCancelled) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.cancelled,
         source: 'refresh',
       );
@@ -1126,7 +1126,7 @@ class LibraryScannerService {
     required LibraryScanLabels labels,
   }) async {
     if (sources.isEmpty) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.noSources,
         source: 'restore_backup_sources',
       );
@@ -1222,7 +1222,7 @@ class LibraryScannerService {
           provider.hasLibraryExclusions(normalizedFolderPath)) {
         provider.clearLibraryExclusions(normalizedFolderPath);
       } else {
-        return const LibraryScanOutcome(
+        return LibraryScanOutcome(
           code: LibraryScanOutcomeCode.folderExists,
           source: 'import_folder',
         );
@@ -1233,7 +1233,7 @@ class LibraryScannerService {
       source: _displaySourceName(folderPath),
     );
     if (generation == 0) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.alreadyRunning,
         source: 'import_folder',
       );
@@ -1351,19 +1351,19 @@ class LibraryScannerService {
       }
     }
     if (wasCancelled) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.cancelled,
         source: 'import_folder',
       );
     }
     if (!completed) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.failed,
         source: 'import_folder',
       );
     }
     if (added == 0) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.noAudio,
         source: 'import_folder',
       );
@@ -1409,7 +1409,7 @@ class LibraryScannerService {
           promotedFolders: promotedFolders,
           tracks: provider.library,
         )) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.libraryExists,
         source: 'import_library',
       );
@@ -1418,7 +1418,7 @@ class LibraryScannerService {
       source: _displaySourceName(normalizedFolderPath),
     );
     if (generation == 0) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.alreadyRunning,
         source: 'import_library',
       );
@@ -1553,7 +1553,7 @@ class LibraryScannerService {
   ) async {
     final generation = provider.tryBeginScan(source: labels.importedFiles);
     if (generation == 0) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.alreadyRunning,
         source: 'import_files',
       );
@@ -1586,7 +1586,7 @@ class LibraryScannerService {
       }
     }
     if (fileExists) {
-      return const LibraryScanOutcome(
+      return LibraryScanOutcome(
         code: LibraryScanOutcomeCode.fileExists,
         source: 'import_files',
       );

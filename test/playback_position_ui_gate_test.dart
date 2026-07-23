@@ -186,15 +186,15 @@ void main() {
   );
 
   test('subtitle cache only changes text when the active cue changes', () {
-    const track = SubtitleTrack(
+    final track = SubtitleTrack(
       sourcePath: '/audio/one.srt',
       cues: <SubtitleCue>[
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration.zero,
           end: Duration(seconds: 5),
           text: 'first',
         ),
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration(seconds: 5),
           end: Duration(seconds: 9),
           text: 'second',

@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:archive/archive_io.dart';
 import 'package:crypto/crypto.dart';
 
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/local_library_import_sources.dart';
 import '../../../core/persistence/app_database.dart';
 import '../../../core/logging/app_log_service.dart';
@@ -12,15 +13,15 @@ import '../../settings/application/app_preferences.dart';
 import '../../settings/application/app_update_service.dart';
 
 class BackupManifest {
-  const BackupManifest({
+  BackupManifest({
     required this.formatVersion,
     required this.dataEpoch,
     required this.appVersion,
     required this.createdAt,
     required this.platform,
     required this.databaseSchemaVersion,
-    required this.entries,
-  });
+    required Map<String, BackupEntryManifest> entries,
+  }) : entries = immutableMap(entries);
 
   factory BackupManifest.fromJson(Map<String, Object?> json) {
     final entries = (json['entries'] as Map<Object?, Object?>?)?.map(
@@ -82,27 +83,26 @@ class BackupEntryManifest {
 }
 
 class BackupValidationResult {
-  const BackupValidationResult._({
+  BackupValidationResult._({
     required this.isValid,
     this.manifest,
-    this.librarySources = const LocalLibraryImportSources(),
+    LocalLibraryImportSources? librarySources,
     this.error,
-  });
+  }) : librarySources = librarySources ?? LocalLibraryImportSources();
 
-  const BackupValidationResult.valid(
+  BackupValidationResult.valid(
     BackupManifest manifest, {
-    LocalLibraryImportSources librarySources =
-        const LocalLibraryImportSources(),
+    LocalLibraryImportSources? librarySources,
   }) : this._(
          isValid: true,
          manifest: manifest,
          librarySources: librarySources,
        );
 
-  const BackupValidationResult.invalid(String error)
+  BackupValidationResult.invalid(String error)
     : this._(isValid: false, error: error);
 
-  const BackupValidationResult.cancelled()
+  BackupValidationResult.cancelled()
     : this._(isValid: false, error: 'restore_cancelled');
 
   final bool isValid;
@@ -114,13 +114,13 @@ class BackupValidationResult {
 }
 
 class _PreparedBackup {
-  const _PreparedBackup({
+  _PreparedBackup({
     required this.validation,
     this.temporaryDirectory,
     this.databaseFile,
-    this.preferences,
+    Map<String, Object?>? preferences,
     this.librarySources,
-  });
+  }) : preferences = immutableJsonMap(preferences);
 
   final BackupValidationResult validation;
   final Directory? temporaryDirectory;
@@ -239,9 +239,9 @@ class AppBackupService {
 
   Future<File> exportBackup(
     String outputPath, {
-    LocalLibraryImportSources librarySources =
-        const LocalLibraryImportSources(),
+    LocalLibraryImportSources? librarySources,
   }) async {
+    librarySources ??= LocalLibraryImportSources();
     final output = File(outputPath);
     final temporaryDirectory = await Directory.systemTemp.createTemp(
       'nameless_audio_backup_export_',
@@ -365,7 +365,7 @@ class AppBackupService {
       if (beforeCommit != null) {
         final preparedSources = await beforeCommit(librarySources);
         if (preparedSources == null) {
-          return const BackupValidationResult.cancelled();
+          return BackupValidationResult.cancelled();
         }
         librarySources = preparedSources;
       }
@@ -423,7 +423,7 @@ class AppBackupService {
         error: error,
         stackTrace: stackTrace,
       );
-      return const BackupValidationResult.invalid('restore_failed');
+      return BackupValidationResult.invalid('restore_failed');
     } finally {
       await prepared.dispose();
     }

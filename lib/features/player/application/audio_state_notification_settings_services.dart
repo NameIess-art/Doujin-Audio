@@ -9,6 +9,8 @@ class NotificationCoordinatorService {
   Timer? unifiedNotificationSyncTimer;
   bool unifiedNotificationSyncInFlight = false;
   bool unifiedNotificationSyncPending = false;
+  bool synchronizationPaused = false;
+  bool synchronizationPendingWhilePaused = false;
   bool notificationActionRefreshPending = false;
   String? queuedNotificationRefreshSessionId;
   bool notificationsDismissedWhilePaused = false;

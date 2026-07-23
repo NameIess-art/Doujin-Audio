@@ -182,7 +182,7 @@ void main() {
   });
 
   test('playback queue follows its listed order for single media files', () {
-    const audio = MusicTrack(
+    final audio = MusicTrack(
       path: 'audio',
       displayName: 'audio',
       groupKey: '__single_files__',
@@ -190,7 +190,7 @@ void main() {
       groupSubtitle: '',
       isSingle: true,
     );
-    const video = MusicTrack(
+    final video = MusicTrack(
       path: 'video',
       displayName: 'video',
       groupKey: '__single_files__',
@@ -199,7 +199,7 @@ void main() {
       isSingle: true,
       isVideo: true,
     );
-    const outro = MusicTrack(
+    final outro = MusicTrack(
       path: 'outro',
       displayName: 'outro',
       groupKey: '__single_files__',
@@ -250,7 +250,7 @@ void main() {
   });
 
   test('playback queue recovers from a stale native queue index', () {
-    const first = MusicTrack(
+    final first = MusicTrack(
       path: 'first',
       displayName: 'first',
       groupKey: '__single_files__',
@@ -258,7 +258,7 @@ void main() {
       groupSubtitle: '',
       isSingle: true,
     );
-    const current = MusicTrack(
+    final current = MusicTrack(
       path: 'current',
       displayName: 'current',
       groupKey: '__single_files__',
@@ -267,7 +267,7 @@ void main() {
       isSingle: true,
       isVideo: true,
     );
-    const next = MusicTrack(
+    final next = MusicTrack(
       path: 'next',
       displayName: 'next',
       groupKey: '__single_files__',

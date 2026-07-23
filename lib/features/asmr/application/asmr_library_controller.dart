@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../app/application/persisted_state_reloader.dart';
+import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/persistence/audio_database_repository.dart';
@@ -15,17 +16,16 @@ import 'asmr_preferences.dart';
 import 'asmr_remote_catalog_service.dart';
 import '../../../core/app_language.dart';
 import '../../../core/media/search_query_utils.dart';
-import '../../../core/ui/ui_interaction_coordinator.dart';
 
 class AsmrLibraryGlobalViewState {
-  const AsmrLibraryGlobalViewState({
+  AsmrLibraryGlobalViewState({
     required this.initialized,
     required this.lastError,
-    required this.visibleCategories,
+    required List<AsmrCategoryType> visibleCategories,
     required this.contentLanguage,
     required this.contentLanguagePreference,
     required this.revision,
-  });
+  }) : visibleCategories = immutableList(visibleCategories);
 
   final bool initialized;
   final Object? lastError;
@@ -57,9 +57,9 @@ class AsmrLibraryGlobalViewState {
 }
 
 class AsmrCategoryViewState {
-  const AsmrCategoryViewState({
+  AsmrCategoryViewState({
     required this.category,
-    required this.works,
+    required List<AsmrWork> works,
     required this.isLoading,
     required this.isLoadingMore,
     required this.isRefreshing,
@@ -71,7 +71,7 @@ class AsmrCategoryViewState {
     required this.lastError,
     required this.operationError,
     required this.revision,
-  });
+  }) : works = immutableList(works);
 
   final AsmrCategoryType category;
   final List<AsmrWork> works;
@@ -124,16 +124,17 @@ class AsmrCategoryViewState {
 }
 
 class AsmrTrackTreeViewState {
-  const AsmrTrackTreeViewState({
+  AsmrTrackTreeViewState({
     required this.workId,
-    required this.tree,
-    required this.visibleTree,
+    required List<AsmrTrackFile>? tree,
+    required List<AsmrTrackFile>? visibleTree,
     required this.isLoading,
     required this.isRefreshing,
     required this.isStale,
     required this.operationError,
     required this.revision,
-  });
+  }) : tree = tree == null ? null : immutableList(tree),
+       visibleTree = visibleTree == null ? null : immutableList(visibleTree);
 
   final int workId;
   final List<AsmrTrackFile>? tree;
@@ -232,6 +233,52 @@ typedef _AsmrCategoryRequestKey = ({
   int requestSerial,
 });
 
+final class _AsmrControllerDependencies {
+  _AsmrControllerDependencies({
+    required this.remoteCatalogService,
+    required this.accountSyncService,
+    required this.ownedApiService,
+  });
+
+  factory _AsmrControllerDependencies.resolve({
+    required AsmrApiService? apiService,
+    required AsmrAuthService? authService,
+    required AsmrRemoteCatalogService? remoteCatalogService,
+    required AsmrAccountSyncService? accountSyncService,
+    required AudioDatabaseRepository? audioDatabaseRepository,
+    required AsmrPreferencesStore preferencesStore,
+  }) {
+    final needsApi = remoteCatalogService == null || accountSyncService == null;
+    final resolvedApi = needsApi ? (apiService ?? AsmrApiService()) : null;
+    final resolvedAuth = accountSyncService == null
+        ? authService ?? AsmrAuthService(apiService: resolvedApi)
+        : authService;
+    final resolvedRemote =
+        remoteCatalogService ??
+        AsmrRemoteCatalogService(
+          apiService: resolvedApi!,
+          audioDatabaseRepository:
+              audioDatabaseRepository ?? AudioDatabaseRepository(),
+        );
+    final resolvedAccount =
+        accountSyncService ??
+        AsmrAccountSyncService(
+          authService: resolvedAuth!,
+          apiService: resolvedApi!,
+          preferencesStore: preferencesStore,
+        );
+    return _AsmrControllerDependencies(
+      remoteCatalogService: resolvedRemote,
+      accountSyncService: resolvedAccount,
+      ownedApiService: apiService == null ? resolvedApi : null,
+    );
+  }
+
+  final AsmrRemoteCatalogService remoteCatalogService;
+  final AsmrAccountSyncService accountSyncService;
+  final AsmrApiService? ownedApiService;
+}
+
 class AsmrLibraryController extends ChangeNotifier
     implements
         AsmrPlaybackSource,
@@ -244,22 +291,25 @@ class AsmrLibraryController extends ChangeNotifier
     required AsmrPreferencesStore preferencesStore,
     AsmrRemoteCatalogService? remoteCatalogService,
     AsmrAccountSyncService? accountSyncService,
+  }) : this._fromDependencies(
+         preferencesStore: preferencesStore,
+         dependencies: _AsmrControllerDependencies.resolve(
+           apiService: apiService,
+           authService: authService,
+           remoteCatalogService: remoteCatalogService,
+           accountSyncService: accountSyncService,
+           audioDatabaseRepository: audioDatabaseRepository,
+           preferencesStore: preferencesStore,
+         ),
+       );
+
+  AsmrLibraryController._fromDependencies({
+    required AsmrPreferencesStore preferencesStore,
+    required _AsmrControllerDependencies dependencies,
   }) : _preferencesStore = preferencesStore,
-       _remoteCatalogService =
-           remoteCatalogService ??
-           AsmrRemoteCatalogService(
-             apiService: apiService ?? AsmrApiService(),
-             audioDatabaseRepository:
-                 audioDatabaseRepository ?? AudioDatabaseRepository(),
-           ),
-       _accountSyncService =
-           accountSyncService ??
-           AsmrAccountSyncService(
-             authService:
-                 authService ?? AsmrAuthService(apiService: apiService),
-             apiService: apiService ?? AsmrApiService(),
-             preferencesStore: preferencesStore,
-           );
+       _remoteCatalogService = dependencies.remoteCatalogService,
+       _accountSyncService = dependencies.accountSyncService,
+       _ownedApiService = dependencies.ownedApiService;
 
   static const int _detailCacheLimit = 128;
   static const int _trackCacheLimit = 32;
@@ -267,6 +317,7 @@ class AsmrLibraryController extends ChangeNotifier
   final AsmrPreferencesStore _preferencesStore;
   final AsmrRemoteCatalogService _remoteCatalogService;
   final AsmrAccountSyncService _accountSyncService;
+  final AsmrApiService? _ownedApiService;
   final Map<AsmrCategoryType, Future<void>> _refreshTasks =
       <AsmrCategoryType, Future<void>>{};
   final Map<AsmrCategoryType, String> _refreshTaskQueries =
@@ -331,6 +382,13 @@ class AsmrLibraryController extends ChangeNotifier
   int _globalRevision = 0;
   int _authEpoch = 0;
   int _contentEpoch = 0;
+  bool _disposed = false;
+
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
+  }
 
   void _commitPresentation(
     String key,
@@ -338,23 +396,8 @@ class AsmrLibraryController extends ChangeNotifier
     bool Function()? isCurrent,
     bool preserveAcrossUiGenerations = false,
   }) {
-    final coordinator = UiInteractionCoordinator.instance;
-    final uiGeneration = coordinator.generation;
-    void guardedCommit() {
-      if (isCurrent != null && !isCurrent()) return;
-      commit();
-    }
-
-    if (coordinator.isInteracting) {
-      coordinator.scheduleCommit(
-        key: key,
-        generation: preserveAcrossUiGenerations ? null : uiGeneration,
-        priority: 10,
-        commit: guardedCommit,
-      );
-    } else {
-      guardedCommit();
-    }
+    if (isCurrent != null && !isCurrent()) return;
+    commit();
   }
 
   Future<T> _runStateMutation<T>(Future<T> Function() mutation) {
@@ -582,9 +625,9 @@ class AsmrLibraryController extends ChangeNotifier
       return cached;
     }
     final terms = extractSearchTerms(normalizedQuery);
-    final filtered = works
-        .where((work) => _matchesQuery(work, normalizedQuery, terms: terms))
-        .toList(growable: false);
+    final filtered = immutableList(
+      works.where((work) => _matchesQuery(work, normalizedQuery, terms: terms)),
+    );
     _filteredWorksCache[cacheKey] = filtered;
     while (_filteredWorksCache.length > _filteredWorksCacheLimit) {
       _filteredWorksCache.remove(_filteredWorksCache.keys.first);
@@ -1004,7 +1047,7 @@ class AsmrLibraryController extends ChangeNotifier
         ...?_worksByCategory[category],
         ...pageResult.works.where((work) => existingIds.add(work.id)),
       ];
-      final decorated = merged.map(_decorateWork).toList(growable: false);
+      final decorated = immutableList(merged.map(_decorateWork));
       _commitPresentation(
         'asmr_page_${category.name}',
         () {
@@ -1155,9 +1198,7 @@ class AsmrLibraryController extends ChangeNotifier
     if (!_isCategoryRequestCurrent(category, requestKey)) {
       return;
     }
-    final decorated = pageResult.works
-        .map(_decorateWork)
-        .toList(growable: false);
+    final decorated = immutableList(pageResult.works.map(_decorateWork));
     _commitPresentation(
       'asmr_refresh_${category.name}',
       () {
@@ -1187,7 +1228,7 @@ class AsmrLibraryController extends ChangeNotifier
     if (!_isCategoryRequestCurrent(category, requestKey)) {
       return;
     }
-    final decorated = ranked.map(_decorateWork).toList(growable: false);
+    final decorated = immutableList(ranked.map(_decorateWork));
     _commitPresentation(
       'asmr_refresh_${category.name}',
       () {
@@ -1491,13 +1532,13 @@ class AsmrLibraryController extends ChangeNotifier
             ),
     );
     for (final entry in _worksByCategory.entries) {
-      _worksByCategory[entry.key] = entry.value
-          .map(
-            (item) => item.id == work.id
-                ? item.copyWith(isFavorite: shouldFavorite)
-                : item,
-          )
-          .toList(growable: false);
+      _worksByCategory[entry.key] = immutableList(
+        entry.value.map(
+          (item) => item.id == work.id
+              ? item.copyWith(isFavorite: shouldFavorite)
+              : item,
+        ),
+      );
       _bumpCategoryRevision(entry.key);
     }
     _bumpGlobalRevision();
@@ -1590,7 +1631,7 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   List<AsmrTrackFile> _storeTrackTree(int workId, List<AsmrTrackFile> tree) {
-    final sortedTree = sortAsmrTrackTreeNaturally(tree);
+    final sortedTree = immutableList(sortAsmrTrackTreeNaturally(tree));
     _trackCache.remove(workId);
     _trackCache[workId] = sortedTree;
     _visibleTrackCache.remove(workId);
@@ -1619,9 +1660,9 @@ class AsmrLibraryController extends ChangeNotifier
       _visibleTrackCache[workId] = cached;
       return cached;
     }
-    final visible = tree
-        .where((node) => node.hasBrowsableContent)
-        .toList(growable: false);
+    final visible = immutableList(
+      tree.where((node) => node.hasBrowsableContent),
+    );
     _visibleTrackCache[workId] = visible;
     while (_visibleTrackCache.length > _trackCacheLimit) {
       _visibleTrackCache.remove(_visibleTrackCache.keys.first);
@@ -1646,5 +1687,17 @@ class AsmrLibraryController extends ChangeNotifier
     return result.isEmpty
         ? kDefaultVisibleAsmrCategories
         : result.toList(growable: false);
+  }
+
+  @override
+  void dispose() {
+    if (_disposed) return;
+    _disposed = true;
+    _activeSyncCancellationToken?.cancel();
+    _activeSyncCancellationToken = null;
+    _authEpoch++;
+    _contentEpoch++;
+    _ownedApiService?.close();
+    super.dispose();
   }
 }

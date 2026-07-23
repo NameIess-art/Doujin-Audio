@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
+import '../../../core/immutable_collections.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/media_file_support.dart';
@@ -10,17 +11,18 @@ import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_matcher.dart';
 
 class LibraryEntryDiskSnapshot {
-  const LibraryEntryDiskSnapshot({
-    required this.audioFilePaths,
-    required this.scannedFolderPaths,
+  LibraryEntryDiskSnapshot({
+    required List<String> audioFilePaths,
+    required Set<String> scannedFolderPaths,
     required this.authoritative,
-  });
+  }) : audioFilePaths = immutableList(audioFilePaths),
+       scannedFolderPaths = immutableSet(scannedFolderPaths);
 
   final List<String> audioFilePaths;
   final Set<String> scannedFolderPaths;
   final bool authoritative;
 
-  Set<String> get audioFilePathSet => audioFilePaths.toSet();
+  Set<String> get audioFilePathSet => immutableSet(audioFilePaths);
 }
 
 class LibraryEntryEditorService {
@@ -46,7 +48,7 @@ class LibraryEntryEditorService {
   ) async {
     final directory = Directory(libraryPath);
     if (!await directory.exists()) {
-      return const LibraryEntryDiskSnapshot(
+      return LibraryEntryDiskSnapshot(
         audioFilePaths: <String>[],
         scannedFolderPaths: <String>{},
         authoritative: true,
@@ -86,7 +88,7 @@ class LibraryEntryEditorService {
     String libraryPath,
   ) async {
     if (!_isAndroid()) {
-      return const LibraryEntryDiskSnapshot(
+      return LibraryEntryDiskSnapshot(
         audioFilePaths: <String>[],
         scannedFolderPaths: <String>{},
         authoritative: false,
@@ -95,7 +97,7 @@ class LibraryEntryEditorService {
     try {
       final payload = await _fileCacheGateway.scanFolderPayload(libraryPath);
       if (payload == null) {
-        return const LibraryEntryDiskSnapshot(
+        return LibraryEntryDiskSnapshot(
           audioFilePaths: <String>[],
           scannedFolderPaths: <String>{},
           authoritative: false,
@@ -127,7 +129,7 @@ class LibraryEntryEditorService {
         error: error,
         stackTrace: stackTrace,
       );
-      return const LibraryEntryDiskSnapshot(
+      return LibraryEntryDiskSnapshot(
         audioFilePaths: <String>[],
         scannedFolderPaths: <String>{},
         authoritative: false,

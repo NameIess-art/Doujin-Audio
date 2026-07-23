@@ -1,19 +1,25 @@
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 
 class LibraryRefreshChunk {
-  const LibraryRefreshChunk({
+  LibraryRefreshChunk({
     required this.sourceFolderPath,
     required this.libraryRoot,
-    this.tracks = const <MusicTrack>[],
-    this.folderPaths = const <String>[],
-    this.removeWatchedFolders = const <String>[],
-    this.addWatchedFolders = const <String>[],
-    this.removeTrackPaths = const <String>[],
-    this.removeEntryPaths = const <String>[],
+    List<MusicTrack> tracks = const <MusicTrack>[],
+    List<String> folderPaths = const <String>[],
+    List<String> removeWatchedFolders = const <String>[],
+    List<String> addWatchedFolders = const <String>[],
+    List<String> removeTrackPaths = const <String>[],
+    List<String> removeEntryPaths = const <String>[],
     this.progressLabel = '',
     this.duplicateCount = 0,
     this.failureCount = 0,
-  });
+  }) : tracks = immutableList(tracks),
+       folderPaths = immutableList(folderPaths),
+       removeWatchedFolders = immutableList(removeWatchedFolders),
+       addWatchedFolders = immutableList(addWatchedFolders),
+       removeTrackPaths = immutableList(removeTrackPaths),
+       removeEntryPaths = immutableList(removeEntryPaths);
 
   final String sourceFolderPath;
   final String libraryRoot;

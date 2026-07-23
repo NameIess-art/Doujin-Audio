@@ -1,17 +1,19 @@
 import 'dart:convert';
 
+import '../../../core/immutable_collections.dart';
+
 class AudioEffectsState {
-  const AudioEffectsState({
+  AudioEffectsState({
     this.skipSilenceEnabled = false,
     this.noiseReductionEnabled = false,
     this.volumeNormalizationEnabled = false,
     this.eqEnabled = false,
     this.eqPresetId,
-    this.eqBandLevels = const <int, double>{},
+    Map<int, double> eqBandLevels = const <int, double>{},
     this.panning = 0.0,
-  });
+  }) : eqBandLevels = immutableMap(eqBandLevels);
 
-  static const AudioEffectsState flat = AudioEffectsState();
+  static final AudioEffectsState flat = AudioEffectsState();
 
   final bool skipSilenceEnabled;
   final bool noiseReductionEnabled;
@@ -163,14 +165,14 @@ class EqBandInfo {
 }
 
 class EqCapabilities {
-  const EqCapabilities({
+  EqCapabilities({
     required this.supported,
     this.minGainDb = -12,
     this.maxGainDb = 12,
-    this.bands = const <EqBandInfo>[],
-  });
+    List<EqBandInfo> bands = const <EqBandInfo>[],
+  }) : bands = immutableList(bands);
 
-  static const EqCapabilities unsupported = EqCapabilities(supported: false);
+  static final EqCapabilities unsupported = EqCapabilities(supported: false);
 
   final bool supported;
   final double minGainDb;
@@ -205,11 +207,11 @@ class EqCapabilities {
 }
 
 class EqPreset {
-  const EqPreset({
+  EqPreset({
     required this.id,
     required this.labelKey,
-    required this.bandLevels,
-  });
+    required Map<int, double> bandLevels,
+  }) : bandLevels = immutableMap(bandLevels);
 
   final String id;
   final String labelKey;
@@ -251,7 +253,7 @@ class EqPreset {
 
   factory EqPreset.fromJson(Object? raw) {
     if (raw is! Map) {
-      return const EqPreset(id: '', labelKey: '', bandLevels: <int, double>{});
+      return EqPreset(id: '', labelKey: '', bandLevels: const <int, double>{});
     }
     return EqPreset(
       id: raw['id'] as String? ?? '',
@@ -263,7 +265,7 @@ class EqPreset {
   }
 }
 
-const List<EqPreset> builtInEqPresets = <EqPreset>[
+final List<EqPreset> builtInEqPresets = immutableList(<EqPreset>[
   EqPreset(id: 'flat', labelKey: 'eq_preset_flat', bandLevels: <int, double>{}),
   EqPreset(
     id: 'asmr_immersive',
@@ -316,7 +318,7 @@ const List<EqPreset> builtInEqPresets = <EqPreset>[
     labelKey: 'eq_preset_bass_boost',
     bandLevels: <int, double>{60: 4.5, 170: 3.0, 310: 1.0, 6000: -1.0},
   ),
-];
+]);
 
 class NativeAudioEffects {
   const NativeAudioEffects({

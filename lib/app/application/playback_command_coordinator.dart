@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 
+import '../../core/immutable_collections.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/media/music_track.dart';
 import '../../core/media/path_matcher.dart';

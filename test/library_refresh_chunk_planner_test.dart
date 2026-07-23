@@ -44,7 +44,7 @@ void main() {
   test('derived snapshot reuses natural order for groups and cards', () {
     final tracks = <MusicTrack>[
       track(10),
-      const MusicTrack(
+      MusicTrack(
         path: '/music/other/11.mp3',
         displayName: '11',
         groupKey: '/music/other',
@@ -82,7 +82,7 @@ void main() {
     const nestedTrack = '$nestedGroup/track.wav';
 
     final snapshot = buildLibraryDerivedSnapshot(
-      const LibraryDerivedSnapshotPayload(
+      LibraryDerivedSnapshotPayload(
         tracks: <MusicTrack>[
           MusicTrack(
             path: nestedTrack,
@@ -93,9 +93,9 @@ void main() {
             isSingle: false,
           ),
         ],
-        watchedFolders: <String>[],
-        watchedLibraries: <String>[libraryRoot],
-        nodeOrder: <String>[],
+        watchedFolders: const <String>[],
+        watchedLibraries: const <String>[libraryRoot],
+        nodeOrder: const <String>[],
       ),
     );
 

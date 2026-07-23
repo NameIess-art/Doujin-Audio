@@ -241,7 +241,7 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
       );
       await for (final message in receivePort) {
         if (message == null) {
-          return const NativeScanResult.failed(
+          return NativeScanResult.failed(
             code: 'filesystem_scan_ended',
             message: 'Filesystem scan isolate ended without a terminal event.',
           );
@@ -309,7 +309,7 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
             );
         }
       }
-      return const NativeScanResult.failed(
+      return NativeScanResult.failed(
         code: 'filesystem_scan_ended',
         message: 'Filesystem scan isolate ended without a terminal event.',
       );

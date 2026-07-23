@@ -5,7 +5,6 @@ import 'package:just_audio/just_audio.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../core/media/music_track.dart';
-import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../library/application/cover_artwork_cache_service.dart';
 
@@ -157,6 +156,21 @@ final class NotificationFacade {
 
   void syncPlaybackState({bool immediateUnifiedSync = false}) =>
       _syncNotificationState(immediateUnifiedSync: immediateUnifiedSync);
+
+  void setSynchronizationPaused(bool paused) {
+    if (stateService.synchronizationPaused == paused) return;
+    stateService.synchronizationPaused = paused;
+    if (paused) {
+      _unifiedNotificationSyncTimer?.cancel();
+      _unifiedNotificationSyncTimer = null;
+      _notificationProgressRefreshTimer?.cancel();
+      _notificationProgressRefreshTimer = null;
+      return;
+    }
+    if (!stateService.synchronizationPendingWhilePaused) return;
+    stateService.synchronizationPendingWhilePaused = false;
+    _syncNotificationState(immediateUnifiedSync: true);
+  }
 
   void clearSessionSubtitle(String sessionId) =>
       _clearNotificationSubtitleForSession(sessionId);

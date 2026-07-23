@@ -36,9 +36,9 @@ class DataSupportFileService {
 
   Future<String?> exportBackup({
     required String dialogTitle,
-    LocalLibraryImportSources librarySources =
-        const LocalLibraryImportSources(),
+    LocalLibraryImportSources? librarySources,
   }) async {
+    librarySources ??= LocalLibraryImportSources();
     final temporary = await _temporaryFile(
       'NamelessAudio-${_timestamp()}.nalbackup',
     );

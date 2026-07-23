@@ -4,7 +4,7 @@ import 'package:nameless_audio/features/library/application/library_scan_rules.d
 
 void main() {
   const rules = LibraryScanRules();
-  const existingTrack = MusicTrack(
+  final existingTrack = MusicTrack(
     path: '/library/work/01.mp3',
     displayName: '01',
     groupKey: '/library/work',
@@ -28,7 +28,7 @@ void main() {
         folderPath: '/library',
         watchedFolders: const <String>[],
         watchedLibraries: const <String>[],
-        tracks: const <MusicTrack>[existingTrack],
+        tracks: <MusicTrack>[existingTrack],
       ),
       isTrue,
     );
@@ -49,7 +49,7 @@ void main() {
         trackPath: '/other/02.mp3',
         watchedFolders: const <String>[],
         watchedLibraries: const <String>[],
-        tracks: const <MusicTrack>[existingTrack],
+        tracks: <MusicTrack>[existingTrack],
       ),
       isFalse,
     );
@@ -67,7 +67,7 @@ void main() {
       rules.hasUnmanagedLibraryContentOverlap(
         folderPath: '/library',
         promotedFolders: const <String>['/library/work'],
-        tracks: const <MusicTrack>[existingTrack],
+        tracks: <MusicTrack>[existingTrack],
       ),
       isFalse,
     );

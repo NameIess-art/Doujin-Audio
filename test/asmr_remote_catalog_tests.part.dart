@@ -180,46 +180,46 @@ void registerAsmrRemoteCatalogTests({
     },
   );
 
-  test(
-    'ASMR refresh defers presentation notifications while interacting',
-    () async {
-      await resetPrefs();
-      final api = _FakeAsmrApiService();
-      final controller = AsmrLibraryController(
-        preferencesStore: preferences,
-        apiService: api,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
-          const <MusicTrack>[],
-        ),
-      );
-      final coordinator = UiInteractionCoordinator.instance;
-      coordinator.resetForTest();
-      final source = Object();
-      final notifications = <bool>[];
-      controller.addListener(
-        () => notifications.add(
-          controller.isLoadingCategory(AsmrCategoryType.release),
-        ),
-      );
+  test('ASMR refresh commits business state while interacting', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = AsmrLibraryController(
+      preferencesStore: preferences,
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    final coordinator = UiInteractionCoordinator.instance;
+    coordinator.resetForTest();
+    final source = Object();
+    final notifications = <bool>[];
+    controller.addListener(
+      () => notifications.add(
+        controller.isLoadingCategory(AsmrCategoryType.release),
+      ),
+    );
 
-      coordinator.beginInteraction(source);
-      await controller.refreshCategory(AsmrCategoryType.release);
+    coordinator.beginInteraction(source);
+    await controller.refreshCategory(AsmrCategoryType.release);
 
-      expect(notifications, isEmpty);
-      expect(controller.worksFor(AsmrCategoryType.release), isEmpty);
-      expect(controller.isLoadingCategory(AsmrCategoryType.release), isTrue);
+    expect(notifications, isNotEmpty);
+    expect(
+      controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+      <int>[12],
+    );
+    expect(controller.isLoadingCategory(AsmrCategoryType.release), isFalse);
 
-      coordinator.finishInteractionsForTest();
+    coordinator.finishInteractionsForTest();
 
-      expect(notifications, isNotEmpty);
-      expect(
-        controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
-        <int>[12],
-      );
-      expect(controller.isLoadingCategory(AsmrCategoryType.release), isFalse);
-      coordinator.resetForTest();
-    },
-  );
+    expect(notifications, isNotEmpty);
+    expect(
+      controller.worksFor(AsmrCategoryType.release).map((work) => work.id),
+      <int>[12],
+    );
+    expect(controller.isLoadingCategory(AsmrCategoryType.release), isFalse);
+    coordinator.resetForTest();
+  });
 
   test('ASMR recommendation search uses ordinary search candidates', () async {
     await resetPrefs();

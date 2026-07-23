@@ -348,7 +348,7 @@ void main() {
       );
       runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
       runtimeGraph.library.addTracks(
-        const <MusicTrack>[
+        <MusicTrack>[
           MusicTrack(
             path: r'C:\library\Work\01.mp3',
             displayName: '01',
@@ -356,7 +356,7 @@ void main() {
             groupTitle: 'Work',
             groupSubtitle: folderPath,
             isSingle: false,
-            duration: Duration(minutes: 2),
+            duration: const Duration(minutes: 2),
           ),
           MusicTrack(
             path: r'C:\library\Work\02.mp3',
@@ -365,7 +365,7 @@ void main() {
             groupTitle: 'Work',
             groupSubtitle: folderPath,
             isSingle: false,
-            duration: Duration(minutes: 4),
+            duration: const Duration(minutes: 4),
           ),
         ],
         notify: false,

@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/ui/warmup_scheduler.dart';
 import '../../core/media/music_track.dart';
 import '../../features/library/application/library_facade.dart';
@@ -20,10 +19,7 @@ final class AudioUiWarmupCoordinator {
        _playback = playback,
        _notifications = notifications,
        _subtitles = subtitles,
-       _scheduler = scheduler ?? WarmupScheduler() {
-    UiInteractionCoordinator.instance.addListener(_syncPauseState);
-    _syncPauseState();
-  }
+       _scheduler = scheduler ?? WarmupScheduler();
 
   static const _libraryTabIndex = 1;
   static const _playbackTabIndex = 2;
@@ -35,7 +31,26 @@ final class AudioUiWarmupCoordinator {
   Timer? _deferredTimer;
   int _generation = 0;
   bool _pausedForLifecycle = false;
+  bool _pausedForInteraction = false;
   bool _disposed = false;
+
+  void setInteractionPaused(bool paused) {
+    if (_pausedForInteraction == paused) return;
+    _pausedForInteraction = paused;
+    _syncPauseState();
+  }
+
+  Future<bool> waitForContinuousIdle(Duration quietWindow) async {
+    while (!_disposed) {
+      while (_pausedForInteraction && !_disposed) {
+        await Future<void>.delayed(const Duration(milliseconds: 40));
+      }
+      if (_disposed) return false;
+      await Future<void>.delayed(quietWindow);
+      if (!_pausedForInteraction) return true;
+    }
+    return false;
+  }
 
   void schedule({required int currentPageIndex, bool immediate = false}) {
     if (_disposed) return;
@@ -105,7 +120,6 @@ final class AudioUiWarmupCoordinator {
   Future<void> shutdown() async {
     if (_disposed) return;
     _disposed = true;
-    UiInteractionCoordinator.instance.removeListener(_syncPauseState);
     _deferredTimer?.cancel();
     _deferredTimer = null;
     _generation++;
@@ -113,9 +127,7 @@ final class AudioUiWarmupCoordinator {
   }
 
   void _syncPauseState() {
-    _scheduler.setPaused(
-      _pausedForLifecycle || UiInteractionCoordinator.instance.isInteracting,
-    );
+    _scheduler.setPaused(_pausedForLifecycle || _pausedForInteraction);
   }
 
   void _run({

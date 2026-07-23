@@ -42,11 +42,11 @@ void main() {
 
   test('clear prevents an old load from overwriting a new load', () async {
     const path = 'content://media/audio/clear-race';
-    const oldTrack = SubtitleTrack(
+    final oldTrack = SubtitleTrack(
       sourcePath: 'old.srt',
       cues: <SubtitleCue>[],
     );
-    const newTrack = SubtitleTrack(
+    final newTrack = SubtitleTrack(
       sourcePath: 'new.srt',
       cues: <SubtitleCue>[],
     );
@@ -76,7 +76,7 @@ void main() {
 
   test('temporary ASMR subtitle miss is not negative cached', () async {
     const path = 'https://api.asmr.one/audio.mp3';
-    const loaded = SubtitleTrack(
+    final loaded = SubtitleTrack(
       sourcePath: 'subtitle.vtt',
       cues: <SubtitleCue>[],
     );

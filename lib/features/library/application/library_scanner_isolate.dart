@@ -1,3 +1,4 @@
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 import 'library_scan_models.dart';
 import 'library_state_models.dart';
@@ -5,9 +6,9 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
 
 class ScanMergeIsolatePayload {
-  const ScanMergeIsolatePayload({
-    required this.scannedTracks,
-    required this.library,
+  ScanMergeIsolatePayload({
+    required List<ScannedTrack> scannedTracks,
+    required List<MusicTrack> library,
     required this.libraryRoot,
     required this.promoteRootTracksToSingles,
     required this.i18nImportedFiles,
@@ -15,10 +16,13 @@ class ScanMergeIsolatePayload {
     required this.exclusionMatcher,
     this.sourceFolderPath,
     this.allowRemoval = false,
-    this.retainedTrackPaths = const <String>{},
-    this.retainedEntryPaths = const <String>{},
+    Set<String> retainedTrackPaths = const <String>{},
+    Set<String> retainedEntryPaths = const <String>{},
     this.entrySnapshot,
-  });
+  }) : scannedTracks = immutableList(scannedTracks),
+       library = immutableList(library),
+       retainedTrackPaths = immutableSet(retainedTrackPaths),
+       retainedEntryPaths = immutableSet(retainedEntryPaths);
 
   final List<ScannedTrack> scannedTracks;
   final List<MusicTrack> library;
@@ -35,13 +39,16 @@ class ScanMergeIsolatePayload {
 }
 
 class ScanMergeIsolateResult {
-  const ScanMergeIsolateResult({
-    required this.trackBatch,
-    required this.entryBatch,
+  ScanMergeIsolateResult({
+    required List<MusicTrack> trackBatch,
+    required List<MusicTrack> entryBatch,
     required this.duplicatesCount,
-    this.removedTrackPaths = const <String>[],
-    this.removedEntryPaths = const <String>[],
-  });
+    List<String> removedTrackPaths = const <String>[],
+    List<String> removedEntryPaths = const <String>[],
+  }) : trackBatch = immutableList(trackBatch),
+       entryBatch = immutableList(entryBatch),
+       removedTrackPaths = immutableList(removedTrackPaths),
+       removedEntryPaths = immutableList(removedEntryPaths);
   final List<MusicTrack> trackBatch;
   final List<MusicTrack> entryBatch;
   final int duplicatesCount;

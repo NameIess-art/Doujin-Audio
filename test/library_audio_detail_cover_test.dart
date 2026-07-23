@@ -14,6 +14,7 @@ import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
+import 'package:nameless_audio/features/library/presentation/library_cover_ui_controller.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
@@ -139,7 +140,7 @@ void main() {
             return <String, Object?>{'ok': true, 'value': null};
           });
 
-      const videoTrack = MusicTrack(
+      final videoTrack = MusicTrack(
         path: trackPath,
         displayName: 'scene',
         groupKey: '__single_files__',
@@ -168,7 +169,7 @@ void main() {
 
       runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
       runtimeGraph.library.addTracks(
-        const <MusicTrack>[
+        <MusicTrack>[
           MusicTrack(
             path: trackPath,
             displayName: '01',
@@ -1036,7 +1037,7 @@ void main() {
     );
 
     test(
-      'initial card detail snapshot commits after app interaction',
+      'initial card detail snapshot commits during app interaction',
       () async {
         final interactionSource = Object();
         final coordinator = UiInteractionCoordinator.instance;
@@ -1075,15 +1076,12 @@ void main() {
             .audioLibraryCategorySnapshot();
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(runtimeGraph.library.categorySnapshot, isNull);
-
-        coordinator.cancelInteraction(interactionSource);
         await snapshotFuture;
-        coordinator.flushPendingCommitsForTest();
         expect(
           runtimeGraph.library.categorySnapshot?.detailFor(target)?.rjCode,
           'RJ333333',
         );
+        coordinator.cancelInteraction(interactionSource);
       },
     );
 
@@ -1237,7 +1235,7 @@ void main() {
         ),
         coverArtworkCacheService: cache,
       );
-      const unresolved = MusicTrack(
+      final unresolved = MusicTrack(
         path: '/library/unresolved.flac',
         displayName: 'Unresolved',
         groupKey: '/library',
@@ -1245,7 +1243,7 @@ void main() {
         groupSubtitle: 'Library',
         isSingle: false,
       );
-      const duplicate = MusicTrack(
+      final duplicate = MusicTrack(
         path: '/library/unresolved.flac',
         displayName: 'Duplicate',
         groupKey: '/library',
@@ -1253,7 +1251,7 @@ void main() {
         groupSubtitle: 'Library',
         isSingle: false,
       );
-      const resolved = MusicTrack(
+      final resolved = MusicTrack(
         path: '/library/resolved.flac',
         displayName: 'Resolved',
         groupKey: '/library',
@@ -1285,7 +1283,7 @@ void main() {
         ),
         coverArtworkCacheService: cache,
       );
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/library/paused.flac',
         displayName: 'Paused',
         groupKey: '/library',
@@ -1293,15 +1291,15 @@ void main() {
         groupSubtitle: 'Library',
         isSingle: false,
       );
-      final interactionSource = Object();
-      final coordinator = UiInteractionCoordinator.instance;
-      coordinator.beginInteraction(interactionSource);
+      final coverUi = LibraryCoverUiController(library: runtimeGraph.library);
+      addTearDown(coverUi.dispose);
+      coverUi.setInteractionPaused(true);
 
-      runtimeGraph.library.warmupCoversForTracks(const <MusicTrack?>[track]);
+      coverUi.warmupTracks(<MusicTrack?>[track]);
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(cache.requestedPaths, isEmpty);
 
-      coordinator.cancelInteraction(interactionSource);
+      coverUi.setInteractionPaused(false);
       for (var i = 0; i < 10 && cache.requestedPaths.isEmpty; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }

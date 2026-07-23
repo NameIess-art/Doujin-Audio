@@ -70,7 +70,7 @@ void main() {
               'value': null,
             });
           });
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/library/optimistic/01.mp3',
         displayName: '01',
         groupKey: '/library/optimistic',
@@ -127,7 +127,7 @@ void main() {
               }
               return <String, Object?>{'ok': true, 'value': null};
             });
-        const track = MusicTrack(
+        final track = MusicTrack(
           path: '/imports/repeated.mp4',
           displayName: 'Repeated clip',
           groupKey: '__single_files__',
@@ -137,7 +137,7 @@ void main() {
           isVideo: true,
         );
         runtimeGraph.library.addTracks(
-          const <MusicTrack>[track],
+          <MusicTrack>[track],
           notify: false,
           persist: false,
         );
@@ -171,7 +171,7 @@ void main() {
           .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
             return <String, Object?>{'ok': true, 'value': null};
           });
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/library/work/01.mp3',
         displayName: '01',
         groupKey: '/library/work',
@@ -222,7 +222,7 @@ void main() {
     test(
       'single files cannot expand into an imported-files work entry',
       () async {
-        const selected = MusicTrack(
+        final selected = MusicTrack(
           path: '/imports/selected.mp3',
           displayName: 'Selected',
           groupKey: '__single_files__',
@@ -230,7 +230,7 @@ void main() {
           groupSubtitle: 'Manually selected files',
           isSingle: true,
         );
-        const other = MusicTrack(
+        final other = MusicTrack(
           path: '/imports/other.mp3',
           displayName: 'Other',
           groupKey: '__single_files__',
@@ -239,7 +239,7 @@ void main() {
           isSingle: true,
         );
         runtimeGraph.library.addTracks(
-          const <MusicTrack>[selected, other],
+          <MusicTrack>[selected, other],
           notify: false,
           persist: false,
         );
@@ -261,7 +261,7 @@ void main() {
     );
 
     test('work entry stores all tracks as one queue entry', () async {
-      const first = MusicTrack(
+      final first = MusicTrack(
         path: '/library/work/01.mp3',
         displayName: '01',
         groupKey: '/library/work',
@@ -269,7 +269,7 @@ void main() {
         groupSubtitle: 'Work',
         isSingle: false,
       );
-      const second = MusicTrack(
+      final second = MusicTrack(
         path: '/library/work/02.mp3',
         displayName: '02',
         groupKey: '/library/work',
@@ -278,7 +278,7 @@ void main() {
         isSingle: false,
       );
       runtimeGraph.library.addTracks(
-        const <MusicTrack>[first, second],
+        <MusicTrack>[first, second],
         notify: false,
         persist: false,
       );
@@ -318,7 +318,7 @@ void main() {
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
               return <String, Object?>{'ok': true, 'value': null};
             });
-        const loopTrack = MusicTrack(
+        final loopTrack = MusicTrack(
           path: 'https://example.com/loop.mp3',
           displayName: 'loop',
           groupKey: 'loop',
@@ -326,7 +326,7 @@ void main() {
           groupSubtitle: 'Loop',
           isSingle: true,
         );
-        const otherTrack = MusicTrack(
+        final otherTrack = MusicTrack(
           path: 'https://example.com/other-01.mp3',
           displayName: 'other-01',
           groupKey: 'other',
@@ -334,7 +334,7 @@ void main() {
           groupSubtitle: 'Other',
           isSingle: false,
         );
-        const otherNextTrack = MusicTrack(
+        final otherNextTrack = MusicTrack(
           path: 'https://example.com/other-02.mp3',
           displayName: 'other-02',
           groupKey: 'other',
@@ -344,7 +344,7 @@ void main() {
         );
 
         await runtimeGraph.playback.spawnSession(loopTrack, autoPlay: false);
-        await runtimeGraph.playback.spawnSessionWithQueue(const <MusicTrack>[
+        await runtimeGraph.playback.spawnSessionWithQueue(<MusicTrack>[
           otherTrack,
           otherNextTrack,
         ], autoPlay: false);
@@ -422,7 +422,7 @@ void main() {
       });
       await coverFile.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
       const coverUrl = 'https://example.com/cover.jpg';
-      const firstTrack = MusicTrack(
+      final firstTrack = MusicTrack(
         path: 'https://example.com/asmr/01.mp3',
         displayName: '01',
         groupKey: 'asmr-work-1',
@@ -437,7 +437,7 @@ void main() {
           'subtitleExtension': '.vtt',
         },
       );
-      const secondTrack = MusicTrack(
+      final secondTrack = MusicTrack(
         path: 'https://example.com/asmr/02.mp3',
         displayName: '02',
         groupKey: 'asmr-work-1',
@@ -453,7 +453,7 @@ void main() {
         database: AppDatabase.test(db),
       );
       await restoredRepository.saveAllSessions(<PersistedSession>[
-        const PersistedSession(
+        PersistedSession(
           id: sessionId,
           trackPath: 'https://example.com/asmr/01.mp3',
           loopModeIndex: 1,
@@ -544,7 +544,7 @@ void main() {
           library: runtimeGraph.library,
           playback: runtimeGraph.playback,
         );
-        const firstTrack = MusicTrack(
+        final firstTrack = MusicTrack(
           path: 'https://example.com/asmr/01.mp3',
           displayName: '01',
           groupKey: 'asmr-work-1',
@@ -557,7 +557,7 @@ void main() {
             'playbackUrls': <String>['https://example.com/asmr/01.mp3'],
           },
         );
-        const secondTrack = MusicTrack(
+        final secondTrack = MusicTrack(
           path: 'https://example.com/asmr/02.mp3',
           displayName: '02',
           groupKey: 'asmr-work-1',
@@ -597,7 +597,7 @@ void main() {
             });
 
         await runtimeGraph.settings.setAsmrPlaybackCacheEnabled(true);
-        await runtimeGraph.playback.spawnSessionWithQueue(const <MusicTrack>[
+        await runtimeGraph.playback.spawnSessionWithQueue(<MusicTrack>[
           firstTrack,
           secondTrack,
         ], autoPlay: false);

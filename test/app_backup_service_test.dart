@@ -244,7 +244,7 @@ void main() {
         'watched_libraries_v1': '["/music/library"]',
         'library_node_order_v1': '["dirty-order"]',
       });
-      const sources = LocalLibraryImportSources(
+      final sources = LocalLibraryImportSources(
         libraries: <String>['/music/library'],
         folders: <String>['/music/work'],
         files: <String>['/music/manual.mp3'],
@@ -618,7 +618,7 @@ void main() {
   test('cancelled source access leaves current data unchanged', () async {
     final output = await createService().exportBackup(
       '${tempDirectory.path}/cancelled_restore.nalbackup',
-      librarySources: const LocalLibraryImportSources(
+      librarySources: LocalLibraryImportSources(
         libraries: <String>['content://old/library'],
       ),
     );

@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
+import '../immutable_collections.dart';
+
 class SubtitleCue {
   const SubtitleCue({
     required this.start,
@@ -21,7 +23,8 @@ class SubtitleCue {
 }
 
 class SubtitleTrack {
-  const SubtitleTrack({required this.sourcePath, required this.cues});
+  SubtitleTrack({required this.sourcePath, required List<SubtitleCue> cues})
+    : cues = immutableList(cues);
 
   final String sourcePath;
   final List<SubtitleCue> cues;

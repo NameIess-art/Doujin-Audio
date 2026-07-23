@@ -38,9 +38,6 @@ extension NotificationFacadeSync on NotificationFacade {
     );
   }
 
-  static const String _interactionNotificationRefreshKey =
-      'playback_notification_refresh_after_interaction';
-
   Future<void> _clearUnifiedPlaybackNotificationsOnPlatform() async {
     _unifiedNotificationSyncKey = null;
     await _notificationService.clearUnifiedNotifications();
@@ -48,6 +45,10 @@ extension NotificationFacadeSync on NotificationFacade {
 
   void _syncNotificationState({bool immediateUnifiedSync = false}) {
     if (!_synchronizationAttached) return;
+    if (stateService.synchronizationPaused) {
+      stateService.synchronizationPendingWhilePaused = true;
+      return;
+    }
 
     if (!_notificationsEnabled) {
       _unifiedNotificationSyncTimer?.cancel();
@@ -95,13 +96,8 @@ extension NotificationFacadeSync on NotificationFacade {
   }
 
   void _requestUnifiedPlaybackNotificationFlush() {
-    final interactionCoordinator = UiInteractionCoordinator.instance;
-    if (interactionCoordinator.isInteracting) {
-      interactionCoordinator.scheduleCommit(
-        key: _interactionNotificationRefreshKey,
-        priority: 80,
-        commit: _requestUnifiedPlaybackNotificationFlush,
-      );
+    if (stateService.synchronizationPaused) {
+      stateService.synchronizationPendingWhilePaused = true;
       return;
     }
     _unifiedNotificationSyncPending = true;
@@ -136,6 +132,10 @@ extension NotificationFacadeSync on NotificationFacade {
     String sessionId, {
     bool immediate = false,
   }) {
+    if (stateService.synchronizationPaused) {
+      stateService.synchronizationPendingWhilePaused = true;
+      return;
+    }
     if (!_notificationsEnabled ||
         (_notificationsDismissedWhilePaused && !_hasPlaybackToKeepAlive)) {
       _notificationProgressRefreshTimer?.cancel();
@@ -153,14 +153,6 @@ extension NotificationFacadeSync on NotificationFacade {
     }
 
     if (immediate) {
-      if (UiInteractionCoordinator.instance.isInteracting) {
-        UiInteractionCoordinator.instance.scheduleCommit(
-          key: _interactionNotificationRefreshKey,
-          priority: 80,
-          commit: _syncNotificationState,
-        );
-        return;
-      }
       _notificationProgressRefreshTimer?.cancel();
       _notificationProgressRefreshTimer = null;
       _queuedNotificationRefreshSessionId = null;
@@ -187,13 +179,9 @@ extension NotificationFacadeSync on NotificationFacade {
           (_notificationsDismissedWhilePaused && !_hasPlaybackToKeepAlive)) {
         return;
       }
-      if (UiInteractionCoordinator.instance.isInteracting) {
+      if (stateService.synchronizationPaused) {
         _queuedNotificationRefreshSessionId = queuedSessionId;
-        UiInteractionCoordinator.instance.scheduleCommit(
-          key: _interactionNotificationRefreshKey,
-          priority: 80,
-          commit: () => _scheduleFocusedNotificationRefresh(queuedSessionId),
-        );
+        stateService.synchronizationPendingWhilePaused = true;
         return;
       }
       _syncNotificationState();

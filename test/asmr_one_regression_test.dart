@@ -60,7 +60,7 @@ void main() {
   test(
     'ASMR work preferred cover uses main cover then cover then thumbnail',
     () {
-      const withMain = AsmrWork(
+      final withMain = AsmrWork(
         id: 1,
         title: 'Work',
         circleName: 'Circle',
@@ -76,10 +76,10 @@ void main() {
         dlCount: 0,
         reviewCount: 0,
         rating: 0,
-        voiceActors: <String>[],
-        tags: <String>[],
+        voiceActors: const <String>[],
+        tags: const <String>[],
       );
-      const withCover = AsmrWork(
+      final withCover = AsmrWork(
         id: 2,
         title: 'Work',
         circleName: 'Circle',
@@ -95,10 +95,10 @@ void main() {
         dlCount: 0,
         reviewCount: 0,
         rating: 0,
-        voiceActors: <String>[],
-        tags: <String>[],
+        voiceActors: const <String>[],
+        tags: const <String>[],
       );
-      const withThumb = AsmrWork(
+      final withThumb = AsmrWork(
         id: 3,
         title: 'Work',
         circleName: 'Circle',
@@ -114,8 +114,8 @@ void main() {
         dlCount: 0,
         reviewCount: 0,
         rating: 0,
-        voiceActors: <String>[],
-        tags: <String>[],
+        voiceActors: const <String>[],
+        tags: const <String>[],
       );
 
       expect(withMain.preferredCoverUrl, 'https://example.com/main.jpg');
@@ -125,7 +125,7 @@ void main() {
   );
 
   test('ASMR playable tracks inherit matched subtitle metadata', () {
-    const work = AsmrWork(
+    final work = AsmrWork(
       id: 416816,
       title: '二人的安眠诱导',
       circleName: 'Circle Demo',
@@ -141,11 +141,11 @@ void main() {
       dlCount: 0,
       reviewCount: 0,
       rating: 0,
-      voiceActors: <String>[],
-      tags: <String>[],
+      voiceActors: const <String>[],
+      tags: const <String>[],
       hasSubtitle: true,
     );
-    const folder = AsmrTrackFile(
+    final folder = AsmrTrackFile(
       hash: '',
       title: '01_mp3',
       type: 'folder',
@@ -172,7 +172,7 @@ void main() {
           workTitle: '二人的安眠诱导',
           sourceId: 'RJ416816',
           relativePath: '01_mp3/track.lrc',
-          children: <AsmrTrackFile>[],
+          children: const <AsmrTrackFile>[],
         ),
         AsmrTrackFile(
           hash: 'audio',
@@ -181,13 +181,13 @@ void main() {
           streamUrl: 'http://127.0.0.1/track.mp3',
           downloadUrl: 'http://127.0.0.1/track.mp3',
           lowQualityUrl: null,
-          duration: Duration(seconds: 10),
+          duration: const Duration(seconds: 10),
           size: 100,
           workId: 416816,
           workTitle: '二人的安眠诱导',
           sourceId: 'RJ416816',
           relativePath: '01_mp3/track.mp3',
-          children: <AsmrTrackFile>[],
+          children: const <AsmrTrackFile>[],
         ),
       ],
     );
@@ -212,7 +212,7 @@ void main() {
   });
 
   test('ASMR playable tracks match double-extension subtitle files', () {
-    const work = AsmrWork(
+    final work = AsmrWork(
       id: 416816,
       title: '浜屼汉鐨勫畨鐪犺瀵?',
       circleName: 'Circle Demo',
@@ -228,11 +228,11 @@ void main() {
       dlCount: 0,
       reviewCount: 0,
       rating: 0,
-      voiceActors: <String>[],
-      tags: <String>[],
+      voiceActors: const <String>[],
+      tags: const <String>[],
       hasSubtitle: true,
     );
-    const folder = AsmrTrackFile(
+    final folder = AsmrTrackFile(
       hash: '',
       title: '01_mp3',
       type: 'folder',
@@ -259,7 +259,7 @@ void main() {
           workTitle: '浜屼汉鐨勫畨鐪犺瀵?',
           sourceId: 'RJ416816',
           relativePath: '01_mp3/track.mp3.vtt',
-          children: <AsmrTrackFile>[],
+          children: const <AsmrTrackFile>[],
         ),
         AsmrTrackFile(
           hash: 'audio',
@@ -268,13 +268,13 @@ void main() {
           streamUrl: 'http://127.0.0.1/track.mp3',
           downloadUrl: 'http://127.0.0.1/track.mp3',
           lowQualityUrl: null,
-          duration: Duration(seconds: 10),
+          duration: const Duration(seconds: 10),
           size: 100,
           workId: 416816,
           workTitle: '浜屼汉鐨勫畨鐪犺瀵?',
           sourceId: 'RJ416816',
           relativePath: '01_mp3/track.mp3',
-          children: <AsmrTrackFile>[],
+          children: const <AsmrTrackFile>[],
         ),
       ],
     );

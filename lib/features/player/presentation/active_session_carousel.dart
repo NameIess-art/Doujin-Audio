@@ -224,8 +224,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final isBar = style == BottomNavigationStyle.bar;
 
     final playbackState =
-        ref.watch(playbackStateProvider).value ??
-        const PlaybackStateSliceData();
+        ref.watch(playbackStateProvider).value ?? PlaybackStateSliceData();
     final library = ref.read(libraryFacadeProvider);
     final sessions = widget.sessions ?? playbackState.activeSessions;
     if (sessions.isEmpty) {

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
+import '../immutable_collections.dart';
 import '../media/audio_detail.dart';
 import '../../features/player/domain/audio_effects.dart';
 import '../../features/asmr/domain/asmr_models.dart';

@@ -1,5 +1,6 @@
 import 'package:path/path.dart' as path;
 
+import '../immutable_collections.dart';
 import '../media/media_file_support.dart';
 import '../media/path_display.dart';
 import '../media/path_matcher.dart';
@@ -58,19 +59,20 @@ class ScannedTrack {
 }
 
 class NativeScanResult {
-  const NativeScanResult._({
+  NativeScanResult._({
     required this.ok,
-    this.tracks = const <ScannedTrack>[],
-    this.paths = const <String>{},
+    List<ScannedTrack> tracks = const <ScannedTrack>[],
+    Set<String> paths = const <String>{},
     this.errorCode,
     this.errorMessage,
     this.notSupported = false,
     this.failureCount = 0,
     this.completenessKnown = false,
     this.wasCancelled = false,
-  });
+  }) : tracks = immutableList(tracks),
+       paths = immutableSet(paths);
 
-  const NativeScanResult.success(
+  NativeScanResult.success(
     List<ScannedTrack> tracks,
     Set<String> paths, {
     int failureCount = 0,
@@ -85,10 +87,10 @@ class NativeScanResult {
          wasCancelled: wasCancelled,
        );
 
-  const NativeScanResult.failed({String? code, String? message})
+  NativeScanResult.failed({String? code, String? message})
     : this._(ok: false, errorCode: code, errorMessage: message);
 
-  const NativeScanResult.notSupported() : this._(ok: false, notSupported: true);
+  NativeScanResult.notSupported() : this._(ok: false, notSupported: true);
 
   final bool ok;
   final List<ScannedTrack> tracks;
@@ -105,18 +107,24 @@ class NativeScanResult {
 }
 
 class NativeScanPayload {
-  const NativeScanPayload({required this.tracks, required this.paths});
+  NativeScanPayload({
+    required List<ScannedTrack> tracks,
+    required Set<String> paths,
+  }) : tracks = immutableList(tracks),
+       paths = immutableSet(paths);
   final List<ScannedTrack> tracks;
   final Set<String> paths;
 }
 
 class FolderScanChunk {
-  const FolderScanChunk({
-    this.tracks = const <ScannedTrack>[],
-    this.paths = const <String>{},
-    this.folders = const <String>[],
+  FolderScanChunk({
+    List<ScannedTrack> tracks = const <ScannedTrack>[],
+    Set<String> paths = const <String>{},
+    List<String> folders = const <String>[],
     this.failureCount = 0,
-  });
+  }) : tracks = immutableList(tracks),
+       paths = immutableSet(paths),
+       folders = immutableList(folders);
 
   final List<ScannedTrack> tracks;
   final Set<String> paths;

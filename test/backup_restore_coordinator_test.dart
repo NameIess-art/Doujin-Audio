@@ -31,15 +31,15 @@ void main() {
     final cancelled = await BackupRestoreCoordinator(
       fileService: _FakeDataSupportFileService(null),
       reloaders: <PersistedStateReloader>[reloader],
-      readLibrarySources: () => const LocalLibraryImportSources(),
+      readLibrarySources: () => LocalLibraryImportSources(),
       prepareLibrarySources: (sources, labels) async => sources,
       restoreLibrarySources: (sources, labels) async {},
     ).pickAndRestoreBackup(labels: _labels);
-    const invalidResult = BackupValidationResult.invalid('invalid');
+    final invalidResult = BackupValidationResult.invalid('invalid');
     final invalid = await BackupRestoreCoordinator(
       fileService: _FakeDataSupportFileService(invalidResult),
       reloaders: <PersistedStateReloader>[reloader],
-      readLibrarySources: () => const LocalLibraryImportSources(),
+      readLibrarySources: () => LocalLibraryImportSources(),
       prepareLibrarySources: (sources, labels) async => sources,
       restoreLibrarySources: (sources, labels) async {},
     ).pickAndRestoreBackup(labels: _labels);
@@ -58,7 +58,7 @@ void main() {
         _RecordingReloader('app', events),
         _RecordingReloader('asmr', events),
       ],
-      readLibrarySources: () => const LocalLibraryImportSources(),
+      readLibrarySources: () => LocalLibraryImportSources(),
       prepareLibrarySources: (sources, labels) async {
         events.add('library:prepare');
         return sources;
@@ -90,7 +90,7 @@ void main() {
         BackupValidationResult.valid(validManifest),
       ),
       reloaders: <PersistedStateReloader>[_RecordingReloader('app', events)],
-      readLibrarySources: () => const LocalLibraryImportSources(),
+      readLibrarySources: () => LocalLibraryImportSources(),
       prepareLibrarySources: (sources, labels) async {
         events.add('library:cancel');
         return null;
@@ -120,7 +120,7 @@ void main() {
         ],
         readLibrarySources: () {
           events.add('library:read');
-          return const LocalLibraryImportSources(files: <String>['song.mp3']);
+          return LocalLibraryImportSources(files: <String>['song.mp3']);
         },
         prepareLibrarySources: (sources, labels) async => sources,
         restoreLibrarySources: (sources, labels) async {},
@@ -140,14 +140,14 @@ void main() {
 
   test('failed restore reloads owners after preparation', () async {
     final events = <String>[];
-    const result = BackupValidationResult.invalid('restore_failed');
+    final result = BackupValidationResult.invalid('restore_failed');
     final coordinator = BackupRestoreCoordinator(
       fileService: _FakeDataSupportFileService(
         result,
         prepareBeforeReturning: true,
       ),
       reloaders: <PersistedStateReloader>[_RecordingReloader('app', events)],
-      readLibrarySources: () => const LocalLibraryImportSources(),
+      readLibrarySources: () => LocalLibraryImportSources(),
       prepareLibrarySources: (sources, labels) async {
         events.add('library:prepare');
         return sources;
@@ -183,8 +183,7 @@ final class _FakeDataSupportFileService extends DataSupportFileService {
   @override
   Future<String?> exportBackup({
     required String dialogTitle,
-    LocalLibraryImportSources librarySources =
-        const LocalLibraryImportSources(),
+    LocalLibraryImportSources? librarySources,
   }) async {
     events?.add('archive:export');
     return exportedPath;
@@ -197,10 +196,10 @@ final class _FakeDataSupportFileService extends DataSupportFileService {
   }) async {
     if (result?.isValid == true || prepareBeforeReturning) {
       final sources = await beforeRestore?.call(
-        result?.librarySources ?? const LocalLibraryImportSources(),
+        result?.librarySources ?? LocalLibraryImportSources(),
       );
       if (result?.isValid == true && sources == null) {
-        return const BackupValidationResult.cancelled();
+        return BackupValidationResult.cancelled();
       }
       if (result?.isValid == true && sources != null) {
         if (identical(sources, result!.librarySources)) return result;

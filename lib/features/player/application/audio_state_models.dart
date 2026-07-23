@@ -2,15 +2,15 @@ part of 'audio_state_services.dart';
 
 @immutable
 class PlaybackStateSliceData {
-  const PlaybackStateSliceData({
-    this.activeSessions = const <PlaybackSession>[],
+  PlaybackStateSliceData({
+    List<PlaybackSession> activeSessions = const <PlaybackSession>[],
     this.playingSessionCount = 0,
     this.focusedSessionId,
     this.multiThreadPlaybackEnabled = false,
     this.coverGeneration = 0,
     this.sessionStateVersion = 0,
     this.isInitialized = false,
-  });
+  }) : activeSessions = immutableList(activeSessions);
 
   final List<PlaybackSession> activeSessions;
   final int playingSessionCount;
@@ -46,7 +46,7 @@ class PlaybackStateSliceData {
 
 @immutable
 class TimerStateSliceData {
-  const TimerStateSliceData({
+  TimerStateSliceData({
     this.mode,
     this.duration,
     this.draftMode = TimerMode.manual,
@@ -57,9 +57,9 @@ class TimerStateSliceData {
     this.autoResumeHour = 7,
     this.autoResumeMinute = 0,
     this.autoResumeAt,
-    this.pausedByTimerSessionIds = const <String>[],
+    List<String> pausedByTimerSessionIds = const <String>[],
     this.isInitialized = false,
-  });
+  }) : pausedByTimerSessionIds = immutableList(pausedByTimerSessionIds);
 
   final TimerMode? mode;
   final Duration? duration;

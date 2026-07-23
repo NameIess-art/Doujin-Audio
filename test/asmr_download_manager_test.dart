@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_download.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
@@ -71,8 +72,56 @@ void main() {
     }
   });
 
+  test('concurrent starts for the same work create one task', () async {
+    final gateway = _BlockingPathGateway();
+    final manager = AsmrDownloadManager(
+      fileCacheGateway: gateway,
+      temporaryDirectoryProvider: () async => Directory.systemTemp,
+      persistTasks: false,
+    );
+    const destinationRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3ADownload';
+
+    try {
+      final firstStart = manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(downloadUrl: 'https://example.invalid/track.mp3'),
+        ],
+        destinationRoot: destinationRoot,
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        saveMetadata: false,
+      );
+      await gateway.pathCheckStarted.future;
+
+      final secondStart = manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(downloadUrl: 'https://example.invalid/track.mp3'),
+        ],
+        destinationRoot: destinationRoot,
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        saveMetadata: false,
+      );
+      await secondStart;
+
+      expect(gateway.pathCheckCount, 1);
+      gateway.releasePathCheck.complete();
+      await firstStart;
+      await gateway.ensureFolderCalled.future;
+
+      expect(gateway.ensureFolderCount, 1);
+      expect(manager.getTask(1), isNotNull);
+    } finally {
+      if (!gateway.releasePathCheck.isCompleted) {
+        gateway.releasePathCheck.complete();
+      }
+      manager.dispose();
+    }
+  });
+
   test('work folder name follows selected field order', () {
-    const work = AsmrWork(
+    final work = AsmrWork(
       id: 1,
       title: 'Work',
       circleName: 'Circle',
@@ -88,8 +137,8 @@ void main() {
       dlCount: 0,
       reviewCount: 0,
       rating: 0,
-      voiceActors: <String>['Voice A', 'Voice B', 'Voice A'],
-      tags: <String>[],
+      voiceActors: const <String>['Voice A', 'Voice B', 'Voice A'],
+      tags: const <String>[],
     );
 
     expect(
@@ -109,7 +158,7 @@ void main() {
         'content://com.android.externalstorage.documents/tree/primary%3ADownload';
     const workFolderName = 'RJ123456 - 羊娘';
     final task = AsmrDownloadTaskSnapshot(
-      work: const AsmrWork(
+      work: AsmrWork(
         id: 1,
         title: '羊娘',
         circleName: 'Circle',
@@ -125,8 +174,8 @@ void main() {
         dlCount: 0,
         reviewCount: 0,
         rating: 0,
-        voiceActors: <String>[],
-        tags: <String>[],
+        voiceActors: const <String>[],
+        tags: const <String>[],
       ),
       destinationRoot: destinationRoot,
       workFolderName: workFolderName,
@@ -667,7 +716,7 @@ void main() {
     try {
       await manager.startDownload(
         work: work,
-        selectedRoots: const <AsmrTrackFile>[
+        selectedRoots: <AsmrTrackFile>[
           AsmrTrackFile(
             hash: 'folder',
             title: 'Folder',
@@ -677,7 +726,7 @@ void main() {
             lowQualityUrl: null,
             duration: Duration.zero,
             size: 0,
-            children: <AsmrTrackFile>[],
+            children: const <AsmrTrackFile>[],
             workId: 1,
             workTitle: 'Work',
             sourceId: 'RJ123456',
@@ -721,7 +770,7 @@ void main() {
       try {
         await manager.startDownload(
           work: _work(),
-          selectedRoots: const <AsmrTrackFile>[
+          selectedRoots: <AsmrTrackFile>[
             AsmrTrackFile(
               hash: 'folder',
               title: 'Folder',
@@ -731,7 +780,7 @@ void main() {
               lowQualityUrl: null,
               duration: Duration.zero,
               size: 0,
-              children: <AsmrTrackFile>[],
+              children: const <AsmrTrackFile>[],
               workId: 1,
               workTitle: 'Work',
               sourceId: 'RJ123456',
@@ -1381,6 +1430,35 @@ AsmrDownloadManager _manager() {
     temporaryDirectoryProvider: () async => Directory.systemTemp,
     persistTasks: false,
   );
+}
+
+final class _BlockingPathGateway extends FileCachePlatformGateway {
+  _BlockingPathGateway() : super(isAndroid: () => true);
+
+  final Completer<void> pathCheckStarted = Completer<void>();
+  final Completer<void> releasePathCheck = Completer<void>();
+  final Completer<void> ensureFolderCalled = Completer<void>();
+  int pathCheckCount = 0;
+  int ensureFolderCount = 0;
+
+  @override
+  Future<bool> documentPathExists(String path) async {
+    pathCheckCount++;
+    if (!pathCheckStarted.isCompleted) pathCheckStarted.complete();
+    await releasePathCheck.future;
+    return false;
+  }
+
+  @override
+  Future<bool> ensureFolderPath({
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async {
+    ensureFolderCount++;
+    if (!ensureFolderCalled.isCompleted) ensureFolderCalled.complete();
+    return false;
+  }
 }
 
 Future<void> _waitForLiveTask(AsmrDownloadManager manager) async {

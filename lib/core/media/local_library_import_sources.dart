@@ -1,9 +1,13 @@
+import '../immutable_collections.dart';
+
 class LocalLibraryImportSources {
-  const LocalLibraryImportSources({
-    this.libraries = const <String>[],
-    this.folders = const <String>[],
-    this.files = const <String>[],
-  });
+  LocalLibraryImportSources({
+    List<String> libraries = const <String>[],
+    List<String> folders = const <String>[],
+    List<String> files = const <String>[],
+  }) : libraries = immutableList(libraries),
+       folders = immutableList(folders),
+       files = immutableList(files);
 
   factory LocalLibraryImportSources.fromJson(Object? value) {
     if (value is! Map || value['version'] != 1) {

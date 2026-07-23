@@ -5,7 +5,7 @@ import 'package:nameless_audio/core/media/path_matcher.dart';
 
 void main() {
   test('uses normalized local path as track key', () {
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: '/library/work/../work/01.mp3',
       displayName: '01',
       groupKey: '/library/work',
@@ -21,7 +21,7 @@ void main() {
   });
 
   test('uses stable ASMR source id and relative path as track key', () {
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'https://example.com/temporary-url.mp3',
       displayName: 'Track',
       groupKey: 'asmr-work-1',
@@ -42,7 +42,7 @@ void main() {
   });
 
   test('falls back to normalized path when ASMR metadata is incomplete', () {
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'https://example.com/track.mp3',
       displayName: 'Track',
       groupKey: 'asmr-work-1',

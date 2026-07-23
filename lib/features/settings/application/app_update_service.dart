@@ -10,6 +10,7 @@ import 'package:pub_semver/pub_semver.dart' as semver;
 
 import 'app_cache_service.dart';
 import '../../../core/errors/native_result.dart';
+import '../../../core/immutable_collections.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/platform/update_platform_service.dart';

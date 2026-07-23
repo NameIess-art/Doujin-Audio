@@ -395,180 +395,176 @@ class _SessionListCard extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
                   child: Row(
                     children: [
-                        if (showCover) ...[
-                          _SessionCoverThumbnail(
-                            sessionId: sessionId,
-                            track: track,
-                            coverPath: coverPath,
-                            coverGeneration: coverGeneration,
-                            coverCacheWidth: coverCacheWidth,
-                            duration: track?.duration,
-                            detailDuration: detailDuration,
-                          ),
-                          const SizedBox(width: 14),
-                        ],
-                        Expanded(
-                          child: Semantics(
-                            button: true,
-                            label: i18n.tr('open_playback_details'),
-                            onTap: onOpen,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  folderName,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall
-                                      ?.copyWith(
-                                        color: cs.onSurfaceVariant,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 12,
-                                      ),
-                                ),
-                                const SizedBox(height: 3),
-                                Text(
-                                  displayName,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 14,
-                                        height: 1.12,
-                                      ),
-                                ),
-                                const SizedBox(height: 4),
-                                Wrap(
-                                  spacing: 10,
-                                  runSpacing: 2,
-                                  children: [
-                                    _SessionMetaChip(
-                                      icon: Icons.repeat_rounded,
-                                      text: _loopModeSummary(
-                                        context,
-                                        cardState.loopMode,
-                                      ),
+                      if (showCover) ...[
+                        _SessionCoverThumbnail(
+                          sessionId: sessionId,
+                          track: track,
+                          coverPath: coverPath,
+                          coverGeneration: coverGeneration,
+                          coverCacheWidth: coverCacheWidth,
+                          duration: track?.duration,
+                          detailDuration: detailDuration,
+                        ),
+                        const SizedBox(width: 14),
+                      ],
+                      Expanded(
+                        child: Semantics(
+                          button: true,
+                          label: i18n.tr('open_playback_details'),
+                          onTap: onOpen,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                folderName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(
+                                      color: cs.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
                                     ),
-                                  ],
-                                ),
-                              ],
-                            ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                displayName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
+                                      height: 1.12,
+                                    ),
+                              ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 10,
+                                runSpacing: 2,
+                                children: [
+                                  _SessionMetaChip(
+                                    icon: Icons.repeat_rounded,
+                                    text: _loopModeSummary(
+                                      context,
+                                      cardState.loopMode,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                SessionFeatureBadgeStack(
-                                  featureIcons: sessionFeatureBadgeIcons(
-                                    showSubtitles: showSubtitles,
-                                    channelSwapEnabled:
-                                        cardState.channelSwapEnabled,
-                                    audioEffects: cardState.audioEffects,
-                                    speed: cardState.speed,
-                                  ),
-                                  color: isAsmrOne ? asmrBlue : localPlayRose,
-                                  child: IconButton(
-                                    tooltip: isPlaying
-                                        ? i18n.tr('pause')
-                                        : i18n.tr('play'),
-                                    onPressed: () {
-                                      AppInteractionFeedback.trigger(
-                                        AppInteractionFeedbackType.selection,
-                                      );
-                                      playback.toggleSessionPlayPause(sessionId);
-                                    },
-                                    style: IconButton.styleFrom(
-                                      foregroundColor: isPlaying
-                                          ? activeColor
-                                          : cs.onSurface,
-                                      minimumSize: const Size(44, 44),
-                                      maximumSize: const Size(44, 44),
-                                      padding: EdgeInsets.zero,
-                                    ),
-                                    icon: AnimatedSwitcher(
-                                      duration: const Duration(
-                                        milliseconds: 120,
-                                      ),
-                                      transitionBuilder: (child, animation) {
-                                        return ScaleTransition(
-                                          scale:
-                                              Tween<double>(
-                                                begin: 0.4,
-                                                end: 1.0,
-                                              ).animate(
-                                                CurvedAnimation(
-                                                  parent: animation,
-                                                  curve: Curves.easeOutBack,
-                                                ),
-                                              ),
-                                          child: FadeTransition(
-                                            opacity: animation,
-                                            child: child,
-                                          ),
-                                        );
-                                      },
-                                      child: cardState.isLoading
-                                          ? const SizedBox(
-                                              key: ValueKey('loading'),
-                                              width: 22,
-                                              height: 22,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2.3,
-                                              ),
-                                            )
-                                          : Icon(
-                                              isPlaying
-                                                  ? Icons.pause_rounded
-                                                  : Icons.play_arrow_rounded,
-                                              key: ValueKey(isPlaying),
-                                              size: 28,
-                                            ),
-                                    ),
-                                  ),
+                      ),
+                      const SizedBox(width: 10),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SessionFeatureBadgeStack(
+                                featureIcons: sessionFeatureBadgeIcons(
+                                  showSubtitles: showSubtitles,
+                                  channelSwapEnabled:
+                                      cardState.channelSwapEnabled,
+                                  audioEffects: cardState.audioEffects,
+                                  speed: cardState.speed,
                                 ),
-                                if (cardState.isLoading ||
-                                    cardState.playbackError != null)
-                                  Text(
-                                    cardState.isLoading
-                                        ? i18n.tr('playback_loading')
-                                        : i18n.tr('playback_failed_retry'),
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .labelSmall
-                                        ?.copyWith(
-                                          color: cardState.isLoading
-                                              ? activeColor
-                                              : cs.error,
+                                color: isAsmrOne ? asmrBlue : localPlayRose,
+                                child: IconButton(
+                                  tooltip: isPlaying
+                                      ? i18n.tr('pause')
+                                      : i18n.tr('play'),
+                                  onPressed: () {
+                                    AppInteractionFeedback.trigger(
+                                      AppInteractionFeedbackType.selection,
+                                    );
+                                    playback.toggleSessionPlayPause(sessionId);
+                                  },
+                                  style: IconButton.styleFrom(
+                                    foregroundColor: isPlaying
+                                        ? activeColor
+                                        : cs.onSurface,
+                                    minimumSize: const Size(44, 44),
+                                    maximumSize: const Size(44, 44),
+                                    padding: EdgeInsets.zero,
+                                  ),
+                                  icon: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 120),
+                                    transitionBuilder: (child, animation) {
+                                      return ScaleTransition(
+                                        scale:
+                                            Tween<double>(
+                                              begin: 0.4,
+                                              end: 1.0,
+                                            ).animate(
+                                              CurvedAnimation(
+                                                parent: animation,
+                                                curve: Curves.easeOutBack,
+                                              ),
+                                            ),
+                                        child: FadeTransition(
+                                          opacity: animation,
+                                          child: child,
                                         ),
-                                  ),
-                              ],
-                            ),
-                            if (!cardPositionsLocked) ...[
-                              const SizedBox(width: 6),
-                              ReorderableDragStartListener(
-                                index: index,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    vertical: 8,
-                                    horizontal: 4,
-                                  ),
-                                  color: Colors.transparent,
-                                  child: const Icon(
-                                    Icons.drag_handle_rounded,
-                                    size: 24,
+                                      );
+                                    },
+                                    child: cardState.isLoading
+                                        ? const SizedBox(
+                                            key: ValueKey('loading'),
+                                            width: 22,
+                                            height: 22,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2.3,
+                                            ),
+                                          )
+                                        : Icon(
+                                            isPlaying
+                                                ? Icons.pause_rounded
+                                                : Icons.play_arrow_rounded,
+                                            key: ValueKey(isPlaying),
+                                            size: 28,
+                                          ),
                                   ),
                                 ),
                               ),
+                              if (cardState.isLoading ||
+                                  cardState.playbackError != null)
+                                Text(
+                                  cardState.isLoading
+                                      ? i18n.tr('playback_loading')
+                                      : i18n.tr('playback_failed_retry'),
+                                  style: Theme.of(context).textTheme.labelSmall
+                                      ?.copyWith(
+                                        color: cardState.isLoading
+                                            ? activeColor
+                                            : cs.error,
+                                      ),
+                                ),
                             ],
+                          ),
+                          if (!cardPositionsLocked) ...[
+                            const SizedBox(width: 6),
+                            ReorderableDragStartListener(
+                              index: index,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 8,
+                                  horizontal: 4,
+                                ),
+                                color: Colors.transparent,
+                                child: const Icon(
+                                  Icons.drag_handle_rounded,
+                                  size: 24,
+                                ),
+                              ),
+                            ),
                           ],
-                        ),
-                      ],
+                        ],
                       ),
+                    ],
+                  ),
                 ),
               ),
             ),

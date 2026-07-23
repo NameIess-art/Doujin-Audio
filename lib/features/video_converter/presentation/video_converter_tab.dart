@@ -259,7 +259,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final settings = ref.read(settingsRepositoryProvider);
     final settingsState =
-        ref.watch(settingsStateProvider).value ?? const SettingsState();
+        ref.watch(settingsStateProvider).value ?? SettingsState();
     final pickOperation = ref.watch(
       uiOperationForScopeProvider(UiOperationScope.videoConverterPick),
     );

@@ -3,6 +3,7 @@ import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
+import '../../../core/immutable_collections.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../domain/playback_mode.dart';
 import 'playback_session.dart';

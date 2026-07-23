@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/media/audio_detail.dart';
+import '../../../core/immutable_collections.dart';
 import '../domain/asmr_download.dart';
 import '../domain/asmr_models.dart';
 import 'asmr_api_service.dart';
@@ -116,7 +117,7 @@ enum AsmrDownloadTaskStatus {
 }
 
 class AsmrDownloadTaskSnapshot {
-  const AsmrDownloadTaskSnapshot({
+  AsmrDownloadTaskSnapshot({
     required this.work,
     required this.destinationRoot,
     required this.workFolderName,
@@ -133,11 +134,14 @@ class AsmrDownloadTaskSnapshot {
     this.currentItemPath,
     this.message,
     this.error,
-    this.fileDownloadedBytes = const {},
-    this.fileTotalBytes = const {},
-    this.completedFilePaths = const {},
-    this.selectedRoots = const [],
-  });
+    Map<String, int> fileDownloadedBytes = const {},
+    Map<String, int> fileTotalBytes = const {},
+    Set<String> completedFilePaths = const {},
+    List<AsmrTrackFile> selectedRoots = const [],
+  }) : fileDownloadedBytes = immutableMap(fileDownloadedBytes),
+       fileTotalBytes = immutableMap(fileTotalBytes),
+       completedFilePaths = immutableSet(completedFilePaths),
+       selectedRoots = immutableList(selectedRoots);
 
   final AsmrWork work;
   final String destinationRoot;
@@ -230,11 +234,15 @@ class AsmrDownloadTaskSnapshot {
 }
 
 class AsmrDownloadState {
-  const AsmrDownloadState({required this.taskIds, required this.tasksByWorkId});
+  AsmrDownloadState({
+    required List<int> taskIds,
+    required Map<int, AsmrDownloadTaskSnapshot> tasksByWorkId,
+  }) : taskIds = immutableList(taskIds),
+       tasksByWorkId = immutableMap(tasksByWorkId);
 
-  static const empty = AsmrDownloadState(
-    taskIds: <int>[],
-    tasksByWorkId: <int, AsmrDownloadTaskSnapshot>{},
+  static final empty = AsmrDownloadState(
+    taskIds: const <int>[],
+    tasksByWorkId: const <int, AsmrDownloadTaskSnapshot>{},
   );
 
   factory AsmrDownloadState.fromManager(AsmrDownloadManager manager) {
@@ -416,6 +424,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   final Map<int, AsmrDownloadTaskSnapshot> _tasks = {};
   List<int> _taskIdsSnapshot = const <int>[];
   final List<int> _queue = [];
+  final Set<int> _startingTasks = {};
   final Set<int> _activeTasks = {};
   final Map<int, List<_PlannedDownloadFile>> _plannedFilesMap = {};
 
@@ -710,80 +719,92 @@ class AsmrDownloadManager extends ChangeNotifier {
     if (_disposed) return;
 
     final workId = work.id;
-    final existingTask = _tasks[workId];
-    if (existingTask != null) {
-      if (existingTask.isActive || _queue.contains(workId)) {
-        return; // Already downloading or queued
+    if (!_startingTasks.add(workId)) return;
+    try {
+      final existingTask = _tasks[workId];
+      if (existingTask != null) {
+        if (existingTask.isActive ||
+            _queue.contains(workId) ||
+            _activeTasks.contains(workId)) {
+          return; // Already downloading or queued
+        }
+        _tasks.remove(workId);
       }
-      _tasks.remove(workId);
-    }
 
-    final workFolderName = buildAsmrDownloadWorkFolderName(
-      work,
-      folderNameFields,
-    );
-    final plannedFiles = _collectPlannedFiles(selectedRoots);
-    for (final file in plannedFiles) {
-      _validatedDownloadRelativePath(file.relativePath);
-    }
-    final workRootPath = _joinFolderPath(normalizedDestination, workFolderName);
-    _workRootExistedBeforeTask[workId] = await _pathExists(workRootPath);
-    if (_disposed) {
-      _workRootExistedBeforeTask.remove(workId);
-      return;
-    }
-    final backupBytes = saveMetadata
-        ? utf8
-              .encode(
-                const JsonEncoder.withIndent('  ').convert(
-                  _buildBackupDetail(work, workRootPath).toBackupJson(),
-                ),
-              )
-              .length
-        : 0;
-    final totalFiles = plannedFiles.length + (saveMetadata ? 1 : 0);
-    final totalBytes = plannedFiles.fold<int>(backupBytes, (sum, item) {
-      return sum + item.size;
-    });
+      final workFolderName = buildAsmrDownloadWorkFolderName(
+        work,
+        folderNameFields,
+      );
+      final plannedFiles = _collectPlannedFiles(selectedRoots);
+      for (final file in plannedFiles) {
+        _validatedDownloadRelativePath(file.relativePath);
+      }
+      final workRootPath = _joinFolderPath(
+        normalizedDestination,
+        workFolderName,
+      );
+      _workRootExistedBeforeTask[workId] = await _pathExists(workRootPath);
+      if (_disposed) {
+        _workRootExistedBeforeTask.remove(workId);
+        return;
+      }
+      final backupBytes = saveMetadata
+          ? utf8
+                .encode(
+                  const JsonEncoder.withIndent('  ').convert(
+                    _buildBackupDetail(work, workRootPath).toBackupJson(),
+                  ),
+                )
+                .length
+          : 0;
+      final totalFiles = plannedFiles.length + (saveMetadata ? 1 : 0);
+      final totalBytes = plannedFiles.fold<int>(backupBytes, (sum, item) {
+        return sum + item.size;
+      });
 
-    final fileTotalBytes = <String, int>{};
-    for (final file in plannedFiles) {
-      fileTotalBytes[file.relativePath] = file.size;
+      final fileTotalBytes = <String, int>{};
+      for (final file in plannedFiles) {
+        fileTotalBytes[file.relativePath] = file.size;
+      }
+      _plannedFilesMap[workId] = plannedFiles;
+
+      _tasks[workId] = AsmrDownloadTaskSnapshot(
+        work: work,
+        destinationRoot: normalizedDestination,
+        workFolderName: workFolderName,
+        conflictPolicy: conflictPolicy,
+        saveMetadata: saveMetadata,
+        status: AsmrDownloadTaskStatus.idle,
+        totalFiles: totalFiles,
+        completedFiles: 0,
+        skippedFiles: 0,
+        failedFiles: 0,
+        totalBytes: totalBytes,
+        downloadedBytes: 0,
+        startedAt: DateTime.now(),
+        message: 'queued',
+        fileTotalBytes: fileTotalBytes,
+        fileDownloadedBytes: {},
+        selectedRoots: selectedRoots,
+      );
+
+      if (!_queue.contains(workId) && !_activeTasks.contains(workId)) {
+        _queue.add(workId);
+      }
+      _notifyTaskChanged();
+      await _persistenceTail;
+      _processQueue();
+    } finally {
+      _startingTasks.remove(workId);
     }
-    _plannedFilesMap[workId] = plannedFiles;
-
-    _tasks[workId] = AsmrDownloadTaskSnapshot(
-      work: work,
-      destinationRoot: normalizedDestination,
-      workFolderName: workFolderName,
-      conflictPolicy: conflictPolicy,
-      saveMetadata: saveMetadata,
-      status: AsmrDownloadTaskStatus.idle,
-      totalFiles: totalFiles,
-      completedFiles: 0,
-      skippedFiles: 0,
-      failedFiles: 0,
-      totalBytes: totalBytes,
-      downloadedBytes: 0,
-      startedAt: DateTime.now(),
-      message: 'queued',
-      fileTotalBytes: fileTotalBytes,
-      fileDownloadedBytes: {},
-      selectedRoots: selectedRoots,
-    );
-
-    _queue.add(workId);
-    _notifyTaskChanged();
-    await _persistenceTail;
-    _processQueue();
   }
 
   void _processQueue() {
     if (_disposed) return;
     while (_activeTasks.length < _maxConcurrentDownloads && _queue.isNotEmpty) {
       final workId = _queue.removeAt(0);
-      _activeTasks.add(workId);
-      _runTask(workId);
+      if (!_activeTasks.add(workId)) continue;
+      unawaited(_runTask(workId));
     }
   }
 

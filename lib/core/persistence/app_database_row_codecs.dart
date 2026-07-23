@@ -813,7 +813,7 @@ List<MusicTrack> _startupTracksFromRows(List<Map<String, Object?>> rows) {
 }
 
 class PersistedSession {
-  const PersistedSession({
+  PersistedSession({
     required this.id,
     required this.trackPath,
     required this.loopModeIndex,
@@ -821,16 +821,19 @@ class PersistedSession {
     this.speed = 1.0,
     required this.positionMs,
     required this.durationMs,
-    required this.customQueueTracks,
+    required List<MusicTrack>? customQueueTracks,
     this.playbackQueue,
     this.currentQueueIndex = 0,
     required this.channelSwapEnabled,
-    this.audioEffects = AudioEffectsState.flat,
+    AudioEffectsState? audioEffects,
     required this.sortOrder,
     this.createdAtMs,
     this.updatedAtMs,
     this.lastPlayedAtMs,
-  });
+  }) : customQueueTracks = customQueueTracks == null
+           ? null
+           : immutableList(customQueueTracks),
+       audioEffects = audioEffects ?? AudioEffectsState.flat;
 
   final String id;
   final String trackPath;

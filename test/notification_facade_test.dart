@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/core/errors/native_result.dart';
+import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
@@ -8,9 +9,68 @@ import 'package:nameless_audio/features/player/application/native_playback_repos
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_session.dart';
+import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 
 void main() {
+  test('notification synchronization coalesces while paused', () async {
+    final library = LibraryFacade.create();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+    );
+    final service = _RecordingPlaybackNotificationService();
+    final facade = NotificationFacade.create(service: service);
+    library.attachCoverArtworkCacheService(
+      () => CoverArtworkCacheService(libraryService: library.service),
+    );
+    final session = PlaybackSession(
+      id: 'paused-notification-session',
+      currentTrackPath: '/tracks/paused.mp3',
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(true, ProcessingState.ready),
+    );
+    playback.registerSession(session);
+    facade.attachActions(
+      playback: playback,
+      resolveSession: ([sessionId]) => session,
+      resolveActionSession: () => session,
+      resumeSession: (_) async {},
+      multiThreadPlaybackEnabled: () => false,
+      setFocusSessionId: (_) {},
+      notify: () {},
+      syncKeepAlive: () {},
+      hasPlaybackToKeepAlive: () => true,
+      clearUnifiedNotifications: () async {},
+      preferredSessionId: () => session.id,
+      notifyNotificationChanged: () {},
+    );
+    facade.attachSynchronization(
+      playbackCommands: _NoopNotificationPlaybackCommands(),
+      subtitles: PlaybackSubtitleService(trackResolver: (_) => null),
+      trackByPath: (_) => null,
+      coverArtworkCacheService: library.coverArtworkCacheService,
+      notificationsEnabled: () => true,
+    );
+
+    facade.setSynchronizationPaused(true);
+    facade.syncPlaybackState(immediateUnifiedSync: true);
+    facade.syncPlaybackState(immediateUnifiedSync: true);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(service.syncCount, 0);
+
+    facade.setSynchronizationPaused(false);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(service.syncCount, 1);
+
+    session.dispose();
+    await facade.dispose();
+    await playback.dispose();
+    await library.dispose();
+  });
+
   test('NotificationFacade owns foreground notification recovery', () async {
     final facade = NotificationFacade.create(
       service: PlaybackNotificationService(),
@@ -132,6 +192,38 @@ void main() {
       expect(keepAliveSyncCount, 1);
     },
   );
+}
+
+final class _RecordingPlaybackNotificationService
+    extends PlaybackNotificationService {
+  int syncCount = 0;
+
+  @override
+  Future<void> syncUnifiedNotifications(Map<String, dynamic> payload) async {
+    syncCount++;
+  }
+}
+
+final class _NoopNotificationPlaybackCommands
+    implements NotificationPlaybackCommands {
+  @override
+  bool hasAdjacent(PlaybackSession session, {required bool forward}) => false;
+
+  @override
+  Future<bool> prepareAndPlay(
+    PlaybackSession session, {
+    required String nextPath,
+    bool autoPlay = true,
+    bool forceStartAtZero = false,
+    bool showLoading = true,
+    int? targetQueueIndex,
+  }) async => false;
+
+  @override
+  Future<bool> startSession(
+    PlaybackSession session, {
+    required bool shouldStartTriggerCountdown,
+  }) async => false;
 }
 
 final class _RecordingNativePlaybackRepository

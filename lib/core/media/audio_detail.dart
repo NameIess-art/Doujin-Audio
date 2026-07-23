@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import '../immutable_collections.dart';
+
 const Object _copyUnset = Object();
 
 enum AudioDetailTargetType {
@@ -62,13 +64,13 @@ class AudioDetailTarget {
 }
 
 class AudioDetail {
-  const AudioDetail({
+  AudioDetail({
     required this.target,
     required this.rjCode,
     required this.workTitle,
     required this.circleName,
-    required this.voiceActors,
-    required this.tags,
+    required List<String> voiceActors,
+    required List<String> tags,
     this.cardCoverPath,
     this.cardCoverSelected = false,
     this.releaseDate,
@@ -77,7 +79,8 @@ class AudioDetail {
     this.rating,
     this.createdAt,
     this.updatedAt,
-  });
+  }) : voiceActors = immutableList(voiceActors),
+       tags = immutableList(tags);
 
   factory AudioDetail.empty(AudioDetailTarget target) {
     return AudioDetail(

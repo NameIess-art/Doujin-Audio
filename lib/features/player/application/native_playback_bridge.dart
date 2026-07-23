@@ -5,12 +5,13 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../../../core/errors/native_result.dart';
+import '../../../core/immutable_collections.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/platform_channels.dart';
 import '../domain/audio_effects.dart';
 
 class NativePlaybackSnapshot {
-  const NativePlaybackSnapshot({
+  NativePlaybackSnapshot({
     required this.sessionId,
     required this.playing,
     required this.playWhenReady,
@@ -22,9 +23,9 @@ class NativePlaybackSnapshot {
     required this.boostGain,
     required this.channelSwapEnabled,
     this.hasChannelSwapPayload = true,
-    this.audioEffects = AudioEffectsState.flat,
+    AudioEffectsState? audioEffects,
     this.hasAudioEffectsPayload = true,
-    this.eqCapabilities = EqCapabilities.unsupported,
+    EqCapabilities? eqCapabilities,
     this.uri,
     this.path,
     this.title,
@@ -34,7 +35,8 @@ class NativePlaybackSnapshot {
     this.error,
     this.queueIndex = 0,
     this.transportCommandId,
-  });
+  }) : audioEffects = audioEffects ?? AudioEffectsState.flat,
+       eqCapabilities = eqCapabilities ?? EqCapabilities.unsupported;
 
   final String sessionId;
   final String? uri;
@@ -221,10 +223,10 @@ List<NativePlaybackProgressUpdate> parseNativePlaybackProgressEvent(
 }
 
 class NativePlaybackBundleSnapshot {
-  const NativePlaybackBundleSnapshot({
-    required this.sessions,
+  NativePlaybackBundleSnapshot({
+    required List<NativePlaybackSnapshot> sessions,
     this.focusedSessionId,
-  });
+  }) : sessions = immutableList(sessions);
 
   final List<NativePlaybackSnapshot> sessions;
   final String? focusedSessionId;
@@ -268,10 +270,7 @@ abstract interface class NativePlaybackBridgeBase {
     bool repeatOne = false,
     bool autoPlay = false,
     double speed = 1.0,
-    NativeAudioEffects audioEffects = const NativeAudioEffects(
-      state: AudioEffectsState.flat,
-      channelSwapEnabled: false,
-    ),
+    NativeAudioEffects? audioEffects,
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -540,10 +539,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     bool repeatOne = false,
     bool autoPlay = false,
     double speed = 1.0,
-    NativeAudioEffects audioEffects = const NativeAudioEffects(
-      state: AudioEffectsState.flat,
-      channelSwapEnabled: false,
-    ),
+    NativeAudioEffects? audioEffects,
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,
@@ -564,7 +560,13 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       'startPositionMs': startPosition.inMilliseconds,
       'volume': volume,
       'speed': speed,
-      'audioEffects': audioEffects.toPlatformMap(),
+      'audioEffects':
+          (audioEffects ??
+                  NativeAudioEffects(
+                    state: AudioEffectsState.flat,
+                    channelSwapEnabled: false,
+                  ))
+              .toPlatformMap(),
       'repeatOne': repeatOne,
       'autoPlay': autoPlay,
 
@@ -742,9 +744,7 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
       NativePlaybackMethod.snapshot,
       (value) => value is Map
           ? NativePlaybackBundleSnapshot.fromMap(value)
-          : const NativePlaybackBundleSnapshot(
-              sessions: <NativePlaybackSnapshot>[],
-            ),
+          : NativePlaybackBundleSnapshot(sessions: <NativePlaybackSnapshot>[]),
     );
   }
 

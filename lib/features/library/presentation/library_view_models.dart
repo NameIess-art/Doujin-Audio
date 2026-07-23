@@ -294,7 +294,7 @@ class LibrarySearchIndex {
       folder.name,
       folder.path,
       depth: folder.depth,
-    )..children.addAll(filteredChildren);
+    )..addChildren(filteredChildren);
     return _FilteredFolderNodeResult(
       node: filteredFolder,
       matchCount: matchCount,

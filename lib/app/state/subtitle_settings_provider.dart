@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter_riverpod/legacy.dart';
+import '../../core/immutable_collections.dart';
 import '../application/persisted_state_reloader.dart';
 import '../../features/settings/application/app_preferences.dart';
 
@@ -23,16 +24,18 @@ class SubtitleSettingsState {
   final double fontSize;
 
   SubtitleSettingsState({
-    this.showSubtitlesMap = const {},
-    this.globalSubtitlesMap = const {},
-    this.positions = const {},
+    Map<String, bool> showSubtitlesMap = const {},
+    Map<String, bool> globalSubtitlesMap = const {},
+    Map<String, double> positions = const {},
     this.fontFamily = '',
     this.fontColor,
     this.backgroundOpacity = 0.2,
     this.backgroundColor,
     this.borderDepth = 0.5,
     this.fontSize = 16,
-  });
+  }) : showSubtitlesMap = immutableMap(showSubtitlesMap),
+       globalSubtitlesMap = immutableMap(globalSubtitlesMap),
+       positions = immutableMap(positions);
 
   bool isShowEnabled(String sessionId) => showSubtitlesMap[sessionId] ?? true;
   bool isGlobalEnabled(String sessionId) =>

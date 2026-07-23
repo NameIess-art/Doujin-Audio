@@ -539,7 +539,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       ? ref.watch(settingsStateProvider)
                       : ref.read(settingsStateProvider)))
             .value ??
-        const SettingsState();
+        SettingsState();
     final subtitleSettings = _isReordering
         ? ref.read(subtitleSettingsProvider)
         : (_isActive

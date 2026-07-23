@@ -1,5 +1,7 @@
+import '../immutable_collections.dart';
+
 class MusicTrack {
-  const MusicTrack({
+  MusicTrack({
     required this.path,
     required this.displayName,
     required this.groupKey,
@@ -13,15 +15,16 @@ class MusicTrack {
     this.lastPlayedPosition = Duration.zero,
     this.lastPlayedAt,
     this.isFavorite = false,
-    this.tags = const <String>[],
+    List<String> tags = const <String>[],
     this.coverCachePath,
     this.lyricsPath,
     this.manualCoverPath,
     this.remoteCoverUrl,
     this.remoteMetadataKind,
-    this.remoteMetadata,
+    Map<String, Object?>? remoteMetadata,
     this.duration = Duration.zero,
-  });
+  }) : tags = immutableList(tags),
+       remoteMetadata = immutableJsonMap(remoteMetadata);
 
   final String path;
   final String displayName;

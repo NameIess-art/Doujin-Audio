@@ -260,7 +260,7 @@ class LibraryOrganizer {
               currentPath,
               depth: currentNode.depth + 1,
             );
-            currentNode.children.add(newFolder);
+            currentNode.addChild(newFolder);
             childFolders[part] = newFolder;
             folderIndexByPath[currentPath] = <String, FolderNode>{};
             currentNode = newFolder;
@@ -270,7 +270,7 @@ class LibraryOrganizer {
         }
       }
 
-      currentNode.children.add(TrackNode(track));
+      currentNode.addChild(TrackNode(track));
     }
 
     var leafFolderCount = 0;
@@ -320,7 +320,7 @@ class LibraryOrganizer {
   }
 
   void _pruneEmptyFolders(FolderNode folder) {
-    folder.children.removeWhere((child) {
+    folder.removeChildrenWhere((child) {
       if (child is FolderNode) {
         _pruneEmptyFolders(child);
         return child.totalTrackCount == 0;
@@ -330,7 +330,7 @@ class LibraryOrganizer {
   }
 
   void _sortFolder(FolderNode folder) {
-    folder.children.sort((a, b) {
+    folder.sortChildren((a, b) {
       if (a is FolderNode && b is TrackNode) return -1;
       if (a is TrackNode && b is FolderNode) return 1;
       return compareNatural(a.name, b.name);

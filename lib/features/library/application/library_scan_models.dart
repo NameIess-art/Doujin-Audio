@@ -1,3 +1,5 @@
+import '../../../core/immutable_collections.dart';
+
 export '../../../core/platform/library_scan_wire_models.dart';
 export '../../../core/media/local_library_import_sources.dart';
 
@@ -34,11 +36,11 @@ enum LibraryScanOutcomeCode {
 }
 
 class LibraryScanOutcome {
-  const LibraryScanOutcome({
+  LibraryScanOutcome({
     required this.code,
     required this.source,
-    this.details = const <String, Object?>{},
-  });
+    Map<String, Object?> details = const <String, Object?>{},
+  }) : details = immutableJsonMap(details)!;
 
   final LibraryScanOutcomeCode code;
   final String source;

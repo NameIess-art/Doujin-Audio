@@ -34,15 +34,15 @@ void main() {
       second.stateStream.listen(secondStates.add);
 
       first.applyNativeSnapshot(
-        const NativePlaybackSnapshot(
+        NativePlaybackSnapshot(
           sessionId: 'session_1',
           uri: 'file:///audio/one.mp3',
           playing: true,
           playWhenReady: true,
           processingState: 'ready',
-          position: Duration(seconds: 12),
-          bufferedPosition: Duration(seconds: 20),
-          duration: Duration(minutes: 3),
+          position: const Duration(seconds: 12),
+          bufferedPosition: const Duration(seconds: 20),
+          duration: const Duration(minutes: 3),
           volume: 0.42,
           speed: 1.5,
           boostGain: 1.0,
@@ -59,7 +59,7 @@ void main() {
             supported: true,
             minGainDb: -10,
             maxGainDb: 10,
-            bands: <EqBandInfo>[EqBandInfo(frequencyHz: 1000)],
+            bands: <EqBandInfo>[const EqBandInfo(frequencyHz: 1000)],
           ),
         ),
       );
@@ -158,7 +158,7 @@ void main() {
     expect(session.state.playing, isFalse);
 
     final staleApplied = session.applyNativeSnapshot(
-      const NativePlaybackSnapshot(
+      NativePlaybackSnapshot(
         sessionId: 'session_1',
         playing: false,
         playWhenReady: false,
@@ -175,7 +175,7 @@ void main() {
     expect(session.effectivePlaying, isTrue);
 
     session.applyNativeSnapshot(
-      const NativePlaybackSnapshot(
+      NativePlaybackSnapshot(
         sessionId: 'session_1',
         playing: false,
         playWhenReady: true,
@@ -191,7 +191,7 @@ void main() {
     expect(session.effectivePlaying, isTrue);
 
     session.applyNativeSnapshot(
-      const NativePlaybackSnapshot(
+      NativePlaybackSnapshot(
         sessionId: 'session_1',
         playing: true,
         playWhenReady: true,
@@ -241,7 +241,7 @@ void main() {
             state: PlayerState(true, ProcessingState.ready),
           )
           ..loadedPath = '/audio/one.mp3'
-          ..audioEffects = const AudioEffectsState(skipSilenceEnabled: true)
+          ..audioEffects = AudioEffectsState(skipSilenceEnabled: true)
           ..currentQueueIndex = 4;
     addTearDown(session.dispose);
 
@@ -288,7 +288,7 @@ void main() {
             state: PlayerState(true, ProcessingState.ready),
           )
           ..channelSwapEnabled = true
-          ..audioEffects = const AudioEffectsState(
+          ..audioEffects = AudioEffectsState(
             skipSilenceEnabled: true,
             noiseReductionEnabled: true,
             volumeNormalizationEnabled: true,
@@ -349,13 +349,13 @@ void main() {
       ),
     );
     session.applyNativeSnapshot(
-      const NativePlaybackSnapshot(
+      NativePlaybackSnapshot(
         sessionId: 'session_1',
         playing: false,
         playWhenReady: false,
         processingState: 'ready',
-        position: Duration(seconds: 8),
-        bufferedPosition: Duration(seconds: 18),
+        position: const Duration(seconds: 8),
+        bufferedPosition: const Duration(seconds: 18),
         volume: 1,
         boostGain: 1,
         channelSwapEnabled: false,
@@ -380,7 +380,7 @@ void main() {
     addTearDown(session.dispose);
 
     session.applyNativeSnapshot(
-      const NativePlaybackSnapshot(
+      NativePlaybackSnapshot(
         sessionId: 'session_1',
         playing: false,
         playWhenReady: false,
@@ -396,7 +396,7 @@ void main() {
     expect(session.playbackError, 'network failed');
 
     session.applyNativeSnapshot(
-      const NativePlaybackSnapshot(
+      NativePlaybackSnapshot(
         sessionId: 'session_1',
         playing: true,
         playWhenReady: true,

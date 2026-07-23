@@ -485,7 +485,7 @@ void main() {
       notificationStateService: notificationCoordinatorService,
       settingsRepository: settingsRepository,
     );
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'https://asmr.one/media/work/track.mp3',
       displayName: 'ASMR remote track',
       groupKey: 'RJ123456',
@@ -641,7 +641,7 @@ void main() {
       notificationStateService: notificationCoordinatorService,
       settingsRepository: settingsRepository,
     );
-    const firstTrack = MusicTrack(
+    final firstTrack = MusicTrack(
       path: '/audio/first.mp3',
       displayName: 'First track',
       groupKey: 'first',
@@ -649,7 +649,7 @@ void main() {
       groupSubtitle: 'First',
       isSingle: true,
     );
-    const secondTrack = MusicTrack(
+    final secondTrack = MusicTrack(
       path: '/audio/second.mp3',
       displayName: 'Second track',
       groupKey: 'second',
@@ -840,7 +840,7 @@ void main() {
       debugDefaultTargetPlatformOverride = previousPlatform;
     });
     _setLogicalTestViewSize(tester, const Size(1080, 2400));
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: '/imports/standalone.mp3',
       displayName: 'Standalone audio',
       groupKey: '__single_files__',
@@ -882,7 +882,7 @@ void main() {
       debugDefaultTargetPlatformOverride = previousPlatform;
     });
     _setLogicalTestViewSize(tester, const Size(1080, 2400));
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'https://asmr.one/media/work/detail-track.mp3',
       displayName: 'ASMR detail track',
       groupKey: 'asmr-work-123456',
@@ -934,7 +934,7 @@ void main() {
       debugDefaultTargetPlatformOverride = previousPlatform;
     });
     _setLogicalTestViewSize(tester, const Size(1080, 2400));
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'https://asmr.one/media/work/color-hierarchy.mp3',
       displayName: 'Color hierarchy track',
       groupKey: 'asmr-color-hierarchy',
@@ -1269,7 +1269,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   int _revision = 0;
   int recommendationRefreshCount = 0;
 
-  static const AsmrWork _collectedWork = AsmrWork(
+  static final AsmrWork _collectedWork = AsmrWork(
     id: 1,
     title: 'Loaded work',
     circleName: 'Circle',
@@ -1285,8 +1285,8 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     dlCount: 0,
     reviewCount: 0,
     rating: 0,
-    voiceActors: <String>[],
-    tags: <String>[],
+    voiceActors: const <String>[],
+    tags: const <String>[],
   );
 
   @override
@@ -1298,20 +1298,19 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   Future<void> restoreAsmrAccountSession({bool force = false}) async {}
 
   @override
-  AsmrLibraryGlobalViewState get globalViewState =>
-      const AsmrLibraryGlobalViewState(
-        initialized: true,
-        lastError: null,
-        visibleCategories: kDefaultVisibleAsmrCategories,
-        contentLanguage: AsmrContentLanguage.zh,
-        contentLanguagePreference: ContentLanguagePreference.followPage,
-        revision: 0,
-      );
+  AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
+    initialized: true,
+    lastError: null,
+    visibleCategories: kDefaultVisibleAsmrCategories,
+    contentLanguage: AsmrContentLanguage.zh,
+    contentLanguagePreference: ContentLanguagePreference.followPage,
+    revision: 0,
+  );
 
   @override
   List<AsmrWork> worksFor(AsmrCategoryType category) =>
       category == AsmrCategoryType.collected
-      ? const <AsmrWork>[_collectedWork]
+      ? <AsmrWork>[_collectedWork]
       : const <AsmrWork>[];
 
   @override

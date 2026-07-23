@@ -107,7 +107,7 @@ void main() {
           '/music/library/work',
           '/music/standalone',
         ]);
-      service.addTracks(const <MusicTrack>[
+      service.addTracks(<MusicTrack>[
         MusicTrack(
           path: '/music/library/work/01.wav',
           displayName: '01.wav',
@@ -147,7 +147,7 @@ void main() {
     addTearDown(facade.dispose);
 
     for (final track in <MusicTrack>[
-      const MusicTrack(
+      MusicTrack(
         path: '$libraryRoot/document/first.wav',
         displayName: 'first.wav',
         groupKey: '$libraryRoot::$firstWork/wav',
@@ -155,7 +155,7 @@ void main() {
         groupSubtitle: '$firstWork/wav',
         isSingle: false,
       ),
-      const MusicTrack(
+      MusicTrack(
         path: '$libraryRoot/document/nested.wav',
         displayName: 'nested.wav',
         groupKey: '$libraryRoot::$nestedWork/$nestedWork/音声',
@@ -231,7 +231,7 @@ void main() {
 final class _RestoredLibraryRepository extends AudioDatabaseRepository {
   @override
   Future<List<MusicTrack>> loadStartupTracks() async {
-    return const <MusicTrack>[
+    return <MusicTrack>[
       MusicTrack(
         path: '/music/album/01.wav',
         displayName: '01.wav',

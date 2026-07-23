@@ -100,7 +100,7 @@ void main() {
           return cover.path;
         },
       );
-      const first = MusicTrack(
+      final first = MusicTrack(
         path: 'https://example.com/audio-a.mp3',
         displayName: 'A',
         groupKey: 'remote-a',
@@ -109,7 +109,7 @@ void main() {
         isSingle: false,
         remoteCoverUrl: 'https://example.com/cover.jpg',
       );
-      const second = MusicTrack(
+      final second = MusicTrack(
         path: 'https://example.com/audio-b.mp3',
         displayName: 'B',
         groupKey: 'remote-b',
@@ -218,7 +218,7 @@ void main() {
         return downloads == 1 ? null : cover.path;
       },
     );
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'https://example.com/audio.mp3',
       displayName: 'Remote audio',
       groupKey: 'remote',
@@ -850,7 +850,7 @@ void main() {
     const root =
         'content://com.android.externalstorage.documents/tree/primary%3AMusic::WorkA';
     final library = LibraryService()
-      ..library.addAll(const <MusicTrack>[
+      ..library.addAll(<MusicTrack>[
         MusicTrack(
           path:
               'content://com.android.externalstorage.documents/tree/primary%3AMusic::WorkA/01.mp3',
@@ -976,41 +976,38 @@ void main() {
     expect(gateway.resolveTrackCoverPaths, isEmpty);
   });
 
-  test(
-    'folder card embedded-cover lookup stays in its work tree',
-    () async {
-      const root =
-          'content://com.android.externalstorage.documents/tree/primary%3AMusic::Work';
-      const subfolder = '$root/Sub';
-      const sibling =
-          'content://com.android.externalstorage.documents/tree/primary%3AMusic::Other';
-      final rootTrack = _track(path: '$root/01.flac', groupKey: root);
-      final subfolderTrack = _track(
-        path: '$subfolder/02.flac',
-        groupKey: subfolder,
-      );
-      final siblingTrack = _track(
-        path: '$sibling/ignored.flac',
-        groupKey: sibling,
-      );
-      final library = LibraryService()
-        ..library.addAll(<MusicTrack>[siblingTrack, subfolderTrack, rootTrack])
-        ..tracksByGroup[root] = <MusicTrack>[rootTrack]
-        ..tracksByGroup[subfolder] = <MusicTrack>[subfolderTrack]
-        ..tracksByGroup[sibling] = <MusicTrack>[siblingTrack];
-      final gateway = _FakeFileCachePlatformGateway(coversByPath: const {});
-      final cache = CoverArtworkCacheService(
-        libraryService: library,
-        fileCacheGateway: gateway,
-      );
+  test('folder card embedded-cover lookup stays in its work tree', () async {
+    const root =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic::Work';
+    const subfolder = '$root/Sub';
+    const sibling =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic::Other';
+    final rootTrack = _track(path: '$root/01.flac', groupKey: root);
+    final subfolderTrack = _track(
+      path: '$subfolder/02.flac',
+      groupKey: subfolder,
+    );
+    final siblingTrack = _track(
+      path: '$sibling/ignored.flac',
+      groupKey: sibling,
+    );
+    final library = LibraryService()
+      ..library.addAll(<MusicTrack>[siblingTrack, subfolderTrack, rootTrack])
+      ..tracksByGroup[root] = <MusicTrack>[rootTrack]
+      ..tracksByGroup[subfolder] = <MusicTrack>[subfolderTrack]
+      ..tracksByGroup[sibling] = <MusicTrack>[siblingTrack];
+    final gateway = _FakeFileCachePlatformGateway(coversByPath: const {});
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      fileCacheGateway: gateway,
+    );
 
-      expect(await cache.futureForFolder(root), isNull);
-      expect(gateway.resolveTrackCoverPaths, <String>[
-        subfolderTrack.path,
-        rootTrack.path,
-      ]);
-    },
-  );
+    expect(await cache.futureForFolder(root), isNull);
+    expect(gateway.resolveTrackCoverPaths, <String>[
+      subfolderTrack.path,
+      rootTrack.path,
+    ]);
+  });
 
   test(
     'standalone audio track ignores folder image and uses its own embedded cover',

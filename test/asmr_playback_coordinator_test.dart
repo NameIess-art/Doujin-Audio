@@ -6,7 +6,7 @@ import 'package:nameless_audio/features/asmr/application/asmr_playback_coordinat
 import 'package:nameless_audio/features/player/application/playback_session_launcher.dart';
 
 void main() {
-  const work = AsmrWork(
+  final work = AsmrWork(
     id: 7,
     title: 'Work',
     circleName: 'Circle',
@@ -22,19 +22,19 @@ void main() {
     dlCount: 0,
     reviewCount: 0,
     rating: 0,
-    voiceActors: <String>[],
-    tags: <String>[],
+    voiceActors: const <String>[],
+    tags: const <String>[],
   );
-  const target = AsmrTrackFile(
+  final target = AsmrTrackFile(
     hash: 'track',
     title: 'Track.mp3',
     type: 'audio',
     streamUrl: 'https://example.test/track.mp3',
     downloadUrl: null,
     lowQualityUrl: null,
-    duration: Duration(seconds: 10),
+    duration: const Duration(seconds: 10),
     size: 100,
-    children: <AsmrTrackFile>[],
+    children: const <AsmrTrackFile>[],
     workId: 7,
     workTitle: 'Work',
     sourceId: 'RJ000007',

@@ -43,7 +43,7 @@ void main() {
               createdAt: DateTime(2026),
               state: PlayerState(false, ProcessingState.ready),
             )
-            ..audioEffects = const AudioEffectsState(
+            ..audioEffects = AudioEffectsState(
               eqEnabled: true,
               eqBandLevels: <int, double>{60: 2.5, 1000: -1.5},
             );
@@ -58,7 +58,7 @@ void main() {
       expect(settings.customEqPresets, hasLength(1));
       expect(
         settings.customEqPresets.single,
-        const EqPreset(
+        EqPreset(
           id: 'custom_42',
           labelKey: 'Night voice',
           bandLevels: <int, double>{60: 2.5, 1000: -1.5},

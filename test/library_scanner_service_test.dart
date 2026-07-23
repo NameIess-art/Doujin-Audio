@@ -25,7 +25,7 @@ void main() {
       final scanner = LibraryScannerService(dataSource: dataSource);
 
       final prepared = await scanner.prepareBackupRestoreSources(
-        sources: const LocalLibraryImportSources(
+        sources: LocalLibraryImportSources(
           libraries: <String>['content://old/library'],
           folders: <String>['C:/music/folder', 'content://old/folder'],
           files: <String>['C:/music/song.mp3', 'content://old/song.mp3'],
@@ -56,7 +56,7 @@ void main() {
 
       final prepared = await LibraryScannerService(dataSource: dataSource)
           .prepareBackupRestoreSources(
-            sources: const LocalLibraryImportSources(
+            sources: LocalLibraryImportSources(
               libraries: <String>['content://storage/tree/library'],
               folders: <String>['content://storage/tree/folder'],
               files: <String>['content://storage/document/song.mp3'],
@@ -87,7 +87,7 @@ void main() {
 
       final prepared = await LibraryScannerService(dataSource: dataSource)
           .prepareBackupRestoreSources(
-            sources: const LocalLibraryImportSources(
+            sources: LocalLibraryImportSources(
               libraries: <String>[library],
               folders: <String>[
                 '$library::work-one',
@@ -109,7 +109,7 @@ void main() {
         await LibraryScannerService(
           dataSource: _CancelledRestoreDataSource(),
         ).prepareBackupRestoreSources(
-          sources: const LocalLibraryImportSources(
+          sources: LocalLibraryImportSources(
             libraries: <String>['content://old/library'],
           ),
           labels: labels,
@@ -129,7 +129,7 @@ void main() {
         await LibraryScannerService(
           dataSource: _PickedFilesDataSource(),
         ).restoreSources(
-          sources: const LocalLibraryImportSources(files: <String>[filePath]),
+          sources: LocalLibraryImportSources(files: <String>[filePath]),
           provider: catalog,
           labels: labels,
         );
@@ -321,10 +321,10 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
     this.terminalPaths = const <String>{},
     this.terminalFailureCount = 0,
     this.nativeChunkingSupported = true,
-    this.legacyResult = const NativeScanResult.failed(
-      code: 'unexpected_full_scan',
-    ),
-  });
+    NativeScanResult? legacyResult,
+  }) : legacyResult =
+           legacyResult ??
+           NativeScanResult.failed(code: 'unexpected_full_scan');
 
   final _RefreshCatalog catalog;
   final List<FolderScanChunk> chunks;
@@ -357,7 +357,7 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
   }) async {
     chunkedScanCalls++;
     if (!nativeChunkingSupported) {
-      return const NativeScanResult.notSupported();
+      return NativeScanResult.notSupported();
     }
     return _deliverChunks(onChunk);
   }

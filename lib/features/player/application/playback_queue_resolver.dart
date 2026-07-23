@@ -1,3 +1,4 @@
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 import '../domain/playback_mode.dart';
 import '../../../core/media/path_matcher.dart';
@@ -11,12 +12,12 @@ String _defaultTrackPath(MusicTrack track) => track.path;
 String _defaultTrackFolderKey(MusicTrack track) => track.groupKey;
 
 class PlaybackQueueScope {
-  const PlaybackQueueScope({
-    required this.paths,
+  PlaybackQueueScope({
+    required List<String> paths,
     required this.currentIndex,
     required this.isPlaybackQueue,
     required this.isCustomQueue,
-  });
+  }) : paths = immutableList(paths);
 
   final List<String> paths;
   final int currentIndex;

@@ -31,6 +31,7 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../application/library_scanner_service.dart';
 import '../application/library_catalog.dart';
 import '../application/library_scan_coordinator.dart';
+import 'library_cover_ui_controller.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
@@ -539,7 +540,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           _lastLibraryCoverWarmupSignature != signature) {
         return;
       }
-      libraryFacade.warmupCoversForTracks(warmupTracks);
+      ref.read(libraryCoverUiControllerProvider).warmupTracks(warmupTracks);
     });
   }
 
@@ -611,7 +612,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     _readOrWatch(libraryCategoryRevisionProvider);
     final coverGeneration = _readOrWatch(coverGenerationProvider);
     final settingsState =
-        _readOrWatch(settingsStateProvider).value ?? const SettingsState();
+        _readOrWatch(settingsStateProvider).value ?? SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final libraryRefreshOperationBusy = _readOrWatch(
       uiOperationForScopeProvider(

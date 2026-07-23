@@ -2,6 +2,7 @@ import 'package:meta/meta.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../core/app_language.dart';
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
 
@@ -179,12 +180,12 @@ class AsmrSyncOperation {
 
 @immutable
 class AsmrWorkPage {
-  const AsmrWorkPage({
-    required this.works,
+  AsmrWorkPage({
+    required List<AsmrWork> works,
     required this.currentPage,
     required this.pageSize,
     required this.totalCount,
-  });
+  }) : works = immutableList(works);
 
   final List<AsmrWork> works;
   final int currentPage;
@@ -219,7 +220,7 @@ class AsmrWorkPage {
 
 @immutable
 class AsmrWork {
-  const AsmrWork({
+  AsmrWork({
     required this.id,
     required this.title,
     required this.circleName,
@@ -235,11 +236,12 @@ class AsmrWork {
     required this.dlCount,
     required this.reviewCount,
     required this.rating,
-    required this.voiceActors,
-    required this.tags,
+    required List<String> voiceActors,
+    required List<String> tags,
     this.hasSubtitle = false,
     this.isFavorite = false,
-  });
+  }) : voiceActors = immutableList(voiceActors),
+       tags = immutableList(tags);
 
   final int id;
   final String title;
@@ -416,13 +418,13 @@ class AsmrWork {
 
 @immutable
 class AsmrWorkDetail {
-  const AsmrWorkDetail({
+  AsmrWorkDetail({
     required this.work,
     required this.description,
     required this.ageCategory,
-    required this.languageEditionLabels,
+    required List<String> languageEditionLabels,
     required this.userRating,
-  });
+  }) : languageEditionLabels = immutableList(languageEditionLabels);
 
   final AsmrWork work;
   final String description;
@@ -478,7 +480,7 @@ String _localizedText(
 
 @immutable
 class AsmrTrackFile {
-  const AsmrTrackFile({
+  AsmrTrackFile({
     required this.hash,
     required this.title,
     required this.type,
@@ -487,12 +489,12 @@ class AsmrTrackFile {
     required this.lowQualityUrl,
     required this.duration,
     required this.size,
-    required this.children,
+    required List<AsmrTrackFile> children,
     required this.workId,
     required this.workTitle,
     required this.sourceId,
     required this.relativePath,
-  });
+  }) : children = immutableList(children);
 
   final String hash;
   final String title;

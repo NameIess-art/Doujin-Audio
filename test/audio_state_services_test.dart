@@ -245,7 +245,7 @@ void main() {
     });
 
     test('new playback behavior settings preserve current defaults', () {
-      const state = SettingsState();
+      final state = SettingsState();
 
       expect(
         state.audioDeviceDisconnectBehavior,
@@ -339,7 +339,7 @@ void main() {
     });
 
     test('ASMR.ONE download conflict policy defaults to overwrite', () {
-      const state = SettingsState();
+      final state = SettingsState();
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
 
@@ -355,7 +355,7 @@ void main() {
     });
 
     test('ASMR download metadata and folder name settings persist', () async {
-      const state = SettingsState();
+      final state = SettingsState();
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
 
@@ -437,7 +437,7 @@ void main() {
     });
 
     test('ASMR.ONE playback cache defaults to disabled', () {
-      const state = SettingsState();
+      final state = SettingsState();
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
 
@@ -860,7 +860,7 @@ void main() {
 
         final renamed = LibraryEntry.track(
           libraryPath: '/library/root',
-          track: const MusicTrack(
+          track: MusicTrack(
             path: '/library/root/Album/01.mp3',
             displayName: '01 renamed.mp3',
             groupKey: '/library/root/Album',
@@ -923,7 +923,7 @@ void main() {
         ),
         LibraryEntry.track(
           libraryPath: root,
-          track: const MusicTrack(
+          track: MusicTrack(
             path: trackPath,
             displayName: '01',
             groupKey: folder,
@@ -953,7 +953,7 @@ void main() {
       service.replaceLibraryEntries(<LibraryEntry>[
         LibraryEntry.track(
           libraryPath: root,
-          track: const MusicTrack(
+          track: MusicTrack(
             path: trackPath,
             displayName: 'track',
             groupKey: root,

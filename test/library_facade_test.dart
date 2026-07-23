@@ -146,7 +146,7 @@ void main() {
         'document/primary%3AMusic%2FWork%2FDisc%2F05.m4a';
     runtimeGraph.library.addWatchedFolder(contentRoot, notify: false);
     runtimeGraph.library.addTracks(
-      const <MusicTrack>[
+      <MusicTrack>[
         MusicTrack(
           path: contentTrackPath,
           displayName: '05',
@@ -171,7 +171,7 @@ void main() {
   test('missing duration is resolved for a single video file', () async {
     const videoPath = r'C:\library\standalone-video.mp4';
     runtimeGraph.library.addTracks(
-      const <MusicTrack>[
+      <MusicTrack>[
         MusicTrack(
           path: videoPath,
           displayName: 'standalone-video',
@@ -564,7 +564,7 @@ void main() {
         runtimeGraph.library.beginLibraryBatch();
         runtimeGraph.library.addOrReplaceTracks(
           <MusicTrack>[
-            const MusicTrack(
+            MusicTrack(
               path: '/library/work/new.mp3',
               displayName: 'new',
               groupKey: '/library/work',
@@ -877,7 +877,7 @@ void main() {
       runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
       runtimeGraph.library.addWatchedFolder(childFolder, notify: false);
       runtimeGraph.library.addTracks(<MusicTrack>[
-        const MusicTrack(
+        MusicTrack(
           path: trackPath,
           displayName: '01',
           groupKey: syntheticChildFolder,
@@ -925,7 +925,7 @@ void main() {
         skipPersistence: false,
       );
 
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/library/work/01.mp3',
         displayName: '01',
         groupKey: '/library/work',
@@ -934,11 +934,11 @@ void main() {
         isSingle: false,
       );
       runtimeGraph.library.addTracks(
-        const <MusicTrack>[track],
+        <MusicTrack>[track],
         notify: false,
         persist: false,
       );
-      await repository.upsertTracks(const <MusicTrack>[track]);
+      await repository.upsertTracks(<MusicTrack>[track]);
 
       final removal = runtimeGraph.library.removeTrackFromLibrary(track.path);
       var completed = false;
@@ -976,7 +976,7 @@ void main() {
       );
 
       const folderPath = '/library/work';
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '$folderPath/01.mp3',
         displayName: '01',
         groupKey: folderPath,
@@ -987,11 +987,11 @@ void main() {
       final detailTarget = AudioDetailTarget.libraryRootFolder(folderPath);
       runtimeGraph.library
         ..addWatchedFolder(folderPath, notify: false)
-        ..recordLibraryEntriesForTracks(folderPath, const <MusicTrack>[
+        ..recordLibraryEntriesForTracks(folderPath, <MusicTrack>[
           track,
         ], persist: false)
-        ..addTracks(const <MusicTrack>[track], notify: false, persist: false);
-      await repository.upsertTracks(const <MusicTrack>[track]);
+        ..addTracks(<MusicTrack>[track], notify: false, persist: false);
+      await repository.upsertTracks(<MusicTrack>[track]);
       await repository.upsertLibraryEntries(
         runtimeGraph.library.libraryEntriesForLibrary(folderPath),
       );
@@ -1037,7 +1037,7 @@ void main() {
       const libraryPath = '/library';
       const workPath = '$libraryPath/work';
       const excludedPath = '$libraryPath/excluded';
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '$workPath/01.mp3',
         displayName: '01',
         groupKey: workPath,
@@ -1053,12 +1053,12 @@ void main() {
         ..setLibraryFolderExcluded(libraryPath, excludedPath, true)
         ..recordLibraryEntriesForTracks(
           libraryPath,
-          const <MusicTrack>[track],
+          <MusicTrack>[track],
           folderPaths: const <String>[workPath],
           persist: false,
         )
-        ..addTracks(const <MusicTrack>[track], notify: false, persist: false);
-      await repository.upsertTracks(const <MusicTrack>[track]);
+        ..addTracks(<MusicTrack>[track], notify: false, persist: false);
+      await repository.upsertTracks(<MusicTrack>[track]);
       await repository.upsertLibraryEntries(
         runtimeGraph.library.libraryEntriesForLibrary(libraryPath),
       );
@@ -1116,7 +1116,7 @@ void main() {
 
       runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
       runtimeGraph.library.addTracks(<MusicTrack>[
-        const MusicTrack(
+        MusicTrack(
           path: firstPath,
           displayName: '01',
           groupKey: firstFolder,
@@ -1124,7 +1124,7 @@ void main() {
           groupSubtitle: firstFolder,
           isSingle: false,
         ),
-        const MusicTrack(
+        MusicTrack(
           path: secondPath,
           displayName: '02',
           groupKey: secondFolder,
@@ -1132,7 +1132,7 @@ void main() {
           groupSubtitle: secondFolder,
           isSingle: false,
         ),
-        const MusicTrack(
+        MusicTrack(
           path: outsidePath,
           displayName: '03',
           groupKey: outsideFolder,
@@ -1180,7 +1180,7 @@ void main() {
 
       runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
       runtimeGraph.library.addTracks(<MusicTrack>[
-        const MusicTrack(
+        MusicTrack(
           path: firstPath,
           displayName: '01',
           groupKey: '$workRoot\\Disc 1',
@@ -1188,7 +1188,7 @@ void main() {
           groupSubtitle: '$workRoot\\Disc 1',
           isSingle: false,
         ),
-        const MusicTrack(
+        MusicTrack(
           path: secondPath,
           displayName: '02',
           groupKey: '$workRoot\\Disc 2',
@@ -1196,7 +1196,7 @@ void main() {
           groupSubtitle: '$workRoot\\Disc 2',
           isSingle: false,
         ),
-        const MusicTrack(
+        MusicTrack(
           path: outsidePath,
           displayName: '03',
           groupKey: '$libraryRoot\\Work B',

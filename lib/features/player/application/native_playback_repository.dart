@@ -34,10 +34,7 @@ class NativePlaybackRepository {
     bool repeatOne = false,
     bool autoPlay = false,
     double speed = 1.0,
-    NativeAudioEffects audioEffects = const NativeAudioEffects(
-      state: AudioEffectsState.flat,
-      channelSwapEnabled: false,
-    ),
+    NativeAudioEffects? audioEffects,
     List<Map<String, Object?>>? queue,
     int? queueStartIndex,
     bool repeatAll = false,

@@ -59,7 +59,7 @@ void main() {
   }
 
   group('duplicate work sessions', () {
-    const first = MusicTrack(
+    final first = MusicTrack(
       path: 'https://example.com/work/01.mp3',
       displayName: '01',
       groupKey: 'work-42',
@@ -67,7 +67,7 @@ void main() {
       groupSubtitle: 'Work 42',
       isSingle: false,
     );
-    const second = MusicTrack(
+    final second = MusicTrack(
       path: 'https://example.com/work/02.mp3',
       displayName: '02',
       groupKey: 'work-42',
@@ -78,7 +78,7 @@ void main() {
 
     setUp(() {
       runtimeGraph.library.addTracks(
-        const <MusicTrack>[first, second],
+        <MusicTrack>[first, second],
         notify: false,
         persist: false,
       );
@@ -112,7 +112,7 @@ void main() {
       var setSpeedCalls = 0;
       double? lastNativeSpeed;
 
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: 'https://example.com/speed.mp3',
         displayName: 'track',
         groupKey: 'speed',
@@ -173,7 +173,7 @@ void main() {
       var setAudioEffectsCalls = 0;
       Map<Object?, Object?>? lastEffects;
 
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: 'https://example.com/effects.mp3',
         displayName: 'track',
         groupKey: 'effects',
@@ -246,16 +246,16 @@ void main() {
           volume: 1,
           boostGain: 1,
           channelSwapEnabled: false,
-          eqCapabilities: const EqCapabilities(
+          eqCapabilities: EqCapabilities(
             supported: true,
             minGainDb: -6,
             maxGainDb: 6,
             bands: <EqBandInfo>[
-              EqBandInfo(frequencyHz: 60),
-              EqBandInfo(frequencyHz: 170),
-              EqBandInfo(frequencyHz: 1000),
-              EqBandInfo(frequencyHz: 3000),
-              EqBandInfo(frequencyHz: 6000),
+              const EqBandInfo(frequencyHz: 60),
+              const EqBandInfo(frequencyHz: 170),
+              const EqBandInfo(frequencyHz: 1000),
+              const EqBandInfo(frequencyHz: 3000),
+              const EqBandInfo(frequencyHz: 6000),
             ],
           ),
         ),
@@ -485,7 +485,7 @@ void main() {
 
     test('failed audio effect update restores state and persistence', () async {
       runtimeGraph.playback.configurePersistence(enabled: true);
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: 'https://example.com/effects-rollback.mp3',
         displayName: 'track',
         groupKey: 'effects-rollback',
@@ -532,7 +532,7 @@ void main() {
             }
             return <String, Object?>{'ok': true, 'value': null};
           });
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/music/skip-silence-playing.mp3',
         displayName: 'Playing track',
         groupKey: '/music',
@@ -561,7 +561,7 @@ void main() {
     test(
       'audio effect toggles keep optimistic state when native omits effects',
       () async {
-        const track = MusicTrack(
+        final track = MusicTrack(
           path: 'https://example.com/effects-missing-payload.mp3',
           displayName: 'track',
           groupKey: 'effects-missing-payload',
@@ -624,7 +624,7 @@ void main() {
       () async {
         runtimeGraph.playback.configurePersistence(enabled: true);
         SharedPreferences.setMockInitialValues(const <String, Object>{});
-        const track = MusicTrack(
+        final track = MusicTrack(
           path: 'https://example.com/remembered-console.mp3',
           displayName: 'track',
           groupKey: 'remembered-console',
@@ -632,7 +632,7 @@ void main() {
           groupSubtitle: 'Remembered Console',
           isSingle: false,
         );
-        const secondTrack = MusicTrack(
+        final secondTrack = MusicTrack(
           path: 'https://example.com/independent-console.mp3',
           displayName: 'second track',
           groupKey: 'independent-console',
@@ -855,7 +855,7 @@ void main() {
       () async {
         runtimeGraph.playback.configurePersistence(enabled: true);
         SharedPreferences.setMockInitialValues(const <String, Object>{});
-        const track = MusicTrack(
+        final track = MusicTrack(
           path: 'https://example.com/paused-console.mp3',
           displayName: 'paused track',
           groupKey: 'paused-console',
@@ -866,7 +866,7 @@ void main() {
         final repository = AudioDatabaseRepository(
           database: AppDatabase.test(db),
         );
-        await repository.saveAllTracks(const <MusicTrack>[track]);
+        await repository.saveAllTracks(<MusicTrack>[track]);
 
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
@@ -913,7 +913,7 @@ void main() {
             });
 
         runtimeGraph.library.addTracks(
-          const <MusicTrack>[track],
+          <MusicTrack>[track],
           notify: false,
           persist: false,
         );
@@ -952,7 +952,7 @@ void main() {
       () async {
         const firstSessionId = 'restored_first';
         const secondSessionId = 'restored_second';
-        const firstTrack = MusicTrack(
+        final firstTrack = MusicTrack(
           path: 'https://example.com/restored/first.mp3',
           displayName: 'first',
           groupKey: 'restored',
@@ -960,7 +960,7 @@ void main() {
           groupSubtitle: 'Restored',
           isSingle: false,
         );
-        const secondTrack = MusicTrack(
+        final secondTrack = MusicTrack(
           path: 'https://example.com/restored/second.mp3',
           displayName: 'second',
           groupKey: 'restored',
@@ -977,7 +977,7 @@ void main() {
           secondTrack,
         ]);
         await restoredRepository.saveAllSessions(<PersistedSession>[
-          const PersistedSession(
+          PersistedSession(
             id: firstSessionId,
             trackPath: 'https://example.com/restored/first.mp3',
             loopModeIndex: 1,
@@ -989,7 +989,7 @@ void main() {
             sortOrder: 0,
             createdAtMs: 1,
           ),
-          const PersistedSession(
+          PersistedSession(
             id: secondSessionId,
             trackPath: 'https://example.com/restored/second.mp3',
             loopModeIndex: 1,
@@ -1125,7 +1125,7 @@ void main() {
     test(
       'reload after backup restore replaces stale library and sessions',
       () async {
-        const oldTrack = MusicTrack(
+        final oldTrack = MusicTrack(
           path: 'https://example.com/old.mp3',
           displayName: 'old',
           groupKey: 'old',
@@ -1134,7 +1134,7 @@ void main() {
           isSingle: false,
         );
         const restoredSessionId = 'backup_restored_session';
-        const restoredTrack = MusicTrack(
+        final restoredTrack = MusicTrack(
           path: 'https://example.com/restored-after-backup.mp3',
           displayName: 'restored',
           groupKey: 'restored',
@@ -1180,7 +1180,7 @@ void main() {
         );
         await databaseRepository.saveAllTracks(<MusicTrack>[restoredTrack]);
         await databaseRepository.saveAllSessions(<PersistedSession>[
-          const PersistedSession(
+          PersistedSession(
             id: restoredSessionId,
             trackPath: 'https://example.com/restored-after-backup.mp3',
             loopModeIndex: 1,
@@ -1239,7 +1239,7 @@ void main() {
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
               return <String, Object?>{'ok': true, 'value': null};
             });
-        const first = MusicTrack(
+        final first = MusicTrack(
           path: r'C:\Audio\Work\01.mp3',
           displayName: '01',
           groupKey: r'C:\Audio\Work',
@@ -1247,7 +1247,7 @@ void main() {
           groupSubtitle: r'C:\Audio\Work',
           isSingle: false,
         );
-        const second = MusicTrack(
+        final second = MusicTrack(
           path: r'C:\Audio\Work\02.mp3',
           displayName: '02',
           groupKey: r'C:\Audio\Work',
@@ -1256,7 +1256,7 @@ void main() {
           isSingle: false,
         );
         runtimeGraph.library.addTracks(
-          const <MusicTrack>[first, second],
+          <MusicTrack>[first, second],
           notify: false,
           persist: false,
         );
@@ -1285,7 +1285,7 @@ void main() {
             return <String, Object?>{'ok': true, 'value': null};
           });
 
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: 'https://example.com/asmr/01.mp3',
         displayName: '01',
         groupKey: 'asmr-work',
@@ -1296,7 +1296,7 @@ void main() {
         remoteMetadataKind: 'asmr.one',
       );
       runtimeGraph.library.addTracks(
-        const <MusicTrack>[track],
+        <MusicTrack>[track],
         notify: false,
         persist: false,
       );
@@ -1335,7 +1335,7 @@ void main() {
           });
 
       await runtimeGraph.playback.spawnSession(
-        const MusicTrack(
+        MusicTrack(
           path: '/music/keep-playing.mp3',
           displayName: 'Keep Playing',
           groupKey: '/music',

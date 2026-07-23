@@ -1,15 +1,15 @@
 part of 'app_update_service.dart';
 
 class _GitHubRelease {
-  const _GitHubRelease({
+  _GitHubRelease({
     required this.tagName,
     required this.name,
     required this.htmlUrl,
     required this.publishedAt,
     required this.isDraft,
     required this.isPrerelease,
-    required this.assets,
-  });
+    required List<_GitHubAsset> assets,
+  }) : assets = immutableList(assets);
 
   final String tagName;
   final String? name;

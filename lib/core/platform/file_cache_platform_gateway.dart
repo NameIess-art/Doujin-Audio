@@ -91,7 +91,7 @@ class FileCachePlatformGateway {
   String? _activeScanTaskId;
 
   Future<NativeScanResult> scanFolder(String folderPath) async {
-    if (!_isAndroid()) return const NativeScanResult.notSupported();
+    if (!_isAndroid()) return NativeScanResult.notSupported();
     final streamedScan = await _scanFolderStream(folderPath);
     if (streamedScan.ok || !streamedScan.notSupported) return streamedScan;
     return _scanFolderLegacy(folderPath);
@@ -102,14 +102,14 @@ class FileCachePlatformGateway {
     FutureOr<bool> Function(FolderScanChunk chunk) onChunk, {
     FutureOr<void> Function(FolderScanSessionEvent event)? onProgress,
   }) async {
-    if (!_isAndroid()) return const NativeScanResult.notSupported();
+    if (!_isAndroid()) return NativeScanResult.notSupported();
     final streamedScan = await _scanFolderStreamChunked(
       folderPath,
       onChunk,
       onProgress: onProgress,
     );
     if (streamedScan.ok || !streamedScan.notSupported) return streamedScan;
-    return const NativeScanResult.notSupported();
+    return NativeScanResult.notSupported();
   }
 
   Future<List<String>?> listChildFolders(String folderPath) async {
@@ -484,7 +484,7 @@ class FileCachePlatformGateway {
     final completer = Completer<NativeScanResult>();
     StreamSubscription<dynamic>? subscription;
     if (_activeScanTaskId != null) {
-      return const NativeScanResult.failed(
+      return NativeScanResult.failed(
         code: 'scan_busy',
         message: 'Another folder scan is already running.',
       );
@@ -565,13 +565,13 @@ class FileCachePlatformGateway {
         decode: (value) => value as bool,
       );
       final started = startResult.valueOrNull;
-      if (started != true) return const NativeScanResult.notSupported();
+      if (started != true) return NativeScanResult.notSupported();
       return await completer.future;
     } on MissingPluginException {
-      return const NativeScanResult.notSupported();
+      return NativeScanResult.notSupported();
     } on PlatformException catch (error) {
       if (error.code == 'notImplemented') {
-        return const NativeScanResult.notSupported();
+        return NativeScanResult.notSupported();
       }
       return NativeScanResult.failed(code: error.code, message: error.message);
     } catch (error, stackTrace) {
@@ -606,7 +606,7 @@ class FileCachePlatformGateway {
     StreamSubscription<dynamic>? subscription;
     Future<void> pendingChunk = Future<void>.value();
     if (_activeScanTaskId != null) {
-      return const NativeScanResult.failed(
+      return NativeScanResult.failed(
         code: 'scan_busy',
         message: 'Another folder scan is already running.',
       );
@@ -737,13 +737,13 @@ class FileCachePlatformGateway {
         decode: (value) => value as bool,
       );
       final started = startResult.valueOrNull;
-      if (started != true) return const NativeScanResult.notSupported();
+      if (started != true) return NativeScanResult.notSupported();
       return await completer.future;
     } on MissingPluginException {
-      return const NativeScanResult.notSupported();
+      return NativeScanResult.notSupported();
     } on PlatformException catch (error) {
       if (error.code == 'notImplemented') {
-        return const NativeScanResult.notSupported();
+        return NativeScanResult.notSupported();
       }
       return NativeScanResult.failed(code: error.code, message: error.message);
     } catch (error, stackTrace) {
@@ -799,7 +799,7 @@ class FileCachePlatformGateway {
       );
       final data = result.valueOrNull;
       if (data == null) {
-        return const NativeScanResult.failed(
+        return NativeScanResult.failed(
           code: 'scan_empty_response',
           message: 'Native scan returned null data.',
         );

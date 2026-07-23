@@ -40,7 +40,7 @@ void main() {
   });
 
   test('standalone audio without stored cover hides playlist artwork', () {
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'C:/media/voice.mp3',
       displayName: 'voice.mp3',
       groupKey: 'voice',
@@ -54,7 +54,7 @@ void main() {
   });
 
   test('standalone audio with stored cover shows playlist artwork', () {
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'C:/media/voice.mp3',
       displayName: 'voice.mp3',
       groupKey: 'voice',
@@ -69,7 +69,7 @@ void main() {
   });
 
   test('video keeps playlist artwork even without resolved cover', () {
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'C:/media/movie.mp4',
       displayName: 'movie.mp4',
       groupKey: 'movie',

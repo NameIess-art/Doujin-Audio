@@ -245,7 +245,7 @@ void main() {
       nativeRepository: native,
     )..configurePersistence(enabled: false);
     final session = _session('transport')
-      ..customQueueTracks = const <MusicTrack>[
+      ..customQueueTracks = <MusicTrack>[
         MusicTrack(
           path: '/tracks/first.mp3',
           displayName: 'First',
@@ -529,7 +529,7 @@ void main() {
       onSessionsReordered: () {},
       onSessionStateChanged: () {},
     );
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: '/tracks/created.mp3',
       displayName: 'Created',
       groupKey: '/tracks',
@@ -542,7 +542,7 @@ void main() {
       track,
       loopMode: SessionLoopMode.single,
       volume: 4,
-      customQueueTracks: const <MusicTrack>[track],
+      customQueueTracks: <MusicTrack>[track],
     );
     final queueSession = playback.createPlaybackQueue('Queue 1');
 
@@ -551,7 +551,7 @@ void main() {
     expect(trackSession.nonSingleLoopMode, SessionLoopMode.folderSequential);
     expect(trackSession.volume, PlaybackFacade.maxSessionVolume);
     expect(trackSession.state.processingState, ProcessingState.idle);
-    expect(trackSession.customQueueTracks, const <MusicTrack>[track]);
+    expect(trackSession.customQueueTracks, <MusicTrack>[track]);
     expect(queueSession.currentTrackPath, isEmpty);
     expect(queueSession.playbackQueue?.name, 'Queue 1');
     expect(queueSession.customQueueTracks, isEmpty);
@@ -598,14 +598,14 @@ void main() {
       ..rememberRetargetedPath('/old/work', '/new/work');
 
     final application = playback.applyNativeSnapshot(
-      const NativePlaybackSnapshot(
+      NativePlaybackSnapshot(
         sessionId: 'retargeted',
         path: '/old/work/track.mp3',
         playing: true,
         playWhenReady: true,
         processingState: 'ready',
-        position: Duration(seconds: 2),
-        bufferedPosition: Duration(seconds: 4),
+        position: const Duration(seconds: 2),
+        bufferedPosition: const Duration(seconds: 4),
         volume: 1,
         boostGain: 1,
         channelSwapEnabled: false,
@@ -677,7 +677,7 @@ void main() {
         databaseRepository: library.databaseRepository,
       );
       final session = _session('incremental-position');
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/tracks/incremental-position.mp3',
         displayName: 'Incremental',
         groupKey: '/tracks',
@@ -756,7 +756,7 @@ void main() {
     final playback = PlaybackFacade.create(
       databaseRepository: library.databaseRepository,
     );
-    const original = MusicTrack(
+    final original = MusicTrack(
       path: '/tracks/a.mp3',
       displayName: 'Old',
       groupKey: '/tracks',
@@ -764,7 +764,7 @@ void main() {
       groupSubtitle: '',
       isSingle: true,
     );
-    const updated = MusicTrack(
+    final updated = MusicTrack(
       path: '/tracks/a.mp3',
       displayName: 'Updated',
       groupKey: '/tracks',
@@ -774,7 +774,7 @@ void main() {
     );
     final queueSession = _session('queue')
       ..customQueueTracks = <MusicTrack>[original]
-      ..playbackQueue = const PlaybackQueueDefinition(
+      ..playbackQueue = PlaybackQueueDefinition(
         name: 'Before',
         entries: <PlaybackQueueEntry>[
           PlaybackQueueEntry(

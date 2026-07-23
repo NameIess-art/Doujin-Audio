@@ -2,14 +2,16 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
+import '../../../core/immutable_collections.dart';
+
 class VideoConversionPlan {
-  const VideoConversionPlan({
+  VideoConversionPlan({
     required this.inputPath,
     required this.outputPath,
     required this.format,
     required this.bitrate,
-    required this.commandArgs,
-  });
+    required List<String> commandArgs,
+  }) : commandArgs = immutableList(commandArgs);
 
   final String inputPath;
   final String outputPath;

@@ -23,7 +23,7 @@ void main() {
 
   List<LibraryNode> buildTree() {
     final folder = FolderNode('Rain Pack', '/library/rain');
-    folder.children.addAll([
+    folder.addChildren([
       TrackNode(track('Soft Rain', '/library/rain/soft_rain.mp3')),
       TrackNode(track('Ocean Waves', '/library/rain/ocean_waves.mp3')),
     ]);
@@ -77,7 +77,7 @@ void main() {
       final index = LibrarySearchIndex();
       final originalTree = buildTree();
       final nextFolder = FolderNode('Rain Pack', '/library/rain')
-        ..children.addAll([
+        ..addChildren([
           TrackNode(track('Soft Rain', '/library/rain/soft_rain.mp3')),
           TrackNode(track('Ocean Waves', '/library/rain/ocean_waves.mp3')),
           TrackNode(track('Forest Night', '/library/rain/forest_night.mp3')),
@@ -123,13 +123,13 @@ void main() {
   test(
     'playlist header state only reflects relevant playback and timer fields',
     () {
-      const playbackState = PlaybackStateSliceData(
+      final playbackState = PlaybackStateSliceData(
         playingSessionCount: 2,
         isInitialized: true,
       );
-      const timerState = TimerStateSliceData(
-        duration: Duration(minutes: 30),
-        remaining: Duration(minutes: 12),
+      final timerState = TimerStateSliceData(
+        duration: const Duration(minutes: 30),
+        remaining: const Duration(minutes: 12),
         active: true,
       );
 
@@ -429,16 +429,16 @@ void main() {
       ..volume = 0.6
       ..speed = 1.5
       ..channelSwapEnabled = true
-      ..audioEffects = const AudioEffectsState(
+      ..audioEffects = AudioEffectsState(
         skipSilenceEnabled: true,
         eqEnabled: true,
         eqPresetId: 'custom',
         eqBandLevels: <int, double>{1000: 3},
         panning: 0.4,
       )
-      ..eqCapabilities = const EqCapabilities(
+      ..eqCapabilities = EqCapabilities(
         supported: true,
-        bands: <EqBandInfo>[EqBandInfo(frequencyHz: 1000)],
+        bands: <EqBandInfo>[const EqBandInfo(frequencyHz: 1000)],
       );
     final updated = sessionDetailViewStateFromPlaybackState(
       PlaybackStateSliceData(activeSessions: [detailSession]),
@@ -457,7 +457,7 @@ void main() {
 
   test('paused playback queue card state tracks queue color changes', () {
     final queueSession = session(id: 'queue', path: '/tracks/queue.mp3')
-      ..playbackQueue = const PlaybackQueueDefinition(
+      ..playbackQueue = PlaybackQueueDefinition(
         name: 'Queue',
         entries: <PlaybackQueueEntry>[],
       );

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/audio_detail.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
@@ -10,16 +11,18 @@ import '../../../core/logging/app_log_service.dart';
 import 'audio_detail_cache_service.dart';
 import 'library_service.dart';
 import 'library_organizer.dart';
-import '../../../core/ui/ui_interaction_coordinator.dart';
 
 @immutable
 class LibraryDerivedSnapshotPayload {
-  const LibraryDerivedSnapshotPayload({
-    required this.tracks,
-    required this.watchedFolders,
-    this.watchedLibraries = const <String>[],
-    required this.nodeOrder,
-  });
+  LibraryDerivedSnapshotPayload({
+    required List<MusicTrack> tracks,
+    required List<String> watchedFolders,
+    List<String> watchedLibraries = const <String>[],
+    required List<String> nodeOrder,
+  }) : tracks = immutableList(tracks),
+       watchedFolders = immutableList(watchedFolders),
+       watchedLibraries = immutableList(watchedLibraries),
+       nodeOrder = immutableList(nodeOrder);
 
   final List<MusicTrack> tracks;
   final List<String> watchedFolders;
@@ -29,15 +32,22 @@ class LibraryDerivedSnapshotPayload {
 
 @immutable
 class LibraryDerivedSnapshot {
-  const LibraryDerivedSnapshot({
-    required this.library,
-    required this.libraryByPath,
-    required this.libraryIndexByPath,
-    required this.tracksByGroup,
-    required this.sortedLibraryTracks,
-    required this.sortedLibraryTrackPaths,
+  LibraryDerivedSnapshot({
+    required List<MusicTrack> library,
+    required Map<String, MusicTrack> libraryByPath,
+    required Map<String, int> libraryIndexByPath,
+    required Map<String, List<MusicTrack>> tracksByGroup,
+    required List<MusicTrack> sortedLibraryTracks,
+    required List<String> sortedLibraryTrackPaths,
     required this.cardSnapshot,
-  });
+  }) : library = immutableList(library),
+       libraryByPath = immutableMap(libraryByPath),
+       libraryIndexByPath = immutableMap(libraryIndexByPath),
+       tracksByGroup = immutableMap(
+         tracksByGroup.map((key, value) => MapEntry(key, immutableList(value))),
+       ),
+       sortedLibraryTracks = immutableList(sortedLibraryTracks),
+       sortedLibraryTrackPaths = immutableList(sortedLibraryTrackPaths);
 
   final List<MusicTrack> library;
   final Map<String, MusicTrack> libraryByPath;
@@ -96,11 +106,8 @@ class LibrarySnapshotCacheService {
   LibrarySnapshotCacheService({
     required LibraryService libraryService,
     required AudioDetailCacheService detailCacheService,
-    UiInteractionCoordinator? interactionCoordinator,
   }) : _libraryService = libraryService,
-       _detailCacheService = detailCacheService,
-       _interactionCoordinator =
-           interactionCoordinator ?? UiInteractionCoordinator.instance {
+       _detailCacheService = detailCacheService {
     if (_libraryService.library.isEmpty &&
         _libraryService.watchedFolders.isEmpty) {
       _cachedCardRevision = _libraryService.structureRevision;
@@ -110,7 +117,6 @@ class LibrarySnapshotCacheService {
 
   final LibraryService _libraryService;
   final AudioDetailCacheService _detailCacheService;
-  final UiInteractionCoordinator _interactionCoordinator;
 
   List<LibraryNode> _cachedCards = const <LibraryNode>[];
   int _cachedCardRevision = -1;
@@ -204,15 +210,7 @@ class LibrarySnapshotCacheService {
               }
             }
 
-            if (_interactionCoordinator.isInteracting) {
-              _interactionCoordinator.scheduleCommit(
-                key: 'library_card_snapshot',
-                priority: 0,
-                commit: commit,
-              );
-            } else {
-              commit();
-            }
+            commit();
           })
           .whenComplete(() {
             if (identical(_cardFuture, future)) {
@@ -274,15 +272,7 @@ class LibrarySnapshotCacheService {
               }
             }
 
-            if (_interactionCoordinator.isInteracting) {
-              _interactionCoordinator.scheduleCommit(
-                key: 'library_tree_snapshot',
-                priority: 0,
-                commit: commit,
-              );
-            } else {
-              commit();
-            }
+            commit();
           })
           .whenComplete(() {
             if (identical(_treeFuture, future)) {
@@ -323,7 +313,6 @@ class LibrarySnapshotCacheService {
     _categoryFuture = future;
     _categoryFutureStructureRevision = structureRevision;
     _categoryFutureDetailRevision = detailRevision;
-    var commitDeferred = false;
     unawaited(
       future
           .then((snapshot) {
@@ -343,24 +332,10 @@ class LibrarySnapshotCacheService {
               onCommitted();
             }
 
-            if (_interactionCoordinator.isInteracting) {
-              commitDeferred = true;
-              _interactionCoordinator.scheduleCommit(
-                key: 'library_category_snapshot',
-                priority: 10,
-                commit: () {
-                  commit();
-                  if (identical(_categoryFuture, future)) {
-                    _categoryFuture = null;
-                  }
-                },
-              );
-            } else {
-              commit();
-            }
+            commit();
           })
           .whenComplete(() {
-            if (!commitDeferred && identical(_categoryFuture, future)) {
+            if (identical(_categoryFuture, future)) {
               _categoryFuture = null;
             }
           }),
@@ -520,7 +495,6 @@ class LibrarySnapshotCacheService {
       start < orderedTargets.length;
       start += _categoryDetailBatchSize
     ) {
-      await _waitForInteractionIdle();
       final end = (start + _categoryDetailBatchSize).clamp(
         0,
         orderedTargets.length,
@@ -545,22 +519,6 @@ class LibrarySnapshotCacheService {
       await Future<void>.delayed(Duration.zero);
     }
     return List<AudioDetail>.unmodifiable(details);
-  }
-
-  Future<void> _waitForInteractionIdle() {
-    if (!_interactionCoordinator.isInteracting) return Future<void>.value();
-    final completer = Completer<void>();
-    void handleInteractionChanged() {
-      if (_interactionCoordinator.isInteracting || completer.isCompleted) {
-        return;
-      }
-      _interactionCoordinator.removeListener(handleInteractionChanged);
-      completer.complete();
-    }
-
-    _interactionCoordinator.addListener(handleInteractionChanged);
-    handleInteractionChanged();
-    return completer.future;
   }
 
   void _applyDetailToCategorySnapshot(AudioDetail detail) {
@@ -652,12 +610,15 @@ class LibrarySnapshotCacheService {
 }
 
 class _LibraryTreeBuildPayload {
-  const _LibraryTreeBuildPayload({
-    required this.tracks,
-    required this.watchedFolders,
-    required this.watchedLibraries,
-    required this.nodeOrder,
-  });
+  _LibraryTreeBuildPayload({
+    required List<MusicTrack> tracks,
+    required List<String> watchedFolders,
+    required List<String> watchedLibraries,
+    required List<String> nodeOrder,
+  }) : tracks = immutableList(tracks),
+       watchedFolders = immutableList(watchedFolders),
+       watchedLibraries = immutableList(watchedLibraries),
+       nodeOrder = immutableList(nodeOrder);
 
   final List<MusicTrack> tracks;
   final List<String> watchedFolders;
@@ -666,13 +627,13 @@ class _LibraryTreeBuildPayload {
 }
 
 class _CategoryDetailRequest {
-  const _CategoryDetailRequest({
+  _CategoryDetailRequest({
     required this.target,
     required this.title,
     required this.path,
     required this.isFolder,
-    required this.tracks,
-  });
+    required List<MusicTrack> tracks,
+  }) : tracks = immutableList(tracks);
 
   final AudioDetailTarget target;
   final String title;

@@ -55,7 +55,7 @@ class SettingsRepository {
   bool allowDuplicateWorks = false;
   bool reduceAnimations = false;
   final AudioStateSlice<SettingsState> slice = AudioStateSlice<SettingsState>(
-    const SettingsState(),
+    SettingsState(),
   );
 
   Future<void> loadPersistedState() async {

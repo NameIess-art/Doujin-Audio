@@ -10,10 +10,9 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
         syncUi: false,
       );
       if (initialNativeRuntime == null) return;
-      final nativeSessionIds =
-          initialNativeRuntime.sessions
-              .map((snapshot) => snapshot.sessionId)
-              .toSet();
+      final nativeSessionIds = initialNativeRuntime.sessions
+          .map((snapshot) => snapshot.sessionId)
+          .toSet();
       final nativeFocusedSessionId = initialNativeRuntime.focusedSessionId;
       final effectiveFocusedSessionId =
           nativeFocusedSessionId != null &&

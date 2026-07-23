@@ -232,7 +232,8 @@ class AsmrRemoteCatalogService {
 }
 
 class _RecommendationPagesResult {
-  const _RecommendationPagesResult({this.pages = const [], this.error});
+  _RecommendationPagesResult({List<AsmrWorkPage> pages = const [], this.error})
+    : pages = List<AsmrWorkPage>.unmodifiable(pages);
 
   final List<AsmrWorkPage> pages;
   final Object? error;

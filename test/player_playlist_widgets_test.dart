@@ -102,7 +102,7 @@ _pumpSubtitleDetail({
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetPhysicalSize);
 
-  const track = MusicTrack(
+  final track = MusicTrack(
     path: '/library/subtitles/track.mp3',
     displayName: 'Subtitle track',
     groupKey: '/library/subtitles',
@@ -118,7 +118,7 @@ _pumpSubtitleDetail({
   );
   addTearDown(fixture.dispose);
   fixture.runtimeGraph.library.addTracks(
-    const <MusicTrack>[track],
+    <MusicTrack>[track],
     notify: false,
     persist: false,
   );
@@ -188,13 +188,13 @@ void main() {
     final disabledIcons = sessionFeatureBadgeIcons(
       showSubtitles: false,
       channelSwapEnabled: false,
-      audioEffects: const AudioEffectsState(eqPresetId: 'voice_clear'),
+      audioEffects: AudioEffectsState(eqPresetId: 'voice_clear'),
       speed: 1,
     );
     final enabledIcons = sessionFeatureBadgeIcons(
       showSubtitles: false,
       channelSwapEnabled: false,
-      audioEffects: const AudioEffectsState(eqEnabled: true),
+      audioEffects: AudioEffectsState(eqEnabled: true),
       speed: 1,
     );
 
@@ -966,7 +966,7 @@ void main() {
 
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: '/library/work/track.mp3',
       displayName: 'Track',
       groupKey: '/library/work',
@@ -975,7 +975,7 @@ void main() {
       isSingle: false,
     );
     fixture.runtimeGraph.library.addTracks(
-      const <MusicTrack>[track],
+      <MusicTrack>[track],
       notify: false,
       persist: false,
     );
@@ -1022,7 +1022,7 @@ void main() {
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: 'https://api.asmr-300.com/api/media/stream/f3d4baa6ec96a6ad',
       displayName: '本編トラック 01',
       groupKey: 'asmr-work-123456',
@@ -1034,7 +1034,7 @@ void main() {
     final session = fixture.runtimeGraph.playback.createTrackSession(
       track,
       loopMode: SessionLoopMode.single,
-      customQueueTracks: const <MusicTrack>[track],
+      customQueueTracks: <MusicTrack>[track],
     );
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[session],
@@ -1062,7 +1062,7 @@ void main() {
     addTearDown(fixture.dispose);
     const libraryRoot = '/library/Library';
     const workRoot = '$libraryRoot/Work A';
-    const track = MusicTrack(
+    final track = MusicTrack(
       path: '$workRoot/Disc 1/01.mp3',
       displayName: '01',
       groupKey: workRoot,
@@ -1072,7 +1072,7 @@ void main() {
     );
     fixture.runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
     fixture.runtimeGraph.library.addTracks(
-      const <MusicTrack>[track],
+      <MusicTrack>[track],
       notify: false,
       persist: false,
     );
@@ -1120,7 +1120,7 @@ void main() {
           fixture.notificationCoordinatorService;
       final settingsRepository = fixture.settings;
       final languageProvider = fixture.languageProvider;
-      const track = MusicTrack(
+      final track = MusicTrack(
         path: '/imports/standalone.mp4',
         displayName: 'Standalone clip',
         groupKey: '__single_files__',
@@ -1130,7 +1130,7 @@ void main() {
         isVideo: true,
       );
       runtimeGraph.library.addTracks(
-        const <MusicTrack>[track],
+        <MusicTrack>[track],
         notify: false,
         persist: false,
       );
@@ -1138,7 +1138,7 @@ void main() {
       queueSession
         ..currentTrackPath = track.path
         ..currentQueueIndex = 0
-        ..playbackQueue = const PlaybackQueueDefinition(
+        ..playbackQueue = PlaybackQueueDefinition(
           name: 'Queue 1',
           entries: <PlaybackQueueEntry>[
             PlaybackQueueEntry(
@@ -1209,10 +1209,10 @@ void main() {
 
   testWidgets('compact playback subtitle centers wrapped text', (tester) async {
     const subtitleText = 'First line\nsecond centered line';
-    const subtitleTrack = SubtitleTrack(
+    final subtitleTrack = SubtitleTrack(
       sourcePath: '/library/subtitles/track.srt',
       cues: <SubtitleCue>[
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration.zero,
           end: Duration(seconds: 5),
           text: subtitleText,
@@ -1235,7 +1235,7 @@ void main() {
   testWidgets('detail loading subtitle fades while the cover resizes', (
     tester,
   ) async {
-    const subtitleTrack = SubtitleTrack(
+    final subtitleTrack = SubtitleTrack(
       sourcePath: '/library/subtitles/empty.srt',
       cues: <SubtitleCue>[],
     );
@@ -1315,20 +1315,20 @@ void main() {
   testWidgets('timeline subtitles scroll, return, and seek while paused', (
     tester,
   ) async {
-    const subtitleTrack = SubtitleTrack(
+    final subtitleTrack = SubtitleTrack(
       sourcePath: '/library/subtitles/track.srt',
       cues: <SubtitleCue>[
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration.zero,
           end: Duration(seconds: 2),
           text: 'Cue zero',
         ),
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration(seconds: 2),
           end: Duration(seconds: 4),
           text: 'Cue one wraps onto a centered second line',
         ),
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration(seconds: 4),
           end: Duration(seconds: 6),
           text: 'Cue two',
@@ -1427,10 +1427,10 @@ void main() {
     tester,
   ) async {
     const subtitleText = 'Line one\nLine two\nLine three\nLine four\nLine five';
-    const subtitleTrack = SubtitleTrack(
+    final subtitleTrack = SubtitleTrack(
       sourcePath: '/library/subtitles/long-track.srt',
       cues: <SubtitleCue>[
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration.zero,
           end: Duration(seconds: 5),
           text: subtitleText,
@@ -1478,20 +1478,20 @@ void main() {
           .setMockMethodCallHandler(SystemChannels.platform, null);
     });
 
-    const subtitleTrack = SubtitleTrack(
+    final subtitleTrack = SubtitleTrack(
       sourcePath: '/library/subtitles/track.srt',
       cues: <SubtitleCue>[
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration.zero,
           end: Duration(seconds: 2),
           text: 'Cue zero',
         ),
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration(seconds: 2),
           end: Duration(seconds: 4),
           text: 'Cue one',
         ),
-        SubtitleCue(
+        const SubtitleCue(
           start: Duration(seconds: 4),
           end: Duration(seconds: 6),
           text: 'Cue two',

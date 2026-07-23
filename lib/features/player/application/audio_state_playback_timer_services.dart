@@ -10,7 +10,7 @@ class PlaybackSessionService {
   Timer? saveSessionStateTimer;
   Timer? saveSessionOrderTimer;
   final AudioStateSlice<PlaybackStateSliceData> slice =
-      AudioStateSlice<PlaybackStateSliceData>(const PlaybackStateSliceData());
+      AudioStateSlice<PlaybackStateSliceData>(PlaybackStateSliceData());
 
   List<PlaybackSession> get activeSessions {
     if (activeSessionsDirty) {
@@ -150,7 +150,7 @@ class TimerService {
   Timer? autoResumeTimer;
   DateTime? autoResumeAt;
   final AudioStateSlice<TimerStateSliceData> slice =
-      AudioStateSlice<TimerStateSliceData>(const TimerStateSliceData());
+      AudioStateSlice<TimerStateSliceData>(TimerStateSliceData());
 
   void syncSlice({required bool isInitialized}) {
     slice.update(

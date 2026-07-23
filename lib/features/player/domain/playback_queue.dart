@@ -1,15 +1,16 @@
+import '../../../core/immutable_collections.dart';
 import '../../../core/media/music_track.dart';
 
 enum PlaybackQueueEntryKind { track, work }
 
 class PlaybackQueueEntry {
-  const PlaybackQueueEntry({
+  PlaybackQueueEntry({
     required this.id,
     required this.kind,
     required this.title,
-    required this.tracks,
+    required List<MusicTrack> tracks,
     this.workRootPath,
-  });
+  }) : tracks = immutableList(tracks);
 
   final String id;
   final PlaybackQueueEntryKind kind;
@@ -43,18 +44,18 @@ class PlaybackQueueEntry {
 }
 
 class PlaybackQueueDefinition {
-  const PlaybackQueueDefinition({
+  PlaybackQueueDefinition({
     required this.name,
-    required this.entries,
+    required List<PlaybackQueueEntry> entries,
     this.colorValue,
-  });
+  }) : entries = immutableList(entries);
 
   final String name;
   final int? colorValue;
   final List<PlaybackQueueEntry> entries;
 
   List<MusicTrack> get expandedTracks =>
-      entries.expand((entry) => entry.tracks).toList(growable: false);
+      immutableList(entries.expand((entry) => entry.tracks));
 
   PlaybackQueueDefinition copyWith({
     String? name,

@@ -8,11 +8,16 @@ void main() {
   test('removed compatibility runtime APIs cannot return', () {
     final violations = <String>[];
     final forbiddenText = <String>[
-      'Audio' 'Provider',
-      'createAudio' 'ProviderOverrides',
-      'audio_' 'provider_',
-      'package:' 'provider',
-      'Multi' 'Provider',
+      'Audio'
+          'Provider',
+      'createAudio'
+          'ProviderOverrides',
+      'audio_'
+          'provider_',
+      'package:'
+          'provider',
+      'Multi'
+          'Provider',
     ];
     final contextAccess = RegExp(r'context\.(?:read|watch|select)\s*[<(]');
     for (final root in <Directory>[
@@ -89,6 +94,23 @@ void main() {
         continue;
       }
       if (forbidden.hasMatch(file.readAsStringSync())) {
+        violations.add(path);
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
+  test('feature application code does not depend on UI interaction state', () {
+    final violations = <String>[];
+    for (final file in _dartFiles(libDirectory)) {
+      final path = _normalizedPath(file);
+      if (!path.contains('/features/') || !path.contains('/application/')) {
+        continue;
+      }
+      final source = file.readAsStringSync();
+      if (source.contains('ui_interaction_coordinator.dart') ||
+          source.contains('UiInteractionCoordinator.instance')) {
         violations.add(path);
       }
     }

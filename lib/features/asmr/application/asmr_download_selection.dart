@@ -1,10 +1,13 @@
+import 'dart:collection';
+
+import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 
 class AsmrDownloadSelectionModel {
   AsmrDownloadSelectionModel(List<AsmrTrackFile> roots)
-    : rootNodes = roots
-          .map(AsmrDownloadSelectionNode.fromTrack)
-          .toList(growable: false) {
+    : rootNodes = immutableList(
+        roots.map(AsmrDownloadSelectionNode.fromTrack),
+      ) {
     for (final root in rootNodes) {
       _index(root);
     }
@@ -161,11 +164,13 @@ class AsmrDownloadSelectionModel {
 class AsmrDownloadSelectionNode {
   AsmrDownloadSelectionNode({
     required this.track,
-    required this.children,
+    required List<AsmrDownloadSelectionNode> children,
     this.parent,
     this.selected = false,
     this.indeterminate = false,
-  });
+  }) : _children = children {
+    this.children = UnmodifiableListView<AsmrDownloadSelectionNode>(_children);
+  }
 
   factory AsmrDownloadSelectionNode.fromTrack(
     AsmrTrackFile track, {
@@ -176,7 +181,7 @@ class AsmrDownloadSelectionNode {
       parent: parent,
       children: <AsmrDownloadSelectionNode>[],
     );
-    node.children.addAll(
+    node._children.addAll(
       track.children
           .map(
             (child) => AsmrDownloadSelectionNode.fromTrack(child, parent: node),
@@ -187,7 +192,8 @@ class AsmrDownloadSelectionNode {
   }
 
   final AsmrTrackFile track;
-  final List<AsmrDownloadSelectionNode> children;
+  final List<AsmrDownloadSelectionNode> _children;
+  late final List<AsmrDownloadSelectionNode> children;
   AsmrDownloadSelectionNode? parent;
   bool selected;
   bool indeterminate;

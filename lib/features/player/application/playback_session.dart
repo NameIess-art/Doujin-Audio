@@ -9,7 +9,7 @@ import '../domain/playback_queue.dart';
 import 'native_playback_bridge.dart';
 
 class PlaybackSession {
-  static const seekLoadingIndicatorThreshold = Duration(milliseconds: 600);
+  static const loadingIndicatorThreshold = Duration(milliseconds: 600);
 
   PlaybackSession({
     required this.id,
@@ -35,8 +35,8 @@ class PlaybackSession {
       StreamController<Duration?>.broadcast();
   final StreamController<Duration> _bufferedPositionController =
       StreamController<Duration>.broadcast();
-  Timer? _seekLoadingIndicatorTimer;
-  bool _suppressTransientSeekLoading = false;
+  Timer? _loadingIndicatorTimer;
+  bool _suppressTransientLoading = false;
   List<MusicTrack>? customQueueTracks;
   PlaybackQueueDefinition? playbackQueue;
   int currentQueueIndex;
@@ -86,9 +86,9 @@ class PlaybackSession {
   bool get isPlaybackLoading {
     final processingState = state.processingState;
     return isLoading ||
-        isPlaybackStarting ||
-        (!_suppressTransientSeekLoading &&
-            (processingState == ProcessingState.loading ||
+        (!_suppressTransientLoading &&
+            (isPlaybackStarting ||
+                processingState == ProcessingState.loading ||
                 processingState == ProcessingState.buffering));
   }
 
@@ -224,16 +224,16 @@ class PlaybackSession {
     _positionController.add(position);
   }
 
-  void beginSeekLoadingIndicatorThreshold({
-    Duration threshold = seekLoadingIndicatorThreshold,
+  void beginLoadingIndicatorThreshold({
+    Duration threshold = loadingIndicatorThreshold,
   }) {
     if (isDisposed) return;
-    _seekLoadingIndicatorTimer?.cancel();
-    _suppressTransientSeekLoading = true;
-    _seekLoadingIndicatorTimer = Timer(threshold, () {
-      _seekLoadingIndicatorTimer = null;
+    _loadingIndicatorTimer?.cancel();
+    _suppressTransientLoading = true;
+    _loadingIndicatorTimer = Timer(threshold, () {
+      _loadingIndicatorTimer = null;
       if (isDisposed) return;
-      _suppressTransientSeekLoading = false;
+      _suppressTransientLoading = false;
       _stateController.add(state);
     });
   }
@@ -258,8 +258,8 @@ class PlaybackSession {
   void dispose() {
     if (isDisposed) return;
     isDisposed = true;
-    _seekLoadingIndicatorTimer?.cancel();
-    _seekLoadingIndicatorTimer = null;
+    _loadingIndicatorTimer?.cancel();
+    _loadingIndicatorTimer = null;
     for (final subscription in subscriptions) {
       subscription.cancel();
     }

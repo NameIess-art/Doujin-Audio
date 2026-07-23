@@ -529,18 +529,11 @@ class _SessionListCard extends ConsumerWidget {
                                   ),
                                 ),
                               ),
-                              if (cardState.isLoading ||
-                                  cardState.playbackError != null)
+                              if (cardState.playbackError != null)
                                 Text(
-                                  cardState.isLoading
-                                      ? i18n.tr('playback_loading')
-                                      : i18n.tr('playback_failed_retry'),
+                                  i18n.tr('playback_failed_retry'),
                                   style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: cardState.isLoading
-                                            ? activeColor
-                                            : cs.error,
-                                      ),
+                                      ?.copyWith(color: cs.error),
                                 ),
                             ],
                           ),

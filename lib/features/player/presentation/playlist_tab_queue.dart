@@ -138,14 +138,6 @@ class _PlaybackQueueCard extends ConsumerWidget {
                                 height: 1.12,
                               ),
                         ),
-                        if (cardState.isLoading)
-                          Text(
-                            i18n.tr('playback_loading'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(color: activeColor),
-                          ),
                       ],
                     ),
                   ),

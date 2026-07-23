@@ -1103,6 +1103,63 @@ void main() {
     await tester.pump(const Duration(milliseconds: 120));
   });
 
+  testWidgets('playlist cards show loading spinners without loading text', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final track = MusicTrack(
+      path: '/library/work/loading.mp3',
+      displayName: 'Loading track',
+      groupKey: '/library/work',
+      groupTitle: 'Work',
+      groupSubtitle: '/library/work',
+      isSingle: false,
+    );
+    fixture.runtimeGraph.library.addTracks(
+      <MusicTrack>[track],
+      notify: false,
+      persist: false,
+    );
+    final trackSession = fixture.runtimeGraph.playback.createTrackSession(track)
+      ..isLoading = true;
+    final queueSession =
+        fixture.runtimeGraph.playback.createPlaybackQueue('Loading queue')
+          ..currentTrackPath = track.path
+          ..playbackQueue = PlaybackQueueDefinition(
+            name: 'Loading queue',
+            entries: <PlaybackQueueEntry>[
+              PlaybackQueueEntry(
+                id: 'loading-entry',
+                kind: PlaybackQueueEntryKind.track,
+                title: track.displayName,
+                tracks: <MusicTrack>[track],
+              ),
+            ],
+          )
+          ..isLoading = true;
+    fixture.playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[trackSession, queueSession],
+      playingSessionCount: 0,
+      focusedSessionId: trackSession.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+
+    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pump();
+
+    expect(
+      find.text(fixture.languageProvider.tr('playback_loading')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('loading')), findsNWidgets(2));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 120));
+  });
+
   testWidgets(
     'single-file queue cover fills the card and switcher shows an audio entry',
     (WidgetTester tester) async {
@@ -1420,7 +1477,7 @@ void main() {
       find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
       findsNothing,
     );
-    await tester.pump(PlaybackSession.seekLoadingIndicatorThreshold);
+    await tester.pump(PlaybackSession.loadingIndicatorThreshold);
   });
 
   testWidgets('timeline subtitles expand beyond two lines without clipping', (

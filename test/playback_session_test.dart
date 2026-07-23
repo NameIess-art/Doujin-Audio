@@ -117,7 +117,7 @@ void main() {
     expect(session.state.processingState, ProcessingState.ready);
   });
 
-  test('seek buffering waits for the loading indicator threshold', () async {
+  test('loading threshold delays transient playback state', () async {
     final session = PlaybackSession(
       id: 'session_1',
       currentTrackPath: '/audio/one.mp3',
@@ -129,9 +129,10 @@ void main() {
     );
     addTearDown(session.dispose);
 
-    session.beginSeekLoadingIndicatorThreshold(
+    session.beginLoadingIndicatorThreshold(
       threshold: const Duration(milliseconds: 20),
     );
+    session.isPlaybackStarting = true;
     session.setOptimisticState(processingState: ProcessingState.buffering);
 
     expect(session.isPlaybackLoading, isFalse);

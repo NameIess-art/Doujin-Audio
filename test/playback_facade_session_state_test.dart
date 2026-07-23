@@ -326,6 +326,54 @@ void main() {
     expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
   });
 
+  test('previous and next suppress transient playback loading', () async {
+    final library = LibraryFacade.create();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+    )..configurePersistence(enabled: false);
+    final session = _session('adjacent_loading');
+    addTearDown(() async {
+      session.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback
+      ..attachPlaybackCommands(
+        prepareSession:
+            (
+              session, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              session.isPlaybackStarting = true;
+              session.setOptimisticState(
+                processingState: ProcessingState.buffering,
+              );
+              return true;
+            },
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+        resolveAdvance: (_, {required forward}) => PlaybackAdvanceResult(
+          path: forward ? '/tracks/next.mp3' : '/tracks/previous.mp3',
+        ),
+        hasAdjacent: (_, {required forward}) => true,
+      )
+      ..registerSession(session);
+
+    await playback.seekSessionToNext(session.id);
+
+    expect(session.isPlaybackLoading, isFalse);
+
+    session.isPlaybackStarting = false;
+    session.setOptimisticState(processingState: ProcessingState.ready);
+    await playback.seekSessionToPrev(session.id);
+
+    expect(session.isPlaybackLoading, isFalse);
+  });
+
   test(
     'sequential play pauses instead of auto-advancing on completion',
     () async {

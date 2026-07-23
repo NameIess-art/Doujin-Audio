@@ -872,7 +872,7 @@ final class PlaybackFacade {
         !identical(service.sessions[session.id], session)) {
       return;
     }
-    session.beginSeekLoadingIndicatorThreshold();
+    session.beginLoadingIndicatorThreshold();
     session.setOptimisticPosition(position);
     session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
     _onSessionPositionChanged?.call(session, position);
@@ -943,6 +943,7 @@ final class PlaybackFacade {
         ? null
         : _resolveAdvance?.call(session, forward: true);
     if (session == null || target == null) return;
+    session.beginLoadingIndicatorThreshold();
     await _prepareSession?.call(
       session,
       nextPath: target.path,
@@ -961,6 +962,7 @@ final class PlaybackFacade {
     }
     final target = _resolveAdvance?.call(session, forward: false);
     if (target == null) return;
+    session.beginLoadingIndicatorThreshold();
     await _prepareSession?.call(
       session,
       nextPath: target.path,

@@ -31,10 +31,7 @@ List<Widget> _buildSettingsLanguageSection({
                 )
                 .toList(),
           ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 8,
-            vertical: 2,
-          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         ),
         Consumer(
           builder: (context, ref, _) {
@@ -66,10 +63,7 @@ List<Widget> _buildSettingsLanguageSection({
                   );
                 }).toList(),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -109,10 +103,7 @@ List<Widget> _buildSettingsLanguageSection({
                     )
                     .toList(),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -158,10 +149,7 @@ List<Widget> _buildSettingsGeneralSection({
                     )
                     .toList(),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -199,10 +187,7 @@ List<Widget> _buildSettingsGeneralSection({
                     )
                     .toList(),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -226,10 +211,7 @@ List<Widget> _buildSettingsGeneralSection({
                 Icons.screen_lock_portrait_rounded,
                 cs.primary,
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -245,10 +227,7 @@ List<Widget> _buildSettingsGeneralSection({
               value: enabled,
               onChanged: settings.setAllowDuplicateWorks,
               secondary: _settingsIcon(Icons.copy_all_rounded, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -264,10 +243,7 @@ List<Widget> _buildSettingsGeneralSection({
               value: enabled,
               onChanged: settings.setReduceAnimations,
               secondary: _settingsIcon(Icons.animation_rounded, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -283,10 +259,7 @@ List<Widget> _buildSettingsGeneralSection({
               value: enabled,
               onChanged: settings.setHapticFeedbackEnabled,
               secondary: _settingsIcon(Icons.vibration_rounded, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),

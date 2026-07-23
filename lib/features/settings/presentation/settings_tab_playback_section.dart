@@ -131,10 +131,7 @@ List<Widget> _buildSettingsPlaybackSection({
                     )
                     .toList(),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -176,10 +173,7 @@ List<Widget> _buildSettingsPlaybackSection({
                     )
                     .toList(),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -214,10 +208,7 @@ List<Widget> _buildSettingsPlaybackSection({
                     )
                     .toList(),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),

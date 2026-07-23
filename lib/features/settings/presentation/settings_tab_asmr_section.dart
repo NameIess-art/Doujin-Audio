@@ -88,10 +88,7 @@ List<Widget> _buildSettingsAsmrSection({
                     )
                     .toList(),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -114,10 +111,7 @@ List<Widget> _buildSettingsAsmrSection({
                 i18n.tr('asmr_download_save_metadata_setting'),
               ),
               secondary: _settingsIcon(Icons.description_outlined, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -154,10 +148,7 @@ List<Widget> _buildSettingsAsmrSection({
                 Icons.chevron_right_rounded,
                 color: cs.onSurfaceVariant,
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),

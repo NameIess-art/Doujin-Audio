@@ -2,6 +2,7 @@ part of 'settings_tab.dart';
 
 List<Widget> _buildSettingsAppearanceSection({
   required BuildContext context,
+  required WidgetRef ref,
   required AppLanguageProvider i18n,
   required SettingsRepository settings,
   required SettingsCommandController settingsController,
@@ -9,6 +10,10 @@ List<Widget> _buildSettingsAppearanceSection({
   required VoidCallback onShowSubtitleWindowSettings,
   required VoidCallback onShowCardInfoFieldsSettings,
 }) {
+  final themeState =
+      ref.watch(themeStateProvider).value ??
+      ThemeState.from(ref.read(themeProviderInstanceProvider));
+  final themeProvider = ref.read(themeProviderInstanceProvider);
   final coverResolutionLabels = <CoverImageResolution, String>{
     CoverImageResolution.memorySaver: i18n.tr('cover_image_resolution_300'),
     CoverImageResolution.balanced: i18n.tr('cover_image_resolution_600'),
@@ -55,74 +60,46 @@ List<Widget> _buildSettingsAppearanceSection({
             );
           },
         ),
-        Consumer(
-          builder: (context, ref, _) {
-            final themeState =
-                ref.watch(themeStateProvider).value ??
-                ThemeState.from(ref.read(themeProviderInstanceProvider));
-            final provider = ref.read(themeProviderInstanceProvider);
-            return SwitchListTile(
-              title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
-              value: themeState.differentiateAsmrTheme,
-              onChanged: provider.setDifferentiateAsmrTheme,
-              secondary: _settingsIcon(Icons.palette_rounded, cs.primary),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
+        SwitchListTile(
+          title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
+          value: themeState.differentiateAsmrTheme,
+          onChanged: themeProvider.setDifferentiateAsmrTheme,
+          secondary: _settingsIcon(Icons.palette_rounded, cs.primary),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         ),
-        Consumer(
-          builder: (context, ref, _) {
-            final themeState =
-                ref.watch(themeStateProvider).value ??
-                ThemeState.from(ref.read(themeProviderInstanceProvider));
-            final provider = ref.read(themeProviderInstanceProvider);
-            return _ThemeColorTile(
-              key: const ValueKey<String>('app_theme_color_tile'),
-              title: i18n.tr('app_theme_color'),
-              indicatorKey: const ValueKey<String>('app_theme_color_indicator'),
-              color: themeState.appThemeColor
-                  .colorScheme(Theme.of(context).brightness)
-                  .primary,
-              iconColor: cs.primary,
-              onTap: () => _showThemeColorPicker(
-                context: context,
-                i18n: i18n,
-                title: i18n.tr('app_theme_color'),
-                selected: themeState.appThemeColor,
-                onSelected: provider.setAppThemeColor,
-              ),
-            );
-          },
+        _ThemeColorTile(
+          key: const ValueKey<String>('app_theme_color_tile'),
+          title: i18n.tr('app_theme_color'),
+          indicatorKey: const ValueKey<String>('app_theme_color_indicator'),
+          color: themeState.appThemeColor
+              .colorScheme(Theme.of(context).brightness)
+              .primary,
+          iconColor: cs.primary,
+          onTap: () => _showThemeColorPicker(
+            context: context,
+            i18n: i18n,
+            title: i18n.tr('app_theme_color'),
+            selected: themeState.appThemeColor,
+            onSelected: themeProvider.setAppThemeColor,
+          ),
         ),
-        Consumer(
-          builder: (context, ref, _) {
-            final themeState =
-                ref.watch(themeStateProvider).value ??
-                ThemeState.from(ref.read(themeProviderInstanceProvider));
-            if (!themeState.differentiateAsmrTheme) {
-              return const SizedBox.shrink();
-            }
-            final provider = ref.read(themeProviderInstanceProvider);
-            return _ThemeColorTile(
-              key: const ValueKey<String>('asmr_theme_color_tile'),
+        if (themeState.differentiateAsmrTheme)
+          _ThemeColorTile(
+            key: const ValueKey<String>('asmr_theme_color_tile'),
+            title: i18n.tr('asmr_theme_color'),
+            indicatorKey: const ValueKey<String>('asmr_theme_color_indicator'),
+            color: themeState.asmrThemeColor
+                .colorScheme(Theme.of(context).brightness)
+                .primary,
+            iconColor: cs.primary,
+            onTap: () => _showThemeColorPicker(
+              context: context,
+              i18n: i18n,
               title: i18n.tr('asmr_theme_color'),
-              indicatorKey: const ValueKey<String>(
-                'asmr_theme_color_indicator',
-              ),
-              color: themeState.asmrThemeColor
-                  .colorScheme(Theme.of(context).brightness)
-                  .primary,
-              iconColor: cs.primary,
-              onTap: () => _showThemeColorPicker(
-                context: context,
-                i18n: i18n,
-                title: i18n.tr('asmr_theme_color'),
-                selected: themeState.asmrThemeColor,
-                onSelected: provider.setAsmrThemeColor,
-              ),
-            );
-          },
-        ),
+              selected: themeState.asmrThemeColor,
+              onSelected: themeProvider.setAsmrThemeColor,
+            ),
+          ),
         Consumer(
           builder: (context, ref, _) {
             final style = ref.watch(

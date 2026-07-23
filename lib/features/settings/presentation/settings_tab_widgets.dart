@@ -1,6 +1,6 @@
 part of 'settings_tab.dart';
 
-const double _settingsTileHeight = 54;
+const double _settingsTileHeight = 78;
 const double _settingsTileTitleFontSize = 16;
 const double _settingsTileSubtitleFontSize = 13;
 const double _settingsDropdownMinWidth = 128;
@@ -8,15 +8,6 @@ const double _settingsDropdownMaxWidth = 180;
 
 Widget _settingsTitle(String text) {
   return Text(text, softWrap: true, overflow: TextOverflow.visible);
-}
-
-Widget _settingsSubtitle(String text) {
-  return Text(
-    text,
-    maxLines: 2,
-    softWrap: true,
-    overflow: TextOverflow.ellipsis,
-  );
 }
 
 Widget _settingsDropdownText(
@@ -93,6 +84,7 @@ class _SettingsTileTheme extends StatelessWidget {
     final subtitleTextStyle = theme.textTheme.bodyMedium?.copyWith(
       fontSize: subtitleFontSize,
       fontWeight: subtitleFontWeight,
+      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.68),
     );
 
     return Theme(
@@ -263,7 +255,7 @@ class _UpdateSettingsTile extends StatelessWidget {
                 icon: const Icon(Icons.refresh_rounded, size: 20),
               ),
       ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(tokens.radiusControl),
       ),

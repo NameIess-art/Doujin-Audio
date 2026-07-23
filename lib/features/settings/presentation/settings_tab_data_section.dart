@@ -74,10 +74,7 @@ List<Widget> _buildSettingsDataSection({
                     )
                     .toList(),
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },
         ),
@@ -93,10 +90,7 @@ List<Widget> _buildSettingsDataSection({
                 Icons.cleaning_services_rounded,
                 cs.primary,
               ),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 8,
-                vertical: 2,
-              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               trailing: cacheOperation.isBusy
                   ? const SizedBox.square(
                       dimension: 18,

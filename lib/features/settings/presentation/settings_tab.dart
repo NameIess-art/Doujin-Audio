@@ -329,7 +329,8 @@ class _SettingsCategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     return _settingsCard(
       context: context,
       isFirst: isFirst,
@@ -337,10 +338,29 @@ class _SettingsCategoryTile extends StatelessWidget {
       child: ListTile(
         onTap: onTap,
         leading: _settingsIcon(category.icon, cs.onSurface),
-        title: _settingsTitle(i18n.tr(category.labelKey)),
-        subtitle: _settingsSubtitle(i18n.tr(category.subtitleKey)),
+        title: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              i18n.tr(category.labelKey),
+              softWrap: true,
+              overflow: TextOverflow.visible,
+              style: theme.textTheme.titleMedium,
+            ),
+            Text(
+              i18n.tr(category.subtitleKey),
+              maxLines: 2,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium,
+            ),
+          ],
+        ),
         contentPadding: const EdgeInsets.symmetric(horizontal: 16),
         minTileHeight: 78,
+        minVerticalPadding: 0,
+        titleAlignment: ListTileTitleAlignment.center,
       ),
     );
   }
@@ -400,6 +420,7 @@ class _SettingsCategoryPage extends ConsumerWidget {
                 ),
                 _SettingsCategory.appearance => _buildSettingsAppearanceSection(
                   context: context,
+                  ref: ref,
                   i18n: i18n,
                   settings: settings,
                   settingsController: settingsController,

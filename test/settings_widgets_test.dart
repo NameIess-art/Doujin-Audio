@@ -77,12 +77,29 @@ void main() {
     expect(rootTileTheme.titleTextStyle?.fontWeight, FontWeight.normal);
     expect(rootTileTheme.subtitleTextStyle?.fontSize, 14);
     expect(rootTileTheme.subtitleTextStyle?.fontWeight, FontWeight.normal);
+    final rootLanguageContext = tester.element(rootLanguageTile);
+    expect(
+      rootTileTheme.subtitleTextStyle?.color,
+      Theme.of(
+        rootLanguageContext,
+      ).colorScheme.onSurfaceVariant.withValues(alpha: 0.68),
+    );
+    final rootTitleRect = tester.getRect(
+      find.text(i18n.tr('section_language')),
+    );
+    final rootSubtitleRect = tester.getRect(
+      find.text(i18n.tr('section_language_subtitle')),
+    );
+    expect(
+      (rootTitleRect.top + rootSubtitleRect.bottom) / 2,
+      closeTo(tester.getRect(rootLanguageTile).center.dy, 0.5),
+    );
     final rootCards = find.ancestor(
       of: rootLanguageTile,
       matching: find.byType(Card),
     );
     expect(rootCards, findsOneWidget);
-    expect(tester.widget<ListTile>(rootLanguageTile).subtitle, isA<Text>());
+    expect(tester.widget<ListTile>(rootLanguageTile).subtitle, isNull);
 
     await tester.tap(find.text(i18n.tr('section_language')));
     await tester.pumpAndSettle();
@@ -108,11 +125,10 @@ void main() {
     );
     expect(languageIcon.size, 30);
     final languageTileHeight = tester.getSize(firstLanguageTile).height;
-    expect(languageTileHeight, greaterThanOrEqualTo(54));
-    expect(languageTileHeight, lessThan(68));
+    expect(languageTileHeight, 78);
     final languageTileContext = tester.element(firstLanguageTile);
     final languageTileTheme = ListTileTheme.of(languageTileContext);
-    expect(languageTileTheme.minTileHeight, 54);
+    expect(languageTileTheme.minTileHeight, 78);
     expect(languageTileTheme.titleTextStyle?.fontSize, closeTo(16, 0.001));
     expect(languageTileTheme.subtitleTextStyle?.fontSize, closeTo(13, 0.001));
     expect(
@@ -122,6 +138,29 @@ void main() {
     expect(
       tester.getTopLeft(firstLanguageTile).dy,
       greaterThanOrEqualTo(tester.getBottomLeft(categoryHeader).dy),
+    );
+    final dlsiteLanguageTile = find.widgetWithText(
+      ListTile,
+      i18n.tr('dlsite_metadata_language'),
+    );
+    final asmrLanguageTile = find.widgetWithText(
+      ListTile,
+      i18n.tr('asmr_page_language'),
+    );
+    expect(tester.getSize(dlsiteLanguageTile).height, 78);
+    expect(tester.getSize(asmrLanguageTile).height, 78);
+    final firstLanguageCard = find.ancestor(
+      of: firstLanguageTile,
+      matching: find.byType(Card),
+    );
+    final dlsiteLanguageCard = find.ancestor(
+      of: dlsiteLanguageTile,
+      matching: find.byType(Card),
+    );
+    expect(
+      tester.getTopLeft(dlsiteLanguageCard).dy -
+          tester.getBottomLeft(firstLanguageCard).dy,
+      closeTo(2, 0.001),
     );
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
@@ -874,6 +913,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('app_theme_color_tile')), findsOneWidget);
     expect(find.byKey(const ValueKey('asmr_theme_color_tile')), findsNothing);
+    final appThemeColorTile = find.byKey(
+      const ValueKey('app_theme_color_tile'),
+    );
+    final bottomNavigationTile = find.widgetWithText(
+      SwitchListTile,
+      i18n.tr('bottom_navigation_style'),
+    );
+    expect(tester.getSize(appThemeColorTile).height, 78);
+    expect(tester.getSize(bottomNavigationTile).height, 78);
+    final appThemeColorCard = find.ancestor(
+      of: appThemeColorTile,
+      matching: find.byType(Card),
+    );
+    final bottomNavigationCard = find.ancestor(
+      of: bottomNavigationTile,
+      matching: find.byType(Card),
+    );
+    expect(
+      tester.getTopLeft(bottomNavigationCard).dy -
+          tester.getBottomLeft(appThemeColorCard).dy,
+      closeTo(2, 0.001),
+    );
 
     await tester.tap(switchTile);
     await tester.pumpAndSettle();

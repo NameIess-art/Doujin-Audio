@@ -207,11 +207,19 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                 _SettingsTileTheme.categories(
                   child: Column(
                     children: [
-                      for (final category in _SettingsCategory.values)
+                      for (
+                        var index = 0;
+                        index < _SettingsCategory.values.length;
+                        index++
+                      )
                         _SettingsCategoryTile(
-                          category: category,
+                          category: _SettingsCategory.values[index],
                           i18n: i18n,
-                          onTap: () => _openSettingsCategory(category),
+                          isFirst: index == 0,
+                          isLast: index == _SettingsCategory.values.length - 1,
+                          onTap: () => _openSettingsCategory(
+                            _SettingsCategory.values[index],
+                          ),
                         ),
                     ],
                   ),
@@ -308,43 +316,31 @@ class _SettingsCategoryTile extends StatelessWidget {
   const _SettingsCategoryTile({
     required this.category,
     required this.i18n,
+    required this.isFirst,
+    required this.isLast,
     required this.onTap,
   });
 
   final _SettingsCategory category;
   final AppLanguageProvider i18n;
+  final bool isFirst;
+  final bool isLast;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Card(
-        clipBehavior: Clip.antiAlias,
-        color: cs.surfaceContainerLow,
-        elevation: 0,
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(tokens.radiusSmall),
-          side: BorderSide(
-            color: cs.outlineVariant.withValues(
-              alpha: tokens.subtleBorderAlpha,
-            ),
-          ),
-        ),
-        child: ListTile(
-          onTap: onTap,
-          leading: _settingsIcon(category.icon, cs.onSurface),
-          title: _settingsTitle(i18n.tr(category.labelKey)),
-          subtitle: _settingsSubtitle(i18n.tr(category.subtitleKey)),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 6,
-          ),
-          minTileHeight: 60,
-        ),
+    return _settingsCard(
+      context: context,
+      isFirst: isFirst,
+      isLast: isLast,
+      child: ListTile(
+        onTap: onTap,
+        leading: _settingsIcon(category.icon, cs.onSurface),
+        title: _settingsTitle(i18n.tr(category.labelKey)),
+        subtitle: _settingsSubtitle(i18n.tr(category.subtitleKey)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        minTileHeight: 56,
       ),
     );
   }

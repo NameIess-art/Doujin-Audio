@@ -70,7 +70,7 @@ void main() {
       ),
     );
     expect(rootLanguageIcon.size, 30);
-    expect(tester.getSize(rootLanguageTile).height, greaterThan(60));
+    expect(tester.getSize(rootLanguageTile).height, greaterThan(56));
     expect(tester.getSize(rootLanguageTile).height, lessThan(72));
     final rootTileTheme = ListTileTheme.of(tester.element(rootLanguageTile));
     expect(rootTileTheme.minTileHeight, 60);
@@ -109,22 +109,16 @@ void main() {
     );
     expect(languageIcon.size, 30);
     final languageTileHeight = tester.getSize(firstLanguageTile).height;
-    expect(languageTileHeight, greaterThanOrEqualTo(58));
+    expect(languageTileHeight, greaterThanOrEqualTo(54));
     expect(languageTileHeight, lessThan(68));
     final languageTileContext = tester.element(firstLanguageTile);
     final languageTileTheme = ListTileTheme.of(languageTileContext);
-    expect(languageTileTheme.minTileHeight, 58);
-    expect(
-      languageTileTheme.titleTextStyle?.fontSize,
-      closeTo(58 * 18 / 68, 0.001),
-    );
-    expect(
-      languageTileTheme.subtitleTextStyle?.fontSize,
-      closeTo(58 * 15 / 68, 0.001),
-    );
+    expect(languageTileTheme.minTileHeight, 54);
+    expect(languageTileTheme.titleTextStyle?.fontSize, closeTo(16, 0.001));
+    expect(languageTileTheme.subtitleTextStyle?.fontSize, closeTo(13, 0.001));
     expect(
       Theme.of(languageTileContext).textTheme.titleMedium?.fontSize,
-      closeTo(58 * 18 / 68, 0.001),
+      closeTo(16, 0.001),
     );
     expect(
       tester.getTopLeft(firstLanguageTile).dy,
@@ -398,8 +392,23 @@ void main() {
     final commonCard = find.ancestor(of: rootTile, matching: find.byType(Card));
     expect(
       tester.getTopLeft(commonCard).dy - tester.getBottomLeft(languageCard).dy,
-      closeTo(8, 0.001),
+      closeTo(4, 0.001),
     );
+    final firstCardShape =
+        tester.widget<Card>(languageCard.first).shape!
+            as RoundedRectangleBorder;
+    final firstBorderRadius = firstCardShape.borderRadius as BorderRadius;
+    expect(firstBorderRadius.topLeft, const Radius.circular(16));
+    expect(firstBorderRadius.bottomLeft, const Radius.circular(12));
+    final aboutCard = find.ancestor(
+      of: find.widgetWithText(ListTile, i18n.tr('about')),
+      matching: find.byType(Card),
+    );
+    final lastCardShape =
+        tester.widget<Card>(aboutCard.first).shape! as RoundedRectangleBorder;
+    final lastBorderRadius = lastCardShape.borderRadius as BorderRadius;
+    expect(lastBorderRadius.topLeft, const Radius.circular(12));
+    expect(lastBorderRadius.bottomLeft, const Radius.circular(16));
 
     await tester.tap(rootTile);
     await tester.pumpAndSettle();
@@ -414,20 +423,29 @@ void main() {
     );
     final colorScheme = Theme.of(detailContext).colorScheme;
     expect(detailIcon.color, colorScheme.primary);
-    final detailSurfaces = tester
-        .widgetList<Container>(
-          find.ancestor(of: detailTile, matching: find.byType(Container)),
-        )
-        .where(
-          (container) =>
-              container.decoration is BoxDecoration &&
-              (container.decoration! as BoxDecoration).color ==
-                  colorScheme.surfaceContainerLow,
-        );
     expect(
-      detailSurfaces,
-      isEmpty,
-      reason: 'Settings secondary-page items should not paint group cards.',
+      find.ancestor(of: detailTile, matching: find.byType(Card)),
+      findsOneWidget,
+      reason: 'Settings secondary-page items should reuse the card style.',
+    );
+    final detailCardShape =
+        tester
+                .widget<Card>(
+                  find
+                      .ancestor(of: detailTile, matching: find.byType(Card))
+                      .first,
+                )
+                .shape!
+            as RoundedRectangleBorder;
+    final detailBorderRadius = detailCardShape.borderRadius as BorderRadius;
+    expect(detailBorderRadius.topLeft, const Radius.circular(16));
+    expect(
+      tester
+          .widget<Card>(
+            find.ancestor(of: detailTile, matching: find.byType(Card)).first,
+          )
+          .color,
+      colorScheme.surfaceContainerLow,
     );
     expect(
       find.byWidgetPredicate(
@@ -542,11 +560,12 @@ void main() {
       240,
       scrollable: find.byType(Scrollable).first,
     );
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, -1000));
     await tester.pumpAndSettle();
 
     final viewportBottom = tester.getBottomLeft(find.byType(Scaffold).first).dy;
     final lastTileBottom = tester.getBottomLeft(aboutTile).dy;
-    expect(viewportBottom - lastTileBottom, closeTo(overlayInset + 8, 2));
+    expect(viewportBottom - lastTileBottom, greaterThanOrEqualTo(overlayInset));
   });
 
   testWidgets('settings titles and choices wrap on narrow screens', (

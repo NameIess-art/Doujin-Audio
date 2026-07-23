@@ -1,8 +1,8 @@
 part of 'settings_tab.dart';
 
-const double _settingsTileHeight = 58;
-const double _settingsTileTitleFontSize = _settingsTileHeight * 18 / 68;
-const double _settingsTileSubtitleFontSize = _settingsTileHeight * 15 / 68;
+const double _settingsTileHeight = 54;
+const double _settingsTileTitleFontSize = 16;
+const double _settingsTileSubtitleFontSize = 13;
 const double _settingsDropdownMinWidth = 128;
 const double _settingsDropdownMaxWidth = 180;
 
@@ -106,7 +106,7 @@ class _SettingsTileTheme extends StatelessWidget {
         visualDensity: const VisualDensity(horizontal: -1),
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         minTileHeight: minTileHeight,
-        minVerticalPadding: 4,
+        minVerticalPadding: 2,
         titleTextStyle: titleTextStyle,
         subtitleTextStyle: subtitleTextStyle,
         child: child,
@@ -122,15 +122,54 @@ class _SettingsGroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: children,
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (var index = 0; index < children.length; index++)
+          _settingsCard(
+            context: context,
+            child: children[index],
+            isFirst: index == 0,
+            isLast: index == children.length - 1,
+          ),
+      ],
     );
   }
+}
+
+Widget _settingsCard({
+  required BuildContext context,
+  required Widget child,
+  bool isFirst = false,
+  bool isLast = false,
+}) {
+  final theme = Theme.of(context);
+  final cs = theme.colorScheme;
+  final tokens = AppDesignTokens.of(context);
+  final outerRadius = tokens.radiusCard;
+  final innerRadius = tokens.radiusSmall;
+  return Padding(
+    padding: EdgeInsets.only(bottom: isLast ? 0 : 4),
+    child: Card(
+      clipBehavior: Clip.antiAlias,
+      color: cs.surfaceContainerLow,
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(isFirst ? outerRadius : innerRadius),
+          topRight: Radius.circular(isFirst ? outerRadius : innerRadius),
+          bottomLeft: Radius.circular(isLast ? outerRadius : innerRadius),
+          bottomRight: Radius.circular(isLast ? outerRadius : innerRadius),
+        ),
+        side: BorderSide(
+          color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
+        ),
+      ),
+      child: child,
+    ),
+  );
 }
 
 class _SettingsSectionCard extends StatelessWidget {

@@ -74,7 +74,7 @@ void main() {
     final rootTileTheme = ListTileTheme.of(tester.element(rootLanguageTile));
     expect(rootTileTheme.minTileHeight, 78);
     expect(rootTileTheme.titleTextStyle?.fontSize, 18);
-    expect(rootTileTheme.titleTextStyle?.fontWeight, FontWeight.normal);
+    expect(rootTileTheme.titleTextStyle?.fontWeight, FontWeight.bold);
     expect(rootTileTheme.subtitleTextStyle?.fontSize, 14);
     expect(rootTileTheme.subtitleTextStyle?.fontWeight, FontWeight.normal);
     final rootLanguageContext = tester.element(rootLanguageTile);

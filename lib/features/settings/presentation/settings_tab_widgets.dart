@@ -64,7 +64,7 @@ class _SettingsTileTheme extends StatelessWidget {
     : minTileHeight = 78,
       titleFontSize = 18,
       subtitleFontSize = 14,
-      titleFontWeight = FontWeight.normal,
+      titleFontWeight = FontWeight.bold,
       subtitleFontWeight = FontWeight.normal;
 
   final Widget child;

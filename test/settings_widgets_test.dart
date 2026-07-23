@@ -441,7 +441,7 @@ void main() {
             as RoundedRectangleBorder;
     final firstBorderRadius = firstCardShape.borderRadius as BorderRadius;
     expect(firstBorderRadius.topLeft, const Radius.circular(16));
-    expect(firstBorderRadius.bottomLeft, const Radius.circular(2));
+    expect(firstBorderRadius.bottomLeft, const Radius.circular(4));
     final aboutCard = find.ancestor(
       of: find.widgetWithText(ListTile, i18n.tr('about')),
       matching: find.byType(Card),
@@ -449,7 +449,7 @@ void main() {
     final lastCardShape =
         tester.widget<Card>(aboutCard.first).shape! as RoundedRectangleBorder;
     final lastBorderRadius = lastCardShape.borderRadius as BorderRadius;
-    expect(lastBorderRadius.topLeft, const Radius.circular(2));
+    expect(lastBorderRadius.topLeft, const Radius.circular(4));
     expect(lastBorderRadius.bottomLeft, const Radius.circular(16));
 
     await tester.tap(rootTile);

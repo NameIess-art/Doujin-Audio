@@ -140,7 +140,7 @@ Widget _settingsCard({
   final cs = theme.colorScheme;
   final tokens = AppDesignTokens.of(context);
   final outerRadius = tokens.radiusCard;
-  const innerRadius = 2.0;
+  const innerRadius = 4.0;
   return Padding(
     padding: EdgeInsets.only(bottom: isLast ? 0 : 2),
     child: Card(

@@ -10,6 +10,9 @@ import '../localization/app_language_provider.dart';
 import '../localization/app_language_zh.dart';
 import 'app_error_view.dart';
 
+const _bootstrapLightBackground = Color(0xFFFFF8F8);
+const _bootstrapDarkBackground = Color(0xFF211A1B);
+
 class AppBootstrapHost extends StatefulWidget {
   const AppBootstrapHost({
     required this.controller,
@@ -77,8 +80,26 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
       _ => appLanguageEn,
     };
     String tr(String key) => strings[key] ?? appLanguageEn[key] ?? key;
+    final lightScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFFFFB2BD),
+    ).copyWith(surface: _bootstrapLightBackground);
+    final darkScheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFFFFB2BD),
+      brightness: Brightness.dark,
+    ).copyWith(surface: _bootstrapDarkBackground);
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      color: lightScheme.surface,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: lightScheme,
+        scaffoldBackgroundColor: lightScheme.surface,
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: darkScheme,
+        scaffoldBackgroundColor: darkScheme.surface,
+      ),
       locale: locale,
       supportedLocales: AppLanguageProvider.supportedLocales,
       localizationsDelegates: const [

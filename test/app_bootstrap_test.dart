@@ -103,4 +103,28 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('startup shell follows dark platform brightness', (tester) async {
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    final pending = Completer<void>();
+    final controller = AppBootstrapController(
+      initializer: () => pending.future,
+    );
+
+    await tester.pumpWidget(
+      AppBootstrapHost(
+        controller: controller,
+        locale: const Locale('en'),
+        appBuilder: () => const SizedBox(),
+      ),
+    );
+
+    final context = tester.element(
+      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+    );
+    final theme = Theme.of(context);
+    expect(theme.brightness, Brightness.dark);
+    expect(theme.scaffoldBackgroundColor, const Color(0xFF211A1B));
+  });
 }

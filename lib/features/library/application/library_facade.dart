@@ -27,6 +27,7 @@ import 'dlsite_metadata_service.dart';
 import 'library_snapshot_cache_service.dart';
 import 'library_startup_maintenance_coordinator.dart';
 import 'library_catalog.dart';
+import 'library_entry_editor_service.dart';
 import 'library_scan_models.dart';
 import 'library_organizer.dart';
 import 'library_service.dart';
@@ -52,8 +53,10 @@ final class LibraryFacade implements LibraryCatalog {
     required this.asmrMetadataService,
     required this.service,
     required this.snapshotCacheService,
+    LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
-  }) : _coverArtworkCacheService = coverArtworkCacheService;
+  }) : entryEditorService = entryEditorService ?? LibraryEntryEditorService(),
+       _coverArtworkCacheService = coverArtworkCacheService;
 
   factory LibraryFacade.create({
     AudioDatabaseRepository? databaseRepository,
@@ -63,6 +66,7 @@ final class LibraryFacade implements LibraryCatalog {
     AsmrMetadataService? asmrMetadataService,
     LibraryService? service,
     LibrarySnapshotCacheService? snapshotCacheService,
+    LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
   }) {
     final resolvedDatabase = databaseRepository ?? AudioDatabaseRepository();
@@ -86,6 +90,7 @@ final class LibraryFacade implements LibraryCatalog {
             libraryService: resolvedService,
             detailCacheService: resolvedDetailCache,
           ),
+      entryEditorService: entryEditorService ?? LibraryEntryEditorService(),
       coverArtworkCacheService: coverArtworkCacheService,
     );
   }
@@ -96,6 +101,7 @@ final class LibraryFacade implements LibraryCatalog {
   final AsmrMetadataService asmrMetadataService;
   final LibraryService service;
   final LibrarySnapshotCacheService snapshotCacheService;
+  final LibraryEntryEditorService entryEditorService;
   CoverArtworkCacheService? _coverArtworkCacheService;
   Future<void>? _missingDurationBackfill;
   bool _missingDurationBackfillRequestedAgain = false;
@@ -1260,41 +1266,19 @@ final class LibraryFacade implements LibraryCatalog {
   @override
   void clearLibraryExclusions(String libraryPath) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final removedFolders = service.excludedLibraryFolders.remove(
-      normalizedLibraryPath,
-    );
-    final removedTracks = service.excludedLibraryTracks.remove(
-      normalizedLibraryPath,
-    );
-    if ((removedFolders == null || removedFolders.isEmpty) &&
-        (removedTracks == null || removedTracks.isEmpty)) {
-      return;
-    }
-
-    final restoredEntryPaths = service.setLibraryEntriesSubtreeState(
-      normalizedLibraryPath,
-      normalizedLibraryPath,
-      LibraryEntryState.active,
-    );
-    final restoredTracks = service
-        .libraryEntriesForLibrary(normalizedLibraryPath)
-        .where(
-          (entry) =>
-              entry.isTrack && !service.libraryByPath.containsKey(entry.path),
-        )
-        .map((entry) => entry.toTrack())
-        .toList(growable: false);
-    if (restoredTracks.isNotEmpty) {
-      addOrReplaceTracks(restoredTracks, notify: false);
+    final result = service.clearLibraryExclusions(normalizedLibraryPath);
+    if (!result.changed) return;
+    if (result.restoredTracks.isNotEmpty) {
+      addOrReplaceTracks(result.restoredTracks, notify: false);
     } else {
       _syncStateSlice();
     }
     if (_persistenceEnabled) {
-      if (restoredEntryPaths.isNotEmpty) {
+      if (result.restoredEntryPaths.isNotEmpty) {
         unawaited(
           databaseRepository.setLibraryEntriesState(
             normalizedLibraryPath,
-            restoredEntryPaths,
+            result.restoredEntryPaths,
             LibraryEntryState.active,
           ),
         );
@@ -1643,9 +1627,9 @@ final class LibraryFacade implements LibraryCatalog {
       return;
     }
 
-    final restoredTracks = PathMatcher.isContentUri(folderPath)
-        ? await _scanRestorableContentTracks(folderPath)
-        : await _scanRestorableFileTracks(folderPath);
+    final restoredTracks = await entryEditorService.loadRestorableTracks(
+      folderPath,
+    );
     final candidates = restoredTracks
         .where(
           (track) => !service.isLibraryPathExcluded(libraryPath, track.path),
@@ -1661,121 +1645,6 @@ final class LibraryFacade implements LibraryCatalog {
     beginLibraryBatch();
     addOrReplaceTracks(tracks, notify: false);
     await endLibraryBatch(waitForPersistence: false);
-  }
-
-  Future<List<MusicTrack>> _scanRestorableFileTracks(String folderPath) async {
-    final directory = Directory(folderPath);
-    if (!await directory.exists()) return const <MusicTrack>[];
-    final pendingDirectories = <Directory>[directory];
-    final restoredTracks = <MusicTrack>[];
-    while (pendingDirectories.isNotEmpty) {
-      final currentDirectory = pendingDirectories.removeLast();
-      late final Stream<FileSystemEntity> entities;
-      try {
-        entities = currentDirectory.list(followLinks: false);
-      } catch (_) {
-        continue;
-      }
-      await for (final entity in entities.handleError((_) {})) {
-        if (entity is Directory) {
-          pendingDirectories.add(entity);
-          continue;
-        }
-        if (entity is! File) continue;
-        final mediaPath = path.normalize(entity.path);
-        if (!isSupportedMediaFile(mediaPath) ||
-            service.libraryByPath.containsKey(mediaPath)) {
-          continue;
-        }
-        FileStat? stat;
-        try {
-          stat = await entity.stat();
-        } catch (_) {
-          // File metadata is optional for restored library entries.
-        }
-        final parentFolder = path.dirname(mediaPath);
-        final folderName = path.basename(parentFolder);
-        restoredTracks.add(
-          MusicTrack(
-            path: mediaPath,
-            displayName: path.basenameWithoutExtension(mediaPath),
-            groupKey: parentFolder,
-            groupTitle: folderName.isEmpty ? parentFolder : folderName,
-            groupSubtitle: parentFolder,
-            isSingle: false,
-            isVideo: isVideoMediaFile(mediaPath),
-            scannedAt: DateTime.now(),
-            fileSizeBytes: stat?.size,
-            modifiedAt: stat?.modified,
-          ),
-        );
-      }
-    }
-    return restoredTracks;
-  }
-
-  Future<List<MusicTrack>> _scanRestorableContentTracks(
-    String folderPath,
-  ) async {
-    try {
-      final data = await FileCachePlatformGateway.instance.scanFolderPayload(
-        folderPath,
-      );
-      if (data == null) return const <MusicTrack>[];
-      final tracks = <MusicTrack>[];
-      for (final item in data) {
-        if (item is! Map) continue;
-        final map = item.cast<Object?, Object?>();
-        final rawPath = map['path']?.toString().trim();
-        if (rawPath == null ||
-            rawPath.isEmpty ||
-            !isSupportedMediaFile(rawPath) ||
-            service.libraryByPath.containsKey(rawPath)) {
-          continue;
-        }
-        final mediaPath = PathMatcher.isContentUri(rawPath)
-            ? rawPath
-            : path.normalize(rawPath);
-        final nativeGroupKey = map['groupKey']?.toString().trim();
-        final nativeGroupTitle = map['groupTitle']?.toString().trim();
-        final nativeGroupSubtitle = map['groupSubtitle']?.toString().trim();
-        final groupKey = (nativeGroupKey?.isNotEmpty ?? false)
-            ? nativeGroupKey!
-            : path.dirname(mediaPath);
-        final groupTitle = (nativeGroupTitle?.isNotEmpty ?? false)
-            ? nativeGroupTitle!
-            : PathDisplay.folderName(groupKey);
-        final groupSubtitle = (nativeGroupSubtitle?.isNotEmpty ?? false)
-            ? nativeGroupSubtitle!
-            : groupKey;
-        final displayName = map['title']?.toString().trim();
-        final scannedAtMs = map['scannedAtMs'] as num?;
-        final modifiedAtMs = map['modifiedAtMs'] as num?;
-        tracks.add(
-          MusicTrack(
-            path: mediaPath,
-            displayName: displayName?.isEmpty ?? true
-                ? PathDisplay.fileName(mediaPath, withoutExtension: true)
-                : displayName!,
-            groupKey: groupKey,
-            groupTitle: groupTitle,
-            groupSubtitle: groupSubtitle,
-            isSingle: false,
-            isVideo: map['isVideo'] as bool? ?? isVideoMediaFile(mediaPath),
-            scannedAt: scannedAtMs == null
-                ? DateTime.now()
-                : DateTime.fromMillisecondsSinceEpoch(scannedAtMs.toInt()),
-            fileSizeBytes: (map['fileSizeBytes'] as num?)?.toInt(),
-            modifiedAt: modifiedAtMs == null
-                ? null
-                : DateTime.fromMillisecondsSinceEpoch(modifiedAtMs.toInt()),
-          ),
-        );
-      }
-      return tracks;
-    } catch (_) {
-      return const <MusicTrack>[];
-    }
   }
 
   Future<AudioDetailRenameResult> renameAudioDetailTarget(
@@ -1794,19 +1663,20 @@ final class LibraryFacade implements LibraryCatalog {
     }
     final oldTarget = detail.target;
 
-    final safeName = _safeFileName(name);
+    final safeName = PathDisplay.safeFileName(name);
     if (safeName.isEmpty) {
       throw const AudioDetailRenameException('invalidTitle');
     }
 
     final oldPath = PathMatcher.normalize(oldTarget.targetPath);
-    final newPath = PathMatcher.isContentUri(oldPath)
-        ? await _renameContentAudioDetailTarget(oldTarget, safeName)
-        : await _renameFileSystemAudioDetailTarget(
-            oldTarget,
-            oldPath,
-            safeName,
-          );
+    final renamedPath = await entryEditorService.renameAudioDetailTarget(
+      oldTarget,
+      safeName,
+    );
+    if (renamedPath == null) {
+      throw const AudioDetailRenameException('renameFailed');
+    }
+    final newPath = PathMatcher.normalize(renamedPath);
     if (PathMatcher.equalsNormalized(oldPath, newPath)) {
       return AudioDetailRenameResult(detail: detail, renamed: false);
     }
@@ -1838,61 +1708,6 @@ final class LibraryFacade implements LibraryCatalog {
     );
   }
 
-  Future<String> _renameFileSystemAudioDetailTarget(
-    AudioDetailTarget oldTarget,
-    String oldPath,
-    String safeName,
-  ) async {
-    final newPath = oldTarget.isLibraryRootFolder
-        ? path.join(path.dirname(oldPath), safeName)
-        : path.join(
-            path.dirname(oldPath),
-            '$safeName${path.extension(oldPath)}',
-          );
-    if (PathMatcher.equalsNormalized(oldPath, newPath)) return newPath;
-    if (oldTarget.isLibraryRootFolder) {
-      await Directory(oldPath).rename(newPath);
-    } else {
-      await File(oldPath).rename(newPath);
-    }
-    return newPath;
-  }
-
-  Future<String> _renameContentAudioDetailTarget(
-    AudioDetailTarget oldTarget,
-    String safeName,
-  ) async {
-    final name = oldTarget.isLibraryRootFolder
-        ? safeName
-        : '$safeName${_contentFileExtension(oldTarget.targetPath)}';
-    // If the document already has this name, skip the rename to avoid
-    // provider errors on some Android versions when the name is unchanged.
-    final currentName = PathMatcher.lastContentPathSegment(
-      oldTarget.targetPath,
-    );
-    if (currentName != null) {
-      final decodedCurrent = PathMatcher.safeDecodeComponent(currentName);
-      if (decodedCurrent == name) return oldTarget.targetPath;
-    }
-    final raw = await FileCachePlatformGateway.instance.renameDocument(
-      path: oldTarget.targetPath,
-      name: name,
-    );
-    final renamedPath = raw?['path'] as String?;
-    if (renamedPath == null || renamedPath.isEmpty) {
-      throw const AudioDetailRenameException('renameFailed');
-    }
-    return renamedPath;
-  }
-
-  String _contentFileExtension(String targetPath) {
-    final segment = PathMatcher.lastContentPathSegment(targetPath);
-    final decoded = segment == null
-        ? targetPath
-        : PathMatcher.safeDecodeComponent(segment).replaceAll('\\', '/');
-    return path.extension(decoded);
-  }
-
   Future<void> _retargetLibraryFolder(
     String oldFolderPath,
     String newFolderPath,
@@ -1906,215 +1721,26 @@ final class LibraryFacade implements LibraryCatalog {
       oldRoot: oldFolderPath,
       newRoot: newFolderPath,
     );
-    final retargetedTracks = <String, MusicTrack>{};
-    for (var i = 0; i < service.library.length; i++) {
-      final track = service.library[i];
-      if (!PathMatcher.isWithinOrEqual(track.path, oldFolderPath)) continue;
-
-      final nextTrackPath = _replacePathPrefix(
-        track.path,
-        oldFolderPath,
-        newFolderPath,
-      );
-      final nextGroupKey =
-          PathMatcher.isWithinOrEqual(track.groupKey, oldFolderPath)
-          ? _replacePathPrefix(track.groupKey, oldFolderPath, newFolderPath)
-          : track.groupKey;
-      final updatedTrack = _copyTrack(
-        track,
-        path: nextTrackPath,
-        groupKey: nextGroupKey,
-        groupTitle: PathMatcher.equalsNormalized(nextGroupKey, newFolderPath)
-            ? folderName
-            : PathDisplay.folderName(nextGroupKey),
-        groupSubtitle: PathDisplay.displayPathFor(nextGroupKey),
-        coverCachePath: _retargetNullablePath(
-          track.coverCachePath,
-          oldFolderPath,
-          newFolderPath,
-        ),
-        lyricsPath: _retargetNullablePath(
-          track.lyricsPath,
-          oldFolderPath,
-          newFolderPath,
-        ),
-        manualCoverPath: _retargetNullablePath(
-          track.manualCoverPath,
-          oldFolderPath,
-          newFolderPath,
-        ),
-      );
-      service.library[i] = updatedTrack;
-      retargetedTracks[track.path] = updatedTrack;
-    }
-
-    for (var i = 0; i < service.watchedFolders.length; i++) {
-      if (PathMatcher.equalsNormalized(
-        service.watchedFolders[i],
-        oldFolderPath,
-      )) {
-        service.watchedFolders[i] = newFolderPath;
-      }
-    }
-    for (var i = 0; i < service.watchedLibraries.length; i++) {
-      if (PathMatcher.equalsNormalized(
-        service.watchedLibraries[i],
-        oldFolderPath,
-      )) {
-        service.watchedLibraries[i] = newFolderPath;
-      }
-    }
-
-    for (var i = 0; i < service.libraryNodeOrder.length; i++) {
-      if (PathMatcher.equalsNormalized(
-        service.libraryNodeOrder[i],
-        oldFolderPath,
-      )) {
-        service.libraryNodeOrder[i] = newFolderPath;
-      }
-    }
-
-    for (var i = 0; i < service.groupOrder.length; i++) {
-      if (PathMatcher.isWithinOrEqual(service.groupOrder[i], oldFolderPath)) {
-        service.groupOrder[i] = _replacePathPrefix(
-          service.groupOrder[i],
-          oldFolderPath,
-          newFolderPath,
-        );
-      }
-    }
-
-    _retargetLibraryExclusions(oldFolderPath, newFolderPath);
-    final retargetedEntries = _retargetLibraryEntries(
+    final retargetResult = service.retargetLibraryFolder(
       oldFolderPath,
       newFolderPath,
       folderName,
     );
     coverArtworkCacheService.invalidateFolders([oldFolderPath, newFolderPath]);
-    service.syncGroupOrderFromLibrary();
-    service.rebuildLibraryIndexes();
     snapshotCacheService.markStructureChanged();
     _syncStateSlice();
-    await databaseRepository.replaceTrackPaths(retargetedTracks);
+    await databaseRepository.replaceTrackPaths(retargetResult.retargetedTracks);
     await databaseRepository.deleteLibraryEntriesForLibrary(oldFolderPath);
-    if (retargetedEntries.isNotEmpty) {
-      await databaseRepository.upsertLibraryEntries(retargetedEntries);
+    if (retargetResult.retargetedEntries.isNotEmpty) {
+      await databaseRepository.upsertLibraryEntries(
+        retargetResult.retargetedEntries,
+      );
     }
     await _saveWatchedFolders();
     await _saveWatchedLibraries();
     await _saveLibraryExclusions();
     await _saveGroupOrder();
     await _saveLibraryNodeOrder();
-  }
-
-  void _retargetLibraryExclusions(String oldRoot, String newRoot) {
-    if (service.excludedLibraryFolders.isEmpty &&
-        service.excludedLibraryTracks.isEmpty) {
-      return;
-    }
-
-    Map<String, Set<String>> retarget(Map<String, Set<String>> source) {
-      final result = <String, Set<String>>{};
-      for (final entry in source.entries) {
-        final nextKey = PathMatcher.equalsNormalized(entry.key, oldRoot)
-            ? newRoot
-            : entry.key;
-        final nextValues = entry.value
-            .map(
-              (value) => PathMatcher.isWithinOrEqual(value, oldRoot)
-                  ? _replacePathPrefix(value, oldRoot, newRoot)
-                  : value,
-            )
-            .toSet();
-        result.putIfAbsent(nextKey, () => <String>{}).addAll(nextValues);
-      }
-      return result;
-    }
-
-    final nextFolderExclusions = retarget(service.excludedLibraryFolders);
-    final nextTrackExclusions = retarget(service.excludedLibraryTracks);
-    service.excludedLibraryFolders
-      ..clear()
-      ..addAll(nextFolderExclusions);
-    service.excludedLibraryTracks
-      ..clear()
-      ..addAll(nextTrackExclusions);
-  }
-
-  List<LibraryEntry> _retargetLibraryEntries(
-    String oldRoot,
-    String newRoot,
-    String folderName,
-  ) {
-    final existingEntries = service.libraryEntriesByLibrary.remove(oldRoot);
-    if (existingEntries == null || existingEntries.isEmpty) {
-      return const <LibraryEntry>[];
-    }
-
-    final retargetedEntries = existingEntries.values
-        .map(
-          (entry) => _retargetLibraryEntry(
-            entry,
-            oldRoot: oldRoot,
-            newRoot: newRoot,
-            folderName: folderName,
-          ),
-        )
-        .toList(growable: false);
-    service.libraryEntriesByLibrary[newRoot] = {
-      for (final entry in retargetedEntries) entry.path: entry,
-    };
-    service.markStructureChanged();
-    snapshotCacheService.markStructureChanged();
-    return retargetedEntries;
-  }
-
-  LibraryEntry _retargetLibraryEntry(
-    LibraryEntry entry, {
-    required String oldRoot,
-    required String newRoot,
-    required String folderName,
-  }) {
-    final nextPath = PathMatcher.isWithinOrEqual(entry.path, oldRoot)
-        ? _replacePathPrefix(entry.path, oldRoot, newRoot)
-        : entry.path;
-    final nextParentPath =
-        entry.parentPath != null &&
-            PathMatcher.isWithinOrEqual(entry.parentPath!, oldRoot)
-        ? _replacePathPrefix(entry.parentPath!, oldRoot, newRoot)
-        : entry.parentPath;
-    if (entry.isFolder) {
-      return LibraryEntry.folder(
-        libraryPath: newRoot,
-        path: nextPath,
-        parentPath: nextParentPath,
-        state: entry.state,
-        displayName: entry.displayName,
-      );
-    }
-
-    final nextGroupKey = PathMatcher.isWithinOrEqual(entry.groupKey, oldRoot)
-        ? _replacePathPrefix(entry.groupKey, oldRoot, newRoot)
-        : entry.groupKey;
-    final nextGroupTitle = PathMatcher.equalsNormalized(nextGroupKey, newRoot)
-        ? folderName
-        : PathDisplay.folderName(nextGroupKey);
-    return LibraryEntry(
-      libraryPath: newRoot,
-      path: nextPath,
-      kind: entry.kind,
-      state: entry.state,
-      parentPath: nextParentPath,
-      displayName: entry.displayName,
-      groupKey: nextGroupKey,
-      groupTitle: nextGroupTitle,
-      groupSubtitle: PathDisplay.displayPathFor(nextGroupKey),
-      isSingle: entry.isSingle,
-      isVideo: entry.isVideo,
-      scannedAt: entry.scannedAt,
-      fileSizeBytes: entry.fileSizeBytes,
-      modifiedAt: entry.modifiedAt,
-    );
   }
 
   Future<void> _retargetSingleTrack(
@@ -2126,27 +1752,13 @@ final class LibraryFacade implements LibraryCatalog {
       oldTrackKey: PathMatcher.normalize(oldTrackPath),
       newTrackKey: PathMatcher.normalize(newTrackPath),
     );
-    final track = service.libraryByPath[oldTrackPath];
-    if (track != null) {
-      final updatedTrack = _copyTrack(
-        track,
-        path: newTrackPath,
-        displayName: displayName,
-      );
-      final index = service.library.indexWhere(
-        (item) => item.path == oldTrackPath,
-      );
-      if (index >= 0) service.library[index] = updatedTrack;
-      for (var i = 0; i < service.libraryNodeOrder.length; i++) {
-        if (PathMatcher.equalsNormalized(
-          service.libraryNodeOrder[i],
-          oldTrackPath,
-        )) {
-          service.libraryNodeOrder[i] = newTrackPath;
-        }
-      }
+    final updatedTrack = service.retargetSingleTrack(
+      oldTrackPath,
+      newTrackPath,
+      displayName,
+    );
+    if (updatedTrack != null) {
       coverArtworkCacheService.invalidateAll();
-      service.rebuildLibraryIndexes();
       snapshotCacheService.markStructureChanged();
       _syncStateSlice();
       await databaseRepository.deleteTracks([oldTrackPath]);
@@ -2158,15 +1770,7 @@ final class LibraryFacade implements LibraryCatalog {
     if (value == null || !PathMatcher.isWithinOrEqual(value, oldRoot)) {
       return value;
     }
-    return _replacePathPrefix(value, oldRoot, newRoot);
-  }
-
-  String _replacePathPrefix(String value, String oldRoot, String newRoot) {
     return PathMatcher.replaceWithinOrEqual(value, oldRoot, newRoot);
-  }
-
-  String _safeFileName(String value) {
-    return PathDisplay.safeFileName(value);
   }
 
   MusicTrack _copyTrack(

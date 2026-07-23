@@ -123,6 +123,32 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('production app shell allows tooltips to become visible', (
+    tester,
+  ) async {
+    await _pumpAppShell(tester);
+
+    expect(find.byType(TooltipVisibility), findsNothing);
+    final tooltipFinder = find.byWidgetPredicate(
+      (widget) => widget is Tooltip && widget.message?.isNotEmpty == true,
+    );
+    expect(tooltipFinder, findsWidgets);
+    final target = tooltipFinder.first;
+    final message = tester.widget<Tooltip>(target).message!;
+    final originalTextCount = find.text(message).evaluate().length;
+
+    await tester.longPress(target);
+    await tester.pump();
+
+    expect(
+      find.text(message).evaluate().length,
+      greaterThan(originalTextCount),
+    );
+
+    await tester.pump(const Duration(seconds: 3));
+    expect(find.text(message).evaluate().length, originalTextCount);
+  });
+
   testWidgets('update download progress stays visible at the top of the app', (
     tester,
   ) async {

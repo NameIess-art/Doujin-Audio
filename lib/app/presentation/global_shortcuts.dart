@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../app/state/app_runtime_providers.dart';
+
+import '../state/app_runtime_providers.dart';
 
 class TogglePlayPauseIntent extends Intent {
   const TogglePlayPauseIntent();
 }
 
 class GlobalShortcuts extends ConsumerWidget {
-  final Widget child;
-
   const GlobalShortcuts({super.key, required this.child});
+
+  final Widget child;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

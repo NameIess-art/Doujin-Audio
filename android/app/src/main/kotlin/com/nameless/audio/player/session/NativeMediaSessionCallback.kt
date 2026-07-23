@@ -29,8 +29,16 @@ internal class NativeMediaSessionCallback(
         controller: MediaSession.ControllerInfo
     ): MediaSession.ConnectionResult {
         val identity = identityFor(session, controller)
-        val accessLevel = accessPolicy.accessFor(identity)
-        val allowedCommands = accessPolicy.commandsFor(accessLevel)
+        val decision = accessPolicy.connectionFor(identity)
+        if (!decision.accepted) {
+            logSecurityEvent(
+                "media_controller_connection_rejected access=${decision.accessLevel} " +
+                    "package=${identity.packageName} uid=${identity.uid}",
+                null
+            )
+            return MediaSession.ConnectionResult.reject()
+        }
+        val allowedCommands = decision.allowedCommands
         return MediaSession.ConnectionResult.accept(
             if (allowedCommands.useDefaultSessionCommands) {
                 MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS

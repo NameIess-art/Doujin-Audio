@@ -271,7 +271,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           context: context,
           scope: UiOperationScope.libraryRefresh,
           labelKey: 'loading_dot',
-          failureMessageKey: 'scan_failed_next_step',
+          failureMessage: i18n.tr('scan_failed_next_step'),
+          operationFailedTitle: i18n.tr('operation_failed'),
+          retryLabel: i18n.tr('retry'),
           cancelPrevious: false,
           onRetry: () => _scheduleWatchedFoldersRefresh(
             silent: silent,
@@ -332,7 +334,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             _ => UiOperationScope.libraryImportFolder,
           },
           labelKey: 'loading_dot',
-          failureMessageKey: 'import_failed_next_step',
+          failureMessage: i18n.tr('import_failed_next_step'),
+          operationFailedTitle: i18n.tr('operation_failed'),
+          retryLabel: i18n.tr('retry'),
           cancelPrevious: false,
           onRetry: () {
             unawaited(retry());

@@ -1,5 +1,8 @@
 const Map<String, String> appLanguageZh = {
   'app_title': 'Nameless Audio',
+  'startup_initializing': '正在启动 Nameless Audio…',
+  'startup_error_title': 'Nameless Audio 启动失败',
+  'startup_error_message': '本地数据不会丢失。你可以重试启动或导出诊断报告。',
   'permission_group_playback': '播放基础',
   'permission_group_reliability': '定时与可靠性',
   'permission_group_advanced': '高级功能',

@@ -194,6 +194,12 @@ class AppBackupService {
   static const String preferencesEntry = 'data/preferences.json';
   static const String librarySourcesEntry = 'data/local_library_sources.json';
   static const String manifestEntry = 'manifest.json';
+  static const int maxBackupBytes = 1024 * 1024 * 1024;
+  static const int maxManifestBytes = 256 * 1024;
+  static const int maxPreferencesBytes = 4 * 1024 * 1024;
+  static const int maxLibrarySourcesBytes = 4 * 1024 * 1024;
+  static const int maxArchiveEntries = 4;
+  static const int _maxCentralDirectoryBytes = 1024 * 1024;
 
   final Future<Map<String, Object>> Function() _exportPreferences;
   final Future<void> Function(Map<String, Object?> values) _restorePreferences;
@@ -434,17 +440,55 @@ class AppBackupService {
     InputFileStream? input;
     Archive? archive;
     try {
+      final backupFile = File(backupPath);
+      if (await backupFile.length() > maxBackupBytes) {
+        return _invalidPrepared('backup_too_large', temporaryDirectory);
+      }
+      final zipPreflightError = await _preflightZip(backupFile);
+      if (zipPreflightError != null) {
+        return _invalidPrepared(zipPreflightError, temporaryDirectory);
+      }
       temporaryDirectory = await Directory.systemTemp.createTemp(
         'nameless_audio_backup_restore_',
       );
       input = InputFileStream(backupPath);
-      archive = ZipDecoder().decodeStream(input, verify: true);
+      final archiveEntryNames = <String>{};
+      String? duplicateEntryName;
+      archive = ZipDecoder().decodeStream(
+        input,
+        verify: true,
+        callback: (entry) {
+          if (!archiveEntryNames.add(entry.name)) {
+            duplicateEntryName ??= entry.name;
+          }
+        },
+      );
+      if (duplicateEntryName != null) {
+        return _invalidPrepared('duplicate_entry', temporaryDirectory);
+      }
+      if (archiveEntryNames.length > maxArchiveEntries) {
+        return _invalidPrepared('unexpected_entry', temporaryDirectory);
+      }
+      for (final entry in archive.files) {
+        if (!entry.isFile || entry.isSymbolicLink) {
+          return _invalidPrepared('unexpected_entry', temporaryDirectory);
+        }
+      }
       final manifestFile = archive.findFile(manifestEntry);
       if (manifestFile == null) {
         return _invalidPrepared('missing_manifest', temporaryDirectory);
       }
+      if (manifestFile.size < 0 || manifestFile.size > maxManifestBytes) {
+        return _invalidPrepared('backup_too_large', temporaryDirectory);
+      }
+      final extractionBudget = _BackupExtractionBudget(maxBackupBytes);
+      final manifestBytes = _readArchiveFile(
+        manifestFile,
+        maxBytes: maxManifestBytes,
+        budget: extractionBudget,
+      );
       final manifest = BackupManifest.fromJson(
-        (jsonDecode(utf8.decode(manifestFile.content)) as Map<String, dynamic>)
+        (jsonDecode(utf8.decode(manifestBytes)) as Map<String, dynamic>)
             .cast<String, Object?>(),
       );
       final compatibilityError = _manifestCompatibilityError(manifest);
@@ -458,6 +502,60 @@ class AppBackupService {
       if (manifest.formatVersion >= formatVersion &&
           !manifest.entries.containsKey(librarySourcesEntry)) {
         return _invalidPrepared('missing_required_entry', temporaryDirectory);
+      }
+
+      final allowedDataEntries = <String>{
+        databaseEntry,
+        preferencesEntry,
+        if (manifest.formatVersion >= _legacyPathImportFormatVersion)
+          librarySourcesEntry,
+      };
+      if (manifest.entries.length > maxArchiveEntries - 1 ||
+          manifest.entries.keys.any(
+            (entryName) => !allowedDataEntries.contains(entryName),
+          )) {
+        return _invalidPrepared('unexpected_entry', temporaryDirectory);
+      }
+      final expectedArchiveEntries = <String>{
+        manifestEntry,
+        ...manifest.entries.keys,
+      };
+      if (archiveEntryNames.length != expectedArchiveEntries.length ||
+          !archiveEntryNames.containsAll(expectedArchiveEntries)) {
+        return _invalidPrepared('unexpected_entry', temporaryDirectory);
+      }
+
+      var declaredTotalBytes = manifestBytes.length;
+      for (final manifestEntry in manifest.entries.entries) {
+        final declaredSize = manifestEntry.value.size;
+        if (declaredSize < 0 ||
+            declaredTotalBytes > maxBackupBytes - declaredSize) {
+          return _invalidPrepared('backup_too_large', temporaryDirectory);
+        }
+        declaredTotalBytes += declaredSize;
+        final archiveFile = archive.findFile(manifestEntry.key);
+        if (archiveFile == null) {
+          return _invalidPrepared(
+            'missing_entry:${manifestEntry.key}',
+            temporaryDirectory,
+          );
+        }
+        if (archiveFile.size != declaredSize) {
+          return _invalidPrepared(
+            'checksum_mismatch:${manifestEntry.key}',
+            temporaryDirectory,
+          );
+        }
+      }
+
+      final preferencesSize = manifest.entries[preferencesEntry]!.size;
+      if (preferencesSize > maxPreferencesBytes) {
+        return _invalidPrepared('backup_too_large', temporaryDirectory);
+      }
+      final librarySourcesSize = manifest.entries[librarySourcesEntry]?.size;
+      if (librarySourcesSize != null &&
+          librarySourcesSize > maxLibrarySourcesBytes) {
+        return _invalidPrepared('backup_too_large', temporaryDirectory);
       }
 
       final databaseFile = File(
@@ -474,7 +572,11 @@ class AppBackupService {
           );
         }
         if (entry.key == preferencesEntry) {
-          final bytes = archiveFile.content;
+          final bytes = _readArchiveFile(
+            archiveFile,
+            maxBytes: entry.value.size,
+            budget: extractionBudget,
+          );
           if (!_matchesManifest(
             bytes.length,
             sha256.convert(bytes),
@@ -490,7 +592,11 @@ class AppBackupService {
           continue;
         }
         if (entry.key == librarySourcesEntry) {
-          final bytes = archiveFile.content;
+          final bytes = _readArchiveFile(
+            archiveFile,
+            maxBytes: entry.value.size,
+            budget: extractionBudget,
+          );
           if (!_matchesManifest(
             bytes.length,
             sha256.convert(bytes),
@@ -513,7 +619,12 @@ class AppBackupService {
                 '${temporaryDirectory.path}${Platform.pathSeparator}'
                 'entry_${entry.key.hashCode}.tmp',
               );
-        await _extractArchiveFile(archiveFile, extracted);
+        await _extractArchiveFile(
+          archiveFile,
+          extracted,
+          maxBytes: entry.value.size,
+          budget: extractionBudget,
+        );
         final matches = _matchesManifest(
           await extracted.length(),
           await _sha256Digest(extracted),
@@ -562,6 +673,13 @@ class AppBackupService {
         preferences: sanitizedPreferences,
         librarySources: librarySources,
       );
+    } on _BackupValidationException catch (error, stackTrace) {
+      AppLogService.warning(
+        'backup_validation_rejected',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      return _invalidPrepared(error.code, temporaryDirectory);
     } catch (error, stackTrace) {
       AppLogService.warning(
         'backup_validation_failed',
@@ -572,7 +690,8 @@ class AppBackupService {
     } finally {
       if (archive != null) {
         await archive.clear();
-      } else if (input != null) {
+      }
+      if (input != null) {
         await input.close();
       }
     }
@@ -606,11 +725,228 @@ class AppBackupService {
     await source.openRead().pipe(target.openWrite());
   }
 
-  Future<void> _extractArchiveFile(ArchiveFile source, File target) async {
+  Future<String?> _preflightZip(File file) async {
+    final fileLength = await file.length();
+    const maximumEndRecordLength = 65535 + 22;
+    final start = fileLength > maximumEndRecordLength
+        ? fileLength - maximumEndRecordLength
+        : 0;
+    final tail = await file
+        .openRead(start)
+        .fold<List<int>>(<int>[], (bytes, chunk) => bytes..addAll(chunk));
+    int? endRecordOffset;
+    for (var index = tail.length - 22; index >= 0; index--) {
+      if (tail[index] != 0x50 ||
+          tail[index + 1] != 0x4b ||
+          tail[index + 2] != 0x05 ||
+          tail[index + 3] != 0x06) {
+        continue;
+      }
+      final commentLength = _uint16(tail, index + 20);
+      if (index + 22 + commentLength != tail.length) continue;
+      endRecordOffset = index;
+      break;
+    }
+    if (endRecordOffset == null) return 'invalid_backup';
+
+    final diskNumber = _uint16(tail, endRecordOffset + 4);
+    final centralDirectoryDisk = _uint16(tail, endRecordOffset + 6);
+    final entriesOnDisk = _uint16(tail, endRecordOffset + 8);
+    final entryCount = _uint16(tail, endRecordOffset + 10);
+    final centralDirectorySize = _uint32(tail, endRecordOffset + 12);
+    final centralDirectoryOffset = _uint32(tail, endRecordOffset + 16);
+    if (diskNumber != 0 ||
+        centralDirectoryDisk != 0 ||
+        entriesOnDisk != entryCount ||
+        entryCount == 0xffff ||
+        centralDirectorySize == 0xffffffff ||
+        centralDirectoryOffset == 0xffffffff) {
+      return 'invalid_backup';
+    }
+    if (entryCount > maxArchiveEntries) return 'unexpected_entry';
+    if (centralDirectorySize > _maxCentralDirectoryBytes) {
+      return 'unexpected_entry';
+    }
+    final absoluteEndRecordOffset = start + endRecordOffset;
+    if (centralDirectoryOffset > absoluteEndRecordOffset ||
+        centralDirectorySize >
+            absoluteEndRecordOffset - centralDirectoryOffset ||
+        centralDirectoryOffset + centralDirectorySize !=
+            absoluteEndRecordOffset) {
+      return 'invalid_backup';
+    }
+
+    RandomAccessFile? input;
+    try {
+      input = await file.open();
+      await input.setPosition(centralDirectoryOffset);
+      final centralDirectory = await input.read(centralDirectorySize);
+      if (centralDirectory.length != centralDirectorySize) {
+        return 'invalid_backup';
+      }
+      final names = <String>{};
+      final entries = <_ZipPreflightEntry>[];
+      var offset = 0;
+      var expandedBytes = 0;
+      for (var index = 0; index < entryCount; index++) {
+        if (offset > centralDirectory.length - 46 ||
+            _uint32(centralDirectory, offset) != 0x02014b50) {
+          return 'invalid_backup';
+        }
+        final versionMadeBy = _uint16(centralDirectory, offset + 4);
+        final flags = _uint16(centralDirectory, offset + 8);
+        final compression = _uint16(centralDirectory, offset + 10);
+        final compressedSize = _uint32(centralDirectory, offset + 20);
+        final uncompressedSize = _uint32(centralDirectory, offset + 24);
+        final nameLength = _uint16(centralDirectory, offset + 28);
+        final extraLength = _uint16(centralDirectory, offset + 30);
+        final commentLength = _uint16(centralDirectory, offset + 32);
+        final diskStart = _uint16(centralDirectory, offset + 34);
+        final externalAttributes = _uint32(centralDirectory, offset + 38);
+        final localHeaderOffset = _uint32(centralDirectory, offset + 42);
+        final variableLength = nameLength + extraLength + commentLength;
+        if (variableLength > centralDirectory.length - offset - 46 ||
+            nameLength == 0 ||
+            diskStart != 0 ||
+            flags & 1 != 0 ||
+            (compression != 0 && compression != 8) ||
+            compressedSize == 0xffffffff ||
+            uncompressedSize == 0xffffffff ||
+            localHeaderOffset == 0xffffffff) {
+          return 'invalid_backup';
+        }
+        final nameBytes = centralDirectory.sublist(
+          offset + 46,
+          offset + 46 + nameLength,
+        );
+        if (nameBytes.any((byte) => byte > 0x7f)) return 'unexpected_entry';
+        final name = String.fromCharCodes(nameBytes);
+        if (!_allowedArchiveEntries.contains(name) ||
+            name.endsWith('/') ||
+            name.endsWith(r'\')) {
+          return 'unexpected_entry';
+        }
+        if (!names.add(name)) return 'duplicate_entry';
+        final creatorSystem = versionMadeBy >> 8;
+        final unixFileType = (externalAttributes >> 16) & 0xf000;
+        if (creatorSystem == 3 &&
+            (unixFileType == 0x4000 || unixFileType == 0xa000)) {
+          return 'unexpected_entry';
+        }
+        final entryLimit = switch (name) {
+          manifestEntry => maxManifestBytes,
+          preferencesEntry => maxPreferencesBytes,
+          librarySourcesEntry => maxLibrarySourcesBytes,
+          _ => maxBackupBytes,
+        };
+        if (uncompressedSize > entryLimit ||
+            expandedBytes > maxBackupBytes - uncompressedSize) {
+          return 'backup_too_large';
+        }
+        expandedBytes += uncompressedSize;
+        entries.add(
+          _ZipPreflightEntry(
+            name: name,
+            flags: flags,
+            compression: compression,
+            compressedSize: compressedSize,
+            uncompressedSize: uncompressedSize,
+            localHeaderOffset: localHeaderOffset,
+          ),
+        );
+        offset += 46 + variableLength;
+      }
+      if (offset != centralDirectory.length) return 'invalid_backup';
+
+      for (final entry in entries) {
+        if (entry.localHeaderOffset > centralDirectoryOffset - 30) {
+          return 'invalid_backup';
+        }
+        await input.setPosition(entry.localHeaderOffset);
+        final localHeader = await input.read(30);
+        if (localHeader.length != 30 || _uint32(localHeader, 0) != 0x04034b50) {
+          return 'invalid_backup';
+        }
+        final localFlags = _uint16(localHeader, 6);
+        final localCompression = _uint16(localHeader, 8);
+        final localCompressedSize = _uint32(localHeader, 18);
+        final localUncompressedSize = _uint32(localHeader, 22);
+        final localNameLength = _uint16(localHeader, 26);
+        final localExtraLength = _uint16(localHeader, 28);
+        if (localFlags != entry.flags ||
+            localCompression != entry.compression ||
+            localNameLength == 0) {
+          return 'invalid_backup';
+        }
+        final localNameBytes = await input.read(localNameLength);
+        if (localNameBytes.length != localNameLength ||
+            String.fromCharCodes(localNameBytes) != entry.name) {
+          return 'invalid_backup';
+        }
+        final usesDataDescriptor = entry.flags & 0x8 != 0;
+        if (!usesDataDescriptor &&
+            (localCompressedSize != entry.compressedSize ||
+                localUncompressedSize != entry.uncompressedSize)) {
+          return 'invalid_backup';
+        }
+        final dataOffset =
+            entry.localHeaderOffset + 30 + localNameLength + localExtraLength;
+        if (dataOffset > centralDirectoryOffset ||
+            entry.compressedSize > centralDirectoryOffset - dataOffset) {
+          return 'invalid_backup';
+        }
+      }
+      return null;
+    } finally {
+      await input?.close();
+    }
+  }
+
+  static const Set<String> _allowedArchiveEntries = <String>{
+    manifestEntry,
+    databaseEntry,
+    preferencesEntry,
+    librarySourcesEntry,
+  };
+
+  int _uint16(List<int> bytes, int offset) {
+    return bytes[offset] | bytes[offset + 1] << 8;
+  }
+
+  int _uint32(List<int> bytes, int offset) {
+    return _uint16(bytes, offset) | _uint16(bytes, offset + 2) << 16;
+  }
+
+  Uint8List _readArchiveFile(
+    ArchiveFile source, {
+    required int maxBytes,
+    required _BackupExtractionBudget budget,
+  }) {
+    final output = OutputMemoryStream(size: source.size.clamp(0, maxBytes));
+    final limitedOutput = _LimitedOutputStream(
+      output,
+      maxBytes: maxBytes,
+      budget: budget,
+    );
+    source.writeContent(limitedOutput);
+    return output.getBytes();
+  }
+
+  Future<void> _extractArchiveFile(
+    ArchiveFile source,
+    File target, {
+    required int maxBytes,
+    required _BackupExtractionBudget budget,
+  }) async {
     await target.parent.create(recursive: true);
     final output = OutputFileStream(target.path);
+    final limitedOutput = _LimitedOutputStream(
+      output,
+      maxBytes: maxBytes,
+      budget: budget,
+    );
     try {
-      source.writeContent(output);
+      source.writeContent(limitedOutput);
     } finally {
       await output.close();
     }
@@ -623,6 +959,108 @@ class AppBackupService {
   Future<Digest> _sha256Digest(File file) async {
     return sha256.bind(file.openRead()).first;
   }
+}
+
+final class _ZipPreflightEntry {
+  const _ZipPreflightEntry({
+    required this.name,
+    required this.flags,
+    required this.compression,
+    required this.compressedSize,
+    required this.uncompressedSize,
+    required this.localHeaderOffset,
+  });
+
+  final String name;
+  final int flags;
+  final int compression;
+  final int compressedSize;
+  final int uncompressedSize;
+  final int localHeaderOffset;
+}
+
+final class _BackupValidationException implements Exception {
+  const _BackupValidationException(this.code);
+
+  final String code;
+
+  @override
+  String toString() => code;
+}
+
+final class _BackupExtractionBudget {
+  _BackupExtractionBudget(this.maxBytes);
+
+  final int maxBytes;
+  int _writtenBytes = 0;
+
+  void reserve(int byteCount) {
+    if (byteCount < 0 || _writtenBytes > maxBytes - byteCount) {
+      throw const _BackupValidationException('backup_too_large');
+    }
+    _writtenBytes += byteCount;
+  }
+}
+
+final class _LimitedOutputStream extends OutputStream {
+  _LimitedOutputStream(
+    this._delegate, {
+    required this.maxBytes,
+    required this.budget,
+  }) : super(byteOrder: _delegate.byteOrder);
+
+  final OutputStream _delegate;
+  final int maxBytes;
+  final _BackupExtractionBudget budget;
+  int _writtenBytes = 0;
+
+  void _reserve(int byteCount) {
+    if (byteCount < 0 || _writtenBytes > maxBytes - byteCount) {
+      throw const _BackupValidationException('backup_too_large');
+    }
+    budget.reserve(byteCount);
+    _writtenBytes += byteCount;
+  }
+
+  @override
+  int get length => _delegate.length;
+
+  @override
+  bool get isOpen => _delegate.isOpen;
+
+  @override
+  void clear() => _delegate.clear();
+
+  @override
+  Future<void> close() => _delegate.close();
+
+  @override
+  void closeSync() => _delegate.closeSync();
+
+  @override
+  void flush() => _delegate.flush();
+
+  @override
+  void writeByte(int value) {
+    _reserve(1);
+    _delegate.writeByte(value);
+  }
+
+  @override
+  void writeBytes(List<int> bytes, {int? length}) {
+    final byteCount = length ?? bytes.length;
+    _reserve(byteCount);
+    _delegate.writeBytes(bytes, length: byteCount);
+  }
+
+  @override
+  void writeStream(InputStream stream) {
+    _reserve(stream.length);
+    _delegate.writeStream(stream);
+  }
+
+  @override
+  Uint8List subset(int start, [int? end]) => _delegate.subset(start, end);
 }
 
 const Set<String> _localLibraryPreferenceKeys = <String>{

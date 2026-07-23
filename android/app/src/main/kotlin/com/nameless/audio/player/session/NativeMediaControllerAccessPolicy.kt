@@ -27,6 +27,12 @@ internal data class AllowedMediaCommands(
     val useDefaultSessionCommands: Boolean = false
 )
 
+internal data class MediaControllerConnectionDecision(
+    val accessLevel: ControllerAccessLevel,
+    val accepted: Boolean,
+    val allowedCommands: AllowedMediaCommands
+)
+
 internal class NativeMediaControllerAccessPolicy(
     private val appPackageName: String,
     private val appUid: Int
@@ -52,6 +58,15 @@ internal class NativeMediaControllerAccessPolicy(
         return ControllerAccessLevel.UNKNOWN_EXTERNAL
     }
 
+    fun connectionFor(identity: ControllerIdentity): MediaControllerConnectionDecision {
+        val accessLevel = accessFor(identity)
+        return MediaControllerConnectionDecision(
+            accessLevel = accessLevel,
+            accepted = accessLevel != ControllerAccessLevel.UNKNOWN_EXTERNAL,
+            allowedCommands = commandsFor(accessLevel)
+        )
+    }
+
     fun commandsFor(accessLevel: ControllerAccessLevel): AllowedMediaCommands {
         return when (accessLevel) {
             ControllerAccessLevel.APP_SELF -> AllowedMediaCommands(
@@ -64,7 +79,7 @@ internal class NativeMediaControllerAccessPolicy(
                 playerCommandCodes = standardTransportPlayerCommands
             )
             ControllerAccessLevel.UNKNOWN_EXTERNAL -> AllowedMediaCommands(
-                playerCommandCodes = readOnlyPlayerCommands
+                playerCommandCodes = emptySet()
             )
         }
     }

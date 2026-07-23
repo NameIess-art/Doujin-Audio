@@ -9,8 +9,12 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'app/localization/app_language_provider.dart';
+import 'app/application/app_bootstrap_controller.dart';
 import 'app/application/app_runtime_graph.dart';
 import 'app/state/app_runtime_providers.dart';
+import 'app/presentation/app_bootstrap_host.dart';
+import 'app/presentation/app_error_view.dart';
+import 'app/presentation/global_shortcuts.dart';
 import 'app/presentation/main_screen.dart';
 import 'app/presentation/onboarding_page.dart';
 import 'features/asmr/application/asmr_library_controller.dart';
@@ -37,8 +41,6 @@ import 'features/settings/application/app_update_service.dart';
 import 'features/settings/application/settings_repository.dart';
 import 'features/settings/application/settings_state.dart';
 import 'core/persistence/app_database.dart';
-import 'core/widgets/global_shortcuts.dart';
-import 'core/widgets/app_error_view.dart';
 
 Future<void> main() async {
   await runZonedGuarded<Future<void>>(() async {
@@ -53,14 +55,21 @@ Future<void> main() async {
           error: details.exception,
           stackTrace: details.stack,
         );
-        return AppErrorView(details: details);
+        return AppErrorView.fromFlutterError(details);
       };
     }
-    await _runAudioPlayerApp();
+    runApp(
+      AppBootstrapHost(
+        controller: AppBootstrapController(
+          initializer: _initializeAudioPlayerApp,
+        ),
+        appBuilder: _createAudioPlayerApp,
+      ),
+    );
   }, AppLogService.logZoneError);
 }
 
-Future<void> _runAudioPlayerApp() async {
+Future<void> _initializeAudioPlayerApp() async {
   applyCoverImageCachePolicy(CoverImageResolution.balanced);
 
   // Start essential services in parallel to minimize blocking before runApp
@@ -89,7 +98,9 @@ Future<void> _runAudioPlayerApp() async {
     'app_bootstrap_pre_run_app',
     () => initFutures,
   );
+}
 
+Widget _createAudioPlayerApp() {
   final notificationService = PlaybackNotificationService();
   final audioDatabaseRepository = AudioDatabaseRepository();
   final nativePlaybackRepository = NativePlaybackRepository();
@@ -132,35 +143,33 @@ Future<void> _runAudioPlayerApp() async {
   );
   final themeProvider = ThemeProvider();
 
-  runApp(
-    ProviderScope(
-      overrides: [
-        ...createAppRuntimeOverrides(
-          persistence: runtimeGraph.persistence,
-          runtime: runtimeGraph.runtime,
-          warmup: runtimeGraph.warmup,
-          playbackCommands: runtimeGraph.playbackCommands,
-          keepAlive: runtimeGraph.keepAlive,
-          library: libraryFacade,
-          playback: playbackFacade,
-          subtitles: runtimeGraph.subtitles,
-          timer: timerFacade,
-          notifications: notificationFacade,
-          settings: settingsRepository,
-        ),
-        themeProviderInstanceProvider.overrideWithValue(themeProvider),
-        appLanguageProviderInstanceProvider.overrideWithValue(
-          appLanguageProvider,
-        ),
-        appUpdateServiceProvider.overrideWithValue(appUpdateService),
-        asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
-        asmrLibraryControllerProvider.overrideWithValue(asmrLibraryController),
-        asmrPlaybackCoordinatorProvider.overrideWithValue(
-          asmrPlaybackCoordinator,
-        ),
-      ],
-      child: const MusicPlayerApp(),
-    ),
+  final app = ProviderScope(
+    overrides: [
+      ...createAppRuntimeOverrides(
+        persistence: runtimeGraph.persistence,
+        runtime: runtimeGraph.runtime,
+        warmup: runtimeGraph.warmup,
+        playbackCommands: runtimeGraph.playbackCommands,
+        keepAlive: runtimeGraph.keepAlive,
+        library: libraryFacade,
+        playback: playbackFacade,
+        subtitles: runtimeGraph.subtitles,
+        timer: timerFacade,
+        notifications: notificationFacade,
+        settings: settingsRepository,
+      ),
+      themeProviderInstanceProvider.overrideWithValue(themeProvider),
+      appLanguageProviderInstanceProvider.overrideWithValue(
+        appLanguageProvider,
+      ),
+      appUpdateServiceProvider.overrideWithValue(appUpdateService),
+      asmrDownloadManagerProvider.overrideWithValue(asmrDownloadManager),
+      asmrLibraryControllerProvider.overrideWithValue(asmrLibraryController),
+      asmrPlaybackCoordinatorProvider.overrideWithValue(
+        asmrPlaybackCoordinator,
+      ),
+    ],
+    child: const MusicPlayerApp(),
   );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -174,6 +183,7 @@ Future<void> _runAudioPlayerApp() async {
     );
     unawaited(asmrDownloadManager.initialize());
   });
+  return app;
 }
 
 class AppOrientationPolicy {
@@ -274,10 +284,7 @@ class MusicPlayerApp extends ConsumerWidget {
           data: mediaQuery.copyWith(
             disableAnimations: reduceAnimations || mediaQuery.disableAnimations,
           ),
-          child: TooltipVisibility(
-            visible: false,
-            child: child ?? const SizedBox(),
-          ),
+          child: child ?? const SizedBox(),
         );
       },
       home: const OnboardingGate(child: GlobalShortcuts(child: MainScreen())),

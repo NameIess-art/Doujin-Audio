@@ -1,5 +1,9 @@
 const Map<String, String> appLanguageEn = {
   'app_title': 'Nameless Audio',
+  'startup_initializing': 'Starting Nameless Audio…',
+  'startup_error_title': 'Nameless Audio could not start',
+  'startup_error_message':
+      'Your local data is safe. Retry startup or export a diagnostic report.',
   'permission_group_playback': 'Playback basics',
   'permission_group_reliability': 'Timer & reliability',
   'permission_group_advanced': 'Advanced features',

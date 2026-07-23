@@ -17,10 +17,14 @@ class NativeMediaControllerAccessPolicyTest {
 
     @Test
     fun `app controller receives the complete player command profile`() {
-        val access = policy.accessFor(identity(packageName = "com.nameless.audio", uid = 1000))
-        val commands = policy.commandsFor(access)
+        val decision = policy.connectionFor(
+            identity(packageName = "com.nameless.audio", uid = 1000)
+        )
+        val access = decision.accessLevel
+        val commands = decision.allowedCommands
 
         assertEquals(ControllerAccessLevel.APP_SELF, access)
+        assertTrue(decision.accepted)
         assertTrue(commands.allowAllPlayerCommands)
         assertTrue(commands.useDefaultSessionCommands)
         assertEquals(
@@ -31,10 +35,12 @@ class NativeMediaControllerAccessPolicyTest {
 
     @Test
     fun `trusted system controller receives standard transport commands only`() {
-        val access = policy.accessFor(identity(trustedByMedia3 = true))
-        val commands = policy.commandsFor(access)
+        val decision = policy.connectionFor(identity(trustedByMedia3 = true))
+        val access = decision.accessLevel
+        val commands = decision.allowedCommands
 
         assertEquals(ControllerAccessLevel.SYSTEM_TRUSTED, access)
+        assertTrue(decision.accepted)
         assertStandardTransportCommands(commands)
         assertFalse(commands.playerCommandCodes.contains(Player.COMMAND_CHANGE_MEDIA_ITEMS))
         assertFalse(commands.playerCommandCodes.contains(Player.COMMAND_SEEK_TO_MEDIA_ITEM))
@@ -100,16 +106,14 @@ class NativeMediaControllerAccessPolicyTest {
     }
 
     @Test
-    fun `unknown controller receives read commands and no state changing commands`() {
-        val access = policy.accessFor(identity())
-        val commands = policy.commandsFor(access)
+    fun `unknown controller is rejected without receiving any commands`() {
+        val decision = policy.connectionFor(identity())
+        val access = decision.accessLevel
+        val commands = decision.allowedCommands
 
         assertEquals(ControllerAccessLevel.UNKNOWN_EXTERNAL, access)
-        assertEquals(expectedReadOnlyCommands, commands.playerCommandCodes)
-        assertFalse(commands.playerCommandCodes.contains(Player.COMMAND_PLAY_PAUSE))
-        assertFalse(commands.playerCommandCodes.contains(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM))
-        assertFalse(commands.playerCommandCodes.contains(Player.COMMAND_CHANGE_MEDIA_ITEMS))
-        assertFalse(commands.playerCommandCodes.contains(Player.COMMAND_SET_MEDIA_ITEM))
+        assertFalse(decision.accepted)
+        assertTrue(commands.playerCommandCodes.isEmpty())
         assertFalse(commands.useDefaultSessionCommands)
         assertEquals(
             SessionResult.RESULT_ERROR_PERMISSION_DENIED,
@@ -119,16 +123,18 @@ class NativeMediaControllerAccessPolicyTest {
 
     @Test
     fun `missing trust signal fails closed unless controller is the media notification controller`() {
-        val unknown = policy.accessFor(identity(trustedByMedia3 = null))
-        val notification = policy.accessFor(
+        val unknown = policy.connectionFor(identity(trustedByMedia3 = null))
+        val notification = policy.connectionFor(
             identity(
                 trustedByMedia3 = null,
                 mediaNotificationController = true
             )
         )
 
-        assertEquals(ControllerAccessLevel.UNKNOWN_EXTERNAL, unknown)
-        assertEquals(ControllerAccessLevel.SYSTEM_TRUSTED, notification)
+        assertEquals(ControllerAccessLevel.UNKNOWN_EXTERNAL, unknown.accessLevel)
+        assertFalse(unknown.accepted)
+        assertEquals(ControllerAccessLevel.SYSTEM_TRUSTED, notification.accessLevel)
+        assertTrue(notification.accepted)
     }
 
     private fun assertStandardTransportCommands(commands: AllowedMediaCommands) {

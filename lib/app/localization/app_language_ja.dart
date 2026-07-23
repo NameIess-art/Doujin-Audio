@@ -1,5 +1,8 @@
 const Map<String, String> appLanguageJa = {
   'app_title': 'Nameless Audio',
+  'startup_initializing': 'Nameless Audio を起動しています…',
+  'startup_error_title': 'Nameless Audio を起動できませんでした',
+  'startup_error_message': 'ローカルデータは失われません。再試行するか、診断レポートを出力してください。',
   'permission_group_playback': '再生の基本',
   'permission_group_reliability': 'タイマーと信頼性',
   'permission_group_advanced': '高度な機能',

@@ -46,6 +46,68 @@ void main() {
     );
   }
 
+  int readUint16(List<int> bytes, int offset) {
+    return bytes[offset] | bytes[offset + 1] << 8;
+  }
+
+  int readUint32(List<int> bytes, int offset) {
+    return readUint16(bytes, offset) | readUint16(bytes, offset + 2) << 16;
+  }
+
+  void writeUint16(List<int> bytes, int offset, int value) {
+    bytes[offset] = value & 0xff;
+    bytes[offset + 1] = value >> 8 & 0xff;
+  }
+
+  void writeUint32(List<int> bytes, int offset, int value) {
+    writeUint16(bytes, offset, value & 0xffff);
+    writeUint16(bytes, offset + 2, value >> 16 & 0xffff);
+  }
+
+  int centralDirectoryEntryOffset(List<int> bytes, String targetName) {
+    var endRecordOffset = bytes.length - 22;
+    while (endRecordOffset >= 0 &&
+        readUint32(bytes, endRecordOffset) != 0x06054b50) {
+      endRecordOffset--;
+    }
+    if (endRecordOffset < 0) {
+      throw StateError('ZIP end record not found');
+    }
+    var offset = readUint32(bytes, endRecordOffset + 16);
+    final entryCount = readUint16(bytes, endRecordOffset + 10);
+    for (var index = 0; index < entryCount; index++) {
+      if (readUint32(bytes, offset) != 0x02014b50) {
+        throw StateError('Invalid central directory');
+      }
+      final nameLength = readUint16(bytes, offset + 28);
+      final extraLength = readUint16(bytes, offset + 30);
+      final commentLength = readUint16(bytes, offset + 32);
+      final name = utf8.decode(
+        bytes.sublist(offset + 46, offset + 46 + nameLength),
+      );
+      if (name == targetName) return offset;
+      offset += 46 + nameLength + extraLength + commentLength;
+    }
+    throw StateError('ZIP entry not found: $targetName');
+  }
+
+  void patchUncompressedSize(
+    List<int> bytes,
+    String targetName,
+    int declaredSize,
+  ) {
+    final centralOffset = centralDirectoryEntryOffset(bytes, targetName);
+    writeUint32(bytes, centralOffset + 24, declaredSize);
+    final localOffset = readUint32(bytes, centralOffset + 42);
+    writeUint32(bytes, localOffset + 22, declaredSize);
+  }
+
+  void patchAsUnixSymlink(List<int> bytes, String targetName) {
+    final centralOffset = centralDirectoryEntryOffset(bytes, targetName);
+    writeUint16(bytes, centralOffset + 4, 3 << 8 | 20);
+    writeUint32(bytes, centralOffset + 38, (0xa000 | 0x1ff) << 16);
+  }
+
   Future<void> createDatabase(
     File file, {
     required String marker,
@@ -233,6 +295,324 @@ void main() {
     expect(validation.manifest?.platform, 'test');
     expect(closeCount, 1);
     expect(reopenCount, 1);
+  });
+
+  test('rejects an archive containing an unexpected entry', () async {
+    final service = createService();
+    final backup = await service.exportBackup(
+      '${tempDirectory.path}/unexpected_entry.nalbackup',
+    );
+    final archive = ZipDecoder().decodeBytes(await backup.readAsBytes())
+      ..addFile(ArchiveFile.string('unexpected.txt', 'not allowed'));
+    await backup.writeAsBytes(ZipEncoder().encode(archive), flush: true);
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'unexpected_entry');
+  });
+
+  test('rejects duplicate archive entry names', () async {
+    final service = createService();
+    final backup = await service.exportBackup(
+      '${tempDirectory.path}/duplicate_entry.nalbackup',
+    );
+    final exported = ZipDecoder().decodeBytes(await backup.readAsBytes());
+    final manifest =
+        jsonDecode(
+              utf8.decode(
+                exported.findFile(AppBackupService.manifestEntry)!.content,
+              ),
+            )
+            as Map<String, dynamic>;
+    manifest['formatVersion'] = 2;
+    (manifest['entries'] as Map<String, dynamic>).remove(
+      AppBackupService.librarySourcesEntry,
+    );
+    final archive = Archive()
+      ..addFile(
+        ArchiveFile.bytes(
+          AppBackupService.databaseEntry,
+          exported.findFile(AppBackupService.databaseEntry)!.content,
+        ),
+      )
+      ..addFile(
+        ArchiveFile.bytes(
+          AppBackupService.preferencesEntry,
+          exported.findFile(AppBackupService.preferencesEntry)!.content,
+        ),
+      )
+      ..addFile(
+        ArchiveFile.string(
+          AppBackupService.manifestEntry,
+          jsonEncode(manifest),
+        ),
+      )
+      ..addFile(ArchiveFile.string('duplicate.txt', 'duplicate'));
+    final encoded = ZipEncoder().encode(archive);
+    final duplicatedNames = latin1
+        .decode(encoded)
+        .replaceAll('duplicate.txt', AppBackupService.manifestEntry);
+    await backup.writeAsBytes(latin1.encode(duplicatedNames), flush: true);
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'duplicate_entry');
+  });
+
+  test('rejects directory entries', () async {
+    final service = createService();
+    final backup = await service.exportBackup(
+      '${tempDirectory.path}/directory_entry.nalbackup',
+    );
+    final archive = ZipDecoder().decodeBytes(await backup.readAsBytes())
+      ..addFile(ArchiveFile.directory('data/extra/'));
+    await backup.writeAsBytes(ZipEncoder().encode(archive), flush: true);
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'unexpected_entry');
+  });
+
+  test('rejects Unix symbolic links before ZIP decoding', () async {
+    final bytes = ZipEncoder().encode(
+      Archive()
+        ..addFile(ArchiveFile.string(AppBackupService.databaseEntry, 'target')),
+    );
+    patchAsUnixSymlink(bytes, AppBackupService.databaseEntry);
+    final backup = File('${tempDirectory.path}/symbolic_link.nalbackup');
+    await backup.writeAsBytes(bytes, flush: true);
+
+    final validation = await createService().validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'unexpected_entry');
+  });
+
+  test('rejects an input archive larger than one GiB', () async {
+    final backup = File('${tempDirectory.path}/oversize_input.nalbackup');
+    final output = await backup.open(mode: FileMode.write);
+    try {
+      await output.truncate(AppBackupService.maxBackupBytes + 1);
+    } finally {
+      await output.close();
+    }
+
+    final validation = await createService().validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'backup_too_large');
+  });
+
+  test('stops when actual output exceeds its declared size', () async {
+    final service = createService();
+    final exported = await service.exportBackup(
+      '${tempDirectory.path}/declared_size_source.nalbackup',
+    );
+    final decoded = ZipDecoder().decodeBytes(await exported.readAsBytes());
+    final databaseBytes = decoded
+        .findFile(AppBackupService.databaseEntry)!
+        .content;
+    final preferencesBytes = utf8.encode(
+      jsonEncode(<String, Object?>{'payload': 'a' * 32768}),
+    );
+    final manifest =
+        jsonDecode(
+              utf8.decode(
+                decoded.findFile(AppBackupService.manifestEntry)!.content,
+              ),
+            )
+            as Map<String, dynamic>;
+    manifest['formatVersion'] = 2;
+    final entries = manifest['entries'] as Map<String, dynamic>;
+    entries
+      ..remove(AppBackupService.librarySourcesEntry)
+      ..[AppBackupService.preferencesEntry] = <String, Object?>{
+        'sha256': sha256.convert(preferencesBytes).toString(),
+        'size': 16,
+      };
+    final bytes = ZipEncoder().encode(
+      Archive()
+        ..addFile(
+          ArchiveFile.bytes(AppBackupService.databaseEntry, databaseBytes),
+        )
+        ..addFile(
+          ArchiveFile.bytes(
+            AppBackupService.preferencesEntry,
+            preferencesBytes,
+          ),
+        )
+        ..addFile(
+          ArchiveFile.string(
+            AppBackupService.manifestEntry,
+            jsonEncode(manifest),
+          ),
+        ),
+    );
+    patchUncompressedSize(bytes, AppBackupService.preferencesEntry, 16);
+    final backup = File('${tempDirectory.path}/actual_size_bomb.nalbackup');
+    await backup.writeAsBytes(bytes, flush: true);
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'backup_too_large');
+  });
+
+  test('rejects a manifest larger than the JSON limit', () async {
+    final service = createService();
+    final backup = await service.exportBackup(
+      '${tempDirectory.path}/large_manifest.nalbackup',
+    );
+    final archive = ZipDecoder().decodeBytes(await backup.readAsBytes());
+    final manifest =
+        jsonDecode(
+              utf8.decode(
+                archive.findFile(AppBackupService.manifestEntry)!.content,
+              ),
+            )
+            as Map<String, dynamic>;
+    manifest['padding'] = 'a' * AppBackupService.maxManifestBytes;
+    archive.addFile(
+      ArchiveFile.string(AppBackupService.manifestEntry, jsonEncode(manifest)),
+    );
+    await backup.writeAsBytes(ZipEncoder().encode(archive), flush: true);
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'backup_too_large');
+  });
+
+  test('rejects a declared expanded total above one GiB', () async {
+    final service = createService();
+    final backup = await service.exportBackup(
+      '${tempDirectory.path}/large_total.nalbackup',
+    );
+    final archive = ZipDecoder().decodeBytes(await backup.readAsBytes());
+    final manifest =
+        jsonDecode(
+              utf8.decode(
+                archive.findFile(AppBackupService.manifestEntry)!.content,
+              ),
+            )
+            as Map<String, dynamic>;
+    final entries = manifest['entries'] as Map<String, dynamic>;
+    final database =
+        entries[AppBackupService.databaseEntry] as Map<String, dynamic>;
+    database['size'] = AppBackupService.maxBackupBytes;
+    archive.addFile(
+      ArchiveFile.string(AppBackupService.manifestEntry, jsonEncode(manifest)),
+    );
+    await backup.writeAsBytes(ZipEncoder().encode(archive), flush: true);
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'backup_too_large');
+  });
+
+  test('accepts an expanded size declaration at exactly one GiB', () async {
+    final service = createService();
+    final exported = await service.exportBackup(
+      '${tempDirectory.path}/exact_boundary_source.nalbackup',
+    );
+    final decoded = ZipDecoder().decodeBytes(await exported.readAsBytes());
+    final manifest =
+        jsonDecode(
+              utf8.decode(
+                decoded.findFile(AppBackupService.manifestEntry)!.content,
+              ),
+            )
+            as Map<String, dynamic>;
+    final entries = manifest['entries'] as Map<String, dynamic>;
+    final databaseManifest =
+        entries[AppBackupService.databaseEntry] as Map<String, dynamic>;
+    final preferencesSize =
+        (entries[AppBackupService.preferencesEntry]
+                as Map<String, dynamic>)['size']
+            as int;
+    final librarySourcesSize =
+        (entries[AppBackupService.librarySourcesEntry]
+                as Map<String, dynamic>)['size']
+            as int;
+    var manifestBytes = utf8.encode(jsonEncode(manifest));
+    while (true) {
+      final databaseSize =
+          AppBackupService.maxBackupBytes -
+          preferencesSize -
+          librarySourcesSize -
+          manifestBytes.length;
+      if (databaseManifest['size'] == databaseSize) break;
+      databaseManifest['size'] = databaseSize;
+      manifestBytes = utf8.encode(jsonEncode(manifest));
+    }
+    final declaredDatabaseSize = databaseManifest['size'] as int;
+    final bytes = ZipEncoder().encode(
+      Archive()
+        ..addFile(decoded.findFile(AppBackupService.databaseEntry)!)
+        ..addFile(decoded.findFile(AppBackupService.preferencesEntry)!)
+        ..addFile(decoded.findFile(AppBackupService.librarySourcesEntry)!)
+        ..addFile(
+          ArchiveFile.bytes(AppBackupService.manifestEntry, manifestBytes),
+        ),
+    );
+    patchUncompressedSize(
+      bytes,
+      AppBackupService.databaseEntry,
+      declaredDatabaseSize,
+    );
+    final backup = File('${tempDirectory.path}/exact_boundary.nalbackup');
+    await backup.writeAsBytes(bytes, flush: true);
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(
+      validation.error,
+      'checksum_mismatch:${AppBackupService.databaseEntry}',
+    );
+  });
+
+  test('rejects preferences JSON above its entry limit', () async {
+    final service = createService();
+    final backup = await service.exportBackup(
+      '${tempDirectory.path}/large_preferences.nalbackup',
+    );
+    final archive = ZipDecoder().decodeBytes(await backup.readAsBytes());
+    final manifest =
+        jsonDecode(
+              utf8.decode(
+                archive.findFile(AppBackupService.manifestEntry)!.content,
+              ),
+            )
+            as Map<String, dynamic>;
+    final bytes = utf8.encode(
+      jsonEncode(<String, Object?>{
+        'payload': 'a' * AppBackupService.maxPreferencesBytes,
+      }),
+    );
+    final entries = manifest['entries'] as Map<String, dynamic>;
+    entries[AppBackupService.preferencesEntry] = <String, Object?>{
+      'sha256': sha256.convert(bytes).toString(),
+      'size': bytes.length,
+    };
+    archive
+      ..addFile(ArchiveFile.bytes(AppBackupService.preferencesEntry, bytes))
+      ..addFile(
+        ArchiveFile.string(
+          AppBackupService.manifestEntry,
+          jsonEncode(manifest),
+        ),
+      );
+    await backup.writeAsBytes(ZipEncoder().encode(archive), flush: true);
+
+    final validation = await service.validateBackup(backup.path);
+
+    expect(validation.isValid, isFalse);
+    expect(validation.error, 'backup_too_large');
   });
 
   test(
@@ -497,8 +877,7 @@ void main() {
   });
 
   test('rejects backup without a manifest', () async {
-    final archive = Archive()
-      ..addFile(ArchiveFile.string('unexpected.txt', 'no manifest'));
+    final archive = Archive();
     final file = File('${tempDirectory.path}/invalid.nalbackup');
     await file.writeAsBytes(ZipEncoder().encode(archive));
 

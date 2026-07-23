@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
-import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../ui/ui_operation_service.dart';
 import '../logging/app_log_service.dart';
@@ -400,7 +398,9 @@ extension UiOperationServiceFeedback on UiOperationService {
     required UiOperationScope scope,
     required String labelKey,
     required UiOperationTask<T> task,
-    required String failureMessageKey,
+    required String failureMessage,
+    required String operationFailedTitle,
+    String? retryLabel,
     bool cancelPrevious = true,
     VoidCallback? onRetry,
   }) async {
@@ -418,17 +418,13 @@ extension UiOperationServiceFeedback on UiOperationService {
         stackTrace: stackTrace,
       );
       if (context.mounted) {
-        final i18n = ProviderScope.containerOf(
-          context,
-          listen: false,
-        ).read(appLanguageProviderInstanceProvider);
         showAppSnackBar(
           context,
-          i18n.tr(failureMessageKey),
+          failureMessage,
           tone: AppFeedbackTone.destructive,
-          title: i18n.tr('operation_failed'),
+          title: operationFailedTitle,
           icon: Icons.error_outline_rounded,
-          actionLabel: onRetry != null ? i18n.tr('retry') : null,
+          actionLabel: onRetry != null ? retryLabel : null,
           onAction: onRetry,
           duration: onRetry != null ? const Duration(seconds: 6) : null,
         );

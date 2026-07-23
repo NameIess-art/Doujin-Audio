@@ -199,23 +199,67 @@ abstract final class AppLogService {
   }
 
   static String sanitize(String message) {
-    var sanitized = message.replaceAll(
-      RegExp(r'\bBearer\s+[A-Za-z0-9._~+/=-]+', caseSensitive: false),
-      'Bearer [REDACTED]',
-    );
-    sanitized = sanitized.replaceAllMapped(
-      RegExp(
-        r'''\b(token|password|passwd|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token)\b(\s*[:=]\s*|"\s*:\s*")([^,\s&}"']+)''',
-        caseSensitive: false,
-      ),
-      (match) => '${match.group(1)}${match.group(2)}[REDACTED]',
-    );
-    sanitized = sanitized.replaceAllMapped(RegExp(r'https?://[^\s]+'), (match) {
+    var sanitized = message.replaceAllMapped(RegExp(r'https?://[^\s]+'), (
+      match,
+    ) {
       final value = match.group(0)!;
       final uri = Uri.tryParse(value);
       if (uri == null || !uri.hasQuery) return value;
       return uri.replace(query: '').toString();
     });
+    sanitized = sanitized.replaceAll(
+      RegExp(r'\bBearer\s+[A-Za-z0-9._~+/=-]+', caseSensitive: false),
+      'Bearer [REDACTED]',
+    );
+    const sensitiveKey =
+        r'(?:token|password|passwd|authorization|api[_-]?key|access[_-]?token|refresh[_-]?token)';
+    sanitized = sanitized.replaceAllMapped(
+      RegExp(
+        '"($sensitiveKey)"(\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"',
+        caseSensitive: false,
+      ),
+      (match) => '"${match.group(1)}"${match.group(2)}"[REDACTED]"',
+    );
+    sanitized = sanitized.replaceAllMapped(
+      RegExp(
+        "'($sensitiveKey)'(\\s*:\\s*)'(?:\\\\.|[^'\\\\])*'",
+        caseSensitive: false,
+      ),
+      (match) => "'${match.group(1)}'${match.group(2)}'[REDACTED]'",
+    );
+    sanitized = sanitized.replaceAllMapped(
+      RegExp(
+        '$sensitiveKey(\\s*[:=]\\s*)"(?:\\\\.|[^"\\\\])*"',
+        caseSensitive: false,
+      ),
+      (match) {
+        final prefix = match
+            .group(0)!
+            .substring(0, match.group(0)!.indexOf('"') + 1);
+        return '$prefix[REDACTED]"';
+      },
+    );
+    sanitized = sanitized.replaceAllMapped(
+      RegExp(
+        "$sensitiveKey(\\s*[:=]\\s*)'(?:\\\\.|[^'\\\\])*'",
+        caseSensitive: false,
+      ),
+      (match) {
+        final prefix = match
+            .group(0)!
+            .substring(0, match.group(0)!.indexOf("'") + 1);
+        return "$prefix[REDACTED]'";
+      },
+    );
+    sanitized = sanitized.replaceAllMapped(
+      RegExp(
+        '\\b($sensitiveKey)\\b(\\s*[:=]\\s*)(?!["\\\'])'
+        '([^,;&\\r\\n}]*?)'
+        '(?=\\s+\\b$sensitiveKey\\b\\s*[:=]|[,;&\\r\\n}]|\$)',
+        caseSensitive: false,
+      ),
+      (match) => '${match.group(1)}${match.group(2)}[REDACTED]',
+    );
     return sanitized;
   }
 

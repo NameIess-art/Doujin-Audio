@@ -140,6 +140,86 @@ void main() {
   });
 
   test(
+    'folder import scans a resolvable SAF source by file-system path',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
+      final dataSource = _ResolvedPickedFolderDataSource();
+
+      await LibraryScannerService(
+        dataSource: dataSource,
+      ).addFolder(provider: catalog, labels: labels);
+
+      expect(dataSource.permissionSources, <String>['C:/media/music']);
+      expect(dataSource.scannedFolders, <String>['C:/media/music']);
+      expect(catalog.watchedFolders, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          catalog.watchedFolders.single,
+          'C:/media/music',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'library import scans a resolvable SAF source by file-system path',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
+      final dataSource = _ResolvedPickedFolderDataSource();
+
+      await LibraryScannerService(
+        dataSource: dataSource,
+      ).addLibrary(provider: catalog, labels: labels);
+
+      expect(dataSource.permissionSources, <String>['C:/media/music']);
+      expect(dataSource.childFolderListings, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          dataSource.childFolderListings.single,
+          'C:/media/music',
+        ),
+        isTrue,
+      );
+      expect(dataSource.scannedFolders, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          dataSource.scannedFolders.single,
+          'C:/media/music',
+        ),
+        isTrue,
+      );
+      expect(catalog.watchedLibraries, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          catalog.watchedLibraries.single,
+          'C:/media/music',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'folder import keeps the SAF source when file permission is denied',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
+      final dataSource = _ResolvedPickedFolderDataSource(
+        permissionGranted: false,
+      );
+
+      await LibraryScannerService(
+        dataSource: dataSource,
+      ).addFolder(provider: catalog, labels: labels);
+
+      expect(dataSource.permissionSources, <String>['C:/media/music']);
+      expect(dataSource.scannedFolders, <String>[
+        'content://storage/tree/music',
+      ]);
+    },
+  );
+
+  test(
     'file import always finishes scan when batch finalization fails',
     () async {
       final catalog = _FailingBatchCatalog();
@@ -602,6 +682,39 @@ class _RefreshCatalog implements LibraryCatalog {
   ) {}
 
   @override
+  void removeTracksDeletedFromFolder(
+    String folderPath,
+    Set<String> scannedPaths,
+  ) {}
+
+  @override
+  void removeLibraryEntriesDeletedFromFolder(
+    String libraryPath,
+    String folderPath,
+    Set<String> retainedPaths,
+  ) {}
+
+  @override
+  void recordLibraryEntriesForTracks(
+    String libraryPath,
+    List<MusicTrack> tracks, {
+    Iterable<String> folderPaths = const <String>[],
+    bool persist = true,
+    LibraryExclusionMatcher? exclusionMatcher,
+    LibraryEntrySnapshot? entrySnapshot,
+  }) {}
+
+  @override
+  void addWatchedFolder(String folderPath, {bool notify = true}) {
+    watchedFolders.add(folderPath);
+  }
+
+  @override
+  void addWatchedLibrary(String folderPath, {bool notify = true}) {
+    watchedLibraries.add(folderPath);
+  }
+
+  @override
   Future<void> prefillAudioDetailRjCodeFromText(
     String folderPath,
     String displayName,
@@ -698,6 +811,59 @@ class _ResolvedBackupRestoreDataSource implements LibraryScanDataSource {
   }) async {
     filePickerCalls++;
     return null;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _ResolvedPickedFolderDataSource implements LibraryScanDataSource {
+  _ResolvedPickedFolderDataSource({this.permissionGranted = true});
+
+  final bool permissionGranted;
+  final permissionSources = <String>[];
+  final scannedFolders = <String>[];
+  final childFolderListings = <String>[];
+
+  @override
+  Future<String?> pickAudioFolder({required String dialogTitle}) async {
+    return 'content://storage/tree/music';
+  }
+
+  @override
+  Future<String> resolveRestorablePath(String source) async {
+    return source == 'content://storage/tree/music' ? 'C:/media/music' : source;
+  }
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    permissionSources.addAll(sources);
+    return permissionGranted;
+  }
+
+  @override
+  Future<bool> sourceExists(String source) async => source == 'C:/media/music';
+
+  @override
+  Future<LibraryChildFolderListing> listImmediateChildFolders(
+    String folderPath,
+  ) async {
+    childFolderListings.add(folderPath);
+    return (folders: const <String>[], complete: true);
+  }
+
+  @override
+  Future<NativeScanResult> scanFolderChunked(
+    String folderPath,
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk, {
+    FutureOr<void> Function(FolderScanSessionEvent event)? onProgress,
+  }) async {
+    scannedFolders.add(folderPath);
+    return NativeScanResult.success(
+      const <ScannedTrack>[],
+      const <String>{},
+      completenessKnown: true,
+    );
   }
 
   @override

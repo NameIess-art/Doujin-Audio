@@ -1192,11 +1192,28 @@ class LibraryScannerService {
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
   }) async {
-    final folderPath = await _dataSource.pickAudioFolder(
+    final selectedPath = await _dataSource.pickAudioFolder(
       dialogTitle: labels.chooseMusicFolder,
     );
-    if (folderPath == null || folderPath.isEmpty) return null;
+    if (selectedPath == null || selectedPath.isEmpty) return null;
+    final folderPath = await _resolvePickedFolderSource(selectedPath);
     return _addFolderFromPath(folderPath, provider, labels);
+  }
+
+  Future<String> _resolvePickedFolderSource(String source) async {
+    final resolved = await _dataSource.resolveRestorablePath(source);
+    if (resolved.isEmpty ||
+        PathMatcher.equalsNormalized(resolved, source) ||
+        PathMatcher.isContentUri(resolved)) {
+      return source;
+    }
+    final permissionGranted = await _dataSource.ensureReadPermissionForSources(
+      <String>[resolved],
+    );
+    if (!permissionGranted || !await _dataSource.sourceExists(resolved)) {
+      return source;
+    }
+    return resolved;
   }
 
   Future<LibraryScanOutcome> _addFolderFromPath(
@@ -1379,10 +1396,11 @@ class LibraryScannerService {
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
   }) async {
-    final folderPath = await _dataSource.pickAudioFolder(
+    final selectedPath = await _dataSource.pickAudioFolder(
       dialogTitle: labels.chooseLibraryFolder,
     );
-    if (folderPath == null || folderPath.isEmpty) return null;
+    if (selectedPath == null || selectedPath.isEmpty) return null;
+    final folderPath = await _resolvePickedFolderSource(selectedPath);
     return _addLibraryFromPath(folderPath, provider, labels);
   }
 

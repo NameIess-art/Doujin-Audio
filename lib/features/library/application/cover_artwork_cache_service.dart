@@ -46,6 +46,8 @@ class CoverArtworkCacheService {
     AudioDatabaseRepository? databaseRepository,
     AudioDetailCacheService? audioDetailCacheService,
     FileCachePlatformGateway? fileCacheGateway,
+    Future<List<String>> Function(String rootPath, bool recursive)?
+    filesystemImageScanner,
     Future<String?> Function(String remoteUrl)? remoteCoverDownloader,
     Duration requestTimeout = const Duration(seconds: 15),
     Duration downloadIdleTimeout = const Duration(seconds: 30),
@@ -58,6 +60,7 @@ class CoverArtworkCacheService {
        _audioDetailCacheService = audioDetailCacheService,
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
+       _filesystemImageScanner = filesystemImageScanner,
        _remoteCoverDownloader = remoteCoverDownloader,
        _requestTimeout = requestTimeout,
        _downloadIdleTimeout = downloadIdleTimeout,
@@ -70,6 +73,8 @@ class CoverArtworkCacheService {
   final AudioDatabaseRepository? _databaseRepository;
   final AudioDetailCacheService? _audioDetailCacheService;
   final FileCachePlatformGateway _fileCacheGateway;
+  final Future<List<String>> Function(String rootPath, bool recursive)?
+  _filesystemImageScanner;
   final Future<String?> Function(String remoteUrl)? _remoteCoverDownloader;
   final Duration _requestTimeout;
   final Duration _downloadIdleTimeout;
@@ -1603,6 +1608,9 @@ class CoverArtworkCacheService {
     }
 
     final normalizedFolder = PathMatcher.normalize(folderPath);
+    if (!recursive) {
+      return _buildFolderImageIndex(normalizedFolder, recursive: false);
+    }
     final indexRoot = _folderImageIndexRoot(normalizedFolder);
     final indexedImages = await _folderImageIndexFutures.putIfAbsent(
       indexRoot,
@@ -1626,33 +1634,36 @@ class CoverArtworkCacheService {
     return _mostSpecificContainingRoot(roots, folderPath) ?? folderPath;
   }
 
-  Future<List<String>> _buildFolderImageIndex(String rootPath) async {
-    final images = <String>[];
+  Future<List<String>> _buildFolderImageIndex(
+    String rootPath, {
+    bool recursive = true,
+  }) async {
     try {
-      final directory = Directory(rootPath);
-      if (!await directory.exists()) return const <String>[];
-      await for (final entity in directory.list(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (entity is! File ||
-            !_folderCoverImageExtensions.contains(
-              path.extension(entity.path).toLowerCase(),
-            )) {
-          continue;
-        }
-        images.add(entity.path);
-        _rememberFolderImageSource(entity.path, entity.path);
+      final scanner = _filesystemImageScanner;
+      final images = scanner == null
+          ? recursive
+                ? await compute(
+                    _scanFilesystemFolderImages,
+                    (rootPath: rootPath, recursive: true),
+                    debugLabel: 'library_folder_cover_index',
+                  )
+                : await _scanFilesystemFolderImages((
+                    rootPath: rootPath,
+                    recursive: false,
+                  ))
+          : await scanner(rootPath, recursive);
+      for (final imagePath in images) {
+        _rememberFolderImageSource(imagePath, imagePath);
       }
+      return List<String>.unmodifiable(images);
     } catch (error, stackTrace) {
       AppLogService.warning(
         'Unable to discover folder cover images.',
         error: error,
         stackTrace: stackTrace,
       );
+      return const <String>[];
     }
-    images.sort();
-    return List<String>.unmodifiable(images);
   }
 
   void _rememberFolderImageSource(String displayPath, String sourcePath) {
@@ -1680,6 +1691,29 @@ class CoverArtworkCacheService {
         })
         .toList(growable: false);
   }
+}
+
+Future<List<String>> _scanFilesystemFolderImages(
+  ({String rootPath, bool recursive}) request,
+) async {
+  final directory = Directory(request.rootPath);
+  if (!await directory.exists()) return const <String>[];
+
+  final images = <String>[];
+  await for (final entity in directory.list(
+    recursive: request.recursive,
+    followLinks: false,
+  )) {
+    if (entity is! File ||
+        !_folderCoverImageExtensions.contains(
+          path.extension(entity.path).toLowerCase(),
+        )) {
+      continue;
+    }
+    images.add(entity.path);
+  }
+  images.sort();
+  return images;
 }
 
 final class _RemoteCoverFailure {

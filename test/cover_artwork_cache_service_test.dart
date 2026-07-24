@@ -1559,6 +1559,71 @@ void main() {
   );
 
   test(
+    'filesystem folder cover skips recursive index when a direct image exists',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'cover_direct_scan_root_',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final child = Directory('${root.path}${Platform.pathSeparator}child');
+      await child.create();
+      final directCover =
+          '${child.path}${Platform.pathSeparator}direct-cover.jpg';
+      final requests = <({String rootPath, bool recursive})>[];
+      final library = LibraryService()..watchedLibraries.add(root.path);
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        filesystemImageScanner: (rootPath, recursive) async {
+          requests.add((rootPath: rootPath, recursive: recursive));
+          return !recursive && rootPath == child.path
+              ? <String>[directCover]
+              : const <String>[];
+        },
+      );
+
+      expect(await cache.futureForFolder(child.path), directCover);
+      expect(requests, <({String rootPath, bool recursive})>[
+        (rootPath: child.path, recursive: false),
+      ]);
+    },
+  );
+
+  test(
+    'filesystem folder cover builds recursive root index after a direct miss',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'cover_recursive_scan_root_',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final child = Directory('${root.path}${Platform.pathSeparator}child');
+      await child.create();
+      final nestedCover =
+          '${child.path}${Platform.pathSeparator}nested-cover.jpg';
+      final requests = <({String rootPath, bool recursive})>[];
+      final library = LibraryService()..watchedLibraries.add(root.path);
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        filesystemImageScanner: (rootPath, recursive) async {
+          requests.add((rootPath: rootPath, recursive: recursive));
+          return recursive && rootPath == root.path
+              ? <String>[nestedCover]
+              : const <String>[];
+        },
+      );
+
+      expect(await cache.futureForFolder(child.path), nestedCover);
+      expect(requests, <({String rootPath, bool recursive})>[
+        (rootPath: child.path, recursive: false),
+        (rootPath: root.path, recursive: true),
+      ]);
+    },
+  );
+
+  test(
     'filesystem image discovery reuses one index per library root',
     () async {
       final root = await Directory.systemTemp.createTemp('cover_root_index_');

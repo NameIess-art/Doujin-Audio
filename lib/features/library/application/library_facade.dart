@@ -381,6 +381,15 @@ final class LibraryFacade implements LibraryCatalog {
     },
   );
 
+  Future<AudioLibraryCategorySnapshot> reconcileAudioLibraryCategorySnapshot({
+    void Function()? onCommitted,
+  }) => snapshotCacheService.reconcileCategorySnapshot(
+    onCommitted: () {
+      _syncStateSlice();
+      onCommitted?.call();
+    },
+  );
+
   Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) =>
       detailCacheService.load(canonicalAudioDetailTarget(target));
 

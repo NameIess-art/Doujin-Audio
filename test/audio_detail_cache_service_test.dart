@@ -157,6 +157,28 @@ void main() {
       expect((await cache.load(target)).detail.workTitle, 'Restored');
     },
   );
+
+  test('database snapshot load does not populate the resolved cache', () async {
+    final target = AudioDetailTarget.libraryRootFolder('/library/work');
+    final repository = _FakeAudioDetailRepository(
+      loadResult: AudioDetail.empty(
+        target,
+      ).copyWith(workTitle: 'Database preview'),
+    );
+    final cache = AudioDetailCacheService(repository: repository);
+
+    final preview = await cache.loadDatabaseSnapshotMany(<AudioDetailTarget>[
+      target,
+    ]);
+
+    expect(preview.single.detail.workTitle, 'Database preview');
+    expect(repository.databaseSnapshotLoadCount, 1);
+    expect(cache.resolvedDetail(target), isNull);
+
+    final reconciled = await cache.load(target);
+    expect(reconciled.detail.workTitle, 'Database preview');
+    expect(repository.loadCount, 1);
+  });
 }
 
 class _FakeAudioDetailRepository implements AudioDetailRepository {
@@ -173,6 +195,7 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   final AudioDetail? _prefillResult;
   final List<String> events = <String>[];
   int loadCount = 0;
+  int databaseSnapshotLoadCount = 0;
   int deleteCount = 0;
 
   @override
@@ -190,6 +213,17 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
     Iterable<AudioDetailTarget> targets,
   ) {
     return Future.wait(targets.map(load));
+  }
+
+  @override
+  Future<List<AudioDetailLoadResult>> loadDatabaseSnapshotMany(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    databaseSnapshotLoadCount++;
+    return <AudioDetailLoadResult>[
+      for (final target in targets)
+        AudioDetailLoadResult(detail: loadResult.copyWith(target: target)),
+    ];
   }
 
   @override

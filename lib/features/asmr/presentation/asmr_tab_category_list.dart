@@ -29,6 +29,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
   bool _refreshTriggeredInCurrentScroll = false;
+  bool _loadMoreTriggeredInCurrentScroll = false;
+  bool _automaticLoadMoreScheduled = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -62,6 +64,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           isStale: false,
           hasAttemptedLoad: false,
           hasMore: false,
+          needsLoadMoreRetry: false,
           totalCount: 0,
           activeQuery: widget.searchQuery,
           lastError: null,
@@ -113,19 +116,26 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   );
                   _refreshIndicatorKey.currentState?.show();
                 }
-                if (notification.metrics.pixels >
-                    notification.metrics.maxScrollExtent - 400) {
-                  if (!state.isLoadingMore && state.hasMore) {
-                    ref
-                        .read(asmrLibraryControllerProvider)
-                        ?.loadMoreCategory(
-                          widget.category,
-                          searchQuery: widget.searchQuery,
-                        );
-                  }
+                final nearBottom =
+                    notification.metrics.pixels >
+                    notification.metrics.maxScrollExtent - 400;
+                final isManualUpwardDrag =
+                    notification.dragDetails != null &&
+                    (notification.scrollDelta ?? 0) > 0;
+                if (nearBottom &&
+                    (!state.needsLoadMoreRetry || isManualUpwardDrag)) {
+                  _loadMoreOncePerScroll(state);
+                }
+              } else if (notification is OverscrollNotification) {
+                final isManualBottomOverscroll =
+                    notification.dragDetails != null &&
+                    notification.overscroll > 0;
+                if (state.needsLoadMoreRetry && isManualBottomOverscroll) {
+                  _loadMoreOncePerScroll(state);
                 }
               } else if (notification is ScrollEndNotification) {
                 _refreshTriggeredInCurrentScroll = false;
+                _loadMoreTriggeredInCurrentScroll = false;
               }
               return false;
             },
@@ -204,23 +214,32 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                       );
                     }
                     if (index >= works.length) {
+                      if (!state.needsLoadMoreRetry) {
+                        _scheduleAutomaticLoadMore(state);
+                      }
                       return Padding(
                         padding: const EdgeInsets.only(top: 4, bottom: 4),
                         child: Center(
-                          child: state.isLoadingMore
-                              ? SizedBox(
+                          child: state.needsLoadMoreRetry
+                              ? Text(
+                                  i18n.tr('asmr_load_more_hint'),
+                                  key: const ValueKey<String>(
+                                    'asmr_load_more_retry_hint',
+                                  ),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                )
+                              : SizedBox(
+                                  key: const ValueKey<String>(
+                                    'asmr_load_more_progress',
+                                  ),
                                   width: 22,
                                   height: 22,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2.2,
                                     color: asmrBlue,
-                                  ),
-                                )
-                              : Text(
-                                  i18n.tr('asmr_load_more_hint'),
-                                  style: theme.textTheme.bodySmall?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant,
-                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
                         ),
@@ -243,6 +262,49 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         ),
       ),
     );
+  }
+
+  void _loadMoreOncePerScroll(AsmrCategoryViewState state) {
+    if (_loadMoreTriggeredInCurrentScroll ||
+        state.isLoadingMore ||
+        !state.hasMore) {
+      return;
+    }
+    _loadMoreTriggeredInCurrentScroll = true;
+    unawaited(_loadMore());
+  }
+
+  void _scheduleAutomaticLoadMore(AsmrCategoryViewState state) {
+    if (_automaticLoadMoreScheduled ||
+        state.isLoadingMore ||
+        !state.hasMore ||
+        state.needsLoadMoreRetry) {
+      return;
+    }
+    _automaticLoadMoreScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _automaticLoadMoreScheduled = false;
+      if (!mounted) return;
+      final currentState = ref
+          .read(asmrLibraryControllerProvider)
+          ?.categoryViewState(
+            widget.category,
+            searchQuery: normalizeSearchQuery(widget.searchQuery),
+          );
+      if (currentState == null ||
+          currentState.isLoadingMore ||
+          !currentState.hasMore ||
+          currentState.needsLoadMoreRetry) {
+        return;
+      }
+      unawaited(_loadMore());
+    });
+  }
+
+  Future<void> _loadMore() async {
+    await ref
+        .read(asmrLibraryControllerProvider)
+        ?.loadMoreCategory(widget.category, searchQuery: widget.searchQuery);
   }
 }
 

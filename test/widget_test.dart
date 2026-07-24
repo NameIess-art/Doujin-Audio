@@ -311,6 +311,106 @@ void main() {
     },
   );
 
+  testWidgets('ASMR pagination shows progress without a pull-up hint', (
+    tester,
+  ) async {
+    final controller = _QueuedEmptyAsmrLibraryController(
+      collectedHasMore: true,
+    );
+    addTearDown(controller.dispose);
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final collectedList = find.byKey(
+      const ValueKey(AsmrCategoryType.collected),
+    );
+    expect(
+      find.descendant(
+        of: collectedList,
+        matching: find.byKey(const ValueKey<String>('asmr_load_more_progress')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: collectedList,
+        matching: find.byKey(
+          const ValueKey<String>('asmr_load_more_retry_hint'),
+        ),
+      ),
+      findsNothing,
+    );
+    expect(controller.loadMoreCount, 1);
+  });
+
+  testWidgets('ASMR pagination failure retries only after a manual pull-up', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator.instance;
+    coordinator.resetForTest();
+    addTearDown(coordinator.resetForTest);
+    final controller = _QueuedEmptyAsmrLibraryController(
+      collectedHasMore: true,
+      needsRetry: true,
+    );
+    addTearDown(controller.dispose);
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final collectedList = find.byKey(
+      const ValueKey(AsmrCategoryType.collected),
+    );
+    expect(
+      find.descendant(
+        of: collectedList,
+        matching: find.byKey(
+          const ValueKey<String>('asmr_load_more_retry_hint'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(controller.loadMoreCount, 0);
+
+    await tester.drag(collectedList, const Offset(0, -180));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 800));
+
+    expect(controller.loadMoreCount, 1);
+    coordinator.finishInteractionsForTest();
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: collectedList,
+        matching: find.byKey(
+          const ValueKey<String>('asmr_load_more_retry_hint'),
+        ),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('app shell does not render a custom startup overlay', (
     tester,
   ) async {
@@ -1265,15 +1365,21 @@ final class _AppShellAudioDatabaseRepository extends AudioDatabaseRepository {
 }
 
 final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
-  _QueuedEmptyAsmrLibraryController()
-    : super(
-        preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
-      );
+  _QueuedEmptyAsmrLibraryController({
+    this.collectedHasMore = false,
+    this.needsRetry = false,
+  }) : super(
+         preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+       );
 
   final Completer<void> _recommendationRefresh = Completer<void>();
+  final bool collectedHasMore;
+  bool needsRetry;
   bool _recommendationLoading = false;
+  bool _isLoadingMore = false;
   int _revision = 0;
   int recommendationRefreshCount = 0;
+  int loadMoreCount = 0;
 
   static final AsmrWork _collectedWork = AsmrWork(
     id: 1,
@@ -1333,16 +1439,19 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     final works = worksFor(category);
     final isLoading =
         category == AsmrCategoryType.recommendation && _recommendationLoading;
+    final isPaginated =
+        category == AsmrCategoryType.collected && collectedHasMore;
     return AsmrCategoryViewState(
       category: category,
       works: works,
       isLoading: isLoading,
-      isLoadingMore: false,
+      isLoadingMore: isPaginated && _isLoadingMore,
       isRefreshing: isLoading && works.isNotEmpty,
       isStale: isLoading && works.isNotEmpty,
       hasAttemptedLoad: true,
-      hasMore: false,
-      totalCount: works.length,
+      hasMore: isPaginated,
+      needsLoadMoreRetry: isPaginated && needsRetry,
+      totalCount: isPaginated ? works.length + 1 : works.length,
       activeQuery: searchQuery,
       lastError: null,
       operationError: null,
@@ -1369,6 +1478,23 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     if (!_recommendationRefresh.isCompleted) {
       _recommendationRefresh.complete();
     }
+  }
+
+  @override
+  Future<void> loadMoreCategory(
+    AsmrCategoryType category, {
+    String searchQuery = '',
+  }) async {
+    if (!collectedHasMore ||
+        category != AsmrCategoryType.collected ||
+        _isLoadingMore) {
+      return;
+    }
+    loadMoreCount++;
+    _isLoadingMore = true;
+    needsRetry = false;
+    _revision++;
+    notifyListeners();
   }
 }
 

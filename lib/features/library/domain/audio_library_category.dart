@@ -80,6 +80,7 @@ class AudioLibraryCategorySnapshot {
     required this.structureRevision,
     required this.detailRevision,
   }) : entries = immutableList(entries),
+       _entryByTarget = _indexEntries(entries),
        tagTerms = immutableList(tagTerms),
        voiceActorTerms = immutableList(voiceActorTerms),
        circleTerms = immutableList(circleTerms);
@@ -90,21 +91,24 @@ class AudioLibraryCategorySnapshot {
   final List<String> circleTerms;
   final int structureRevision;
   final int detailRevision;
+  final Map<AudioDetailTarget, AudioLibraryCategoryEntry> _entryByTarget;
 
   AudioDetail? detailFor(AudioDetailTarget target) {
-    for (final entry in entries) {
-      if (targetKey(entry.target) == targetKey(target)) {
-        return entry.detail;
-      }
-    }
-    return null;
+    return _entryByTarget[target]?.detail;
   }
 
   AudioLibraryCategoryEntry? entryFor(AudioDetailTarget target) {
+    return _entryByTarget[target];
+  }
+
+  static Map<AudioDetailTarget, AudioLibraryCategoryEntry> _indexEntries(
+    Iterable<AudioLibraryCategoryEntry> entries,
+  ) {
+    final result = <AudioDetailTarget, AudioLibraryCategoryEntry>{};
     for (final entry in entries) {
-      if (targetKey(entry.target) == targetKey(target)) return entry;
+      result.putIfAbsent(entry.target, () => entry);
     }
-    return null;
+    return immutableMap(result);
   }
 
   static String targetKey(AudioDetailTarget target) {

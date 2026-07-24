@@ -160,6 +160,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final ScrollController _scrollController = ScrollController();
   int? _categorySnapshotRequestStructureRevision;
   int? _categorySnapshotRequestDetailRevision;
+  int? _categoryReconcileRequestStructureRevision;
+  int? _categoryReconcileRequestDetailRevision;
   String? _lastLibraryCoverWarmupSignature;
   int? _durationBackfillStructureRevision;
   late final String _durationBackfillCommitKey;
@@ -487,6 +489,41 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     });
   }
 
+  void _ensureCategoryReconciliation({
+    required LibraryFacade libraryFacade,
+    required int structureRevision,
+    required int detailRevision,
+  }) {
+    if (_categoryReconcileRequestStructureRevision == structureRevision &&
+        _categoryReconcileRequestDetailRevision == detailRevision) {
+      return;
+    }
+    _categoryReconcileRequestStructureRevision = structureRevision;
+    _categoryReconcileRequestDetailRevision = detailRevision;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          _categoryReconcileRequestStructureRevision != structureRevision ||
+          _categoryReconcileRequestDetailRevision != detailRevision) {
+        return;
+      }
+      unawaited(
+        libraryFacade.reconcileAudioLibraryCategorySnapshot().then<void>(
+          (_) {},
+          onError: (Object error, StackTrace stackTrace) {
+            if (!mounted ||
+                _categoryReconcileRequestStructureRevision !=
+                    structureRevision ||
+                _categoryReconcileRequestDetailRevision != detailRevision) {
+              return;
+            }
+            _categoryReconcileRequestStructureRevision = null;
+            _categoryReconcileRequestDetailRevision = null;
+          },
+        ),
+      );
+    });
+  }
+
   void _ensureMissingDurationBackfill({
     required LibraryFacade libraryFacade,
     required int structureRevision,
@@ -644,8 +681,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           !listStateIsScanning &&
           !listStateIsBackgroundScanning,
     );
-    if (_categoryType != AudioLibraryCategoryType.all ||
-        _startupLibraryRefreshCompleted) {
+    if (listStateIsInitialized) {
       _ensureCategorySnapshot(
         libraryFacade: libraryFacade,
         structureRevision: listStateStructureRevision,
@@ -695,9 +731,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         categorySnapshot.structureRevision == listStateStructureRevision &&
         categorySnapshot.detailRevision == detailRevision;
     if (!_initialLibraryContentReady &&
-        _startupLibraryRefreshCompleted &&
+        listStateIsInitialized &&
         libraryCardDetailsReady) {
       _initialLibraryContentReady = true;
+    }
+    if (listStateIsInitialized &&
+        _startupLibraryRefreshCompleted &&
+        libraryCardDetailsReady) {
+      _ensureCategoryReconciliation(
+        libraryFacade: libraryFacade,
+        structureRevision: listStateStructureRevision,
+        detailRevision: detailRevision,
+      );
     }
     final showLibrarySkeleton =
         _effectiveSearchQuery.isEmpty &&
@@ -706,6 +751,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     if (_categoryType == AudioLibraryCategoryType.all &&
         _effectiveSearchQuery.isEmpty &&
         !showLibrarySkeleton &&
+        _startupLibraryRefreshCompleted &&
         listStateIsInitialized) {
       _scheduleLibraryCoverWarmup(
         libraryFacade: libraryFacade,

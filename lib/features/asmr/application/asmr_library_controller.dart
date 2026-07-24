@@ -66,6 +66,7 @@ class AsmrCategoryViewState {
     required this.isStale,
     required this.hasAttemptedLoad,
     required this.hasMore,
+    required this.needsLoadMoreRetry,
     required this.totalCount,
     required this.activeQuery,
     required this.lastError,
@@ -81,6 +82,7 @@ class AsmrCategoryViewState {
   final bool isStale;
   final bool hasAttemptedLoad;
   final bool hasMore;
+  final bool needsLoadMoreRetry;
   final int totalCount;
   final String activeQuery;
   final Object? lastError;
@@ -98,6 +100,7 @@ class AsmrCategoryViewState {
         isStale == other.isStale &&
         hasAttemptedLoad == other.hasAttemptedLoad &&
         hasMore == other.hasMore &&
+        needsLoadMoreRetry == other.needsLoadMoreRetry &&
         totalCount == other.totalCount &&
         activeQuery == other.activeQuery &&
         lastError == other.lastError &&
@@ -115,6 +118,7 @@ class AsmrCategoryViewState {
     isStale,
     hasAttemptedLoad,
     hasMore,
+    needsLoadMoreRetry,
     totalCount,
     activeQuery,
     lastError,
@@ -340,6 +344,8 @@ class AsmrLibraryController extends ChangeNotifier
       <AsmrCategoryType, int>{};
   final Map<AsmrCategoryType, bool> _hasMoreByCategory =
       <AsmrCategoryType, bool>{};
+  final Map<AsmrCategoryType, bool> _loadMoreRetryByCategory =
+      <AsmrCategoryType, bool>{};
   final Map<AsmrCategoryType, String> _queryByCategory =
       <AsmrCategoryType, String>{};
   final LinkedHashMap<int, AsmrWorkDetail> _detailCache = LinkedHashMap();
@@ -451,6 +457,7 @@ class AsmrLibraryController extends ChangeNotifier
           (_refreshRequestSerial[category] ?? 0) + 1;
       _loadingByCategory[category] = false;
       _loadingMoreByCategory[category] = false;
+      _loadMoreRetryByCategory.remove(category);
       if (_isRemoteCategory(category)) {
         _currentPageByCategory.remove(category);
         _totalCountByCategory.remove(category);
@@ -517,6 +524,8 @@ class AsmrLibraryController extends ChangeNotifier
       _loadingMoreByCategory[category] ?? false;
   bool hasMoreCategory(AsmrCategoryType category) =>
       _hasMoreByCategory[category] ?? false;
+  bool needsLoadMoreRetryCategory(AsmrCategoryType category) =>
+      _loadMoreRetryByCategory[category] ?? false;
   int totalCountFor(AsmrCategoryType category) =>
       _totalCountByCategory[category] ?? worksFor(category).length;
   String activeQueryFor(AsmrCategoryType category) =>
@@ -564,6 +573,7 @@ class AsmrLibraryController extends ChangeNotifier
           _queryByCategory.containsKey(category) ||
           (_refreshRequestSerial[category] ?? 0) > 0,
       hasMore: hasMoreCategory(category),
+      needsLoadMoreRetry: needsLoadMoreRetryCategory(category),
       totalCount:
           category == AsmrCategoryType.favorites ||
               category == AsmrCategoryType.history
@@ -935,6 +945,7 @@ class AsmrLibraryController extends ChangeNotifier
           (_refreshRequestSerial[category] ?? 0) + 1;
       _loadingByCategory[category] = false;
       _loadingMoreByCategory[category] = false;
+      _loadMoreRetryByCategory.remove(category);
     }
     _refreshTasks.clear();
     _refreshTaskQueries.clear();
@@ -1022,6 +1033,8 @@ class AsmrLibraryController extends ChangeNotifier
     final requestId = _refreshRequestSerial[category] ?? 0;
     final requestKey = _categoryRequestKey(requestId);
     _loadingMoreByCategory[category] = true;
+    _loadMoreRetryByCategory[category] = false;
+    _lastError = null;
     _commitPresentation(
       'asmr_loading_more_start_${category.name}',
       notifyListeners,
@@ -1043,10 +1056,10 @@ class AsmrLibraryController extends ChangeNotifier
       final existingIds = (_worksByCategory[category] ?? const <AsmrWork>[])
           .map((work) => work.id)
           .toSet();
-      final merged = <AsmrWork>[
-        ...?_worksByCategory[category],
-        ...pageResult.works.where((work) => existingIds.add(work.id)),
-      ];
+      final additions = pageResult.works
+          .where((work) => existingIds.add(work.id))
+          .toList(growable: false);
+      final merged = <AsmrWork>[...?_worksByCategory[category], ...additions];
       final decorated = immutableList(merged.map(_decorateWork));
       _commitPresentation(
         'asmr_page_${category.name}',
@@ -1058,6 +1071,8 @@ class AsmrLibraryController extends ChangeNotifier
             query: normalizedQuery,
             pageResult: pageResult,
           );
+          _loadMoreRetryByCategory[category] =
+              additions.isEmpty && pageResult.hasMore;
           notifyListeners();
         },
         isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
@@ -1065,6 +1080,7 @@ class AsmrLibraryController extends ChangeNotifier
     } catch (error) {
       if (_isCategoryRequestCurrent(category, requestKey)) {
         _lastError = error;
+        _loadMoreRetryByCategory[category] = true;
       }
     } finally {
       if (_isCategoryRequestCurrent(category, requestKey)) {
@@ -1089,6 +1105,7 @@ class AsmrLibraryController extends ChangeNotifier
   }) async {
     final normalizedQuery = normalizeSearchQuery(searchQuery);
     _loadingByCategory[category] = true;
+    _loadMoreRetryByCategory[category] = false;
     _lastError = null;
     _commitPresentation(
       'asmr_loading_start_${category.name}',

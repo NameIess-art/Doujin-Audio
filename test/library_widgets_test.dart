@@ -195,18 +195,14 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
-  testWidgets('library keeps partial scan results behind skeleton cards', (
+  testWidgets('library shows persisted cards before startup scan completes', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    var trackCoverLookups = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(fileCacheChannel, (call) async {
-          if (call.method == FileCacheMethod.resolveTrackCover) {
-            trackCoverLookups++;
-          }
           return <String, Object?>{'ok': true, 'value': null};
         });
     addTearDown(
@@ -240,23 +236,6 @@ void main() {
     await tester.pumpWidget(fixture.build(const LibraryTab()));
     await tester.pump();
 
-    expect(find.byType(LibraryLikeSkeletonCard), findsNWidgets(5));
-    expect(
-      find.text('Partially loaded work', findRichText: true),
-      findsNothing,
-    );
-    expect(trackCoverLookups, 0);
-
-    runtimeGraph.library.finishScan(scanGeneration);
-    await tester.pump();
-
-    expect(find.byType(LibraryLikeSkeletonCard), findsNWidgets(5));
-    expect(
-      find.text('Partially loaded work', findRichText: true),
-      findsNothing,
-    );
-    expect(runtimeGraph.library.categorySnapshot, isNull);
-
     await pumpUntilFound(
       tester,
       find.text('Partially loaded work', findRichText: true),
@@ -265,6 +244,10 @@ void main() {
     expect(runtimeGraph.library.categorySnapshot, isNotNull);
     await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
     expect(find.byType(LibraryLikeSkeletonCard), findsNothing);
+    expect(runtimeGraph.library.state.isScanning, isTrue);
+
+    runtimeGraph.library.finishScan(scanGeneration);
+    await tester.pump();
 
     final refreshGeneration = runtimeGraph.library.tryBeginScan(
       source: 'Pull to refresh',
@@ -380,9 +363,15 @@ void main() {
       runtimeGraph.library,
       waitForCategorySnapshot: true,
     );
+    await tester.pump();
 
     expect(tester.takeException(), isNull);
     expect(find.byType(ExpansionTile), findsOneWidget);
+
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pump();
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 100));
@@ -480,9 +469,12 @@ void main() {
     await tester.pump();
 
     await tester.enterText(find.byType(TextField), 'ocean');
+    await tester.pump(const Duration(milliseconds: 250));
     await pumpUntilFound(tester, find.text('Ocean Waves', findRichText: true));
+    await pumpUntilNotFound(tester, find.text('Soft Rain', findRichText: true));
 
     expect(find.text('Soft Rain', findRichText: true), findsNothing);
+    expect(find.text('Ocean Waves', findRichText: true), findsOneWidget);
     expect(
       runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
       libraryService.structureRevision,

@@ -688,6 +688,67 @@ void registerAsmrControllerStateTests({
     expect(controller.isLoadingMoreCategory(AsmrCategoryType.release), isFalse);
   });
 
+  test('pagination failure waits for manual retry and recovers', () async {
+    await resetPrefs();
+    var failNextPage = true;
+    final api = _FakeAsmrApiService(
+      largeRecommendationPool: true,
+      recommendationPageCount: 3,
+      beforeFetchWorkResponse: (request) async {
+        if (request == 'release:desc:2' && failNextPage) {
+          throw const HttpException('Simulated pagination failure');
+        }
+      },
+    );
+    final controller = AsmrLibraryController(
+      preferencesStore: preferences,
+      apiService: api,
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.refreshCategory(AsmrCategoryType.release);
+
+    await controller.loadMoreCategory(AsmrCategoryType.release);
+
+    expect(
+      controller.categoryViewState(AsmrCategoryType.release).needsLoadMoreRetry,
+      isTrue,
+    );
+    expect(controller.worksFor(AsmrCategoryType.release), hasLength(40));
+
+    failNextPage = false;
+    await controller.loadMoreCategory(AsmrCategoryType.release);
+
+    final recovered = controller.categoryViewState(AsmrCategoryType.release);
+    expect(recovered.needsLoadMoreRetry, isFalse);
+    expect(recovered.works, hasLength(80));
+  });
+
+  test('pagination with no new works waits for manual retry', () async {
+    await resetPrefs();
+    final controller = AsmrLibraryController(
+      preferencesStore: preferences,
+      apiService: _FakeAsmrApiService(
+        largeRecommendationPool: true,
+        repeatPaginatedWorks: true,
+        recommendationPageCount: 3,
+      ),
+      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.refreshCategory(AsmrCategoryType.release);
+
+    await controller.loadMoreCategory(AsmrCategoryType.release);
+
+    final state = controller.categoryViewState(AsmrCategoryType.release);
+    expect(state.works, hasLength(40));
+    expect(state.needsLoadMoreRetry, isTrue);
+  });
+
   test(
     'restoring a different token invalidates and refreshes a loaded category',
     () async {

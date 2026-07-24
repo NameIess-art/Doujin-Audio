@@ -143,6 +143,31 @@ class AudioDetailRepository {
     return AudioDetailLoadResult(detail: normalized, restoredFromBackup: true);
   }
 
+  Future<List<AudioDetailLoadResult>> loadDatabaseSnapshotMany(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    final normalizedTargets = targets
+        .map(_normalizeTarget)
+        .toList(growable: false);
+    if (normalizedTargets.isEmpty) return const <AudioDetailLoadResult>[];
+
+    final loadedDetails = await _databaseRepository.loadAudioDetails(
+      normalizedTargets,
+    );
+    final detailsByKey = <String, AudioDetail>{
+      for (final detail in loadedDetails)
+        _detailKeyForTarget(detail.target): detail,
+    };
+    return <AudioDetailLoadResult>[
+      for (final target in normalizedTargets)
+        AudioDetailLoadResult(
+          detail:
+              detailsByKey[_detailKeyForTarget(target)] ??
+              AudioDetail.empty(target),
+        ),
+    ];
+  }
+
   Future<List<AudioDetailLoadResult>> loadMany(
     Iterable<AudioDetailTarget> targets,
   ) async {

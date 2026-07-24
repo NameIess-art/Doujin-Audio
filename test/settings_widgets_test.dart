@@ -164,7 +164,7 @@ void main() {
     expect(
       tester.getTopLeft(dlsiteLanguageCard).dy -
           tester.getBottomLeft(firstLanguageCard).dy,
-      closeTo(2, 0.001),
+      closeTo(3, 0.001),
     );
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
@@ -427,6 +427,10 @@ void main() {
       rootCard.color,
       Theme.of(rootContext).colorScheme.surfaceContainerLow,
     );
+    final rootBorderRadius =
+        (rootCard.shape! as RoundedRectangleBorder).borderRadius
+            as BorderRadius;
+    expect(rootBorderRadius, BorderRadius.circular(6));
     final languageCard = find.ancestor(
       of: find.widgetWithText(ListTile, i18n.tr('section_language')),
       matching: find.byType(Card),
@@ -434,14 +438,14 @@ void main() {
     final commonCard = find.ancestor(of: rootTile, matching: find.byType(Card));
     expect(
       tester.getTopLeft(commonCard).dy - tester.getBottomLeft(languageCard).dy,
-      closeTo(2, 0.001),
+      closeTo(3, 0.001),
     );
     final firstCardShape =
         tester.widget<Card>(languageCard.first).shape!
             as RoundedRectangleBorder;
     final firstBorderRadius = firstCardShape.borderRadius as BorderRadius;
     expect(firstBorderRadius.topLeft, const Radius.circular(16));
-    expect(firstBorderRadius.bottomLeft, const Radius.circular(4));
+    expect(firstBorderRadius.bottomLeft, const Radius.circular(6));
     final aboutCard = find.ancestor(
       of: find.widgetWithText(ListTile, i18n.tr('about')),
       matching: find.byType(Card),
@@ -449,7 +453,7 @@ void main() {
     final lastCardShape =
         tester.widget<Card>(aboutCard.first).shape! as RoundedRectangleBorder;
     final lastBorderRadius = lastCardShape.borderRadius as BorderRadius;
-    expect(lastBorderRadius.topLeft, const Radius.circular(4));
+    expect(lastBorderRadius.topLeft, const Radius.circular(6));
     expect(lastBorderRadius.bottomLeft, const Radius.circular(16));
 
     await tester.tap(rootTile);
@@ -937,7 +941,7 @@ void main() {
     expect(
       tester.getTopLeft(bottomNavigationCard).dy -
           tester.getBottomLeft(appThemeColorCard).dy,
-      closeTo(2, 0.001),
+      closeTo(3, 0.001),
     );
 
     await tester.tap(switchTile);

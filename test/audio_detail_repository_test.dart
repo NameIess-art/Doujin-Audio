@@ -87,6 +87,53 @@ void main() {
     );
   });
 
+  test(
+    'database snapshot preserves order without reading or restoring backups',
+    () async {
+      final databaseDirectory = Directory(
+        '${tempDir.path}${Platform.pathSeparator}database-work',
+      );
+      final backupOnlyDirectory = Directory(
+        '${tempDir.path}${Platform.pathSeparator}backup-only-work',
+      );
+      await databaseDirectory.create();
+      await backupOnlyDirectory.create();
+      final databaseTarget = AudioDetailTarget.libraryRootFolder(
+        databaseDirectory.path,
+      );
+      final databaseVariantTarget = AudioDetailTarget.libraryRootFolder(
+        '${databaseDirectory.path}${Platform.pathSeparator}.',
+      );
+      final backupOnlyTarget = AudioDetailTarget.libraryRootFolder(
+        backupOnlyDirectory.path,
+      );
+      await appDatabase.upsertAudioDetail(
+        AudioDetail.empty(databaseTarget).copyWith(workTitle: 'Database title'),
+      );
+      await File(
+        '${backupOnlyDirectory.path}${Platform.pathSeparator}'
+        '${AudioDetailRepository.backupFileName}',
+      ).writeAsString(
+        jsonEncode(
+          AudioDetail.empty(
+            backupOnlyTarget,
+          ).copyWith(workTitle: 'Backup title').toBackupJson(),
+        ),
+      );
+
+      final results = await repository.loadDatabaseSnapshotMany(
+        <AudioDetailTarget>[backupOnlyTarget, databaseVariantTarget],
+      );
+
+      expect(results, hasLength(2));
+      expect(results.first.detail.target, backupOnlyTarget);
+      expect(results.first.detail.workTitle, isEmpty);
+      expect(results.last.detail.target, databaseTarget);
+      expect(results.last.detail.workTitle, 'Database title');
+      expect(await appDatabase.loadAudioDetail(backupOnlyTarget), isNull);
+    },
+  );
+
   test('oversized external cover keeps its path without embedding', () async {
     final workDirectory = Directory(
       '${tempDir.path}${Platform.pathSeparator}work',

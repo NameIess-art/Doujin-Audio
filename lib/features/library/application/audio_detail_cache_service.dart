@@ -127,6 +127,21 @@ class AudioDetailCacheService {
     ]);
   }
 
+  Future<List<AudioDetailLoadResult>> loadDatabaseSnapshotMany(
+    Iterable<AudioDetailTarget> targets,
+  ) {
+    final orderedTargets = targets.toList(growable: false);
+    if (orderedTargets.isEmpty) {
+      return Future<List<AudioDetailLoadResult>>.value(
+        const <AudioDetailLoadResult>[],
+      );
+    }
+    return _runSerialized<List<AudioDetailLoadResult>>(
+      orderedTargets,
+      () => _repository.loadDatabaseSnapshotMany(orderedTargets),
+    );
+  }
+
   Future<AudioDetailLoadResult> _resultForRequest(
     AudioDetailTarget target, {
     required Map<String, AudioDetailLoadResult> resolvedForRequest,

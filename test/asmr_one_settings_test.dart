@@ -104,6 +104,7 @@ final class _CountingHttpOverrides extends HttpOverrides {
 class _FakeAsmrApiService extends AsmrApiService {
   _FakeAsmrApiService({
     this.largeRecommendationPool = false,
+    this.repeatPaginatedWorks = false,
     this.recommendationPageCount = 2,
     this.recommendationWorks,
     this.worksByToken = const <String, List<AsmrWork>>{},
@@ -129,6 +130,7 @@ class _FakeAsmrApiService extends AsmrApiService {
   final List<int> detailFetchWorkIds = <int>[];
   final List<int> trackFetchWorkIds = <int>[];
   final bool largeRecommendationPool;
+  final bool repeatPaginatedWorks;
   final int recommendationPageCount;
   final List<AsmrWork>? recommendationWorks;
   final Map<String, List<AsmrWork>> worksByToken;
@@ -269,7 +271,7 @@ class _FakeAsmrApiService extends AsmrApiService {
         'release' => 3000,
         _ => 4000,
       };
-      final pageOffset = (page - 1) * pageSize;
+      final pageOffset = repeatPaginatedWorks ? 0 : (page - 1) * pageSize;
       return AsmrWorkPage(
         works: <AsmrWork>[
           for (var index = 1; index <= pageSize; index++)

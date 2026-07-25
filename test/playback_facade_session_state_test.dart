@@ -873,6 +873,8 @@ void main() {
     expect(addedEntry.id, startsWith('queue_entry_'));
     expect(queueSession.playbackQueue?.entries, hasLength(1));
   });
+
+  _backgroundBucketTests();
 }
 
 final class _RecordingAudioDatabaseRepository extends AudioDatabaseRepository {
@@ -904,6 +906,51 @@ final class _RecordingAudioDatabaseRepository extends AudioDatabaseRepository {
   Future<void> updateSessionOrder(List<String> sessionIds) async {
     orderSaves++;
   }
+}
+
+void _backgroundBucketTests() {
+  test('background mode coarsens the position persistence bucket', () {
+    final library = LibraryFacade.create();
+    final playback = PlaybackFacade.create(
+      databaseRepository: library.databaseRepository,
+    );
+    final session = _session('bucket');
+    addTearDown(() async {
+      session.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback.registerSession(session);
+
+    expect(
+      playback.positionBucketSeconds,
+      PlaybackFacade.foregroundPositionBucketSeconds,
+    );
+
+    session.lastKnownPosition = const Duration(seconds: 97);
+    playback.setBackgroundMode(true);
+
+    expect(
+      playback.positionBucketSeconds,
+      PlaybackFacade.backgroundPositionBucketSeconds,
+    );
+    // Buckets are re-based so the first background tick is not a spurious write.
+    expect(
+      session.lastPersistedPositionBucket,
+      97 ~/ PlaybackFacade.backgroundPositionBucketSeconds,
+    );
+
+    playback.setBackgroundMode(false);
+
+    expect(
+      playback.positionBucketSeconds,
+      PlaybackFacade.foregroundPositionBucketSeconds,
+    );
+    expect(
+      session.lastPersistedPositionBucket,
+      97 ~/ PlaybackFacade.foregroundPositionBucketSeconds,
+    );
+  });
 }
 
 PlaybackSession _session(String id) {

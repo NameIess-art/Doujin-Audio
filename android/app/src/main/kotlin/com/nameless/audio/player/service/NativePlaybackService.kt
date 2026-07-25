@@ -49,6 +49,20 @@ internal fun shouldPublishProgressHeartbeat(
     isScreenOn ||
         nowElapsedRealtimeMs - lastPublishedElapsedRealtimeMs >= screenOffIntervalMs
 
+/**
+ * Delay before the next progress tick.
+ *
+ * While the screen is off nothing can observe sub-second progress, so the
+ * Runnable itself must back off too - otherwise the main thread is woken twice
+ * a second for 12 hours straight under a held wake lock, only to decide that
+ * there is nothing to publish.
+ */
+internal fun progressHeartbeatDelayMs(
+    isScreenOn: Boolean,
+    screenOnIntervalMs: Long,
+    screenOffIntervalMs: Long
+): Long = if (isScreenOn) screenOnIntervalMs else screenOffIntervalMs
+
 internal fun exclusivePlaybackSessionIdsToPause(
     targetSessionId: String,
     sessionPlaybackIntent: Map<String, Boolean>
@@ -367,6 +381,14 @@ class NativePlaybackService : MediaSessionService() {
 
                 override fun onActiveSync() {
                     acquireWakeLock()
+                    // Armed as soon as playback is active, not at the first
+                    // watchdog tick 4 minutes later: if an OEM power manager
+                    // revokes the wake lock before then, every handler timer
+                    // stalls and nothing would be left to arm the backstop.
+                    // Re-arming is throttled inside the scheduler.
+                    PlaybackKeepAliveAlarmScheduler.ensureScheduled(
+                        this@NativePlaybackService
+                    )
                     if (!shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
                             transientAudioFocusLossActive || focusDuckActive
                         )
@@ -379,20 +401,42 @@ class NativePlaybackService : MediaSessionService() {
                     ensureStatePersistenceTicker()
                 }
 
+                override fun onIdleGraceBegan() {
+                    // Keep the foreground service and audio focus (playback may
+                    // resume within the grace window) but stop burning battery
+                    // on a wake lock that no audio pipeline needs right now.
+                    releaseWakeLock()
+                    // The grace timer runs on uptimeMillis and the wake lock is
+                    // now gone, so it can stall in deep sleep. The alarm is what
+                    // guarantees the window eventually closes.
+                    PlaybackKeepAliveAlarmScheduler.ensureScheduled(
+                        this@NativePlaybackService
+                    )
+                    persistSessionStateNow()
+                }
+
+                override fun isForegroundNotificationPosted(): Boolean? =
+                    isPlaybackNotificationPosted()
+
                 override fun onSuppressedIdle() {
                     abandonAudioFocus(reason = "suppressed_no_active_playback")
                     releaseWakeLock()
+                    PlaybackKeepAliveAlarmScheduler.cancel(this@NativePlaybackService)
                     persistSessionStateNow()
                 }
 
                 override fun onGraceExpired() {
                     abandonAudioFocus(reason = "grace_expired_no_active_playback")
                     releaseWakeLock()
+                    PlaybackKeepAliveAlarmScheduler.cancel(this@NativePlaybackService)
                     persistSessionStateNow()
                 }
 
                 override fun onWatchdog() {
                     playbackWakeLock.refresh()
+                    PlaybackKeepAliveAlarmScheduler.ensureScheduled(
+                        this@NativePlaybackService
+                    )
                     if (!shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
                             transientAudioFocusLossActive || focusDuckActive
                         )
@@ -473,6 +517,8 @@ class NativePlaybackService : MediaSessionService() {
                 override fun remove(runnable: Runnable) {
                     mainHandler.removeCallbacks(runnable)
                 }
+
+                override fun elapsedRealtimeMs(): Long = SystemClock.elapsedRealtime()
             },
             stopGraceMs = PLAYBACK_STOP_GRACE_MS,
             watchdogIntervalMs = FOREGROUND_WATCHDOG_INTERVAL_MS
@@ -577,6 +623,26 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
     private var lastProgressHeartbeatElapsedRealtimeMs = 0L
+    private val powerManager by lazy {
+        getSystemService(Context.POWER_SERVICE) as? PowerManager
+    }
+    private var screenStateReceiverRegistered = false
+    private val screenStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != Intent.ACTION_SCREEN_ON) return
+            // The heartbeat is parked on the screen-off interval; pull it
+            // forward so progress is live again immediately after unlock.
+            restartProgressHeartbeat()
+        }
+    }
+
+    private fun isScreenInteractive(): Boolean = powerManager?.isInteractive ?: true
+
+    private fun restartProgressHeartbeat() {
+        if (!tickerScheduled) return
+        mainHandler.removeCallbacks(positionTicker)
+        mainHandler.post(positionTicker)
+    }
 
     private val positionTicker = object : Runnable {
         override fun run() {
@@ -586,8 +652,7 @@ class NativePlaybackService : MediaSessionService() {
             }
             
             val nowElapsedRealtimeMs = SystemClock.elapsedRealtime()
-            val powerManager = getSystemService(POWER_SERVICE) as? PowerManager
-            val isScreenOn = powerManager?.isInteractive ?: true
+            val isScreenOn = isScreenInteractive()
 
             if (shouldPublishProgressHeartbeat(
                 isScreenOn = isScreenOn,
@@ -599,7 +664,14 @@ class NativePlaybackService : MediaSessionService() {
                 lastProgressHeartbeatElapsedRealtimeMs = nowElapsedRealtimeMs
             }
 
-            mainHandler.postDelayed(this, PROGRESS_HEARTBEAT_INTERVAL_MS)
+            mainHandler.postDelayed(
+                this,
+                progressHeartbeatDelayMs(
+                    isScreenOn = isScreenOn,
+                    screenOnIntervalMs = PROGRESS_HEARTBEAT_INTERVAL_MS,
+                    screenOffIntervalMs = SCREEN_OFF_PROGRESS_HEARTBEAT_INTERVAL_MS
+                )
+            )
         }
     }
     override fun onCreate() {
@@ -612,6 +684,13 @@ class NativePlaybackService : MediaSessionService() {
             ContextCompat.RECEIVER_NOT_EXPORTED
         )
         audioDeviceDisconnectReceiverRegistered = true
+        ContextCompat.registerReceiver(
+            this,
+            screenStateReceiver,
+            IntentFilter(Intent.ACTION_SCREEN_ON),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        screenStateReceiverRegistered = true
         ensurePlaybackChannel()
         instance = this
         logInfo("on_create")
@@ -711,6 +790,10 @@ class NativePlaybackService : MediaSessionService() {
             unregisterReceiver(audioDeviceDisconnectReceiver)
             audioDeviceDisconnectReceiverRegistered = false
         }
+        if (screenStateReceiverRegistered) {
+            unregisterReceiver(screenStateReceiver)
+            screenStateReceiverRegistered = false
+        }
         restoreExecutor.shutdownNow()
         mainHandler.removeCallbacks(positionTicker)
         progressPublisher.shutdown()
@@ -723,6 +806,7 @@ class NativePlaybackService : MediaSessionService() {
         foregroundCoordinator.shutdown()
         abandonAudioFocus(reason = "on_destroy")
         releaseWakeLock()
+        PlaybackKeepAliveAlarmScheduler.cancel(this)
         instance = null
         super.onDestroy()
         logInfo("on_destroy_end")
@@ -1092,6 +1176,7 @@ class NativePlaybackService : MediaSessionService() {
             NativePlaybackStateStore.clearTimerRuntimeState(this)
             releaseMediaSession("remove_session_empty")
             abandonAudioFocus(reason = "remove_session_empty")
+            PlaybackKeepAliveAlarmScheduler.cancel(this)
             foregroundCoordinator.stop(reason = "remove_session_empty", removeNotification = true)
             stopSelf()
         } else {
@@ -1116,6 +1201,7 @@ class NativePlaybackService : MediaSessionService() {
         playbackSuspended = true
         abandonAudioFocus(reason = "pause_all")
         releaseWakeLock()
+        PlaybackKeepAliveAlarmScheduler.cancel(this)
         foregroundCoordinator.stop(reason = "pause_all", removeNotification = sessions.isEmpty())
         return okResult(null)
     }
@@ -1139,6 +1225,7 @@ class NativePlaybackService : MediaSessionService() {
         NativePlaybackStateStore.clearTimerCandidateSessionIds(this)
         NativePlaybackStateStore.clearTimerRuntimeState(this)
         abandonAudioFocus(reason = "clear_all")
+        PlaybackKeepAliveAlarmScheduler.cancel(this)
         foregroundCoordinator.stop(reason = "clear_all", removeNotification = true)
         stopSelf()
         return okResult(null)
@@ -1768,6 +1855,56 @@ class NativePlaybackService : MediaSessionService() {
         focusDuckActive = false
         pendingAudioFocusResumeSessionIds.clear()
         sessions.values.forEach { it.applyFocusDuckMultiplier(1f) }
+    }
+
+    /**
+     * Doze-proof backstop driven by [PlaybackKeepAliveAlarmScheduler].
+     *
+     * Deliberately does no work of its own beyond re-asserting invariants the
+     * handler-based timers may have missed while the CPU was asleep.
+     */
+    internal fun onKeepAliveHeartbeat() {
+        if (!hasPlaybackToKeepAlive() && !foregroundCoordinator.isStarted) {
+            PlaybackKeepAliveAlarmScheduler.cancel(this)
+            return
+        }
+        logInfo(
+            "keep_alive_heartbeat wakeLockHeld=${playbackWakeLock.isHeld()} " +
+                "playback=${hasPlaybackToKeepAlive()} " +
+                "foregroundStarted=${foregroundCoordinator.isStarted}"
+        )
+        if (hasPlaybackToKeepAlive()) {
+            // Re-acquire if an OEM power manager took the lock from us, then let
+            // the ordinary sync path restore timers and notification state.
+            playbackWakeLock.refresh()
+            restartProgressHeartbeat()
+        }
+        // A grace window whose uptimeMillis timer slept through its deadline has
+        // to be closed explicitly; sync() alone cannot, since scheduleGrace()
+        // short-circuits while the window is still marked as scheduled.
+        if (foregroundCoordinator.expireGraceIfOverdue()) {
+            PlaybackKeepAliveAlarmScheduler.cancel(this)
+            return
+        }
+        syncForegroundState()
+        PlaybackKeepAliveAlarmScheduler.ensureScheduled(this)
+    }
+
+    /**
+     * Whether our foreground notification id is currently visible. Returns null
+     * when the platform cannot answer, in which case callers should assume the
+     * worst and refresh.
+     */
+    private fun isPlaybackNotificationPosted(): Boolean? {
+        if (notificationsDismissed) return null
+        return try {
+            val manager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+                    ?: return null
+            manager.activeNotifications.any { it.id == FOREGROUND_NOTIFICATION_ID }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun acquireWakeLock() {

@@ -2,6 +2,7 @@
 
 package com.nameless.audio.player.session
 
+import com.nameless.audio.player.common.nativePlaybackWakeModeForUris
 import com.nameless.audio.player.effects.*
 
 import android.net.Uri
@@ -247,6 +248,7 @@ internal class NativePlaybackSession(
             applyVolumeToPlayer(p)
             applySpeedToPlayer(p)
             applyAudioEffectsToPlayer(p)
+            applyWakeModeToPlayer(p)
             p.repeatMode = repeatModeFor(descriptors.size)
             p.shuffleModeEnabled = shuffleModeEnabled && descriptors.size > 1
             p.playWhenReady = lastPlayWhenReady
@@ -320,6 +322,7 @@ internal class NativePlaybackSession(
         applyVolumeToPlayer(p)
         applySpeedToPlayer(p)
         applyAudioEffectsToPlayer(p)
+        applyWakeModeToPlayer(p)
         p.repeatMode = repeatModeFor(this.queue.size)
         p.shuffleModeEnabled = shuffleModeEnabled && this.queue.size > 1
         p.playWhenReady = autoPlay
@@ -374,6 +377,17 @@ internal class NativePlaybackSession(
 
     private fun applySpeedToPlayer(player: ExoPlayer) {
         player.playbackParameters = PlaybackParameters(normalizeSpeed(speed))
+    }
+
+    private fun applyWakeModeToPlayer(player: ExoPlayer) {
+        val uris = buildList {
+            add(uri)
+            queue.forEach { descriptor ->
+                add(descriptor.uri)
+                addAll(descriptor.candidateUris)
+            }
+        }
+        player.setWakeMode(nativePlaybackWakeModeForUris(uris))
     }
 
     private fun applyAudioEffectsToPlayer(player: ExoPlayer) {

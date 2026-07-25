@@ -316,8 +316,13 @@ AppRuntimeGraph createAppRuntimeGraph({
     onSnapshot: playbackCommands.handleNativeSnapshot,
     onProgress: playback.applyNativeProgress,
     onStart: persistence.loadPersistedState,
-    onEnterBackground: keepAlive.enterBackground,
+    onEnterBackground: () async {
+      // Coarsen position persistence before handing off to background playback.
+      playback.setBackgroundMode(true);
+      keepAlive.enterBackground();
+    },
     onResumeForeground: () async {
+      playback.setBackgroundMode(false);
       keepAlive.resumeForeground();
       await playbackCommands.reconcileNativeRuntime();
       notifications.resyncAfterForegroundResume();

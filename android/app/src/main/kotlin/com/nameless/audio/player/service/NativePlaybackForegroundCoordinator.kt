@@ -3,6 +3,13 @@ package com.nameless.audio.player.service
 internal interface NativePlaybackForegroundEnvironment {
     fun postDelayed(runnable: Runnable, delayMs: Long)
     fun remove(runnable: Runnable)
+
+    /**
+     * Sleep-inclusive clock. [postDelayed] runs on `uptimeMillis`, which stalls
+     * in deep sleep, so the grace window needs an independent way to tell that
+     * its own timer is overdue.
+     */
+    fun elapsedRealtimeMs(): Long
 }
 
 internal interface NativePlaybackForegroundHost {
@@ -13,8 +20,27 @@ internal interface NativePlaybackForegroundHost {
 
     fun playbackSignature(): String?
     fun onActiveSync()
+
+    /**
+     * Playback stopped and the stop-grace window has just begun. The foreground
+     * service must stay up (transient buffering/focus gaps), but nothing is
+     * driving the audio pipeline, so CPU-holding resources should be dropped
+     * now rather than at the end of the grace window.
+     */
+    fun onIdleGraceBegan()
     fun onSuppressedIdle()
     fun onGraceExpired()
+
+    /**
+     * Whether the foreground notification is still posted. Used to avoid
+     * rebuilding it on every watchdog tick.
+     *
+     * Only an explicit `false` triggers a rebuild. `null` means "not
+     * answerable" - notifications were dismissed by the user, or the platform
+     * query failed - and must NOT force a re-post, otherwise the watchdog
+     * fights the user's dismiss every interval.
+     */
+    fun isForegroundNotificationPosted(): Boolean?
     fun onWatchdog()
     fun startPlaybackForeground()
     fun startBootstrapForeground()
@@ -35,6 +61,7 @@ internal class NativePlaybackForegroundCoordinator(
 
     private var signature: String? = null
     private var graceScheduled = false
+    private var graceStartedElapsedRealtimeMs = 0L
     private var watchdogScheduled = false
 
     private val graceRunnable = Runnable {
@@ -57,7 +84,11 @@ internal class NativePlaybackForegroundCoordinator(
             if (!watchdogScheduled) return
             if (host.hasPlaybackToKeepAlive) {
                 host.onWatchdog()
-                startOrUpdate(forceRefresh = true)
+                // Only rebuild when the notification actually went missing.
+                // A blind forceRefresh re-posts ~180 times over a 12h session.
+                startOrUpdate(
+                    forceRefresh = host.isForegroundNotificationPosted() == false
+                )
                 environment.postDelayed(this, watchdogIntervalMs)
             } else {
                 stopWatchdog()
@@ -129,8 +160,26 @@ internal class NativePlaybackForegroundCoordinator(
     fun scheduleGrace() {
         if (graceScheduled) return
         graceScheduled = true
+        graceStartedElapsedRealtimeMs = environment.elapsedRealtimeMs()
         host.logInfo("foreground_stop_grace_scheduled delay=${stopGraceMs}ms")
+        host.onIdleGraceBegan()
         environment.postDelayed(graceRunnable, stopGraceMs)
+    }
+
+    /**
+     * Closes a grace window whose [postDelayed] timer never fired because the
+     * device slept through it. Called from the alarm-backed heartbeat.
+     *
+     * Returns true when the window was force-closed.
+     */
+    fun expireGraceIfOverdue(): Boolean {
+        if (!graceScheduled) return false
+        val elapsedMs = environment.elapsedRealtimeMs() - graceStartedElapsedRealtimeMs
+        if (elapsedMs < stopGraceMs) return false
+        host.logInfo("foreground_stop_grace_overdue elapsed=${elapsedMs}ms forcing_stop")
+        environment.remove(graceRunnable)
+        graceRunnable.run()
+        return true
     }
 
     fun cancelGrace() {

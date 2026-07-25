@@ -95,6 +95,12 @@ internal fun evaluateNativePlaybackHealth(
         previousSample.mediaItemIndex != current.mediaItemIndex
     val positionAdvanced = previousSample != null &&
         current.positionMs - previousSample.positionMs >= progressToleranceMs
+    // A backwards jump on the same media item means the player looped (repeat-one)
+    // or was seeked - either way it is demonstrably alive. Without this, a short
+    // looping track whose length is close to the sampling interval reads as a
+    // frozen position and gets needlessly re-prepared mid-playback.
+    val positionRewound = previousSample != null &&
+        previousSample.positionMs - current.positionMs >= progressToleranceMs
     val bufferAdvanced = previousSample != null &&
         current.bufferedPositionMs - previousSample.bufferedPositionMs >= progressToleranceMs
     val nearEnd = current.durationMs?.let { durationMs ->
@@ -106,6 +112,7 @@ internal fun evaluateNativePlaybackHealth(
         current.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE &&
         !nearEnd
     val activityAdvanced = positionAdvanced ||
+        positionRewound ||
         (current.playbackState == Player.STATE_BUFFERING && bufferAdvanced)
     val resetBaseline = previous == null || mediaItemChanged || !eligible || activityAdvanced
     val lastActivityMs = if (resetBaseline) {

@@ -154,6 +154,15 @@ class NativePlaybackSessionStateTest {
     }
 
     @Test
+    fun `progress heartbeat backs off its own reschedule while the screen is off`() {
+        // The publish gate alone is not enough: a 500ms reschedule wakes the main
+        // thread ~86k times over a 12h screen-off session under a held wake lock,
+        // only to decide there is nothing to publish.
+        assertEquals(500L, progressHeartbeatDelayMs(true, 500L, 5000L))
+        assertEquals(5000L, progressHeartbeatDelayMs(false, 500L, 5000L))
+    }
+
+    @Test
     fun `exclusive playback pauses only other sessions with playback intent`() {
         assertEquals(
             listOf("playing", "buffering"),

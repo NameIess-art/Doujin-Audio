@@ -4,6 +4,29 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
+/** The subset of [StoredNativePlaybackSession] that changes on every tick. */
+data class StoredNativePlaybackProgress(
+    val sessionId: String,
+    val positionMs: Long,
+    val playing: Boolean,
+    val playWhenReady: Boolean
+)
+
+/**
+ * Applies a progress record on top of a structural snapshot. The progress key is
+ * always at least as fresh as the sessions key, so it wins when present.
+ */
+internal fun StoredNativePlaybackSession.withProgressOverlay(
+    progress: StoredNativePlaybackProgress?
+): StoredNativePlaybackSession {
+    if (progress == null || progress.sessionId != sessionId) return this
+    return copy(
+        positionMs = progress.positionMs.coerceAtLeast(0L),
+        playing = progress.playing,
+        playWhenReady = progress.playWhenReady
+    )
+}
+
 data class StoredNativePlaybackSession(
     val sessionId: String,
     val uri: String,
@@ -74,6 +97,16 @@ data class StoredPlaybackBehavior(
 object NativePlaybackStateStore {
     private const val preferencesName = "audio_player_native_playback_state"
     private const val keySessions = "sessions"
+
+    /**
+     * Position/playing flags live apart from [keySessions] because they change
+     * on every persistence tick while the rest of the snapshot - including the
+     * full queue - does not. Writing them together means re-serialising and
+     * rewriting the entire queue every 15s for the whole session; over a 12h
+     * playback that is ~2900 full-file rewrites of a payload that can reach
+     * hundreds of KB on large ASMR queues.
+     */
+    private const val keySessionProgress = "session_progress_v1"
     private const val keyPausedSessionIds = "paused_session_ids"
     private const val keyTimerCandidateSessionIds = "timer_candidate_session_ids"
     private const val keyTimerRuntimeState = "timer_runtime_state_v3"
@@ -177,13 +210,75 @@ object NativePlaybackStateStore {
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .putString(keySessions, array.toString())
+            // The structural write already carries current positions, so drop
+            // any stale progress overlay.
+            .remove(keySessionProgress)
             .apply()
+    }
+
+    /**
+     * Persists only the fields that change every tick. Payload is a few dozen
+     * bytes per session regardless of queue size.
+     */
+    fun saveSessionProgress(
+        context: Context,
+        progress: List<StoredNativePlaybackProgress>
+    ) {
+        if (progress.isEmpty()) {
+            context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+                .edit()
+                .remove(keySessionProgress)
+                .apply()
+            return
+        }
+        val array = JSONArray()
+        progress.forEach { item ->
+            array.put(
+                JSONObject()
+                    .put("sessionId", item.sessionId)
+                    .put("positionMs", item.positionMs)
+                    .put("playing", item.playing)
+                    .put("playWhenReady", item.playWhenReady)
+            )
+        }
+        context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .edit()
+            .putString(keySessionProgress, array.toString())
+            .apply()
+    }
+
+    private fun loadSessionProgress(context: Context): Map<String, StoredNativePlaybackProgress> {
+        val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
+            .getString(keySessionProgress, null)
+            ?: return emptyMap()
+        return try {
+            val array = JSONArray(raw)
+            buildMap {
+                for (index in 0 until array.length()) {
+                    val item = array.optJSONObject(index) ?: continue
+                    val sessionId = item.optString("sessionId").takeIf { it.isNotBlank() }
+                        ?: continue
+                    put(
+                        sessionId,
+                        StoredNativePlaybackProgress(
+                            sessionId = sessionId,
+                            positionMs = item.optLong("positionMs", 0L).coerceAtLeast(0L),
+                            playing = item.optBoolean("playing", false),
+                            playWhenReady = item.optBoolean("playWhenReady", false)
+                        )
+                    )
+                }
+            }
+        } catch (_: Exception) {
+            emptyMap()
+        }
     }
 
     fun clearSessions(context: Context) {
         context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .edit()
             .remove(keySessions)
+            .remove(keySessionProgress)
             .apply()
     }
 
@@ -191,6 +286,7 @@ object NativePlaybackStateStore {
         val raw = context.getSharedPreferences(preferencesName, Context.MODE_PRIVATE)
             .getString(keySessions, null)
             ?: return emptyList()
+        val progressBySessionId = loadSessionProgress(context)
         return try {
             val array = JSONArray(raw)
             buildList {
@@ -200,6 +296,7 @@ object NativePlaybackStateStore {
                         ?: continue
                     val uri = item.optString("uri").takeIf { it.isNotBlank() }
                         ?: continue
+                    val progress = progressBySessionId[sessionId]
                     add(
                         StoredNativePlaybackSession(
                             sessionId = sessionId,
@@ -227,7 +324,7 @@ object NativePlaybackStateStore {
                             channelSwapEnabled = item.optBoolean("channelSwapEnabled", false),
                             playing = item.optBoolean("playing", false),
                             playWhenReady = item.optBoolean("playWhenReady", false)
-                        )
+                        ).withProgressOverlay(progress)
                     )
                 }
             }

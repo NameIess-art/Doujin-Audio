@@ -109,6 +109,46 @@ class NativePlaybackHealthPolicyTest {
     }
 
     @Test
+    fun `repeat one loop rewind counts as activity instead of a frozen position`() {
+        // A short looping track sampled at the health-check interval can report a
+        // position at or below the previous one on the same media item. That is
+        // the loop wrapping, not a stall - re-preparing here restarts audio
+        // under a sleeping user.
+        val initial = evaluateNativePlaybackHealth(
+            previous = null,
+            current = sample(nowMs = 10_000L, positionMs = 14_000L, isPlaying = true)
+        )
+        val looped = evaluateNativePlaybackHealth(
+            previous = initial.state,
+            current = sample(nowMs = 25_000L, positionMs = 500L, isPlaying = true)
+        )
+        val stillLooping = evaluateNativePlaybackHealth(
+            previous = looped.state,
+            current = sample(nowMs = 40_000L, positionMs = 200L, isPlaying = true)
+        )
+
+        assertNull(looped.stallReason)
+        assertEquals(25_000L, looped.state.lastActivityElapsedRealtimeMs)
+        assertNull(stillLooping.stallReason)
+        assertEquals(40_000L, stillLooping.state.lastActivityElapsedRealtimeMs)
+    }
+
+    @Test
+    fun `a genuinely frozen position is still detected after the rewind allowance`() {
+        val initial = evaluateNativePlaybackHealth(
+            previous = null,
+            current = sample(nowMs = 10_000L, positionMs = 5_000L, isPlaying = true)
+        )
+        // Same position within tolerance: neither advanced nor rewound.
+        val frozen = evaluateNativePlaybackHealth(
+            previous = initial.state,
+            current = sample(nowMs = 45_000L, positionMs = 5_100L, isPlaying = true)
+        )
+
+        assertEquals(NativePlaybackStallReason.POSITION_FROZEN, frozen.stallReason)
+    }
+
+    @Test
     fun `pause suppression seek and track transition reset health baseline`() {
         val stale = NativePlaybackHealthState(
             sample = sample(nowMs = 0L, mediaItemIndex = 0),

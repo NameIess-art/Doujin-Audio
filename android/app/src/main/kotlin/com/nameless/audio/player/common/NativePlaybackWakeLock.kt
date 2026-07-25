@@ -2,22 +2,32 @@ package com.nameless.audio.player.common
 
 import android.annotation.SuppressLint
 import android.content.Context
-import android.net.wifi.WifiManager
 import android.os.PowerManager
 
+/**
+ * Holds the CPU wake lock that keeps handler-driven playback timers (progress
+ * heartbeat, health check, retry backoff) running while the screen is off.
+ *
+ * Wi-Fi is intentionally NOT locked here. ExoPlayer's own
+ * [androidx.media3.common.C.WAKE_MODE_NETWORK] handling acquires a Wi-Fi lock
+ * only while a network-backed item is actually loading, so a manual
+ * always-on Wi-Fi lock would just disable Wi-Fi power save for the whole
+ * session - including local-file playback that needs no network at all.
+ */
 internal class NativePlaybackWakeLock(
     private val context: Context,
     private val logInfo: (String) -> Unit,
     private val logWarn: (String, Exception) -> Unit
 ) {
     private var wakeLock: PowerManager.WakeLock? = null
-    private var wifiLock: WifiManager.WifiLock? = null
 
-    fun isHeld(): Boolean = wakeLock?.isHeld == true || wifiLock?.isHeld == true
+    fun isHeld(): Boolean = wakeLock?.isHeld == true
 
     @SuppressLint("WakelockTimeout")
     fun acquire() {
-        var acquiredAny = false
+        // syncForegroundState() runs on nearly every player event, so a
+        // short-circuit keeps this off the binder/log hot path.
+        if (isHeld()) return
 
         if (wakeLock == null) {
             try {
@@ -33,78 +43,36 @@ internal class NativePlaybackWakeLock(
             }
         }
 
-        wakeLock?.let { lock ->
-            try {
-                lock.acquire()
-                acquiredAny = lock.isHeld
-            } catch (e: Exception) {
-                logWarn("wakelock_acquire_failed", e)
-            }
+        val lock = wakeLock ?: return
+        try {
+            lock.acquire()
+        } catch (e: Exception) {
+            logWarn("wakelock_acquire_failed", e)
+            return
         }
-
-        if (wifiLock == null) {
-            try {
-                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
-                wifiLock = wifiManager?.createWifiLock(
-                    WifiManager.WIFI_MODE_FULL_HIGH_PERF,
-                    "${context.packageName}:native_playback_wifi"
-                )?.apply {
-                    setReferenceCounted(false)
-                }
-            } catch (e: Exception) {
-                logWarn("wifilock_create_failed", e)
-            }
-        }
-
-        wifiLock?.let { lock ->
-            try {
-                lock.acquire()
-                acquiredAny = acquiredAny || lock.isHeld
-            } catch (e: Exception) {
-                logWarn("wifilock_acquire_failed", e)
-            }
-        }
-
-        if (acquiredAny) {
-            logInfo("wakelock_acquired held=${wakeLock?.isHeld == true} wifiHeld=${wifiLock?.isHeld == true}")
-        } else if (wakeLock?.isHeld == true || wifiLock?.isHeld == true) {
-            logInfo("wakelock_acquire_skip already_held")
-        }
+        if (lock.isHeld) logInfo("wakelock_acquired")
     }
 
+    /**
+     * Re-acquires the lock if an OEM power manager revoked it underneath us.
+     * A no-op while the lock is still held.
+     */
     fun refresh() {
+        if (isHeld()) return
+        logInfo("wakelock_refresh_reacquire")
         acquire()
     }
 
     fun release() {
-        val currentWakeLock = wakeLock
-        val currentWifiLock = wifiLock
-        
-        if (currentWakeLock == null && currentWifiLock == null) {
-            logInfo("wakelock_release_skip none")
-            return
-        }
-        
+        val currentWakeLock = wakeLock ?: return
+        wakeLock = null
         try {
-            var releasedAny = false
-            if (currentWakeLock?.isHeld == true) {
+            if (currentWakeLock.isHeld) {
                 currentWakeLock.release()
-                releasedAny = true
-            }
-            if (currentWifiLock?.isHeld == true) {
-                currentWifiLock.release()
-                releasedAny = true
-            }
-            if (releasedAny) {
                 logInfo("wakelock_released")
-            } else {
-                logInfo("wakelock_release_skip not_held")
             }
         } catch (e: RuntimeException) {
             logWarn("wakelock_release_failed", e)
-        } finally {
-            wakeLock = null
-            wifiLock = null
         }
     }
 }

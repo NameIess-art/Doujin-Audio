@@ -127,9 +127,21 @@ final class PlaybackFacade {
   int _transportCommandSequence = 0;
   int _sessionSeed = 0;
   bool _persistenceEnabled = true;
+  bool _backgroundMode = false;
   Timer? _savePlaybackStateTimer;
   final Set<String> _pendingPlaybackStateSessionIds = <String>{};
   Future<void>? _sessionPersistenceTail;
+
+  /// Position-persistence bucket while the UI is visible.
+  static const int foregroundPositionBucketSeconds = 5;
+
+  /// Position-persistence bucket once the UI is gone.
+  ///
+  /// Nothing on screen consumes a resumable position in the background, and the
+  /// native service persists its own copy. A 5s bucket there costs ~720 SQLite
+  /// transactions per hour - ~8600 over a 12h screen-off session - for a
+  /// precision no one can observe.
+  static const int backgroundPositionBucketSeconds = 30;
 
   static const double maxSessionVolume = 2.0;
   static const List<double> playbackSpeedOptions = <double>[
@@ -368,7 +380,8 @@ final class PlaybackFacade {
       session
         ..lastKnownPosition = restoredPosition
         ..setOptimisticDuration(Duration(milliseconds: item.durationMs))
-        ..lastPersistedPositionBucket = restoredPosition.inSeconds ~/ 5
+        ..lastPersistedPositionBucket =
+            restoredPosition.inSeconds ~/ positionBucketSeconds
         ..channelSwapEnabled = item.channelSwapEnabled
         ..speed = nearestPlaybackSpeed(item.speed)
         ..audioEffects = item.audioEffects;
@@ -437,7 +450,8 @@ final class PlaybackFacade {
     final track = _persistedTrackResolver?.call(session.currentTrackPath);
     if (tracksToUpdate != null &&
         track != null &&
-        (track.lastPlayedPosition.inSeconds ~/ 5 != position.inSeconds ~/ 5 ||
+        (track.lastPlayedPosition.inSeconds ~/ positionBucketSeconds !=
+                position.inSeconds ~/ positionBucketSeconds ||
             session.state.playing)) {
       final updated = _updatePlaybackHistory?.call(
         trackPath: track.path,
@@ -723,7 +737,7 @@ final class PlaybackFacade {
     final positionSub = session.positionStream.listen((position) {
       if (!service.sessions.containsKey(session.id)) return;
       session.lastKnownPosition = position;
-      final bucket = position.inSeconds ~/ 5;
+      final bucket = position.inSeconds ~/ positionBucketSeconds;
       if (bucket != session.lastPersistedPositionBucket) {
         session.lastPersistedPositionBucket = bucket;
         _scheduleSessionPlaybackStatePersistence(session.id);
@@ -874,7 +888,8 @@ final class PlaybackFacade {
     }
     session.beginLoadingIndicatorThreshold();
     session.setOptimisticPosition(position);
-    session.lastPersistedPositionBucket = position.inSeconds ~/ 5;
+    session.lastPersistedPositionBucket =
+        position.inSeconds ~/ positionBucketSeconds;
     _onSessionPositionChanged?.call(session, position);
     await nativeRepository.seek(session.id, position);
   }
@@ -970,6 +985,32 @@ final class PlaybackFacade {
       showLoading: false,
       targetQueueIndex: target.queueIndex,
     );
+  }
+
+  /// Bucket width currently used to decide whether a position is worth writing.
+  int get positionBucketSeconds => _backgroundMode
+      ? backgroundPositionBucketSeconds
+      : foregroundPositionBucketSeconds;
+
+  /// Switches position-persistence cadence with UI visibility.
+  ///
+  /// Entering the background flushes first so the fine-grained position observed
+  /// while visible is not lost to the coarser bucket.
+  void setBackgroundMode(bool value) {
+    if (_backgroundMode == value) return;
+    if (value) {
+      _savePlaybackStateTimer?.cancel();
+      _savePlaybackStateTimer = null;
+      if (_pendingPlaybackStateSessionIds.isNotEmpty) {
+        unawaited(_enqueueSessionPersistence(_savePendingPlaybackStates));
+      }
+    }
+    _backgroundMode = value;
+    // Buckets from the previous width are not comparable to the new one.
+    for (final session in service.sessions.values) {
+      session.lastPersistedPositionBucket =
+          session.lastKnownPosition.inSeconds ~/ positionBucketSeconds;
+    }
   }
 
   bool hasSessionAdjacentTrack(String sessionId, {required bool forward}) {

@@ -20,7 +20,34 @@ import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 
-internal fun nativePlaybackWakeMode(): Int = C.WAKE_MODE_NETWORK
+/**
+ * Wake mode for a specific playback URI.
+ *
+ * [C.WAKE_MODE_NETWORK] additionally makes ExoPlayer hold a Wi-Fi lock, which
+ * disables Wi-Fi power save. That is required for streamed items but pure
+ * overhead for local files, so only network schemes opt into it.
+ */
+internal fun isNativePlaybackNetworkUri(uri: String?): Boolean {
+    val scheme = uri
+        ?.substringBefore("://", missingDelimiterValue = "")
+        ?.trim()
+        ?.lowercase()
+        .orEmpty()
+    return scheme == "http" || scheme == "https" || scheme == "rtsp" || scheme == "rtmp"
+}
+
+/**
+ * Decided over the whole queue rather than the current item so the mode stays
+ * stable across media-item transitions and a Wi-Fi lock is already held while
+ * ExoPlayer prefetches an upcoming network item.
+ */
+internal fun nativePlaybackWakeModeForUris(uris: Iterable<String?>): Int {
+    return if (uris.any(::isNativePlaybackNetworkUri)) {
+        C.WAKE_MODE_NETWORK
+    } else {
+        C.WAKE_MODE_LOCAL
+    }
+}
 
 /**
  * Keep the player's channel layout untouched by Android's optional spatializer.
@@ -105,7 +132,8 @@ internal class NativePlayerFactory(
 
         return ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
-            .setWakeMode(nativePlaybackWakeMode())
+            // The session applies the URI-specific mode before prepare().
+            .setWakeMode(C.WAKE_MODE_LOCAL)
             .setHandleAudioBecomingNoisy(false)
             .build()
             .also { player ->

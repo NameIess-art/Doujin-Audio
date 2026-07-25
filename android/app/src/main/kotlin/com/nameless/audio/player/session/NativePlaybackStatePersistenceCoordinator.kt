@@ -10,8 +10,32 @@ internal interface NativePlaybackStatePersistenceEnvironment {
     fun removeCallbacks(runnable: Runnable)
     fun execute(task: () -> Unit)
     fun saveSessions(sessions: List<StoredNativePlaybackSession>)
+    fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>)
     fun clearSessions()
     fun shutdown()
+}
+
+internal fun StoredNativePlaybackSession.toStoredProgress() =
+    StoredNativePlaybackProgress(
+        sessionId = sessionId,
+        positionMs = positionMs,
+        playing = playing,
+        playWhenReady = playWhenReady
+    )
+
+/**
+ * True when two snapshot lists differ only in the per-tick fields, which means
+ * the large structural payload (queue, effects, ordering) need not be rewritten.
+ */
+internal fun nativePlaybackSnapshotsDifferOnlyByProgress(
+    previous: List<StoredNativePlaybackSession>,
+    next: List<StoredNativePlaybackSession>
+): Boolean {
+    if (previous.size != next.size) return false
+    return previous.zip(next).all { (before, after) ->
+        before.copy(positionMs = 0L, playing = false, playWhenReady = false) ==
+            after.copy(positionMs = 0L, playing = false, playWhenReady = false)
+    }
 }
 
 private class AndroidNativePlaybackStatePersistenceEnvironment(
@@ -37,6 +61,10 @@ private class AndroidNativePlaybackStatePersistenceEnvironment(
 
     override fun saveSessions(sessions: List<StoredNativePlaybackSession>) {
         NativePlaybackStateStore.saveSessions(appContext, sessions)
+    }
+
+    override fun saveSessionProgress(progress: List<StoredNativePlaybackProgress>) {
+        NativePlaybackStateStore.saveSessionProgress(appContext, progress)
     }
 
     override fun clearSessions() {
@@ -77,6 +105,19 @@ internal class NativePlaybackStatePersistenceCoordinator(
     private var tickerScheduled = false
     private var pendingDebounce = false
     private var lastSubmittedSnapshots: List<StoredNativePlaybackSession>? = null
+
+    /**
+     * The snapshot list whose structural payload is actually on disk. Written on
+     * the storage thread, read on the main thread.
+     *
+     * A progress-only write is valid only as an overlay on top of a persisted
+     * structure. Keying off "last submitted" instead would be wrong: a
+     * superseded structural write (dropped by the generation check) would leave
+     * the sessions key stale or absent while progress-only writes kept
+     * succeeding, losing the queue on restore.
+     */
+    @Volatile
+    private var persistedStructure: List<StoredNativePlaybackSession>? = null
 
     private val ticker = object : Runnable {
         override fun run() {
@@ -138,6 +179,22 @@ internal class NativePlaybackStatePersistenceCoordinator(
             environment.execute {
                 if (saveGeneration == generation.get()) {
                     environment.clearSessions()
+                    persistedStructure = null
+                }
+            }
+            return
+        }
+
+        // During steady playback only position/playing change, so avoid
+        // re-serialising and rewriting the whole queue every interval.
+        val onDisk = persistedStructure
+        if (onDisk != null &&
+            nativePlaybackSnapshotsDifferOnlyByProgress(onDisk, snapshots)
+        ) {
+            val progress = snapshots.map(StoredNativePlaybackSession::toStoredProgress)
+            environment.execute {
+                if (saveGeneration == generation.get()) {
+                    environment.saveSessionProgress(progress)
                 }
             }
             return
@@ -146,6 +203,7 @@ internal class NativePlaybackStatePersistenceCoordinator(
         environment.execute {
             if (saveGeneration == generation.get()) {
                 environment.saveSessions(snapshots)
+                persistedStructure = snapshots
             }
         }
     }

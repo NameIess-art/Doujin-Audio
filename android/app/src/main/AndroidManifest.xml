@@ -142,6 +142,9 @@
             android:name=".player.notification.PlaybackTimerAlarmReceiver"
             android:exported="false" />
         <receiver
+            android:name=".player.notification.PlaybackKeepAliveAlarmReceiver"
+            android:exported="false" />
+        <receiver
             android:name=".player.notification.PlaybackTimerStateRestoreReceiver"
             android:enabled="true"
             android:exported="true">

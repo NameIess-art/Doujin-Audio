@@ -9,8 +9,36 @@ import org.junit.Test
 
 class NativePlayerFactoryTest {
     @Test
-    fun `native playback uses network wake mode for background streaming`() {
-        assertEquals(C.WAKE_MODE_NETWORK, nativePlaybackWakeMode())
+    fun `network queues keep the network wake mode for background streaming`() {
+        assertEquals(
+            C.WAKE_MODE_NETWORK,
+            nativePlaybackWakeModeForUris(listOf("https://asmr.one/media/track.mp3"))
+        )
+    }
+
+    @Test
+    fun `local only queues avoid the wifi lock that network wake mode implies`() {
+        assertEquals(
+            C.WAKE_MODE_LOCAL,
+            nativePlaybackWakeModeForUris(
+                listOf("file:///storage/emulated/0/a.flac", "content://media/audio/2", null)
+            )
+        )
+    }
+
+    @Test
+    fun `a single network item promotes the whole queue so prefetch stays covered`() {
+        assertEquals(
+            C.WAKE_MODE_NETWORK,
+            nativePlaybackWakeModeForUris(
+                listOf("file:///storage/emulated/0/a.flac", "http://asmr-100.com/b.mp3")
+            )
+        )
+    }
+
+    @Test
+    fun `empty queues do not hold a wifi lock`() {
+        assertEquals(C.WAKE_MODE_LOCAL, nativePlaybackWakeModeForUris(emptyList()))
     }
 
     @Test

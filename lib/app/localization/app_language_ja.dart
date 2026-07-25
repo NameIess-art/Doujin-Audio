@@ -103,6 +103,8 @@ const Map<String, String> appLanguageJa = {
   'import_audio_failed': '音声を追加できませんでした。再試行してください。',
   'import_failed_next_step': '選択したファイルまたはフォルダにまだアクセスできるか確認してから、もう一度お試しください。',
   'scan_failed_next_step': 'ストレージ権限と元のフォルダがまだ存在するか確認してから、もう一度お試しください。',
+  'detail_backup_import_failed':
+      '{count} 件の詳細バックアップを同期できませんでした。nameless-audio.json を確認して再試行してください。',
   'refresh_done_added': '更新完了：{count} 曲を追加しました。',
   'refresh_done_no_new': '新しい音声は見つかりませんでした。',
   'asmr_refresh_done_updated': 'カテゴリ内容を更新しました。',

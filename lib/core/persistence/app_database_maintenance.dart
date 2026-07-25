@@ -14,8 +14,11 @@ extension AppDatabaseMaintenance on AppDatabase {
         }
         batch.delete(
           'app_kv_settings',
-          where: 'key = ?',
-          whereArgs: const <Object?>['folder_cover_selections_v1'],
+          where: 'key IN (?, ?)',
+          whereArgs: const <Object?>[
+            'folder_cover_selections_v1',
+            'audio_detail_database_primary_migration_v1',
+          ],
         );
         await batch.commit(noResult: true);
       });
@@ -151,6 +154,7 @@ const List<String> _playbackSessionTablesInDeleteOrder = <String>[
 const List<String> _localLibraryTablesInDeleteOrder = <String>[
   'time_segment_labels',
   'library_entries',
+  'audio_detail_backup_sync',
   'audio_details',
   'track_tags',
   'track_remote_metadata',
@@ -169,6 +173,7 @@ const Set<String> _requiredAppDatabaseTables = <String>{
   'asmr_work_voice_actors',
   'asmr_works',
   'audio_details',
+  'audio_detail_backup_sync',
   'library_entries',
   'playback_queue_entries',
   'playback_queue_entry_tracks',

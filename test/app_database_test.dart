@@ -27,8 +27,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 4', () {
-    expect(AppDatabase.schemaVersion, 4);
+  test('schema starts from version 5', () {
+    expect(AppDatabase.schemaVersion, 5);
   });
 
   test('version 3 migration adds audio detail duration', () async {
@@ -68,6 +68,78 @@ void main() {
       (row) => row['name'] == 'card_cover_selected',
     );
     expect(selectedColumn['dflt_value'], '0');
+  });
+
+  test(
+    'version 5 migration creates the audio detail backup sync queue',
+    () async {
+      await db.execute('DROP TABLE audio_detail_backup_sync');
+
+      await AppDatabase.upgradeSchemaForTest(db, 4, 5);
+
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master WHERE type = 'table'",
+      );
+      expect(
+        tables.map((row) => row['name']),
+        contains('audio_detail_backup_sync'),
+      );
+    },
+  );
+
+  test('audio detail save and backup queue generation use CAS', () async {
+    final target = AudioDetailTarget.libraryRootFolder('/library/work');
+    final first = await appDatabase.upsertAudioDetailAndEnqueueBackupSync(
+      AudioDetail.empty(target).copyWith(workTitle: 'First'),
+    );
+    final second = await appDatabase.upsertAudioDetailAndEnqueueBackupSync(
+      AudioDetail.empty(target).copyWith(workTitle: 'Second'),
+    );
+
+    expect(first.generation, 1);
+    expect(second.generation, 2);
+    expect((await appDatabase.loadAudioDetail(target))?.workTitle, 'Second');
+    expect(
+      await appDatabase.deleteAudioDetailBackupSyncTask(
+        target,
+        generation: first.generation,
+      ),
+      isFalse,
+    );
+    expect(
+      await appDatabase.deleteAudioDetailBackupSyncTask(
+        target,
+        generation: second.generation,
+      ),
+      isTrue,
+    );
+  });
+
+  test('audio detail backup queue records due retries', () async {
+    final target = AudioDetailTarget.singleAudioFile('/library/track.mp3');
+    final task = await appDatabase.enqueueAudioDetailBackupSync(target);
+
+    expect(
+      await appDatabase.loadDueAudioDetailBackupSyncTasks(nowMs: 0),
+      hasLength(1),
+    );
+    expect(
+      await appDatabase.recordAudioDetailBackupSyncFailure(
+        task,
+        nextAttemptAtMs: 5000,
+        error: 'write failed',
+      ),
+      isTrue,
+    );
+    expect(
+      await appDatabase.loadDueAudioDetailBackupSyncTasks(nowMs: 4999),
+      isEmpty,
+    );
+    final due = await appDatabase.loadDueAudioDetailBackupSyncTasks(
+      nowMs: 5000,
+    );
+    expect(due.single.attemptCount, 1);
+    expect(due.single.lastError, 'write failed');
   });
 
   test(

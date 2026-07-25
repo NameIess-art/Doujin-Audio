@@ -42,10 +42,14 @@ class LibraryScanCoordinator extends ChangeNotifier {
   Future<LibraryScanOutcome?> refresh({
     required LibraryCatalog catalog,
     required LibraryScanLabels labels,
+    bool importAudioDetails = true,
   }) => _run(
     operation: LibraryScanOperation.refresh,
-    task: () =>
-        _scanner.refreshWatchedFolders(provider: catalog, labels: labels),
+    task: () => _withBackupImport(
+      catalog,
+      () => _scanner.refreshWatchedFolders(provider: catalog, labels: labels),
+      enabled: importAudioDetails,
+    ),
   );
 
   Future<LibraryScanOutcome?> importFolder({
@@ -53,7 +57,10 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.importFolder,
-    task: () => _scanner.addFolder(provider: catalog, labels: labels),
+    task: () => _withBackupImport(
+      catalog,
+      () => _scanner.addFolder(provider: catalog, labels: labels),
+    ),
   );
 
   Future<LibraryScanOutcome?> importLibrary({
@@ -61,7 +68,10 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.importLibrary,
-    task: () => _scanner.addLibrary(provider: catalog, labels: labels),
+    task: () => _withBackupImport(
+      catalog,
+      () => _scanner.addLibrary(provider: catalog, labels: labels),
+    ),
   );
 
   Future<LibraryScanOutcome?> importFiles({
@@ -69,7 +79,10 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.importFiles,
-    task: () => _scanner.addFiles(provider: catalog, labels: labels),
+    task: () => _withBackupImport(
+      catalog,
+      () => _scanner.addFiles(provider: catalog, labels: labels),
+    ),
   );
 
   Future<LocalLibraryImportSources?> prepareBackupRestoreSources({
@@ -88,12 +101,44 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.restoreBackup,
-    task: () => _scanner.restoreSources(
-      sources: sources,
-      provider: catalog,
-      labels: labels,
+    task: () => _withBackupImport(
+      catalog,
+      () => _scanner.restoreSources(
+        sources: sources,
+        provider: catalog,
+        labels: labels,
+      ),
     ),
   );
+
+  Future<LibraryScanOutcome?> _withBackupImport(
+    LibraryCatalog catalog,
+    Future<LibraryScanOutcome?> Function() scan, {
+    bool enabled = true,
+  }) async {
+    final outcome = await scan();
+    if (!enabled || outcome == null || !_canImportBackups(outcome.code)) {
+      return outcome;
+    }
+    final import = await catalog.importAudioDetailBackups();
+    if (import.failureCount == 0 && import.importedCount == 0) return outcome;
+    return LibraryScanOutcome(
+      code: outcome.code,
+      source: outcome.source,
+      details: <String, Object?>{
+        ...outcome.details,
+        'detailImportCount': import.importedCount,
+        'detailImportFailureCount': import.failureCount,
+      },
+    );
+  }
+
+  bool _canImportBackups(LibraryScanOutcomeCode code) {
+    return code != LibraryScanOutcomeCode.permissionDenied &&
+        code != LibraryScanOutcomeCode.alreadyRunning &&
+        code != LibraryScanOutcomeCode.cancelled &&
+        code != LibraryScanOutcomeCode.failed;
+  }
 
   void cancel(LibraryCatalogWriter catalog) {
     catalog.cancelScan();

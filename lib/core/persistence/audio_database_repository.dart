@@ -92,6 +92,54 @@ class AudioDatabaseRepository {
     return _database.upsertAudioDetail(detail);
   }
 
+  Future<AudioDetailBackupSyncTask> upsertAudioDetailAndEnqueueBackupSync(
+    AudioDetail detail,
+  ) {
+    return _database.upsertAudioDetailAndEnqueueBackupSync(detail);
+  }
+
+  Future<AudioDetailBackupSyncTask> enqueueAudioDetailBackupSync(
+    AudioDetailTarget target,
+  ) {
+    return _database.enqueueAudioDetailBackupSync(target);
+  }
+
+  Future<List<AudioDetailBackupSyncTask>> loadDueAudioDetailBackupSyncTasks({
+    required int nowMs,
+    int limit = 100,
+  }) {
+    return _database.loadDueAudioDetailBackupSyncTasks(
+      nowMs: nowMs,
+      limit: limit,
+    );
+  }
+
+  Future<int?> loadNextAudioDetailBackupSyncAtMs() {
+    return _database.loadNextAudioDetailBackupSyncAtMs();
+  }
+
+  Future<bool> deleteAudioDetailBackupSyncTask(
+    AudioDetailTarget target, {
+    required int generation,
+  }) {
+    return _database.deleteAudioDetailBackupSyncTask(
+      target,
+      generation: generation,
+    );
+  }
+
+  Future<bool> recordAudioDetailBackupSyncFailure(
+    AudioDetailBackupSyncTask task, {
+    required int nextAttemptAtMs,
+    required String error,
+  }) {
+    return _database.recordAudioDetailBackupSyncFailure(
+      task,
+      nextAttemptAtMs: nextAttemptAtMs,
+      error: error,
+    );
+  }
+
   Future<void> upsertAudioDetails(Iterable<AudioDetail> details) {
     return _database.upsertAudioDetails(details);
   }

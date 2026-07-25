@@ -3,6 +3,7 @@ import 'package:nameless_audio/core/errors/app_failure.dart';
 import 'package:nameless_audio/features/library/application/library_catalog.dart';
 import 'package:nameless_audio/features/library/application/library_scan_coordinator.dart';
 import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 
 void main() {
   const labels = LibraryScanLabels(
@@ -67,6 +68,47 @@ void main() {
     },
   );
 
+  test('startup refresh can skip JSON detail import', () async {
+    final catalog = _FakeCatalog();
+    final coordinator = LibraryScanCoordinator(
+      scanner: _FakeScanner(
+        (_, _) async => LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.refreshNoChanges,
+          source: 'refresh',
+        ),
+      ),
+    );
+    addTearDown(coordinator.dispose);
+
+    await coordinator.refresh(
+      catalog: catalog,
+      labels: labels,
+      importAudioDetails: false,
+    );
+
+    expect(catalog.detailImportCount, 0);
+  });
+
+  test('manual refresh reports explicit detail import failures', () async {
+    final catalog = _FakeCatalog(
+      importResult: const AudioDetailBackupImportResult(failureCount: 2),
+    );
+    final coordinator = LibraryScanCoordinator(
+      scanner: _FakeScanner(
+        (_, _) async => LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.refreshNoChanges,
+          source: 'refresh',
+        ),
+      ),
+    );
+    addTearDown(coordinator.dispose);
+
+    final outcome = await coordinator.refresh(catalog: catalog, labels: labels);
+
+    expect(catalog.detailImportCount, 1);
+    expect(outcome?.details['detailImportFailureCount'], 2);
+  });
+
   test(
     'technical exception is retained as cause behind a stable failure',
     () async {
@@ -118,6 +160,17 @@ class _FakeScanner extends LibraryScannerService {
 }
 
 class _FakeCatalog implements LibraryCatalog {
+  _FakeCatalog({this.importResult = const AudioDetailBackupImportResult()});
+
+  final AudioDetailBackupImportResult importResult;
+  int detailImportCount = 0;
+
+  @override
+  Future<AudioDetailBackupImportResult> importAudioDetailBackups() async {
+    detailImportCount++;
+    return importResult;
+  }
+
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

@@ -29,6 +29,7 @@ Future<void> _onCreate(Database db, int version) async {
   await _createSessionDetailTables(db);
   await _createAsmrTables(db);
   await _createAudioDetailsTable(db);
+  await _createAudioDetailBackupSyncTable(db);
   await _createLibraryEntriesTable(db);
   await _createTimeSegmentLabelsTable(db);
 }
@@ -53,6 +54,9 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
       'card_cover_selected',
       'INTEGER NOT NULL DEFAULT 0',
     );
+  }
+  if (oldVersion < 5) {
+    await _createAudioDetailBackupSyncTable(db);
   }
 }
 
@@ -364,6 +368,24 @@ Future<void> _createAudioDetailsTable(Database db) async {
   await db.execute(
     'CREATE INDEX IF NOT EXISTS idx_audio_details_target '
     'ON audio_details(target_type, target_path)',
+  );
+}
+
+Future<void> _createAudioDetailBackupSyncTable(Database db) async {
+  await db.execute('''
+      CREATE TABLE IF NOT EXISTS audio_detail_backup_sync (
+        target_type TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        generation INTEGER NOT NULL DEFAULT 1,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at_ms INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        PRIMARY KEY(target_type, target_path)
+      )
+    ''');
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_audio_detail_backup_sync_due '
+    'ON audio_detail_backup_sync(next_attempt_at_ms)',
   );
 }
 

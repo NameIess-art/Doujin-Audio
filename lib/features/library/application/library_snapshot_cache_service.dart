@@ -9,6 +9,7 @@ import '../domain/library_node.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'audio_detail_cache_service.dart';
+import 'audio_detail_repository.dart';
 import 'library_service.dart';
 import 'library_organizer.dart';
 
@@ -101,8 +102,6 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
 }
 
 class LibrarySnapshotCacheService {
-  static const int _categoryDetailBatchSize = 24;
-
   LibrarySnapshotCacheService({
     required LibraryService libraryService,
     required AudioDetailCacheService detailCacheService,
@@ -136,11 +135,6 @@ class LibrarySnapshotCacheService {
   Future<AudioLibraryCategorySnapshot>? _categoryFuture;
   int _categoryFutureStructureRevision = -1;
   int _categoryFutureDetailRevision = -1;
-  Future<AudioLibraryCategorySnapshot>? _categoryReconcileFuture;
-  int _categoryReconcileStructureRevision = -1;
-  int _categoryReconcileDetailRevision = -1;
-  int _reconciledCategoryStructureRevision = -1;
-  int _reconciledCategoryDetailRevision = -1;
   int _categorySnapshotRevision = 0;
 
   List<LibraryNode> get cards => _cachedCards;
@@ -163,7 +157,6 @@ class LibrarySnapshotCacheService {
     _cardFutureRevision = -1;
     _cardCommitCallbacks.clear();
     _categoryFuture = null;
-    _resetCategoryReconciliation();
   }
 
   Future<LibraryTreeSnapshot> cardSnapshot({
@@ -314,7 +307,6 @@ class LibrarySnapshotCacheService {
       () => _buildCategorySnapshot(
         structureRevision: structureRevision,
         detailRevision: detailRevision,
-        databaseOnly: true,
       ),
       details: <String, Object?>{'tracks': _libraryService.library.length},
     );
@@ -351,79 +343,6 @@ class LibrarySnapshotCacheService {
     return future;
   }
 
-  Future<AudioLibraryCategorySnapshot> reconcileCategorySnapshot({
-    required VoidCallback onCommitted,
-  }) {
-    final structureRevision = _libraryService.structureRevision;
-    final detailRevision = _detailCacheService.revision;
-    final cached = _categorySnapshot;
-    if (_reconciledCategoryStructureRevision == structureRevision &&
-        _reconciledCategoryDetailRevision == detailRevision &&
-        cached != null &&
-        cached.structureRevision == structureRevision &&
-        cached.detailRevision == detailRevision) {
-      return Future<AudioLibraryCategorySnapshot>.value(cached);
-    }
-    final inFlight = _categoryReconcileFuture;
-    if (inFlight != null &&
-        _categoryReconcileStructureRevision == structureRevision &&
-        _categoryReconcileDetailRevision == detailRevision) {
-      return inFlight;
-    }
-
-    final future = AppLogService.measureAsync(
-      'library_category_snapshot_reconcile',
-      () => _buildCategorySnapshot(
-        structureRevision: structureRevision,
-        detailRevision: detailRevision,
-        databaseOnly: false,
-      ),
-      details: <String, Object?>{'tracks': _libraryService.library.length},
-    );
-    _categoryReconcileFuture = future;
-    _categoryReconcileStructureRevision = structureRevision;
-    _categoryReconcileDetailRevision = detailRevision;
-    unawaited(
-      future
-          .then<void>(
-            (snapshot) {
-              if (!_isCurrentCategorySnapshot(snapshot)) return;
-              _categorySnapshot = snapshot;
-              _reconciledCategoryStructureRevision = structureRevision;
-              _reconciledCategoryDetailRevision = detailRevision;
-              _categorySnapshotRevision++;
-              onCommitted();
-            },
-            onError: (Object error, StackTrace stackTrace) {
-              AppLogService.warning(
-                'library_category_snapshot_reconcile_failed',
-                error: error,
-                stackTrace: stackTrace,
-              );
-            },
-          )
-          .whenComplete(() {
-            if (identical(_categoryReconcileFuture, future)) {
-              _categoryReconcileFuture = null;
-            }
-          }),
-    );
-    return future;
-  }
-
-  bool _isCurrentCategorySnapshot(AudioLibraryCategorySnapshot snapshot) {
-    return snapshot.structureRevision == _libraryService.structureRevision &&
-        snapshot.detailRevision == _detailCacheService.revision;
-  }
-
-  void _resetCategoryReconciliation() {
-    _categoryReconcileFuture = null;
-    _categoryReconcileStructureRevision = -1;
-    _categoryReconcileDetailRevision = -1;
-    _reconciledCategoryStructureRevision = -1;
-    _reconciledCategoryDetailRevision = -1;
-  }
-
   void markStructureChanged() {
     _cachedCardRevision = -1;
     _cardFuture = null;
@@ -432,7 +351,6 @@ class LibrarySnapshotCacheService {
     _treeFuture = null;
     _treeCommitCallbacks.clear();
     _categoryFuture = null;
-    _resetCategoryReconciliation();
   }
 
   bool applyCurrentTopLevelOrder() {
@@ -463,25 +381,13 @@ class LibrarySnapshotCacheService {
       );
     }
     _categoryFuture = null;
-    _resetCategoryReconciliation();
     return true;
   }
 
   void markDetailChanged([AudioDetail? detail]) {
-    final cached = _categorySnapshot;
-    final wasReconciled =
-        cached != null &&
-        _reconciledCategoryStructureRevision == cached.structureRevision &&
-        _reconciledCategoryDetailRevision == cached.detailRevision;
     _categoryFuture = null;
-    _resetCategoryReconciliation();
     if (detail != null) {
       _applyDetailToCategorySnapshot(detail);
-      final updated = _categorySnapshot;
-      if (wasReconciled && updated != null) {
-        _reconciledCategoryStructureRevision = updated.structureRevision;
-        _reconciledCategoryDetailRevision = updated.detailRevision;
-      }
     }
   }
 
@@ -502,7 +408,6 @@ class LibrarySnapshotCacheService {
     _categoryFuture = null;
     _categoryFutureStructureRevision = -1;
     _categoryFutureDetailRevision = -1;
-    _resetCategoryReconciliation();
     _categorySnapshotRevision = 0;
   }
 
@@ -521,7 +426,6 @@ class LibrarySnapshotCacheService {
   Future<AudioLibraryCategorySnapshot> _buildCategorySnapshot({
     required int structureRevision,
     required int detailRevision,
-    required bool databaseOnly,
   }) async {
     final snapshot = await cardSnapshot(onCommitted: () {});
     var tree = snapshot.tree;
@@ -559,9 +463,7 @@ class LibrarySnapshotCacheService {
     }
 
     final targets = requests.map((request) => request.target);
-    final details = databaseOnly
-        ? await _loadDatabaseCategoryDetails(targets)
-        : await _loadCategoryDetails(targets);
+    final details = await _loadCategoryDetails(targets);
     final entries = <AudioLibraryCategoryEntry>[
       for (var i = 0; i < requests.length; i++)
         AudioLibraryCategoryEntry(
@@ -580,51 +482,28 @@ class LibrarySnapshotCacheService {
     );
   }
 
-  Future<List<AudioDetail>> _loadDatabaseCategoryDetails(
-    Iterable<AudioDetailTarget> targets,
-  ) async {
-    final results = await _detailCacheService.loadDatabaseSnapshotMany(targets);
-    return List<AudioDetail>.unmodifiable(
-      results.map((result) => result.detail),
-    );
-  }
-
   Future<List<AudioDetail>> _loadCategoryDetails(
     Iterable<AudioDetailTarget> targets,
   ) async {
     final orderedTargets = targets.toList(growable: false);
     if (orderedTargets.isEmpty) return const <AudioDetail>[];
-
-    final details = <AudioDetail>[];
-    for (
-      var start = 0;
-      start < orderedTargets.length;
-      start += _categoryDetailBatchSize
-    ) {
-      final end = (start + _categoryDetailBatchSize).clamp(
-        0,
-        orderedTargets.length,
+    List<AudioDetailLoadResult> results;
+    try {
+      results = await _detailCacheService.loadMany(orderedTargets);
+    } catch (_) {
+      results = await Future.wait(
+        orderedTargets.map((target) async {
+          try {
+            return await _detailCacheService.load(target);
+          } catch (_) {
+            return AudioDetailLoadResult(detail: AudioDetail.empty(target));
+          }
+        }),
       );
-      final batch = orderedTargets.sublist(start, end);
-      try {
-        final results = await _detailCacheService.loadMany(batch);
-        details.addAll(results.map((result) => result.detail));
-      } catch (_) {
-        details.addAll(
-          await Future.wait(
-            batch.map((target) async {
-              try {
-                return (await _detailCacheService.load(target)).detail;
-              } catch (_) {
-                return AudioDetail.empty(target);
-              }
-            }),
-          ),
-        );
-      }
-      await Future<void>.delayed(Duration.zero);
     }
-    return List<AudioDetail>.unmodifiable(details);
+    return List<AudioDetail>.unmodifiable(
+      results.map((result) => result.detail),
+    );
   }
 
   void _applyDetailToCategorySnapshot(AudioDetail detail) {

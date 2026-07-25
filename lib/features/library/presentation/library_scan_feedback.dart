@@ -31,6 +31,17 @@ abstract final class LibraryScanPresentationMapper {
     AppLanguageProvider i18n,
   ) {
     if (outcome.code == LibraryScanOutcomeCode.noSources) return null;
+    final detailImportFailureCount =
+        (outcome.details['detailImportFailureCount'] as int?) ?? 0;
+    if (detailImportFailureCount > 0) {
+      return LibraryScanFeedback(
+        message: i18n.tr('detail_backup_import_failed', {
+          'count': detailImportFailureCount,
+        }),
+        tone: AppFeedbackTone.warning,
+        icon: Icons.sync_problem_rounded,
+      );
+    }
     final isFailure = switch (outcome.code) {
       LibraryScanOutcomeCode.permissionDenied ||
       LibraryScanOutcomeCode.failed ||

@@ -2,6 +2,7 @@ import '../domain/library_entry.dart';
 import '../../../core/media/music_track.dart';
 import 'library_scan_models.dart';
 import 'library_state_models.dart';
+import 'audio_detail_repository.dart';
 
 abstract interface class LibraryCatalogReader {
   List<MusicTrack> get library;
@@ -93,6 +94,7 @@ abstract interface class LibraryCatalogWriter {
     String folderPath,
     String displayName,
   );
+  Future<AudioDetailBackupImportResult> importAudioDetailBackups();
 }
 
 abstract interface class LibraryCatalog

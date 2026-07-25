@@ -160,8 +160,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final ScrollController _scrollController = ScrollController();
   int? _categorySnapshotRequestStructureRevision;
   int? _categorySnapshotRequestDetailRevision;
-  int? _categoryReconcileRequestStructureRevision;
-  int? _categoryReconcileRequestDetailRevision;
   String? _lastLibraryCoverWarmupSignature;
   int? _durationBackfillStructureRevision;
   late final String _durationBackfillCommitKey;
@@ -250,6 +248,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Future<void> _scheduleWatchedFoldersRefresh({
     bool silent = false,
     bool forceShowResult = false,
+    bool importAudioDetails = true,
   }) async {
     final i18n = ProviderScope.containerOf(
       context,
@@ -280,10 +279,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           onRetry: () => _scheduleWatchedFoldersRefresh(
             silent: silent,
             forceShowResult: forceShowResult,
+            importAudioDetails: importAudioDetails,
           ),
           task: (_) => _scanCoordinator.refresh(
             catalog: catalog,
             labels: LibraryScanPresentationMapper.labels(i18n),
+            importAudioDetails: importAudioDetails,
           ),
         );
     if (!mounted || outcome == null) return;
@@ -443,7 +444,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   Future<void> _finishStartupLibraryRefresh() async {
     try {
-      await _scheduleWatchedFoldersRefresh(silent: true);
+      await _scheduleWatchedFoldersRefresh(
+        silent: true,
+        importAudioDetails: false,
+      );
     } finally {
       if (mounted) {
         setState(() => _startupLibraryRefreshCompleted = true);
@@ -485,41 +489,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               _categorySnapshotRequestStructureRevision = null;
               _categorySnapshotRequestDetailRevision = null;
             }),
-      );
-    });
-  }
-
-  void _ensureCategoryReconciliation({
-    required LibraryFacade libraryFacade,
-    required int structureRevision,
-    required int detailRevision,
-  }) {
-    if (_categoryReconcileRequestStructureRevision == structureRevision &&
-        _categoryReconcileRequestDetailRevision == detailRevision) {
-      return;
-    }
-    _categoryReconcileRequestStructureRevision = structureRevision;
-    _categoryReconcileRequestDetailRevision = detailRevision;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted ||
-          _categoryReconcileRequestStructureRevision != structureRevision ||
-          _categoryReconcileRequestDetailRevision != detailRevision) {
-        return;
-      }
-      unawaited(
-        libraryFacade.reconcileAudioLibraryCategorySnapshot().then<void>(
-          (_) {},
-          onError: (Object error, StackTrace stackTrace) {
-            if (!mounted ||
-                _categoryReconcileRequestStructureRevision !=
-                    structureRevision ||
-                _categoryReconcileRequestDetailRevision != detailRevision) {
-              return;
-            }
-            _categoryReconcileRequestStructureRevision = null;
-            _categoryReconcileRequestDetailRevision = null;
-          },
-        ),
       );
     });
   }
@@ -734,15 +703,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         listStateIsInitialized &&
         libraryCardDetailsReady) {
       _initialLibraryContentReady = true;
-    }
-    if (listStateIsInitialized &&
-        _startupLibraryRefreshCompleted &&
-        libraryCardDetailsReady) {
-      _ensureCategoryReconciliation(
-        libraryFacade: libraryFacade,
-        structureRevision: listStateStructureRevision,
-        detailRevision: detailRevision,
-      );
     }
     final showLibrarySkeleton =
         _effectiveSearchQuery.isEmpty &&

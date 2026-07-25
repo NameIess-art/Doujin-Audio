@@ -120,6 +120,8 @@ const Map<String, String> appLanguageEn = {
       'Check that the selected file or folder is still accessible, then try again.',
   'scan_failed_next_step':
       'Check storage permission and whether the source folder still exists, then retry.',
+  'detail_backup_import_failed':
+      '{count} detail backups could not be synchronized. Check nameless-audio.json and retry.',
   'refresh_done_added': 'Refresh complete: {count} new tracks added.',
   'refresh_done_no_new': 'No new audio found.',
   'asmr_refresh_done_updated': 'Category content updated.',

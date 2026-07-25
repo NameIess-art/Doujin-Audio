@@ -127,18 +127,41 @@ class AudioDetailCacheService {
     ]);
   }
 
-  Future<List<AudioDetailLoadResult>> loadDatabaseSnapshotMany(
+  Future<AudioDetailBackupImportResult> importBackupsMany(
     Iterable<AudioDetailTarget> targets,
   ) {
-    final orderedTargets = targets.toList(growable: false);
-    if (orderedTargets.isEmpty) {
-      return Future<List<AudioDetailLoadResult>>.value(
-        const <AudioDetailLoadResult>[],
+    final values = targets.toList(growable: false);
+    if (values.isEmpty) {
+      return Future<AudioDetailBackupImportResult>.value(
+        const AudioDetailBackupImportResult(),
       );
     }
-    return _runSerialized<List<AudioDetailLoadResult>>(
-      orderedTargets,
-      () => _repository.loadDatabaseSnapshotMany(orderedTargets),
+    final epoch = _cacheEpoch;
+    return _runSerialized<AudioDetailBackupImportResult>(values, () async {
+      final result = await _repository.importBackupsMany(values);
+      if (epoch != _cacheEpoch) {
+        throw const AudioDetailOperationCancelled();
+      }
+      if (result.changedDetails.isNotEmpty) {
+        for (final detail in result.changedDetails) {
+          _store(detail);
+        }
+        _bumpRevision();
+      }
+      return result;
+    });
+  }
+
+  Future<AudioDetailBackupSyncFlushResult> flushPendingBackupSync() {
+    if (_suspended) {
+      return Future<AudioDetailBackupSyncFlushResult>.error(
+        const AudioDetailOperationCancelled(),
+      );
+    }
+    final epoch = _cacheEpoch;
+    return AudioDetailRepository.runWithCommitGuard(
+      () => epoch == _cacheEpoch && !_suspended,
+      _repository.flushPendingBackupSync,
     );
   }
 
@@ -222,6 +245,12 @@ class AudioDetailCacheService {
       _remove(target);
       _bumpRevision();
     });
+  }
+
+  Future<void> removeBackupMirror(AudioDetailTarget target) {
+    return _runSerialized<void>(<AudioDetailTarget>[
+      target,
+    ], () => _repository.removeBackupMirror(target));
   }
 
   Future<void> deleteMany(Iterable<AudioDetailTarget> targets) async {

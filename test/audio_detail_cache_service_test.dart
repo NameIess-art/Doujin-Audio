@@ -158,7 +158,7 @@ void main() {
     },
   );
 
-  test('database snapshot load does not populate the resolved cache', () async {
+  test('explicit backup import updates the resolved cache', () async {
     final target = AudioDetailTarget.libraryRootFolder('/library/work');
     final repository = _FakeAudioDetailRepository(
       loadResult: AudioDetail.empty(
@@ -167,17 +167,11 @@ void main() {
     );
     final cache = AudioDetailCacheService(repository: repository);
 
-    final preview = await cache.loadDatabaseSnapshotMany(<AudioDetailTarget>[
-      target,
-    ]);
+    final imported = await cache.importBackupsMany(<AudioDetailTarget>[target]);
 
-    expect(preview.single.detail.workTitle, 'Database preview');
-    expect(repository.databaseSnapshotLoadCount, 1);
-    expect(cache.resolvedDetail(target), isNull);
-
-    final reconciled = await cache.load(target);
-    expect(reconciled.detail.workTitle, 'Database preview');
-    expect(repository.loadCount, 1);
+    expect(imported.importedCount, 1);
+    expect(cache.resolvedDetail(target)?.workTitle, 'Database preview');
+    expect(cache.revision, 1);
   });
 }
 
@@ -195,7 +189,6 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   final AudioDetail? _prefillResult;
   final List<String> events = <String>[];
   int loadCount = 0;
-  int databaseSnapshotLoadCount = 0;
   int deleteCount = 0;
 
   @override
@@ -216,15 +209,25 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   }
 
   @override
-  Future<List<AudioDetailLoadResult>> loadDatabaseSnapshotMany(
+  Future<AudioDetailBackupImportResult> importBackupsMany(
     Iterable<AudioDetailTarget> targets,
   ) async {
-    databaseSnapshotLoadCount++;
-    return <AudioDetailLoadResult>[
-      for (final target in targets)
-        AudioDetailLoadResult(detail: loadResult.copyWith(target: target)),
+    final changed = <AudioDetail>[
+      for (final target in targets) loadResult.copyWith(target: target),
     ];
+    return AudioDetailBackupImportResult(
+      changedDetails: changed,
+      importedCount: changed.length,
+    );
   }
+
+  @override
+  Future<AudioDetailBackupSyncFlushResult> flushPendingBackupSync() async {
+    return const AudioDetailBackupSyncFlushResult();
+  }
+
+  @override
+  Future<void> removeBackupMirror(AudioDetailTarget target) async {}
 
   @override
   Future<AudioDetailSaveResult> save(

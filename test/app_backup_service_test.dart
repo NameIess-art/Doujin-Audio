@@ -209,9 +209,24 @@ void main() {
         'path': '/music/manual.mp3',
         'manual_cover_path': '/music/cover.jpg',
       });
+      await db.insert('audio_details', <String, Object?>{
+        'target_type': 'single-audio-file',
+        'target_path': '/music/manual.mp3',
+      });
+      await db.insert('audio_detail_backup_sync', <String, Object?>{
+        'target_type': 'single-audio-file',
+        'target_path': '/music/manual.mp3',
+        'generation': 1,
+        'attempt_count': 1,
+        'next_attempt_at_ms': 5000,
+      });
       await db.insert('app_kv_settings', <String, Object?>{
         'key': 'folder_cover_selections_v1',
         'value': '{"/music":"/music/cover.jpg"}',
+      });
+      await db.insert('app_kv_settings', <String, Object?>{
+        'key': 'audio_detail_database_primary_migration_v1',
+        'value': '1',
       });
     } finally {
       await db.close();
@@ -660,6 +675,8 @@ void main() {
       expect(await tableCount(databaseFile, 'tracks'), 1);
       expect(await tableCount(exportedDatabase, 'tracks'), 0);
       expect(await tableCount(exportedDatabase, 'track_assets'), 0);
+      expect(await tableCount(exportedDatabase, 'audio_details'), 0);
+      expect(await tableCount(exportedDatabase, 'audio_detail_backup_sync'), 0);
       expect(exportedPreferences.keys, isNot(contains('watched_folders_v1')));
       expect(exportedPreferences.keys, isNot(contains('watched_libraries_v1')));
       expect(

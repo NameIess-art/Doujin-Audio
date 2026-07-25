@@ -103,6 +103,8 @@ const Map<String, String> appLanguageZh = {
   'import_audio_failed': '无法添加音频，请重试。',
   'import_failed_next_step': '请确认所选文件或文件夹仍可访问，然后重试。',
   'scan_failed_next_step': '请检查存储权限和来源文件夹是否仍存在，然后重试。',
+  'detail_backup_import_failed':
+      '有 {count} 项详情备份未能同步，请检查 nameless-audio.json 后重试。',
   'refresh_done_added': '刷新完成：新增 {count} 首音频。',
   'refresh_done_no_new': '未发现新音频。',
   'asmr_refresh_done_updated': '分类内容已更新。',

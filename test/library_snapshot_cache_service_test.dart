@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/features/library/domain/library_node.dart';
@@ -90,7 +88,6 @@ void main() {
 
       final first = await service.categorySnapshot(onCommitted: () {});
       final second = await service.categorySnapshot(onCommitted: () {});
-      await service.reconcileCategorySnapshot(onCommitted: () {});
 
       expect(service.treeSnapshotRevision, -1);
       expect(service.cardSnapshotRevision, library.structureRevision);
@@ -109,16 +106,11 @@ void main() {
   );
 
   test(
-    'database category snapshot commits before backup reconciliation completes',
+    'category snapshot reads SQLite details in one batch and commits once',
     () async {
       final target = AudioDetailTarget.libraryRootFolder('/library');
-      final reconciliationGate = Completer<void>();
       final repository = _FakeAudioDetailRepository(
-        databaseDetails: {
-          AudioLibraryDetailKey.forTarget(target): 'Database preview',
-        },
-        details: {AudioLibraryDetailKey.forTarget(target): 'Backup reconciled'},
-        reconciliationGate: reconciliationGate,
+        details: {AudioLibraryDetailKey.forTarget(target): 'Database detail'},
       );
       final library = LibraryService()
         ..watchedFolders.add('/library')
@@ -132,42 +124,30 @@ void main() {
       );
       var commitCount = 0;
 
-      final preview = await service.categorySnapshot(
+      final snapshot = await service.categorySnapshot(
         onCommitted: () => commitCount++,
       );
 
-      expect(preview.entries.single.detail.workTitle, 'Database preview');
-      expect(service.categorySnapshotSync, same(preview));
-      expect(repository.databaseSnapshotLoadCount, 1);
-      expect(repository.loadCount, 0);
+      expect(snapshot.entries.single.detail.workTitle, 'Database detail');
+      expect(service.categorySnapshotSync, same(snapshot));
+      expect(repository.batchLoadCount, 1);
+      expect(repository.loadCount, 1);
       expect(commitCount, 1);
-
-      final reconciliation = service.reconcileCategorySnapshot(
-        onCommitted: () => commitCount++,
-      );
-      reconciliationGate.complete();
-      await reconciliation;
-      await Future<void>.delayed(Duration.zero);
 
       expect(
         service.categorySnapshotSync?.entries.single.detail.workTitle,
-        'Backup reconciled',
+        'Database detail',
       );
-      expect(commitCount, 2);
+      expect(commitCount, 1);
     },
   );
 
   test(
-    'stale backup reconciliation cannot overwrite a newer detail revision',
+    'a newer detail revision updates the committed category snapshot',
     () async {
       final target = AudioDetailTarget.libraryRootFolder('/library');
-      final reconciliationGate = Completer<void>();
       final repository = _FakeAudioDetailRepository(
-        databaseDetails: {
-          AudioLibraryDetailKey.forTarget(target): 'Database preview',
-        },
-        details: {AudioLibraryDetailKey.forTarget(target): 'Stale backup'},
-        reconciliationGate: reconciliationGate,
+        details: {AudioLibraryDetailKey.forTarget(target): 'Database detail'},
       );
       final detailCache = AudioDetailCacheService(repository: repository);
       final library = LibraryService()
@@ -182,17 +162,11 @@ void main() {
       );
 
       await service.categorySnapshot(onCommitted: () {});
-      final reconciliation = service.reconcileCategorySnapshot(
-        onCommitted: () {},
-      );
       final userDetail = AudioDetail.empty(
         target,
       ).copyWith(workTitle: 'New user edit');
       detailCache.markChanged(userDetail);
       service.markDetailChanged(userDetail);
-      reconciliationGate.complete();
-      await reconciliation;
-      await Future<void>.delayed(Duration.zero);
 
       expect(
         service.categorySnapshotSync?.entries.single.detail.workTitle,
@@ -207,7 +181,7 @@ void main() {
       const workRoot = '/library/work';
       final target = AudioDetailTarget.libraryRootFolder(workRoot);
       final repository = _FakeAudioDetailRepository(
-        details: {AudioLibraryDetailKey.forTarget(target): 'Backup title'},
+        details: {AudioLibraryDetailKey.forTarget(target): 'Database title'},
       );
       final library = LibraryService()
         ..watchedFolders.add(workRoot)
@@ -231,7 +205,7 @@ void main() {
 
       expect(snapshot.entries, hasLength(1));
       expect(snapshot.entries.single.target, target);
-      expect(snapshot.entries.single.detail.workTitle, 'Backup title');
+      expect(snapshot.entries.single.detail.workTitle, 'Database title');
     },
   );
 
@@ -258,7 +232,6 @@ void main() {
     );
 
     await service.categorySnapshot(onCommitted: () {});
-    await service.reconcileCategorySnapshot(onCommitted: () {});
 
     expect(
       service.categorySnapshotSync?.entries.map(
@@ -292,8 +265,8 @@ void main() {
 
     await first;
 
-    expect(repository.databaseSnapshotLoadCount, 1);
-    expect(repository.loadCount, 0);
+    expect(repository.batchLoadCount, 1);
+    expect(repository.loadCount, 1);
     expect(committed, isTrue);
   });
 
@@ -315,9 +288,7 @@ void main() {
 
     final snapshotFuture = service.categorySnapshot(onCommitted: () {});
     final snapshot = await snapshotFuture;
-    await service.reconcileCategorySnapshot(onCommitted: () {});
-
-    expect(repository.batchLoadCount, 2);
+    expect(repository.batchLoadCount, 1);
     expect(repository.loadCount, 30);
     expect(snapshot.entries, hasLength(30));
   });
@@ -430,20 +401,13 @@ MusicTrack _track({required String path, required String groupKey}) {
 class _FakeAudioDetailRepository implements AudioDetailRepository {
   _FakeAudioDetailRepository({
     Map<String, String>? details,
-    Map<String, String>? databaseDetails,
     this.failBatchLoad = false,
-    this.reconciliationGate,
-  }) : _details = details ?? const <String, String>{},
-       _databaseDetails =
-           databaseDetails ?? details ?? const <String, String>{};
+  }) : _details = details ?? const <String, String>{};
 
   final Map<String, String> _details;
-  final Map<String, String> _databaseDetails;
   final bool failBatchLoad;
-  final Completer<void>? reconciliationGate;
   int loadCount = 0;
   int batchLoadCount = 0;
-  int databaseSnapshotLoadCount = 0;
 
   @override
   Future<AudioDetailLoadResult> load(AudioDetailTarget target) async {
@@ -459,28 +423,35 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
     Iterable<AudioDetailTarget> targets,
   ) async {
     batchLoadCount++;
-    await reconciliationGate?.future;
     if (failBatchLoad) {
       throw StateError('batch load failed');
     }
-    return Future.wait(targets.map(load));
-  }
-
-  @override
-  Future<List<AudioDetailLoadResult>> loadDatabaseSnapshotMany(
-    Iterable<AudioDetailTarget> targets,
-  ) async {
-    databaseSnapshotLoadCount++;
+    final values = targets.toList(growable: false);
+    loadCount += values.length;
     return <AudioDetailLoadResult>[
-      for (final target in targets)
+      for (final target in values)
         AudioDetailLoadResult(
           detail: AudioDetail.empty(target).copyWith(
-            workTitle:
-                _databaseDetails[AudioLibraryDetailKey.forTarget(target)] ?? '',
+            workTitle: _details[AudioLibraryDetailKey.forTarget(target)] ?? '',
           ),
         ),
     ];
   }
+
+  @override
+  Future<AudioDetailBackupImportResult> importBackupsMany(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    return const AudioDetailBackupImportResult();
+  }
+
+  @override
+  Future<AudioDetailBackupSyncFlushResult> flushPendingBackupSync() async {
+    return const AudioDetailBackupSyncFlushResult();
+  }
+
+  @override
+  Future<void> removeBackupMirror(AudioDetailTarget target) async {}
 
   @override
   Future<AudioDetailSaveResult> save(

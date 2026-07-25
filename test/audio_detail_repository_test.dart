@@ -88,7 +88,7 @@ void main() {
   });
 
   test(
-    'database snapshot preserves order without reading or restoring backups',
+    'loadMany preserves order and does not read or import backups',
     () async {
       final databaseDirectory = Directory(
         '${tempDir.path}${Platform.pathSeparator}database-work',
@@ -121,9 +121,10 @@ void main() {
         ),
       );
 
-      final results = await repository.loadDatabaseSnapshotMany(
-        <AudioDetailTarget>[backupOnlyTarget, databaseVariantTarget],
-      );
+      final results = await repository.loadMany(<AudioDetailTarget>[
+        backupOnlyTarget,
+        databaseVariantTarget,
+      ]);
 
       expect(results, hasLength(2));
       expect(results.first.detail.target, backupOnlyTarget);
@@ -165,7 +166,7 @@ void main() {
     expect(backup['cardCoverEmbedded'], isNull);
   });
 
-  test('load prefers normalized database path before local backup', () async {
+  test('load normalizes the database target path', () async {
     final normalizedTarget = AudioDetailTarget.libraryRootFolder(tempDir.path);
     final variantTarget = AudioDetailTarget.libraryRootFolder(
       '${tempDir.path}${Platform.pathSeparator}.',
@@ -178,12 +179,11 @@ void main() {
 
     final result = await repository.load(normalizedTarget);
 
-    expect(result.restoredFromBackup, isFalse);
     expect(result.detail.rjCode, 'RJ333333');
     expect(result.detail.workTitle, 'Normalized');
   });
 
-  test('load restores a newer local backup over stale database detail', () async {
+  test('explicit import merges a newer local backup into SQLite', () async {
     final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
     final databaseDetail = AudioDetail.empty(target).copyWith(
       workTitle: 'Stale database title',
@@ -211,9 +211,9 @@ void main() {
       ),
     );
 
+    await repository.importBackupsMany(<AudioDetailTarget>[target]);
     final result = await repository.load(target);
 
-    expect(result.restoredFromBackup, isTrue);
     expect(result.detail.rjCode, 'RJ123456');
     expect(result.detail.workTitle, 'Current JSON title');
     expect(result.detail.circleName, 'Current circle');
@@ -225,7 +225,7 @@ void main() {
     expect(persisted?.duration, const Duration(minutes: 12));
   });
 
-  test('loadMany restores newer JSON details before automatic updates', () async {
+  test('loadMany reads details after an explicit JSON import', () async {
     final workFolder = Directory(
       '${tempDir.path}${Platform.pathSeparator}batch-work',
     );
@@ -253,16 +253,16 @@ void main() {
       ),
     );
 
+    await repository.importBackupsMany(<AudioDetailTarget>[target]);
     final result = (await repository.loadMany(<AudioDetailTarget>[
       target,
     ])).single;
 
-    expect(result.restoredFromBackup, isTrue);
     expect(result.detail.rjCode, 'RJ654321');
     expect(result.detail.workTitle, 'Current batch JSON title');
   });
 
-  test('stale automatic save cannot erase a newer JSON backup', () async {
+  test('automatic save uses the database value without reading JSON', () async {
     final workFolder = Directory(
       '${tempDir.path}${Platform.pathSeparator}stale-save-work',
     );
@@ -292,9 +292,9 @@ void main() {
       origin: AudioDetailSaveOrigin.automatic,
     );
 
-    expect(saved.detail.rjCode, 'RJ998877');
-    expect(saved.detail.workTitle, 'Current JSON title');
-    expect(saved.detail.circleName, 'Current circle');
+    expect(saved.detail.rjCode, isEmpty);
+    expect(saved.detail.workTitle, 'Stale cached title');
+    expect(saved.detail.circleName, isEmpty);
     expect(saved.detail.duration, const Duration(minutes: 8));
     final backup =
         json.decode(
@@ -303,8 +303,8 @@ void main() {
               ).readAsString(),
             )
             as Map<String, dynamic>;
-    expect(backup['rjCode'], 'RJ998877');
-    expect(backup['workTitle'], 'Current JSON title');
+    expect(backup['rjCode'], isEmpty);
+    expect(backup['workTitle'], 'Stale cached title');
     expect(backup['durationMs'], const Duration(minutes: 8).inMilliseconds);
   });
 
@@ -381,7 +381,7 @@ void main() {
     expect(backup['circleName'], 'Circle');
   });
 
-  test('root folder load restores from backup when database is empty', () async {
+  test('root folder import restores a backup when SQLite is empty', () async {
     final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
     final backupFile = File(
       '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
@@ -401,9 +401,9 @@ void main() {
       }),
     );
 
+    await repository.importBackupsMany(<AudioDetailTarget>[target]);
     final result = await repository.load(target);
 
-    expect(result.restoredFromBackup, isTrue);
     expect(result.detail.workTitle, 'Backup work');
     expect(
       result.detail.cardCoverPath,
@@ -437,9 +437,9 @@ void main() {
       '${tempDir.path}${Platform.pathSeparator}reimported-work',
     );
     final newTarget = AudioDetailTarget.libraryRootFolder(newFolder.path);
+    await repository.importBackupsMany(<AudioDetailTarget>[newTarget]);
     final restored = await repository.load(newTarget);
 
-    expect(restored.restoredFromBackup, isTrue);
     expect(
       restored.detail.cardCoverPath,
       '${newFolder.path}${Platform.pathSeparator}artwork'
@@ -488,9 +488,9 @@ void main() {
 
       await cacheFile.delete();
       await repository.delete(target);
+      await repository.importBackupsMany(<AudioDetailTarget>[target]);
       final restored = await repository.load(target);
 
-      expect(restored.restoredFromBackup, isTrue);
       expect(restored.detail.workTitle, sourceName);
       expect(restored.detail.cardCoverSelected, isTrue);
       final restoredCover = File(restored.detail.cardCoverPath!);
@@ -518,9 +518,9 @@ void main() {
     await cacheFile.delete();
     await File(saved.detail.cardCoverPath!).delete();
 
+    await repository.importBackupsMany(<AudioDetailTarget>[target]);
     final restored = await repository.load(target);
 
-    expect(restored.restoredFromBackup, isFalse);
     expect(restored.detail.workTitle, 'Keep database metadata');
     expect(restored.detail.cardCoverPath, saved.detail.cardCoverPath);
     expect(
@@ -563,9 +563,9 @@ void main() {
 
     await cacheFile.delete();
     await repository.delete(target);
+    await repository.importBackupsMany(<AudioDetailTarget>[target]);
     final restored = await repository.load(target);
 
-    expect(restored.restoredFromBackup, isTrue);
     expect(
       await File(restored.detail.cardCoverPath!).readAsBytes(),
       pngCoverBytes,
@@ -617,11 +617,13 @@ void main() {
         isNull,
       );
 
+      await contentRepository.importBackupsMany(<AudioDetailTarget>[
+        AudioDetailTarget.libraryRootFolder(newTargetPath),
+      ]);
       final restored = await contentRepository.load(
         AudioDetailTarget.libraryRootFolder(newTargetPath),
       );
 
-      expect(restored.restoredFromBackup, isTrue);
       expect(restored.detail.cardCoverPath, expectedCoverPath);
       expect(restored.detail.cardCoverSelected, isTrue);
     },
@@ -657,6 +659,7 @@ void main() {
     // selection marker. The embedded payload itself remains authoritative.
     backup['cardCoverSelected'] = false;
     gateway.backup = json.encode(backup);
+    await contentRepository.importBackupsMany(<AudioDetailTarget>[target]);
     final upgraded = await contentRepository.load(target);
     expect(upgraded.detail.cardCoverSelected, isTrue);
     expect(
@@ -666,9 +669,9 @@ void main() {
 
     await cacheFile.delete();
     await contentRepository.delete(target);
+    await contentRepository.importBackupsMany(<AudioDetailTarget>[target]);
     final restored = await contentRepository.load(target);
 
-    expect(restored.restoredFromBackup, isTrue);
     expect(restored.detail.cardCoverSelected, isTrue);
     expect(
       await File(restored.detail.cardCoverPath!).readAsBytes(),
@@ -706,9 +709,9 @@ void main() {
 
     await cacheFile.delete();
     await contentRepository.delete(target);
+    await contentRepository.importBackupsMany(<AudioDetailTarget>[target]);
     final restored = await contentRepository.load(target);
 
-    expect(restored.restoredFromBackup, isTrue);
     expect(
       await File(restored.detail.cardCoverPath!).readAsBytes(),
       pngCoverBytes,
@@ -740,13 +743,13 @@ void main() {
       }),
     );
 
+    await repository.importBackupsMany(<AudioDetailTarget>[target]);
     final restored = await repository.load(target);
 
-    expect(restored.restoredFromBackup, isTrue);
     expect(restored.detail.cardCoverPath, missingCover);
   });
 
-  test('loadMany restores missing backups in caller order', () async {
+  test('loadMany preserves caller order after importing missing details', () async {
     final firstDir = Directory('${tempDir.path}${Platform.pathSeparator}first');
     final secondDir = Directory(
       '${tempDir.path}${Platform.pathSeparator}second',
@@ -770,6 +773,7 @@ void main() {
       ),
     );
 
+    await repository.importBackupsMany(<AudioDetailTarget>[first, second]);
     final results = await repository.loadMany(<AudioDetailTarget>[
       second,
       first,
@@ -781,12 +785,11 @@ void main() {
       'First',
       'Second',
     ]);
-    expect(results.every((result) => result.restoredFromBackup), isTrue);
     expect((await appDatabase.loadAudioDetail(first))?.workTitle, 'First');
     expect((await appDatabase.loadAudioDetail(second))?.workTitle, 'Second');
   });
 
-  test('loadMany reads a shared content backup once', () async {
+  test('explicit batch import reads a shared content backup once', () async {
     final gateway = _MemoryFileCacheGateway();
     repository = AudioDetailRepository(
       databaseRepository: AudioDatabaseRepository(database: appDatabase),
@@ -806,6 +809,7 @@ void main() {
       AudioDetail.empty(second).copyWith(workTitle: 'Second').toBackupJson(),
     ]);
 
+    await repository.importBackupsMany(<AudioDetailTarget>[first, second]);
     final results = await repository.loadMany(<AudioDetailTarget>[
       second,
       first,
@@ -818,21 +822,22 @@ void main() {
       'First',
       'Second',
     ]);
-    expect(results.every((result) => result.restoredFromBackup), isTrue);
   });
 
-  test('malformed backup returns an empty root detail', () async {
-    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
-    final backupFile = File(
-      '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
-    );
-    await backupFile.writeAsString('{bad json');
+  test(
+    'load ignores a malformed backup and returns empty SQLite detail',
+    () async {
+      final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+      final backupFile = File(
+        '${tempDir.path}${Platform.pathSeparator}${AudioDetailRepository.backupFileName}',
+      );
+      await backupFile.writeAsString('{bad json');
 
-    final result = await repository.load(target);
+      final result = await repository.load(target);
 
-    expect(result.restoredFromBackup, isFalse);
-    expect(result.detail.isEmpty, isTrue);
-  });
+      expect(result.detail.isEmpty, isTrue);
+    },
+  );
 
   test('backup rejects invalid date, sales count, and rating fields', () {
     final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
@@ -953,7 +958,7 @@ void main() {
   });
 
   test(
-    'single audio load restores from local backup when database is empty',
+    'single audio import restores local backup when SQLite is empty',
     () async {
       final target = AudioDetailTarget.singleAudioFile(
         '${tempDir.path}${Platform.pathSeparator}single.mp3',
@@ -978,9 +983,9 @@ void main() {
         ]),
       );
 
+      await repository.importBackupsMany(<AudioDetailTarget>[target]);
       final result = await repository.load(target);
 
-      expect(result.restoredFromBackup, isTrue);
       expect(result.detail.rjCode, 'RJ998877');
       expect(result.detail.workTitle, 'Single backup work');
       expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ998877');
@@ -988,7 +993,7 @@ void main() {
   );
 
   test(
-    'single audio load matches shared backup entry by decoded file name',
+    'single audio import matches shared backup by decoded file name',
     () async {
       const fileName = '#羊娘めめ 20260326 nico 【限定ASMR┊睡眠導入】ゆっくりはむちゅ.mp3';
       final target = AudioDetailTarget.singleAudioFile(
@@ -1019,9 +1024,9 @@ void main() {
         ]),
       );
 
+      await repository.importBackupsMany(<AudioDetailTarget>[target]);
       final result = await repository.load(target);
 
-      expect(result.restoredFromBackup, isTrue);
       expect(result.detail.rjCode, 'RJ112233');
       expect(result.detail.workTitle, 'Decoded file backup');
       expect(result.detail.voiceActors, const <String>['羊娘めめ']);
@@ -1099,6 +1104,138 @@ void main() {
   );
 
   test(
+    'concurrent single-file saves preserve every shared backup entry',
+    () async {
+      final first = AudioDetailTarget.singleAudioFile(
+        '${tempDir.path}${Platform.pathSeparator}first.mp3',
+      );
+      final second = AudioDetailTarget.singleAudioFile(
+        '${tempDir.path}${Platform.pathSeparator}second.mp3',
+      );
+
+      await Future.wait(<Future<AudioDetailSaveResult>>[
+        repository.save(AudioDetail.empty(first).copyWith(workTitle: 'First')),
+        repository.save(
+          AudioDetail.empty(second).copyWith(workTitle: 'Second'),
+        ),
+      ]);
+
+      final backup =
+          json.decode(
+                await File(
+                  '${tempDir.path}${Platform.pathSeparator}'
+                  '${AudioDetailRepository.backupFileName}',
+                ).readAsString(),
+              )
+              as List;
+      expect(backup, hasLength(2));
+      expect(
+        backup.map((entry) => (entry as Map<String, dynamic>)['workTitle']),
+        containsAll(<String>['First', 'Second']),
+      );
+    },
+  );
+
+  test('invalid shared backup is preserved and queued for retry', () async {
+    final target = AudioDetailTarget.singleAudioFile(
+      '${tempDir.path}${Platform.pathSeparator}single.mp3',
+    );
+    final backup = File(
+      '${tempDir.path}${Platform.pathSeparator}'
+      '${AudioDetailRepository.backupFileName}',
+    );
+    await backup.writeAsString('{bad json');
+
+    final result = await repository.save(
+      AudioDetail.empty(target).copyWith(workTitle: 'Database title'),
+    );
+
+    expect(result.backupFailed, isTrue);
+    expect(await backup.readAsString(), '{bad json');
+    expect(
+      await appDatabase.loadDueAudioDetailBackupSyncTasks(
+        nowMs: fixedNow.add(const Duration(seconds: 5)).millisecondsSinceEpoch,
+      ),
+      hasLength(1),
+    );
+  });
+
+  test('failed mirror retry persists and later flush clears it', () async {
+    var now = fixedNow;
+    final gateway = _MemoryFileCacheGateway()..folderWriteSucceeds = false;
+    final retryRepository = AudioDetailRepository(
+      databaseRepository: AudioDatabaseRepository(database: appDatabase),
+      fileCacheGateway: gateway,
+      now: () => now,
+      portableCoverDirectory: () async =>
+          Directory('${tempDir.path}${Platform.pathSeparator}retry-covers'),
+    );
+    const path =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+    final target = AudioDetailTarget.libraryRootFolder(path);
+
+    final saved = await retryRepository.save(
+      AudioDetail.empty(target).copyWith(workTitle: 'Queued'),
+    );
+    expect(saved.backupFailed, isTrue);
+    expect(saved.backupRetryAt, fixedNow.add(const Duration(seconds: 5)));
+
+    now = fixedNow.add(const Duration(seconds: 5));
+    gateway.folderWriteSucceeds = true;
+    final flush = await retryRepository.flushPendingBackupSync();
+
+    expect(flush.succeededCount, 1);
+    expect(
+      await appDatabase.loadDueAudioDetailBackupSyncTasks(
+        nowMs: now.millisecondsSinceEpoch,
+      ),
+      isEmpty,
+    );
+    expect(
+      (json.decode(gateway.backup!) as Map<String, dynamic>)['workTitle'],
+      'Queued',
+    );
+  });
+
+  test(
+    'mirror retry revalidates current generation before writing JSON',
+    () async {
+      const path =
+          'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+      final target = AudioDetailTarget.libraryRootFolder(path);
+      final staleDetail = AudioDetail.empty(
+        target,
+      ).copyWith(workTitle: 'Stale title');
+      final currentDetail = AudioDetail.empty(
+        target,
+      ).copyWith(workTitle: 'Current title');
+      final databaseRepository = _RevalidatingAudioDatabaseRepository(
+        target: target,
+        staleDetail: staleDetail,
+        currentDetail: currentDetail,
+      );
+      final gateway = _MemoryFileCacheGateway();
+      final retryRepository = AudioDetailRepository(
+        databaseRepository: databaseRepository,
+        fileCacheGateway: gateway,
+        now: () => fixedNow,
+        portableCoverDirectory: () async =>
+            Directory('${tempDir.path}${Platform.pathSeparator}retry-covers'),
+      );
+
+      final result = await retryRepository.flushPendingBackupSync();
+
+      expect(result.succeededCount, 1);
+      expect(databaseRepository.dueLoadCount, 2);
+      expect(databaseRepository.deletedGeneration, 2);
+      expect(
+        (json.decode(gateway.backup!) as Map<String, dynamic>)['workTitle'],
+        'Current title',
+      );
+    },
+  );
+
+  test(
     'updating a single file entry does not duplicate it in the backup',
     () async {
       final target = AudioDetailTarget.singleAudioFile(
@@ -1140,7 +1277,6 @@ void main() {
 
     final result = await repository.load(target);
 
-    expect(result.restoredFromBackup, isFalse);
     expect(result.detail.isEmpty, isTrue);
     expect(await appDatabase.loadAudioDetail(target), isNull);
   });
@@ -1163,7 +1299,6 @@ void main() {
 
     final result = await repository.load(target);
 
-    expect(result.restoredFromBackup, isFalse);
     expect(result.detail.isEmpty, isTrue);
     expect(await appDatabase.loadAudioDetail(target), isNull);
   });
@@ -1175,6 +1310,8 @@ class _MemoryFileCacheGateway extends FileCachePlatformGateway {
   String? backup;
   String? singleBackup;
   int singleBackupReadCount = 0;
+  bool folderWriteSucceeds = true;
+  bool singleWriteSucceeds = true;
 
   @override
   Future<bool> writeAudioDetailBackup({
@@ -1182,7 +1319,7 @@ class _MemoryFileCacheGateway extends FileCachePlatformGateway {
     required String json,
   }) async {
     backup = json;
-    return true;
+    return folderWriteSucceeds;
   }
 
   @override
@@ -1194,7 +1331,7 @@ class _MemoryFileCacheGateway extends FileCachePlatformGateway {
     required String json,
   }) async {
     singleBackup = json;
-    return true;
+    return singleWriteSucceeds;
   }
 
   @override
@@ -1202,4 +1339,53 @@ class _MemoryFileCacheGateway extends FileCachePlatformGateway {
     singleBackupReadCount++;
     return singleBackup;
   }
+}
+
+class _RevalidatingAudioDatabaseRepository extends AudioDatabaseRepository {
+  _RevalidatingAudioDatabaseRepository({
+    required this.target,
+    required this.staleDetail,
+    required this.currentDetail,
+  });
+
+  final AudioDetailTarget target;
+  final AudioDetail staleDetail;
+  final AudioDetail currentDetail;
+  int dueLoadCount = 0;
+  int? deletedGeneration;
+
+  @override
+  Future<List<AudioDetailBackupSyncTask>> loadDueAudioDetailBackupSyncTasks({
+    required int nowMs,
+    int limit = 100,
+  }) async {
+    dueLoadCount++;
+    return <AudioDetailBackupSyncTask>[
+      AudioDetailBackupSyncTask(
+        target: target,
+        generation: dueLoadCount == 1 ? 1 : 2,
+        attemptCount: 0,
+        nextAttemptAtMs: 0,
+      ),
+    ];
+  }
+
+  @override
+  Future<List<AudioDetail>> loadAudioDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) async {
+    return <AudioDetail>[dueLoadCount == 1 ? staleDetail : currentDetail];
+  }
+
+  @override
+  Future<bool> deleteAudioDetailBackupSyncTask(
+    AudioDetailTarget target, {
+    required int generation,
+  }) async {
+    deletedGeneration = generation;
+    return true;
+  }
+
+  @override
+  Future<int?> loadNextAudioDetailBackupSyncAtMs() async => null;
 }

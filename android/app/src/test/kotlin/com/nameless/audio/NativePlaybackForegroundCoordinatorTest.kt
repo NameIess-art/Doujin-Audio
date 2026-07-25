@@ -157,6 +157,31 @@ class NativePlaybackForegroundCoordinatorTest {
         assertFalse(coordinator.isStarted)
     }
 
+    /**
+     * Force-closing an overdue window reports true even when it decided not to
+     * stop, because playback resumed inside the window. Callers must therefore
+     * re-check playback state instead of treating true as "service stopped" -
+     * the alarm-backed heartbeat would otherwise cancel the Doze backstop for
+     * playback that is still running.
+     */
+    @Test
+    fun `force closed grace reports true without stopping resumed playback`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost(hasPlaybackToKeepAlive = false)
+        val coordinator = coordinator(host, environment)
+        coordinator.startOrUpdate()
+        environment.elapsedRealtimeMs = 100_000L
+        coordinator.sync()
+
+        host.hasPlaybackToKeepAlive = true
+        environment.elapsedRealtimeMs = 100_000L + 10_000L
+
+        assertTrue(coordinator.expireGraceIfOverdue())
+        assertEquals(0, host.graceExpiries)
+        assertTrue(host.stopRequests.isEmpty())
+        assertTrue(coordinator.isStarted)
+    }
+
     @Test
     fun `watchdog keeps one schedule and does not rebuild a healthy notification`() {
         val environment = FakeForegroundEnvironment()

@@ -101,8 +101,13 @@ class NativePlaybackRecoveryControllerTest {
         assertFalse(environment.listening)
     }
 
+    /**
+     * Network errors used to retry forever. Recovery keeps the service in its
+     * keep-alive state, which holds the playback wake lock, so an item that
+     * never comes back drained the battery all night.
+     */
     @Test
-    fun `recovery window switches mode without clearing playback intent`() {
+    fun `network playback errors also stop after the recovery window`() {
         val environment = FakeRecoveryEnvironment()
         val controller = NativePlaybackRecoveryController(
             FakeRecoveryHost(),
@@ -120,16 +125,15 @@ class NativePlaybackRecoveryControllerTest {
 
         environment.runFirst(60_000L)
 
-        assertTrue(controller.isIntended("player"))
-        assertTrue(controller.isPending("player"))
-        assertTrue(environment.listening)
-        assertTrue(environment.delays.contains(2_000L))
-        controller.clear("player")
+        assertFalse(controller.isIntended("player"))
+        assertFalse(controller.isPending("player"))
+        assertFalse(controller.shouldKeepAlive())
+        assertFalse(environment.listening)
         assertTrue(environment.tasks.isEmpty())
     }
 
     @Test
-    fun `terminal playback errors stop after the recovery window`() {
+    fun `decoder playback errors stop after the recovery window`() {
         val environment = FakeRecoveryEnvironment()
         val host = FakeRecoveryHost()
         val controller = NativePlaybackRecoveryController(
@@ -142,7 +146,6 @@ class NativePlaybackRecoveryControllerTest {
         controller.onPlayerError(
             sessionId = "player",
             recoverable = true,
-            stopAfterRecoveryWindow = true,
             errorCodeName = "ERROR_CODE_DECODER_INIT_FAILED",
             errorMessage = "decoder",
             causeDescription = null

@@ -297,7 +297,6 @@ internal class NativePlaybackRecoveryController(
     private val recoveryBaselines = mutableMapOf<String, NativePlaybackHealthSample>()
     private val recovering = linkedSetOf<String>()
     private val candidateFallbackPending = linkedSetOf<String>()
-    private val stopAfterRecoveryWindow = linkedSetOf<String>()
     private var triggerInProgress = false
     private val startedAt = mutableMapOf<String, Long>()
     private var listening = false
@@ -338,7 +337,6 @@ internal class NativePlaybackRecoveryController(
         recoveryBaselines.clear()
         recovering.clear()
         candidateFallbackPending.clear()
-        stopAfterRecoveryWindow.clear()
         stopHealthCheck()
         stopListening()
     }
@@ -368,7 +366,6 @@ internal class NativePlaybackRecoveryController(
         sessionId: String,
         recoverable: Boolean,
         candidateFallbackEligible: Boolean = false,
-        stopAfterRecoveryWindow: Boolean = false,
         errorCodeName: String,
         errorMessage: String?,
         causeDescription: String?,
@@ -393,11 +390,6 @@ internal class NativePlaybackRecoveryController(
         pending += sessionId
         if (candidateFallbackEligible && session?.hasAlternatePlaybackUri() == true) {
             candidateFallbackPending += sessionId
-        }
-        if (stopAfterRecoveryWindow) {
-            this.stopAfterRecoveryWindow += sessionId
-        } else {
-            this.stopAfterRecoveryWindow -= sessionId
         }
         captureHealth(sessionId)?.let { recoveryBaselines[sessionId] = it }
         startListening()
@@ -532,22 +524,22 @@ internal class NativePlaybackRecoveryController(
         if (sessionId in expiryTasks) return
         val recoveryStarted = startedAt.getOrPut(sessionId, environment::elapsedRealtimeMs)
         val delayMs = (recoveryStarted + recoveryWindowMs - environment.elapsedRealtimeMs()).coerceAtLeast(0L)
+        // Terminal for every error class, not just decoder/audio-track ones.
+        // Recovery keeps the service in its keep-alive state, which holds the
+        // playback wake lock; retrying an unrecoverable item indefinitely burns
+        // the battery all night for playback that demonstrably never resumes.
+        // Session state is persisted, so the user can resume from the
+        // notification instead.
         val task = Runnable {
             expiryTasks.remove(sessionId)
             if (sessionId !in pending) return@Runnable
-            if (sessionId in stopAfterRecoveryWindow) {
-                val session = host.session(sessionId)
-                clear(sessionId)
-                session?.playerOrNull()?.pause()
-                host.publishSession(sessionId)
-                host.persistNow()
-                host.syncForeground()
-                return@Runnable
-            }
+            val session = host.session(sessionId)
             host.logInfo(
-                "playback_recovery_low_frequency sessionId=$sessionId " +
+                "playback_recovery_window_expired sessionId=$sessionId " +
                     "attempts=${attempts.getOrDefault(sessionId, 0)}"
             )
+            clear(sessionId)
+            session?.playerOrNull()?.pause()
             host.publishSession(sessionId)
             host.persistNow()
             host.syncForeground()
@@ -563,7 +555,6 @@ internal class NativePlaybackRecoveryController(
         recoveryBaselines -= sessionId
         recovering -= sessionId
         candidateFallbackPending -= sessionId
-        stopAfterRecoveryWindow -= sessionId
         retryTasks.remove(sessionId)?.let(environment::remove)
         expiryTasks.remove(sessionId)?.let(environment::remove)
         if (pending.isEmpty()) stopListening()

@@ -1470,7 +1470,6 @@ class NativePlaybackService : MediaSessionService() {
             sessionId = sessionId,
             recoverable = isRecoverablePlaybackErrorCode(error.errorCode),
             candidateFallbackEligible = isCandidateFallbackPlaybackErrorCode(error.errorCode),
-            stopAfterRecoveryWindow = shouldStopAfterPlaybackRecoveryWindow(error.errorCode),
             errorCodeName = error.errorCodeName,
             errorMessage = error.message,
             causeDescription = "${error.cause?.javaClass?.simpleName}:${error.cause?.message}",
@@ -1490,10 +1489,7 @@ class NativePlaybackService : MediaSessionService() {
         val session = mediaSessionCandidate()
         val player = session?.playerOrNull() ?: return mediaSession
         mediaSession?.let { existingSession ->
-            if (existingSession.player !== player) {
-                logInfo("media_session_switch_player", session)
-                existingSession.player = player
-            }
+            attachPlayerToMediaSession(existingSession, player, session)
             return existingSession
         }
         val launchIntent = Intent(Intent.ACTION_MAIN)
@@ -1536,12 +1532,27 @@ class NativePlaybackService : MediaSessionService() {
             ensureMediaSession()
             return
         }
-        if (existingSession.player !== nextPlayer) {
-            logInfo("media_session_switch_player")
-            existingSession.player = nextPlayer
-            dummyPlayer?.release()
-            dummyPlayer = null
-        }
+        attachPlayerToMediaSession(existingSession, nextPlayer)
+    }
+
+    /**
+     * Swaps in a real session player and disposes the bootstrap dummy player.
+     *
+     * Both entry points must release it: [onGetSession] can be the first caller
+     * when a system media controller binds before the app ever focuses a
+     * session, and an idle ExoPlayer left behind holds an audio session plus its
+     * playback thread for the whole service lifetime.
+     */
+    private fun attachPlayerToMediaSession(
+        target: MediaSession,
+        player: ExoPlayer,
+        session: NativePlaybackSession? = null
+    ) {
+        if (target.player === player) return
+        logInfo("media_session_switch_player", session)
+        target.player = player
+        dummyPlayer?.release()
+        dummyPlayer = null
     }
 
     private fun ensureFocusedPlayer(session: NativePlaybackSession): ExoPlayer {
@@ -1882,7 +1893,13 @@ class NativePlaybackService : MediaSessionService() {
         // A grace window whose uptimeMillis timer slept through its deadline has
         // to be closed explicitly; sync() alone cannot, since scheduleGrace()
         // short-circuits while the window is still marked as scheduled.
-        if (foregroundCoordinator.expireGraceIfOverdue()) {
+        //
+        // Closing the window does not necessarily mean the service stopped: the
+        // grace runnable skips its stop when playback resumed inside the window.
+        // Cancelling the alarm in that case would strip the Doze backstop from
+        // live playback, and no handler timer would be left to re-arm it if the
+        // wake lock was the thing that got revoked.
+        if (foregroundCoordinator.expireGraceIfOverdue() && !hasPlaybackToKeepAlive()) {
             PlaybackKeepAliveAlarmScheduler.cancel(this)
             return
         }
@@ -2178,15 +2195,6 @@ internal fun isCandidateFallbackPlaybackErrorCode(errorCode: Int): Boolean {
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
         PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
         PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS -> true
-        else -> false
-    }
-}
-
-internal fun shouldStopAfterPlaybackRecoveryWindow(errorCode: Int): Boolean {
-    return when (errorCode) {
-        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-        PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
-        PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED -> true
         else -> false
     }
 }

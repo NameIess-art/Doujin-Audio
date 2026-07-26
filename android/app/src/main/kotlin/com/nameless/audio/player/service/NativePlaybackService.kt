@@ -1492,7 +1492,7 @@ class NativePlaybackService : MediaSessionService() {
         }
         val launchIntent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setComponent(ComponentName(packageName, activeLauncherAliasName(this)))
+            .setComponent(ComponentName(packageName, activeLauncherActivityName(this)))
             .apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }

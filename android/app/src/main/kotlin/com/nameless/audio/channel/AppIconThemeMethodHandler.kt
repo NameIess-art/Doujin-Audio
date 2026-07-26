@@ -4,7 +4,6 @@ import com.nameless.audio.player.notification.UnifiedPlaybackNotificationControl
 
 import android.content.ComponentName
 import android.content.Context
-import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.os.Build
 import io.flutter.plugin.common.MethodCall
@@ -14,8 +13,14 @@ internal class AppIconThemeMethodHandler(
     context: Context
 ) : MethodChannel.MethodCallHandler {
     private val context = context.applicationContext
-    private var lastThemeMode = THEME_MODE_SYSTEM
-    private var lastColorGroup = ICON_GROUP_WARM
+    private val preferences =
+        this.context.getSharedPreferences(APP_ICON_THEME_PREFERENCES, Context.MODE_PRIVATE)
+    private var lastThemeMode = validThemeModeOrDefault(
+        preferences.getString(APP_ICON_THEME_MODE_KEY, null)
+    )
+    private var lastColorGroup = validIconColorGroupOrDefault(
+        preferences.getString(APP_ICON_COLOR_GROUP_KEY, null)
+    )
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         val envelope = ChannelEnvelopeResult(result)
@@ -51,28 +56,36 @@ internal class AppIconThemeMethodHandler(
     }
 
     private fun syncThemeMode(mode: String, colorGroup: String) {
-        val dark = isDarkThemeMode(mode, context.resources.configuration.uiMode)
-        iconColorGroupAliasSuffix(colorGroup)
-        setLauncherAliasEnabled(dark, colorGroup)
+        launcherThemeModeSuffix(mode)
+        iconColorGroupLauncherSuffix(colorGroup)
+        setLauncherActivityEnabled(mode, colorGroup)
+        preferences.edit()
+            .putString(APP_ICON_THEME_MODE_KEY, mode)
+            .putString(APP_ICON_COLOR_GROUP_KEY, colorGroup)
+            .apply()
         UnifiedPlaybackNotificationController.refreshThemeIcon(context)
         lastThemeMode = mode
         lastColorGroup = colorGroup
     }
 
-    private fun setLauncherAliasEnabled(dark: Boolean, colorGroup: String) {
+    private fun setLauncherActivityEnabled(mode: String, colorGroup: String) {
         val packageManager = context.packageManager
         val packageName = context.packageName
-        val enabledAliasName = appIconAliasName(packageName, dark, colorGroup)
-        val updates = launcherAliasUpdates(
-            launcherAliasNames(packageName),
-            enabledAliasName
+        val enabledActivityName = appIconLauncherActivityName(
+            packageName,
+            mode,
+            colorGroup
+        )
+        val updates = launcherActivityUpdates(
+            launcherActivityNames(packageName),
+            enabledActivityName
         )
         val flags = PackageManager.DONT_KILL_APP
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             packageManager.setComponentEnabledSettings(
-                updates.map { (aliasName, enabled) ->
+                updates.map { (activityName, enabled) ->
                     PackageManager.ComponentEnabledSetting(
-                        ComponentName(packageName, aliasName),
+                        ComponentName(packageName, activityName),
                         if (enabled) {
                             PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                         } else {
@@ -83,9 +96,9 @@ internal class AppIconThemeMethodHandler(
                 }
             )
         } else {
-            updates.forEach { (aliasName, enabled) ->
+            updates.forEach { (activityName, enabled) ->
                 packageManager.setComponentEnabledSetting(
-                    ComponentName(packageName, aliasName),
+                    ComponentName(packageName, activityName),
                     if (enabled) {
                         PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                     } else {
@@ -99,8 +112,8 @@ internal class AppIconThemeMethodHandler(
 }
 
 internal const val THEME_MODE_SYSTEM = "system"
-private const val THEME_MODE_LIGHT = "light"
-private const val THEME_MODE_DARK = "dark"
+internal const val THEME_MODE_LIGHT = "light"
+internal const val THEME_MODE_DARK = "dark"
 internal const val ICON_GROUP_WARM = "warm"
 private const val ICON_GROUP_PURPLE = "purple"
 private const val ICON_GROUP_BLUE = "blue"
@@ -115,55 +128,67 @@ internal val ICON_COLOR_GROUPS = listOf(
     ICON_GROUP_SUNSET,
     ICON_GROUP_NEUTRAL
 )
+private val THEME_MODES = listOf(
+    THEME_MODE_SYSTEM,
+    THEME_MODE_LIGHT,
+    THEME_MODE_DARK
+)
+private const val APP_ICON_THEME_PREFERENCES = "app_icon_theme_v1"
+private const val APP_ICON_THEME_MODE_KEY = "theme_mode"
+private const val APP_ICON_COLOR_GROUP_KEY = "color_group"
 
-internal fun isDarkThemeMode(mode: String, uiMode: Int): Boolean {
-    return when (mode) {
-        THEME_MODE_DARK -> true
-        THEME_MODE_LIGHT -> false
-        THEME_MODE_SYSTEM -> {
-            (uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                Configuration.UI_MODE_NIGHT_YES
+internal fun launcherActivityNames(packageName: String): List<String> {
+    return ICON_COLOR_GROUPS.flatMap { colorGroup ->
+        THEME_MODES.map { mode ->
+            appIconLauncherActivityName(packageName, mode, colorGroup)
         }
+    }
+}
+
+internal fun launcherActivityUpdates(
+    activityNames: List<String>,
+    enabledActivityName: String
+): List<Pair<String, Boolean>> {
+    require(enabledActivityName in activityNames) {
+        "Launcher activity is not registered: $enabledActivityName"
+    }
+    return buildList {
+        add(enabledActivityName to true)
+        activityNames.forEach { activityName ->
+            if (activityName != enabledActivityName) add(activityName to false)
+        }
+    }
+}
+
+internal fun appIconLauncherActivityName(
+    packageName: String,
+    mode: String,
+    colorGroup: String
+): String {
+    val groupSuffix = iconColorGroupLauncherSuffix(colorGroup)
+    val modeSuffix = launcherThemeModeSuffix(mode)
+    val activityName = "MainActivity${groupSuffix}${modeSuffix}"
+    return "$packageName.common.$activityName"
+}
+
+internal fun launcherThemeModeSuffix(mode: String): String {
+    return when (mode) {
+        THEME_MODE_SYSTEM -> "System"
+        THEME_MODE_LIGHT -> "Light"
+        THEME_MODE_DARK -> "Dark"
         else -> throw IllegalArgumentException("Unsupported theme mode: $mode")
     }
 }
 
-internal fun launcherAliasNames(packageName: String): List<String> {
-    return ICON_COLOR_GROUPS.flatMap { colorGroup ->
-        listOf(
-            appIconAliasName(packageName, dark = false, colorGroup = colorGroup),
-            appIconAliasName(packageName, dark = true, colorGroup = colorGroup)
-        )
-    }
+internal fun validThemeModeOrDefault(value: String?): String {
+    return value?.takeIf(THEME_MODES::contains) ?: THEME_MODE_SYSTEM
 }
 
-internal fun launcherAliasUpdates(
-    aliasNames: List<String>,
-    enabledAliasName: String
-): List<Pair<String, Boolean>> {
-    require(enabledAliasName in aliasNames) {
-        "Launcher alias is not registered: $enabledAliasName"
-    }
-    return buildList {
-        add(enabledAliasName to true)
-        aliasNames.forEach { aliasName ->
-            if (aliasName != enabledAliasName) add(aliasName to false)
-        }
-    }
+internal fun validIconColorGroupOrDefault(value: String?): String {
+    return value?.takeIf(ICON_COLOR_GROUPS::contains) ?: ICON_GROUP_WARM
 }
 
-internal fun appIconAliasName(
-    packageName: String,
-    dark: Boolean,
-    colorGroup: String
-): String {
-    val groupSuffix = iconColorGroupAliasSuffix(colorGroup)
-    val modeSuffix = if (dark) "Dark" else "Light"
-    val aliasName = "MainActivity${groupSuffix}${modeSuffix}"
-    return "$packageName.$aliasName"
-}
-
-internal fun iconColorGroupAliasSuffix(colorGroup: String): String {
+internal fun iconColorGroupLauncherSuffix(colorGroup: String): String {
     return when (colorGroup) {
         ICON_GROUP_WARM -> "Warm"
         ICON_GROUP_PURPLE -> "Purple"

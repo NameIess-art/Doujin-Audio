@@ -4,8 +4,9 @@ package com.nameless.audio.player.notification
 
 import com.nameless.audio.*
 import com.nameless.audio.channel.ICON_GROUP_WARM
-import com.nameless.audio.channel.appIconAliasName
-import com.nameless.audio.channel.launcherAliasNames
+import com.nameless.audio.channel.THEME_MODE_SYSTEM
+import com.nameless.audio.channel.appIconLauncherActivityName
+import com.nameless.audio.channel.launcherActivityNames
 import com.nameless.audio.player.service.*
 
 import android.app.NotificationChannel
@@ -138,14 +139,18 @@ internal fun addNotificationTransportActions(
     }
 }
 
-internal fun notificationIconResourceForAlias(aliasName: String): Int {
-    return when (aliasName.substringAfter("MainActivity", "")) {
-        "WarmLight", "WarmDark" -> R.drawable.ic_launcher_warm_light_foreground
-        "PurpleLight", "PurpleDark" -> R.drawable.ic_launcher_purple_light_foreground
-        "BlueLight", "BlueDark" -> R.drawable.ic_launcher_blue_light_foreground
-        "GreenLight", "GreenDark" -> R.drawable.ic_launcher_green_light_foreground
-        "SunsetLight", "SunsetDark" -> R.drawable.ic_launcher_sunset_light_foreground
-        "NeutralLight", "NeutralDark" -> R.drawable.ic_launcher_neutral_light_foreground
+internal fun notificationIconResourceForLauncher(activityName: String): Int {
+    return when {
+        activityName.contains("MainActivityPurple") ->
+            R.drawable.ic_launcher_purple_light_foreground
+        activityName.contains("MainActivityBlue") ->
+            R.drawable.ic_launcher_blue_light_foreground
+        activityName.contains("MainActivityGreen") ->
+            R.drawable.ic_launcher_green_light_foreground
+        activityName.contains("MainActivitySunset") ->
+            R.drawable.ic_launcher_sunset_light_foreground
+        activityName.contains("MainActivityNeutral") ->
+            R.drawable.ic_launcher_neutral_light_foreground
         else -> R.drawable.ic_launcher_warm_light_foreground
     }
 }
@@ -155,35 +160,34 @@ internal data class NotificationIconSpec(
     val color: Int
 )
 
-internal fun notificationIconSpecForAlias(aliasName: String): NotificationIconSpec {
-    val suffix = aliasName.substringAfter("MainActivity", "")
-    val color = when (suffix) {
-        "PurpleLight", "PurpleDark" -> 0xFFA867F1.toInt()
-        "BlueLight", "BlueDark" -> 0xFF4B78EF.toInt()
-        "GreenLight", "GreenDark" -> 0xFF63C636.toInt()
-        "SunsetLight", "SunsetDark" -> 0xFFFB833C.toInt()
-        "NeutralLight", "NeutralDark" -> 0xFFA6B0BE.toInt()
+internal fun notificationIconSpecForLauncher(activityName: String): NotificationIconSpec {
+    val color = when {
+        activityName.contains("MainActivityPurple") -> 0xFFA867F1.toInt()
+        activityName.contains("MainActivityBlue") -> 0xFF4B78EF.toInt()
+        activityName.contains("MainActivityGreen") -> 0xFF63C636.toInt()
+        activityName.contains("MainActivitySunset") -> 0xFFFB833C.toInt()
+        activityName.contains("MainActivityNeutral") -> 0xFFA6B0BE.toInt()
         else -> 0xFFFF5F5C.toInt()
     }
     return NotificationIconSpec(
-        resourceId = notificationIconResourceForAlias(aliasName),
+        resourceId = notificationIconResourceForLauncher(activityName),
         color = color
     )
 }
 
 internal fun notificationIconSpec(context: Context): NotificationIconSpec {
-    return notificationIconSpecForAlias(activeLauncherAliasName(context))
+    return notificationIconSpecForLauncher(activeLauncherActivityName(context))
 }
 
-internal fun activeLauncherAliasName(context: Context): String {
+internal fun activeLauncherActivityName(context: Context): String {
     val packageName = context.packageName
-    return launcherAliasNames(packageName).firstOrNull { aliasName ->
+    return launcherActivityNames(packageName).firstOrNull { activityName ->
         context.packageManager.getComponentEnabledSetting(
-            ComponentName(packageName, aliasName)
+            ComponentName(packageName, activityName)
         ) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-    } ?: appIconAliasName(
+    } ?: appIconLauncherActivityName(
         packageName,
-        dark = false,
+        mode = THEME_MODE_SYSTEM,
         colorGroup = ICON_GROUP_WARM
     )
 }
@@ -806,7 +810,7 @@ internal object UnifiedPlaybackNotificationController {
     ): PendingIntent? {
         val launchIntent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setComponent(ComponentName(context.packageName, activeLauncherAliasName(context)))
+            .setComponent(ComponentName(context.packageName, activeLauncherActivityName(context)))
             .apply {
                 addFlags(
                     Intent.FLAG_ACTIVITY_NEW_TASK or

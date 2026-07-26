@@ -48,78 +48,258 @@
               />
         </activity>
 
-        <activity-alias android:name=".MainActivityWarmLight" android:targetActivity=".MainActivity" android:enabled="true" android:exported="true" android:icon="@drawable/ic_launcher_warm_light" android:theme="@style/LaunchThemeWarmLight">
+        <activity
+            android:name=".common.MainActivityWarmSystem"
+            android:enabled="true" android:exported="true"
+            android:icon="@drawable/ic_launcher_warm_system"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeWarmSystem"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivityWarmDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_warm_dark" android:theme="@style/LaunchThemeWarmDark">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityWarmLight"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_warm_light"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeWarmLight"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivityPurpleLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_purple_light" android:theme="@style/LaunchThemePurpleLight">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityWarmDark"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_warm_dark"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeWarmDark"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivityPurpleDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_purple_dark" android:theme="@style/LaunchThemePurpleDark">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityPurpleSystem"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_purple_system"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemePurpleSystem"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivityBlueLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_blue_light" android:theme="@style/LaunchThemeBlueLight">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityPurpleLight"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_purple_light"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemePurpleLight"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivityBlueDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_blue_dark" android:theme="@style/LaunchThemeBlueDark">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityPurpleDark"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_purple_dark"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemePurpleDark"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivityGreenLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_green_light" android:theme="@style/LaunchThemeGreenLight">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityBlueSystem"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_blue_system"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeBlueSystem"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivityGreenDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_green_dark" android:theme="@style/LaunchThemeGreenDark">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityBlueLight"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_blue_light"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeBlueLight"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivitySunsetLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_sunset_light" android:theme="@style/LaunchThemeSunsetLight">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityBlueDark"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_blue_dark"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeBlueDark"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivitySunsetDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_sunset_dark" android:theme="@style/LaunchThemeSunsetDark">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityGreenSystem"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_green_system"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeGreenSystem"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivityNeutralLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_neutral_light" android:theme="@style/LaunchThemeNeutralLight">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityGreenLight"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_green_light"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeGreenLight"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
-        <activity-alias android:name=".MainActivityNeutralDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_neutral_dark" android:theme="@style/LaunchThemeNeutralDark">
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityGreenDark"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_green_dark"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeGreenDark"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity-alias>
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivitySunsetSystem"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_sunset_system"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeSunsetSystem"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivitySunsetLight"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_sunset_light"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeSunsetLight"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivitySunsetDark"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_sunset_dark"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeSunsetDark"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityNeutralSystem"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_neutral_system"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeNeutralSystem"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityNeutralLight"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_neutral_light"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeNeutralLight"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
+        <activity
+            android:name=".common.MainActivityNeutralDark"
+            android:enabled="false" android:exported="true"
+            android:icon="@drawable/ic_launcher_neutral_dark"
+            android:launchMode="singleTop" android:taskAffinity=""
+            android:theme="@style/LaunchThemeNeutralDark"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true" android:windowSoftInputMode="adjustNothing">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
+        </activity>
         
         <!-- SUBTITLE OVERLAY SERVICE -->
         <service

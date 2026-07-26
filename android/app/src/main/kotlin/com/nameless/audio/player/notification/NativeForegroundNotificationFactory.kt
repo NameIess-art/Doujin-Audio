@@ -119,7 +119,7 @@ internal class NativeForegroundNotificationFactory(
     private fun launchPendingIntent(): PendingIntent? {
         val launchIntent = Intent(Intent.ACTION_MAIN)
             .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setComponent(ComponentName(context.packageName, activeLauncherAliasName(context)))
+            .setComponent(ComponentName(context.packageName, activeLauncherActivityName(context)))
             .apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }

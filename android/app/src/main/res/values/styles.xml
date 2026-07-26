@@ -78,4 +78,11 @@
         <item name="android:statusBarColor">@color/launch_background_neutral_dark</item>
         <item name="android:navigationBarColor">@color/launch_background_neutral_dark</item>
     </style>
+
+    <style name="LaunchThemeWarmSystem" parent="@style/LaunchThemeWarmLight" />
+    <style name="LaunchThemePurpleSystem" parent="@style/LaunchThemePurpleLight" />
+    <style name="LaunchThemeBlueSystem" parent="@style/LaunchThemeBlueLight" />
+    <style name="LaunchThemeGreenSystem" parent="@style/LaunchThemeGreenLight" />
+    <style name="LaunchThemeSunsetSystem" parent="@style/LaunchThemeSunsetLight" />
+    <style name="LaunchThemeNeutralSystem" parent="@style/LaunchThemeNeutralLight" />
 </resources>

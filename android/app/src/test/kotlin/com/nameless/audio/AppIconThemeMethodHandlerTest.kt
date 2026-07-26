@@ -1,79 +1,81 @@
 package com.nameless.audio
 
-import android.content.res.Configuration
 import com.nameless.audio.channel.ICON_COLOR_GROUPS
-import com.nameless.audio.channel.appIconAliasName
-import com.nameless.audio.channel.iconColorGroupAliasSuffix
-import com.nameless.audio.channel.isDarkThemeMode
-import com.nameless.audio.channel.launcherAliasNames
-import com.nameless.audio.channel.launcherAliasUpdates
+import com.nameless.audio.channel.appIconLauncherActivityName
+import com.nameless.audio.channel.iconColorGroupLauncherSuffix
+import com.nameless.audio.channel.launcherActivityNames
+import com.nameless.audio.channel.launcherActivityUpdates
+import com.nameless.audio.channel.launcherThemeModeSuffix
+import com.nameless.audio.channel.validIconColorGroupOrDefault
+import com.nameless.audio.channel.validThemeModeOrDefault
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class AppIconThemeMethodHandlerTest {
     @Test
-    fun `explicit theme modes resolve independently from system mode`() {
-        assertFalse(isDarkThemeMode("light", Configuration.UI_MODE_NIGHT_YES))
-        assertTrue(isDarkThemeMode("dark", Configuration.UI_MODE_NIGHT_NO))
-    }
-
-    @Test
-    fun `system theme mode follows ui mode night flag`() {
-        assertFalse(isDarkThemeMode("system", Configuration.UI_MODE_NIGHT_NO))
-        assertTrue(isDarkThemeMode("system", Configuration.UI_MODE_NIGHT_YES))
+    fun `three appearance modes expose stable launcher suffixes`() {
+        assertEquals("System", launcherThemeModeSuffix("system"))
+        assertEquals("Light", launcherThemeModeSuffix("light"))
+        assertEquals("Dark", launcherThemeModeSuffix("dark"))
     }
 
     @Test(expected = IllegalArgumentException::class)
     fun `unsupported theme mode is rejected`() {
-        isDarkThemeMode("sepia", Configuration.UI_MODE_NIGHT_NO)
+        launcherThemeModeSuffix("sepia")
     }
 
     @Test
-    fun `alias component names stay stable`() {
+    fun `launcher activity component names stay stable`() {
         val packageName = "com.nameless.audio"
         assertEquals(
-            "$packageName.MainActivityWarmLight",
-            appIconAliasName(packageName, dark = false, colorGroup = "warm")
+            "$packageName.common.MainActivityWarmSystem",
+            appIconLauncherActivityName(packageName, mode = "system", colorGroup = "warm")
         )
         assertEquals(
-            "$packageName.MainActivityBlueDark",
-            appIconAliasName(packageName, dark = true, colorGroup = "blue")
+            "$packageName.common.MainActivityBlueDark",
+            appIconLauncherActivityName(packageName, mode = "dark", colorGroup = "blue")
         )
     }
 
     @Test
-    fun `six color groups expose stable alias suffixes`() {
+    fun `six color groups expose eighteen launcher activities`() {
         assertEquals(6, ICON_COLOR_GROUPS.size)
-        assertEquals("Neutral", iconColorGroupAliasSuffix("neutral"))
-        val aliases = launcherAliasNames("com.nameless.audio")
-        assertEquals(12, aliases.size)
-        assertEquals(12, aliases.toSet().size)
+        assertEquals("Neutral", iconColorGroupLauncherSuffix("neutral"))
+        val activities = launcherActivityNames("com.nameless.audio")
+        assertEquals(18, activities.size)
+        assertEquals(18, activities.toSet().size)
     }
 
     @Test
-    fun `icon switches leave exactly one launcher alias enabled`() {
-        val aliases = launcherAliasNames("com.nameless.audio")
-        val target = "com.nameless.audio.MainActivityGreenDark"
-        val updates = launcherAliasUpdates(aliases, target)
+    fun `icon switches leave exactly one launcher activity enabled`() {
+        val activities = launcherActivityNames("com.nameless.audio")
+        val target = "com.nameless.audio.common.MainActivityGreenSystem"
+        val updates = launcherActivityUpdates(activities, target)
 
-        assertEquals(aliases.size, updates.size)
+        assertEquals(activities.size, updates.size)
         assertEquals(target to true, updates.first())
         assertEquals(listOf(target), updates.filter { it.second }.map { it.first })
-        assertEquals(aliases.toSet(), updates.map { it.first }.toSet())
+        assertEquals(activities.toSet(), updates.map { it.first }.toSet())
     }
 
     @Test(expected = IllegalArgumentException::class)
-    fun `unregistered launcher alias is rejected`() {
-        launcherAliasUpdates(
-            launcherAliasNames("com.nameless.audio"),
+    fun `unregistered launcher activity is rejected`() {
+        launcherActivityUpdates(
+            launcherActivityNames("com.nameless.audio"),
             "com.nameless.audio.MainActivityMissing"
         )
     }
 
+    @Test
+    fun `invalid persisted launcher values use stable defaults`() {
+        assertEquals("system", validThemeModeOrDefault("sepia"))
+        assertEquals("warm", validIconColorGroupOrDefault("teal"))
+        assertEquals("dark", validThemeModeOrDefault("dark"))
+        assertEquals("purple", validIconColorGroupOrDefault("purple"))
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `unsupported color group is rejected`() {
-        iconColorGroupAliasSuffix("teal")
+        iconColorGroupLauncherSuffix("teal")
     }
 }

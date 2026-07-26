@@ -168,6 +168,72 @@ void main() {
     expect(contentDuration, const Duration(minutes: 5));
   });
 
+  test(
+    'duration backfill does not overwrite a richer local detail backup',
+    () async {
+      final workFolder = await Directory.systemTemp.createTemp(
+        'detail_duration_backup_race_',
+      );
+      addTearDown(() async {
+        if (await workFolder.exists()) {
+          await workFolder.delete(recursive: true);
+        }
+      });
+      final trackPath = path.join(workFolder.path, '01.mp3');
+      final target = AudioDetailTarget.libraryRootFolder(workFolder.path);
+      runtimeGraph.library.addWatchedFolder(workFolder.path, notify: false);
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: workFolder.path,
+            groupTitle: 'Work',
+            groupSubtitle: workFolder.path,
+            isSingle: false,
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+
+      await runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(target).copyWith(
+          rjCode: 'RJ123456',
+          workTitle: 'Original title',
+          circleName: 'Original circle',
+        ),
+      );
+      await db.delete('audio_details');
+      await runtimeGraph.library.databaseRepository.upsertAudioDetail(
+        AudioDetail.empty(target).copyWith(
+          createdAt: DateTime.utc(2026, 7, 26, 10),
+          updatedAt: DateTime.utc(2026, 7, 26, 10, 1),
+        ),
+      );
+      runtimeGraph.library.detailCacheService.clear();
+
+      await runtimeGraph.library.backfillMissingLibraryDurations(
+        durationReader: (_) async => const Duration(minutes: 2),
+      );
+
+      final backup =
+          json.decode(
+                await File(
+                  path.join(
+                    workFolder.path,
+                    AudioDetailRepository.backupFileName,
+                  ),
+                ).readAsString(),
+              )
+              as Map<String, dynamic>;
+      expect(backup['rjCode'], 'RJ123456');
+      expect(backup['workTitle'], 'Original title');
+      expect(backup['circleName'], 'Original circle');
+      expect(backup['durationMs'], const Duration(minutes: 2).inMilliseconds);
+    },
+  );
+
   test('missing duration is resolved for a single video file', () async {
     const videoPath = r'C:\library\standalone-video.mp4';
     runtimeGraph.library.addTracks(

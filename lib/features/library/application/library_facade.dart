@@ -553,8 +553,33 @@ final class LibraryFacade implements LibraryCatalog {
     if (targetsByKey.isEmpty) return;
 
     final targets = targetsByKey.values.toList(growable: false);
-    final loadResults = await detailCacheService.loadMany(targets);
+    var loadResults = await detailCacheService.loadMany(targets);
     if (_disposed || epoch != _maintenanceEpoch) return;
+    final targetsWithMissingDetails = <AudioDetailTarget>[];
+    for (var index = 0; index < loadResults.length; index++) {
+      if (loadResults[index].detail.isEmpty) {
+        targetsWithMissingDetails.add(targets[index]);
+      }
+    }
+    if (targetsWithMissingDetails.isNotEmpty) {
+      // A rescan can expose a track before the explicit backup import finishes.
+      // Restore sparse details before automatic duration writes can mirror them
+      // back to nameless-audio.json.
+      final import = await detailCacheService.importBackupsMany(
+        targetsWithMissingDetails,
+      );
+      final retryAt = import.nextRetryAt;
+      if (retryAt != null) {
+        _startupMaintenanceCoordinator.scheduleBackupSync(retryAt);
+      }
+      if (import.changedDetails.isNotEmpty) {
+        snapshotCacheService.markDetailChanged();
+        _syncStateSlice();
+      }
+      if (_disposed || epoch != _maintenanceEpoch) return;
+      loadResults = await detailCacheService.loadMany(targets);
+      if (_disposed || epoch != _maintenanceEpoch) return;
+    }
     for (var index = 0; index < targets.length; index++) {
       if (_disposed || epoch != _maintenanceEpoch) return;
       final detail = loadResults[index].detail;

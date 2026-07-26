@@ -1031,6 +1031,7 @@ class AudioDetailRepository {
   }
 
   bool _shouldPreferBackup(AudioDetail database, AudioDetail backup) {
+    if (database.isEmpty && !backup.isEmpty) return true;
     if (_isBackupNewer(database, backup)) return true;
     if (database.updatedAt != null || backup.updatedAt != null) return false;
     return _metadataScore(backup) > _metadataScore(database);

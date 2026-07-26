@@ -98,9 +98,13 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   }
 
   Future<void> _openDownloadPage(BuildContext context) async {
-    await Navigator.of(
-      context,
-    ).push(buildAppPageRoute<void>(child: AsmrDownloadPage(work: widget.work)));
+    await Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        context: context,
+        style: AppPageTransitionStyle.sharedAxisZ,
+        child: AsmrDownloadPage(work: widget.work),
+      ),
+    );
   }
 
   @override
@@ -162,9 +166,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             controller: _expansionController,
-            expansionAnimationStyle: const AnimationStyle(
-              reverseDuration: Duration.zero,
-            ),
+            expansionAnimationStyle: appExpansionAnimationStyle(context),
             minTileHeight: _rootTileHeight,
             onExpansionChanged: (expanded) {
               if (_expanded == expanded) {
@@ -347,6 +349,7 @@ class _AsmrTrackTreeNodeState extends ConsumerState<_AsmrTrackTreeNode> {
       return Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          expansionAnimationStyle: appExpansionAnimationStyle(context),
           controller: _expansionController,
           minTileHeight: _childFolderTileHeight,
           onExpansionChanged: (expanded) {

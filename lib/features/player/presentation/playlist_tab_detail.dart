@@ -347,7 +347,15 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           },
           child: RepaintBoundary(
             child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 300),
+              duration: kAppMotionSlow,
+              reverseDuration: kAppMotionStandard,
+              transitionBuilder: (child, animation) =>
+                  buildAppScaleFadeTransition(
+                    context: context,
+                    animation: animation,
+                    child: child,
+                    beginScale: 0.96,
+                  ),
               child: Builder(
                 key: ValueKey(_currentSessionId),
                 builder: (context) {

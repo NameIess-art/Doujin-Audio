@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'app_transitions.dart';
+
 class AppBottomSheet {
   /// Shows a standardized bottom sheet with a drag handle and rounded top corners.
   static Future<T?> show<T>({
@@ -21,6 +23,14 @@ class AppBottomSheet {
       showDragHandle: showDragHandle,
       enableDrag: enableDrag,
       isDismissible: isDismissible,
+      sheetAnimationStyle: MediaQuery.disableAnimationsOf(context)
+          ? AnimationStyle.noAnimation
+          : const AnimationStyle(
+              duration: kAppMotionSlow,
+              reverseDuration: kAppMotionStandard,
+              curve: Curves.easeOutCubic,
+              reverseCurve: Curves.easeInCubic,
+            ),
       backgroundColor: backgroundColor,
       elevation: elevation,
       clipBehavior: clipBehavior,

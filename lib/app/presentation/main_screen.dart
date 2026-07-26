@@ -67,8 +67,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   late final ValueNotifier<int> _activePageIndex;
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
-  Timer? _pageSwitchTimer;
-  int _pageSwitchGeneration = 0;
+  int _pageSwitchCoordinatorGeneration = 0;
 
   bool _notificationPermissionCheckDone = false;
   bool _notificationPermissionCheckQueued = false;
@@ -282,7 +281,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   void dispose() {
     UiInteractionCoordinator.instance.cancelInteraction(_pageSwitchInteraction);
-    _pageSwitchTimer?.cancel();
     _metricsRecoveryTimer?.cancel();
     _notificationSessionNavigationTimer?.cancel();
     _notificationSessionNavigationTimer = null;
@@ -569,16 +567,13 @@ class _MainScreenState extends ConsumerState<MainScreen>
       ref.read(mainScreenControllerProvider).requestScrollToTop(index);
       return;
     }
-    final warmup = ref.read(audioUiWarmupCoordinatorProvider);
     if (withFeedback) {
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     }
 
     final coordinator = UiInteractionCoordinator.instance;
-    _pageSwitchTimer?.cancel();
-    final switchGeneration = ++_pageSwitchGeneration;
     coordinator.beginInteraction(_pageSwitchInteraction);
-    final generation = coordinator.beginGeneration();
+    _pageSwitchCoordinatorGeneration = coordinator.beginGeneration();
     setState(() {
       _currentIndex = index;
     });
@@ -586,30 +581,28 @@ class _MainScreenState extends ConsumerState<MainScreen>
     if (index == 0) {
       unawaited(_showAsmrOnlineNoticeOnce());
     }
+  }
 
-    _pageSwitchTimer = Timer(const Duration(milliseconds: 140), () {
-      if (!mounted ||
-          _currentIndex != index ||
-          switchGeneration != _pageSwitchGeneration) {
-        return;
-      }
-      coordinator.endInteraction(_pageSwitchInteraction);
-      coordinator.scheduleCommit(
-        key: 'main_page_$index',
-        priority: 0,
-        commit: () {},
-      );
-      coordinator.scheduleAfterIdle(
-        key: 'main_page_warmup_$index',
-        generation: generation,
-        priority: 0,
-        task: () async {
-          if (!mounted || _currentIndex != index) return;
-          warmup.schedule(currentPageIndex: index, immediate: true);
-        },
-      );
-      _pageSwitchTimer = null;
-    });
+  void _handlePageTransitionCompleted(int index) {
+    if (!mounted || _currentIndex != index) return;
+    final warmup = ref.read(audioUiWarmupCoordinatorProvider);
+    final coordinator = UiInteractionCoordinator.instance;
+    final generation = _pageSwitchCoordinatorGeneration;
+    coordinator.endInteraction(_pageSwitchInteraction);
+    coordinator.scheduleCommit(
+      key: 'main_page_$index',
+      priority: 0,
+      commit: () {},
+    );
+    coordinator.scheduleAfterIdle(
+      key: 'main_page_warmup_$index',
+      generation: generation,
+      priority: 0,
+      task: () async {
+        if (!mounted || _currentIndex != index) return;
+        warmup.schedule(currentPageIndex: index, immediate: true);
+      },
+    );
   }
 
   Future<void> _showAsmrOnlineNoticeOnce() async {

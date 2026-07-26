@@ -34,6 +34,7 @@ import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
 import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
+import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
@@ -92,7 +93,7 @@ void main() {
     expect(
       find.byWidgetPredicate(
         (widget) =>
-            widget is IndexedStack &&
+            widget is AppFadeThroughIndexedStack &&
             widget.key == const ValueKey<String>('main_page_stack'),
       ),
       findsOneWidget,
@@ -222,7 +223,10 @@ void main() {
       final asmrState = tester.state(asmrFinder);
       final stackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
 
-      expect(tester.widget<IndexedStack>(stackFinder).children, hasLength(4));
+      expect(
+        tester.widget<AppFadeThroughIndexedStack>(stackFinder).children,
+        hasLength(4),
+      );
       expect(find.byType(TopPageHeader), findsOneWidget);
 
       final asmrDestination = find.byKey(
@@ -231,7 +235,7 @@ void main() {
       await tester.tap(asmrDestination);
       await tester.pump();
 
-      expect(tester.widget<IndexedStack>(stackFinder).index, 0);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 0);
       expect(find.byType(TopPageHeader), findsOneWidget);
       expect(tester.state(libraryFinder), same(libraryState));
       expect(tester.state(asmrFinder), same(asmrState));
@@ -242,7 +246,7 @@ void main() {
       await tester.tap(libraryDestination);
       await tester.pump();
 
-      expect(tester.widget<IndexedStack>(stackFinder).index, 1);
+      expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 1);
       expect(find.byType(TopPageHeader), findsOneWidget);
       expect(tester.state(libraryFinder), same(libraryState));
       expect(tester.state(asmrFinder), same(asmrState));
@@ -490,9 +494,10 @@ void main() {
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
 
-    IndexedStack mainPageStack() => tester.widget<IndexedStack>(
-      find.byKey(const ValueKey<String>('main_page_stack')),
-    );
+    AppFadeThroughIndexedStack mainPageStack() =>
+        tester.widget<AppFadeThroughIndexedStack>(
+          find.byKey(const ValueKey<String>('main_page_stack')),
+        );
 
     expect(mainPageStack().index, 3);
 
@@ -545,9 +550,10 @@ void main() {
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
 
-    IndexedStack mainPageStack() => tester.widget<IndexedStack>(
-      find.byKey(const ValueKey<String>('main_page_stack')),
-    );
+    AppFadeThroughIndexedStack mainPageStack() =>
+        tester.widget<AppFadeThroughIndexedStack>(
+          find.byKey(const ValueKey<String>('main_page_stack')),
+        );
 
     expect(mainPageStack().index, 3);
     tester.view.viewInsets = const FakeViewPadding(bottom: 600);
@@ -1653,12 +1659,13 @@ Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {
   final pageStackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
   for (var frame = 0; frame < 30; frame++) {
     await tester.pump(const Duration(milliseconds: 16));
-    final stack = tester.widget<IndexedStack>(pageStackFinder);
+    final stack = tester.widget<AppFadeThroughIndexedStack>(pageStackFinder);
     if (stack.index == targetPage) {
+      await tester.pump(kAppMotionSlow);
       return;
     }
   }
-  final stack = tester.widget<IndexedStack>(pageStackFinder);
+  final stack = tester.widget<AppFadeThroughIndexedStack>(pageStackFinder);
   fail(
     'Main page stack did not reach page $targetPage; '
     'current page: ${stack.index}.',

@@ -135,6 +135,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void _openAboutPage() {
     Navigator.of(context).push(
       buildAppPageRoute<void>(
+        context: context,
         child: AboutPage(versionFuture: _appVersionFuture),
       ),
     );
@@ -253,6 +254,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     }
     Navigator.of(context).push(
       buildAppPageRoute<void>(
+        context: context,
         child: _SettingsCategoryPage(
           category: category,
           updateInfoListenable: _updateInfoNotifier,

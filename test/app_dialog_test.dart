@@ -57,6 +57,13 @@ void main() {
     expect(find.byIcon(Icons.edit_rounded), findsOneWidget);
     expect(find.text('Rename queue'), findsOneWidget);
     expect(find.text('Queue name'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('app_dialog_surface')),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();

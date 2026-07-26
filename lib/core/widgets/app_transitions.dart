@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 
 const kPlaceholderContentTransitionDuration = Duration(milliseconds: 750);
+const kAppMotionFast = Duration(milliseconds: 180);
+const kAppMotionStandard = Duration(milliseconds: 220);
+const kAppMotionSlow = Duration(milliseconds: 300);
+
+enum AppPageTransitionStyle { fadeThrough, sharedAxisX, sharedAxisZ }
 
 class PlaceholderContentTransition extends StatefulWidget {
   const PlaceholderContentTransition({
@@ -96,8 +101,8 @@ class _PlaceholderContentTransitionState
 class SecondaryOverlayConfig {
   const SecondaryOverlayConfig({
     this.backgroundOpacity = 0.80,
-    this.transitionDuration = const Duration(milliseconds: 160),
-    this.reverseTransitionDuration = const Duration(milliseconds: 120),
+    this.transitionDuration = kAppMotionStandard,
+    this.reverseTransitionDuration = kAppMotionFast,
     this.curve = Curves.easeOutCubic,
     this.reverseCurve = Curves.easeInCubic,
   });
@@ -117,19 +122,228 @@ class SecondaryOverlayConfig {
 
 const kSecondaryOverlayConfig = SecondaryOverlayConfig();
 
+AnimationStyle appExpansionAnimationStyle(BuildContext context) {
+  if (MediaQuery.disableAnimationsOf(context)) {
+    return AnimationStyle.noAnimation;
+  }
+  return const AnimationStyle(
+    duration: kAppMotionStandard,
+    curve: Curves.easeOutCubic,
+    reverseCurve: Curves.easeInCubic,
+  );
+}
+
+Widget buildAppScaleFadeTransition({
+  required BuildContext context,
+  required Animation<double> animation,
+  required Widget child,
+  double beginScale = 0.94,
+  Curve curve = Curves.easeOutCubic,
+  Curve reverseCurve = Curves.easeInCubic,
+}) {
+  if (MediaQuery.disableAnimationsOf(context)) return child;
+  final curved = CurvedAnimation(
+    parent: animation,
+    curve: curve,
+    reverseCurve: reverseCurve,
+  );
+  return FadeTransition(
+    opacity: curved,
+    child: ScaleTransition(
+      scale: Tween<double>(begin: beginScale, end: 1).animate(curved),
+      child: child,
+    ),
+  );
+}
+
 Widget buildCenterExpandTransition({
   required BuildContext context,
   required Animation<double> animation,
   required Widget child,
 }) {
-  if (MediaQuery.disableAnimationsOf(context)) return child;
-  final opacityAnimation = CurvedAnimation(
-    parent: animation,
-    curve: Curves.easeOut,
-    reverseCurve: Curves.easeIn,
+  return buildAppScaleFadeTransition(
+    context: context,
+    animation: animation,
+    child: child,
   );
+}
 
-  return FadeTransition(opacity: opacityAnimation, child: child);
+Widget _buildSharedAxisTransition({
+  required BuildContext context,
+  required Animation<double> animation,
+  required Animation<double> secondaryAnimation,
+  required Widget child,
+  required AppPageTransitionStyle style,
+}) {
+  if (MediaQuery.disableAnimationsOf(context)) return child;
+  return AnimatedBuilder(
+    animation: Listenable.merge([animation, secondaryAnimation]),
+    child: child,
+    builder: (context, child) {
+      final primary = Curves.easeOutCubic.transform(animation.value);
+      final secondary = Curves.easeInCubic.transform(secondaryAnimation.value);
+      final isDepth = style == AppPageTransitionStyle.sharedAxisZ;
+      final opacity = (primary * (1 - secondary * 0.08)).clamp(0.0, 1.0);
+      final scale = isDepth
+          ? (0.94 + 0.06 * primary) * (1 - secondary * 0.02)
+          : 1.0;
+      final dx = isDepth ? 0.0 : 24 * (1 - primary) - 8 * secondary;
+      return Opacity(
+        opacity: opacity,
+        child: Transform(
+          alignment: Alignment.center,
+          transform: Matrix4.identity()
+            ..translateByDouble(dx, 0.0, 0.0, 1.0)
+            ..scaleByDouble(scale, scale, 1.0, 1.0),
+          child: child,
+        ),
+      );
+    },
+  );
+}
+
+Widget buildAppPageTransition({
+  required BuildContext context,
+  required Animation<double> animation,
+  required Animation<double> secondaryAnimation,
+  required Widget child,
+  required AppPageTransitionStyle style,
+}) {
+  if (style == AppPageTransitionStyle.fadeThrough) {
+    return buildAppScaleFadeTransition(
+      context: context,
+      animation: animation,
+      child: child,
+      beginScale: 0.92,
+    );
+  }
+  return _buildSharedAxisTransition(
+    context: context,
+    animation: animation,
+    secondaryAnimation: secondaryAnimation,
+    child: child,
+    style: style,
+  );
+}
+
+class AppFadeThroughIndexedStack extends StatefulWidget {
+  const AppFadeThroughIndexedStack({
+    super.key,
+    required this.index,
+    required this.children,
+    this.onTransitionCompleted,
+  });
+
+  final int index;
+  final List<Widget> children;
+  final ValueChanged<int>? onTransitionCompleted;
+
+  @override
+  State<AppFadeThroughIndexedStack> createState() =>
+      _AppFadeThroughIndexedStackState();
+}
+
+class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late int _currentIndex;
+  late int _targetIndex;
+  bool _hasSwappedPage = true;
+  bool _isAnimating = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentIndex = widget.index;
+    _targetIndex = widget.index;
+    _controller =
+        AnimationController(
+            vsync: this,
+            duration: kAppMotionSlow,
+            reverseDuration: kAppMotionFast,
+          )
+          ..addListener(_handleProgressChanged)
+          ..addStatusListener(_handleStatusChanged);
+    _controller.value = 1;
+  }
+
+  @override
+  void didUpdateWidget(covariant AppFadeThroughIndexedStack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.index == _targetIndex) return;
+    _targetIndex = widget.index;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _currentIndex = _targetIndex;
+      _hasSwappedPage = true;
+      _isAnimating = false;
+      _controller.value = 1;
+      widget.onTransitionCompleted?.call(_currentIndex);
+      return;
+    }
+    _hasSwappedPage = false;
+    _isAnimating = true;
+    _controller.forward(from: 0);
+  }
+
+  void _handleProgressChanged() {
+    if (!_isAnimating || _hasSwappedPage || _controller.value < 0.35) {
+      return;
+    }
+    setState(() {
+      _currentIndex = _targetIndex;
+      _hasSwappedPage = true;
+    });
+  }
+
+  void _handleStatusChanged(AnimationStatus status) {
+    if (status != AnimationStatus.completed || !_isAnimating || !mounted) {
+      return;
+    }
+    setState(() {
+      _currentIndex = _targetIndex;
+      _hasSwappedPage = true;
+      _isAnimating = false;
+    });
+    widget.onTransitionCompleted?.call(_currentIndex);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final stack = IndexedStack(
+      index: _currentIndex,
+      sizing: StackFit.expand,
+      children: widget.children,
+    );
+    return IgnorePointer(
+      ignoring: _isAnimating,
+      child: AnimatedBuilder(
+        animation: _controller,
+        child: stack,
+        builder: (context, child) {
+          final outgoing = _isAnimating && _controller.value < 0.35;
+          final rawProgress = !_isAnimating
+              ? 1.0
+              : outgoing
+              ? (_controller.value / 0.35).clamp(0.0, 1.0)
+              : ((_controller.value - 0.35) / 0.65).clamp(0.0, 1.0);
+          final progress = Curves.easeOutCubic.transform(rawProgress);
+          return Opacity(
+            opacity: outgoing ? 1 - progress : progress,
+            child: Transform.scale(
+              scale: outgoing ? 1 - progress * 0.04 : 0.92 + progress * 0.08,
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
+  }
 }
 
 class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
@@ -143,30 +357,37 @@ class CenterScalePageTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return buildCenterExpandTransition(
+    return buildAppPageTransition(
       context: context,
       animation: animation,
+      secondaryAnimation: secondaryAnimation,
       child: child,
+      style: AppPageTransitionStyle.sharedAxisZ,
     );
   }
 }
 
 PageRouteBuilder<T> buildAppPageRoute<T>({
+  required BuildContext context,
   required Widget child,
   RouteSettings? settings,
-  Duration duration = Duration.zero,
-  Duration reverseDuration = Duration.zero,
+  AppPageTransitionStyle style = AppPageTransitionStyle.sharedAxisX,
+  Duration duration = kAppMotionSlow,
+  Duration reverseDuration = kAppMotionFast,
 }) {
+  final reducedMotion = MediaQuery.disableAnimationsOf(context);
   return PageRouteBuilder<T>(
     settings: settings,
-    transitionDuration: duration,
-    reverseTransitionDuration: reverseDuration,
+    transitionDuration: reducedMotion ? Duration.zero : duration,
+    reverseTransitionDuration: reducedMotion ? Duration.zero : reverseDuration,
     pageBuilder: (context, animation, secondaryAnimation) => child,
     transitionsBuilder: (context, animation, secondaryAnimation, routedChild) {
-      return buildCenterExpandTransition(
+      return buildAppPageTransition(
         context: context,
         animation: animation,
+        secondaryAnimation: secondaryAnimation,
         child: routedChild,
+        style: style,
       );
     },
   );

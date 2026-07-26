@@ -6,6 +6,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../domain/asmr_models.dart';
 import '../application/asmr_download_manager.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 
 class AsmrDownloadDetailsPage extends ConsumerWidget {
@@ -183,6 +184,7 @@ class _AsmrDownloadDetailsNodeTileState
       return Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          expansionAnimationStyle: appExpansionAnimationStyle(context),
           initiallyExpanded: _expanded,
           onExpansionChanged: (v) => _toggleExpanded(),
           tilePadding: EdgeInsetsDirectional.only(

@@ -219,8 +219,12 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
       reverseDuration: const Duration(milliseconds: 220),
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
-      transitionBuilder: (child, animation) =>
-          FadeTransition(opacity: animation, child: child),
+      transitionBuilder: (child, animation) => buildAppScaleFadeTransition(
+        context: context,
+        animation: animation,
+        child: child,
+        beginScale: 0.96,
+      ),
       child: child,
     );
   }

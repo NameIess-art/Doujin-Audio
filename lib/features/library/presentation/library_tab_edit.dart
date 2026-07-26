@@ -128,6 +128,7 @@ class LibraryManagementPage extends ConsumerWidget {
                   child: InkWell(
                     onTap: () => Navigator.of(context).push(
                       buildAppPageRoute<void>(
+                        context: context,
                         child: LibraryEditPage(libraryPath: libraryPath),
                       ),
                     ),
@@ -282,9 +283,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final requestGeneration = ++_diskSnapshotGeneration;
     late final LibraryEntryDiskSnapshot snapshot;
     try {
-      snapshot = await _entryEditorService.loadDiskSnapshot(
-        widget.libraryPath,
-      );
+      snapshot = await _entryEditorService.loadDiskSnapshot(widget.libraryPath);
     } catch (_) {
       if (!mounted || requestGeneration != _diskSnapshotGeneration) return;
       _showDiskSnapshotFailure(requestGeneration);
@@ -1150,6 +1149,7 @@ class _LibraryEditFolderTreeTileState
     final content = Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
+        expansionAnimationStyle: appExpansionAnimationStyle(context),
         key: PageStorageKey<String>(
           'library-edit-folder:${widget.libraryPath}:$folderPath',
         ),

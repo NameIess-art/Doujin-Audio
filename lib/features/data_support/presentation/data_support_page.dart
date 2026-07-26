@@ -258,7 +258,10 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
                   subtitle: i18n.tr('privacy_summary_local_body'),
                   icon: Icons.privacy_tip_outlined,
                   onTap: () => Navigator.of(context).push(
-                    buildAppPageRoute<void>(child: const PrivacySummaryPage()),
+                    buildAppPageRoute<void>(
+                      context: context,
+                      child: const PrivacySummaryPage(),
+                    ),
                   ),
                 ),
               ],

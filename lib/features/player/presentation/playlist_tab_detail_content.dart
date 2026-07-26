@@ -928,6 +928,7 @@ class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
+        expansionAnimationStyle: appExpansionAnimationStyle(context),
         initiallyExpanded: _expanded,
         minTileHeight: 52,
         onExpansionChanged: (expanded) => setState(() => _expanded = expanded),

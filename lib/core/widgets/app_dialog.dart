@@ -53,12 +53,11 @@ Future<T?> showAppDialog<T>({
       );
     },
     transitionBuilder: (context, animation, secondaryAnimation, child) {
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
+      return buildAppScaleFadeTransition(
+        context: context,
+        animation: animation,
+        child: child,
       );
-      return FadeTransition(opacity: curved, child: child);
     },
   );
 }

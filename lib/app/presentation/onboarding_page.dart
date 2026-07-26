@@ -101,6 +101,7 @@ class OnboardingPage extends ConsumerWidget {
                   TextButton(
                     onPressed: () => Navigator.of(context).push(
                       buildAppPageRoute<void>(
+                        context: context,
                         child: const PrivacySummaryPage(),
                       ),
                     ),

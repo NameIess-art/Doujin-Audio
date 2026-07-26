@@ -203,6 +203,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     Widget content = Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
+        expansionAnimationStyle: appExpansionAnimationStyle(context),
         key: PageStorageKey<String>('library-folder:${folder.path}'),
         controller: _expansionController,
         initiallyExpanded: widget.initiallyExpanded,

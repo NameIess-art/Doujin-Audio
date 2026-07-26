@@ -74,6 +74,7 @@ class _DlsiteMetadataBatchPageState
     final result = await Navigator.of(context)
         .push<List<AudioLibraryCategoryEntry>>(
           buildAppPageRoute(
+            context: context,
             child: DlsiteMetadataWorkPickerPage(
               entries: _entries,
               initialSelection: _specificEntries,
@@ -143,6 +144,8 @@ class _DlsiteMetadataBatchPageState
       final result = await Navigator.of(context)
           .push<DlsiteMetadataReviewResult>(
             buildAppPageRoute(
+              context: context,
+              style: AppPageTransitionStyle.sharedAxisZ,
               child: DlsiteMetadataReviewPage(
                 detail: entry.detail,
                 rjCode: query.rjCode,

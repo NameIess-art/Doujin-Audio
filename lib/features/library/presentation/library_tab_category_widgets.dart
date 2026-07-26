@@ -434,7 +434,9 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
               ),
             )
           : AnimatedSize(
-              duration: const Duration(milliseconds: 250),
+              duration: MediaQuery.disableAnimationsOf(context)
+                  ? Duration.zero
+                  : kAppMotionStandard,
               curve: Curves.easeOutCubic,
               alignment: Alignment.topCenter,
               child: Column(

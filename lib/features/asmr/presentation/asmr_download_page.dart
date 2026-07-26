@@ -453,6 +453,8 @@ class _TaskCard extends ConsumerWidget {
         onTap: () {
           Navigator.of(context).push(
             buildAppPageRoute<void>(
+              context: context,
+              style: AppPageTransitionStyle.sharedAxisZ,
               child: AsmrDownloadDetailsPage(workId: task.work.id),
             ),
           );
@@ -663,6 +665,7 @@ class _AsmrDownloadNodeTileState extends ConsumerState<_AsmrDownloadNodeTile> {
       return Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
+          expansionAnimationStyle: appExpansionAnimationStyle(context),
           initiallyExpanded: _expanded,
           minTileHeight: _folderRowHeight,
           shape: const RoundedRectangleBorder(),

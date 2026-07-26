@@ -509,6 +509,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                     i18n.tr('edit_queue_audio'),
                     () => Navigator.of(context).push(
                       buildAppPageRoute<void>(
+                        context: context,
                         child: PlaybackQueueAudioEditPage(sessionId: sessionId),
                       ),
                     ),

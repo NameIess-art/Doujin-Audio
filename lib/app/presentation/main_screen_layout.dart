@@ -107,10 +107,10 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }
 
-    return IndexedStack(
+    return AppFadeThroughIndexedStack(
       key: const ValueKey<String>('main_page_stack'),
       index: _currentIndex,
-      sizing: StackFit.expand,
+      onTransitionCompleted: _handlePageTransitionCompleted,
       children: List<Widget>.generate(_pages.length, pageShell),
     );
   }
@@ -211,10 +211,25 @@ extension _MainScreenLayout on _MainScreenState {
                           ),
                         ),
                       ),
-                      Icon(
-                        selected ? item.selectedIcon : item.icon,
-                        size: 20,
-                        color: selected ? activeColor : inactive,
+                      AnimatedSwitcher(
+                        duration: MediaQuery.disableAnimationsOf(context)
+                            ? Duration.zero
+                            : kAppMotionFast,
+                        switchInCurve: Curves.easeOutCubic,
+                        switchOutCurve: Curves.easeInCubic,
+                        transitionBuilder: (child, animation) =>
+                            buildAppScaleFadeTransition(
+                              context: context,
+                              animation: animation,
+                              child: child,
+                              beginScale: 0.9,
+                            ),
+                        child: Icon(
+                          selected ? item.selectedIcon : item.icon,
+                          key: ValueKey<bool>(selected),
+                          size: 20,
+                          color: selected ? activeColor : inactive,
+                        ),
                       ),
                     ],
                   ),
@@ -260,7 +275,12 @@ extension _MainScreenLayout on _MainScreenState {
       switchInCurve: Curves.easeOutCubic,
       switchOutCurve: Curves.easeInCubic,
       transitionBuilder: (child, animation) {
-        return FadeTransition(opacity: animation, child: child);
+        return buildAppScaleFadeTransition(
+          context: context,
+          animation: animation,
+          child: child,
+          beginScale: 0.96,
+        );
       },
       child: isBar
           ? _buildMobileBottomNavigationBar(

@@ -34,6 +34,7 @@ import '../application/library_scan_coordinator.dart';
 import 'library_cover_ui_controller.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/content_bound_reorder_area.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -51,7 +52,6 @@ import 'dlsite_metadata_batch_page.dart';
 import 'library_scan_feedback.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../video_converter/presentation/video_converter_tab.dart';
-import '../../../core/widgets/app_transitions.dart';
 import '../../../app/theme/app_styles.dart';
 
 import '../../../core/widgets/app_buttons.dart';
@@ -227,23 +227,32 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   Future<void> _openVideoConverterPage() async {
     if (!mounted) return;
-    await Navigator.of(
-      context,
-    ).push(buildAppPageRoute<void>(child: const VideoConverterTab()));
+    await Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        context: context,
+        child: const VideoConverterTab(),
+      ),
+    );
   }
 
   Future<void> _openLibraryManagementPage() async {
     if (!mounted) return;
-    await Navigator.of(
-      context,
-    ).push(buildAppPageRoute<void>(child: const LibraryManagementPage()));
+    await Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        context: context,
+        child: const LibraryManagementPage(),
+      ),
+    );
   }
 
   Future<void> _openBatchMetadataPage() async {
     if (!mounted) return;
-    await Navigator.of(
-      context,
-    ).push(buildAppPageRoute<void>(child: const DlsiteMetadataBatchPage()));
+    await Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        context: context,
+        child: const DlsiteMetadataBatchPage(),
+      ),
+    );
   }
 
   Future<void> _scheduleWatchedFoldersRefresh({

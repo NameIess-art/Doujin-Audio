@@ -36,9 +36,12 @@ class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
       ),
       tooltip: i18n.tr('downloads'),
       onPressed: () {
-        Navigator.of(
-          context,
-        ).push(buildAppPageRoute<void>(child: const AsmrDownloadTaskPage()));
+        Navigator.of(context).push(
+          buildAppPageRoute<void>(
+            context: context,
+            child: const AsmrDownloadTaskPage(),
+          ),
+        );
       },
     );
   }
@@ -200,38 +203,49 @@ class _AsmrCategoryButton extends StatelessWidget {
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
 
-    return AnimatedContainer(
-      duration: tokens.motionStandard,
+    return AnimatedScale(
+      scale: selected ? 1.0 : 0.98,
+      duration: MediaQuery.disableAnimationsOf(context)
+          ? Duration.zero
+          : tokens.motionStandard,
       curve: Curves.easeOutCubic,
-      decoration: BoxDecoration(
-        color: selected ? tokens.asmrContainer : cs.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(tokens.radiusCard),
-        border: Border.all(
-          color: selected
-              ? asmrBlue.withValues(alpha: isDark ? 0.58 : 0.45)
-              : cs.outlineVariant.withValues(alpha: isDark ? 0.68 : 1),
-        ),
-      ),
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
+      child: AnimatedContainer(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : tokens.motionStandard,
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: selected ? tokens.asmrContainer : cs.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(tokens.radiusCard),
-          child: SizedBox(
-            height: 34,
-            child: Center(
-              child: AnimatedDefaultTextStyle(
-                duration: tokens.motionStandard,
-                curve: Curves.easeOutCubic,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelMedium!.copyWith(
-                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: selected
-                      ? tokens.onAsmrContainer
-                      : cs.onSurfaceVariant,
+          border: Border.all(
+            color: selected
+                ? asmrBlue.withValues(alpha: isDark ? 0.58 : 0.45)
+                : cs.outlineVariant.withValues(alpha: isDark ? 0.68 : 1),
+          ),
+        ),
+        child: Material(
+          type: MaterialType.transparency,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(tokens.radiusCard),
+            child: SizedBox(
+              height: 34,
+              child: Center(
+                child: AnimatedDefaultTextStyle(
+                  duration: MediaQuery.disableAnimationsOf(context)
+                      ? Duration.zero
+                      : tokens.motionStandard,
+                  curve: Curves.easeOutCubic,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelMedium!.copyWith(
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: selected
+                        ? tokens.onAsmrContainer
+                        : cs.onSurfaceVariant,
+                  ),
+                  child: Text(label),
                 ),
-                child: Text(label),
               ),
             ),
           ),

@@ -382,6 +382,8 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
 
     final result = await Navigator.of(context).push<DlsiteMetadataReviewResult>(
       buildAppPageRoute(
+        context: context,
+        style: AppPageTransitionStyle.sharedAxisZ,
         child: DlsiteMetadataReviewPage(
           detail: detail,
           rjCode: query.rjCode,

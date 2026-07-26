@@ -282,9 +282,7 @@ extension _TimerTabBody on _TimerTabState {
             elevation: 0,
             shadowColor: Colors.transparent,
             minimumSize: Size.fromHeight(compactMode ? 50 : 56),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
+            shape: const StadiumBorder(),
           ),
         ),
         if (_durationIsZero && !compactMode)

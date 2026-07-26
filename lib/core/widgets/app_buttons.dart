@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../app/theme/app_styles.dart';
-
 class AppPrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final String label;
@@ -34,7 +32,7 @@ class AppPrimaryButton extends StatelessWidget {
       foregroundColor: foregroundColor,
       backgroundColor: backgroundColor,
       minimumSize: const Size.fromHeight(48),
-      shape: const RoundedRectangleBorder(borderRadius: AppRadius.borderMedium),
+      shape: const StadiumBorder(),
       textStyle: theme.textTheme.labelLarge?.copyWith(
         fontWeight: FontWeight.bold,
       ),
@@ -102,7 +100,7 @@ class AppSecondaryButton extends StatelessWidget {
             ? colorScheme.error.withValues(alpha: 0.5)
             : colorScheme.outlineVariant,
       ),
-      shape: const RoundedRectangleBorder(borderRadius: AppRadius.borderMedium),
+      shape: const StadiumBorder(),
       textStyle: theme.textTheme.labelLarge?.copyWith(
         fontWeight: FontWeight.bold,
       ),

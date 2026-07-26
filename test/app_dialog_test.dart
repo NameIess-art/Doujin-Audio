@@ -64,6 +64,22 @@ void main() {
       ),
       findsOneWidget,
     );
+    expect(
+      tester
+          .widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Cancel'))
+          .style
+          ?.shape
+          ?.resolve(const <WidgetState>{}),
+      isA<StadiumBorder>(),
+    );
+    expect(
+      tester
+          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Save'))
+          .style
+          ?.shape
+          ?.resolve(const <WidgetState>{}),
+      isA<StadiumBorder>(),
+    );
 
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
     await tester.pumpAndSettle();

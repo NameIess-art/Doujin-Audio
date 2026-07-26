@@ -198,9 +198,7 @@ extension _TimerTabDetailBody on _TimerTabState {
                             minimumSize: const Size.fromHeight(48),
                             foregroundColor: cs.error,
                             side: BorderSide(color: cs.error),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
-                            ),
+                            shape: const StadiumBorder(),
                           ),
                         ),
                     ],

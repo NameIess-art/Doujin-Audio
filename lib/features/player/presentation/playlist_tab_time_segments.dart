@@ -314,9 +314,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                                 .surfaceContainerHighest
                                 .withValues(alpha: 0.28),
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                      shape: const StadiumBorder(),
                     ),
                     onPressed: widget.onToggleLoop,
                     icon: Icon(
@@ -342,9 +340,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                         context,
                       ).colorScheme.errorContainer.withValues(alpha: 0.5),
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
+                      shape: const StadiumBorder(),
                     ),
                     onPressed: widget.onDelete,
                     icon: const Icon(Icons.delete_outline_rounded),
@@ -487,9 +483,7 @@ class _SegmentTimeRow extends StatelessWidget {
                   foregroundColor: color,
                   minimumSize: const Size(48, 36),
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
-                  ),
+                  shape: const StadiumBorder(),
                 ),
                 onPressed: onSet,
                 child: Text(

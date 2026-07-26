@@ -298,9 +298,7 @@ class ThemeProvider
       );
     }
 
-    final largeShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(tokens.radiusSection),
-    );
+    const buttonShape = StadiumBorder();
     final bodyColor = Color.alphaBlend(
       scheme.onSurface.withValues(alpha: 0.88),
       scheme.surface,
@@ -385,14 +383,14 @@ class ThemeProvider
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
           minimumSize: const Size.fromHeight(52),
-          shape: largeShape,
+          shape: buttonShape,
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: const Size.fromHeight(48),
-          shape: largeShape,
+          shape: buttonShape,
           side: BorderSide(color: scheme.outlineVariant),
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
         ),
@@ -400,9 +398,7 @@ class ThemeProvider
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           minimumSize: Size(tokens.minimumTapTarget, tokens.minimumTapTarget),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(tokens.radiusControl),
-          ),
+          shape: buttonShape,
         ),
       ),
       iconButtonTheme: IconButtonThemeData(

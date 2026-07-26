@@ -306,6 +306,18 @@ void main() {
       theme.inputDecorationTheme.constraints?.minHeight,
       tokens.minimumTapTarget,
     );
+    expect(
+      theme.filledButtonTheme.style?.shape?.resolve(const <WidgetState>{}),
+      isA<StadiumBorder>(),
+    );
+    expect(
+      theme.outlinedButtonTheme.style?.shape?.resolve(const <WidgetState>{}),
+      isA<StadiumBorder>(),
+    );
+    expect(
+      theme.textButtonTheme.style?.shape?.resolve(const <WidgetState>{}),
+      isA<StadiumBorder>(),
+    );
   });
 
   test('light and dark text colors keep readable visual hierarchy', () async {

@@ -93,6 +93,7 @@ void _expectPrimaryFilledButton(WidgetTester tester, Finder finder) {
     style.foregroundColor?.resolve(const <WidgetState>{}),
     scheme.onPrimary,
   );
+  expect(button.style?.shape, isNull);
 }
 
 void main() {

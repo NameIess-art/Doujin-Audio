@@ -44,7 +44,10 @@ extension _LibraryTabUiHelpers on _LibraryTabState {
                 if (_categoryType == items[index].type) return;
                 FocusScope.of(context).unfocus();
 
-                _setLocalState(() => _categoryType = items[index].type);
+                _setLocalState(() {
+                  _categoryType = items[index].type;
+                  _hasSwitchedCategory = true;
+                });
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted) measureHeader();
                 });

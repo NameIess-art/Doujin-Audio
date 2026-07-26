@@ -451,6 +451,97 @@ void main() {
     },
   );
 
+  test(
+    'missing-only detail import skips JSON when database detail exists',
+    () async {
+      final workDir = await Directory.systemTemp.createTemp(
+        'library_detail_import_skip_',
+      );
+      addTearDown(() async {
+        if (await workDir.exists()) await workDir.delete(recursive: true);
+      });
+      final trackPath = path.join(workDir.path, '01.mp3');
+      final target = AudioDetailTarget.libraryRootFolder(workDir.path);
+      runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: workDir.path,
+            groupTitle: 'Work',
+            groupSubtitle: workDir.path,
+            isSingle: false,
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+      await runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(target).copyWith(workTitle: 'Database title'),
+      );
+      await File(
+        path.join(workDir.path, AudioDetailRepository.backupFileName),
+      ).writeAsString('{invalid json');
+      runtimeGraph.library.detailCacheService.clear();
+
+      final result = await runtimeGraph.library.importAudioDetailBackups(
+        onlyMissing: true,
+      );
+
+      expect(result.importedCount, 0);
+      expect(result.failureCount, 0);
+      expect(
+        (await runtimeGraph.library.loadAudioDetail(target)).detail.workTitle,
+        'Database title',
+      );
+    },
+  );
+
+  test(
+    'missing-only detail import restores an absent database detail',
+    () async {
+      final workDir = await Directory.systemTemp.createTemp(
+        'library_detail_import_missing_',
+      );
+      addTearDown(() async {
+        if (await workDir.exists()) await workDir.delete(recursive: true);
+      });
+      final trackPath = path.join(workDir.path, '01.mp3');
+      final target = AudioDetailTarget.libraryRootFolder(workDir.path);
+      runtimeGraph.library.addWatchedFolder(workDir.path, notify: false);
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[
+          MusicTrack(
+            path: trackPath,
+            displayName: '01',
+            groupKey: workDir.path,
+            groupTitle: 'Work',
+            groupSubtitle: workDir.path,
+            isSingle: false,
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+      await runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(target).copyWith(workTitle: 'Backup title'),
+      );
+      await db.delete('audio_details');
+      runtimeGraph.library.detailCacheService.clear();
+
+      final result = await runtimeGraph.library.importAudioDetailBackups(
+        onlyMissing: true,
+      );
+
+      expect(result.importedCount, 1);
+      expect(
+        (await runtimeGraph.library.loadAudioDetail(target)).detail.workTitle,
+        'Backup title',
+      );
+    },
+  );
+
   test('backup restore resets cached audio details', () async {
     final workDir = await Directory.systemTemp.createTemp(
       'library_detail_restore_cache_',

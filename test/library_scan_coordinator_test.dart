@@ -25,16 +25,16 @@ void main() {
       );
     });
     final coordinator = LibraryScanCoordinator(scanner: scanner);
+    final catalog = _FakeCatalog();
     addTearDown(coordinator.dispose);
 
-    final outcome = await coordinator.refresh(
-      catalog: _FakeCatalog(),
-      labels: labels,
-    );
+    final outcome = await coordinator.refresh(catalog: catalog, labels: labels);
 
     expect(receivedLabels, same(labels));
     expect(outcome?.code, LibraryScanOutcomeCode.refreshAdded);
     expect(outcome?.addedCount, 2);
+    expect(catalog.detailImportCount, 1);
+    expect(catalog.lastImportOnlyMissing, isTrue);
     expect(coordinator.state.phase, LibraryScanPhase.success);
     expect(coordinator.state.outcome, same(outcome));
     expect(coordinator.state.failure, isNull);
@@ -89,6 +89,23 @@ void main() {
     expect(catalog.detailImportCount, 0);
   });
 
+  test('unchanged manual refresh skips JSON detail import', () async {
+    final catalog = _FakeCatalog();
+    final coordinator = LibraryScanCoordinator(
+      scanner: _FakeScanner(
+        (_, _) async => LibraryScanOutcome(
+          code: LibraryScanOutcomeCode.refreshNoChanges,
+          source: 'refresh',
+        ),
+      ),
+    );
+    addTearDown(coordinator.dispose);
+
+    await coordinator.refresh(catalog: catalog, labels: labels);
+
+    expect(catalog.detailImportCount, 0);
+  });
+
   test('manual refresh reports explicit detail import failures', () async {
     final catalog = _FakeCatalog(
       importResult: const AudioDetailBackupImportResult(failureCount: 2),
@@ -96,7 +113,7 @@ void main() {
     final coordinator = LibraryScanCoordinator(
       scanner: _FakeScanner(
         (_, _) async => LibraryScanOutcome(
-          code: LibraryScanOutcomeCode.refreshNoChanges,
+          code: LibraryScanOutcomeCode.refreshAdded,
           source: 'refresh',
         ),
       ),
@@ -164,10 +181,14 @@ class _FakeCatalog implements LibraryCatalog {
 
   final AudioDetailBackupImportResult importResult;
   int detailImportCount = 0;
+  bool? lastImportOnlyMissing;
 
   @override
-  Future<AudioDetailBackupImportResult> importAudioDetailBackups() async {
+  Future<AudioDetailBackupImportResult> importAudioDetailBackups({
+    bool onlyMissing = false,
+  }) async {
     detailImportCount++;
+    lastImportOnlyMissing = onlyMissing;
     return importResult;
   }
 

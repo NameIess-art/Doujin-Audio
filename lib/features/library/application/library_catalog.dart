@@ -94,7 +94,9 @@ abstract interface class LibraryCatalogWriter {
     String folderPath,
     String displayName,
   );
-  Future<AudioDetailBackupImportResult> importAudioDetailBackups();
+  Future<AudioDetailBackupImportResult> importAudioDetailBackups({
+    bool onlyMissing = false,
+  });
 }
 
 abstract interface class LibraryCatalog

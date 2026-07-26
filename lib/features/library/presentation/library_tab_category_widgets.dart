@@ -194,6 +194,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
             if (hasTermBox && index == 0) {
               return _LibraryCategoryTermBox(
                 categoryType: _categoryType,
+                collapseOnMount: _hasSwitchedCategory,
                 terms: terms,
                 selectedTerms: _selectedTermsForCurrentCategory,
                 emptyText: _noTermsText(i18n),
@@ -289,6 +290,7 @@ extension _LibraryTabCategoryView on _LibraryTabState {
 class _LibraryCategoryTermBox extends StatefulWidget {
   const _LibraryCategoryTermBox({
     required this.categoryType,
+    required this.collapseOnMount,
     required this.terms,
     required this.selectedTerms,
     required this.emptyText,
@@ -301,6 +303,7 @@ class _LibraryCategoryTermBox extends StatefulWidget {
   });
 
   final AudioLibraryCategoryType categoryType;
+  final bool collapseOnMount;
   final List<String> terms;
   final Set<String> selectedTerms;
   final String emptyText;
@@ -321,7 +324,7 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
   bool _expanded = false;
   bool _wasExpandedBeforeSearch = false;
   late final TextEditingController _searchController;
-  late final String _prefKey;
+  late String _prefKey;
   late String _localSearchQuery;
   Timer? _searchDebounceTimer;
 
@@ -329,7 +332,12 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
   void initState() {
     super.initState();
     _prefKey = 'library_category_terms_expanded_${widget.categoryType.name}';
-    _expanded = AppPreferences.getBoolSync(_prefKey) ?? false;
+    _expanded = widget.collapseOnMount
+        ? false
+        : AppPreferences.getBoolSync(_prefKey) ?? false;
+    if (widget.collapseOnMount) {
+      unawaited(AppPreferences.setBool(_prefKey, false));
+    }
     _searchController = TextEditingController(text: widget.searchQuery);
     _localSearchQuery = widget.searchQuery;
   }
@@ -372,6 +380,16 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
   @override
   void didUpdateWidget(covariant _LibraryCategoryTermBox oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final categoryChanged = oldWidget.categoryType != widget.categoryType;
+    if (categoryChanged) {
+      _prefKey = 'library_category_terms_expanded_${widget.categoryType.name}';
+    }
+    if (categoryChanged ||
+        (!oldWidget.collapseOnMount && widget.collapseOnMount)) {
+      _expanded = false;
+      _wasExpandedBeforeSearch = false;
+      unawaited(AppPreferences.setBool(_prefKey, false));
+    }
     if (oldWidget.searchQuery != widget.searchQuery &&
         _searchController.text != widget.searchQuery) {
       _searchController.text = widget.searchQuery;

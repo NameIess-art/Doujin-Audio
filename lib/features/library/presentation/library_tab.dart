@@ -134,6 +134,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   int? _visibleSearchRevision;
   String? _pendingSearchKey;
   AudioLibraryCategoryType _categoryType = AudioLibraryCategoryType.all;
+  bool _hasSwitchedCategory = false;
   final Set<String> _selectedTagTerms = <String>{};
   final Set<String> _selectedVoiceActorTerms = <String>{};
   final Set<String> _selectedCircleTerms = <String>{};

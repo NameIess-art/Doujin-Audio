@@ -12,6 +12,7 @@ import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/library/application/library_entry_editor_service.dart';
+import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'support/app_runtime_test_fixture.dart';
@@ -389,6 +390,88 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  testWidgets('switching library categories collapses the element selector', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    final libraryService = fixture.libraryService;
+    final languageProvider = fixture.languageProvider;
+    const workPath = '/library/category-work';
+    const tagsPreferenceKey = 'library_category_terms_expanded_tags';
+    const voiceActorsPreferenceKey =
+        'library_category_terms_expanded_voiceActors';
+
+    addTearDown(() async {
+      await AppPreferences.remove(tagsPreferenceKey);
+      await AppPreferences.remove(voiceActorsPreferenceKey);
+    });
+    await AppPreferences.setBool(tagsPreferenceKey, false);
+    await AppPreferences.setBool(voiceActorsPreferenceKey, true);
+
+    runtimeGraph.library.addTracks(
+      [
+        testMusicTrack(
+          name: 'Categorized work',
+          path: '$workPath/track.mp3',
+          groupKey: workPath,
+          groupTitle: 'Categorized work',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    await tester.runAsync(
+      () => runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder(workPath),
+        ).copyWith(
+          tags: const <String>['sleep'],
+          voiceActors: const <String>['Voice Actor'],
+        ),
+      ),
+    );
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(
+      tester,
+      runtimeGraph.library,
+      waitForCategorySnapshot: true,
+    );
+    await tester.pump();
+
+    final tagsLabel = languageProvider.tr('library_category_tags');
+    final voiceActorsLabel = languageProvider.tr(
+      'library_category_voice_actors',
+    );
+    await tester.tap(find.text(tagsLabel).last);
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(find.text('展开'), findsOneWidget);
+    final expandButton = find.ancestor(
+      of: find.text('展开'),
+      matching: find.byType(ActionChip),
+    );
+    await tester.ensureVisible(expandButton);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(expandButton);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('收起'), findsOneWidget);
+
+    await tester.tap(find.text(voiceActorsLabel).last);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('展开'), findsOneWidget);
+    expect(find.text('收起'), findsNothing);
+
+    await tester.tap(find.text(tagsLabel).last);
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('展开'), findsOneWidget);
+    expect(find.text('收起'), findsNothing);
   });
 
   testWidgets('library tab search submits asynchronously and removes misses', (

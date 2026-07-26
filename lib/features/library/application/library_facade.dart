@@ -432,7 +432,9 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   @override
-  Future<AudioDetailBackupImportResult> importAudioDetailBackups() async {
+  Future<AudioDetailBackupImportResult> importAudioDetailBackups({
+    bool onlyMissing = false,
+  }) async {
     final targetsByKey = <String, AudioDetailTarget>{};
     for (final track in service.library) {
       final target = canonicalAudioDetailTarget(
@@ -440,9 +442,16 @@ final class LibraryFacade implements LibraryCatalog {
       );
       targetsByKey[AudioLibraryDetailKey.forTarget(target)] = target;
     }
-    final result = await detailCacheService.importBackupsMany(
-      targetsByKey.values,
-    );
+    Iterable<AudioDetailTarget> targets = targetsByKey.values;
+    if (onlyMissing && targetsByKey.isNotEmpty) {
+      final orderedTargets = targetsByKey.values.toList(growable: false);
+      final databaseDetails = await detailCacheService.loadMany(orderedTargets);
+      targets = <AudioDetailTarget>[
+        for (var index = 0; index < orderedTargets.length; index++)
+          if (databaseDetails[index].detail.isEmpty) orderedTargets[index],
+      ];
+    }
+    final result = await detailCacheService.importBackupsMany(targets);
     final retryAt = result.nextRetryAt;
     if (retryAt != null) {
       _startupMaintenanceCoordinator.scheduleBackupSync(retryAt);

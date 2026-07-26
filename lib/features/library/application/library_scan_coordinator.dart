@@ -49,6 +49,8 @@ class LibraryScanCoordinator extends ChangeNotifier {
       catalog,
       () => _scanner.refreshWatchedFolders(provider: catalog, labels: labels),
       enabled: importAudioDetails,
+      skipWhenUnchanged: true,
+      onlyMissing: true,
     ),
   );
 
@@ -115,12 +117,20 @@ class LibraryScanCoordinator extends ChangeNotifier {
     LibraryCatalog catalog,
     Future<LibraryScanOutcome?> Function() scan, {
     bool enabled = true,
+    bool skipWhenUnchanged = false,
+    bool onlyMissing = false,
   }) async {
     final outcome = await scan();
     if (!enabled || outcome == null || !_canImportBackups(outcome.code)) {
       return outcome;
     }
-    final import = await catalog.importAudioDetailBackups();
+    if (skipWhenUnchanged &&
+        outcome.code == LibraryScanOutcomeCode.refreshNoChanges) {
+      return outcome;
+    }
+    final import = await catalog.importAudioDetailBackups(
+      onlyMissing: onlyMissing,
+    );
     if (import.failureCount == 0 && import.importedCount == 0) return outcome;
     return LibraryScanOutcome(
       code: outcome.code,

@@ -1,7 +1,9 @@
 package com.nameless.audio
 
+import android.content.res.Configuration
 import com.nameless.audio.channel.ICON_COLOR_GROUPS
 import com.nameless.audio.channel.appIconLauncherActivityName
+import com.nameless.audio.channel.effectiveLauncherThemeMode
 import com.nameless.audio.channel.iconColorGroupLauncherSuffix
 import com.nameless.audio.channel.launcherActivityNames
 import com.nameless.audio.channel.launcherActivityUpdates
@@ -17,6 +19,22 @@ class AppIconThemeMethodHandlerTest {
         assertEquals("System", launcherThemeModeSuffix("system"))
         assertEquals("Light", launcherThemeModeSuffix("light"))
         assertEquals("Dark", launcherThemeModeSuffix("dark"))
+    }
+
+    @Test
+    fun `system appearance resolves to the current light or dark launcher activity`() {
+        assertEquals(
+            "light",
+            effectiveLauncherThemeMode("system", Configuration.UI_MODE_NIGHT_NO)
+        )
+        assertEquals(
+            "dark",
+            effectiveLauncherThemeMode("system", Configuration.UI_MODE_NIGHT_YES)
+        )
+        assertEquals(
+            "dark",
+            effectiveLauncherThemeMode("dark", Configuration.UI_MODE_NIGHT_NO)
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)

@@ -4,6 +4,7 @@ import com.nameless.audio.player.notification.UnifiedPlaybackNotificationControl
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.res.Configuration
 import android.content.pm.PackageManager
 import android.os.Build
 import io.flutter.plugin.common.MethodCall
@@ -56,9 +57,12 @@ internal class AppIconThemeMethodHandler(
     }
 
     private fun syncThemeMode(mode: String, colorGroup: String) {
-        launcherThemeModeSuffix(mode)
+        val launcherMode = effectiveLauncherThemeMode(
+            mode,
+            context.resources.configuration.uiMode
+        )
         iconColorGroupLauncherSuffix(colorGroup)
-        setLauncherActivityEnabled(mode, colorGroup)
+        setLauncherActivityEnabled(launcherMode, colorGroup)
         preferences.edit()
             .putString(APP_ICON_THEME_MODE_KEY, mode)
             .putString(APP_ICON_COLOR_GROUP_KEY, colorGroup)
@@ -176,6 +180,23 @@ internal fun launcherThemeModeSuffix(mode: String): String {
         THEME_MODE_SYSTEM -> "System"
         THEME_MODE_LIGHT -> "Light"
         THEME_MODE_DARK -> "Dark"
+        else -> throw IllegalArgumentException("Unsupported theme mode: $mode")
+    }
+}
+
+internal fun effectiveLauncherThemeMode(mode: String, uiMode: Int): String {
+    return when (mode) {
+        THEME_MODE_SYSTEM -> {
+            if ((uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+                Configuration.UI_MODE_NIGHT_YES
+            ) {
+                THEME_MODE_DARK
+            } else {
+                THEME_MODE_LIGHT
+            }
+        }
+        THEME_MODE_LIGHT,
+        THEME_MODE_DARK -> mode
         else -> throw IllegalArgumentException("Unsupported theme mode: $mode")
     }
 }

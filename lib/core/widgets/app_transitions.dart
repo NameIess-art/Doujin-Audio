@@ -245,13 +245,12 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
 
 class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     with SingleTickerProviderStateMixin {
-  static const _fadeFloor = 0.9;
-  static const _switchPoint = 0.35;
+  static const _opacityFloor = 0.92;
 
   late final AnimationController _controller;
   late int _currentIndex;
   late int _targetIndex;
-  bool _hasSwappedPage = true;
+  int _transitionDirection = 1;
   bool _isAnimating = false;
 
   @override
@@ -259,14 +258,11 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     super.initState();
     _currentIndex = widget.index;
     _targetIndex = widget.index;
-    _controller =
-        AnimationController(
-            vsync: this,
-            duration: kAppMotionStandard,
-            reverseDuration: kAppMotionFast,
-          )
-          ..addListener(_handleProgressChanged)
-          ..addStatusListener(_handleStatusChanged);
+    _controller = AnimationController(
+      vsync: this,
+      duration: kAppMotionStandard,
+      reverseDuration: kAppMotionFast,
+    )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
   }
 
@@ -274,28 +270,29 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   void didUpdateWidget(covariant AppFadeThroughIndexedStack oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.index == _targetIndex) return;
-    _targetIndex = widget.index;
     if (MediaQuery.disableAnimationsOf(context)) {
-      _currentIndex = _targetIndex;
-      _hasSwappedPage = true;
+      _currentIndex = widget.index;
+      _targetIndex = widget.index;
       _isAnimating = false;
       _controller.value = 1;
       widget.onTransitionCompleted?.call(_currentIndex);
       return;
     }
-    _hasSwappedPage = false;
-    _isAnimating = true;
-    _controller.forward(from: 0);
-  }
 
-  void _handleProgressChanged() {
-    if (!_isAnimating || _hasSwappedPage || _controller.value < _switchPoint) {
+    if (_isAnimating && _controller.value >= 0.5) {
+      _currentIndex = _targetIndex;
+    }
+    _targetIndex = widget.index;
+    if (_targetIndex == _currentIndex) {
+      _isAnimating = false;
+      _controller.value = 1;
+      widget.onTransitionCompleted?.call(_currentIndex);
       return;
     }
-    setState(() {
-      _currentIndex = _targetIndex;
-      _hasSwappedPage = true;
-    });
+
+    _transitionDirection = _targetIndex > _currentIndex ? 1 : -1;
+    _isAnimating = true;
+    _controller.forward(from: 0);
   }
 
   void _handleStatusChanged(AnimationStatus status) {
@@ -304,7 +301,6 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     }
     setState(() {
       _currentIndex = _targetIndex;
-      _hasSwappedPage = true;
       _isAnimating = false;
     });
     widget.onTransitionCompleted?.call(_currentIndex);
@@ -318,33 +314,50 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 
   @override
   Widget build(BuildContext context) {
-    final stack = IndexedStack(
-      index: _currentIndex,
-      sizing: StackFit.expand,
-      children: widget.children,
-    );
     return IgnorePointer(
       ignoring: _isAnimating,
       child: AnimatedBuilder(
         animation: _controller,
-        child: stack,
-        builder: (context, child) {
-          final outgoing = _isAnimating && _controller.value < _switchPoint;
-          final rawProgress = !_isAnimating
-              ? 1.0
-              : outgoing
-              ? (_controller.value / _switchPoint).clamp(0.0, 1.0)
-              : ((_controller.value - _switchPoint) / (1 - _switchPoint)).clamp(
-                  0.0,
-                  1.0,
+        builder: (context, _) {
+          final progress = _isAnimating
+              ? Curves.easeOutCubic.transform(_controller.value)
+              : 1.0;
+          final direction = _transitionDirection.toDouble();
+
+          return ClipRect(
+            child: Stack(
+              fit: StackFit.expand,
+              children: List<Widget>.generate(widget.children.length, (index) {
+                final isOutgoing = _isAnimating && index == _currentIndex;
+                final isIncoming = _isAnimating && index == _targetIndex;
+                final isVisible =
+                    isOutgoing ||
+                    isIncoming ||
+                    (!_isAnimating && index == _currentIndex);
+
+                final translation = switch ((isOutgoing, isIncoming)) {
+                  (true, _) => Offset(-direction * progress, 0),
+                  (_, true) => Offset(direction * (1 - progress), 0),
+                  _ => Offset.zero,
+                };
+                final opacity = switch ((isOutgoing, isIncoming)) {
+                  (true, _) => 1 - progress * (1 - _opacityFloor),
+                  (_, true) => _opacityFloor + progress * (1 - _opacityFloor),
+                  _ => 1.0,
+                };
+
+                return Offstage(
+                  offstage: !isVisible,
+                  child: FractionalTranslation(
+                    translation: translation,
+                    child: Opacity(
+                      opacity: opacity,
+                      child: widget.children[index],
+                    ),
+                  ),
                 );
-          final progress = (outgoing ? Curves.easeInCubic : Curves.easeOutCubic)
-              .transform(rawProgress);
-          return Opacity(
-            opacity: outgoing
-                ? 1 - progress * (1 - _fadeFloor)
-                : _fadeFloor + progress * (1 - _fadeFloor),
-            child: child,
+              }),
+            ),
           );
         },
       ),

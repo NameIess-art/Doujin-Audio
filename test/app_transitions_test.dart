@@ -18,7 +18,7 @@ class _StateProbeState extends State<_StateProbe> {
 
 void main() {
   testWidgets(
-    'subtle fade avoids scaling, keeps page states, and completes latest switch',
+    'slides in index order, keeps page states, and completes latest switch',
     (tester) async {
       var index = 0;
       var completedIndex = -1;
@@ -50,36 +50,24 @@ void main() {
       update(() => index = 1);
       await tester.pump();
 
-      final opacityFinder = find.descendant(
-        of: find.byType(AppFadeThroughIndexedStack),
-        matching: find.byType(Opacity),
-      );
-      expect(tester.widget<Opacity>(opacityFinder).opacity, 1);
       expect(find.text('first'), findsOneWidget);
-
-      await tester.pump(const Duration(milliseconds: 40));
-      expect(
-        tester.widget<Opacity>(opacityFinder).opacity,
-        inInclusiveRange(0.9, 1),
-      );
-      expect(find.text('first'), findsOneWidget);
-
-      await tester.pump(const Duration(milliseconds: 50));
       expect(find.text('second'), findsOneWidget);
-      expect(
-        tester.widget<Opacity>(opacityFinder).opacity,
-        inInclusiveRange(0.9, 1),
-      );
+
+      await tester.pump(const Duration(milliseconds: 80));
+      expect(_translationFor(tester, 'first').dx, lessThan(0));
+      expect(_translationFor(tester, 'second').dx, greaterThan(0));
       expect(
         find.descendant(
           of: find.byType(AppFadeThroughIndexedStack),
-          matching: find.byType(Transform),
+          matching: find.byType(ScaleTransition),
         ),
         findsNothing,
       );
 
       update(() => index = 2);
       await tester.pump();
+      expect(find.text('second'), findsNothing);
+      expect(find.text('third'), findsOneWidget);
       await tester.pumpAndSettle();
 
       expect(completedIndex, 2);
@@ -87,6 +75,39 @@ void main() {
       expect(find.text('third'), findsOneWidget);
     },
   );
+
+  testWidgets('lower indexes slide in from the left', (tester) async {
+    var index = 2;
+    late StateSetter update;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return Scaffold(
+              body: AppFadeThroughIndexedStack(
+                index: index,
+                children: const [
+                  _StateProbe(label: 'first'),
+                  _StateProbe(label: 'second'),
+                  _StateProbe(label: 'third'),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    update(() => index = 0);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 80));
+
+    expect(_translationFor(tester, 'third').dx, greaterThan(0));
+    expect(_translationFor(tester, 'first').dx, lessThan(0));
+    expect(find.text('second'), findsNothing);
+  });
 
   testWidgets('shared-axis styles use horizontal and depth transforms', (
     tester,
@@ -172,4 +193,15 @@ void main() {
     expect(completed, isTrue);
     expect(find.text('second'), findsOneWidget);
   });
+}
+
+Offset _translationFor(WidgetTester tester, String label) {
+  final finder = find.ancestor(
+    of: find.text(label),
+    matching: find.byType(FractionalTranslation),
+  );
+  return tester
+      .widgetList<FractionalTranslation>(finder)
+      .map((widget) => widget.translation)
+      .firstWhere((translation) => translation.dx.abs() > 0.001);
 }

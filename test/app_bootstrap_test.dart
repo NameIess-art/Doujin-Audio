@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/application/app_bootstrap_controller.dart';
 import 'package:nameless_audio/app/presentation/app_bootstrap_host.dart';
+import 'package:nameless_audio/core/ui/app_icon_color_group.dart';
+import 'package:nameless_audio/core/widgets/app_brand_icon.dart';
+import 'package:nameless_audio/features/settings/application/app_preferences.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   test('bootstrap attempts are single-flight', () async {
@@ -159,5 +163,37 @@ void main() {
     final theme = Theme.of(context);
     expect(theme.brightness, Brightness.dark);
     expect(theme.scaffoldBackgroundColor, const Color(0xFF211A1B));
+  });
+
+  testWidgets('startup shell follows the persisted icon color group', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'appThemeColor': 'mint',
+      'themeMode': 'dark',
+    });
+    await AppPreferences.init();
+    final pending = Completer<void>();
+    final controller = AppBootstrapController(
+      initializer: () => pending.future,
+    );
+
+    await tester.pumpWidget(
+      AppBootstrapHost(
+        controller: controller,
+        locale: const Locale('en'),
+        appBuilder: () => const SizedBox(),
+      ),
+    );
+
+    expect(find.byType(AppBrandIcon), findsOneWidget);
+    final context = tester.element(
+      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+    );
+    expect(Theme.of(context).scaffoldBackgroundColor, const Color(0xFF12201C));
+    expect(
+      Theme.of(context).extension<AppBrandIconTheme>()?.gradient.colors,
+      const <Color>[Color(0xFF2DD4BF), Color(0xFFA3E635)],
+    );
   });
 }

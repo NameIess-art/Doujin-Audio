@@ -122,18 +122,27 @@ class ThemeProvider
 
   final AppIconPlatformService _appIconPlatformService;
 
-  void _loadThemeSync() {
+  static ThemeMode readThemeModeSync() {
     final storedMode = AppPreferences.getStringSync(_themeModeKey);
-    _themeMode = ThemeMode.values.firstWhere(
+    return ThemeMode.values.firstWhere(
       (mode) => mode.name == storedMode,
       orElse: () => ThemeMode.system,
     );
+  }
+
+  static ThemeAccentPreset readAppThemeColorSync() {
+    final storedColor = AppPreferences.getStringSync(_appThemeColorKey);
+    return ThemeAccentPreset.values.firstWhere(
+      (preset) => preset.name == storedColor,
+      orElse: () => ThemeAccentPreset.rose,
+    );
+  }
+
+  void _loadThemeSync() {
+    _themeMode = readThemeModeSync();
     _differentiateAsmrTheme =
         AppPreferences.getBoolSync(_differentiateAsmrThemeKey) ?? true;
-    _appThemeColor = _readThemeColor(
-      AppPreferences.getStringSync(_appThemeColorKey),
-      ThemeAccentPreset.rose,
-    );
+    _appThemeColor = readAppThemeColorSync();
     _asmrThemeColor = _readThemeColor(
       AppPreferences.getStringSync(_asmrThemeColorKey),
       ThemeAccentPreset.blue,

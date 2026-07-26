@@ -8,10 +8,10 @@ import '../localization/app_language_en.dart';
 import '../localization/app_language_ja.dart';
 import '../localization/app_language_provider.dart';
 import '../localization/app_language_zh.dart';
+import '../theme/theme_provider.dart';
+import '../../core/ui/app_icon_color_group.dart';
+import '../../core/widgets/app_brand_icon.dart';
 import 'app_error_view.dart';
-
-const _bootstrapLightBackground = Color(0xFFFFF8F8);
-const _bootstrapDarkBackground = Color(0xFF211A1B);
 
 class AppBootstrapHost extends StatefulWidget {
   const AppBootstrapHost({
@@ -87,13 +87,14 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
       _ => appLanguageEn,
     };
     String tr(String key) => strings[key] ?? appLanguageEn[key] ?? key;
-    final lightScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFFFFB2BD),
-    ).copyWith(surface: _bootstrapLightBackground);
-    final darkScheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFFFFB2BD),
-      brightness: Brightness.dark,
-    ).copyWith(surface: _bootstrapDarkBackground);
+    final appThemeColor = ThemeProvider.readAppThemeColorSync();
+    final iconColorGroup = appThemeColor.iconColorGroup;
+    final lightScheme = appThemeColor
+        .colorScheme(Brightness.light)
+        .copyWith(surface: iconColorGroup.splashBackground(Brightness.light));
+    final darkScheme = appThemeColor
+        .colorScheme(Brightness.dark)
+        .copyWith(surface: iconColorGroup.splashBackground(Brightness.dark));
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       color: lightScheme.surface,
@@ -101,12 +102,19 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
         useMaterial3: true,
         colorScheme: lightScheme,
         scaffoldBackgroundColor: lightScheme.surface,
+        extensions: <ThemeExtension<dynamic>>[
+          AppBrandIconTheme.forGroup(iconColorGroup, Brightness.light),
+        ],
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         colorScheme: darkScheme,
         scaffoldBackgroundColor: darkScheme.surface,
+        extensions: <ThemeExtension<dynamic>>[
+          AppBrandIconTheme.forGroup(iconColorGroup, Brightness.dark),
+        ],
       ),
+      themeMode: ThemeProvider.readThemeModeSync(),
       locale: locale,
       supportedLocales: AppLanguageProvider.supportedLocales,
       localizationsDelegates: const [
@@ -130,6 +138,8 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      const AppBrandIcon(size: 72),
+                      const SizedBox(height: 20),
                       const CircularProgressIndicator(),
                       const SizedBox(height: 20),
                       Text(tr('startup_initializing')),

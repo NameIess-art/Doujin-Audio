@@ -48,73 +48,73 @@
               />
         </activity>
 
-        <activity-alias android:name=".MainActivityWarmLight" android:targetActivity=".MainActivity" android:enabled="true" android:exported="true" android:icon="@drawable/ic_launcher_warm_light">
+        <activity-alias android:name=".MainActivityWarmLight" android:targetActivity=".MainActivity" android:enabled="true" android:exported="true" android:icon="@drawable/ic_launcher_warm_light" android:theme="@style/LaunchThemeWarmLight">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivityWarmDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_warm_dark">
+        <activity-alias android:name=".MainActivityWarmDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_warm_dark" android:theme="@style/LaunchThemeWarmDark">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivityPurpleLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_purple_light">
+        <activity-alias android:name=".MainActivityPurpleLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_purple_light" android:theme="@style/LaunchThemePurpleLight">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivityPurpleDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_purple_dark">
+        <activity-alias android:name=".MainActivityPurpleDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_purple_dark" android:theme="@style/LaunchThemePurpleDark">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivityBlueLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_blue_light">
+        <activity-alias android:name=".MainActivityBlueLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_blue_light" android:theme="@style/LaunchThemeBlueLight">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivityBlueDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_blue_dark">
+        <activity-alias android:name=".MainActivityBlueDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_blue_dark" android:theme="@style/LaunchThemeBlueDark">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivityGreenLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_green_light">
+        <activity-alias android:name=".MainActivityGreenLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_green_light" android:theme="@style/LaunchThemeGreenLight">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivityGreenDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_green_dark">
+        <activity-alias android:name=".MainActivityGreenDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_green_dark" android:theme="@style/LaunchThemeGreenDark">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivitySunsetLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_sunset_light">
+        <activity-alias android:name=".MainActivitySunsetLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_sunset_light" android:theme="@style/LaunchThemeSunsetLight">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivitySunsetDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_sunset_dark">
+        <activity-alias android:name=".MainActivitySunsetDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_sunset_dark" android:theme="@style/LaunchThemeSunsetDark">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivityNeutralLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_neutral_light">
+        <activity-alias android:name=".MainActivityNeutralLight" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_neutral_light" android:theme="@style/LaunchThemeNeutralLight">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
-        <activity-alias android:name=".MainActivityNeutralDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_neutral_dark">
+        <activity-alias android:name=".MainActivityNeutralDark" android:targetActivity=".MainActivity" android:enabled="false" android:exported="true" android:icon="@drawable/ic_launcher_neutral_dark" android:theme="@style/LaunchThemeNeutralDark">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

@@ -1,4 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="launch_background">#FFF8F8</color>
+    <color name="launch_background_warm_light">#FFF8F8</color>
+    <color name="launch_background_warm_dark">#211A1B</color>
+    <color name="launch_background_purple_light">#FAF8FF</color>
+    <color name="launch_background_purple_dark">#1D1927</color>
+    <color name="launch_background_blue_light">#F5FBFF</color>
+    <color name="launch_background_blue_dark">#111D24</color>
+    <color name="launch_background_green_light">#F5FFF9</color>
+    <color name="launch_background_green_dark">#12201C</color>
+    <color name="launch_background_sunset_light">#FFF9F2</color>
+    <color name="launch_background_sunset_dark">#241D13</color>
+    <color name="launch_background_neutral_light">#F7F8FA</color>
+    <color name="launch_background_neutral_dark">#1A1D21</color>
 </resources>

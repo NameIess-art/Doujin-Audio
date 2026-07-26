@@ -36,6 +36,24 @@ extension AppIconColorGroupColors on AppIconColorGroup {
   LinearGradient gradient(Brightness brightness) {
     return LinearGradient(colors: colors(brightness));
   }
+
+  Color splashBackground(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    return switch (this) {
+      AppIconColorGroup.warm =>
+        dark ? const Color(0xFF211A1B) : const Color(0xFFFFF8F8),
+      AppIconColorGroup.purple =>
+        dark ? const Color(0xFF1D1927) : const Color(0xFFFAF8FF),
+      AppIconColorGroup.blue =>
+        dark ? const Color(0xFF111D24) : const Color(0xFFF5FBFF),
+      AppIconColorGroup.green =>
+        dark ? const Color(0xFF12201C) : const Color(0xFFF5FFF9),
+      AppIconColorGroup.sunset =>
+        dark ? const Color(0xFF241D13) : const Color(0xFFFFF9F2),
+      AppIconColorGroup.neutral =>
+        dark ? const Color(0xFF1A1D21) : const Color(0xFFF7F8FA),
+    };
+  }
 }
 
 class AppBrandIconTheme extends ThemeExtension<AppBrandIconTheme> {

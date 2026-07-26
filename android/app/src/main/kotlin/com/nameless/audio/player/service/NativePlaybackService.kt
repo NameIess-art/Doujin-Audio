@@ -136,7 +136,6 @@ class NativePlaybackService : MediaSessionService() {
         // transient buffering/focus failures under 10 minutes; a short grace
         // window lets screen-off playback get killed during those gaps.
         private const val PLAYBACK_STOP_GRACE_MS = 10 * 60 * 1000L
-        private const val PLAYBACK_RECOVERY_WINDOW_MS = 10 * 60 * 1000L
         private const val PROGRESS_HEARTBEAT_INTERVAL_MS = 500L
         private const val SCREEN_OFF_PROGRESS_HEARTBEAT_INTERVAL_MS = 5000L
         private const val LOG_TAG = "NativePlaybackService"
@@ -354,7 +353,6 @@ class NativePlaybackService : MediaSessionService() {
                 handler = mainHandler,
                 logWarn = { message, error -> logWarn(message, error = error) }
             ),
-            recoveryWindowMs = PLAYBACK_RECOVERY_WINDOW_MS
         )
     }
     private val foregroundCoordinator by lazy {
@@ -1889,6 +1887,15 @@ class NativePlaybackService : MediaSessionService() {
             // the ordinary sync path restore timers and notification state.
             playbackWakeLock.refresh()
             restartProgressHeartbeat()
+            if (
+                shouldTriggerPlaybackRecoveryOnKeepAlive(
+                    hasPlaybackToKeepAlive = true,
+                    transientAudioFocusLossActive = transientAudioFocusLossActive,
+                    focusDuckActive = focusDuckActive
+                )
+            ) {
+                playbackRecovery.trigger("keep_alive_heartbeat")
+            }
         }
         // A grace window whose uptimeMillis timer slept through its deadline has
         // to be closed explicitly; sync() alone cannot, since scheduleGrace()
@@ -2118,6 +2125,15 @@ internal fun shouldClearPlaybackIntentForPlayWhenReadyChange(
 internal fun shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
     transientAudioFocusLossActive: Boolean
 ): Boolean = transientAudioFocusLossActive
+
+internal fun shouldTriggerPlaybackRecoveryOnKeepAlive(
+    hasPlaybackToKeepAlive: Boolean,
+    transientAudioFocusLossActive: Boolean,
+    focusDuckActive: Boolean
+): Boolean = hasPlaybackToKeepAlive &&
+    !shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
+        transientAudioFocusLossActive || focusDuckActive
+    )
 
 internal fun shouldPreservePendingAudioFocusResume(
     playWhenReady: Boolean,

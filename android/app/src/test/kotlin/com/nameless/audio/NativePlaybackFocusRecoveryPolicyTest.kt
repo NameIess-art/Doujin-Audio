@@ -27,6 +27,38 @@ class NativePlaybackFocusRecoveryPolicyTest {
     }
 
     @Test
+    fun `keep alive heartbeat triggers recovery unless focus interruption is active`() {
+        assertTrue(
+            shouldTriggerPlaybackRecoveryOnKeepAlive(
+                hasPlaybackToKeepAlive = true,
+                transientAudioFocusLossActive = false,
+                focusDuckActive = false
+            )
+        )
+        assertFalse(
+            shouldTriggerPlaybackRecoveryOnKeepAlive(
+                hasPlaybackToKeepAlive = true,
+                transientAudioFocusLossActive = true,
+                focusDuckActive = false
+            )
+        )
+        assertFalse(
+            shouldTriggerPlaybackRecoveryOnKeepAlive(
+                hasPlaybackToKeepAlive = true,
+                transientAudioFocusLossActive = false,
+                focusDuckActive = true
+            )
+        )
+        assertFalse(
+            shouldTriggerPlaybackRecoveryOnKeepAlive(
+                hasPlaybackToKeepAlive = false,
+                transientAudioFocusLossActive = false,
+                focusDuckActive = false
+            )
+        )
+    }
+
+    @Test
     fun `duckable focus loss keeps playback running`() {
         assertEquals(
             NativeAudioFocusAction.DUCK,

@@ -39,7 +39,6 @@ class NativePlaybackRecoveryControllerTest {
         val controller = NativePlaybackRecoveryController(
             host = host,
             environment = environment,
-            recoveryWindowMs = 60_000L,
             healthCheckIntervalMs = 15_000L
         )
         controller.markIntended("stalled")
@@ -65,7 +64,7 @@ class NativePlaybackRecoveryControllerTest {
     fun foregroundSyncCannotReenterAnActiveRecoveryTrigger() {
         val environment = FakeRecoveryEnvironment()
         val host = FakeRecoveryHost()
-        val controller = NativePlaybackRecoveryController(host, environment, recoveryWindowMs = 60_000L)
+        val controller = NativePlaybackRecoveryController(host, environment)
         host.onRequestAudioFocus = { controller.trigger("foreground_sync") }
         controller.markIntended("player")
 
@@ -75,10 +74,10 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
-    fun recoverableErrorSchedulesRetryAndExpiryThenDisposesListeners() {
+    fun recoverableErrorSchedulesRetryWithoutExpiry() {
         val environment = FakeRecoveryEnvironment()
-        val host = FakeRecoveryHost()
-        val controller = NativePlaybackRecoveryController(host, environment, recoveryWindowMs = 60_000L)
+        val host = FakeRecoveryHost(recoverySession(environment))
+        val controller = NativePlaybackRecoveryController(host, environment)
         controller.markIntended("player")
 
         controller.onPlayerError(
@@ -92,27 +91,21 @@ class NativePlaybackRecoveryControllerTest {
         assertTrue(controller.isIntended("player"))
         assertTrue(controller.isPending("player"))
         assertTrue(environment.listening)
-        assertEquals(listOf(2_000L, 15_000L, 60_000L), environment.delays.sorted())
-
-        environment.runFirst(2_000L)
-
-        assertFalse(controller.isIntended("player"))
-        assertFalse(controller.isPending("player"))
-        assertFalse(environment.listening)
+        assertEquals(listOf(2_000L, 15_000L), environment.delays.sorted())
+        assertTrue(controller.shouldKeepAlive())
     }
 
     /**
-     * Network errors used to retry forever. Recovery keeps the service in its
-     * keep-alive state, which holds the playback wake lock, so an item that
-     * never comes back drained the battery all night.
+     * Recoverable network errors remain eligible for the low-frequency retry
+     * schedule. They must not be converted into a permanent user pause by a
+     * fixed recovery window.
      */
     @Test
-    fun `network playback errors also stop after the recovery window`() {
+    fun `network playback errors remain pending for low frequency recovery`() {
         val environment = FakeRecoveryEnvironment()
         val controller = NativePlaybackRecoveryController(
-            FakeRecoveryHost(),
-            environment,
-            recoveryWindowMs = 60_000L
+            FakeRecoveryHost(recoverySession(environment)),
+            environment
         )
         controller.markIntended("player")
         controller.onPlayerError(
@@ -123,35 +116,27 @@ class NativePlaybackRecoveryControllerTest {
             causeDescription = null
         )
 
-        environment.runFirst(60_000L)
-
-        assertFalse(controller.isIntended("player"))
-        assertFalse(controller.isPending("player"))
-        assertFalse(controller.shouldKeepAlive())
-        assertFalse(environment.listening)
-        assertTrue(environment.tasks.isEmpty())
+        assertTrue(controller.isIntended("player"))
+        assertTrue(controller.isPending("player"))
+        assertTrue(controller.shouldKeepAlive())
+        assertTrue(environment.listening)
+        assertFalse(environment.delays.contains(10 * 60 * 1000L))
     }
 
     @Test
-    fun `decoder playback errors stop after the recovery window`() {
+    fun `nonrecoverable playback errors clear intent immediately`() {
         val environment = FakeRecoveryEnvironment()
         val host = FakeRecoveryHost()
-        val controller = NativePlaybackRecoveryController(
-            host = host,
-            environment = environment,
-            recoveryWindowMs = 60_000L
-        )
+        val controller = NativePlaybackRecoveryController(host, environment)
         controller.markIntended("player")
 
         controller.onPlayerError(
             sessionId = "player",
-            recoverable = true,
-            errorCodeName = "ERROR_CODE_DECODER_INIT_FAILED",
-            errorMessage = "decoder",
+            recoverable = false,
+            errorCodeName = "ERROR_CODE_IO_FILE_NOT_FOUND",
+            errorMessage = "missing",
             causeDescription = null
         )
-
-        environment.runFirst(60_000L)
 
         assertFalse(controller.isIntended("player"))
         assertFalse(controller.isPending("player"))
@@ -162,11 +147,7 @@ class NativePlaybackRecoveryControllerTest {
     @Test
     fun staleScheduledTasksAreRemovedWhenIntentIsCleared() {
         val environment = FakeRecoveryEnvironment()
-        val controller = NativePlaybackRecoveryController(
-            FakeRecoveryHost(),
-            environment,
-            recoveryWindowMs = 60_000L
-        )
+        val controller = NativePlaybackRecoveryController(FakeRecoveryHost(), environment)
         controller.markIntended("player")
         controller.onPlayerError(
             sessionId = "player",
@@ -219,8 +200,7 @@ class NativePlaybackRecoveryControllerTest {
         )
         val controller = NativePlaybackRecoveryController(
             FakeRecoveryHost(session),
-            environment,
-            recoveryWindowMs = 60_000L
+            environment
         )
         controller.markIntended("player")
 
@@ -247,11 +227,7 @@ class NativePlaybackRecoveryControllerTest {
     @Test
     fun `clearing playback intent cancels a health-only scheduled task`() {
         val environment = FakeRecoveryEnvironment()
-        val controller = NativePlaybackRecoveryController(
-            FakeRecoveryHost(),
-            environment,
-            recoveryWindowMs = 60_000L
-        )
+        val controller = NativePlaybackRecoveryController(FakeRecoveryHost(), environment)
         controller.markIntended("prepare-failed")
 
         assertTrue(controller.isIntended("prepare-failed"))
@@ -295,6 +271,14 @@ private class FakeRecoveryEnvironment : NativePlaybackRecoveryEnvironment {
         task.run()
     }
 }
+
+private fun recoverySession(environment: FakeRecoveryEnvironment): NativePlaybackSession =
+    NativePlaybackSession(
+        sessionId = "player",
+        createPlayer = { _, _ -> error("unused") },
+        logWarn = { _, _, _ -> },
+        elapsedRealtimeMs = { environment.now }
+    )
 
 private class FakeRecoveryHost(
     playbackSession: NativePlaybackSession? = null,

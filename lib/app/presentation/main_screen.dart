@@ -562,13 +562,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _handleNotificationSettingsReturn();
   }
 
-  void _switchPage(int index, {bool withFeedback = true}) {
+  void _switchPage(int index) {
     if (index == _currentIndex) {
       ref.read(mainScreenControllerProvider).requestScrollToTop(index);
       return;
-    }
-    if (withFeedback) {
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
     }
 
     final coordinator = UiInteractionCoordinator.instance;

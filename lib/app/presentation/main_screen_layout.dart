@@ -253,9 +253,12 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }).toList();
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      children: items,
+    return Theme(
+      data: Theme.of(context).copyWith(splashFactory: NoSplash.splashFactory),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: items,
+      ),
     );
   }
 
@@ -476,6 +479,7 @@ extension _MainScreenLayout on _MainScreenState {
               builder: (context, constraints) {
                 final rail = Theme(
                   data: Theme.of(context).copyWith(
+                    splashFactory: NoSplash.splashFactory,
                     navigationRailTheme: Theme.of(context).navigationRailTheme
                         .copyWith(
                           indicatorShape: RoundedRectangleBorder(

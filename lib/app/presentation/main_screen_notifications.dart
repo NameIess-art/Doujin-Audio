@@ -226,7 +226,7 @@ extension _MainScreenNotifications on _MainScreenState {
     _pendingNotificationSessionRetryCount = 0;
     _lastOpenedNotificationSessionId = sessionId;
     _lastOpenedNotificationAt = DateTime.now();
-    _switchPage(1, withFeedback: false);
+    _switchPage(1);
     Navigator.of(context).push(buildSessionDetailRoute(sessionId: sessionId));
   }
 }

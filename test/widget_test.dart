@@ -84,6 +84,17 @@ void main() {
   });
 
   testWidgets('app shell renders portrait tab navigation', (tester) async {
+    final platformCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          platformCalls.add(call);
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
     final harness = await _pumpAppShell(tester);
 
     expect(find.byType(MainScreen), findsOneWidget);
@@ -111,7 +122,22 @@ void main() {
       find.byKey(const ValueKey<String>('main_page_fade_3')),
       findsNothing,
     );
+    final settingsDestination = find.byKey(
+      const ValueKey<String>('main_destination_nav_settings'),
+    );
+    expect(
+      tester
+          .widgetList<Theme>(
+            find.ancestor(
+              of: settingsDestination,
+              matching: find.byType(Theme),
+            ),
+          )
+          .any((theme) => theme.data.splashFactory == NoSplash.splashFactory),
+      isTrue,
+    );
 
+    platformCalls.clear();
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
 
@@ -119,6 +145,10 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('main_page_fade_1')),
       findsNothing,
+    );
+    expect(
+      platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
+      isEmpty,
     );
     expect(tester.takeException(), isNull);
   });
@@ -442,30 +472,36 @@ void main() {
     });
     await _pumpAppShell(tester, includePlaybackSession: false);
 
-    expect(find.byType(NavigationRail), findsOneWidget);
+    final navigationRail = find.byType(NavigationRail);
+    expect(navigationRail, findsOneWidget);
+    expect(
+      tester
+          .widgetList<Theme>(
+            find.ancestor(of: navigationRail, matching: find.byType(Theme)),
+          )
+          .any((theme) => theme.data.splashFactory == NoSplash.splashFactory),
+      isTrue,
+    );
     expect(
       find.ancestor(
-        of: find.byType(NavigationRail),
+        of: navigationRail,
         matching: find.byType(SingleChildScrollView),
       ),
       findsNothing,
     );
     expect(
-      find.ancestor(
-        of: find.byType(NavigationRail),
-        matching: find.byType(FittedBox),
-      ),
+      find.ancestor(of: navigationRail, matching: find.byType(FittedBox)),
       findsNothing,
     );
     final settingsNavigationIcon = find.descendant(
-      of: find.byType(NavigationRail),
+      of: navigationRail,
       matching: find.byIcon(Icons.tune_outlined),
     );
     expect(settingsNavigationIcon, findsOneWidget);
     expect(tester.widget<Icon>(settingsNavigationIcon).size, isNull);
 
     final expandedMenuButton = find.descendant(
-      of: find.byType(NavigationRail),
+      of: navigationRail,
       matching: find.byIcon(Icons.menu_open_rounded),
     );
     expect(expandedMenuButton, findsOneWidget);

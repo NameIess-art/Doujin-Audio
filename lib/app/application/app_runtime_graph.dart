@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import '../../core/widgets/app_feedback.dart';
+import '../../core/ui/app_interaction_feedback_settings.dart';
 import '../../features/library/application/cover_artwork_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
@@ -93,7 +93,7 @@ AppRuntimeGraph createAppRuntimeGraph({
 
   void syncSettingsState() {
     settings.syncSlice(isInitialized: settings.slice.state.isInitialized);
-    AppInteractionFeedback.hapticFeedbackEnabled =
+    AppInteractionFeedbackSettings.hapticFeedbackEnabled =
         settings.hapticFeedbackEnabled;
   }
 

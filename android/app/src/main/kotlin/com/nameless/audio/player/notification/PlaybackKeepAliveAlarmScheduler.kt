@@ -33,7 +33,7 @@ object PlaybackKeepAliveAlarmScheduler {
 
     fun ensureScheduled(context: Context) {
         val nowMs = SystemClock.elapsedRealtime()
-        if (nowMs - lastArmedElapsedRealtimeMs < rearmThrottleMs) return
+        if (shouldSkipRearm(nowMs, lastArmedElapsedRealtimeMs)) return
         val alarmManager = alarmManager(context) ?: return
         val triggerAtMs = nowMs + intervalMs
         val operation = pendingIntent(context) ?: return
@@ -70,6 +70,9 @@ object PlaybackKeepAliveAlarmScheduler {
         }
         lastArmedElapsedRealtimeMs = Long.MIN_VALUE
     }
+
+    internal fun shouldSkipRearm(nowMs: Long, lastArmedMs: Long): Boolean =
+        lastArmedMs != Long.MIN_VALUE && nowMs - lastArmedMs < rearmThrottleMs
 
     private fun alarmManager(context: Context): AlarmManager? =
         context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager

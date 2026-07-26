@@ -118,6 +118,22 @@ void main() {
     );
     expect(await partial.exists(), isTrue);
   });
+
+  test('rejects an MP4 cover atom that exceeds its containing file', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'embedded_cover_mp4_test_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final file = File('${directory.path}/malformed.m4a');
+    await file.writeAsBytes(_malformedMp4WithOversizedCoverAtom(), flush: true);
+
+    expect(
+      await EmbeddedCoverArtworkService.resolveForPath(file.path),
+      isNull,
+    );
+  });
 }
 
 Uint8List _flacWithPicture(Uint8List pictureBytes) {
@@ -198,4 +214,47 @@ void _addUint32Le(BytesBuilder builder, int value) {
     (value >> 16) & 0xff,
     (value >> 24) & 0xff,
   ]);
+}
+
+Uint8List _malformedMp4WithOversizedCoverAtom() {
+  final dataPayload = Uint8List.fromList(const <int>[
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+  ]);
+  final data = _mp4Atom(
+    'data',
+    dataPayload,
+    declaredSize: 0xffffffff,
+  );
+  final covr = _mp4Atom('covr', data);
+  final ilst = _mp4Atom('ilst', covr);
+  final meta = _mp4Atom(
+    'meta',
+    Uint8List.fromList(<int>[0, 0, 0, 0, ...ilst]),
+  );
+  final udta = _mp4Atom('udta', meta);
+  final moov = _mp4Atom('moov', udta);
+  return Uint8List.fromList(<int>[
+    ..._mp4Atom('ftyp', Uint8List.fromList(const <int>[0, 0, 0, 0])),
+    ...moov,
+  ]);
+}
+
+Uint8List _mp4Atom(
+  String type,
+  Uint8List payload, {
+  int? declaredSize,
+}) {
+  final bytes = BytesBuilder();
+  final size = declaredSize ?? payload.length + 8;
+  _addUint32(bytes, size);
+  bytes.add(ascii.encode(type));
+  bytes.add(payload);
+  return bytes.toBytes();
 }

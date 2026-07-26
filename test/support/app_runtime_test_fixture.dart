@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    show Consumer, ProviderContainer, ProviderScope;
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/application/app_runtime_graph.dart';
@@ -229,7 +230,16 @@ Widget buildAppRuntimeTestApp({
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
       ...overrides,
     ],
-    child: MaterialApp(home: Scaffold(body: child)),
+    child: MaterialApp(
+      home: Scaffold(
+        body: Consumer(
+          builder: (context, ref, _) {
+            ref.watch(appInteractionEffectsControllerProvider);
+            return child;
+          },
+        ),
+      ),
+    ),
   );
 }
 
@@ -338,7 +348,8 @@ final class AppRuntimeTestFixture {
     required this.notifications,
     required this.settings,
     required this.runtimeGraph,
-  });
+    required ProviderContainer providerContainer,
+  }) : _providerContainer = providerContainer;
 
   final Database database;
   final PlaybackNotificationService notificationService;
@@ -348,6 +359,7 @@ final class AppRuntimeTestFixture {
   final NotificationFacade notifications;
   final SettingsRepository settings;
   final AppRuntimeGraph runtimeGraph;
+  ProviderContainer? _providerContainer;
   bool _disposed = false;
 
   static void initialize() {
@@ -382,6 +394,22 @@ final class AppRuntimeTestFixture {
       settings: settings,
       persistenceEnabled: false,
     );
+    final providerContainer = ProviderContainer(
+      overrides: createAppRuntimeOverrides(
+        persistence: runtimeGraph.persistence,
+        runtime: runtimeGraph.runtime,
+        warmup: runtimeGraph.warmup,
+        playbackCommands: runtimeGraph.playbackCommands,
+        keepAlive: runtimeGraph.keepAlive,
+        library: runtimeGraph.library,
+        playback: runtimeGraph.playback,
+        subtitles: runtimeGraph.subtitles,
+        timer: runtimeGraph.timer,
+        notifications: runtimeGraph.notifications,
+        settings: runtimeGraph.settings,
+      ),
+    );
+    providerContainer.read(appInteractionEffectsControllerProvider);
     return AppRuntimeTestFixture._(
       database: database,
       notificationService: notificationService,
@@ -391,6 +419,7 @@ final class AppRuntimeTestFixture {
       notifications: notifications,
       settings: settings,
       runtimeGraph: runtimeGraph,
+      providerContainer: providerContainer,
     );
   }
 
@@ -411,6 +440,8 @@ final class AppRuntimeTestFixture {
   Future<void> dispose({AppRuntimeGraph? currentGraph}) async {
     if (_disposed) return;
     _disposed = true;
+    _providerContainer?.dispose();
+    _providerContainer = null;
     await (currentGraph ?? runtimeGraph).runtime.dispose();
     await Future<void>.delayed(Duration.zero);
     final messenger =
@@ -419,5 +450,24 @@ final class AppRuntimeTestFixture {
     messenger.setMockMethodCallHandler(nativePlaybackChannel, null);
     messenger.setMockMethodCallHandler(notificationsChannel, null);
     await database.close();
+  }
+
+  void bindRuntimeGraph(AppRuntimeGraph graph) {
+    _providerContainer?.dispose();
+    _providerContainer = ProviderContainer(
+      overrides: createAppRuntimeOverrides(
+        persistence: graph.persistence,
+        runtime: graph.runtime,
+        warmup: graph.warmup,
+        playbackCommands: graph.playbackCommands,
+        keepAlive: graph.keepAlive,
+        library: graph.library,
+        playback: graph.playback,
+        subtitles: graph.subtitles,
+        timer: graph.timer,
+        notifications: graph.notifications,
+        settings: graph.settings,
+      ),
+    )..read(appInteractionEffectsControllerProvider);
   }
 }

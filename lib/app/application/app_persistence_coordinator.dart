@@ -1,5 +1,5 @@
 import '../../core/logging/app_log_service.dart';
-import '../../core/widgets/app_feedback.dart';
+import '../../core/ui/app_interaction_feedback_settings.dart';
 import '../../features/library/application/cover_image_cache_policy.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
@@ -59,7 +59,7 @@ final class AppPersistenceCoordinator
     try {
       await _settings.loadPersistedState();
       if (!isCurrent()) return;
-      AppInteractionFeedback.hapticFeedbackEnabled =
+      AppInteractionFeedbackSettings.hapticFeedbackEnabled =
           _settings.hapticFeedbackEnabled;
       applyCoverImageCachePolicy(_settings.coverImageResolution);
       await _playback.nativeRepository.setPlaybackBehavior(

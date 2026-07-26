@@ -86,7 +86,6 @@ void main() {
           notify: false,
           persist: false,
         );
-
         expect(
           await runtimeGraph.notifications.coverPathFutureForFolder(
             workDir.path,
@@ -559,6 +558,7 @@ void main() {
           notify: false,
           persist: false,
         );
+        await runtimeGraph.library.importAudioDetailBackups();
 
         expect(
           await runtimeGraph.notifications.coverPathFutureForTrack(track),

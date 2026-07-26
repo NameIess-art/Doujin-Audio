@@ -25,12 +25,12 @@ void main() {
     ]);
   });
 
-  test('missing local root produces an authoritative empty snapshot', () async {
+  test('missing local root produces a non-authoritative snapshot', () async {
     final snapshot = await LibraryEntryEditorService(
       isAndroid: () => false,
     ).loadDiskSnapshot(path.join(Directory.systemTemp.path, 'missing-library'));
 
-    expect(snapshot.authoritative, isTrue);
+    expect(snapshot.authoritative, isFalse);
     expect(snapshot.audioFilePaths, isEmpty);
   });
 

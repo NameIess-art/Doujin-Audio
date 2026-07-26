@@ -310,6 +310,8 @@ const Map<String, String> appLanguageEn = {
       'RJ number should usually look like RJ + digits.',
   'audio_detail_save_failed': 'Save failed. Please try again.',
   'audio_detail_load_failed': 'Load failed. Please try again.',
+  'audio_detail_duration_calculation_failed':
+      'Unable to calculate duration. Please try again.',
   'audio_detail_fetch_info': 'Fetch info',
   'audio_detail_fetch_scope_title': 'Choose fetch range',
   'audio_detail_fetch_scope_hint':
@@ -527,12 +529,12 @@ const Map<String, String> appLanguageEn = {
       'Back up and restore data, or export a diagnostic report.',
   'export_backup': 'Export backup',
   'export_backup_subtitle':
-      'Export the library, settings, and ASMR.ONE account. Playback lists are not included. Keep the backup secure.',
+      'Export the library, settings, and ASMR.ONE account, including plaintext username, password, and JWT/token. Playback lists are not included. The ZIP is not encrypted; keep it secure and share it carefully.',
   'restore_backup': 'Restore backup',
   'restore_backup_subtitle':
-      'Restore the library, settings, and ASMR.ONE account. Playback lists are not included.',
+      'Restore the library, settings, and ASMR.ONE account, including plaintext username, password, and JWT/token. Playback lists are not included.',
   'restore_backup_confirm':
-      'This replaces the current library database, settings, and ASMR.ONE account. Playback lists are not included. Failed restores roll back automatically. Continue?',
+      'This replaces the current library database, settings, and ASMR.ONE account, including plaintext username, password, and JWT/token. Playback lists are not included. Failed restores roll back automatically. Continue?',
   'operation_completed': 'Completed',
   'operation_failed': 'Operation failed',
   'backup_exported': 'Backup exported to {path}',

@@ -91,6 +91,7 @@ class LibraryEntryEditorService {
 
   Future<List<MusicTrack>> _loadRestorableFileTracks(String folderPath) async {
     final snapshot = await _loadFileSystemSnapshot(folderPath);
+    if (!snapshot.authoritative) return const <MusicTrack>[];
     final tracks = <MusicTrack>[];
     for (final mediaPath in snapshot.audioFilePaths) {
       FileStat? stat;
@@ -201,13 +202,14 @@ class LibraryEntryEditorService {
       return LibraryEntryDiskSnapshot(
         audioFilePaths: <String>[],
         scannedFolderPaths: <String>{},
-        authoritative: true,
+        authoritative: false,
       );
     }
 
     final audioFiles = <String>{};
     final pendingDirectories = Queue<Directory>()..add(directory);
     var processedEntities = 0;
+    var scanFailed = false;
     while (pendingDirectories.isNotEmpty) {
       final currentDirectory = pendingDirectories.removeFirst();
       try {
@@ -224,6 +226,14 @@ class LibraryEntryEditorService {
           }
         }
       } on FileSystemException catch (error, stackTrace) {
+        scanFailed = true;
+        AppLogService.warning(
+          'library_entry_directory_scan_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      } catch (error, stackTrace) {
+        scanFailed = true;
         AppLogService.warning(
           'library_entry_directory_scan_failed',
           error: error,
@@ -231,7 +241,11 @@ class LibraryEntryEditorService {
         );
       }
     }
-    return _snapshot(audioFiles, const <String>{}, authoritative: true);
+    return _snapshot(
+      audioFiles,
+      const <String>{},
+      authoritative: !scanFailed,
+    );
   }
 
   Future<LibraryEntryDiskSnapshot> _loadNativeSnapshot(

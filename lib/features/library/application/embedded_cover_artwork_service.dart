@@ -31,6 +31,7 @@ Future<void> cleanupEmbeddedCoverPartial(
 
 class EmbeddedCoverArtworkService {
   static const String _flacCacheVersion = 'flac-picture-v1';
+  static const int _maxEmbeddedPictureBytes = 20 * 1024 * 1024;
 
   static Future<String?> resolveForTrack(MusicTrack track) async {
     return resolveForPath(track.path);
@@ -274,6 +275,7 @@ class EmbeddedCoverArtworkService {
         int depth,
       ) async {
         if (start >= limit) return null;
+        final targetTypes = targetPath.split('.');
         int current = start;
         while (current < limit) {
           await raf!.setPosition(current);
@@ -294,9 +296,9 @@ class EmbeddedCoverArtworkService {
           } else if (size == 0) {
             size = limit - current;
           }
-          if (size < headerSize) break;
+          final remaining = limit - current;
+          if (size < headerSize || size > remaining) return null;
 
-          final targetTypes = targetPath.split('.');
           if (type == targetTypes[depth]) {
             if (depth == targetTypes.length - 1) {
               return {
@@ -307,6 +309,7 @@ class EmbeddedCoverArtworkService {
             } else {
               int childrenStart = current + headerSize;
               if (type == 'meta') childrenStart += 4;
+              if (childrenStart > current + size) return null;
               return await readAtom(
                 childrenStart,
                 current + size,
@@ -330,10 +333,17 @@ class EmbeddedCoverArtworkService {
         int dataOffset = covrAtom['offset'] as int;
         int dataSize = covrAtom['size'] as int;
         int headerSize = covrAtom['headerSize'] as int;
-        if (dataSize > headerSize + 8) {
-          await raf.setPosition(dataOffset + headerSize + 8);
-          return await raf.read(dataSize - (headerSize + 8));
+        final payloadSize = dataSize - (headerSize + 8);
+        final payloadOffset = dataOffset + headerSize + 8;
+        if (payloadSize <= 0 ||
+            payloadSize > _maxEmbeddedPictureBytes ||
+            payloadOffset < 0 ||
+            payloadOffset > length ||
+            payloadSize > length - payloadOffset) {
+          return null;
         }
+        await raf.setPosition(payloadOffset);
+        return await raf.read(payloadSize);
       }
       return null;
     } catch (_) {

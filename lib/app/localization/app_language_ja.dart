@@ -280,6 +280,8 @@ const Map<String, String> appLanguageJa = {
   'audio_detail_rj_format_hint': 'RJ番号は RJ + 数字の形式を推奨します。',
   'audio_detail_save_failed': '保存に失敗しました。もう一度お試しください。',
   'audio_detail_load_failed': '読み込みに失敗しました。もう一度お試しください。',
+  'audio_detail_duration_calculation_failed':
+      '再生時間を計算できませんでした。もう一度お試しください。',
   'audio_detail_fetch_info': '情報を取得',
   'audio_detail_fetch_scope_title': '取得範囲を選択',
   'audio_detail_fetch_scope_hint':
@@ -482,11 +484,12 @@ const Map<String, String> appLanguageJa = {
   'data_and_support_subtitle': 'データのバックアップ・復元と診断レポートの出力。',
   'export_backup': 'バックアップを出力',
   'export_backup_subtitle':
-      'ライブラリ、設定、ASMR.ONE アカウントを出力します。再生リストは含まれません。バックアップは安全に保管してください。',
+      'ライブラリ、設定、ASMR.ONE アカウント（ユーザー名、パスワード、JWT/token の平文を含む）を出力します。再生リストは含まれません。ZIP は暗号化されないため、安全に保管し慎重に共有してください。',
   'restore_backup': 'バックアップを復元',
-  'restore_backup_subtitle': 'ライブラリ、設定、ASMR.ONE アカウントを復元します。再生リストは含まれません。',
+  'restore_backup_subtitle':
+      'ライブラリ、設定、ASMR.ONE アカウント（ユーザー名、パスワード、JWT/token の平文を含む）を復元します。再生リストは含まれません。',
   'restore_backup_confirm':
-      '復元すると現在のライブラリ、設定、ASMR.ONE アカウントが置き換わり、再生リストは復元されません。失敗時は自動的に元に戻します。続行しますか？',
+      '復元すると現在のライブラリ、設定、ASMR.ONE アカウント（ユーザー名、パスワード、JWT/token の平文を含む）が置き換わり、再生リストは復元されません。失敗時は自動的に元に戻します。続行しますか？',
   'operation_completed': '完了',
   'operation_failed': '操作に失敗しました',
   'backup_exported': 'バックアップの出力先：{path}',

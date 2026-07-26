@@ -279,6 +279,7 @@ const Map<String, String> appLanguageZh = {
   'audio_detail_rj_format_hint': 'RJ号格式建议为 RJ + 数字。',
   'audio_detail_save_failed': '保存失败，请重试。',
   'audio_detail_load_failed': '读取失败，请重试。',
+  'audio_detail_duration_calculation_failed': '无法计算时长，请重试。',
   'audio_detail_fetch_info': '获取信息',
   'audio_detail_fetch_scope_title': '选择获取范围',
   'audio_detail_fetch_scope_hint':
@@ -475,11 +476,13 @@ const Map<String, String> appLanguageZh = {
   'data_and_support': '数据与支持',
   'data_and_support_subtitle': '数据备份、恢复及导出诊断报告。',
   'export_backup': '导出备份',
-  'export_backup_subtitle': '导出曲库、设置和 ASMR.ONE 账号；不包含播放列表。请妥善保管备份文件。',
+  'export_backup_subtitle':
+      '导出曲库、设置和 ASMR.ONE 账号（含明文用户名、密码和 JWT/token）；不包含播放列表，备份 ZIP 不加密，请妥善保管并谨慎分享。',
   'restore_backup': '恢复备份',
-  'restore_backup_subtitle': '恢复曲库、设置和 ASMR.ONE 账号；播放列表不会恢复。',
+  'restore_backup_subtitle':
+      '恢复曲库、设置和 ASMR.ONE 账号（含明文用户名、密码和 JWT/token）；播放列表不会恢复。',
   'restore_backup_confirm':
-      '恢复将替换当前曲库数据库、设置和 ASMR.ONE 账号，不恢复播放列表。失败时会自动回滚，是否继续？',
+      '恢复将替换当前曲库数据库、设置和 ASMR.ONE 账号（含明文用户名、密码和 JWT/token），不恢复播放列表。失败时会自动回滚，是否继续？',
   'operation_completed': '已完成',
   'operation_failed': '操作失败',
   'backup_exported': '备份已导出至：{path}',

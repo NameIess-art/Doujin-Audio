@@ -630,6 +630,7 @@ void main() {
             database: AppDatabase.test(db),
           ),
         );
+        fixture.bindRuntimeGraph(runtimeGraph);
         runtimeGraph.playback.configurePersistence(enabled: false);
         final track = MusicTrack(
           path: '/music/notification-scroll.mp3',

@@ -11,6 +11,7 @@ import '../../../core/media/audio_detail.dart';
 import '../../../core/media/music_track.dart';
 import '../application/audio_detail_repository.dart';
 import '../application/library_facade.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/time_text_formatters.dart';
@@ -106,19 +107,45 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       });
     }
     unawaited(() async {
-      final calculatedDuration = await _calculateAutomaticDuration(
-        libraryFacade,
-        detail,
-      );
-      if (!mounted ||
-          generation != _durationCalculationGeneration ||
-          _target != target) {
-        return;
+      try {
+        final calculatedDuration = await _calculateAutomaticDuration(
+          libraryFacade,
+          detail,
+        );
+        if (!mounted ||
+            generation != _durationCalculationGeneration ||
+            _target != target) {
+          return;
+        }
+        setState(() {
+          _calculatedDuration = calculatedDuration;
+          _calculatingDuration = false;
+        });
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'audio_detail_duration_calculation_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+        if (!mounted ||
+            generation != _durationCalculationGeneration ||
+            _target != target) {
+          return;
+        }
+        setState(() {
+          _calculatingDuration = false;
+        });
+        final i18n = ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(appLanguageProviderInstanceProvider);
+        showAppSnackBar(
+          context,
+          i18n.tr('audio_detail_duration_calculation_failed'),
+          tone: AppFeedbackTone.warning,
+          icon: Icons.warning_amber_rounded,
+        );
       }
-      setState(() {
-        _calculatedDuration = calculatedDuration;
-        _calculatingDuration = false;
-      });
     }());
   }
 

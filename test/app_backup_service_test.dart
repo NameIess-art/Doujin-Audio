@@ -8,6 +8,7 @@ import 'package:nameless_audio/core/media/local_library_import_sources.dart';
 import 'package:nameless_audio/features/data_support/application/app_backup_service.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
+import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -685,6 +686,36 @@ void main() {
       );
     },
   );
+
+  test('preferences JSON keeps the plaintext ASMR account backup object', () async {
+    preferences = <String, Object>{
+      AppPreferences.asmrAccountBackupKey: <String, Object>{
+        'token': 'plain-jwt-token',
+        'name': 'plain-user',
+        'password': 'plain-password',
+      },
+    };
+    final output = await createService().exportBackup(
+      '${tempDirectory.path}/plaintext_account.nalbackup',
+    );
+    final archive = ZipDecoder().decodeBytes(await output.readAsBytes());
+    final exportedPreferences =
+        jsonDecode(
+              utf8.decode(
+                archive.findFile(AppBackupService.preferencesEntry)!.content
+                    as List<int>,
+              ),
+            )
+            as Map<String, dynamic>;
+    expect(
+      exportedPreferences[AppPreferences.asmrAccountBackupKey],
+      <String, dynamic>{
+        'token': 'plain-jwt-token',
+        'name': 'plain-user',
+        'password': 'plain-password',
+      },
+    );
+  });
 
   test(
     'large database fixture exports validates and restores by stream',

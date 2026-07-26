@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../app/theme/app_design_tokens.dart';
+import '../ui/app_interaction_feedback_settings.dart';
 import '../ui/ui_operation_service.dart';
 import '../logging/app_log_service.dart';
 
@@ -15,7 +16,12 @@ Timer? _activeFeedbackTimer;
 VoidCallback? _activeFeedbackRemove;
 
 abstract final class AppInteractionFeedback {
-  static bool hapticFeedbackEnabled = true;
+  static bool get hapticFeedbackEnabled =>
+      AppInteractionFeedbackSettings.hapticFeedbackEnabled;
+
+  static set hapticFeedbackEnabled(bool value) {
+    AppInteractionFeedbackSettings.hapticFeedbackEnabled = value;
+  }
   static DateTime? _lastContinuousFeedbackAt;
   static Object? _lastContinuousValue;
 

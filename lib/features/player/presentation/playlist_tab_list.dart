@@ -90,15 +90,6 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: cs.surfaceContainerHigh,
-                    ),
-                  ),
                 ],
               ),
             ),

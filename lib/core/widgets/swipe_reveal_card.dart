@@ -223,7 +223,14 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final cs = Theme.of(context).colorScheme;
     final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
     final baseColor =
-        widget.color ?? (widget.destructive ? cs.error : cs.primary);
+        widget.color ??
+        (widget.destructive
+            ? Theme.of(context).brightness == Brightness.dark
+                  ? ColorScheme.fromSeed(
+                      seedColor: cs.primary,
+                    ).error
+                  : cs.error
+            : cs.primary);
     final isBgDark =
         ThemeData.estimateBrightnessForColor(baseColor) == Brightness.dark;
     final onColor = isBgDark

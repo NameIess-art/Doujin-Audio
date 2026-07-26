@@ -99,14 +99,24 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
     final loopActive = selected != null && selected.id == widget.loopSegmentId;
     final mediaHeight = MediaQuery.sizeOf(context).height;
     final targetHeight = max(360.0, mediaHeight * 0.5 - 130.0);
+    final isPortrait =
+        MediaQuery.orientationOf(context) == Orientation.portrait;
 
     final content = Padding(
       padding: const EdgeInsets.fromLTRB(0, 6, 0, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 4),
-          const SizedBox(height: 8),
+          if (isPortrait)
+            Divider(
+              key: const ValueKey<String>('portrait_console_divider'),
+              height: 1,
+              thickness: 1,
+              color: Theme.of(
+                context,
+              ).colorScheme.outlineVariant.withValues(alpha: 0.56),
+            ),
+          const SizedBox(height: 12),
           Stack(
             alignment: Alignment.center,
             children: [

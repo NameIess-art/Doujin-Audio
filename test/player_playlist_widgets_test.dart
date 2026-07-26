@@ -347,6 +347,15 @@ void main() {
       isNull,
       reason: 'Playlist loading items should match the borderless list style.',
     );
+    final skeletonTrailingCircles = find.descendant(
+      of: skeletonCards.first,
+      matching: find.byWidgetPredicate((widget) {
+        return widget is Container &&
+            widget.decoration is BoxDecoration &&
+            (widget.decoration! as BoxDecoration).shape == BoxShape.circle;
+      }),
+    );
+    expect(skeletonTrailingCircles, findsNothing);
     expect(
       tester.getTopLeft(skeletonCards.first).dy,
       greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TopPageHeader)).dy),
@@ -377,6 +386,10 @@ void main() {
   testWidgets('session reset actions share style and disable at defaults', (
     WidgetTester tester,
   ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(430, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
     const nativePlaybackChannel = MethodChannel(NativePlaybackChannel.name);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -455,6 +468,14 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip(languageProvider.tr('audio_features')));
+    await tester.pumpAndSettle();
+
+    const portraitDividerKey = ValueKey<String>('portrait_console_divider');
+    expect(find.byKey(portraitDividerKey), findsOneWidget);
+    tester.view.physicalSize = const Size(900, 430);
+    await tester.pumpAndSettle();
+    expect(find.byKey(portraitDividerKey), findsNothing);
+    tester.view.physicalSize = const Size(430, 900);
     await tester.pumpAndSettle();
 
     final speedRestoreButton = find.byKey(
@@ -940,6 +961,10 @@ void main() {
     );
     final queueSession = runtimeGraph.playback.service.activeSessions
         .singleWhere((session) => session.isPlaybackQueue);
+    final queueCard = tester
+        .widgetList<SwipeRevealCard>(find.byType(SwipeRevealCard))
+        .singleWhere((card) => card.key == ValueKey(queueSession.id));
+    expect((queueCard.shape as RoundedRectangleBorder).side, BorderSide.none);
     unawaited(
       showPlaybackQueueEditPanel(
         tester.element(find.byType(PlaylistTab)),

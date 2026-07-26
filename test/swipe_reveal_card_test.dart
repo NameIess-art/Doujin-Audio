@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
+import 'package:nameless_audio/app/theme/theme_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -47,6 +48,62 @@ void main() {
     final decoration = revealPane.decoration as ShapeDecoration;
     expect(decoration.gradient!.colors.last, scheme.primary);
   });
+
+  testWidgets(
+    'default destructive reveal colors stay consistent in dark mode',
+    (tester) async {
+      final shape = RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      );
+      final lightScheme = ThemeAccentPreset.rose.colorScheme(Brightness.light);
+      final darkScheme = ThemeAccentPreset.rose.colorScheme(Brightness.dark);
+
+      Future<Color> revealColor(ThemeData theme) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: Scaffold(
+              body: Center(
+                child: SizedBox(
+                  width: 260,
+                  height: 96,
+                  child: SwipeRevealCard(
+                    shape: shape,
+                    actionLabel: 'Remove',
+                    removeTooltip: 'Remove',
+                    onRemove: () {},
+                    child: const SizedBox.expand(
+                      child: Text('Destructive card'),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        await tester.drag(find.byType(SwipeRevealCard), const Offset(-180, 0));
+        await tester.pumpAndSettle();
+        final revealPane = tester.widget<DecoratedBox>(
+          find.byWidgetPredicate((widget) {
+            if (widget is! DecoratedBox) return false;
+            final decoration = widget.decoration;
+            return decoration is ShapeDecoration && decoration.gradient != null;
+          }),
+        );
+        return (revealPane.decoration as ShapeDecoration).gradient!.colors.last;
+      }
+
+      final lightRevealColor = await revealColor(
+        ThemeData(colorScheme: lightScheme, useMaterial3: true),
+      );
+      final darkRevealColor = await revealColor(
+        ThemeData(colorScheme: darkScheme, useMaterial3: true),
+      );
+
+      expect(lightRevealColor, lightScheme.error);
+      expect(darkRevealColor, lightRevealColor);
+    },
+  );
 
   testWidgets('closed card surface can differ from reveal action color', (
     tester,

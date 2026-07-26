@@ -43,7 +43,6 @@ class _PlaybackQueueCard extends ConsumerWidget {
         ? cs.primary
         : activeColor;
     final isPlaying = cardState.isPlaying;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final coverTracks = queue.entries
         .where((entry) => entry.tracks.isNotEmpty)
         .map((entry) => entry.tracks.first)
@@ -68,11 +67,6 @@ class _PlaybackQueueCard extends ConsumerWidget {
         : cs.surfaceContainerLow;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
-      side: BorderSide(
-        color: isPlaying
-            ? activeColor.withValues(alpha: isDark ? 0.34 : 0.28)
-            : cs.outlineVariant.withValues(alpha: isDark ? 0.26 : 0.42),
-      ),
     );
     return SwipeRevealCard(
       key: ValueKey(session.id),

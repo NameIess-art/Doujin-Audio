@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
+import 'package:nameless_audio/core/widgets/app_dialog.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/features/library/presentation/audio_detail_sheet.dart';
 import 'package:nameless_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
@@ -417,10 +418,10 @@ void main() {
       await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField), '');
       final saveLabel = MaterialLocalizations.of(
-        tester.element(find.byType(AlertDialog)),
+        tester.element(find.byType(AppDialog)),
       ).saveButtonLabel;
       await tester.tap(find.widgetWithText(FilledButton, saveLabel));
-      await pumpUntilNotFound(tester, find.byType(AlertDialog));
+      await pumpUntilNotFound(tester, find.byType(AppDialog));
       for (
         var i = 0;
         i < 100 && find.text('00:06:00').evaluate().isEmpty;

@@ -29,6 +29,8 @@ import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
+import '../../../core/widgets/app_buttons.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/async_cover_image.dart';

@@ -618,46 +618,33 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     String currentName,
   ) async {
     final controller = TextEditingController(text: currentName);
-    final name = await showDialog<String>(
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    final name = await showAppDialog<String>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(
-          ProviderScope.containerOf(
-            context,
-            listen: false,
-          ).read(appLanguageProviderInstanceProvider).tr('edit_queue_name'),
+      builder: (dialogContext) => AppDialog(
+        title: i18n.tr('edit_queue_name'),
+        icon: Icons.drive_file_rename_outline_rounded,
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          onSubmitted: (value) => Navigator.of(dialogContext).pop(value.trim()),
         ),
-        content: TextField(controller: controller, autofocus: true),
-        actions: [
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(),
-                  child: Text(
-                    ProviderScope.containerOf(
-                      context,
-                      listen: false,
-                    ).read(appLanguageProviderInstanceProvider).tr('cancel'),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () =>
-                      Navigator.of(dialogContext).pop(controller.text.trim()),
-                  child: Text(
-                    ProviderScope.containerOf(
-                      context,
-                      listen: false,
-                    ).read(appLanguageProviderInstanceProvider).tr('save'),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
+        actions: AppDialogActions(
+          children: [
+            AppSecondaryButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              label: i18n.tr('cancel'),
+            ),
+            AppPrimaryButton(
+              onPressed: () =>
+                  Navigator.of(dialogContext).pop(controller.text.trim()),
+              label: i18n.tr('save'),
+            ),
+          ],
+        ),
       ),
     );
     controller.dispose();

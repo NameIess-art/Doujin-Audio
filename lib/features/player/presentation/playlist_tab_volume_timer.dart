@@ -203,44 +203,42 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
     final controller = TextEditingController(
       text: '${((_dragVolume ?? widget.session.volume) * 100).round()}',
     );
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(i18n.tr('volume')),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: i18n.tr('volume_range_hint'),
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-          ),
-          onSubmitted: (text) {
-            _applyVolumeInput(text, ctx);
-          },
-        ),
-        actions: [
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.of(ctx).pop(),
-                  child: Text(i18n.tr('cancel')),
-                ),
+    unawaited(
+      showAppDialog<void>(
+        context: context,
+        builder: (dialogContext) => AppDialog(
+          title: i18n.tr('volume'),
+          icon: Icons.volume_up_rounded,
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: i18n.tr('volume_range_hint'),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton(
-                  onPressed: () {
-                    _applyVolumeInput(controller.text, ctx);
-                  },
-                  child: Text(i18n.tr('confirm')),
-                ),
+            ),
+            onSubmitted: (text) {
+              _applyVolumeInput(text, dialogContext);
+            },
+          ),
+          actions: AppDialogActions(
+            children: [
+              AppSecondaryButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                label: i18n.tr('cancel'),
+              ),
+              AppPrimaryButton(
+                onPressed: () {
+                  _applyVolumeInput(controller.text, dialogContext);
+                },
+                label: i18n.tr('confirm'),
               ),
             ],
           ),
-        ],
-      ),
+        ),
+      ).whenComplete(controller.dispose),
     );
   }
 

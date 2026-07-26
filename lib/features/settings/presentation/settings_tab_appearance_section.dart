@@ -306,8 +306,9 @@ void _showThemeColorPicker({
   required ThemeAccentPreset selected,
   required Future<void> Function(ThemeAccentPreset value) onSelected,
 }) {
-  showDialog<void>(
+  showAppDialog<void>(
     context: context,
+    maxWidth: 388,
     builder: (dialogContext) => _ThemeColorPickerMenu(
       title: title,
       selected: selected,
@@ -383,91 +384,64 @@ class _ThemeColorPickerMenu extends StatelessWidget {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
-    return Dialog(
+    return AppDialog(
       key: const ValueKey<String>('theme_color_dialog'),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340),
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            tokens.spaceLg,
-            tokens.spaceLg,
-            tokens.spaceLg,
-            tokens.spaceLg,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.titleLarge,
-                textAlign: TextAlign.center,
-              ),
-              SizedBox(height: tokens.spaceLg),
-              GridView.builder(
-                key: const ValueKey<String>('theme_color_grid'),
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  mainAxisExtent: 56,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 4,
-                ),
-                itemCount: ThemeAccentPreset.values.length,
-                itemBuilder: (context, index) {
-                  final preset = ThemeAccentPreset.values[index];
-                  final isSelected = preset == selected;
-                  final label = i18n.tr(preset.labelKey);
-                  final color = preset.colorScheme(theme.brightness).primary;
-                  final foreground =
-                      ThemeData.estimateBrightnessForColor(color) ==
-                          Brightness.dark
-                      ? Colors.white
-                      : const Color(0xFF242126);
-                  return Semantics(
-                    button: true,
-                    selected: isSelected,
-                    label: label,
-                    child: Tooltip(
-                      message: label,
-                      child: InkWell(
-                        key: ValueKey<String>('theme_color_${preset.name}'),
-                        customBorder: const CircleBorder(),
-                        onTap: () => onSelected(preset),
-                        child: Center(
-                          child: AnimatedContainer(
-                            duration: tokens.motionFast,
-                            width: 48,
-                            height: 48,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: isSelected
-                                    ? cs.onSurface
-                                    : cs.outlineVariant.withValues(alpha: 0.7),
-                                width: isSelected ? 3 : 1,
-                              ),
-                            ),
-                            child: isSelected
-                                ? Icon(
-                                    Icons.check_rounded,
-                                    color: foreground,
-                                    size: 24,
-                                  )
-                                : null,
-                          ),
-                        ),
+      title: title,
+      icon: Icons.palette_outlined,
+      content: GridView.builder(
+        key: const ValueKey<String>('theme_color_grid'),
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 4,
+          mainAxisExtent: 56,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 4,
+        ),
+        itemCount: ThemeAccentPreset.values.length,
+        itemBuilder: (context, index) {
+          final preset = ThemeAccentPreset.values[index];
+          final isSelected = preset == selected;
+          final label = i18n.tr(preset.labelKey);
+          final color = preset.colorScheme(theme.brightness).primary;
+          final foreground =
+              ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+              ? Colors.white
+              : const Color(0xFF242126);
+          return Semantics(
+            button: true,
+            selected: isSelected,
+            label: label,
+            child: Tooltip(
+              message: label,
+              child: InkWell(
+                key: ValueKey<String>('theme_color_${preset.name}'),
+                customBorder: const CircleBorder(),
+                onTap: () => onSelected(preset),
+                child: Center(
+                  child: AnimatedContainer(
+                    duration: tokens.motionFast,
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected
+                            ? cs.onSurface
+                            : cs.outlineVariant.withValues(alpha: 0.7),
+                        width: isSelected ? 3 : 1,
                       ),
                     ),
-                  );
-                },
+                    child: isSelected
+                        ? Icon(Icons.check_rounded, color: foreground, size: 24)
+                        : null,
+                  ),
+                ),
               ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

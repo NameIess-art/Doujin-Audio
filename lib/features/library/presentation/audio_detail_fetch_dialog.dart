@@ -12,56 +12,37 @@ class _AudioDetailFetchScopeDialog extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
 
-    return Dialog(
-      backgroundColor: cs.surfaceContainerHigh,
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.download_rounded, color: cs.primary),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    i18n.tr('audio_detail_fetch_scope_title'),
-                    style: textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ),
-              ],
+    return AppDialog(
+      title: i18n.tr('audio_detail_fetch_scope_title'),
+      icon: Icons.download_rounded,
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-            const SizedBox(height: 16),
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              tileColor: cs.surfaceContainer,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              leading: const Icon(Icons.select_all_rounded),
-              title: Text(i18n.tr('batch_metadata_all')),
-              onTap: () =>
-                  Navigator.of(context).pop(_AudioDetailFetchScope.all),
+            tileColor: cs.surfaceContainer,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: const Icon(Icons.select_all_rounded),
+            title: Text(i18n.tr('batch_metadata_all')),
+            onTap: () => Navigator.of(context).pop(_AudioDetailFetchScope.all),
+          ),
+          const SizedBox(height: 4),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
             ),
-            const SizedBox(height: 4),
-            ListTile(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              tileColor: cs.surfaceContainer,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-              leading: const Icon(Icons.playlist_add_check_rounded),
-              title: Text(i18n.tr('metadata_scope_missing')),
-              onTap: () =>
-                  Navigator.of(context).pop(_AudioDetailFetchScope.missing),
-            ),
-          ],
-        ),
+            tileColor: cs.surfaceContainer,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+            leading: const Icon(Icons.playlist_add_check_rounded),
+            title: Text(i18n.tr('metadata_scope_missing')),
+            onTap: () =>
+                Navigator.of(context).pop(_AudioDetailFetchScope.missing),
+          ),
+        ],
       ),
     );
   }

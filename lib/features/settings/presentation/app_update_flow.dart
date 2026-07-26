@@ -7,6 +7,8 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/permission_action_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/widgets/app_buttons.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../application/app_update_service.dart';
 
@@ -107,11 +109,12 @@ class AppUpdateFlow {
     AppUpdateInfo info,
   ) async {
     final i18n = _languageProvider;
-    final shouldDownload = await showDialog<bool>(
+    final shouldDownload = await showAppDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
+      builder: (dialogContext) => AppDialog(
+        title: i18n.tr('latest_version_available'),
+        icon: Icons.system_update_rounded,
         scrollable: true,
-        title: Text(i18n.tr('latest_version_available')),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -134,26 +137,19 @@ class AppUpdateFlow {
             ),
           ],
         ),
-        actions: [
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.of(dialogContext).pop(false),
-                  child: Text(i18n.tr('later')),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => Navigator.of(dialogContext).pop(true),
-                  icon: const Icon(Icons.download_rounded),
-                  label: Text(i18n.tr('download_update')),
-                ),
-              ),
-            ],
-          ),
-        ],
+        actions: AppDialogActions(
+          children: [
+            AppSecondaryButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              label: i18n.tr('later'),
+            ),
+            AppPrimaryButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              label: i18n.tr('download_update'),
+              icon: Icons.download_rounded,
+            ),
+          ],
+        ),
       ),
     );
     if (shouldDownload != true || !context.mounted || !info.canDownload) {
@@ -238,29 +234,34 @@ class AppUpdateFlow {
     AppUpdateInfo info,
     AppLanguageProvider i18n,
   ) {
-    return showDialog<bool>(
+    return showAppDialog<bool>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(i18n.tr('update_download_failed')),
+      builder: (dialogContext) => AppDialog(
+        title: i18n.tr('update_download_failed'),
+        icon: Icons.error_outline_rounded,
+        accentColor: Theme.of(dialogContext).colorScheme.error,
         content: Text(i18n.tr('update_download_failed_next_step')),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(i18n.tr('close')),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.of(dialogContext).pop(false);
-              unawaited(_updateService.openReleasePage(info.releaseUrl));
-            },
-            child: Text(i18n.tr('open_release_page')),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            icon: const Icon(Icons.refresh_rounded),
-            label: Text(i18n.tr('retry')),
-          ),
-        ],
+        actions: AppDialogActions(
+          children: [
+            AppSecondaryButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              label: i18n.tr('close'),
+            ),
+            AppSecondaryButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+                unawaited(_updateService.openReleasePage(info.releaseUrl));
+              },
+              label: i18n.tr('open_release_page'),
+              icon: Icons.open_in_new_rounded,
+            ),
+            AppPrimaryButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              label: i18n.tr('retry'),
+              icon: Icons.refresh_rounded,
+            ),
+          ],
+        ),
       ),
     );
   }

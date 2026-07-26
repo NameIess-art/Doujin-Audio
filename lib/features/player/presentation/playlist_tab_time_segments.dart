@@ -534,10 +534,11 @@ Future<Duration?> _showSegmentTimeInputDialog(
   final controller = TextEditingController(
     text: initial == null ? '' : _formatSegmentTime(initial),
   );
-  return showDialog<Duration>(
+  return showAppDialog<Duration>(
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(i18n.tr('segment_time_input_title')),
+    builder: (dialogContext) => AppDialog(
+      title: i18n.tr('segment_time_input_title'),
+      icon: Icons.schedule_rounded,
       content: TextField(
         controller: controller,
         autofocus: true,
@@ -548,33 +549,26 @@ Future<Duration?> _showSegmentTimeInputDialog(
         ),
         onSubmitted: (value) {
           final parsed = _parseSegmentTime(value);
-          if (parsed != null) Navigator.of(ctx).pop(parsed);
+          if (parsed != null) Navigator.of(dialogContext).pop(parsed);
         },
       ),
-      actions: [
-        Row(
-          children: [
-            Expanded(
-              child: TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text(i18n.tr('cancel')),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton(
-                onPressed: () {
-                  final parsed = _parseSegmentTime(controller.text);
-                  if (parsed != null) Navigator.of(ctx).pop(parsed);
-                },
-                child: Text(i18n.tr('confirm')),
-              ),
-            ),
-          ],
-        ),
-      ],
+      actions: AppDialogActions(
+        children: [
+          AppSecondaryButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            label: i18n.tr('cancel'),
+          ),
+          AppPrimaryButton(
+            onPressed: () {
+              final parsed = _parseSegmentTime(controller.text);
+              if (parsed != null) Navigator.of(dialogContext).pop(parsed);
+            },
+            label: i18n.tr('confirm'),
+          ),
+        ],
+      ),
     ),
-  );
+  ).whenComplete(controller.dispose);
 }
 
 Duration? _parseSegmentTime(String raw) {

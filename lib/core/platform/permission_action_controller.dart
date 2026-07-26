@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../widgets/confirm_action_dialog.dart';
+
 typedef PermissionCheckCallback = Future<bool> Function();
 typedef PermissionOpenSettingsCallback = Future<bool> Function();
 typedef PermissionGrantedCallback = Future<void> Function();
@@ -26,35 +28,17 @@ class PermissionActionController {
     }
 
     if (!context.mounted) return false;
-    final shouldOpenSettings = await showDialog<bool>(
+    final shouldOpenSettings = await showConfirmActionDialog(
       context: context,
-      builder: (dialogContext) {
-        return AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(false),
-                    child: Text(cancelLabel ?? 'Cancel'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(true),
-                    child: Text(confirmLabel ?? 'Open settings'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
+      title: title,
+      message: message,
+      cancelLabel: cancelLabel ?? 'Cancel',
+      confirmLabel: confirmLabel ?? 'Open settings',
+      icon: Icons.settings_outlined,
+      confirmIcon: Icons.settings_rounded,
+      isDestructive: false,
     );
-    if (shouldOpenSettings != true) {
+    if (!shouldOpenSettings) {
       return false;
     }
 

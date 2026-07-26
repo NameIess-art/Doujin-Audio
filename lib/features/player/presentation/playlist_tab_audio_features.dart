@@ -425,39 +425,34 @@ class _EqualizerPage extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final controller = TextEditingController();
-    final name = await showDialog<String>(
+    final name = await showAppDialog<String>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(i18n.tr('eq_save_preset')),
+      builder: (dialogContext) {
+        return AppDialog(
+          title: i18n.tr('eq_save_preset'),
+          icon: Icons.graphic_eq_rounded,
           content: TextField(
             controller: controller,
             autofocus: true,
             decoration: InputDecoration(labelText: i18n.tr('eq_preset_name')),
+            onSubmitted: (value) =>
+                Navigator.of(dialogContext).pop(value.trim()),
           ),
-          actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(
-                      MaterialLocalizations.of(context).cancelButtonLabel,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(controller.text),
-                    child: Text(
-                      MaterialLocalizations.of(context).okButtonLabel,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          actions: AppDialogActions(
+            children: [
+              AppSecondaryButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                label: MaterialLocalizations.of(
+                  dialogContext,
+                ).cancelButtonLabel,
+              ),
+              AppPrimaryButton(
+                onPressed: () =>
+                    Navigator.of(dialogContext).pop(controller.text.trim()),
+                label: MaterialLocalizations.of(dialogContext).okButtonLabel,
+              ),
+            ],
+          ),
         );
       },
     );

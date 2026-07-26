@@ -15,8 +15,11 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/time_text_formatters.dart';
+import '../../../core/widgets/app_buttons.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import 'dlsite_metadata_review_page.dart';
@@ -189,15 +192,14 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
         field == _AudioDetailField.rjCode && initialValue.trim().isEmpty
         ? 'RJ'
         : initialValue;
-    final value = await showDialog<String>(
+    final value = await showAppDialog<String>(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(
-            i18n.tr('audio_detail_edit_title', {
-              'name': field.label(i18n, detail),
-            }),
-          ),
+      builder: (dialogContext) {
+        return AppDialog(
+          title: i18n.tr('audio_detail_edit_title', {
+            'name': field.label(i18n, detail),
+          }),
+          icon: Icons.edit_rounded,
           content: TextFormField(
             initialValue: editedValue,
             autofocus: true,
@@ -210,18 +212,20 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                   : null,
             ),
             onChanged: (value) => editedValue = value,
-            onFieldSubmitted: (value) => Navigator.of(context).pop(value),
+            onFieldSubmitted: (value) => Navigator.of(dialogContext).pop(value),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(i18n.tr('cancel')),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(context).pop(editedValue),
-              child: Text(MaterialLocalizations.of(context).saveButtonLabel),
-            ),
-          ],
+          actions: AppDialogActions(
+            children: [
+              AppSecondaryButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                label: i18n.tr('cancel'),
+              ),
+              AppPrimaryButton(
+                onPressed: () => Navigator.of(dialogContext).pop(editedValue),
+                label: MaterialLocalizations.of(dialogContext).saveButtonLabel,
+              ),
+            ],
+          ),
         );
       },
     );
@@ -370,7 +374,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       );
       return;
     }
-    final scope = await showDialog<_AudioDetailFetchScope>(
+    final scope = await showAppDialog<_AudioDetailFetchScope>(
       context: context,
       builder: (context) => const _AudioDetailFetchScopeDialog(),
     );
@@ -463,35 +467,16 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final confirmed = await showDialog<bool>(
+    return showConfirmActionDialog(
       context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text(title),
-          content: Text(message),
-          actions: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: () => Navigator.of(context).pop(false),
-                    child: Text(i18n.tr('cancel')),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton(
-                    onPressed: () => Navigator.of(context).pop(true),
-                    child: Text(confirmLabel),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        );
-      },
+      title: title,
+      message: message,
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: confirmLabel,
+      icon: Icons.drive_file_rename_outline_rounded,
+      confirmIcon: Icons.check_rounded,
+      isDestructive: false,
     );
-    return confirmed == true;
   }
 
   @override

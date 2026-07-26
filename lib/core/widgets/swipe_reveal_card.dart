@@ -3,9 +3,6 @@ import 'package:flutter/material.dart';
 import 'app_feedback.dart';
 
 class SwipeRevealCard extends StatefulWidget {
-  static const Color darkDestructiveActionColor = Color(0xFF93000A);
-  static const Color darkPrimaryActionColor = Color(0xFFF08599);
-
   const SwipeRevealCard({
     super.key,
     required this.child,
@@ -226,10 +223,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     final cs = Theme.of(context).colorScheme;
     final revealProgress = (_revealedWidth / _actionWidth).clamp(0.0, 1.0);
     final baseColor =
-        widget.color ??
-        (widget.destructive
-            ? SwipeRevealCard.darkDestructiveActionColor
-            : SwipeRevealCard.darkPrimaryActionColor);
+        widget.color ?? (widget.destructive ? cs.error : cs.primary);
     final isBgDark =
         ThemeData.estimateBrightnessForColor(baseColor) == Brightness.dark;
     final onColor = isBgDark

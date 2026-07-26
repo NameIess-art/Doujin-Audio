@@ -175,7 +175,7 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
         Center(
           child: FilledButton.tonal(
             key: const ValueKey<String>('restore_playback_speed'),
-            style: _sessionDetailResetButtonStyle,
+            style: _sessionDetailResetButtonStyle(context),
             onPressed: (selectedSpeed - 1.0).abs() < 0.001 ? null : _resetSpeed,
             child: Text(i18n.tr('speed_reset')),
           ),

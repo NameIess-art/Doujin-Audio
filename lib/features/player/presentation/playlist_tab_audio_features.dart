@@ -220,7 +220,7 @@ class _VolumeBalancePage extends ConsumerWidget {
             Center(
               child: FilledButton.tonal(
                 key: const ValueKey<String>('restore_volume_balance'),
-                style: _sessionDetailResetButtonStyle,
+                style: _sessionDetailResetButtonStyle(context),
                 onPressed: panning.abs() < 0.001
                     ? null
                     : () {
@@ -379,7 +379,7 @@ class _EqualizerPage extends ConsumerWidget {
               child: Center(
                 child: FilledButton.tonal(
                   key: const ValueKey<String>('reset_equalizer'),
-                  style: _sessionDetailResetButtonStyle,
+                  style: _sessionDetailResetButtonStyle(context),
                   onPressed: hasAdjustedEqBands
                       ? () {
                           final flat = builtInEqPresets.first;
@@ -397,7 +397,7 @@ class _EqualizerPage extends ConsumerWidget {
               child: Center(
                 child: FilledButton.tonal(
                   key: const ValueKey<String>('save_equalizer_preset'),
-                  style: _sessionDetailResetButtonStyle,
+                  style: _sessionDetailResetButtonStyle(context),
                   onPressed: hasAdjustedEqBands
                       ? () => _showSavePresetDialog(
                           context,

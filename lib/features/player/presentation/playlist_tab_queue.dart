@@ -40,9 +40,8 @@ class _PlaybackQueueCard extends ConsumerWidget {
         ? cs.primary
         : Color(cardState.queueColorValue!);
     final revealActionColor = cardState.queueColorValue == null
-        ? SwipeRevealCard.darkPrimaryActionColor
+        ? cs.primary
         : activeColor;
-    final hasCustomColor = cardState.queueColorValue != null;
     final isPlaying = cardState.isPlaying;
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final coverTracks = queue.entries
@@ -64,6 +63,9 @@ class _PlaybackQueueCard extends ConsumerWidget {
     final currentTrack = tracks.isEmpty
         ? null
         : tracks[session.currentQueueIndex.clamp(0, tracks.length - 1)];
+    final cardColor = isPlaying
+        ? cs.surfaceContainerHigh
+        : cs.surfaceContainerLow;
     final shape = RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
       side: BorderSide(
@@ -77,6 +79,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
       margin: const EdgeInsets.only(bottom: 6),
       shape: shape,
       color: revealActionColor,
+      closedColor: cardColor,
       destructive: false,
       primaryActionIcon: Icons.edit_rounded,
       actionLabel: i18n.tr('edit'),
@@ -87,14 +90,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
         child: Card(
           margin: EdgeInsets.zero,
           elevation: 0,
-          color: isPlaying
-              ? cs.surfaceContainerHigh
-              : hasCustomColor
-              ? Color.alphaBlend(
-                  activeColor.withValues(alpha: isDark ? 0.12 : 0.08),
-                  cs.surfaceContainerLow,
-                )
-              : cs.surfaceContainerLow,
+          color: cardColor,
           shape: shape,
           clipBehavior: Clip.antiAlias,
           child: InkWell(

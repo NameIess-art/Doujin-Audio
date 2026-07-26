@@ -54,10 +54,11 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
       SynchronousFuture<String?>(null);
 }
 
-void _expectFixedSessionResetButtonStyle(WidgetTester tester, Finder finder) {
+void _expectThemeSessionResetButtonStyle(WidgetTester tester, Finder finder) {
   expect(finder, findsOneWidget);
   final button = tester.widget<FilledButton>(finder);
   final style = button.style!;
+  final colorScheme = Theme.of(tester.element(finder)).colorScheme;
   const enabled = <WidgetState>{};
   const disabled = <WidgetState>{WidgetState.disabled};
 
@@ -70,19 +71,19 @@ void _expectFixedSessionResetButtonStyle(WidgetTester tester, Finder finder) {
   expect(style.tapTargetSize, MaterialTapTargetSize.padded);
   expect(style.visualDensity, VisualDensity.standard);
   expect(style.elevation!.resolve(enabled), 0);
-  expect(style.backgroundColor!.resolve(enabled), const Color(0xFFF08599));
-  expect(style.foregroundColor!.resolve(enabled), const Color(0xFF301017));
+  expect(style.backgroundColor!.resolve(enabled), colorScheme.primary);
+  expect(style.foregroundColor!.resolve(enabled), colorScheme.onPrimary);
   expect(
     style.overlayColor!.resolve(const <WidgetState>{WidgetState.pressed}),
-    Colors.white.withValues(alpha: 0.14),
+    colorScheme.onPrimary.withValues(alpha: 0.14),
   );
   expect(
     style.backgroundColor!.resolve(disabled),
-    Colors.white.withValues(alpha: 0.12),
+    colorScheme.onSurface.withValues(alpha: 0.12),
   );
   expect(
     style.foregroundColor!.resolve(disabled),
-    Colors.white.withValues(alpha: 0.50),
+    colorScheme.onSurface.withValues(alpha: 0.50),
   );
   final textStyle = style.textStyle!.resolve(enabled)!;
   expect(textStyle.fontSize, 14);
@@ -459,7 +460,7 @@ void main() {
     final speedRestoreButton = find.byKey(
       const ValueKey<String>('restore_playback_speed'),
     );
-    _expectFixedSessionResetButtonStyle(tester, speedRestoreButton);
+    _expectThemeSessionResetButtonStyle(tester, speedRestoreButton);
     expect(tester.widget<FilledButton>(speedRestoreButton).onPressed, isNull);
 
     await tester.tap(find.text(languageProvider.tr('equalizer')));
@@ -470,8 +471,8 @@ void main() {
     final saveEqualizerPresetButton = find.byKey(
       const ValueKey<String>('save_equalizer_preset'),
     );
-    _expectFixedSessionResetButtonStyle(tester, equalizerResetButton);
-    _expectFixedSessionResetButtonStyle(tester, saveEqualizerPresetButton);
+    _expectThemeSessionResetButtonStyle(tester, equalizerResetButton);
+    _expectThemeSessionResetButtonStyle(tester, saveEqualizerPresetButton);
     expect(tester.widget<FilledButton>(equalizerResetButton).onPressed, isNull);
     expect(
       tester.widget<FilledButton>(saveEqualizerPresetButton).onPressed,
@@ -514,7 +515,7 @@ void main() {
     final restoreButton = find.byKey(
       const ValueKey<String>('restore_volume_balance'),
     );
-    _expectFixedSessionResetButtonStyle(tester, restoreButton);
+    _expectThemeSessionResetButtonStyle(tester, restoreButton);
     expect(tester.widget<FilledButton>(restoreButton).onPressed, isNotNull);
     expect(find.text(languageProvider.tr('restore_default')), findsOneWidget);
     await tester.tap(restoreButton);

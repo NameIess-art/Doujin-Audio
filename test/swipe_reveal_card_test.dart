@@ -5,9 +5,47 @@ import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('default reveal colors use the dark theme palette', () {
-    expect(SwipeRevealCard.darkDestructiveActionColor, const Color(0xFF93000A));
-    expect(SwipeRevealCard.darkPrimaryActionColor, const Color(0xFFF08599));
+  testWidgets('default reveal colors follow the active color scheme', (
+    tester,
+  ) async {
+    final scheme = ColorScheme.fromSeed(seedColor: Colors.teal);
+    final shape = RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(12),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData(colorScheme: scheme, useMaterial3: true),
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 260,
+              height: 96,
+              child: SwipeRevealCard(
+                shape: shape,
+                actionLabel: 'Details',
+                removeTooltip: 'Details',
+                destructive: false,
+                onRemove: () {},
+                child: const SizedBox.expand(child: Text('Themed card')),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.drag(find.text('Themed card'), const Offset(-180, 0));
+    await tester.pumpAndSettle();
+    final revealPane = tester.widget<DecoratedBox>(
+      find.byWidgetPredicate((widget) {
+        if (widget is! DecoratedBox) return false;
+        final decoration = widget.decoration;
+        return decoration is ShapeDecoration && decoration.gradient != null;
+      }),
+    );
+    final decoration = revealPane.decoration as ShapeDecoration;
+    expect(decoration.gradient!.colors.last, scheme.primary);
   });
 
   testWidgets('closed card surface can differ from reveal action color', (

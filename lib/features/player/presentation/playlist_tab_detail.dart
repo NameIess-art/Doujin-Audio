@@ -35,28 +35,30 @@ ThemeData _createAsmrSessionDetailTheme(
   );
 }
 
-final ButtonStyle _sessionDetailResetButtonStyle =
-    FilledButton.styleFrom(
-      backgroundColor: const Color(0xFFF08599),
-      foregroundColor: const Color(0xFF301017),
-      disabledBackgroundColor: Colors.white.withValues(alpha: 0.12),
-      disabledForegroundColor: Colors.white.withValues(alpha: 0.50),
-      minimumSize: const Size(96, 40),
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      tapTargetSize: MaterialTapTargetSize.padded,
-      visualDensity: VisualDensity.standard,
-      shape: const StadiumBorder(),
-      elevation: 0,
-      textStyle: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w600,
-        height: 1,
-      ),
-    ).copyWith(
-      overlayColor: WidgetStatePropertyAll(
-        Colors.white.withValues(alpha: 0.14),
-      ),
-    );
+ButtonStyle _sessionDetailResetButtonStyle(BuildContext context) {
+  final colorScheme = Theme.of(context).colorScheme;
+  return FilledButton.styleFrom(
+    backgroundColor: colorScheme.primary,
+    foregroundColor: colorScheme.onPrimary,
+    disabledBackgroundColor: colorScheme.onSurface.withValues(alpha: 0.12),
+    disabledForegroundColor: colorScheme.onSurface.withValues(alpha: 0.50),
+    minimumSize: const Size(96, 40),
+    padding: const EdgeInsets.symmetric(horizontal: 20),
+    tapTargetSize: MaterialTapTargetSize.padded,
+    visualDensity: VisualDensity.standard,
+    shape: const StadiumBorder(),
+    elevation: 0,
+    textStyle: const TextStyle(
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      height: 1,
+    ),
+  ).copyWith(
+    overlayColor: WidgetStatePropertyAll(
+      colorScheme.onPrimary.withValues(alpha: 0.14),
+    ),
+  );
+}
 
 class SessionDetailPage extends ConsumerStatefulWidget {
   const SessionDetailPage({

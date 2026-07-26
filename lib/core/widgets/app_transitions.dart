@@ -245,6 +245,9 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
 
 class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     with SingleTickerProviderStateMixin {
+  static const _fadeFloor = 0.9;
+  static const _switchPoint = 0.35;
+
   late final AnimationController _controller;
   late int _currentIndex;
   late int _targetIndex;
@@ -259,7 +262,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _controller =
         AnimationController(
             vsync: this,
-            duration: kAppMotionSlow,
+            duration: kAppMotionStandard,
             reverseDuration: kAppMotionFast,
           )
           ..addListener(_handleProgressChanged)
@@ -286,7 +289,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   }
 
   void _handleProgressChanged() {
-    if (!_isAnimating || _hasSwappedPage || _controller.value < 0.35) {
+    if (!_isAnimating || _hasSwappedPage || _controller.value < _switchPoint) {
       return;
     }
     setState(() {
@@ -326,19 +329,22 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         animation: _controller,
         child: stack,
         builder: (context, child) {
-          final outgoing = _isAnimating && _controller.value < 0.35;
+          final outgoing = _isAnimating && _controller.value < _switchPoint;
           final rawProgress = !_isAnimating
               ? 1.0
               : outgoing
-              ? (_controller.value / 0.35).clamp(0.0, 1.0)
-              : ((_controller.value - 0.35) / 0.65).clamp(0.0, 1.0);
-          final progress = Curves.easeOutCubic.transform(rawProgress);
+              ? (_controller.value / _switchPoint).clamp(0.0, 1.0)
+              : ((_controller.value - _switchPoint) / (1 - _switchPoint)).clamp(
+                  0.0,
+                  1.0,
+                );
+          final progress = (outgoing ? Curves.easeInCubic : Curves.easeOutCubic)
+              .transform(rawProgress);
           return Opacity(
-            opacity: outgoing ? 1 - progress : progress,
-            child: Transform.scale(
-              scale: outgoing ? 1 - progress * 0.04 : 0.92 + progress * 0.08,
-              child: child,
-            ),
+            opacity: outgoing
+                ? 1 - progress * (1 - _fadeFloor)
+                : _fadeFloor + progress * (1 - _fadeFloor),
+            child: child,
           );
         },
       ),

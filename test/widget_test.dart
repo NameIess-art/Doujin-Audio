@@ -1661,7 +1661,7 @@ Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {
     await tester.pump(const Duration(milliseconds: 16));
     final stack = tester.widget<AppFadeThroughIndexedStack>(pageStackFinder);
     if (stack.index == targetPage) {
-      await tester.pump(kAppMotionSlow);
+      await tester.pump(kAppMotionStandard);
       return;
     }
   }

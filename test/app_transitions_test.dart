@@ -18,7 +18,7 @@ class _StateProbeState extends State<_StateProbe> {
 
 void main() {
   testWidgets(
-    'fade-through keeps page states and completes the latest switch',
+    'subtle fade avoids scaling, keeps page states, and completes latest switch',
     (tester) async {
       var index = 0;
       var completedIndex = -1;
@@ -57,15 +57,26 @@ void main() {
       expect(tester.widget<Opacity>(opacityFinder).opacity, 1);
       expect(find.text('first'), findsOneWidget);
 
-      await tester.pump(const Duration(milliseconds: 75));
+      await tester.pump(const Duration(milliseconds: 40));
       expect(
         tester.widget<Opacity>(opacityFinder).opacity,
-        inExclusiveRange(0, 1),
+        inInclusiveRange(0.9, 1),
       );
       expect(find.text('first'), findsOneWidget);
 
-      await tester.pump(const Duration(milliseconds: 75));
+      await tester.pump(const Duration(milliseconds: 50));
       expect(find.text('second'), findsOneWidget);
+      expect(
+        tester.widget<Opacity>(opacityFinder).opacity,
+        inInclusiveRange(0.9, 1),
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AppFadeThroughIndexedStack),
+          matching: find.byType(Transform),
+        ),
+        findsNothing,
+      );
 
       update(() => index = 2);
       await tester.pump();

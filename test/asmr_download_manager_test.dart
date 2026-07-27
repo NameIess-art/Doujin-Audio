@@ -1168,6 +1168,7 @@ void main() {
         work: _work(),
         selectedRoots: <AsmrTrackFile>[
           _file(
+            title: 'track.mp3',
             downloadUrl:
                 'http://${server.address.host}:${server.port}/track.mp3',
             size: bytes.length,

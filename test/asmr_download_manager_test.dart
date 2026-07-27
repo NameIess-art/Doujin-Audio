@@ -1058,6 +1058,273 @@ void main() {
   });
 
   test(
+    'a transient file failure retries without blocking sibling downloads',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_file_retry_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      const bytes = <int>[1, 2, 3, 4];
+      var retryRequests = 0;
+      var siblingRequests = 0;
+      unawaited(
+        server.forEach((request) async {
+          if (request.uri.path.endsWith('retry.mp3')) {
+            retryRequests++;
+            if (retryRequests == 1) {
+              request.response.statusCode = HttpStatus.serviceUnavailable;
+              await request.response.close();
+              return;
+            }
+          } else {
+            siblingRequests++;
+          }
+          request.response.contentLength = bytes.length;
+          request.response.add(bytes);
+          await request.response.close();
+        }),
+      );
+      final manager = _manager();
+      var observedRetry = false;
+      manager.addListener(() {
+        observedRetry =
+            observedRetry ||
+            manager.getTask(1)?.fileRetryAttempts['retry.mp3'] == 1;
+      });
+      try {
+        final baseUrl = 'http://${server.address.host}:${server.port}';
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              title: 'retry.mp3',
+              downloadUrl: '$baseUrl/retry.mp3',
+              size: bytes.length,
+            ),
+            _file(
+              title: 'sibling.mp3',
+              downloadUrl: '$baseUrl/sibling.mp3',
+              size: bytes.length,
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        expect(retryRequests, 2);
+        expect(siblingRequests, 1);
+        expect(observedRetry, isTrue);
+        expect(manager.getTask(1)?.failedFiles, 0);
+        expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
+        expect(
+          await File(
+            '${tempDir.path}${Platform.pathSeparator}Work'
+            '${Platform.pathSeparator}retry.mp3',
+          ).readAsBytes(),
+          bytes,
+        );
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test('a truncated file resumes from its partial staging file', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_truncated_retry_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final bytes = List<int>.generate(1024, (index) => index % 251);
+    final rangeStarts = <int>[];
+    unawaited(
+      server.forEach((request) async {
+        final range = request.headers.value(HttpHeaders.rangeHeader);
+        if (range == null) {
+          rangeStarts.add(0);
+          request.response.add(bytes.take(128).toList());
+        } else {
+          final start = int.parse(
+            RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!,
+          );
+          rangeStarts.add(start);
+          request.response.statusCode = HttpStatus.partialContent;
+          request.response.headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes $start-${bytes.length - 1}/${bytes.length}',
+          );
+          final remaining = bytes.sublist(start);
+          request.response.contentLength = remaining.length;
+          request.response.add(remaining);
+        }
+        await request.response.close();
+      }),
+    );
+    final manager = _manager();
+    try {
+      await manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(
+            downloadUrl:
+                'http://${server.address.host}:${server.port}/track.mp3',
+            size: bytes.length,
+          ),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+      );
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+      expect(rangeStarts, <int>[0, 128]);
+      expect(
+        manager.getTask(1)?.downloadedBytes,
+        manager.getTask(1)?.totalBytes,
+      );
+      expect(
+        await File(
+          '${tempDir.path}${Platform.pathSeparator}Work'
+          '${Platform.pathSeparator}track.mp3',
+        ).readAsBytes(),
+        bytes,
+      );
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test(
+    'transient failures exhaust five retries and count one failure',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_retry_exhausted_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requests = 0;
+      unawaited(
+        server.forEach((request) async {
+          requests++;
+          request.response.statusCode = HttpStatus.serviceUnavailable;
+          await request.response.close();
+        }),
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(
+          manager,
+          1,
+          AsmrDownloadTaskStatus.failed,
+          allowFailure: true,
+        );
+
+        expect(requests, 6);
+        expect(manager.getTask(1)?.failedFiles, 1);
+        expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test('a permanent HTTP failure is not retried', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_no_retry_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var requests = 0;
+    unawaited(
+      server.forEach((request) async {
+        requests++;
+        request.response.statusCode = HttpStatus.notFound;
+        await request.response.close();
+      }),
+    );
+    final manager = _manager();
+    try {
+      await manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(
+            downloadUrl:
+                'http://${server.address.host}:${server.port}/track.mp3',
+          ),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+      );
+      await _waitForTaskStatus(
+        manager,
+        1,
+        AsmrDownloadTaskStatus.failed,
+        allowFailure: true,
+      );
+
+      expect(requests, 1);
+      expect(manager.getTask(1)?.failedFiles, 1);
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test('pausing during retry backoff prevents another request', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_retry_pause_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var requests = 0;
+    unawaited(
+      server.forEach((request) async {
+        requests++;
+        request.response.statusCode = HttpStatus.serviceUnavailable;
+        await request.response.close();
+      }),
+    );
+    final manager = _manager();
+    try {
+      await manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(
+            downloadUrl:
+                'http://${server.address.host}:${server.port}/track.mp3',
+          ),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+      );
+      await _waitForFileRetryAttempt(manager, 1, 'Track.mp3', 1);
+      await manager.pauseTask(1);
+
+      expect(requests, 1);
+      expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
+      expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test(
     'truncated responses fail without committing the final media file',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
@@ -1468,6 +1735,27 @@ Future<void> _waitForLiveTask(AsmrDownloadManager manager) async {
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
   fail('Timed out waiting for a live download task');
+}
+
+Future<void> _waitForFileRetryAttempt(
+  AsmrDownloadManager manager,
+  int workId,
+  String relativePath,
+  int attempt,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    if (manager.getTask(workId)?.fileRetryAttempts[relativePath] == attempt) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  final task = manager.getTask(workId);
+  fail(
+    'Timed out waiting for retry $attempt of $relativePath; '
+    'status=${task?.status} retries=${task?.fileRetryAttempts} '
+    'message=${task?.message} error=${task?.error}',
+  );
 }
 
 Future<void> _waitForTaskStatus(

@@ -219,6 +219,7 @@ const Map<String, String> appLanguageJa = {
   'asmr_download_empty_folder': '空のフォルダ',
   'asmr_download_status_preparing': '準備中',
   'asmr_download_status_downloading': 'ダウンロード中',
+  'asmr_download_status_retrying': '再試行中（{attempt}/{max}）',
   'asmr_download_status_paused': '一時停止',
   'asmr_download_status_completed': '完了',
   'asmr_download_status_failed': '失敗',

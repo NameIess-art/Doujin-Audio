@@ -136,10 +136,12 @@ class AsmrDownloadTaskSnapshot {
     this.error,
     Map<String, int> fileDownloadedBytes = const {},
     Map<String, int> fileTotalBytes = const {},
+    Map<String, int> fileRetryAttempts = const {},
     Set<String> completedFilePaths = const {},
     List<AsmrTrackFile> selectedRoots = const [],
   }) : fileDownloadedBytes = immutableMap(fileDownloadedBytes),
        fileTotalBytes = immutableMap(fileTotalBytes),
+       fileRetryAttempts = immutableMap(fileRetryAttempts),
        completedFilePaths = immutableSet(completedFilePaths),
        selectedRoots = immutableList(selectedRoots);
 
@@ -161,6 +163,7 @@ class AsmrDownloadTaskSnapshot {
   final String? error;
   final Map<String, int> fileDownloadedBytes;
   final Map<String, int> fileTotalBytes;
+  final Map<String, int> fileRetryAttempts;
   final Set<String> completedFilePaths;
   final List<AsmrTrackFile> selectedRoots;
 
@@ -205,6 +208,7 @@ class AsmrDownloadTaskSnapshot {
     String? error,
     Map<String, int>? fileDownloadedBytes,
     Map<String, int>? fileTotalBytes,
+    Map<String, int>? fileRetryAttempts,
     Set<String>? completedFilePaths,
     List<AsmrTrackFile>? selectedRoots,
   }) {
@@ -227,6 +231,7 @@ class AsmrDownloadTaskSnapshot {
       error: error ?? this.error,
       fileDownloadedBytes: fileDownloadedBytes ?? this.fileDownloadedBytes,
       fileTotalBytes: fileTotalBytes ?? this.fileTotalBytes,
+      fileRetryAttempts: fileRetryAttempts ?? this.fileRetryAttempts,
       completedFilePaths: completedFilePaths ?? this.completedFilePaths,
       selectedRoots: selectedRoots ?? this.selectedRoots,
     );
@@ -416,6 +421,14 @@ class AsmrDownloadManager extends ChangeNotifier {
   static const Duration _progressNotifyMinInterval = Duration(
     milliseconds: 120,
   );
+  static const int maxAutomaticFileRetries = 5;
+  static const List<Duration> _automaticFileRetryDelays = <Duration>[
+    Duration(milliseconds: 350),
+    Duration(milliseconds: 900),
+    Duration(milliseconds: 900),
+    Duration(milliseconds: 900),
+    Duration(milliseconds: 900),
+  ];
   static const int _progressNotifyMinByteDelta = 128 * 1024;
   final FileCachePlatformGateway _fileCacheGateway;
   final Future<Directory> Function() _stagingDirectoryProvider;
@@ -1246,43 +1259,105 @@ class AsmrDownloadManager extends ChangeNotifier {
     required int workId,
     required HttpClient client,
     required File stagingFile,
-    bool allowResume = true,
   }) async {
     final tempFile = stagingFile;
     await tempFile.parent.create(recursive: true);
     final cacheLease = AppCacheService.protectPaths(<String>[tempFile.path]);
     var leaseTransferred = false;
+    try {
+      for (var attempt = 0; ; attempt++) {
+        _throwIfCancelled(workId);
+        final result = await _downloadToTemporaryFileAttempt(
+          item,
+          workId: workId,
+          client: client,
+          stagingFile: stagingFile,
+          allowResume: true,
+        );
+        if (result.bytesDownloaded case final bytesDownloaded?) {
+          await tempFile.setLastModified(DateTime.now());
+          leaseTransferred = true;
+          return _TemporaryDownloadResult(
+            file: tempFile,
+            bytesDownloaded: bytesDownloaded,
+            cacheLease: cacheLease,
+          );
+        }
 
+        if (!result.retryable || attempt >= _automaticFileRetryDelays.length) {
+          if (result.error case final error?) {
+            AppLogService.error(
+              'asmr_download_transfer_failed path=${item.relativePath}',
+              error: error,
+              stackTrace: result.stackTrace,
+            );
+          }
+          return null;
+        }
+
+        final retryAttempt = attempt + 1;
+        _setFileRetryAttempt(workId, item.relativePath, retryAttempt);
+        AppLogService.warning(
+          'asmr_download_transfer_retry path=${item.relativePath} '
+          'attempt=$retryAttempt/$maxAutomaticFileRetries',
+          error: result.error,
+          stackTrace: result.stackTrace,
+        );
+        await Future<void>.delayed(_automaticFileRetryDelays[attempt]);
+      }
+    } on _DownloadCancelled {
+      rethrow;
+    } finally {
+      _setFileRetryAttempt(workId, item.relativePath, null);
+      if (!leaseTransferred) {
+        try {
+          if (_pauseRequested[workId] != true &&
+              !_disposed &&
+              await tempFile.exists()) {
+            await tempFile.delete();
+          }
+        } catch (_) {
+          // Incomplete staging file cleanup is best effort.
+        } finally {
+          cacheLease.release();
+        }
+      }
+    }
+  }
+
+  Future<_TemporaryDownloadAttempt> _downloadToTemporaryFileAttempt(
+    _PlannedDownloadFile item, {
+    required int workId,
+    required HttpClient client,
+    required File stagingFile,
+    required bool allowResume,
+  }) async {
     var received = 0;
     try {
-      received = await tempFile.length();
-    } on FileSystemException {
-      if (await tempFile.exists()) rethrow;
-    }
-    if (!allowResume && received > 0) {
-      await _deleteFileIfPresent(tempFile);
-      received = 0;
-    }
-    if (item.size > 0 && received > item.size) {
-      await _deleteFileIfPresent(tempFile);
-      received = 0;
-    }
-    try {
-      if (item.size > 0 && received == item.size) {
-        await tempFile.setLastModified(DateTime.now());
-        leaseTransferred = true;
-        return _TemporaryDownloadResult(
-          file: tempFile,
-          bytesDownloaded: received,
-          cacheLease: cacheLease,
-        );
+      try {
+        received = await stagingFile.length();
+      } on FileSystemException {
+        if (await stagingFile.exists()) rethrow;
       }
+      if (!allowResume && received > 0) {
+        _discardLivePartialProgress(workId, item.relativePath, received);
+        await _deleteFileIfPresent(stagingFile);
+        received = 0;
+      }
+      if (item.size > 0 && received > item.size) {
+        _discardLivePartialProgress(workId, item.relativePath, received);
+        await _deleteFileIfPresent(stagingFile);
+        received = 0;
+      }
+      if (item.size > 0 && received == item.size) {
+        return _TemporaryDownloadAttempt.success(received);
+      }
+
       const requestTimeout = Duration(seconds: 15);
       const downloadIdleTimeout = Duration(seconds: 30);
       _throwIfCancelled(workId);
-      final request = await client
-          .getUrl(Uri.parse(item.url))
-          .timeout(requestTimeout);
+      final uri = Uri.parse(item.url);
+      final request = await client.getUrl(uri).timeout(requestTimeout);
       request.headers.set(
         HttpHeaders.userAgentHeader,
         'Nameless Audio downloader',
@@ -1295,17 +1370,15 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
       final response = await request.close().timeout(requestTimeout);
 
-      Future<_TemporaryDownloadResult?> retryWithoutRange() async {
+      Future<_TemporaryDownloadAttempt> retryWithoutRange() async {
         try {
           await response.listen((_) {}).cancel();
         } catch (_) {
           // The retry uses a new response even if cancellation already won.
         }
         _discardLivePartialProgress(workId, item.relativePath, received);
-        await _deleteFileIfPresent(tempFile);
-        cacheLease.release();
-        leaseTransferred = true;
-        return _downloadToTemporaryFile(
+        await _deleteFileIfPresent(stagingFile);
+        return _downloadToTemporaryFileAttempt(
           item,
           workId: workId,
           client: client,
@@ -1320,7 +1393,20 @@ class AsmrDownloadManager extends ChangeNotifier {
         return retryWithoutRange();
       }
       if (response.statusCode < 200 || response.statusCode >= 300) {
-        return null;
+        try {
+          await response.listen((_) {}).cancel();
+        } catch (_) {
+          // The status code is sufficient to classify this attempt.
+        }
+        final error = HttpException(
+          'Download failed with HTTP ${response.statusCode}.',
+          uri: uri,
+        );
+        return _TemporaryDownloadAttempt.failure(
+          retryable: _isRetryableDownloadStatus(response.statusCode),
+          error: error,
+          stackTrace: StackTrace.current,
+        );
       }
 
       var responseStart = 0;
@@ -1331,8 +1417,15 @@ class AsmrDownloadManager extends ChangeNotifier {
           responseLength: response.contentLength,
           expectedTotal: item.size,
         )) {
-          if (received <= 0 || !allowResume) return null;
-          return retryWithoutRange();
+          if (received > 0 && allowResume) return retryWithoutRange();
+          return _TemporaryDownloadAttempt.failure(
+            retryable: true,
+            error: HttpException(
+              'Download response contained an invalid byte range.',
+              uri: uri,
+            ),
+            stackTrace: StackTrace.current,
+          );
         }
         responseStart = received;
       }
@@ -1341,7 +1434,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         received = 0;
         _discardLivePartialProgress(workId, item.relativePath, discardedBytes);
       }
-      final sink = tempFile.openWrite(
+      final sink = stagingFile.openWrite(
         mode: responseStart > 0 ? FileMode.append : FileMode.write,
       );
       try {
@@ -1364,45 +1457,56 @@ class AsmrDownloadManager extends ChangeNotifier {
       if ((response.contentLength > 0 &&
               received - responseStart != response.contentLength) ||
           (item.size > 0 && received != item.size)) {
-        await _deleteFileIfPresent(tempFile);
-        return null;
+        return _TemporaryDownloadAttempt.failure(
+          retryable: true,
+          error: HttpException(
+            'Download response ended before the file was complete.',
+            uri: uri,
+          ),
+          stackTrace: StackTrace.current,
+        );
       }
-
-      await tempFile.setLastModified(DateTime.now());
-      leaseTransferred = true;
-      return _TemporaryDownloadResult(
-        file: tempFile,
-        bytesDownloaded: received,
-        cacheLease: cacheLease,
-      );
+      return _TemporaryDownloadAttempt.success(received);
     } on _DownloadCancelled {
       rethrow;
     } catch (error, stackTrace) {
       if (_cancelRequested[workId] == true || _pauseRequested[workId] == true) {
         throw const _DownloadCancelled();
       }
-      AppLogService.error(
-        'asmr_download_transfer_failed',
+      return _TemporaryDownloadAttempt.failure(
+        retryable: _isRetryableDownloadError(error),
         error: error,
         stackTrace: stackTrace,
       );
-      await _deleteFileIfPresent(tempFile);
-      return null;
-    } finally {
-      if (!leaseTransferred) {
-        try {
-          if (_pauseRequested[workId] != true &&
-              !_disposed &&
-              await tempFile.exists()) {
-            await tempFile.delete();
-          }
-        } catch (_) {
-          // Incomplete staging file cleanup is best effort.
-        } finally {
-          cacheLease.release();
-        }
-      }
     }
+  }
+
+  bool _isRetryableDownloadStatus(int statusCode) {
+    return statusCode == HttpStatus.requestTimeout ||
+        statusCode == HttpStatus.tooManyRequests ||
+        statusCode >= HttpStatus.internalServerError;
+  }
+
+  bool _isRetryableDownloadError(Object error) {
+    return error is TimeoutException ||
+        error is SocketException ||
+        error is HandshakeException ||
+        error is HttpException;
+  }
+
+  void _setFileRetryAttempt(int workId, String relativePath, int? attempt) {
+    if (_disposed) return;
+    final task = _tasks[workId];
+    if (task == null) return;
+    final attempts = Map<String, int>.from(task.fileRetryAttempts);
+    if (attempt == null) {
+      if (attempts.remove(relativePath) == null) return;
+    } else {
+      if (attempts[relativePath] == attempt) return;
+      attempts[relativePath] = attempt;
+    }
+    _tasks[workId] = task.copyWith(fileRetryAttempts: attempts);
+    _notifyProgressChanged();
   }
 
   Future<void> _writeWorkDetailBackup(
@@ -2037,6 +2141,34 @@ class _TemporaryDownloadResult {
   final File file;
   final int bytesDownloaded;
   final CachePathLease cacheLease;
+}
+
+class _TemporaryDownloadAttempt {
+  const _TemporaryDownloadAttempt.success(int bytesDownloaded)
+    : this._(bytesDownloaded: bytesDownloaded, retryable: false);
+
+  const _TemporaryDownloadAttempt.failure({
+    required bool retryable,
+    Object? error,
+    StackTrace? stackTrace,
+  }) : this._(
+         bytesDownloaded: null,
+         retryable: retryable,
+         error: error,
+         stackTrace: stackTrace,
+       );
+
+  const _TemporaryDownloadAttempt._({
+    required this.bytesDownloaded,
+    required this.retryable,
+    this.error,
+    this.stackTrace,
+  });
+
+  final int? bytesDownloaded;
+  final bool retryable;
+  final Object? error;
+  final StackTrace? stackTrace;
 }
 
 class _DownloadCancelled implements Exception {

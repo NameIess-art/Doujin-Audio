@@ -245,6 +245,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_empty_folder': 'Empty folder',
   'asmr_download_status_preparing': 'Preparing',
   'asmr_download_status_downloading': 'Downloading',
+  'asmr_download_status_retrying': 'Retrying ({attempt}/{max})',
   'asmr_download_status_paused': 'Paused',
   'asmr_download_status_completed': 'Completed',
   'asmr_download_status_failed': 'Failed',

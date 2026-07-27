@@ -242,48 +242,59 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets(
-    'ASMR and library switch atomically while both page states stay mounted',
-    (tester) async {
-      await _pumpAppShell(tester, includePlaybackSession: false);
+  testWidgets('ASMR and library animate while both page states stay mounted', (
+    tester,
+  ) async {
+    await _pumpAppShell(tester, includePlaybackSession: false);
 
-      final libraryFinder = find.byType(LibraryTab, skipOffstage: false);
-      final asmrFinder = find.byType(AsmrTab, skipOffstage: false);
-      final libraryState = tester.state(libraryFinder);
-      final asmrState = tester.state(asmrFinder);
-      final stackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
+    final libraryFinder = find.byType(LibraryTab, skipOffstage: false);
+    final asmrFinder = find.byType(AsmrTab, skipOffstage: false);
+    final libraryState = tester.state(libraryFinder);
+    final asmrState = tester.state(asmrFinder);
+    final stackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
+    final headerFinder = find.byType(TopPageHeader);
 
-      expect(
-        tester.widget<AppFadeThroughIndexedStack>(stackFinder).children,
-        hasLength(4),
-      );
-      expect(find.byType(TopPageHeader), findsOneWidget);
+    Future<void> finishPageTransition() async {
+      for (var frame = 0; frame < 30; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        if (headerFinder.evaluate().length == 1) return;
+      }
+      fail('Main page transition did not complete.');
+    }
 
-      final asmrDestination = find.byKey(
-        const ValueKey<String>('main_destination_ASMR.ONE'),
-      );
-      await tester.tap(asmrDestination);
-      await tester.pump();
+    expect(
+      tester.widget<AppFadeThroughIndexedStack>(stackFinder).children,
+      hasLength(4),
+    );
+    expect(headerFinder, findsOneWidget);
 
-      expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 0);
-      expect(find.byType(TopPageHeader), findsOneWidget);
-      expect(tester.state(libraryFinder), same(libraryState));
-      expect(tester.state(asmrFinder), same(asmrState));
+    final asmrDestination = find.byKey(
+      const ValueKey<String>('main_destination_ASMR.ONE'),
+    );
+    await tester.tap(asmrDestination);
+    await tester.pump();
 
-      final libraryDestination = find.byKey(
-        const ValueKey<String>('main_destination_nav_library'),
-      );
-      await tester.tap(libraryDestination);
-      await tester.pump();
+    expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 0);
+    expect(headerFinder, findsNWidgets(2));
+    expect(tester.state(libraryFinder), same(libraryState));
+    expect(tester.state(asmrFinder), same(asmrState));
+    await finishPageTransition();
+    expect(headerFinder, findsOneWidget);
 
-      expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 1);
-      expect(find.byType(TopPageHeader), findsOneWidget);
-      expect(tester.state(libraryFinder), same(libraryState));
-      expect(tester.state(asmrFinder), same(asmrState));
-      await tester.pump(const Duration(milliseconds: 180));
-      expect(tester.takeException(), isNull);
-    },
-  );
+    final libraryDestination = find.byKey(
+      const ValueKey<String>('main_destination_nav_library'),
+    );
+    await tester.tap(libraryDestination);
+    await tester.pump();
+
+    expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 1);
+    expect(headerFinder, findsNWidgets(2));
+    expect(tester.state(libraryFinder), same(libraryState));
+    expect(tester.state(asmrFinder), same(asmrState));
+    await finishPageTransition();
+    expect(headerFinder, findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'ASMR queued empty category shows skeleton until empty is confirmed',

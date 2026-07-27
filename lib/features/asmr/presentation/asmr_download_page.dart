@@ -442,6 +442,11 @@ class _TaskCard extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
+    final retryAttempt = task.fileRetryAttempts.values.fold<int?>(
+      null,
+      (highest, attempt) =>
+          highest == null || attempt > highest ? attempt : highest,
+    );
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -543,7 +548,12 @@ class _TaskCard extends ConsumerWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    _statusText(i18n, task.status),
+                    retryAttempt == null
+                        ? _statusText(i18n, task.status)
+                        : i18n.tr('asmr_download_status_retrying', {
+                            'attempt': retryAttempt,
+                            'max': AsmrDownloadManager.maxAutomaticFileRetries,
+                          }),
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: cs.onSurfaceVariant,
                       fontWeight: FontWeight.w600,

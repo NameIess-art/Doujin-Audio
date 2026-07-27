@@ -15,7 +15,7 @@ void main() {
     );
   });
 
-  test('Flutter tooling can launch the app without duplicating its icon', () {
+  test('Flutter tooling can launch alongside themed launcher activities', () {
     final manifest = File(
       'android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
@@ -27,6 +27,7 @@ void main() {
       manifest,
       contains('android:scheme="\${applicationId}.integration-test"'),
     );
-    expect(manifest, contains('<activity-alias'));
+    expect(manifest, contains('android:name=".common.MainActivityWarmSystem"'));
+    expect(manifest, isNot(contains('<activity-alias')));
   });
 }

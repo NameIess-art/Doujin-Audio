@@ -241,6 +241,8 @@ class _AsmrDownloadDetailsNodeTileState
         widget.node.size;
     final downloaded =
         widget.task.fileDownloadedBytes[widget.node.relativePath] ?? 0;
+    final retryAttempt =
+        widget.task.fileRetryAttempts[widget.node.relativePath];
     double progress = 0.0;
     if (total > 0) {
       progress = (downloaded / total).clamp(0.0, 1.0);
@@ -300,7 +302,18 @@ class _AsmrDownloadDetailsNodeTileState
                       ),
                       const SizedBox(width: 12),
                       Text(
-                        '${_formatBytes(downloaded)} / ${_formatBytes(total)}',
+                        retryAttempt == null
+                            ? '${_formatBytes(downloaded)} / ${_formatBytes(total)}'
+                            : widget.i18n.tr('asmr_download_status_retrying', {
+                                'attempt': retryAttempt,
+                                'max':
+                                    AsmrDownloadManager.maxAutomaticFileRetries,
+                              }),
+                        key: retryAttempt == null
+                            ? null
+                            : ValueKey<String>(
+                                'asmr_download_retry_${widget.node.relativePath}',
+                              ),
                         style: Theme.of(context).textTheme.labelSmall?.copyWith(
                           color: cs.onSurfaceVariant,
                           fontWeight: FontWeight.w600,

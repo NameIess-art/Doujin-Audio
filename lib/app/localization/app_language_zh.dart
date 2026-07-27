@@ -219,6 +219,7 @@ const Map<String, String> appLanguageZh = {
   'asmr_download_empty_folder': '空文件夹',
   'asmr_download_status_preparing': '准备中',
   'asmr_download_status_downloading': '下载中',
+  'asmr_download_status_retrying': '正在重试（{attempt}/{max}）',
   'asmr_download_status_paused': '已暂停',
   'asmr_download_status_completed': '已完成',
   'asmr_download_status_failed': '失败',

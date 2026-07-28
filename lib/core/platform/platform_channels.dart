@@ -70,9 +70,6 @@ abstract final class NativePlaybackMethod {
 // ---------------------------------------------------------------------------
 abstract final class PowerMethod {
   static const String syncPlaybackTimerAlarms = 'syncPlaybackTimerAlarms';
-  static const String canManageAllFilesAccess = 'canManageAllFilesAccess';
-  static const String openManageAllFilesAccessSettings =
-      'openManageAllFilesAccessSettings';
   static const String isIgnoringBatteryOptimizations =
       'isIgnoringBatteryOptimizations';
   static const String openBatteryOptimizationSettings =
@@ -109,8 +106,8 @@ abstract final class FileCacheMethod {
       'writeSingleFileDetailBackup';
   static const String writeFileBytesToFolder = 'writeFileBytesToFolder';
   static const String documentPathExists = 'documentPathExists';
-  static const String resolveDocumentFileSystemPath =
-      'resolveDocumentFileSystemPath';
+  static const String findPersistedTreeGrantForPath =
+      'findPersistedTreeGrantForPath';
   static const String ensureFolderPath = 'ensureFolderPath';
   static const String copyFileToFolder = 'copyFileToFolder';
   static const String exportFile = 'exportFile';

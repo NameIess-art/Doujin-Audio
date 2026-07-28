@@ -377,9 +377,9 @@ class FileCachePlatformGateway {
     return result.valueOrNull ?? false;
   }
 
-  Future<String?> resolveDocumentFileSystemPath(String path) async {
+  Future<String?> findPersistedTreeGrantForPath(String path) async {
     final result = await _client.invoke<String?>(
-      FileCacheMethod.resolveDocumentFileSystemPath,
+      FileCacheMethod.findPersistedTreeGrantForPath,
       arguments: <String, Object?>{'path': path},
       decode: (value) => value?.toString(),
     );

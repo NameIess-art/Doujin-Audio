@@ -57,9 +57,11 @@ final class LibraryFacade implements LibraryCatalog {
     required this.snapshotCacheService,
     LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
+    bool Function()? isAndroid,
   }) : _service = service,
        entryEditorService = entryEditorService ?? LibraryEntryEditorService(),
-       _coverArtworkCacheService = coverArtworkCacheService;
+       _coverArtworkCacheService = coverArtworkCacheService,
+       _isAndroid = isAndroid ?? (() => Platform.isAndroid);
 
   factory LibraryFacade.create({
     LibraryPersistenceRepository? databaseRepository,
@@ -71,6 +73,7 @@ final class LibraryFacade implements LibraryCatalog {
     LibrarySnapshotCacheService? snapshotCacheService,
     LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
+    bool Function()? isAndroid,
   }) {
     final resolvedDatabase =
         databaseRepository ??
@@ -97,6 +100,7 @@ final class LibraryFacade implements LibraryCatalog {
           ),
       entryEditorService: entryEditorService ?? LibraryEntryEditorService(),
       coverArtworkCacheService: coverArtworkCacheService,
+      isAndroid: isAndroid,
     );
   }
 
@@ -105,6 +109,7 @@ final class LibraryFacade implements LibraryCatalog {
   final DlsiteMetadataService metadataService;
   final AsmrMetadataService asmrMetadataService;
   final LibraryService _service;
+  final bool Function() _isAndroid;
   final LibrarySnapshotCacheService snapshotCacheService;
   final LibraryEntryEditorService entryEditorService;
   CoverArtworkCacheService? _coverArtworkCacheService;
@@ -152,6 +157,38 @@ final class LibraryFacade implements LibraryCatalog {
   @override
   List<String> get watchedLibraries =>
       UnmodifiableListView<String>(_service.watchedLibraries);
+
+  List<LibrarySourceAccessIssue> get legacyAndroidSourceIssues {
+    if (!_isAndroid()) return const <LibrarySourceAccessIssue>[];
+    bool isLegacyLocalPath(String value) =>
+        value.trim().isNotEmpty &&
+        !PathMatcher.isContentUri(value) &&
+        !PathMatcher.isRemoteUri(value);
+
+    return List<LibrarySourceAccessIssue>.unmodifiable(
+      <LibrarySourceAccessIssue>[
+        for (final source in _service.watchedLibraries)
+          if (isLegacyLocalPath(source))
+            LibrarySourceAccessIssue(
+              source: source,
+              kind: LibrarySourceKind.library,
+            ),
+        for (final source in _service.watchedFolders)
+          if (isLegacyLocalPath(source))
+            LibrarySourceAccessIssue(
+              source: source,
+              kind: LibrarySourceKind.folder,
+            ),
+        for (final track in _service.library)
+          if (track.isSingle && isLegacyLocalPath(track.path))
+            LibrarySourceAccessIssue(
+              source: track.path,
+              kind: LibrarySourceKind.singleFile,
+            ),
+      ],
+    );
+  }
+
   LocalLibraryImportSources get backupImportSources {
     final libraries = _distinctImportPaths(_service.watchedLibraries);
     final folders = _distinctImportPaths(
@@ -1747,6 +1784,56 @@ final class LibraryFacade implements LibraryCatalog {
     AudioDetail detail,
   ) async {
     return renameAudioDetailTargetToName(detail, detail.workTitle);
+  }
+
+  Future<LibrarySourceRebindResult> rebindSource({
+    required LibrarySourceAccessIssue issue,
+    required String newSource,
+  }) async {
+    final oldPath = PathMatcher.normalize(issue.source);
+    final newPath = PathMatcher.normalize(newSource);
+    if (oldPath.isEmpty || newPath.isEmpty) {
+      throw ArgumentError('Library source paths must not be empty.');
+    }
+    if (_isAndroid() && !PathMatcher.isContentUri(newPath)) {
+      throw ArgumentError('Android library sources must use a content URI.');
+    }
+
+    switch (issue.kind) {
+      case LibrarySourceKind.library:
+        if (!_service.watchedLibraries.any(
+          (source) => PathMatcher.equalsNormalized(source, oldPath),
+        )) {
+          throw StateError('The watched library source no longer exists.');
+        }
+        await _retargetLibraryFolder(
+          oldPath,
+          newPath,
+          PathDisplay.folderName(newPath),
+        );
+      case LibrarySourceKind.folder:
+        if (!_service.watchedFolders.any(
+          (source) => PathMatcher.equalsNormalized(source, oldPath),
+        )) {
+          throw StateError('The watched folder source no longer exists.');
+        }
+        await _retargetLibraryFolder(
+          oldPath,
+          newPath,
+          PathDisplay.folderName(newPath),
+        );
+      case LibrarySourceKind.singleFile:
+        final track = trackByPath(oldPath);
+        if (track == null || !track.isSingle) {
+          throw StateError('The standalone track source no longer exists.');
+        }
+        await _retargetSingleTrack(oldPath, newPath, track.displayName);
+    }
+    return LibrarySourceRebindResult(
+      oldSource: oldPath,
+      newSource: newPath,
+      kind: issue.kind,
+    );
   }
 
   Future<AudioDetailRenameResult> renameAudioDetailTargetToName(

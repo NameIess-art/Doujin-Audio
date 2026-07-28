@@ -111,15 +111,18 @@ const Map<String, String> appLanguageEn = {
   'search_match_count': '{match} / {total} tracks matched',
   'import_audio_hint':
       'Use the buttons below to add audio from a folder or individual file.',
-  'need_storage_permission_scan_folder':
-      'Storage permission is required to scan folders.',
-  'need_storage_permission_import_audio':
-      'Storage permission is required to import audio.',
+  'library_source_authorization_required':
+      'This legacy file path must be authorized again with the system picker.',
+  'library_source_authorization_section': 'Authorization required',
+  'reauthorize_library_source': 'Authorize again',
+  'library_source_reauthorized': 'The file source has been authorized again.',
+  'library_source_reauthorization_failed':
+      'Authorization failed. Select the accessible original folder or file.',
   'import_audio_failed': 'Unable to add audio. Please try again.',
   'import_failed_next_step':
       'Check that the selected file or folder is still accessible, then try again.',
   'scan_failed_next_step':
-      'Check storage permission and whether the source folder still exists, then retry.',
+      'Check that the source folder is still accessible, then retry.',
   'detail_backup_import_failed':
       '{count} detail backups could not be synchronized. Check nameless-audio.json and retry.',
   'refresh_done_added': 'Refresh complete: {count} new tracks added.',
@@ -519,8 +522,6 @@ const Map<String, String> appLanguageEn = {
       'Reduces the chance of some devices restricting playback while the screen is off.',
   'permission_exact_alarm_description':
       'Improves sleep timer auto-resume reliability.',
-  'permission_manage_files_description':
-      'Only needed for advanced direct filesystem library scans. Prefer the system folder picker.',
   'permission_overlay_description':
       'Only needed to show global subtitles over other apps.',
   'permission_update_install_description':
@@ -710,10 +711,6 @@ const Map<String, String> appLanguageEn = {
   'background_play_permission_title': 'Allow background playback',
   'background_play_permission_message':
       'To continue playing audio after the screen turns off, this app needs to be exempt from battery optimization. Open settings now?',
-  'manage_files_permission_title': 'Allow all-files access',
-  'manage_files_permission_message':
-      'This app does not have all-files access yet. Adding folders or libraries and reading local media may fail until it is enabled. Open system settings now?',
-  'manage_files_permission_enabled': 'All-files access is now enabled.',
   'go_settings': 'Open settings',
   'later': 'Later',
   'start_conversion': 'Start conversion',

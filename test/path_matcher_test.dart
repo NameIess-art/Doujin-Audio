@@ -46,6 +46,25 @@ void main() {
     );
   });
 
+  test('filesystem roots retarget to SAF tree and document URIs', () {
+    const oldRoot = '/storage/emulated/0/Music';
+    const newRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3AMusic';
+
+    expect(
+      PathMatcher.replaceWithinOrEqual(oldRoot, oldRoot, newRoot),
+      newRoot,
+    );
+    expect(
+      PathMatcher.replaceWithinOrEqual(
+        '$oldRoot/Album/01.mp3',
+        oldRoot,
+        newRoot,
+      ),
+      '$newRoot/document/primary%3AMusic%2FAlbum%2F01.mp3',
+    );
+  });
+
   test('SAF relativeWithin bridges document and synthetic paths', () {
     const root =
         'content://com.android.externalstorage.documents/tree/primary%3ALibrary';

@@ -33,8 +33,6 @@ void main() {
         isAndroidOverride: false,
       );
 
-      expect(await service.canManageAllFilesAccess(), isTrue);
-      expect(await service.openManageAllFilesAccessSettings(), isFalse);
       expect(await service.isIgnoringBatteryOptimizations(), isTrue);
       expect(await service.openBackgroundRunSettings(), isFalse);
       expect(await service.canScheduleExactAlarms(), isTrue);
@@ -87,7 +85,6 @@ void main() {
         isAndroidOverride: true,
       );
 
-      expect(await service.canManageAllFilesAccess(), isTrue);
       expect(await service.isIgnoringBatteryOptimizations(), isFalse);
       expect(
         await service.isIgnoringBatteryOptimizations(errorDefault: true),

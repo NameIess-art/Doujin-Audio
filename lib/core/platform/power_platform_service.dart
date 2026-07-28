@@ -98,24 +98,6 @@ class PowerPlatformService {
     });
   }
 
-  Future<bool> canManageAllFilesAccess() async {
-    if (!_isAndroid) return true;
-    return _invokeBool(
-      PowerMethod.canManageAllFilesAccess,
-      missingPluginDefault: true,
-      errorDefault: true,
-    );
-  }
-
-  Future<bool> openManageAllFilesAccessSettings() async {
-    if (!_isAndroid) return false;
-    return _invokeBool(
-      PowerMethod.openManageAllFilesAccessSettings,
-      missingPluginDefault: false,
-      errorDefault: false,
-    );
-  }
-
   Future<bool> isIgnoringBatteryOptimizations({
     bool errorDefault = false,
   }) async {

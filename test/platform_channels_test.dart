@@ -39,7 +39,7 @@ void main() {
       FileCacheMethod.writeSingleFileDetailBackup,
       FileCacheMethod.writeFileBytesToFolder,
       FileCacheMethod.documentPathExists,
-      FileCacheMethod.resolveDocumentFileSystemPath,
+      FileCacheMethod.findPersistedTreeGrantForPath,
       FileCacheMethod.ensureFolderPath,
       FileCacheMethod.copyFileToFolder,
       FileCacheMethod.exportFile,
@@ -71,6 +71,10 @@ void main() {
     expect(FileCacheMethod.cancelFolderScan, 'cancelFolderScan');
     expect(FileCacheMethod.exportFile, 'exportFile');
     expect(FileCacheMethod.resolveTrackSubtitle, 'resolveTrackSubtitle');
+    expect(
+      FileCacheMethod.findPersistedTreeGrantForPath,
+      'findPersistedTreeGrantForPath',
+    );
     expect(SubtitleOverlayMethod.updateSubtitle, 'updateSubtitle');
     expect(
       NotificationsMethod.syncUnifiedPlaybackNotifications,

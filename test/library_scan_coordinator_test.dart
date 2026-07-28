@@ -46,7 +46,7 @@ void main() {
       final coordinator = LibraryScanCoordinator(
         scanner: _FakeScanner(
           (_, _) async => LibraryScanOutcome(
-            code: LibraryScanOutcomeCode.permissionDenied,
+            code: LibraryScanOutcomeCode.authorizationRequired,
             source: 'refresh',
           ),
         ),
@@ -58,9 +58,9 @@ void main() {
         labels: labels,
       );
 
-      expect(outcome?.code, LibraryScanOutcomeCode.permissionDenied);
+      expect(outcome?.code, LibraryScanOutcomeCode.authorizationRequired);
       expect(coordinator.state.phase, LibraryScanPhase.failure);
-      expect(coordinator.state.failure?.code, 'permissionDenied');
+      expect(coordinator.state.failure?.code, 'authorizationRequired');
       expect(
         coordinator.state.failure?.message,
         'Library scan did not complete.',

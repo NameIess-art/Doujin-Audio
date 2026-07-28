@@ -21,7 +21,7 @@ class LibraryScanLabels {
 
 enum LibraryScanOutcomeCode {
   noSources,
-  permissionDenied,
+  authorizationRequired,
   alreadyRunning,
   folderExists,
   libraryExists,
@@ -33,6 +33,36 @@ enum LibraryScanOutcomeCode {
   refreshNoChanges,
   importAdded,
   libraryImported,
+}
+
+enum LibrarySourceKind { library, folder, singleFile }
+
+class LibrarySourceAccessIssue {
+  const LibrarySourceAccessIssue({required this.source, required this.kind});
+
+  final String source;
+  final LibrarySourceKind kind;
+
+  @override
+  bool operator ==(Object other) =>
+      other is LibrarySourceAccessIssue &&
+      other.source == source &&
+      other.kind == kind;
+
+  @override
+  int get hashCode => Object.hash(source, kind);
+}
+
+class LibrarySourceRebindResult {
+  const LibrarySourceRebindResult({
+    required this.oldSource,
+    required this.newSource,
+    required this.kind,
+  });
+
+  final String oldSource;
+  final String newSource;
+  final LibrarySourceKind kind;
 }
 
 class LibraryScanOutcome {

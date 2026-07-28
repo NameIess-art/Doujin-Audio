@@ -98,11 +98,15 @@ const Map<String, String> appLanguageJa = {
   'search_try_another_term': '別のキーワードを試すか、検索をクリアしてください。',
   'search_match_count': '{match} / {total} 曲一致',
   'import_audio_hint': '下のボタンから音声を追加できます。フォルダ/ファイル両方に対応します。',
-  'need_storage_permission_scan_folder': 'フォルダをスキャンするにはストレージ権限が必要です。',
-  'need_storage_permission_import_audio': '音声を追加するにはストレージ権限が必要です。',
+  'library_source_authorization_required': 'この旧ファイルパスはシステムピッカーで再認証する必要があります。',
+  'library_source_authorization_section': '再認証が必要です',
+  'reauthorize_library_source': '再認証',
+  'library_source_reauthorized': 'ファイルの参照元を再認証しました。',
+  'library_source_reauthorization_failed':
+      '再認証に失敗しました。アクセス可能な元のフォルダーまたはファイルを選択してください。',
   'import_audio_failed': '音声を追加できませんでした。再試行してください。',
   'import_failed_next_step': '選択したファイルまたはフォルダにまだアクセスできるか確認してから、もう一度お試しください。',
-  'scan_failed_next_step': 'ストレージ権限と元のフォルダがまだ存在するか確認してから、もう一度お試しください。',
+  'scan_failed_next_step': '元のフォルダーに引き続きアクセスできるか確認して、もう一度お試しください。',
   'detail_backup_import_failed':
       '{count} 件の詳細バックアップを同期できませんでした。nameless-audio.json を確認して再試行してください。',
   'refresh_done_added': '更新完了：{count} 曲を追加しました。',
@@ -476,8 +480,6 @@ const Map<String, String> appLanguageJa = {
   'permission_notification_description': 'バックグラウンド再生状態とメディア操作を表示します。',
   'permission_background_description': '画面オフ時に一部端末が再生を制限する可能性を減らします。',
   'permission_exact_alarm_description': 'スリープタイマーの自動再開の信頼性を高めます。',
-  'permission_manage_files_description':
-      'ファイルシステムを直接走査する高度な曲庫スキャンでのみ必要です。通常はシステムのフォルダ選択を推奨します。',
   'permission_overlay_description': '他のアプリ上にグローバル字幕を表示する場合のみ必要です。',
   'permission_update_install_description':
       'ユーザーが明示的にダウンロードした GitHub Release 更新のインストールにのみ使用します。',
@@ -647,10 +649,6 @@ const Map<String, String> appLanguageJa = {
   'background_play_permission_title': 'バックグラウンド再生を許可',
   'background_play_permission_message':
       '画面オフ後も音声を再生し続けるために、アプリを電池制限の対象外に設定してください。設定画面を開きますか？',
-  'manage_files_permission_title': 'すべてのファイルへのアクセスを許可',
-  'manage_files_permission_message':
-      'このアプリにはまだすべてのファイルへのアクセスがありません。フォルダやライブラリの追加、ローカルメディアの読み取りに失敗する可能性があります。今すぐ設定を開きますか？',
-  'manage_files_permission_enabled': 'すべてのファイルへのアクセスを許可しました。',
   'go_settings': '設定を開く',
   'later': 'あとで',
   'start_conversion': '変換開始',

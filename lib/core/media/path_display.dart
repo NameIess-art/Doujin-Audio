@@ -23,6 +23,10 @@ abstract final class PathDisplay {
     final trimmed = value.trim();
     if (trimmed.isEmpty) return trimmed;
     if (!PathMatcher.isContentUri(trimmed)) {
+      final androidSharedStoragePath = _androidSharedStoragePath(trimmed);
+      if (androidSharedStoragePath != null) {
+        return _normalizeDisplaySegment(androidSharedStoragePath);
+      }
       return _normalizeDisplaySegment(path.normalize(trimmed));
     }
 
@@ -35,6 +39,15 @@ abstract final class PathDisplay {
       PathMatcher.lastContentPathSegment(trimmed) ?? trimmed,
     );
     return _normalizeDisplaySegment(fallback);
+  }
+
+  static String? _androidSharedStoragePath(String value) {
+    const root = '/storage/emulated/0';
+    final normalized = path.posix.normalize(value.replaceAll('\\', '/'));
+    if (normalized == root) return '/';
+    const prefix = '$root/';
+    if (!normalized.startsWith(prefix)) return null;
+    return normalized.substring(prefix.length);
   }
 
   static String? _decodedContentDocumentPath(String value) {

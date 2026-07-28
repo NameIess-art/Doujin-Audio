@@ -114,7 +114,7 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final runtimeGraph = fixture.runtimeGraph;
-      final audioDatabaseRepository = fixture.audioDatabaseRepository;
+      final persistenceRepository = fixture.persistenceRepository;
       final nativePlaybackRepository = fixture.nativePlaybackRepository;
       const playbackCommandRunner =
           AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -129,7 +129,7 @@ void main() {
       await tester.pumpWidget(
         buildAppRuntimeTestApp(
           runtimeGraph: runtimeGraph,
-          audioDatabaseRepository: audioDatabaseRepository,
+          persistenceRepository: persistenceRepository,
           nativePlaybackRepository: nativePlaybackRepository,
           playbackCommandRunner: playbackCommandRunner,
           libraryService: libraryService,
@@ -224,7 +224,7 @@ void main() {
     );
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -239,7 +239,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -331,7 +331,7 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final runtimeGraph = fixture.runtimeGraph;
-      final audioDatabaseRepository = fixture.audioDatabaseRepository;
+      final persistenceRepository = fixture.persistenceRepository;
       final nativePlaybackRepository = fixture.nativePlaybackRepository;
       const playbackCommandRunner =
           AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -384,7 +384,7 @@ void main() {
       await tester.pumpWidget(
         buildAppRuntimeTestApp(
           runtimeGraph: runtimeGraph,
-          audioDatabaseRepository: audioDatabaseRepository,
+          persistenceRepository: persistenceRepository,
           nativePlaybackRepository: nativePlaybackRepository,
           playbackCommandRunner: playbackCommandRunner,
           libraryService: libraryService,
@@ -456,7 +456,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -476,7 +476,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -516,40 +516,45 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('duration calculation failure clears busy state and is retryable', (
-    WidgetTester tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final runtimeGraph = fixture.runtimeGraph;
-    final target = AudioDetailTarget.libraryRootFolder('/library/DurationError');
-    await tester.runAsync(
-      () => runtimeGraph.library.saveAudioDetail(AudioDetail.empty(target)),
-    );
+  testWidgets(
+    'duration calculation failure clears busy state and is retryable',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      final target = AudioDetailTarget.libraryRootFolder(
+        '/library/DurationError',
+      );
+      await tester.runAsync(
+        () => runtimeGraph.library.saveAudioDetail(AudioDetail.empty(target)),
+      );
 
-    await tester.pumpWidget(
-      fixture.build(
-        AudioDetailSheet(
-          target: target,
-          durationCalculator: (_, _) async {
-            throw StateError('duration probe failed');
-          },
+      await tester.pumpWidget(
+        fixture.build(
+          AudioDetailSheet(
+            target: target,
+            durationCalculator: (_, _) async {
+              throw StateError('duration probe failed');
+            },
+          ),
         ),
-      ),
-    );
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 50)),
-    );
-    await tester.pump();
+      );
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
 
-    expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(
-      find.text(
-        fixture.languageProvider.tr('audio_detail_duration_calculation_failed'),
-      ),
-      findsOneWidget,
-    );
-  });
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(
+        find.text(
+          fixture.languageProvider.tr(
+            'audio_detail_duration_calculation_failed',
+          ),
+        ),
+        findsOneWidget,
+      );
+    },
+  );
 
   testWidgets('audio detail fetch opens metadata scope page', (
     WidgetTester tester,
@@ -557,7 +562,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -580,7 +585,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,

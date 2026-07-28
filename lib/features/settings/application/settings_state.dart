@@ -3,16 +3,17 @@ import 'package:flutter/foundation.dart';
 import '../../../core/app_language.dart';
 import '../../../core/immutable_collections.dart';
 import '../../../core/media/card_info_field.dart';
+import '../../../core/media/cover_image_resolution.dart';
 import '../../asmr/domain/asmr_download.dart';
 import '../../player/domain/audio_effects.dart';
+
+export '../../../core/media/cover_image_resolution.dart';
 
 enum StartupPage { asmrOne, library, playlist }
 
 enum BottomNavigationStyle { capsule, bar }
 
 enum PlaybackDetailSubtitleStyle { compact, timeline }
-
-enum CoverImageResolution { memorySaver, balanced, high, ultraHigh, original }
 
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 

@@ -5,6 +5,7 @@ import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
+import 'package:nameless_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:nameless_audio/core/media/subtitle_parser.dart';
 
 void main() {
@@ -193,7 +194,9 @@ void main() {
     );
 
     final controller = AsmrLibraryController(
-      preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+      preferencesStore: AsmrPreferencesStore(
+        repository: SqliteAsmrRepository(database: AppDatabase.instance),
+      ),
     );
     final tracks = controller.buildPlayableTracksFromNode(work, folder);
 
@@ -280,7 +283,9 @@ void main() {
     );
 
     final controller = AsmrLibraryController(
-      preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+      preferencesStore: AsmrPreferencesStore(
+        repository: SqliteAsmrRepository(database: AppDatabase.instance),
+      ),
     );
     final tracks = controller.buildPlayableTracksFromNode(work, folder);
 

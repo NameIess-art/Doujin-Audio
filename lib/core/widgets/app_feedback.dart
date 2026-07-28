@@ -22,6 +22,7 @@ abstract final class AppInteractionFeedback {
   static set hapticFeedbackEnabled(bool value) {
     AppInteractionFeedbackSettings.hapticFeedbackEnabled = value;
   }
+
   static DateTime? _lastContinuousFeedbackAt;
   static Object? _lastContinuousValue;
 

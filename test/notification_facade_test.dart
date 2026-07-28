@@ -3,9 +3,9 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/core/errors/native_result.dart';
-import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
+import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
@@ -13,6 +13,9 @@ import 'package:nameless_audio/features/player/application/playback_facade.dart'
 import 'package:nameless_audio/features/player/application/playback_session.dart';
 import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
+import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
+
+import 'support/test_persistence_repository.dart';
 
 void main() {
   test('notification synchronization coalesces while paused', () async {
@@ -37,24 +40,18 @@ void main() {
     addTearDown(fixture.dispose);
 
     fixture.facade.syncPlaybackState();
-    expect(fixture.facade.stateService.unifiedNotificationSyncTimer, isNotNull);
+    expect(fixture.stateService.unifiedNotificationSyncTimer, isNotNull);
 
     fixture.facade.setSynchronizationPaused(true);
-    expect(fixture.facade.stateService.unifiedNotificationSyncTimer, isNull);
-    expect(
-      fixture.facade.stateService.synchronizationPendingWhilePaused,
-      isTrue,
-    );
+    expect(fixture.stateService.unifiedNotificationSyncTimer, isNull);
+    expect(fixture.stateService.synchronizationPendingWhilePaused, isTrue);
     await Future<void>.delayed(const Duration(milliseconds: 120));
     expect(service.syncCount, 0);
 
     fixture.facade.setSynchronizationPaused(false);
     await Future<void>.delayed(const Duration(milliseconds: 20));
     expect(service.syncCount, 1);
-    expect(
-      fixture.facade.stateService.synchronizationPendingWhilePaused,
-      isFalse,
-    );
+    expect(fixture.stateService.synchronizationPendingWhilePaused, isFalse);
   });
 
   test('queued in-flight synchronization waits for resume', () async {
@@ -72,10 +69,7 @@ void main() {
     await Future<void>.delayed(const Duration(milliseconds: 20));
 
     expect(service.syncCount, 1);
-    expect(
-      fixture.facade.stateService.synchronizationPendingWhilePaused,
-      isTrue,
-    );
+    expect(fixture.stateService.synchronizationPendingWhilePaused, isTrue);
 
     fixture.facade.setSynchronizationPaused(false);
     await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -99,8 +93,10 @@ void main() {
   });
 
   test('NotificationFacade owns foreground notification recovery', () async {
+    final stateService = NotificationCoordinatorService();
     final facade = NotificationFacade.create(
       service: PlaybackNotificationService(),
+      stateService: stateService,
     );
     addTearDown(facade.dispose);
     var undismissCount = 0;
@@ -109,15 +105,15 @@ void main() {
       undismissNotifications: () async => undismissCount++,
       onNotificationsRestored: () => restoredCount++,
     );
-    facade.stateService
+    stateService
       ..notificationsDismissedWhilePaused = true
       ..unifiedNotificationSyncKey = 'stale';
 
     facade.resyncAfterForegroundResume();
     await Future<void>.delayed(Duration.zero);
 
-    expect(facade.stateService.notificationsDismissedWhilePaused, isFalse);
-    expect(facade.stateService.unifiedNotificationSyncKey, isNull);
+    expect(stateService.notificationsDismissedWhilePaused, isFalse);
+    expect(stateService.unifiedNotificationSyncKey, isNull);
     expect(undismissCount, 1);
     expect(restoredCount, 1);
 
@@ -128,10 +124,11 @@ void main() {
   });
 
   test('NotificationFacade owns guarded pause action coordination', () async {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
     );
     final facade = NotificationFacade.create(
@@ -180,12 +177,15 @@ void main() {
   test(
     'NotificationFacade resets platform state after playback mode changes',
     () async {
-      final library = LibraryFacade.create();
+      final library = _createLibraryFacade();
       final playback = PlaybackFacade.create(
-        databaseRepository: library.databaseRepository,
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
       );
+      final stateService = NotificationCoordinatorService();
       final facade = NotificationFacade.create(
         service: PlaybackNotificationService(),
+        stateService: stateService,
       );
       var clearCount = 0;
       var keepAliveSyncCount = 0;
@@ -209,11 +209,11 @@ void main() {
         preferredSessionId: () => null,
         notifyNotificationChanged: () {},
       );
-      facade.stateService.unifiedNotificationSyncKey = 'stale';
+      stateService.unifiedNotificationSyncKey = 'stale';
 
       await facade.handlePlaybackModeChanged();
 
-      expect(facade.stateService.unifiedNotificationSyncKey, isNull);
+      expect(stateService.unifiedNotificationSyncKey, isNull);
       expect(focusedSessionId, isNull);
       expect(clearCount, 1);
       expect(keepAliveSyncCount, 1);
@@ -224,13 +224,19 @@ void main() {
 _NotificationFixture _createNotificationFixture(
   PlaybackNotificationService service,
 ) {
-  final library = LibraryFacade.create();
+  final library = _createLibraryFacade();
   final playback = PlaybackFacade.create(
-    databaseRepository: library.databaseRepository,
+    databaseRepository:
+        library.databaseRepository as PlaybackPersistenceRepository,
   );
-  final facade = NotificationFacade.create(service: service);
-  library.attachCoverArtworkCacheService(
-    () => CoverArtworkCacheService(libraryService: library.service),
+  final stateService = NotificationCoordinatorService();
+  final facade = NotificationFacade.create(
+    service: service,
+    stateService: stateService,
+  );
+  library.configureCoverArtworkRuntime(
+    isActiveCoverKey: (_) => false,
+    onActiveCoverChanged: () {},
   );
   final session = PlaybackSession(
     id: 'paused-notification-session',
@@ -263,7 +269,7 @@ _NotificationFixture _createNotificationFixture(
     coverArtworkCacheService: library.coverArtworkCacheService,
     notificationsEnabled: () => true,
   );
-  return _NotificationFixture(library, playback, facade, session);
+  return _NotificationFixture(library, playback, facade, stateService, session);
 }
 
 final class _NotificationFixture {
@@ -271,12 +277,14 @@ final class _NotificationFixture {
     this.library,
     this.playback,
     this.facade,
+    this.stateService,
     this.session,
   );
 
   final LibraryFacade library;
   final PlaybackFacade playback;
   final NotificationFacade facade;
+  final NotificationCoordinatorService stateService;
   final PlaybackSession session;
 
   Future<void> dispose() async {
@@ -351,4 +359,8 @@ final class _RecordingNativePlaybackRepository
 
   @override
   Future<void> dispose() async {}
+}
+
+LibraryFacade _createLibraryFacade() {
+  return LibraryFacade.create(databaseRepository: TestPersistenceRepository());
 }

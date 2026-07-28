@@ -1,11 +1,12 @@
 import 'dart:async';
 
 import '../../features/player/application/native_playback_bridge.dart';
+import 'app_runtime_lifecycle.dart';
 
 typedef AudioRuntimeAction = FutureOr<void> Function();
 
 /// Owns application-wide audio runtime startup, lifecycle, and shutdown.
-final class AudioRuntimeCoordinator {
+final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
   AudioRuntimeCoordinator({
     required Stream<NativePlaybackSnapshot> snapshots,
     required Stream<NativePlaybackProgressUpdate> progressUpdates,
@@ -45,6 +46,7 @@ final class AudioRuntimeCoordinator {
   bool _disposed = false;
   Future<void>? _disposeFuture;
 
+  @override
   Future<void> start() async {
     if (_started || _disposed) return;
     _started = true;
@@ -54,17 +56,20 @@ final class AudioRuntimeCoordinator {
     await _onStart();
   }
 
+  @override
   Future<void> enterBackground() async {
     if (!_started || _disposed) return;
     await _onEnterBackground();
   }
 
+  @override
   Future<void> resumeForeground() async {
     if (!_started || _disposed) return;
     _startListening();
     await _onResumeForeground();
   }
 
+  @override
   Future<void> dispose() {
     return _disposeFuture ??= _dispose();
   }

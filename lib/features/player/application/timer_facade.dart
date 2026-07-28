@@ -13,10 +13,11 @@ import 'timer_runtime_calculator.dart';
 /// Owns timer state and timer-related platform power coordination.
 final class TimerFacade {
   TimerFacade({
-    required this.service,
+    required TimerService service,
     required this.powerPlatformService,
     Future<SharedPreferences> Function()? preferencesLoader,
-  }) : _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
+  }) : _service = service,
+       _preferencesLoader = preferencesLoader ?? SharedPreferences.getInstance;
 
   factory TimerFacade.create({
     TimerService? service,
@@ -30,7 +31,7 @@ final class TimerFacade {
     );
   }
 
-  final TimerService service;
+  final TimerService _service;
   final PowerPlatformService powerPlatformService;
   final Future<SharedPreferences> Function() _preferencesLoader;
   SharedPreferences? _cachedPreferences;
@@ -48,17 +49,23 @@ final class TimerFacade {
   void Function() _onRuntimeRestored = _noop;
   void Function(double multiplier) _applyFadeMultiplier = _noopFade;
 
-  TimerStateSliceData get state => service.slice.state;
-  Stream<TimerStateSliceData> get states => service.slice.stream;
+  TimerStateSliceData get state => _service.slice.state;
+  Stream<TimerStateSliceData> get states => _service.slice.stream;
+
+  void syncPresentationState({bool? isInitialized}) {
+    _service.syncSlice(
+      isInitialized: isInitialized ?? _service.slice.state.isInitialized,
+    );
+  }
 
   bool get hasArmedRuntime => _runtimeCalculator.hasArmedRuntime(
-    mode: service.timerMode,
-    duration: service.timerDuration,
-    waitingForPlayback: service.timerWaitingForPlayback,
-    active: service.timerActive,
-    endsAt: service.timerEndsAt,
-    autoResumeAt: service.autoResumeAt,
-    hasPausedByTimerSessionIds: service.pausedByTimerSessionIds.isNotEmpty,
+    mode: _service.timerMode,
+    duration: _service.timerDuration,
+    waitingForPlayback: _service.timerWaitingForPlayback,
+    active: _service.timerActive,
+    endsAt: _service.timerEndsAt,
+    autoResumeAt: _service.autoResumeAt,
+    hasPausedByTimerSessionIds: _service.pausedByTimerSessionIds.isNotEmpty,
   );
 
   void attachRuntime({
@@ -81,18 +88,29 @@ final class TimerFacade {
     _applyFadeMultiplier = applyFadeMultiplier;
   }
 
+  void detachRuntime() {
+    _hasPlayingSession = () => false;
+    _sessions = _emptySessions;
+    _pauseSession = _falseSession;
+    _activateAudioSession = _falseAsync;
+    _resumeSession = _falseSession;
+    _onStateChanged = _noop;
+    _onRuntimeRestored = _noop;
+    _applyFadeMultiplier = _noopFade;
+  }
+
   void configureTimer(TimerMode mode, Duration duration) {
-    service.timerDraftMode = mode;
-    service.timerDraftDuration = duration > Duration.zero
+    _service.timerDraftMode = mode;
+    _service.timerDraftDuration = duration > Duration.zero
         ? duration
         : const Duration(minutes: 30);
     _cancelTimerInternal();
-    service.timerMode = mode;
-    service.timerDuration = duration;
-    service.timerRemaining = duration;
-    service.timerEndsAt = null;
-    service.timerActive = false;
-    service.timerWaitingForPlayback = mode == TimerMode.trigger;
+    _service.timerMode = mode;
+    _service.timerDuration = duration;
+    _service.timerRemaining = duration;
+    _service.timerEndsAt = null;
+    _service.timerActive = false;
+    _service.timerWaitingForPlayback = mode == TimerMode.trigger;
     if (mode == TimerMode.trigger && _hasPlayingSession()) {
       startCountdown();
       return;
@@ -104,15 +122,15 @@ final class TimerFacade {
   }
 
   void startCountdown() {
-    if (service.timerDuration == null || service.timerActive) return;
-    service.countdownTimer?.cancel();
-    final generation = ++service.timerGeneration;
-    service.timerActive = true;
-    service.timerWaitingForPlayback = false;
-    service.timerRemaining = service.timerDuration;
-    service.timerEndsAt = DateTime.now().add(service.timerDuration!);
-    service.countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (generation != service.timerGeneration) return;
+    if (_service.timerDuration == null || _service.timerActive) return;
+    _service.countdownTimer?.cancel();
+    final generation = ++_service.timerGeneration;
+    _service.timerActive = true;
+    _service.timerWaitingForPlayback = false;
+    _service.timerRemaining = _service.timerDuration;
+    _service.timerEndsAt = DateTime.now().add(_service.timerDuration!);
+    _service.countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (generation != _service.timerGeneration) return;
       _tickCountdown();
     });
     _changed();
@@ -131,25 +149,25 @@ final class TimerFacade {
     final normalizedDuration = duration > Duration.zero
         ? duration
         : const Duration(minutes: 30);
-    if (service.timerDraftMode == mode &&
-        service.timerDraftDuration == normalizedDuration) {
+    if (_service.timerDraftMode == mode &&
+        _service.timerDraftDuration == normalizedDuration) {
       return;
     }
-    service.timerDraftMode = mode;
-    service.timerDraftDuration = normalizedDuration;
+    _service.timerDraftMode = mode;
+    _service.timerDraftDuration = normalizedDuration;
     _changed();
     unawaited(saveSettings());
   }
 
   void setAutoResume(bool enabled, int hour, int minute) {
-    service.autoResumeEnabled = enabled;
-    service.autoResumeHour = hour;
-    service.autoResumeMinute = minute;
+    _service.autoResumeEnabled = enabled;
+    _service.autoResumeHour = hour;
+    _service.autoResumeMinute = minute;
     if (!enabled) {
-      service.autoResumeTimer?.cancel();
-      service.autoResumeTimer = null;
-      service.autoResumeAt = null;
-    } else if (service.pausedByTimerSessionIds.isNotEmpty) {
+      _service.autoResumeTimer?.cancel();
+      _service.autoResumeTimer = null;
+      _service.autoResumeAt = null;
+    } else if (_service.pausedByTimerSessionIds.isNotEmpty) {
       scheduleAutoResumeTimer(
         _runtimeCalculator.nextClockTime(
           now: DateTime.now(),
@@ -165,8 +183,8 @@ final class TimerFacade {
   }
 
   void retryOverdueAutoResume() {
-    final autoResumeAt = service.autoResumeAt;
-    if (autoResumeAt == null || service.pausedByTimerSessionIds.isEmpty) {
+    final autoResumeAt = _service.autoResumeAt;
+    if (autoResumeAt == null || _service.pausedByTimerSessionIds.isEmpty) {
       return;
     }
     if (autoResumeAt.isAfter(DateTime.now())) {
@@ -176,36 +194,36 @@ final class TimerFacade {
       unawaited(syncNativeAlarms());
       return;
     }
-    service.autoResumeTimer?.cancel();
-    service.autoResumeTimer = null;
-    unawaited(_handleAutoResumeOnPlatform(service.timerGeneration));
+    _service.autoResumeTimer?.cancel();
+    _service.autoResumeTimer = null;
+    unawaited(_handleAutoResumeOnPlatform(_service.timerGeneration));
   }
 
   void maybeStartTriggerCountdown() {
-    if (service.timerMode != TimerMode.trigger ||
-        service.timerDuration == null ||
-        service.timerActive ||
-        !service.timerWaitingForPlayback) {
+    if (_service.timerMode != TimerMode.trigger ||
+        _service.timerDuration == null ||
+        _service.timerActive ||
+        !_service.timerWaitingForPlayback) {
       return;
     }
     startCountdown();
   }
 
   void resetRuntimeState({bool clearPausedSessions = true}) {
-    service.timerGeneration++;
-    service.countdownTimer?.cancel();
-    service.countdownTimer = null;
-    service.timerMode = null;
-    service.timerDuration = null;
-    service.timerActive = false;
-    service.timerRemaining = null;
-    service.timerEndsAt = null;
-    service.timerWaitingForPlayback = false;
-    service.autoResumeTimer?.cancel();
-    service.autoResumeTimer = null;
-    service.autoResumeAt = null;
+    _service.timerGeneration++;
+    _service.countdownTimer?.cancel();
+    _service.countdownTimer = null;
+    _service.timerMode = null;
+    _service.timerDuration = null;
+    _service.timerActive = false;
+    _service.timerRemaining = null;
+    _service.timerEndsAt = null;
+    _service.timerWaitingForPlayback = false;
+    _service.autoResumeTimer?.cancel();
+    _service.autoResumeTimer = null;
+    _service.autoResumeAt = null;
     if (clearPausedSessions) {
-      service.pausedByTimerSessionIds.clear();
+      _service.pausedByTimerSessionIds.clear();
     }
     _applyFadeMultiplier(1.0);
   }
@@ -213,7 +231,7 @@ final class TimerFacade {
   Future<void> resetForBackupRestore() async {
     _cachedPreferences = null;
     resetRuntimeState();
-    service
+    _service
       ..timerDraftMode = TimerMode.manual
       ..timerDraftDuration = const Duration(minutes: 30)
       ..autoResumeEnabled = false
@@ -222,27 +240,27 @@ final class TimerFacade {
   }
 
   void scheduleAutoResumeTimer(DateTime target) {
-    service.autoResumeTimer?.cancel();
-    service.autoResumeAt = target;
+    _service.autoResumeTimer?.cancel();
+    _service.autoResumeAt = target;
     final delay = target.difference(DateTime.now());
     if (delay <= Duration.zero) {
-      service.autoResumeTimer = null;
-      unawaited(_handleAutoResumeOnPlatform(service.timerGeneration));
+      _service.autoResumeTimer = null;
+      unawaited(_handleAutoResumeOnPlatform(_service.timerGeneration));
       return;
     }
-    service.autoResumeTimer = Timer(delay, () {
-      service.autoResumeTimer = null;
-      unawaited(_handleAutoResumeOnPlatform(service.timerGeneration));
+    _service.autoResumeTimer = Timer(delay, () {
+      _service.autoResumeTimer = null;
+      unawaited(_handleAutoResumeOnPlatform(_service.timerGeneration));
     });
   }
 
   void restoreCountdownTimer() {
-    final endsAt = service.timerEndsAt;
+    final endsAt = _service.timerEndsAt;
     if (endsAt == null) return;
-    final generation = service.timerGeneration;
-    service.countdownTimer?.cancel();
-    service.countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (generation != service.timerGeneration) return;
+    final generation = _service.timerGeneration;
+    _service.countdownTimer?.cancel();
+    _service.countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (generation != _service.timerGeneration) return;
       _tickCountdown();
     });
   }
@@ -266,19 +284,19 @@ final class TimerFacade {
     final playingSessions = _sessions()
         .where((session) => session.effectivePlaying)
         .toList(growable: false);
-    service.pausedByTimerSessionIds.clear();
+    _service.pausedByTimerSessionIds.clear();
     for (final session in playingSessions) {
       if (await _pauseSession(session)) {
-        service.pausedByTimerSessionIds.add(session.id);
+        _service.pausedByTimerSessionIds.add(session.id);
       }
     }
-    if (service.autoResumeEnabled &&
-        service.pausedByTimerSessionIds.isNotEmpty) {
+    if (_service.autoResumeEnabled &&
+        _service.pausedByTimerSessionIds.isNotEmpty) {
       scheduleAutoResumeTimer(
         _runtimeCalculator.nextClockTime(
           now: DateTime.now(),
-          hour: service.autoResumeHour,
-          minute: service.autoResumeMinute,
+          hour: _service.autoResumeHour,
+          minute: _service.autoResumeMinute,
         ),
       );
     }
@@ -289,9 +307,9 @@ final class TimerFacade {
   }
 
   void _maybeResetTimerAfterExpiry() {
-    if (service.autoResumeAt != null ||
-        service.pausedByTimerSessionIds.isNotEmpty &&
-            service.autoResumeEnabled) {
+    if (_service.autoResumeAt != null ||
+        _service.pausedByTimerSessionIds.isNotEmpty &&
+            _service.autoResumeEnabled) {
       return;
     }
     resetRuntimeState();
@@ -338,11 +356,11 @@ final class TimerFacade {
     final sessions = _sessions().toList(growable: false);
     final resumableSessions = sessions
         .where(
-          (session) => service.pausedByTimerSessionIds.contains(session.id),
+          (session) => _service.pausedByTimerSessionIds.contains(session.id),
         )
         .toList(growable: false);
     if (resumableSessions.isEmpty) {
-      service.pausedByTimerSessionIds.clear();
+      _service.pausedByTimerSessionIds.clear();
       _changed();
       await saveRuntime();
       await syncNativeAlarms();
@@ -350,19 +368,19 @@ final class TimerFacade {
     }
     for (final session in resumableSessions) {
       if (await _resumeSession(session)) {
-        service.pausedByTimerSessionIds.remove(session.id);
+        _service.pausedByTimerSessionIds.remove(session.id);
       }
     }
     final sessionIds = sessions.map((session) => session.id).toSet();
-    service.pausedByTimerSessionIds.removeWhere(
+    _service.pausedByTimerSessionIds.removeWhere(
       (sessionId) => !sessionIds.contains(sessionId),
     );
-    if (service.pausedByTimerSessionIds.isEmpty) {
-      service.autoResumeAt = null;
+    if (_service.pausedByTimerSessionIds.isEmpty) {
+      _service.autoResumeAt = null;
       resetRuntimeState(clearPausedSessions: false);
     } else {
-      service.autoResumeTimer?.cancel();
-      service.autoResumeTimer = null;
+      _service.autoResumeTimer?.cancel();
+      _service.autoResumeTimer = null;
     }
     _changed();
     await saveRuntime();
@@ -374,18 +392,18 @@ final class TimerFacade {
       final raw = (await _preferences).getString(_settingsKey);
       if (raw == null || raw.isEmpty) return;
       final map = json.decode(raw) as Map<String, dynamic>;
-      service.autoResumeEnabled = map['autoResumeEnabled'] as bool? ?? false;
-      service.autoResumeHour = map['autoResumeHour'] as int? ?? 7;
-      service.autoResumeMinute = map['autoResumeMinute'] as int? ?? 0;
+      _service.autoResumeEnabled = map['autoResumeEnabled'] as bool? ?? false;
+      _service.autoResumeHour = map['autoResumeHour'] as int? ?? 7;
+      _service.autoResumeMinute = map['autoResumeMinute'] as int? ?? 0;
       final draftModeIndex = map['timerDraftMode'] as int?;
       final draftDurationMs = map['timerDraftDurationMs'] as int?;
       if (draftModeIndex != null &&
           draftModeIndex >= 0 &&
           draftModeIndex < TimerMode.values.length) {
-        service.timerDraftMode = TimerMode.values[draftModeIndex];
+        _service.timerDraftMode = TimerMode.values[draftModeIndex];
       }
       if (draftDurationMs != null && draftDurationMs > 0) {
-        service.timerDraftDuration = Duration(milliseconds: draftDurationMs);
+        _service.timerDraftDuration = Duration(milliseconds: draftDurationMs);
       }
     } catch (error, stackTrace) {
       AppLogService.error(
@@ -399,11 +417,11 @@ final class TimerFacade {
   Future<void> saveSettings() async {
     try {
       final encoded = json.encode({
-        'autoResumeEnabled': service.autoResumeEnabled,
-        'autoResumeHour': service.autoResumeHour,
-        'autoResumeMinute': service.autoResumeMinute,
-        'timerDraftMode': service.timerDraftMode.index,
-        'timerDraftDurationMs': service.timerDraftDuration.inMilliseconds,
+        'autoResumeEnabled': _service.autoResumeEnabled,
+        'autoResumeHour': _service.autoResumeHour,
+        'autoResumeMinute': _service.autoResumeMinute,
+        'timerDraftMode': _service.timerDraftMode.index,
+        'timerDraftDurationMs': _service.timerDraftDuration.inMilliseconds,
       });
       await (await _preferences).setString(_settingsKey, encoded);
     } catch (error, stackTrace) {
@@ -446,16 +464,16 @@ final class TimerFacade {
         return;
       }
       final encoded = json.encode({
-        'timerMode': service.timerMode?.index,
-        'timerDurationMs': service.timerDuration?.inMilliseconds,
-        'timerWaitingForPlayback': service.timerWaitingForPlayback,
-        'timerEndsAtWallClockMs': service.timerEndsAt?.millisecondsSinceEpoch,
-        'autoResumeEnabled': service.autoResumeEnabled,
-        'autoResumeHour': service.autoResumeHour,
-        'autoResumeMinute': service.autoResumeMinute,
-        'autoResumeAtMs': service.autoResumeAt?.millisecondsSinceEpoch,
-        'pausedSessionIds': service.pausedByTimerSessionIds,
-        'generation': service.timerGeneration,
+        'timerMode': _service.timerMode?.index,
+        'timerDurationMs': _service.timerDuration?.inMilliseconds,
+        'timerWaitingForPlayback': _service.timerWaitingForPlayback,
+        'timerEndsAtWallClockMs': _service.timerEndsAt?.millisecondsSinceEpoch,
+        'autoResumeEnabled': _service.autoResumeEnabled,
+        'autoResumeHour': _service.autoResumeHour,
+        'autoResumeMinute': _service.autoResumeMinute,
+        'autoResumeAtMs': _service.autoResumeAt?.millisecondsSinceEpoch,
+        'pausedSessionIds': _service.pausedByTimerSessionIds,
+        'generation': _service.timerGeneration,
       });
       await preferences.setString(_runtimeKey, encoded);
     } catch (error, stackTrace) {
@@ -469,25 +487,25 @@ final class TimerFacade {
 
   Future<void> syncNativeAlarms() async {
     try {
-      final autoResumeAt = service.autoResumeAt;
+      final autoResumeAt = _service.autoResumeAt;
       await powerPlatformService.syncPlaybackTimerAlarms(
-        timerMode: service.timerMode?.index,
-        timerDurationMs: service.timerDuration?.inMilliseconds,
-        timerWaitingForPlayback: service.timerWaitingForPlayback,
-        timerEndsAtWallClockMs: service.timerActive
-            ? service.timerEndsAt?.millisecondsSinceEpoch
+        timerMode: _service.timerMode?.index,
+        timerDurationMs: _service.timerDuration?.inMilliseconds,
+        timerWaitingForPlayback: _service.timerWaitingForPlayback,
+        timerEndsAtWallClockMs: _service.timerActive
+            ? _service.timerEndsAt?.millisecondsSinceEpoch
             : null,
-        autoResumeEnabled: service.autoResumeEnabled,
-        autoResumeHour: service.autoResumeHour,
-        autoResumeMinute: service.autoResumeMinute,
+        autoResumeEnabled: _service.autoResumeEnabled,
+        autoResumeHour: _service.autoResumeHour,
+        autoResumeMinute: _service.autoResumeMinute,
         autoResumeAtMs:
             autoResumeAt != null &&
-                service.pausedByTimerSessionIds.isNotEmpty &&
+                _service.pausedByTimerSessionIds.isNotEmpty &&
                 autoResumeAt.isAfter(DateTime.now())
             ? autoResumeAt.millisecondsSinceEpoch
             : null,
-        pausedSessionIds: service.pausedByTimerSessionIds,
-        generation: service.timerGeneration,
+        pausedSessionIds: _service.pausedByTimerSessionIds,
+        generation: _service.timerGeneration,
       );
     } catch (error, stackTrace) {
       AppLogService.error(
@@ -531,14 +549,14 @@ final class TimerFacade {
         _readMillisValue(map['timerEndsAtWallClockMs']) ??
         _readMillisValue(map['timerEndsAtMs']);
     final autoResumeEnabled =
-        map['autoResumeEnabled'] as bool? ?? service.autoResumeEnabled;
+        map['autoResumeEnabled'] as bool? ?? _service.autoResumeEnabled;
     final autoResumeHour =
-        _readMillisValue(map['autoResumeHour']) ?? service.autoResumeHour;
+        _readMillisValue(map['autoResumeHour']) ?? _service.autoResumeHour;
     final autoResumeMinute =
-        _readMillisValue(map['autoResumeMinute']) ?? service.autoResumeMinute;
+        _readMillisValue(map['autoResumeMinute']) ?? _service.autoResumeMinute;
     final autoResumeAtMs = _readMillisValue(map['autoResumeAtMs']);
     final generation =
-        _readMillisValue(map['generation']) ?? service.timerGeneration;
+        _readMillisValue(map['generation']) ?? _service.timerGeneration;
     final pausedSessionIds =
         (map['pausedSessionIds'] as List<dynamic>? ??
                 map['pausedByTimerPaths'] as List<dynamic>? ??
@@ -564,9 +582,9 @@ final class TimerFacade {
       return;
     }
 
-    service.countdownTimer?.cancel();
-    service.autoResumeTimer?.cancel();
-    service
+    _service.countdownTimer?.cancel();
+    _service.autoResumeTimer?.cancel();
+    _service
       ..countdownTimer = null
       ..autoResumeTimer = null
       ..timerMode = null
@@ -580,31 +598,31 @@ final class TimerFacade {
       ..autoResumeEnabled = autoResumeEnabled
       ..autoResumeHour = autoResumeHour
       ..autoResumeMinute = autoResumeMinute;
-    service.pausedByTimerSessionIds
+    _service.pausedByTimerSessionIds
       ..clear()
       ..addAll(pausedSessionIds);
 
     if (timerModeIndex != null &&
         timerModeIndex >= 0 &&
         timerModeIndex < TimerMode.values.length) {
-      service.timerMode = TimerMode.values[timerModeIndex];
+      _service.timerMode = TimerMode.values[timerModeIndex];
     }
     if (durationMs != null && durationMs > 0) {
-      service.timerDuration = Duration(milliseconds: durationMs);
+      _service.timerDuration = Duration(milliseconds: durationMs);
     }
-    if (service.timerDuration != null && waitingForPlayback) {
-      service
-        ..timerRemaining = service.timerDuration
+    if (_service.timerDuration != null && waitingForPlayback) {
+      _service
+        ..timerRemaining = _service.timerDuration
         ..timerWaitingForPlayback = true;
-    } else if (service.timerDuration != null && timerEndsAtMs == null) {
-      service.timerRemaining = Duration.zero;
+    } else if (_service.timerDuration != null && timerEndsAtMs == null) {
+      _service.timerRemaining = Duration.zero;
     }
 
-    if (timerEndsAtMs != null && service.timerDuration != null) {
+    if (timerEndsAtMs != null && _service.timerDuration != null) {
       final restoredEndsAt = DateTime.fromMillisecondsSinceEpoch(timerEndsAtMs);
       if (restoredEndsAt.isAfter(now)) {
         final remaining = restoredEndsAt.difference(now);
-        service
+        _service
           ..timerEndsAt = restoredEndsAt
           ..timerActive = true
           ..timerWaitingForPlayback = false
@@ -613,23 +631,23 @@ final class TimerFacade {
           );
         restoreCountdownTimer();
       } else {
-        service.timerRemaining = Duration.zero;
+        _service.timerRemaining = Duration.zero;
       }
     }
 
-    service.autoResumeAt = autoResumeAtMs == null
+    _service.autoResumeAt = autoResumeAtMs == null
         ? null
         : DateTime.fromMillisecondsSinceEpoch(autoResumeAtMs);
-    final autoResumeAt = service.autoResumeAt;
+    final autoResumeAt = _service.autoResumeAt;
     if (autoResumeAt != null) {
       if (autoResumeAt.isAfter(now) &&
-          service.pausedByTimerSessionIds.isNotEmpty) {
+          _service.pausedByTimerSessionIds.isNotEmpty) {
         scheduleAutoResumeTimer(autoResumeAt);
-      } else if (service.pausedByTimerSessionIds.isNotEmpty) {
-        await _handleAutoResumeOnPlatform(service.timerGeneration);
+      } else if (_service.pausedByTimerSessionIds.isNotEmpty) {
+        await _handleAutoResumeOnPlatform(_service.timerGeneration);
         return;
       } else {
-        service.autoResumeAt = null;
+        _service.autoResumeAt = null;
       }
     }
 
@@ -651,38 +669,38 @@ final class TimerFacade {
   }
 
   void _cancelTimerInternal() {
-    service.timerGeneration++;
-    service.countdownTimer?.cancel();
-    service.countdownTimer = null;
-    service.timerEndsAt = null;
-    service.autoResumeTimer?.cancel();
-    service.autoResumeTimer = null;
-    service.autoResumeAt = null;
-    service.timerActive = false;
-    service.timerWaitingForPlayback = false;
+    _service.timerGeneration++;
+    _service.countdownTimer?.cancel();
+    _service.countdownTimer = null;
+    _service.timerEndsAt = null;
+    _service.autoResumeTimer?.cancel();
+    _service.autoResumeTimer = null;
+    _service.autoResumeAt = null;
+    _service.timerActive = false;
+    _service.timerWaitingForPlayback = false;
     unawaited(saveRuntime());
     unawaited(syncNativeAlarms());
   }
 
   void _tickCountdown() {
     final tick = _runtimeCalculator.countdownTick(
-      active: service.timerActive,
-      endsAt: service.timerEndsAt,
+      active: _service.timerActive,
+      endsAt: _service.timerEndsAt,
       now: DateTime.now(),
-      currentRemaining: service.timerRemaining,
+      currentRemaining: _service.timerRemaining,
     );
     if (tick.expired) {
-      service.timerRemaining = tick.remaining;
+      _service.timerRemaining = tick.remaining;
       _applyFadeMultiplier(1.0);
       _changed();
       _expireTimer();
       return;
     }
     if (!tick.changed) return;
-    service.timerRemaining = tick.remaining;
-    final duration = service.timerDuration;
+    _service.timerRemaining = tick.remaining;
+    final duration = _service.timerDuration;
     if (duration != null && duration.inMinutes >= 2) {
-      final remainingMs = service.timerRemaining!.inMilliseconds;
+      final remainingMs = _service.timerRemaining!.inMilliseconds;
       if (remainingMs <= 120000) {
         _applyFadeMultiplier((remainingMs / 120000.0).clamp(0.0, 1.0));
       }
@@ -691,15 +709,15 @@ final class TimerFacade {
   }
 
   void _expireTimer() {
-    final generation = service.timerGeneration;
-    service.timerActive = false;
-    service.countdownTimer?.cancel();
-    service.countdownTimer = null;
-    service.timerEndsAt = null;
-    service.timerWaitingForPlayback = false;
-    service.timerRemaining = Duration.zero;
-    service.autoResumeTimer?.cancel();
-    service.autoResumeTimer = null;
+    final generation = _service.timerGeneration;
+    _service.timerActive = false;
+    _service.countdownTimer?.cancel();
+    _service.countdownTimer = null;
+    _service.timerEndsAt = null;
+    _service.timerWaitingForPlayback = false;
+    _service.timerRemaining = Duration.zero;
+    _service.autoResumeTimer?.cancel();
+    _service.autoResumeTimer = null;
     _changed();
     unawaited(_handleTimerExpiredOnPlatform(generation));
   }
@@ -707,9 +725,9 @@ final class TimerFacade {
   void _changed() => _onStateChanged();
 
   Future<void> dispose() async {
-    service.countdownTimer?.cancel();
-    service.autoResumeTimer?.cancel();
-    await service.dispose();
+    _service.countdownTimer?.cancel();
+    _service.autoResumeTimer?.cancel();
+    await _service.dispose();
   }
 }
 

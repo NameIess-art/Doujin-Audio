@@ -25,18 +25,11 @@ final class PlaybackKeepAliveCoordinator {
   final void Function() _enterBackgroundWarmup;
   final void Function() _resumeForegroundWarmup;
 
-  bool get hasPlayingSession =>
-      _playback.service.sessions.values.any((session) => session.state.playing);
+  bool get hasPlayingSession => _playback.hasPlayingSession;
 
-  bool get hasPlaybackToKeepAlive => _playback.service.sessions.values.any(
-    (session) =>
-        session.state.playing ||
-        session.isLoading ||
-        session.isPlaybackStarting ||
-        session.loadedPath != null,
-  );
+  bool get hasPlaybackToKeepAlive => _playback.hasPlaybackToKeepAlive;
 
-  bool get hasRetainedPlaybackSession => _playback.service.sessions.isNotEmpty;
+  bool get hasRetainedPlaybackSession => _playback.hasRetainedPlaybackSession;
 
   void sync() {
     if (!hasPlaybackToKeepAlive && !hasRetainedPlaybackSession) {

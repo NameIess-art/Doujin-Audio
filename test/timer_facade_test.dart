@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/player/application/timer_facade.dart';
+import 'package:nameless_audio/features/player/application/audio_state_services.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/core/platform/power_platform_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,7 +14,8 @@ void main() {
 
   group('TimerFacade', () {
     test('owns timer configuration, countdown, and cancellation', () async {
-      final timer = TimerFacade.create();
+      final timerService = TimerService();
+      final timer = TimerFacade.create(service: timerService);
       addTearDown(timer.dispose);
       var stateChanges = 0;
       final fadeMultipliers = <double>[];
@@ -25,7 +27,7 @@ void main() {
         resumeSession: (_) async => false,
         onStateChanged: () {
           stateChanges++;
-          timer.service.syncSlice(isInitialized: true);
+          timerService.syncSlice(isInitialized: true);
         },
         onRuntimeRestored: () {},
         applyFadeMultiplier: fadeMultipliers.add,
@@ -34,13 +36,13 @@ void main() {
       timer.configureTimer(TimerMode.trigger, const Duration(minutes: 10));
       await Future<void>.delayed(Duration.zero);
 
-      expect(timer.service.timerWaitingForPlayback, isTrue);
+      expect(timerService.timerWaitingForPlayback, isTrue);
       expect(timer.state.duration, const Duration(minutes: 10));
       expect(timer.hasArmedRuntime, isTrue);
 
       timer.startCountdown();
       expect(timer.state.active, isTrue);
-      expect(timer.service.timerWaitingForPlayback, isFalse);
+      expect(timerService.timerWaitingForPlayback, isFalse);
 
       timer.cancelTimer();
       await Future<void>.delayed(Duration.zero);
@@ -56,7 +58,8 @@ void main() {
     });
 
     test('starts trigger countdown when playback is already active', () {
-      final timer = TimerFacade.create();
+      final timerService = TimerService();
+      final timer = TimerFacade.create(service: timerService);
       addTearDown(timer.dispose);
       timer.attachRuntime(
         hasPlayingSession: () => true,
@@ -65,7 +68,7 @@ void main() {
         activateAudioSession: () async => false,
         resumeSession: (_) async => false,
         onStateChanged: () {
-          timer.service.syncSlice(isInitialized: true);
+          timerService.syncSlice(isInitialized: true);
         },
         onRuntimeRestored: () {},
         applyFadeMultiplier: (_) {},
@@ -74,12 +77,14 @@ void main() {
       timer.configureTimer(TimerMode.trigger, const Duration(minutes: 5));
 
       expect(timer.state.active, isTrue);
-      expect(timer.service.timerWaitingForPlayback, isFalse);
-      expect(timer.service.timerEndsAt, isNotNull);
+      expect(timerService.timerWaitingForPlayback, isFalse);
+      expect(timerService.timerEndsAt, isNotNull);
     });
 
     test('retains overdue sessions when playback activation fails', () async {
+      final timerService = TimerService();
       final timer = TimerFacade.create(
+        service: timerService,
         powerPlatformService: PowerPlatformService(isAndroidOverride: false),
       );
       addTearDown(timer.dispose);
@@ -97,7 +102,7 @@ void main() {
         onRuntimeRestored: () {},
         applyFadeMultiplier: (_) {},
       );
-      timer.service
+      timerService
         ..timerGeneration = 7
         ..autoResumeAt = DateTime.now().subtract(const Duration(seconds: 1))
         ..pausedByTimerSessionIds.add('session-a');
@@ -106,8 +111,8 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(activationCount, 1);
-      expect(timer.service.pausedByTimerSessionIds, <String>['session-a']);
-      expect(timer.service.autoResumeAt, isNotNull);
+      expect(timerService.pausedByTimerSessionIds, <String>['session-a']);
+      expect(timerService.autoResumeAt, isNotNull);
     });
 
     test('loads persisted settings and a pending trigger runtime', () async {
@@ -130,7 +135,8 @@ void main() {
           'generation': 4,
         }),
       });
-      final timer = TimerFacade.create();
+      final timerService = TimerService();
+      final timer = TimerFacade.create(service: timerService);
       addTearDown(timer.dispose);
       var restoreCount = 0;
       timer.attachRuntime(
@@ -147,15 +153,15 @@ void main() {
       await timer.loadPersistedState();
       await timer.loadRuntimeFromSystem();
 
-      expect(timer.service.autoResumeEnabled, isTrue);
-      expect(timer.service.autoResumeHour, 8);
-      expect(timer.service.autoResumeMinute, 15);
-      expect(timer.service.timerDraftMode, TimerMode.trigger);
-      expect(timer.service.timerDraftDuration, const Duration(minutes: 45));
-      expect(timer.service.timerMode, TimerMode.trigger);
-      expect(timer.service.timerDuration, const Duration(minutes: 10));
-      expect(timer.service.timerWaitingForPlayback, isTrue);
-      expect(timer.service.timerGeneration, 4);
+      expect(timerService.autoResumeEnabled, isTrue);
+      expect(timerService.autoResumeHour, 8);
+      expect(timerService.autoResumeMinute, 15);
+      expect(timerService.timerDraftMode, TimerMode.trigger);
+      expect(timerService.timerDraftDuration, const Duration(minutes: 45));
+      expect(timerService.timerMode, TimerMode.trigger);
+      expect(timerService.timerDuration, const Duration(minutes: 10));
+      expect(timerService.timerWaitingForPlayback, isTrue);
+      expect(timerService.timerGeneration, 4);
       expect(restoreCount, 1);
     });
   });

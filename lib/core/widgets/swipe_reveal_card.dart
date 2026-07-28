@@ -226,9 +226,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
         widget.color ??
         (widget.destructive
             ? Theme.of(context).brightness == Brightness.dark
-                  ? ColorScheme.fromSeed(
-                      seedColor: cs.primary,
-                    ).error
+                  ? ColorScheme.fromSeed(seedColor: cs.primary).error
                   : cs.error
             : cs.primary);
     final isBgDark =

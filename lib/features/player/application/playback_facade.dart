@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:math';
 
 import 'package:just_audio/just_audio.dart';
@@ -7,13 +8,12 @@ import '../../../core/errors/native_result.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/logging/app_log_service.dart';
-import '../../../core/persistence/app_database.dart' show PersistedSession;
-import '../../../core/persistence/audio_database_repository.dart';
 import '../../asmr/application/asmr_playback_cache_service.dart';
 import '../../settings/application/app_preferences.dart';
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
+import '../domain/playback_persistence_repository.dart';
 import 'playback_session.dart';
 import 'audio_state_services.dart';
 import 'native_playback_repository.dart';
@@ -70,11 +70,11 @@ final class PlaybackFacade {
     required this.nativeRepository,
     required this.commandRunner,
     required this.playbackCacheService,
-    required this.service,
-  });
+    required PlaybackSessionService service,
+  }) : _service = service;
 
   factory PlaybackFacade.create({
-    required AudioDatabaseRepository databaseRepository,
+    required PlaybackPersistenceRepository databaseRepository,
     NativePlaybackRepository? nativeRepository,
     PlaybackCommandRunner commandRunner = const PlaybackCommandRunner(),
     AsmrPlaybackCacheService? playbackCacheService,
@@ -89,11 +89,11 @@ final class PlaybackFacade {
     );
   }
 
-  final AudioDatabaseRepository databaseRepository;
+  final PlaybackPersistenceRepository databaseRepository;
   final NativePlaybackRepository nativeRepository;
   final PlaybackCommandRunner commandRunner;
   final AsmrPlaybackCacheService playbackCacheService;
-  final PlaybackSessionService service;
+  final PlaybackSessionService _service;
   final StreamController<String> _sessionActivations =
       StreamController<String>.broadcast(sync: true);
   MusicTrack? Function(String trackPath)? _persistedTrackResolver;
@@ -155,15 +155,75 @@ final class PlaybackFacade {
   ];
 
   Stream<String> get sessionActivations => _sessionActivations.stream;
-  PlaybackStateSliceData get state => service.slice.state;
-  Stream<PlaybackStateSliceData> get states => service.slice.stream;
+  PlaybackStateSliceData get state => _service.slice.state;
+  Stream<PlaybackStateSliceData> get states => _service.slice.stream;
+  Map<String, PlaybackSession> get sessions =>
+      UnmodifiableMapView<String, PlaybackSession>(_service.sessions);
+  List<PlaybackSession> get activeSessions =>
+      List<PlaybackSession>.unmodifiable(_service.activeSessions);
+  bool get hasPlayingSession =>
+      _service.sessions.values.any((session) => session.state.playing);
+  bool get hasPlaybackToKeepAlive => _service.sessions.values.any(
+    (session) =>
+        session.state.playing ||
+        session.isLoading ||
+        session.isPlaybackStarting ||
+        session.loadedPath != null,
+  );
+  bool get hasRetainedPlaybackSession => _service.sessions.isNotEmpty;
+  Future<void> get pendingSessionPreparation =>
+      _service.sessionPreparationQueue;
+  bool get hasScheduledSessionStatePersistence =>
+      _service.saveSessionStateTimer != null;
+  bool get hasScheduledSessionOrderPersistence =>
+      _service.saveSessionOrderTimer != null;
   PlaybackSession? sessionById(String sessionId) =>
-      service.sessionById(sessionId);
-  List<PlaybackSession> get ordinarySessions => service.activeSessions
+      _service.sessionById(sessionId);
+  List<PlaybackSession> get ordinarySessions => _service.activeSessions
       .where((session) => !session.isPlaybackQueue)
       .toList(growable: false);
 
   int nextTransportCommandId() => ++_transportCommandSequence;
+
+  bool isRegisteredSession(PlaybackSession session) =>
+      !session.isDisposed && identical(_service.sessions[session.id], session);
+
+  void markSessionStateDirty() => _service.markActiveSessionsDirty();
+
+  void syncPresentationState({
+    required String? focusedSessionId,
+    required bool multiThreadPlaybackEnabled,
+    required int coverGeneration,
+    bool? isInitialized,
+  }) {
+    _service.markSessionStateDirty();
+    final current = _service.slice.state;
+    _service.syncSlice(
+      activeSessions: _service.activeSessions,
+      playingSessionCount: _service.playingSessionCount,
+      focusedSessionId: focusedSessionId,
+      multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
+      coverGeneration: coverGeneration,
+      isInitialized: isInitialized ?? current.isInitialized,
+    );
+  }
+
+  Future<void> removeSessionsForTrackPaths(Iterable<String> trackPaths) {
+    final removedPaths = trackPaths.toSet();
+    final sessionIds = _service.sessions.values
+        .where((session) => removedPaths.contains(session.currentTrackPath))
+        .map((session) => session.id)
+        .toList(growable: false);
+    if (sessionIds.isEmpty) return Future<void>.value();
+    return removeSessions(sessionIds, persist: false, notify: false);
+  }
+
+  void applyFadeMultiplierToPlayingSessions(double multiplier) {
+    for (final session in _service.sessions.values) {
+      if (!session.state.playing) continue;
+      unawaited(nativeRepository.setFadeMultiplier(session.id, multiplier));
+    }
+  }
 
   void observeTransportCommandId(int? commandId) {
     if (commandId != null && commandId > _transportCommandSequence) {
@@ -172,10 +232,10 @@ final class PlaybackFacade {
   }
 
   void applyNativeProgress(NativePlaybackProgressUpdate progress) {
-    if (service.sessions[progress.sessionId]?.pendingNativeTrackPath != null) {
+    if (_service.sessions[progress.sessionId]?.pendingNativeTrackPath != null) {
       return;
     }
-    service.applyNativeProgress(progress);
+    _service.applyNativeProgress(progress);
   }
 
   PlaybackNativeSnapshotApplication applyNativeSnapshot(
@@ -187,7 +247,7 @@ final class PlaybackFacade {
       snapshot,
       hasLibraryTrack: hasLibraryTrack,
     );
-    final session = service.sessions[normalized.sessionId];
+    final session = _service.sessions[normalized.sessionId];
     if (session == null || session.pendingNativeTrackPath != null) {
       return PlaybackNativeSnapshotApplication.notApplied(normalized);
     }
@@ -195,7 +255,7 @@ final class PlaybackFacade {
     final previousState = session.state;
     final previousIsPlaybackStarting = session.isPlaybackStarting;
     final previousPendingPlayingIntent = session.pendingPlayingIntent;
-    if (!service.applyNativeSnapshot(normalized)) {
+    if (!_service.applyNativeSnapshot(normalized)) {
       return PlaybackNativeSnapshotApplication.notApplied(normalized);
     }
     return PlaybackNativeSnapshotApplication(
@@ -217,7 +277,7 @@ final class PlaybackFacade {
     final rawPath = snapshot.path ?? _pathFromSnapshotUri(snapshot.uri);
     if (rawPath == null || rawPath.isEmpty) return snapshot;
     final resolvedPath = resolveRetargetedPath(rawPath);
-    final currentSession = service.sessions[snapshot.sessionId];
+    final currentSession = _service.sessions[snapshot.sessionId];
     final currentSessionPath = currentSession?.currentTrackPath;
     if (currentSession != null &&
         currentSessionPath != null &&
@@ -385,7 +445,7 @@ final class PlaybackFacade {
         ..channelSwapEnabled = item.channelSwapEnabled
         ..speed = nearestPlaybackSpeed(item.speed)
         ..audioEffects = item.audioEffects;
-      service.sessions[session.id] = session;
+      _service.sessions[session.id] = session;
       observeSession(session);
       restoredSessions.add(session);
     }
@@ -397,10 +457,10 @@ final class PlaybackFacade {
     for (final session in restoredSessions) {
       if (!orderedIds.contains(session.id)) orderedIds.add(session.id);
     }
-    service.sessionOrder
+    _service.sessionOrder
       ..clear()
       ..addAll(orderedIds);
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     final focusedSessionId = orderedIds.firstOrNull;
     _onPersistenceFocusChanged?.call(focusedSessionId);
     await _restoreRuntime?.call(
@@ -411,10 +471,10 @@ final class PlaybackFacade {
 
   Future<void> resetForBackupRestore() async {
     cancelScheduledPersistence();
-    final removedSessions = service.sessions.values.toList(growable: false);
-    service.sessions.clear();
-    service.sessionOrder.clear();
-    service.markActiveSessionsDirty();
+    final removedSessions = _service.sessions.values.toList(growable: false);
+    _service.sessions.clear();
+    _service.sessionOrder.clear();
+    _service.markActiveSessionsDirty();
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
       session.dispose();
@@ -433,7 +493,7 @@ final class PlaybackFacade {
     _onPersistenceFocusChanged?.call(null);
   }
 
-  PersistedSession _persistedSessionSnapshot(
+  PersistedPlaybackSession _persistedSessionSnapshot(
     PlaybackSession session, {
     required int sortOrder,
     required DateTime now,
@@ -461,7 +521,7 @@ final class PlaybackFacade {
       );
       if (updated != null) tracksToUpdate.add(updated);
     }
-    return PersistedSession(
+    return PersistedPlaybackSession(
       id: session.id,
       trackPath: session.currentTrackPath,
       loopModeIndex: session.loopMode.index,
@@ -509,8 +569,8 @@ final class PlaybackFacade {
 
   Future<void> _savePersistedStateNow() async {
     if (!_persistenceEnabled) return;
-    final ordered = service.sessionOrder
-        .map((id) => service.sessions[id])
+    final ordered = _service.sessionOrder
+        .map((id) => _service.sessions[id])
         .whereType<PlaybackSession>()
         .toList(growable: false);
     final tracksToUpdate = <MusicTrack>[];
@@ -541,9 +601,9 @@ final class PlaybackFacade {
     _pendingPlaybackStateSessionIds.removeAll(sessionIds);
     final now = DateTime.now();
     final tracksToUpdate = <MusicTrack>[];
-    final orderedIds = service.sessionOrder;
+    final orderedIds = _service.sessionOrder;
     for (final sessionId in sessionIds) {
-      final session = service.sessions[sessionId];
+      final session = _service.sessions[sessionId];
       if (session == null) continue;
       final sortOrder = orderedIds.indexOf(sessionId);
       await databaseRepository.upsertSessionPlaybackState(
@@ -563,7 +623,7 @@ final class PlaybackFacade {
   Future<void> saveSessionOrder() async {
     if (!_persistenceEnabled) return;
     await databaseRepository.updateSessionOrder(
-      service.sessionOrder.toList(growable: false),
+      _service.sessionOrder.toList(growable: false),
     );
     await AppPreferences.remove('session_order_v1');
   }
@@ -575,9 +635,9 @@ final class PlaybackFacade {
     _savePlaybackStateTimer?.cancel();
     _savePlaybackStateTimer = null;
     _pendingPlaybackStateSessionIds.clear();
-    service.saveSessionStateTimer?.cancel();
-    service.saveSessionStateTimer = Timer(delay, () {
-      service.saveSessionStateTimer = null;
+    _service.saveSessionStateTimer?.cancel();
+    _service.saveSessionStateTimer = Timer(delay, () {
+      _service.saveSessionStateTimer = null;
       unawaited(savePersistedState());
     });
   }
@@ -586,7 +646,7 @@ final class PlaybackFacade {
     String sessionId, {
     Duration delay = const Duration(milliseconds: 800),
   }) {
-    if (!_persistenceEnabled || service.saveSessionStateTimer != null) return;
+    if (!_persistenceEnabled || _service.saveSessionStateTimer != null) return;
     _pendingPlaybackStateSessionIds.add(sessionId);
     _savePlaybackStateTimer?.cancel();
     _savePlaybackStateTimer = Timer(delay, () {
@@ -599,16 +659,16 @@ final class PlaybackFacade {
     Duration delay = const Duration(milliseconds: 180),
   }) {
     if (!_persistenceEnabled) return;
-    service.saveSessionOrderTimer?.cancel();
-    service.saveSessionOrderTimer = Timer(delay, () {
-      service.saveSessionOrderTimer = null;
+    _service.saveSessionOrderTimer?.cancel();
+    _service.saveSessionOrderTimer = Timer(delay, () {
+      _service.saveSessionOrderTimer = null;
       unawaited(saveSessionOrder());
     });
   }
 
   Future<void> flushSessionStatePersistence() async {
-    service.saveSessionStateTimer?.cancel();
-    service.saveSessionStateTimer = null;
+    _service.saveSessionStateTimer?.cancel();
+    _service.saveSessionStateTimer = null;
     await savePersistedState();
   }
 
@@ -616,10 +676,10 @@ final class PlaybackFacade {
     _savePlaybackStateTimer?.cancel();
     _savePlaybackStateTimer = null;
     _pendingPlaybackStateSessionIds.clear();
-    service.saveSessionStateTimer?.cancel();
-    service.saveSessionStateTimer = null;
-    service.saveSessionOrderTimer?.cancel();
-    service.saveSessionOrderTimer = null;
+    _service.saveSessionStateTimer?.cancel();
+    _service.saveSessionStateTimer = null;
+    _service.saveSessionOrderTimer?.cancel();
+    _service.saveSessionOrderTimer = null;
   }
 
   void attachSessionRuntime({
@@ -673,8 +733,34 @@ final class PlaybackFacade {
     _synchronizeLoopMode ??= synchronize;
   }
 
+  void detachRuntime() {
+    _persistedTrackResolver = null;
+    _recordPlaybackProgress = null;
+    _restoreRuntime = null;
+    _updatePlaybackHistory = null;
+    _onPersistenceFocusChanged = null;
+    _onSessionRegistered = null;
+    _onSessionsRemoved = null;
+    _onSessionsReordered = null;
+    _onSessionStateChanged = null;
+    _onRuntimeStateChanged = null;
+    _onSessionPositionChanged = null;
+    _onSessionCompleted = null;
+    _onSessionDurationChanged = null;
+    _onSessionSettingsChanged = null;
+    _synchronizePlaybackQueueSession = null;
+    _prepareSession = null;
+    _pauseSession = null;
+    _startSession = null;
+    _resolveAdvance = null;
+    _hasAdjacent = null;
+    _synchronizeLoopMode = null;
+    _autoPlayAddedSessions = _defaultAutoPlayAddedSessions;
+    _allowDuplicateWorks = _defaultAllowDuplicateWorks;
+  }
+
   void registerSession(PlaybackSession session) {
-    service.registerSession(session);
+    _service.registerSession(session);
     if (_sessionObserversAttached) {
       _bindSessionListeners(session);
     }
@@ -687,7 +773,7 @@ final class PlaybackFacade {
 
   void _bindSessionListeners(PlaybackSession session) {
     final stateSub = session.stateStream.listen((state) {
-      if (!service.sessions.containsKey(session.id)) return;
+      if (!_service.sessions.containsKey(session.id)) return;
 
       final previousState =
           session.previousStateBeforeLastStateEvent ?? session.state;
@@ -735,7 +821,7 @@ final class PlaybackFacade {
     session.subscriptions.add(stateSub);
 
     final positionSub = session.positionStream.listen((position) {
-      if (!service.sessions.containsKey(session.id)) return;
+      if (!_service.sessions.containsKey(session.id)) return;
       session.lastKnownPosition = position;
       final bucket = position.inSeconds ~/ positionBucketSeconds;
       if (bucket != session.lastPersistedPositionBucket) {
@@ -747,7 +833,7 @@ final class PlaybackFacade {
     session.subscriptions.add(positionSub);
 
     final durationSub = session.durationStream.listen((_) {
-      if (!service.sessions.containsKey(session.id)) return;
+      if (!_service.sessions.containsKey(session.id)) return;
       _scheduleSessionPlaybackStatePersistence(
         session.id,
         delay: const Duration(milliseconds: 1500),
@@ -813,14 +899,14 @@ final class PlaybackFacade {
   }
 
   void reorderSessions(int oldIndex, int newIndex) {
-    final version = service.sessionStateVersion;
-    service.reorderSessions(oldIndex, newIndex);
-    if (service.sessionStateVersion == version) return;
+    final version = _service.sessionStateVersion;
+    _service.reorderSessions(oldIndex, newIndex);
+    if (_service.sessionStateVersion == version) return;
     _onSessionsReordered?.call();
   }
 
   Future<void> pauseAllSessions() async {
-    for (final session in service.sessions.values) {
+    for (final session in _service.sessions.values) {
       session.setOptimisticState(playing: false);
       session.isLoading = false;
       session.isPlaybackStarting = false;
@@ -840,7 +926,7 @@ final class PlaybackFacade {
     bool persist = true,
     bool notify = true,
   }) async {
-    final removedSessions = service.removeSessions(sessionIds);
+    final removedSessions = _service.removeSessions(sessionIds);
     if (removedSessions.isEmpty) return;
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
@@ -861,8 +947,8 @@ final class PlaybackFacade {
   }
 
   Future<void> clearAllSessions() async {
-    final removedSessions = service.removeSessions(
-      service.sessions.keys.toList(growable: false),
+    final removedSessions = _service.removeSessions(
+      _service.sessions.keys.toList(growable: false),
     );
     if (removedSessions.isEmpty) return;
     for (final session in removedSessions) {
@@ -880,10 +966,10 @@ final class PlaybackFacade {
   }
 
   Future<void> seekSession(String sessionId, Duration position) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null ||
         session.isDisposed ||
-        !identical(service.sessions[session.id], session)) {
+        !identical(_service.sessions[session.id], session)) {
       return;
     }
     session.beginLoadingIndicatorThreshold();
@@ -895,7 +981,7 @@ final class PlaybackFacade {
   }
 
   Future<void> toggleSessionPlayPause(String sessionId) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null || session.currentTrackPath.isEmpty) return;
     if (session.playbackError != null) {
       await _prepareSession?.call(session, nextPath: session.currentTrackPath);
@@ -923,7 +1009,7 @@ final class PlaybackFacade {
   }
 
   Future<void> switchSessionTrack(String sessionId, String newPath) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null) return;
     await _prepareSession?.call(
       session,
@@ -935,7 +1021,7 @@ final class PlaybackFacade {
   }
 
   Future<void> switchSessionQueueTrack(String sessionId, int queueIndex) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null) return;
     final tracks = session.isPlaybackQueue
         ? session.playbackQueue!.expandedTracks
@@ -953,7 +1039,7 @@ final class PlaybackFacade {
   }
 
   Future<void> seekSessionToNext(String sessionId) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     final target = session == null
         ? null
         : _resolveAdvance?.call(session, forward: true);
@@ -969,7 +1055,7 @@ final class PlaybackFacade {
   }
 
   Future<void> seekSessionToPrev(String sessionId) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null) return;
     if (!session.isPlaybackQueue && session.position.inSeconds > 3) {
       await seekSession(sessionId, Duration.zero);
@@ -1007,14 +1093,14 @@ final class PlaybackFacade {
     }
     _backgroundMode = value;
     // Buckets from the previous width are not comparable to the new one.
-    for (final session in service.sessions.values) {
+    for (final session in _service.sessions.values) {
       session.lastPersistedPositionBucket =
           session.lastKnownPosition.inSeconds ~/ positionBucketSeconds;
     }
   }
 
   bool hasSessionAdjacentTrack(String sessionId, {required bool forward}) {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     return session != null &&
         !session.isLoading &&
         (_hasAdjacent?.call(session, forward: forward) ?? false);
@@ -1024,13 +1110,13 @@ final class PlaybackFacade {
     String sessionId,
     SessionLoopMode mode,
   ) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null) return;
     session.loopMode = mode;
     if (mode != SessionLoopMode.single) {
       session.nonSingleLoopMode = mode;
     }
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     _onSessionSettingsChanged?.call();
     final synchronize = _synchronizeLoopMode;
     if (synchronize != null) {
@@ -1040,7 +1126,7 @@ final class PlaybackFacade {
   }
 
   Future<void> toggleSessionSingleLoop(String sessionId) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null) return;
     if (session.loopMode == SessionLoopMode.single) {
       await setSessionLoopMode(sessionId, session.nonSingleLoopMode);
@@ -1051,19 +1137,19 @@ final class PlaybackFacade {
   }
 
   Future<void> toggleSessionShuffle(String sessionId) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null || session.loopMode == SessionLoopMode.single) return;
     await setSessionLoopMode(sessionId, session.loopMode.nextOrderMode);
   }
 
   Future<void> toggleSessionCrossFolder(String sessionId) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null || session.loopMode == SessionLoopMode.single) return;
     await setSessionLoopMode(sessionId, session.loopMode.toggledScopeMode);
   }
 
   Future<void> setSessionChannelSwap(String sessionId, bool enabled) {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null) return Future<void>.value();
     if (session.channelSwapEnabled == enabled) {
       return session.audioEffectsSyncFuture ?? flushSessionStatePersistence();
@@ -1162,7 +1248,7 @@ final class PlaybackFacade {
         nextPath: session.currentTrackPath,
         autoPlay: shouldKeepPlaying,
       );
-      if (!service.sessions.containsKey(session.id)) {
+      if (!_service.sessions.containsKey(session.id)) {
         return const NativeFailure(
           'Session removed before audio effects sync.',
         );
@@ -1179,7 +1265,7 @@ final class PlaybackFacade {
     );
     if (response.isOk ||
         needsPrepare ||
-        !service.sessions.containsKey(session.id)) {
+        !_service.sessions.containsKey(session.id)) {
       return response;
     }
 
@@ -1193,7 +1279,7 @@ final class PlaybackFacade {
       showLoading: false,
     );
     if (session.loadedPath == null ||
-        !service.sessions.containsKey(session.id)) {
+        !_service.sessions.containsKey(session.id)) {
       return response;
     }
     response = await nativeRepository.setAudioEffects(session.id, audioEffects);
@@ -1205,7 +1291,7 @@ final class PlaybackFacade {
     AudioEffectsState Function(AudioEffectsState state) update, {
     required String errorLabel,
   }) {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null) return Future<void>.value();
     return _queueSessionAudioEffectsSync(
       session,
@@ -1236,7 +1322,7 @@ final class PlaybackFacade {
       ..channelSwapEnabled = channelSwapEnabled
       ..audioEffectsSyncRevision += 1
       ..audioEffectsSyncErrorLabel = errorLabel;
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     _onSessionStateChanged?.call();
 
     final activeDrain = session.audioEffectsSyncFuture;
@@ -1260,7 +1346,7 @@ final class PlaybackFacade {
   }
 
   Future<void> _drainSessionAudioEffectsSync(PlaybackSession session) async {
-    while (identical(service.sessions[session.id], session)) {
+    while (identical(_service.sessions[session.id], session)) {
       final revision = session.audioEffectsSyncRevision;
       final desiredAudioEffects = session.pendingNativeAudioEffects;
       if (desiredAudioEffects == null) return;
@@ -1270,7 +1356,7 @@ final class PlaybackFacade {
         session,
         desiredAudioEffects,
       );
-      if (!identical(service.sessions[session.id], session)) return;
+      if (!identical(_service.sessions[session.id], session)) return;
 
       if (response.isOk) {
         final snapshot = response.valueOrNull;
@@ -1296,11 +1382,11 @@ final class PlaybackFacade {
       session
         ..audioEffects = confirmed.state
         ..channelSwapEnabled = confirmed.channelSwapEnabled;
-      service.markActiveSessionsDirty();
+      _service.markActiveSessionsDirty();
       _onSessionStateChanged?.call();
 
       await flushSessionStatePersistence();
-      if (!identical(service.sessions[session.id], session)) return;
+      if (!identical(_service.sessions[session.id], session)) return;
       if (revision != session.audioEffectsSyncRevision) continue;
       session.pendingNativeAudioEffects = null;
       return;
@@ -1321,7 +1407,7 @@ final class PlaybackFacade {
   }
 
   Map<int, double> _mapPresetToSessionBands(String sessionId, EqPreset preset) {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     final bands = session?.eqCapabilities.bands ?? const <EqBandInfo>[];
     if (bands.isEmpty) {
       return Map<int, double>.unmodifiable(preset.bandLevels);
@@ -1343,7 +1429,7 @@ final class PlaybackFacade {
   }
 
   double _clampEqGainForSession(String sessionId, double gainDb) {
-    final capabilities = service.sessions[sessionId]?.eqCapabilities;
+    final capabilities = _service.sessions[sessionId]?.eqCapabilities;
     if (capabilities == null || !capabilities.supported) {
       return gainDb.clamp(-12.0, 12.0);
     }
@@ -1356,10 +1442,10 @@ final class PlaybackFacade {
     bool persist = true,
     bool notify = true,
   }) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null ||
         session.isDisposed ||
-        !identical(service.sessions[session.id], session)) {
+        !identical(_service.sessions[session.id], session)) {
       return;
     }
     final nextVolume = volume.clamp(0.0, maxSessionVolume);
@@ -1382,7 +1468,7 @@ final class PlaybackFacade {
       _deferredVolumeReloadSessionIds.add(session.id);
     }
     if (notify) {
-      service.markActiveSessionsDirty();
+      _service.markActiveSessionsDirty();
       _onSessionStateChanged?.call();
     }
     await nativeRepository.setVolume(
@@ -1400,10 +1486,10 @@ final class PlaybackFacade {
     bool persist = true,
     bool notify = true,
   }) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     if (session == null ||
         session.isDisposed ||
-        !identical(service.sessions[session.id], session)) {
+        !identical(_service.sessions[session.id], session)) {
       return;
     }
     final nextSpeed = nearestPlaybackSpeed(speed);
@@ -1413,13 +1499,13 @@ final class PlaybackFacade {
     }
     final previous = session.speed;
     session.speed = nextSpeed;
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     if (notify) _onSessionSettingsChanged?.call();
     final response = await nativeRepository.setSpeed(session.id, nextSpeed);
     if (!_isCurrentSession(session)) return;
     if (response.isFailure) {
       session.speed = previous;
-      service.markActiveSessionsDirty();
+      _service.markActiveSessionsDirty();
       AppLogService.warning(
         'PlaybackFacade.setSessionSpeed error: ${response.errorOrNull}',
       );
@@ -1432,7 +1518,7 @@ final class PlaybackFacade {
   bool _isCurrentSession(PlaybackSession? session) {
     return session != null &&
         !session.isDisposed &&
-        identical(service.sessions[session.id], session);
+        identical(_service.sessions[session.id], session);
   }
 
   double nearestPlaybackSpeed(double speed) {
@@ -1482,7 +1568,7 @@ final class PlaybackFacade {
     String sessionId,
     PlaybackQueueEntry entry,
   ) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     final queue = session?.playbackQueue;
     if (session == null || queue == null) return;
     final wasEmpty = queue.expandedTracks.isEmpty;
@@ -1492,14 +1578,14 @@ final class PlaybackFacade {
         entry,
       ]),
     );
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     _onSessionStateChanged?.call();
     _scheduleNewSessionPersistence();
     await _synchronizePlaybackQueueSession?.call(
       session,
       selectFirst: wasEmpty,
     );
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     _onSessionStateChanged?.call();
     publishSessionActivated(session.id);
   }
@@ -1508,7 +1594,7 @@ final class PlaybackFacade {
     String sessionId,
     String entryId,
   ) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     final queue = session?.playbackQueue;
     if (session == null || queue == null) return;
     final entries = queue.entries
@@ -1517,7 +1603,7 @@ final class PlaybackFacade {
     if (entries.length == queue.entries.length) return;
     session.playbackQueue = queue.copyWith(entries: entries);
     await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     _onSessionStateChanged?.call();
     _scheduleNewSessionPersistence();
   }
@@ -1527,7 +1613,7 @@ final class PlaybackFacade {
     int oldIndex,
     int newIndex,
   ) async {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     final queue = session?.playbackQueue;
     if (session == null || queue == null) return;
     if (oldIndex < newIndex) newIndex -= 1;
@@ -1542,7 +1628,7 @@ final class PlaybackFacade {
     entries.insert(newIndex, item);
     session.playbackQueue = queue.copyWith(entries: entries);
     await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     _onSessionStateChanged?.call();
     await databaseRepository.updatePlaybackQueueEntryOrder(
       session.id,
@@ -1554,26 +1640,26 @@ final class PlaybackFacade {
       'queue_entry_${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 20)}';
 
   bool renamePlaybackQueue(String sessionId, String name) {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     final queue = session?.playbackQueue;
     final trimmed = name.trim();
     if (session == null || queue == null || trimmed.isEmpty) return false;
     session.playbackQueue = queue.copyWith(name: trimmed);
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     scheduleSessionStatePersistence();
     _onSessionStateChanged?.call();
     return true;
   }
 
   bool setPlaybackQueueColorValue(String sessionId, int? colorValue) {
-    final session = service.sessions[sessionId];
+    final session = _service.sessions[sessionId];
     final queue = session?.playbackQueue;
     if (session == null || queue == null) return false;
     session.playbackQueue = queue.copyWith(
       colorValue: colorValue,
       clearColor: colorValue == null,
     );
-    service.markActiveSessionsDirty();
+    _service.markActiveSessionsDirty();
     scheduleSessionStatePersistence();
     _onSessionStateChanged?.call();
     return true;
@@ -1581,7 +1667,7 @@ final class PlaybackFacade {
 
   bool replaceSessionTrackSnapshots(MusicTrack updatedTrack) {
     var changed = false;
-    for (final session in service.sessions.values) {
+    for (final session in _service.sessions.values) {
       final customQueueTracks = session.customQueueTracks;
       if (customQueueTracks != null) {
         var customQueueChanged = false;
@@ -1682,7 +1768,7 @@ final class PlaybackFacade {
   Future<void> retargetPath(String oldPath, String newPath) async {
     rememberRetargetedPath(oldPath, newPath);
     var changed = false;
-    for (final session in service.sessions.values) {
+    for (final session in _service.sessions.values) {
       if (PathMatcher.isWithinOrEqual(session.currentTrackPath, oldPath)) {
         session.currentTrackPath = PathMatcher.replaceWithinOrEqual(
           session.currentTrackPath,
@@ -1703,11 +1789,11 @@ final class PlaybackFacade {
       }
     }
     if (!changed) return;
-    service.markActiveSessionsDirty();
-    final current = service.slice.state;
-    service.syncSlice(
-      activeSessions: service.activeSessions,
-      playingSessionCount: service.playingSessionCount,
+    _service.markActiveSessionsDirty();
+    final current = _service.slice.state;
+    _service.syncSlice(
+      activeSessions: _service.activeSessions,
+      playingSessionCount: _service.playingSessionCount,
       focusedSessionId: current.focusedSessionId,
       multiThreadPlaybackEnabled: current.multiThreadPlaybackEnabled,
       coverGeneration: current.coverGeneration,
@@ -1775,7 +1861,7 @@ final class PlaybackFacade {
   List<String> _matchingWorkSessionIds(MusicTrack incomingTrack) {
     if (_allowDuplicateWorks()) return const <String>[];
     final incomingKey = _workKey(incomingTrack);
-    return service.sessions.values
+    return _service.sessions.values
         .where((session) {
           final representative = _representativeTrack(session);
           return representative != null &&
@@ -1808,15 +1894,15 @@ final class PlaybackFacade {
     required String nextPath,
     required bool autoPlay,
   }) {
-    service.enqueueSessionPreparation(() async {
-      if (!service.sessions.containsKey(session.id)) return;
+    _service.enqueueSessionPreparation(() async {
+      if (!_service.sessions.containsKey(session.id)) return;
       await _prepareSession?.call(
         session,
         nextPath: nextPath,
         autoPlay: autoPlay,
       );
     });
-    return service.sessionPreparationQueue;
+    return _service.sessionPreparationQueue;
   }
 
   Future<void> dispose() async {
@@ -1824,9 +1910,14 @@ final class PlaybackFacade {
     final persistenceTail = _sessionPersistenceTail;
     if (persistenceTail != null) await persistenceTail;
     await _sessionActivations.close();
+    final sessionsToDispose = _service.sessions.values.toList(growable: false);
+    _service.sessions.clear();
+    for (final session in sessionsToDispose) {
+      session.dispose();
+    }
     await playbackCacheService.dispose();
     await nativeRepository.dispose();
-    await service.dispose();
+    await _service.dispose();
   }
 
   void _dispatchSessionCompleted(String sessionId) {
@@ -1836,7 +1927,7 @@ final class PlaybackFacade {
       try {
         await callback(sessionId);
       } catch (error, stackTrace) {
-        final session = service.sessions[sessionId];
+        final session = _service.sessions[sessionId];
         if (session != null) {
           session.isLoading = false;
           session.isAdvancingAfterCompletion = false;

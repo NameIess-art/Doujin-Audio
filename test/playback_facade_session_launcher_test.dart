@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_session_launcher.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
@@ -10,7 +10,7 @@ void main() {
 
   test('facade launcher forwards queues through the playback owner', () async {
     final facade = PlaybackFacade.create(
-      databaseRepository: AudioDatabaseRepository(),
+      databaseRepository: TestPersistenceRepository(),
     );
     addTearDown(facade.dispose);
     final launcher = PlaybackFacadeSessionLauncher(facade);
@@ -49,7 +49,7 @@ void main() {
       autoPlay: true,
       loopMode: SessionLoopMode.crossSequential,
     );
-    await facade.service.sessionPreparationQueue;
+    await facade.pendingSessionPreparation;
     expect(prepared, isTrue);
     expect(
       facade.ordinarySessions.single.loopMode,

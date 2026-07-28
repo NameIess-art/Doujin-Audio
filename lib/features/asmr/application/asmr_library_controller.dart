@@ -7,7 +7,9 @@ import '../../../app/application/persisted_state_reloader.dart';
 import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
-import '../../../core/persistence/audio_database_repository.dart';
+import '../../../core/persistence/app_database.dart';
+import '../../../infrastructure/sqlite/sqlite_asmr_repository.dart';
+import '../domain/asmr_persistence_repository.dart';
 import 'asmr_api_service.dart';
 import 'asmr_account_sync_service.dart';
 import 'asmr_auth_service.dart';
@@ -249,7 +251,7 @@ final class _AsmrControllerDependencies {
     required AsmrAuthService? authService,
     required AsmrRemoteCatalogService? remoteCatalogService,
     required AsmrAccountSyncService? accountSyncService,
-    required AudioDatabaseRepository? audioDatabaseRepository,
+    required AsmrPersistenceRepository? persistenceRepository,
     required AsmrPreferencesStore preferencesStore,
   }) {
     final needsApi = remoteCatalogService == null || accountSyncService == null;
@@ -261,8 +263,9 @@ final class _AsmrControllerDependencies {
         remoteCatalogService ??
         AsmrRemoteCatalogService(
           apiService: resolvedApi!,
-          audioDatabaseRepository:
-              audioDatabaseRepository ?? AudioDatabaseRepository(),
+          persistenceRepository:
+              persistenceRepository ??
+              SqliteAsmrRepository(database: AppDatabase.instance),
         );
     final resolvedAccount =
         accountSyncService ??
@@ -291,7 +294,7 @@ class AsmrLibraryController extends ChangeNotifier
   AsmrLibraryController({
     AsmrApiService? apiService,
     AsmrAuthService? authService,
-    AudioDatabaseRepository? audioDatabaseRepository,
+    AsmrPersistenceRepository? persistenceRepository,
     required AsmrPreferencesStore preferencesStore,
     AsmrRemoteCatalogService? remoteCatalogService,
     AsmrAccountSyncService? accountSyncService,
@@ -302,7 +305,7 @@ class AsmrLibraryController extends ChangeNotifier
            authService: authService,
            remoteCatalogService: remoteCatalogService,
            accountSyncService: accountSyncService,
-           audioDatabaseRepository: audioDatabaseRepository,
+           persistenceRepository: persistenceRepository,
            preferencesStore: preferencesStore,
          ),
        );

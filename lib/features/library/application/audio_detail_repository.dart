@@ -9,7 +9,8 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/media/audio_detail.dart';
-import '../../../core/persistence/audio_database_repository.dart';
+import '../../../infrastructure/sqlite/sqlite_library_repository.dart';
+import '../domain/library_persistence_repository.dart';
 import '../../../core/persistence/app_database.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
@@ -81,11 +82,13 @@ final Object _audioDetailCommitGuardZoneKey = Object();
 
 class AudioDetailRepository {
   AudioDetailRepository({
-    AudioDatabaseRepository? databaseRepository,
+    LibraryPersistenceRepository? databaseRepository,
     FileCachePlatformGateway? fileCacheGateway,
     DateTime Function()? now,
     Future<Directory> Function()? portableCoverDirectory,
-  }) : _databaseRepository = databaseRepository ?? AudioDatabaseRepository(),
+  }) : _databaseRepository =
+           databaseRepository ??
+           SqliteLibraryRepository(database: AppDatabase.instance),
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
        _now = now ?? DateTime.now,
@@ -95,7 +98,7 @@ class AudioDetailRepository {
   static const backupFileName = 'nameless-audio.json';
   static const _cardCoverRelativePathKey = 'cardCoverRelativePath';
   static const _cardCoverEmbeddedKey = 'cardCoverEmbedded';
-  final AudioDatabaseRepository _databaseRepository;
+  final LibraryPersistenceRepository _databaseRepository;
   final FileCachePlatformGateway _fileCacheGateway;
   final DateTime Function() _now;
   final Future<Directory> Function() _portableCoverDirectory;

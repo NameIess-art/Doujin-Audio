@@ -123,8 +123,7 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
     }
     final focusedSessionId = bundle.focusedSessionId;
     if (focusedSessionId != null && _sessions.containsKey(focusedSessionId)) {
-      _notificationFacade.stateService.notificationFocusSessionId =
-          focusedSessionId;
+      _notificationFacade.setFocusedSession(focusedSessionId);
     }
     if (syncUi) {
       _syncNotificationState(immediateUnifiedSync: true);

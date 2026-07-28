@@ -49,7 +49,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -67,7 +67,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -96,7 +96,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -115,7 +115,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -480,7 +480,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -517,7 +517,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -638,7 +638,7 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final runtimeGraph = fixture.runtimeGraph;
-      final audioDatabaseRepository = fixture.audioDatabaseRepository;
+      final persistenceRepository = fixture.persistenceRepository;
       final nativePlaybackRepository = fixture.nativePlaybackRepository;
       const playbackCommandRunner =
           AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -667,7 +667,7 @@ void main() {
       await tester.pumpWidget(
         buildAppRuntimeTestApp(
           runtimeGraph: runtimeGraph,
-          audioDatabaseRepository: audioDatabaseRepository,
+          persistenceRepository: persistenceRepository,
           nativePlaybackRepository: nativePlaybackRepository,
           playbackCommandRunner: playbackCommandRunner,
           libraryService: libraryService,
@@ -711,7 +711,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -739,7 +739,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -781,7 +781,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -826,7 +826,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -894,95 +894,98 @@ void main() {
     expect(find.text(languageProvider.tr('exclude')), findsWidgets);
   });
 
-  testWidgets('library edit ignores stale scans and preserves tree on failure', (
-    WidgetTester tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    const libraryRoot = '/library';
-    final first = Completer<LibraryEntryDiskSnapshot>();
-    final second = Completer<LibraryEntryDiskSnapshot>();
-    final third = Completer<LibraryEntryDiskSnapshot>();
-    final fourth = Completer<LibraryEntryDiskSnapshot>();
-    final service = _QueuedEntryEditorService(<Future<LibraryEntryDiskSnapshot>>[
-      first.future,
-      second.future,
-      third.future,
-      fourth.future,
-    ]);
-    final oldTrack = testMusicTrack(
-      name: 'Old track',
-      path: '$libraryRoot/old.mp3',
-      groupKey: libraryRoot,
-      groupTitle: 'Library',
-    );
-    fixture.runtimeGraph.library.addWatchedFolder(libraryRoot, notify: false);
-    fixture.runtimeGraph.library.addTracks(
-      <MusicTrack>[oldTrack],
-      notify: false,
-      persist: false,
-    );
-    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+  testWidgets(
+    'library edit ignores stale scans and preserves tree on failure',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      const libraryRoot = '/library';
+      final first = Completer<LibraryEntryDiskSnapshot>();
+      final second = Completer<LibraryEntryDiskSnapshot>();
+      final third = Completer<LibraryEntryDiskSnapshot>();
+      final fourth = Completer<LibraryEntryDiskSnapshot>();
+      final service = _QueuedEntryEditorService(
+        <Future<LibraryEntryDiskSnapshot>>[
+          first.future,
+          second.future,
+          third.future,
+          fourth.future,
+        ],
+      );
+      final oldTrack = testMusicTrack(
+        name: 'Old track',
+        path: '$libraryRoot/old.mp3',
+        groupKey: libraryRoot,
+        groupTitle: 'Library',
+      );
+      fixture.runtimeGraph.library.addWatchedFolder(libraryRoot, notify: false);
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[oldTrack],
+        notify: false,
+        persist: false,
+      );
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
-    await tester.pumpWidget(
-      fixture.build(
-        LibraryEditPage(
-          libraryPath: libraryRoot,
-          entryEditorService: service,
+      await tester.pumpWidget(
+        fixture.build(
+          LibraryEditPage(
+            libraryPath: libraryRoot,
+            entryEditorService: service,
+          ),
         ),
-      ),
-    );
-    first.complete(
-      LibraryEntryDiskSnapshot(
-        audioFilePaths: <String>[oldTrack.path],
-        scannedFolderPaths: const <String>{},
-        authoritative: true,
-      ),
-    );
-    await tester.pump();
-    expect(find.text('Old track', findRichText: true), findsOneWidget);
+      );
+      first.complete(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: <String>[oldTrack.path],
+          scannedFolderPaths: const <String>{},
+          authoritative: true,
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Old track', findRichText: true), findsOneWidget);
 
-    WidgetsBinding.instance.handleAppLifecycleStateChanged(
-      AppLifecycleState.resumed,
-    );
-    await tester.pump();
-    WidgetsBinding.instance.handleAppLifecycleStateChanged(
-      AppLifecycleState.resumed,
-    );
-    await tester.pump();
-    third.complete(
-      LibraryEntryDiskSnapshot(
-        audioFilePaths: const <String>['/library/new.mp3'],
-        scannedFolderPaths: const <String>{},
-        authoritative: true,
-      ),
-    );
-    await tester.pump();
-    second.complete(
-      LibraryEntryDiskSnapshot(
-        audioFilePaths: <String>[oldTrack.path],
-        scannedFolderPaths: const <String>{},
-        authoritative: true,
-      ),
-    );
-    await tester.pump();
-    expect(find.text('new', findRichText: true), findsOneWidget);
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(
+        AppLifecycleState.resumed,
+      );
+      await tester.pump();
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(
+        AppLifecycleState.resumed,
+      );
+      await tester.pump();
+      third.complete(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: const <String>['/library/new.mp3'],
+          scannedFolderPaths: const <String>{},
+          authoritative: true,
+        ),
+      );
+      await tester.pump();
+      second.complete(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: <String>[oldTrack.path],
+          scannedFolderPaths: const <String>{},
+          authoritative: true,
+        ),
+      );
+      await tester.pump();
+      expect(find.text('new', findRichText: true), findsOneWidget);
 
-    WidgetsBinding.instance.handleAppLifecycleStateChanged(
-      AppLifecycleState.resumed,
-    );
-    await tester.pump();
-    fourth.complete(
-      LibraryEntryDiskSnapshot(
-        audioFilePaths: const <String>[],
-        scannedFolderPaths: const <String>{},
-        authoritative: false,
-      ),
-    );
-    await tester.pump();
-    expect(find.text('new', findRichText: true), findsOneWidget);
-    expect(tester.takeException(), isNull);
-  });
+      WidgetsBinding.instance.handleAppLifecycleStateChanged(
+        AppLifecycleState.resumed,
+      );
+      await tester.pump();
+      fourth.complete(
+        LibraryEntryDiskSnapshot(
+          audioFilePaths: const <String>[],
+          scannedFolderPaths: const <String>{},
+          authoritative: false,
+        ),
+      );
+      await tester.pump();
+      expect(find.text('new', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets('library edit keeps excluded tracks compact on a narrow screen', (
     WidgetTester tester,
@@ -992,7 +995,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -1036,7 +1039,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,

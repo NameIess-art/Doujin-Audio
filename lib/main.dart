@@ -22,7 +22,9 @@ import 'features/asmr/application/asmr_download_manager.dart';
 import 'features/asmr/application/asmr_playback_coordinator.dart';
 import 'features/asmr/application/asmr_preferences.dart';
 import 'features/asmr/domain/asmr_models.dart';
-import 'core/persistence/audio_database_repository.dart';
+import 'infrastructure/sqlite/sqlite_asmr_repository.dart';
+import 'infrastructure/sqlite/sqlite_library_repository.dart';
+import 'infrastructure/sqlite/sqlite_playback_repository.dart';
 import 'features/player/application/audio_state_services.dart';
 import 'features/library/application/library_facade.dart';
 import 'features/library/application/library_service.dart';
@@ -104,7 +106,10 @@ Future<void> _initializeAudioPlayerApp() async {
 
 Widget _createAudioPlayerApp() {
   final notificationService = PlaybackNotificationService();
-  final audioDatabaseRepository = AudioDatabaseRepository();
+  final database = AppDatabase.instance;
+  final libraryRepository = SqliteLibraryRepository(database: database);
+  final playbackRepository = SqlitePlaybackRepository(database: database);
+  final asmrRepository = SqliteAsmrRepository(database: database);
   final nativePlaybackRepository = NativePlaybackRepository();
   final libraryService = LibraryService();
   final playbackService = PlaybackSessionService();
@@ -115,11 +120,11 @@ Widget _createAudioPlayerApp() {
   final appLanguageProvider = AppLanguageProvider();
   final appUpdateService = AppUpdateService();
   final libraryFacade = LibraryFacade.create(
-    databaseRepository: audioDatabaseRepository,
+    databaseRepository: libraryRepository,
     service: libraryService,
   );
   final playbackFacade = PlaybackFacade.create(
-    databaseRepository: audioDatabaseRepository,
+    databaseRepository: playbackRepository,
     nativeRepository: nativePlaybackRepository,
     service: playbackService,
   );
@@ -136,8 +141,8 @@ Widget _createAudioPlayerApp() {
     settings: settingsRepository,
   );
   final asmrLibraryController = AsmrLibraryController(
-    audioDatabaseRepository: audioDatabaseRepository,
-    preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+    persistenceRepository: asmrRepository,
+    preferencesStore: AsmrPreferencesStore(repository: asmrRepository),
   );
   final asmrPlaybackCoordinator = AsmrPlaybackCoordinator(
     source: asmrLibraryController,

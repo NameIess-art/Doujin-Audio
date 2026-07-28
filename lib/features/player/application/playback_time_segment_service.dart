@@ -4,13 +4,13 @@ import 'dart:math';
 import '../../../app/application/audio_path_coordinator.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../../core/persistence/audio_database_repository.dart';
+import '../domain/playback_persistence_repository.dart';
 import '../domain/time_segment_label.dart';
 import 'playback_facade.dart';
 
 final class PlaybackTimeSegmentService {
   PlaybackTimeSegmentService({
-    required AudioDatabaseRepository database,
+    required PlaybackPersistenceRepository database,
     required PlaybackFacade playback,
     required AudioPathCoordinator paths,
     DateTime Function()? now,
@@ -23,7 +23,7 @@ final class PlaybackTimeSegmentService {
     _playbackSubscription = _playback.states.listen((_) => _pruneSessions());
   }
 
-  final AudioDatabaseRepository _database;
+  final PlaybackPersistenceRepository _database;
   final PlaybackFacade _playback;
   final AudioPathCoordinator _paths;
   final DateTime Function() _now;

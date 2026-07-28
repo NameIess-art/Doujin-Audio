@@ -131,25 +131,17 @@ final class AppPersistenceCoordinator
   }
 
   void _syncInitializedSlices() {
-    _library.service.syncSlice(
-      isInitialized: true,
-      detailRevision: _library.detailCacheService.revision,
-      treeSnapshotRevision: _library.snapshotCacheService.cardSnapshotRevision,
-      categorySnapshotRevision:
-          _library.snapshotCacheService.categorySnapshotRevision,
-    );
-    _playback.service.syncSlice(
-      activeSessions: _playback.service.activeSessions,
-      playingSessionCount: _playback.service.playingSessionCount,
-      focusedSessionId: _notifications.stateService.notificationFocusSessionId,
+    _library.syncPresentationState(isInitialized: true);
+    _playback.syncPresentationState(
+      focusedSessionId: _notifications.focusedSessionId,
       multiThreadPlaybackEnabled: _settings.multiThreadPlaybackEnabled,
       coverGeneration: _library.coverArtworkCacheService.generation,
       isInitialized: true,
     );
-    _timer.service.syncSlice(isInitialized: true);
+    _timer.syncPresentationState(isInitialized: true);
     _settings.syncSlice(isInitialized: true);
-    _notifications.stateService.syncSlice(
-      activeQueueLength: _playback.service.activeSessions.length,
+    _notifications.syncPresentationState(
+      activeQueueLength: _playback.activeSessions.length,
     );
   }
 
@@ -165,8 +157,7 @@ final class AppPersistenceCoordinator
     if (_disposed) return;
     _loadEpoch++;
     _playback.cancelScheduledPersistence();
-    _library.service.scanProgressNotifyTimer?.cancel();
-    _library.service.scanProgressNotifyTimer = null;
+    _library.cancelPendingScanProgressNotification();
     _notifications.prepareForPersistenceReset();
     await _library.prepareForBackupRestore();
   }
@@ -177,8 +168,7 @@ final class AppPersistenceCoordinator
     _loadEpoch++;
     _reloading = true;
     _playback.cancelScheduledPersistence();
-    _library.service.scanProgressNotifyTimer?.cancel();
-    _library.service.scanProgressNotifyTimer = null;
+    _library.cancelPendingScanProgressNotification();
     _uiWarmup.enterBackground();
     _notifications.prepareForPersistenceReset();
 

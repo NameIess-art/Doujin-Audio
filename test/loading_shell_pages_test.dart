@@ -8,7 +8,7 @@ import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/features/library/presentation/dlsite_metadata_review_page.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_metadata_service.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/library/application/dlsite_metadata_service.dart';
@@ -108,7 +108,7 @@ class _TestServices {
   }) {
     runtimeGraph = createTestRuntimeGraph(
       notificationService: notificationService,
-      audioDatabaseRepository: audioDatabaseRepository,
+      persistenceRepository: persistenceRepository,
       nativePlaybackRepository: nativePlaybackRepository,
       libraryService: libraryService,
       playbackService: playbackService,
@@ -121,7 +121,7 @@ class _TestServices {
   }
 
   final notificationService = PlaybackNotificationService();
-  final audioDatabaseRepository = AudioDatabaseRepository();
+  final persistenceRepository = TestPersistenceRepository();
   final nativePlaybackRepository = NativePlaybackRepository();
   final playbackCommandRunner = const PlaybackCommandRunner();
   final libraryService = LibraryService();

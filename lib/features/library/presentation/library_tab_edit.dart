@@ -370,7 +370,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
     final libraryService = ref.read(libraryFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final localSnapshotPending = _initialLoadPending;
-    final structureRevision = libraryService.service.structureRevision;
+    final structureRevision = libraryService.structureRevision;
     if (_searchMetadataRevision != structureRevision) {
       _searchMetadataRevision = structureRevision;
       _trackSearchTextCache.clear();
@@ -939,10 +939,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
 
   bool _trackPathMatchesQuery(String trackPath, String normalizedQuery) {
     final searchableText = _trackSearchTextCache.putIfAbsent(trackPath, () {
-      final track = ref
-          .read(libraryFacadeProvider)
-          .service
-          .trackByPath(trackPath);
+      final track = ref.read(libraryFacadeProvider).trackByPath(trackPath);
       return <String>[
         path.basenameWithoutExtension(trackPath),
         trackPath,

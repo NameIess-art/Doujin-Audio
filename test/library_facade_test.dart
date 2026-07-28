@@ -1,3 +1,4 @@
+import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -6,7 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
@@ -750,12 +751,12 @@ void main() {
 
     test('library entry persistence is deferred until batch close', () async {
       await runtimeGraph.runtime.dispose();
-      final countingRepository = _CountingAudioDatabaseRepository(
+      final countingRepository = _CountingTestPersistenceRepository(
         AppDatabase.test(db),
       );
       runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
-        audioDatabaseRepository: countingRepository,
+        persistenceRepository: countingRepository,
         skipPersistence: false,
       );
 
@@ -858,7 +859,7 @@ void main() {
         }
         expect(runtimeGraph.library.libraryTree, isNotEmpty);
 
-        final beforeRevision = runtimeGraph.library.service.contentRevision;
+        final beforeRevision = runtimeGraph.library.contentRevision;
         final scanner = LibraryScannerService();
         await scanner.refreshWatchedFolders(
           provider: runtimeGraph.library,
@@ -877,7 +878,7 @@ void main() {
           same(track),
           reason: 'before=${track.toJson()} after=${refreshedTrack?.toJson()}',
         );
-        expect(runtimeGraph.library.service.contentRevision, beforeRevision);
+        expect(runtimeGraph.library.contentRevision, beforeRevision);
       },
     );
 
@@ -1072,13 +1073,13 @@ void main() {
 
     test('track removal waits for its persistent cleanup', () async {
       await runtimeGraph.runtime.dispose();
-      final repository = _BlockingDeletionAudioDatabaseRepository(
+      final repository = _BlockingDeletionTestPersistenceRepository(
         AppDatabase.test(db),
       );
       addTearDown(repository.releaseAndWait);
       runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
-        audioDatabaseRepository: repository,
+        persistenceRepository: repository,
         skipPersistence: false,
       );
 
@@ -1122,13 +1123,13 @@ void main() {
 
     test('folder removal waits for all persistent cleanup', () async {
       await runtimeGraph.runtime.dispose();
-      final repository = _BlockingDeletionAudioDatabaseRepository(
+      final repository = _BlockingDeletionTestPersistenceRepository(
         AppDatabase.test(db),
       );
       addTearDown(repository.releaseAndWait);
       runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
-        audioDatabaseRepository: repository,
+        persistenceRepository: repository,
         skipPersistence: false,
       );
 
@@ -1181,13 +1182,13 @@ void main() {
 
     test('library removal waits for its whole persistent cleanup', () async {
       await runtimeGraph.runtime.dispose();
-      final repository = _BlockingDeletionAudioDatabaseRepository(
+      final repository = _BlockingDeletionTestPersistenceRepository(
         AppDatabase.test(db),
       );
       addTearDown(repository.releaseAndWait);
       runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
-        audioDatabaseRepository: repository,
+        persistenceRepository: repository,
         skipPersistence: false,
       );
 
@@ -1367,7 +1368,7 @@ void main() {
         runtimeGraph.library.trackByPath(secondPath)!,
         autoPlay: false,
       );
-      final session = runtimeGraph.playback.service.activeSessions.single;
+      final session = runtimeGraph.playback.activeSessions.single;
       for (var i = 0; i < 50 && session.isLoading; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
@@ -1556,8 +1557,8 @@ void main() {
   });
 }
 
-class _CountingAudioDatabaseRepository extends AudioDatabaseRepository {
-  _CountingAudioDatabaseRepository(AppDatabase database)
+class _CountingTestPersistenceRepository extends TestPersistenceRepository {
+  _CountingTestPersistenceRepository(AppDatabase database)
     : super(database: database);
 
   int upsertLibraryEntriesCallCount = 0;
@@ -1572,11 +1573,12 @@ class _CountingAudioDatabaseRepository extends AudioDatabaseRepository {
   }
 
   @override
-  Future<void> saveAllSessions(List<PersistedSession> sessions) async {}
+  Future<void> saveAllSessions(List<PersistedPlaybackSession> sessions) async {}
 }
 
-class _BlockingDeletionAudioDatabaseRepository extends AudioDatabaseRepository {
-  _BlockingDeletionAudioDatabaseRepository(AppDatabase database)
+class _BlockingDeletionTestPersistenceRepository
+    extends TestPersistenceRepository {
+  _BlockingDeletionTestPersistenceRepository(AppDatabase database)
     : super(database: database);
 
   final Completer<void> _trackDeletionStarted = Completer<void>();

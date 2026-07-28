@@ -51,7 +51,11 @@ void main() {
             import.contains('/application/') ||
             import.contains('/presentation/') ||
             import.contains('..${Platform.pathSeparator}application') ||
-            import.contains('..${Platform.pathSeparator}presentation')) {
+            import.contains('..${Platform.pathSeparator}presentation') ||
+            import.contains('/core/persistence/') ||
+            import.contains('/infrastructure/') ||
+            import.contains('core/persistence') ||
+            import.contains('infrastructure')) {
           violations.add('$path imports $import');
         }
       }
@@ -129,6 +133,32 @@ void main() {
       final source = file.readAsStringSync();
       if (emptyCatch.hasMatch(source) || emptyCatchError.hasMatch(source)) {
         violations.add(_normalizedPath(file));
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
+  test('production code does not pierce facade service boundaries', () {
+    final violations = <String>[];
+    final serviceAccess = RegExp(r'\.(?:service|stateService)\b');
+    for (final file in _dartFiles(libDirectory)) {
+      if (serviceAccess.hasMatch(file.readAsStringSync())) {
+        violations.add(_normalizedPath(file));
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
+  test('core does not depend on feature code', () {
+    final violations = <String>[];
+    for (final file in _dartFiles(Directory('lib/core'))) {
+      final path = _normalizedPath(file);
+      for (final import in _imports(file.readAsStringSync())) {
+        if (import.contains('/features/') || import.contains('../features/')) {
+          violations.add('$path imports $import');
+        }
       }
     }
 

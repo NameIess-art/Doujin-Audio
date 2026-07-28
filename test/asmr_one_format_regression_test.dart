@@ -5,6 +5,7 @@ import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
+import 'package:nameless_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 
 void main() {
   test('ASMR tracks persist ordered deduplicated playback candidates', () {
@@ -56,7 +57,9 @@ void main() {
         tags: <String>[],
       );
       final controller = AsmrLibraryController(
-        preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+        preferencesStore: AsmrPreferencesStore(
+          repository: SqliteAsmrRepository(database: AppDatabase.instance),
+        ),
       );
 
       for (final extension in <String>['.vtt', '.srt', '.ass', '.ssa']) {
@@ -141,7 +144,9 @@ void main() {
       tags: <String>[],
     );
     final controller = AsmrLibraryController(
-      preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+      preferencesStore: AsmrPreferencesStore(
+        repository: SqliteAsmrRepository(database: AppDatabase.instance),
+      ),
     );
 
     for (final extension in <String>['.vtt', '.srt', '.ass', '.ssa']) {

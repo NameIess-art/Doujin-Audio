@@ -23,9 +23,9 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           _isRegisteredSession(session) &&
           session.playbackCommandGeneration == generation,
     );
-    _notificationFacade.stateService.notificationsDismissedWhilePaused = false;
+    _notificationFacade.markNotificationsAvailable();
     unawaited(_nativePlaybackRepository.undismissNotifications());
-    _notificationFacade.stateService.notificationFocusSessionId = session.id;
+    _notificationFacade.setFocusedSession(session.id);
     session.beginTransportCommand(commandId: generation, playing: true);
     final exclusivelyPausedSessions = !_multiThreadPlaybackEnabled
         ? _sessions.values
@@ -158,7 +158,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
           (session) => session.id != keepSessionId && session.state.playing,
         )
         .toList(growable: false);
-    _notificationFacade.stateService.notificationFocusSessionId = keepSessionId;
+    _notificationFacade.setFocusedSession(keepSessionId);
     if (sessionsToPause.isEmpty) {
       _syncNotificationState();
       return;
@@ -174,7 +174,7 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
         (session) => _nativePlaybackRepository.pause(session.id),
       ),
     );
-    _notificationFacade.stateService.notificationFocusSessionId = keepSessionId;
+    _notificationFacade.setFocusedSession(keepSessionId);
     _syncNotificationState();
   }
 

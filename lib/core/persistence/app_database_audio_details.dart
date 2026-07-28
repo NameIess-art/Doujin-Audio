@@ -1,36 +1,5 @@
 part of 'app_database.dart';
 
-class AudioDetailBackupSyncTask {
-  const AudioDetailBackupSyncTask({
-    required this.target,
-    required this.generation,
-    required this.attemptCount,
-    required this.nextAttemptAtMs,
-    this.lastError,
-  });
-
-  factory AudioDetailBackupSyncTask.fromRow(Map<String, Object?> row) {
-    return AudioDetailBackupSyncTask(
-      target: AudioDetailTarget(
-        targetType: AudioDetailTargetType.fromDbValue(
-          row['target_type']! as String,
-        )!,
-        targetPath: row['target_path']! as String,
-      ),
-      generation: row['generation']! as int,
-      attemptCount: row['attempt_count']! as int,
-      nextAttemptAtMs: row['next_attempt_at_ms']! as int,
-      lastError: row['last_error'] as String?,
-    );
-  }
-
-  final AudioDetailTarget target;
-  final int generation;
-  final int attemptCount;
-  final int nextAttemptAtMs;
-  final String? lastError;
-}
-
 extension AppDatabaseAudioDetails on AppDatabase {
   Future<AudioDetail?> loadAudioDetail(AudioDetailTarget target) async {
     return _runDatabaseRead((db) async {
@@ -91,10 +60,10 @@ extension AppDatabaseAudioDetails on AppDatabase {
     });
   }
 
-  Future<AudioDetailBackupSyncTask> upsertAudioDetailAndEnqueueBackupSync(
+  Future<AudioDetailBackupSyncRecord> upsertAudioDetailAndEnqueueBackupSync(
     AudioDetail detail,
   ) async {
-    late AudioDetailBackupSyncTask task;
+    late AudioDetailBackupSyncRecord task;
     await _runDatabaseWrite((db) async {
       await db.transaction((transaction) async {
         final normalizedPath = PathMatcher.normalize(detail.target.targetPath);
@@ -117,18 +86,16 @@ extension AppDatabaseAudioDetails on AppDatabase {
         final generation = existing.isEmpty
             ? 1
             : (existing.single['generation']! as int) + 1;
-        task = AudioDetailBackupSyncTask(
-          target: AudioDetailTarget(
-            targetType: detail.target.targetType,
-            targetPath: normalizedPath,
-          ),
+        task = AudioDetailBackupSyncRecord(
+          targetType: detail.target.targetType.dbValue,
+          targetPath: normalizedPath,
           generation: generation,
           attemptCount: 0,
           nextAttemptAtMs: 0,
         );
         await transaction.insert('audio_detail_backup_sync', <String, Object?>{
-          'target_type': task.target.targetType.dbValue,
-          'target_path': task.target.targetPath,
+          'target_type': task.targetType,
+          'target_path': task.targetPath,
           'generation': generation,
           'attempt_count': 0,
           'next_attempt_at_ms': 0,
@@ -139,10 +106,10 @@ extension AppDatabaseAudioDetails on AppDatabase {
     return task;
   }
 
-  Future<AudioDetailBackupSyncTask> enqueueAudioDetailBackupSync(
+  Future<AudioDetailBackupSyncRecord> enqueueAudioDetailBackupSync(
     AudioDetailTarget target,
   ) async {
-    late AudioDetailBackupSyncTask task;
+    late AudioDetailBackupSyncRecord task;
     await _runDatabaseWrite((db) async {
       final normalizedPath = PathMatcher.normalize(target.targetPath);
       await db.transaction((transaction) async {
@@ -156,11 +123,9 @@ extension AppDatabaseAudioDetails on AppDatabase {
         final generation = existing.isEmpty
             ? 1
             : (existing.single['generation']! as int) + 1;
-        task = AudioDetailBackupSyncTask(
-          target: AudioDetailTarget(
-            targetType: target.targetType,
-            targetPath: normalizedPath,
-          ),
+        task = AudioDetailBackupSyncRecord(
+          targetType: target.targetType.dbValue,
+          targetPath: normalizedPath,
           generation: generation,
           attemptCount: 0,
           nextAttemptAtMs: 0,
@@ -178,7 +143,7 @@ extension AppDatabaseAudioDetails on AppDatabase {
     return task;
   }
 
-  Future<List<AudioDetailBackupSyncTask>> loadDueAudioDetailBackupSyncTasks({
+  Future<List<AudioDetailBackupSyncRecord>> loadDueAudioDetailBackupSyncTasks({
     required int nowMs,
     int limit = 100,
   }) {
@@ -191,7 +156,7 @@ extension AppDatabaseAudioDetails on AppDatabase {
         limit: limit,
       );
       return rows
-          .map(AudioDetailBackupSyncTask.fromRow)
+          .map(AudioDetailBackupSyncRecord.fromRow)
           .toList(growable: false);
     });
   }
@@ -226,7 +191,7 @@ extension AppDatabaseAudioDetails on AppDatabase {
   }
 
   Future<bool> recordAudioDetailBackupSyncFailure(
-    AudioDetailBackupSyncTask task, {
+    AudioDetailBackupSyncRecord task, {
     required int nextAttemptAtMs,
     required String error,
   }) async {
@@ -241,8 +206,8 @@ extension AppDatabaseAudioDetails on AppDatabase {
         },
         where: 'target_type = ? AND target_path = ? AND generation = ?',
         whereArgs: <Object?>[
-          task.target.targetType.dbValue,
-          PathMatcher.normalize(task.target.targetPath),
+          task.targetType,
+          PathMatcher.normalize(task.targetPath),
           task.generation,
         ],
       );
@@ -317,7 +282,9 @@ extension AppDatabaseAudioDetails on AppDatabase {
 
   // ---- Time segment labels ----
 
-  Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
+  Future<List<TimeSegmentLabelRecord>> loadTimeSegmentLabels(
+    String trackKey,
+  ) async {
     return _runDatabaseRead((db) async {
       final rows = await db.query(
         'time_segment_labels',
@@ -325,11 +292,11 @@ extension AppDatabaseAudioDetails on AppDatabase {
         whereArgs: [trackKey],
         orderBy: 'start_ms ASC, created_at_ms ASC',
       );
-      return rows.map(TimeSegmentLabel.fromRow).toList(growable: false);
+      return rows.map(TimeSegmentLabelRecord.fromRow).toList(growable: false);
     });
   }
 
-  Future<void> upsertTimeSegmentLabel(TimeSegmentLabel label) async {
+  Future<void> upsertTimeSegmentLabel(TimeSegmentLabelRecord label) async {
     await _runDatabaseWrite(
       (db) => db
           .insert(

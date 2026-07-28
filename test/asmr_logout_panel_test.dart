@@ -5,6 +5,7 @@ import 'package:nameless_audio/core/app_language.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
+import 'package:nameless_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/features/asmr/presentation/asmr_tab.dart';
 
@@ -54,7 +55,9 @@ void main() {
 class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
   _LogoutFailureAsmrLibraryController()
     : super(
-        preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+        preferencesStore: AsmrPreferencesStore(
+          repository: SqliteAsmrRepository(database: AppDatabase.instance),
+        ),
       );
 
   int logoutAttempts = 0;

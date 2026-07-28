@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
@@ -228,7 +228,7 @@ void main() {
   );
 }
 
-final class _RestoredLibraryRepository extends AudioDatabaseRepository {
+final class _RestoredLibraryRepository extends TestPersistenceRepository {
   @override
   Future<List<MusicTrack>> loadStartupTracks() async {
     return <MusicTrack>[

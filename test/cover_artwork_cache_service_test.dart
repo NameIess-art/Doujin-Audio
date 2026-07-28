@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
@@ -588,7 +588,7 @@ void main() {
       '${directory.path}${Platform.pathSeparator}selected.jpg',
     );
     await cover.writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
-    final repository = _MemoryAudioDatabaseRepository();
+    final repository = _MemoryTestPersistenceRepository();
     final trackPath = '${directory.path}${Platform.pathSeparator}track.flac';
     final track = _track(path: trackPath, groupKey: directory.path);
     final library = LibraryService()..library.add(track);
@@ -628,7 +628,7 @@ void main() {
         path: '${directory.path}${Platform.pathSeparator}track.flac',
         groupKey: directory.path,
       );
-      final repository = _MemoryAudioDatabaseRepository();
+      final repository = _MemoryTestPersistenceRepository();
       await repository.saveAppSetting(
         'folder_cover_selections_v1',
         json.encode(<String, String>{
@@ -1720,7 +1720,7 @@ class _FakeFileCachePlatformGateway extends FileCachePlatformGateway {
   }
 }
 
-class _MemoryAudioDatabaseRepository extends AudioDatabaseRepository {
+class _MemoryTestPersistenceRepository extends TestPersistenceRepository {
   final Map<String, String> _settings = <String, String>{};
 
   @override
@@ -1740,7 +1740,7 @@ class _MemoryAudioDetailCacheService extends AudioDetailCacheService {
   _MemoryAudioDetailCacheService({this.persistedPathOverride})
     : super(
         repository: AudioDetailRepository(
-          databaseRepository: _MemoryAudioDatabaseRepository(),
+          databaseRepository: _MemoryTestPersistenceRepository(),
         ),
       );
 

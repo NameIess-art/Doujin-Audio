@@ -1,3 +1,4 @@
+import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -9,7 +10,7 @@ import 'package:nameless_audio/app/application/playback_queue_coordinator.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_playback_cache_service.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_time_segment_service.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
@@ -44,7 +45,7 @@ void main() {
       paths: paths,
     );
     timeSegments = PlaybackTimeSegmentService(
-      database: runtimeGraph.library.databaseRepository,
+      database: runtimeGraph.playback.databaseRepository,
       playback: runtimeGraph.playback,
       paths: paths,
     );
@@ -349,7 +350,7 @@ void main() {
           otherNextTrack,
         ], autoPlay: false);
         for (var i = 0; i < 50; i++) {
-          if (runtimeGraph.playback.service.activeSessions.every(
+          if (runtimeGraph.playback.activeSessions.every(
             (session) => !session.isLoading,
           )) {
             break;
@@ -357,14 +358,12 @@ void main() {
           await Future<void>.delayed(const Duration(milliseconds: 10));
         }
 
-        final loopSession = runtimeGraph.playback.service.activeSessions
-            .firstWhere(
-              (session) => session.currentTrackPath == loopTrack.path,
-            );
-        final otherSession = runtimeGraph.playback.service.activeSessions
-            .firstWhere(
-              (session) => session.currentTrackPath == otherTrack.path,
-            );
+        final loopSession = runtimeGraph.playback.activeSessions.firstWhere(
+          (session) => session.currentTrackPath == loopTrack.path,
+        );
+        final otherSession = runtimeGraph.playback.activeSessions.firstWhere(
+          (session) => session.currentTrackPath == otherTrack.path,
+        );
         final trackKey = timeSegments.trackKeyForTrack(loopTrack);
         final now = DateTime(2026, 6, 2);
         final label = TimeSegmentLabel(
@@ -449,11 +448,11 @@ void main() {
         remoteMetadata: <String, Object?>{'trackRelativePath': '01_mp3/02.mp3'},
       );
 
-      final restoredRepository = AudioDatabaseRepository(
+      final restoredRepository = TestPersistenceRepository(
         database: AppDatabase.test(db),
       );
-      await restoredRepository.saveAllSessions(<PersistedSession>[
-        PersistedSession(
+      await restoredRepository.saveAllSessions(<PersistedPlaybackSession>[
+        PersistedPlaybackSession(
           id: sessionId,
           trackPath: 'https://example.com/asmr/01.mp3',
           loopModeIndex: 1,
@@ -488,7 +487,7 @@ void main() {
 
       final restoredGraph = createTestRuntimeGraph(
         notificationService: notificationService,
-        audioDatabaseRepository: restoredRepository,
+        persistenceRepository: restoredRepository,
         coverArtworkCacheService: _RecordingCoverArtworkCacheService(
           expectedRemoteCoverUrl: coverUrl,
           coverPath: coverFile.path,
@@ -498,11 +497,11 @@ void main() {
       );
 
       for (var i = 0; i < 100; i++) {
-        if (restoredGraph.playback.service.activeSessions.isNotEmpty) break;
+        if (restoredGraph.playback.activeSessions.isNotEmpty) break;
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
 
-      expect(restoredGraph.playback.service.activeSessions, hasLength(1));
+      expect(restoredGraph.playback.activeSessions, hasLength(1));
       expect(
         restoredGraph.playbackCommands
             .trackByPath('https://example.com/asmr/01.mp3')
@@ -535,7 +534,7 @@ void main() {
         await runtimeGraph.runtime.dispose();
         runtimeGraph = createTestRuntimeGraph(
           notificationService: notificationService,
-          audioDatabaseRepository: AudioDatabaseRepository(
+          persistenceRepository: TestPersistenceRepository(
             database: AppDatabase.test(db),
           ),
           asmrPlaybackCacheService: _FakeAsmrPlaybackCacheService(cachedPath),
@@ -602,7 +601,7 @@ void main() {
           secondTrack,
         ], autoPlay: false);
 
-        final session = runtimeGraph.playback.service.activeSessions.single;
+        final session = runtimeGraph.playback.activeSessions.single;
         for (var i = 0; i < 100; i++) {
           if (runtimeGraph.playbackCommands.trackByPath(cachedPath) != null) {
             break;
@@ -617,7 +616,7 @@ void main() {
         );
         expect(paths.trackByPath(cachedPath)?.toJson(), firstTrack.toJson());
         expect(
-          runtimeGraph.playback.service.activeSessions.single.customQueueTracks,
+          runtimeGraph.playback.activeSessions.single.customQueueTracks,
           hasLength(2),
         );
         expect(

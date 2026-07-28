@@ -11,7 +11,7 @@ import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'test_persistence_repository.dart';
 import 'package:nameless_audio/core/platform/power_platform_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
@@ -48,7 +48,7 @@ AppRuntimeGraph createTestRuntimeGraph({
   NotificationFacade? notification,
   SettingsRepository? settings,
   PlaybackNotificationService? notificationService,
-  AudioDatabaseRepository? audioDatabaseRepository,
+  TestPersistenceRepository? persistenceRepository,
   AudioDetailRepository? audioDetailRepository,
   AudioDetailCacheService? audioDetailCacheService,
   CoverArtworkCacheService? coverArtworkCacheService,
@@ -67,7 +67,7 @@ AppRuntimeGraph createTestRuntimeGraph({
   bool skipPersistence = true,
   bool startRuntime = false,
 }) {
-  final database = audioDatabaseRepository ?? AudioDatabaseRepository();
+  final database = persistenceRepository ?? TestPersistenceRepository();
   final detailCache =
       audioDetailCacheService ??
       AudioDetailCacheService(
@@ -90,7 +90,7 @@ AppRuntimeGraph createTestRuntimeGraph({
   final resolvedPlayback =
       playback ??
       PlaybackFacade.create(
-        databaseRepository: resolvedLibrary.databaseRepository,
+        databaseRepository: database,
         nativeRepository: nativePlaybackRepository,
         commandRunner: playbackCommandRunner,
         playbackCacheService:
@@ -194,7 +194,7 @@ Future<void> pumpUntilLibraryTreeReady(
 
 Widget buildAppRuntimeTestApp({
   required AppRuntimeGraph runtimeGraph,
-  required AudioDatabaseRepository audioDatabaseRepository,
+  required TestPersistenceRepository persistenceRepository,
   required NativePlaybackRepository nativePlaybackRepository,
   required PlaybackCommandRunner playbackCommandRunner,
   required LibraryService libraryService,
@@ -252,7 +252,7 @@ final class AppRuntimeWidgetTestFixture {
     void Function(SettingsRepository settingsRepository)?
     configureSettingsRepository,
   }) : notificationService = PlaybackNotificationService(),
-       audioDatabaseRepository = AudioDatabaseRepository(),
+       persistenceRepository = TestPersistenceRepository(),
        nativePlaybackRepository = NativePlaybackRepository(),
        libraryService = LibraryService(),
        playbackService = PlaybackSessionService(),
@@ -263,14 +263,14 @@ final class AppRuntimeWidgetTestFixture {
        languageProvider = AppLanguageProvider() {
     configureSettingsRepository?.call(settingsRepository);
     library = LibraryFacade.create(
-      databaseRepository: audioDatabaseRepository,
+      databaseRepository: persistenceRepository,
       service: libraryService,
       coverArtworkCacheService: coverArtworkCacheService,
       metadataService: dlsiteMetadataService,
       asmrMetadataService: asmrMetadataService,
     );
     playback = PlaybackFacade.create(
-      databaseRepository: audioDatabaseRepository,
+      databaseRepository: persistenceRepository,
       nativeRepository: nativePlaybackRepository,
       service: playbackService,
     );
@@ -290,7 +290,7 @@ final class AppRuntimeWidgetTestFixture {
   }
 
   final PlaybackNotificationService notificationService;
-  final AudioDatabaseRepository audioDatabaseRepository;
+  final TestPersistenceRepository persistenceRepository;
   final NativePlaybackRepository nativePlaybackRepository;
   static const PlaybackCommandRunner playbackCommandRunner =
       PlaybackCommandRunner();
@@ -315,7 +315,7 @@ final class AppRuntimeWidgetTestFixture {
     List<Override> overrides = const <Override>[],
   }) => buildAppRuntimeTestApp(
     runtimeGraph: runtimeGraph,
-    audioDatabaseRepository: audioDatabaseRepository,
+    persistenceRepository: persistenceRepository,
     nativePlaybackRepository: nativePlaybackRepository,
     playbackCommandRunner: playbackCommandRunner,
     libraryService: libraryService,
@@ -376,7 +376,7 @@ final class AppRuntimeTestFixture {
     );
     await AppDatabase.createSchemaForTest(database);
     final notificationService = PlaybackNotificationService();
-    final repository = AudioDatabaseRepository(
+    final repository = TestPersistenceRepository(
       database: AppDatabase.test(database),
     );
     final library = LibraryFacade.create(databaseRepository: repository);

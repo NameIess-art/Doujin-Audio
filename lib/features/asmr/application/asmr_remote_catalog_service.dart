@@ -6,16 +6,16 @@ import '../../../core/media/music_track.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'asmr_api_service.dart';
 import 'asmr_recommendation_engine.dart';
-import '../../../core/persistence/audio_database_repository.dart';
+import '../domain/asmr_persistence_repository.dart';
 
 class AsmrRemoteCatalogService {
   AsmrRemoteCatalogService({
     required AsmrApiService apiService,
-    required AudioDatabaseRepository audioDatabaseRepository,
+    required AsmrPersistenceRepository persistenceRepository,
     AsmrRecommendationEngine recommendationEngine =
         const AsmrRecommendationEngine(),
   }) : _apiService = apiService,
-       _audioDatabaseRepository = audioDatabaseRepository,
+       _persistenceRepository = persistenceRepository,
        _recommendationEngine = recommendationEngine;
 
   static const Map<AsmrCategoryType, int> _pageSizes = <AsmrCategoryType, int>{
@@ -41,7 +41,7 @@ class AsmrRemoteCatalogService {
   ];
 
   final AsmrApiService _apiService;
-  final AudioDatabaseRepository _audioDatabaseRepository;
+  final AsmrPersistenceRepository _persistenceRepository;
   final AsmrRecommendationEngine _recommendationEngine;
 
   Future<AsmrWorkPage> loadPage(
@@ -172,7 +172,7 @@ class AsmrRemoteCatalogService {
 
   Future<List<MusicTrack>> _loadLocalTracks() async {
     try {
-      return await _audioDatabaseRepository.loadAllTracks();
+      return await _persistenceRepository.loadTracksForRecommendations();
     } catch (error, stackTrace) {
       AppLogService.error(
         'asmr_recommendation_local_tracks_failed',

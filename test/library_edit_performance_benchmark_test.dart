@@ -49,10 +49,7 @@ void main() {
         groupTitle: 'Disc ${index % 20}',
       ),
     );
-    fixture.runtimeGraph.library.addWatchedFolder(
-      libraryPath,
-      notify: false,
-    );
+    fixture.runtimeGraph.library.addWatchedFolder(libraryPath, notify: false);
     fixture.runtimeGraph.library.addTracks(
       tracks,
       notify: false,
@@ -62,17 +59,16 @@ void main() {
 
     final service = _FixedSnapshotService(
       LibraryEntryDiskSnapshot(
-        audioFilePaths: tracks.map((track) => track.path).toList(growable: false),
+        audioFilePaths: tracks
+            .map((track) => track.path)
+            .toList(growable: false),
         scannedFolderPaths: const <String>{},
         authoritative: true,
       ),
     );
     await tester.pumpWidget(
       fixture.build(
-        LibraryEditPage(
-          libraryPath: libraryPath,
-          entryEditorService: service,
-        ),
+        LibraryEditPage(libraryPath: libraryPath, entryEditorService: service),
       ),
     );
     await tester.pump();

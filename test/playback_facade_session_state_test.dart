@@ -1,3 +1,4 @@
+import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -5,9 +6,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/core/errors/native_result.dart';
 import 'package:nameless_audio/core/media/path_matcher.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/core/persistence/app_database.dart'
-    show PersistedSession;
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
@@ -20,9 +19,10 @@ import 'package:nameless_audio/features/player/domain/playback_queue.dart';
 
 void main() {
   test('PlaybackFacade owns session registration and reorder commands', () {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     );
     final first = _session('first');
     final second = _session('second');
@@ -45,16 +45,16 @@ void main() {
       ..registerSession(second);
 
     expect(registered, <String>['first', 'second']);
-    expect(
-      playback.service.activeSessions.map((session) => session.id),
-      <String>['second', 'first'],
-    );
+    expect(playback.activeSessions.map((session) => session.id), <String>[
+      'second',
+      'first',
+    ]);
 
     playback.reorderSessions(0, 2);
-    expect(
-      playback.service.activeSessions.map((session) => session.id),
-      <String>['first', 'second'],
-    );
+    expect(playback.activeSessions.map((session) => session.id), <String>[
+      'first',
+      'second',
+    ]);
     expect(reorderCount, 1);
 
     playback.reorderSessions(-1, 0);
@@ -62,10 +62,11 @@ void main() {
   });
 
   test('PlaybackFacade owns pause and session removal lifecycle', () async {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
     )..configurePersistence(enabled: false);
     addTearDown(() async {
@@ -142,7 +143,7 @@ void main() {
 
     await playback.clearAllSessions();
 
-    expect(playback.service.sessions, isEmpty);
+    expect(playback.sessions, isEmpty);
     expect(native.clearAllCount, 1);
     expect(removed, <String>[first.id, second.id]);
     expect(stateChanges, 4);
@@ -150,10 +151,11 @@ void main() {
   });
 
   test('session removal wins over an in-flight speed command', () async {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
     )..configurePersistence(enabled: false);
     final session = _session('racing');
@@ -186,9 +188,10 @@ void main() {
   test(
     'loading playback intent can be paused from the spinner control',
     () async {
-      final library = LibraryFacade.create();
+      final library = _createLibraryFacade();
       final playback = PlaybackFacade.create(
-        databaseRepository: library.databaseRepository,
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
       )..configurePersistence(enabled: false);
       final session = _session('loading_toggle')
         ..setOptimisticState(
@@ -238,10 +241,11 @@ void main() {
   );
 
   test('PlaybackFacade owns transport command decisions', () async {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
     )..configurePersistence(enabled: false);
     final session = _session('transport')
@@ -327,9 +331,10 @@ void main() {
   });
 
   test('previous and next suppress transient playback loading', () async {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     )..configurePersistence(enabled: false);
     final session = _session('adjacent_loading');
     addTearDown(() async {
@@ -377,9 +382,10 @@ void main() {
   test(
     'sequential play pauses instead of auto-advancing on completion',
     () async {
-      final library = LibraryFacade.create();
+      final library = _createLibraryFacade();
       final playback = PlaybackFacade.create(
-        databaseRepository: library.databaseRepository,
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
       )..configurePersistence(enabled: false);
       final session = _session('sequential_once')
         ..loopMode = SessionLoopMode.folderOnce;
@@ -428,9 +434,10 @@ void main() {
   );
 
   test('completion callback failures are contained and surfaced', () async {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     )..configurePersistence(enabled: false);
     final session = _session('completion_failure');
     addTearDown(() async {
@@ -478,9 +485,10 @@ void main() {
   });
 
   test('PlaybackFacade owns loop mode state and synchronization', () async {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     )..configurePersistence(enabled: false);
     final session = _session('loop');
     final synchronizedModes = <SessionLoopMode>[];
@@ -528,10 +536,11 @@ void main() {
   });
 
   test('PlaybackFacade owns audio effect updates and rollback', () async {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
       nativeRepository: native,
     )..configurePersistence(enabled: false);
     final session = _session('effects')..loadedPath = '/tracks/effects.mp3';
@@ -560,12 +569,13 @@ void main() {
   });
 
   test('PlaybackFacade owns track and playback queue session creation', () {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     );
     addTearDown(() async {
-      for (final session in playback.service.sessions.values) {
+      for (final session in playback.sessions.values) {
         session.dispose();
       }
       await playback.dispose();
@@ -608,10 +618,11 @@ void main() {
   });
 
   test('PlaybackFacade can disable session persistence scheduling', () async {
-    final database = _RecordingAudioDatabaseRepository();
+    final database = _RecordingTestPersistenceRepository();
     final library = LibraryFacade.create(databaseRepository: database);
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     );
     addTearDown(() async {
       await playback.dispose();
@@ -625,14 +636,15 @@ void main() {
 
     expect(database.sessionSaves, 0);
     expect(database.orderSaves, 0);
-    expect(playback.service.saveSessionStateTimer, isNull);
-    expect(playback.service.saveSessionOrderTimer, isNull);
+    expect(playback.hasScheduledSessionStatePersistence, isFalse);
+    expect(playback.hasScheduledSessionOrderPersistence, isFalse);
   });
 
   test('PlaybackFacade normalizes native snapshots after a path retarget', () {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     );
     final session = _session('retargeted')
       ..currentTrackPath = '/new/work/track.mp3';
@@ -684,10 +696,11 @@ void main() {
   test(
     'PlaybackFacade owns debounced session persistence scheduling',
     () async {
-      final database = _RecordingAudioDatabaseRepository();
+      final database = _RecordingTestPersistenceRepository();
       final library = LibraryFacade.create(databaseRepository: database);
       final playback = PlaybackFacade.create(
-        databaseRepository: library.databaseRepository,
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
       );
       addTearDown(() async {
         await playback.dispose();
@@ -719,10 +732,11 @@ void main() {
   test(
     'position buckets upsert playback state without rewriting all sessions',
     () async {
-      final database = _RecordingAudioDatabaseRepository();
+      final database = _RecordingTestPersistenceRepository();
       final library = LibraryFacade.create(databaseRepository: database);
       final playback = PlaybackFacade.create(
-        databaseRepository: library.databaseRepository,
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
       );
       final session = _session('incremental-position');
       final track = MusicTrack(
@@ -774,10 +788,11 @@ void main() {
   );
 
   test('a full session save supersedes a pending position upsert', () async {
-    final database = _RecordingAudioDatabaseRepository();
+    final database = _RecordingTestPersistenceRepository();
     final library = LibraryFacade.create(databaseRepository: database);
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     );
     final session = _session('full-supersedes-position');
     addTearDown(() async {
@@ -800,9 +815,10 @@ void main() {
   });
 
   test('PlaybackFacade owns queue metadata and track snapshots', () async {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     );
     final original = MusicTrack(
       path: '/tracks/a.mp3',
@@ -877,21 +893,24 @@ void main() {
   _backgroundBucketTests();
 }
 
-final class _RecordingAudioDatabaseRepository extends AudioDatabaseRepository {
+final class _RecordingTestPersistenceRepository
+    extends TestPersistenceRepository {
   int sessionSaves = 0;
   int sessionStateUpserts = 0;
   int trackUpserts = 0;
   int orderSaves = 0;
-  PersistedSession? lastPlaybackState;
+  PersistedPlaybackSession? lastPlaybackState;
   MusicTrack? lastTrack;
 
   @override
-  Future<void> saveAllSessions(List<PersistedSession> sessions) async {
+  Future<void> saveAllSessions(List<PersistedPlaybackSession> sessions) async {
     sessionSaves++;
   }
 
   @override
-  Future<void> upsertSessionPlaybackState(PersistedSession session) async {
+  Future<void> upsertSessionPlaybackState(
+    PersistedPlaybackSession session,
+  ) async {
     sessionStateUpserts++;
     lastPlaybackState = session;
   }
@@ -908,11 +927,16 @@ final class _RecordingAudioDatabaseRepository extends AudioDatabaseRepository {
   }
 }
 
+LibraryFacade _createLibraryFacade() {
+  return LibraryFacade.create(databaseRepository: TestPersistenceRepository());
+}
+
 void _backgroundBucketTests() {
   test('background mode coarsens the position persistence bucket', () {
-    final library = LibraryFacade.create();
+    final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
-      databaseRepository: library.databaseRepository,
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
     );
     final session = _session('bucket');
     addTearDown(() async {

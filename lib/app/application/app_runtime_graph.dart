@@ -1,24 +1,28 @@
 import 'dart:async';
 
 import '../../core/ui/app_interaction_feedback_settings.dart';
-import '../../features/library/application/cover_artwork_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
-import '../../features/player/domain/playback_mode.dart';
 import '../../features/settings/application/settings_repository.dart';
+import 'app_lifecycle_binding.dart';
 import 'app_persistence_coordinator.dart';
+import 'app_runtime_lifecycle.dart';
 import 'audio_path_coordinator.dart';
-import 'audio_runtime_coordinator.dart';
 import 'audio_ui_warmup_coordinator.dart';
+import 'library_runtime_binding.dart';
+import 'notification_runtime_binding.dart';
 import 'playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
+import 'playback_runtime_binding.dart';
+import 'runtime_binding.dart';
+import 'timer_runtime_binding.dart';
 
 typedef AppRuntimeGraph = ({
   AudioPathCoordinator audioPaths,
-  AudioRuntimeCoordinator runtime,
+  AppRuntimeLifecycle runtime,
   AudioUiWarmupCoordinator warmup,
   AppPersistenceCoordinator persistence,
   LibraryFacade library,
@@ -31,7 +35,7 @@ typedef AppRuntimeGraph = ({
   TimerFacade timer,
 });
 
-/// Wires existing feature owners without introducing another mutable state owner.
+/// Creates feature owners and aggregates their disposable runtime bindings.
 AppRuntimeGraph createAppRuntimeGraph({
   required LibraryFacade library,
   required PlaybackFacade playback,
@@ -59,37 +63,22 @@ AppRuntimeGraph createAppRuntimeGraph({
   );
 
   void syncLibraryState() {
-    library.service.syncSlice(
-      isInitialized: library.service.slice.state.isInitialized,
-      detailRevision: library.detailCacheService.revision,
-      treeSnapshotRevision: library.snapshotCacheService.cardSnapshotRevision,
-      categorySnapshotRevision:
-          library.snapshotCacheService.categorySnapshotRevision,
-    );
+    library.syncPresentationState();
     unawaited(library.ensureCardSnapshot());
   }
 
   void syncPlaybackState() {
-    playback.service
-      ..markSessionStateDirty()
-      ..syncSlice(
-        activeSessions: playback.service.activeSessions,
-        playingSessionCount: playback.service.playingSessionCount,
-        focusedSessionId: notifications.stateService.notificationFocusSessionId,
-        multiThreadPlaybackEnabled: settings.multiThreadPlaybackEnabled,
-        coverGeneration: library.coverArtworkCacheService.generation,
-        isInitialized: playback.service.slice.state.isInitialized,
-      );
-    notifications.stateService.syncSlice(
-      activeQueueLength: playback.service.activeSessions.length,
+    playback.syncPresentationState(
+      focusedSessionId: notifications.focusedSessionId,
+      multiThreadPlaybackEnabled: settings.multiThreadPlaybackEnabled,
+      coverGeneration: library.coverArtworkCacheService.generation,
+    );
+    notifications.syncPresentationState(
+      activeQueueLength: playback.activeSessions.length,
     );
   }
 
-  void syncTimerState() {
-    timer.service.syncSlice(
-      isInitialized: timer.service.slice.state.isInitialized,
-    );
-  }
+  void syncTimerState() => timer.syncPresentationState();
 
   void syncSettingsState() {
     settings.syncSlice(isInitialized: settings.slice.state.isInitialized);
@@ -119,184 +108,43 @@ AppRuntimeGraph createAppRuntimeGraph({
 
   library.configurePersistence(enabled: persistenceEnabled);
   playback.configurePersistence(enabled: persistenceEnabled);
-  library.attachTrackRemovalHandler((removedPaths) {
-    final removedSet = removedPaths.toSet();
-    final sessionIds = playback.service.sessions.values
-        .where((session) => removedSet.contains(session.currentTrackPath))
-        .map((session) => session.id)
-        .toList(growable: false);
-    if (sessionIds.isEmpty) return;
-    unawaited(
-      playback.removeSessions(sessionIds, persist: false, notify: false),
-    );
-  });
-  library.attachCoverChangeHandler(() {
-    playback.service.markActiveSessionsDirty();
-    notifications.syncPlaybackState();
-    syncLibraryState();
-    syncPlaybackState();
-  });
-  playback.attachSessionDefaults(
-    autoPlayAddedSessions: () => settings.autoPlayAddedSessions,
-    allowDuplicateWorks: () => settings.allowDuplicateWorks,
-  );
-  playback.attachPersistenceRuntime(
-    trackByPath: library.trackByPath,
-    recordPlaybackProgress: () => settings.recordPlaybackProgress,
-    restoreRuntime: playbackCommands.restorePersistedRuntime,
-    updatePlaybackHistory: library.updatePlaybackHistory,
-    onFocusChanged: (sessionId) {
-      notifications.stateService.notificationFocusSessionId = sessionId;
-    },
-  );
-  playback.attachSessionRuntime(
-    onSessionRegistered: (session) {
-      notifications.stateService
-        ..notificationsDismissedWhilePaused = false
-        ..notificationFocusSessionId = session.id;
-      keepAlive.sync();
-      notifications.syncPlaybackState();
-      syncPlaybackState();
-    },
-    onSessionsRemoved: (sessions) {
-      for (final session in sessions) {
-        notifications.clearSessionSubtitle(session.id);
-        if (notifications.stateService.notificationFocusSessionId ==
-            session.id) {
-          notifications.stateService.notificationFocusSessionId = null;
-        }
-      }
-    },
-    onSessionsReordered: () {
-      notifications.syncPlaybackState();
-      syncPlaybackState();
-      playback.scheduleSessionOrderPersistence();
-    },
-    onSessionStateChanged: syncPlaybackState,
-    onRuntimeStateChanged: () {
-      keepAlive.sync();
-      notifications.syncPlaybackState();
-    },
-    onSessionPositionChanged: (session, position) {
-      if (!notifications.isFocusedSessionId(session.id)) return;
-      final changed = notifications.refreshSessionSubtitle(
-        session,
-        position: position,
-        syncNotification: false,
-      );
-      if (changed) {
-        notifications.scheduleFocusedRefresh(session.id, immediate: true);
-      }
-    },
-    onSessionCompleted: playbackCommands.handleSessionCompleted,
-    onSessionDurationChanged: notifications.scheduleFocusedRefresh,
-    onSessionSettingsChanged: () {
-      syncPlaybackState();
-      notifications.syncPlaybackState();
-    },
-  );
-  playback.attachPlaybackQueueSynchronizer(
-    playbackCommands.syncPlaybackQueueSession,
-  );
-  playback.attachPlaybackCommands(
-    prepareSession: playbackCommands.prepareAndPlay,
-    pauseSession: playbackCommands.pauseSession,
-    startSession: playbackCommands.startSession,
-    resolveAdvance: (session, {required forward}) =>
-        playbackCommands.resolveAdvance(session, forward: forward),
-    hasAdjacent: (session, {required forward}) =>
-        playbackCommands.hasAdjacent(session, forward: forward),
-  );
-  playback.attachLoopModeSynchronizer((session, mode) {
-    return playback.nativeRepository.setRepeatOne(
-      session.id,
-      mode == SessionLoopMode.single,
-      queue: playbackCommands.nativePlaybackQueueFor(
-        session,
-        currentPath: session.currentTrackPath,
-      ),
-      queueStartIndex: playbackCommands.nativePlaybackQueueStartIndexFor(
-        session,
-        currentPath: session.currentTrackPath,
-      ),
-      repeatAll: mode != SessionLoopMode.single && !mode.isOneShot,
-      shuffle: mode.isShuffle,
-    );
-  });
-  timer.attachRuntime(
-    hasPlayingSession: () => keepAlive.hasPlayingSession,
-    sessions: () => playback.service.sessions.values,
-    pauseSession: playbackCommands.pauseSession,
-    activateAudioSession: keepAlive.activateAudioSession,
-    resumeSession: (session) => playbackCommands.startSession(
-      session,
-      shouldStartTriggerCountdown: false,
+  final bindings = <RuntimeBinding>[
+    LibraryRuntimeBinding.attach(
+      library: library,
+      playback: playback,
+      notifications: notifications,
+      syncLibraryState: syncLibraryState,
+      syncPlaybackState: syncPlaybackState,
     ),
-    onStateChanged: () {
-      keepAlive.sync();
-      syncTimerState();
-    },
-    onRuntimeRestored: () {
-      notifications.syncPlaybackState();
-      keepAlive.sync();
-      syncTimerState();
-    },
-    applyFadeMultiplier: (multiplier) {
-      for (final session in playback.service.sessions.values) {
-        if (!session.state.playing) continue;
-        unawaited(
-          playback.nativeRepository.setFadeMultiplier(session.id, multiplier),
-        );
-      }
-    },
-  );
-  notifications.attachRuntime(
-    undismissNotifications: playback.nativeRepository.undismissNotifications,
-    onNotificationsRestored: () {
-      notifications.syncPlaybackState(immediateUnifiedSync: true);
-      syncPlaybackState();
-    },
-  );
-  notifications.attachActions(
-    playback: playback,
-    resolveSession: notifications.resolveNotificationSession,
-    resolveActionSession: () => notifications.notificationActionSession,
-    resumeSession: (session) => playbackCommands.startSession(
-      session,
-      shouldStartTriggerCountdown: false,
+    PlaybackRuntimeBinding.attach(
+      library: library,
+      playback: playback,
+      notifications: notifications,
+      settings: settings,
+      playbackCommands: playbackCommands,
+      keepAlive: keepAlive,
+      syncPlaybackState: syncPlaybackState,
     ),
-    multiThreadPlaybackEnabled: () => settings.multiThreadPlaybackEnabled,
-    setFocusSessionId: (sessionId) {
-      notifications.stateService.notificationFocusSessionId = sessionId;
-    },
-    notify: syncAllState,
-    syncKeepAlive: keepAlive.sync,
-    hasPlaybackToKeepAlive: () => keepAlive.hasPlaybackToKeepAlive,
-    clearUnifiedNotifications:
-        notifications.clearUnifiedNotificationsOnPlatform,
-    preferredSessionId: () => playbackCommands.preferredSingleSessionId,
-    notifyNotificationChanged: syncPlaybackState,
-  );
-  library.attachCoverArtworkCacheService(
-    () => CoverArtworkCacheService(
-      libraryService: library.service,
-      databaseRepository: library.databaseRepository,
-      audioDetailCacheService: library.detailCacheService,
-      isActiveCoverKey: notifications.isActiveCoverKey,
-      onActiveCoverChanged: () {
-        notifications.syncPlaybackState();
-        syncPlaybackState();
-      },
+    TimerRuntimeBinding.attach(
+      timer: timer,
+      playback: playback,
+      notifications: notifications,
+      playbackCommands: playbackCommands,
+      keepAlive: keepAlive,
+      syncTimerState: syncTimerState,
     ),
-  );
-  notifications.attachSynchronization(
-    playbackCommands: playbackCommands,
-    subtitles: subtitles,
-    trackByPath: playbackCommands.trackByPath,
-    coverArtworkCacheService: library.coverArtworkCacheService,
-    notificationsEnabled: () => settings.notificationsEnabled,
-  );
-
+    NotificationRuntimeBinding.attach(
+      library: library,
+      playback: playback,
+      notifications: notifications,
+      settings: settings,
+      playbackCommands: playbackCommands,
+      keepAlive: keepAlive,
+      subtitles: subtitles,
+      syncAllState: syncAllState,
+      syncPlaybackState: syncPlaybackState,
+    ),
+  ];
   final persistence = AppPersistenceCoordinator(
     library: library,
     playback: playback,
@@ -308,45 +156,17 @@ AppRuntimeGraph createAppRuntimeGraph({
     uiWarmup: warmup,
     subtitles: subtitles,
   );
-  final runtime = AudioRuntimeCoordinator(
-    snapshots: playback.nativeRepository.snapshots,
-    progressUpdates: playback.nativeRepository.progressUpdates,
-    startListening: playback.nativeRepository.startListening,
-    stopListening: playback.nativeRepository.stopListening,
-    onSnapshot: playbackCommands.handleNativeSnapshot,
-    onProgress: playback.applyNativeProgress,
-    onStart: persistence.loadPersistedState,
-    onEnterBackground: () async {
-      // Coarsen position persistence before handing off to background playback.
-      playback.setBackgroundMode(true);
-      keepAlive.enterBackground();
-    },
-    onResumeForeground: () async {
-      playback.setBackgroundMode(false);
-      keepAlive.resumeForeground();
-      await playbackCommands.reconcileNativeRuntime();
-      notifications.resyncAfterForegroundResume();
-      await timer.syncRuntimeFromNative();
-      timer.retryOverdueAutoResume();
-    },
-    onDispose: () async {
-      persistence.dispose();
-      timer.service.countdownTimer?.cancel();
-      timer.service.autoResumeTimer?.cancel();
-      playback.cancelScheduledPersistence();
-      library.service.scanProgressNotifyTimer?.cancel();
-      await warmup.shutdown();
-      await keepAlive.shutdown();
-      for (final session in playback.service.sessions.values) {
-        session.dispose();
-      }
-      playback.service.sessions.clear();
-      await library.dispose();
-      await playback.dispose();
-      await timer.dispose();
-      await notifications.dispose();
-      await settings.dispose();
-    },
+  final runtime = AppLifecycleBinding.attach(
+    persistence: persistence,
+    library: library,
+    playback: playback,
+    timer: timer,
+    notifications: notifications,
+    settings: settings,
+    warmup: warmup,
+    keepAlive: keepAlive,
+    playbackCommands: playbackCommands,
+    bindings: bindings,
   );
   syncAllState();
   return (

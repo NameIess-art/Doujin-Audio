@@ -42,7 +42,11 @@ abstract interface class NotificationPlaybackCommands {
 
 /// Owns notification synchronization state and the notification gateway.
 final class NotificationFacade {
-  NotificationFacade({required this.service, required this.stateService});
+  NotificationFacade({
+    required PlaybackNotificationService service,
+    required NotificationCoordinatorService stateService,
+  }) : _service = service,
+       _stateService = stateService;
 
   factory NotificationFacade.create({
     required PlaybackNotificationService service,
@@ -54,8 +58,8 @@ final class NotificationFacade {
     );
   }
 
-  final PlaybackNotificationService service;
-  final NotificationCoordinatorService stateService;
+  final PlaybackNotificationService _service;
+  final NotificationCoordinatorService _stateService;
   static const Duration _notificationProgressRefreshInterval = Duration(
     milliseconds: 750,
   );
@@ -87,67 +91,66 @@ final class NotificationFacade {
   bool Function() _notificationsEnabledResolver = _alwaysFalse;
   bool _synchronizationAttached = false;
 
-  PlaybackFacade get _playbackFacade => _playback!;
-  NotificationCoordinatorService get _notificationStateService => stateService;
-  PlaybackNotificationService get _notificationService => service;
+  NotificationCoordinatorService get _notificationStateService => _stateService;
+  PlaybackNotificationService get _notificationService => _service;
   Map<String, PlaybackSession> get _sessions =>
-      _playbackFacade.service.sessions;
+      _playback?.sessions ?? const <String, PlaybackSession>{};
   List<PlaybackSession> get activeSessions =>
-      _playbackFacade.service.activeSessions;
+      _playback?.activeSessions ?? const <PlaybackSession>[];
   bool get _multiThreadPlaybackEnabled => _multiThreadPlaybackEnabledResolver();
   bool get _hasPlaybackToKeepAlive => _hasPlaybackToKeepAliveResolver();
   bool get _notificationsEnabled => _notificationsEnabledResolver();
 
   String? get _notificationFocusSessionId =>
-      stateService.notificationFocusSessionId;
+      _stateService.notificationFocusSessionId;
   set _notificationFocusSessionId(String? value) {
-    stateService.notificationFocusSessionId = value;
+    _stateService.notificationFocusSessionId = value;
   }
 
   String? get _unifiedNotificationSyncKey =>
-      stateService.unifiedNotificationSyncKey;
+      _stateService.unifiedNotificationSyncKey;
   set _unifiedNotificationSyncKey(String? value) {
-    stateService.unifiedNotificationSyncKey = value;
+    _stateService.unifiedNotificationSyncKey = value;
   }
 
   Timer? get _notificationProgressRefreshTimer =>
-      stateService.notificationProgressRefreshTimer;
+      _stateService.notificationProgressRefreshTimer;
   set _notificationProgressRefreshTimer(Timer? value) {
-    stateService.notificationProgressRefreshTimer = value;
+    _stateService.notificationProgressRefreshTimer = value;
   }
 
   Timer? get _unifiedNotificationSyncTimer =>
-      stateService.unifiedNotificationSyncTimer;
+      _stateService.unifiedNotificationSyncTimer;
   set _unifiedNotificationSyncTimer(Timer? value) {
-    stateService.unifiedNotificationSyncTimer = value;
+    _stateService.unifiedNotificationSyncTimer = value;
   }
 
   bool get _unifiedNotificationSyncInFlight =>
-      stateService.unifiedNotificationSyncInFlight;
+      _stateService.unifiedNotificationSyncInFlight;
   set _unifiedNotificationSyncInFlight(bool value) {
-    stateService.unifiedNotificationSyncInFlight = value;
+    _stateService.unifiedNotificationSyncInFlight = value;
   }
 
   bool get _unifiedNotificationSyncPending =>
-      stateService.unifiedNotificationSyncPending;
+      _stateService.unifiedNotificationSyncPending;
   set _unifiedNotificationSyncPending(bool value) {
-    stateService.unifiedNotificationSyncPending = value;
+    _stateService.unifiedNotificationSyncPending = value;
   }
 
   bool get _notificationActionRefreshPending =>
-      stateService.notificationActionRefreshPending;
+      _stateService.notificationActionRefreshPending;
   String? get _queuedNotificationRefreshSessionId =>
-      stateService.queuedNotificationRefreshSessionId;
+      _stateService.queuedNotificationRefreshSessionId;
   set _queuedNotificationRefreshSessionId(String? value) {
-    stateService.queuedNotificationRefreshSessionId = value;
+    _stateService.queuedNotificationRefreshSessionId = value;
   }
 
   bool get _notificationsDismissedWhilePaused =>
-      stateService.notificationsDismissedWhilePaused;
+      _stateService.notificationsDismissedWhilePaused;
   Map<String, String?> get _notificationSubtitleTexts =>
-      stateService.notificationSubtitleTexts;
+      _stateService.notificationSubtitleTexts;
   Map<String, String> get _notificationSubtitleTrackPaths =>
-      stateService.notificationSubtitleTrackPaths;
+      _stateService.notificationSubtitleTrackPaths;
 
   MusicTrack? trackByPath(String trackPath) => _trackByPath(trackPath);
 
@@ -157,9 +160,35 @@ final class NotificationFacade {
   void syncPlaybackState({bool immediateUnifiedSync = false}) =>
       _syncNotificationState(immediateUnifiedSync: immediateUnifiedSync);
 
+  String? get focusedSessionId => _stateService.notificationFocusSessionId;
+
+  void setFocusedSession(String? sessionId) {
+    _stateService.notificationFocusSessionId = sessionId;
+  }
+
+  void clearFocusIfMatches(String sessionId) {
+    if (_stateService.notificationFocusSessionId == sessionId) {
+      _stateService.notificationFocusSessionId = null;
+    }
+  }
+
+  void registerSessionFocus(String sessionId) {
+    _stateService
+      ..notificationsDismissedWhilePaused = false
+      ..notificationFocusSessionId = sessionId;
+  }
+
+  void markNotificationsAvailable() {
+    _stateService.notificationsDismissedWhilePaused = false;
+  }
+
+  void syncPresentationState({required int activeQueueLength}) {
+    _stateService.syncSlice(activeQueueLength: activeQueueLength);
+  }
+
   void setSynchronizationPaused(bool paused) {
-    if (stateService.synchronizationPaused == paused) return;
-    stateService.synchronizationPaused = paused;
+    if (_stateService.synchronizationPaused == paused) return;
+    _stateService.synchronizationPaused = paused;
     if (paused) {
       final hasPendingSynchronization =
           _unifiedNotificationSyncTimer != null ||
@@ -167,7 +196,7 @@ final class NotificationFacade {
           _queuedNotificationRefreshSessionId != null ||
           _unifiedNotificationSyncPending;
       if (hasPendingSynchronization) {
-        stateService.synchronizationPendingWhilePaused = true;
+        _stateService.synchronizationPendingWhilePaused = true;
       }
       _unifiedNotificationSyncTimer?.cancel();
       _unifiedNotificationSyncTimer = null;
@@ -176,13 +205,31 @@ final class NotificationFacade {
       _queuedNotificationRefreshSessionId = null;
       return;
     }
-    if (!stateService.synchronizationPendingWhilePaused) return;
-    stateService.synchronizationPendingWhilePaused = false;
+    if (!_stateService.synchronizationPendingWhilePaused) return;
+    _stateService.synchronizationPendingWhilePaused = false;
     _syncNotificationState(immediateUnifiedSync: true);
   }
 
   void clearSessionSubtitle(String sessionId) =>
       _clearNotificationSubtitleForSession(sessionId);
+
+  bool updateSessionSubtitle({
+    required String sessionId,
+    required String trackPath,
+    required String? text,
+    bool syncNotification = true,
+  }) {
+    final previousText = _stateService.notificationSubtitleTexts[sessionId];
+    final previousTrackPath =
+        _stateService.notificationSubtitleTrackPaths[sessionId];
+    if (previousTrackPath == trackPath && previousText == text) return false;
+    _stateService.notificationSubtitleTexts[sessionId] = text;
+    _stateService.notificationSubtitleTrackPaths[sessionId] = trackPath;
+    if (syncNotification && focusedSessionId == sessionId) {
+      syncPlaybackState();
+    }
+    return true;
+  }
 
   bool isFocusedSessionId(String sessionId) =>
       _isNotificationFocusedSessionId(sessionId);
@@ -212,18 +259,18 @@ final class NotificationFacade {
       _ensureSubtitleTrackLoaded(trackPath);
 
   void prepareForPersistenceReset() {
-    stateService.notificationProgressRefreshTimer?.cancel();
-    stateService.notificationProgressRefreshTimer = null;
-    stateService.unifiedNotificationSyncTimer?.cancel();
-    stateService.unifiedNotificationSyncTimer = null;
-    stateService.notificationActionRefreshTimer?.cancel();
-    stateService.notificationActionRefreshTimer = null;
-    stateService.notificationActionGuardTimeout?.cancel();
-    stateService.notificationActionGuardTimeout = null;
+    _stateService.notificationProgressRefreshTimer?.cancel();
+    _stateService.notificationProgressRefreshTimer = null;
+    _stateService.unifiedNotificationSyncTimer?.cancel();
+    _stateService.unifiedNotificationSyncTimer = null;
+    _stateService.notificationActionRefreshTimer?.cancel();
+    _stateService.notificationActionRefreshTimer = null;
+    _stateService.notificationActionGuardTimeout?.cancel();
+    _stateService.notificationActionGuardTimeout = null;
   }
 
   Future<void> resetForBackupRestore() async {
-    stateService
+    _stateService
       ..notificationFocusSessionId = null
       ..unifiedNotificationSyncKey = null
       ..unifiedNotificationSyncInFlight = false
@@ -231,8 +278,8 @@ final class NotificationFacade {
       ..queuedNotificationRefreshSessionId = null
       ..notificationsDismissedWhilePaused = false
       ..notificationActionRefreshPending = false;
-    stateService.notificationSubtitleTexts.clear();
-    stateService.notificationSubtitleTrackPaths.clear();
+    _stateService.notificationSubtitleTexts.clear();
+    _stateService.notificationSubtitleTrackPaths.clear();
     _subtitleService.clear();
     _coverArtworkCacheService.invalidateAll();
     await _clearUnifiedPlaybackNotificationsOnPlatform();
@@ -240,8 +287,8 @@ final class NotificationFacade {
     _notifyNotificationChanged();
   }
 
-  NotificationState get state => stateService.slice.state;
-  Stream<NotificationState> get states => stateService.slice.stream;
+  NotificationState get state => _stateService.slice.state;
+  Stream<NotificationState> get states => _stateService.slice.stream;
 
   void refreshState() {
     _syncNotificationState();
@@ -249,7 +296,7 @@ final class NotificationFacade {
   }
 
   Future<void> handlePlaybackModeChanged() async {
-    stateService.unifiedNotificationSyncKey = null;
+    _stateService.unifiedNotificationSyncKey = null;
     _setFocusSessionId(null);
     await _clearUnifiedNotifications();
     _syncKeepAlive();
@@ -306,6 +353,24 @@ final class NotificationFacade {
     _coverArtworkCacheService = coverArtworkCacheService;
     _notificationsEnabledResolver = notificationsEnabled;
     _synchronizationAttached = true;
+  }
+
+  void detachRuntime() {
+    _playback = null;
+    _resolveSession = _noopSessionResolver;
+    _resolveActionSession = _noopActionSession;
+    _resumeSession = _noopResumeSession;
+    _multiThreadPlaybackEnabledResolver = _alwaysFalse;
+    _setFocusSessionId = _ignoreSessionId;
+    _notify = _noop;
+    _syncKeepAlive = _noop;
+    _hasPlaybackToKeepAliveResolver = _alwaysFalse;
+    _clearUnifiedNotifications = _noopAsync;
+    _preferredSessionId = _noSessionId;
+    _notifyNotificationChanged = _noop;
+    _trackByPath = _noTrack;
+    _notificationsEnabledResolver = _alwaysFalse;
+    _synchronizationAttached = false;
   }
 
   Future<void> playPrimarySession() {
@@ -423,7 +488,7 @@ final class NotificationFacade {
   Future<void> dismissAfterPauseAll() async {
     final playback = _playback;
     if (playback == null) return;
-    stateService.notificationsDismissedWhilePaused = true;
+    _stateService.notificationsDismissedWhilePaused = true;
     await playback.nativeRepository.dismissNotifications();
     if (_hasPlaybackToKeepAlive) {
       await _clearUnifiedNotifications();
@@ -439,7 +504,7 @@ final class NotificationFacade {
   }
 
   Future<void> _guardAction(Future<void> Function() action) {
-    return stateService.guardNotificationAction(
+    return _stateService.guardNotificationAction(
       action,
       notify: _notify,
       syncNotificationState: () =>
@@ -454,21 +519,21 @@ final class NotificationFacade {
   }
 
   Future<void> restoreAfterSystemClear() async {
-    stateService.notificationsDismissedWhilePaused = false;
-    stateService.unifiedNotificationSyncKey = null;
+    _stateService.notificationsDismissedWhilePaused = false;
+    _stateService.unifiedNotificationSyncKey = null;
     await _undismissNotifications();
     _onNotificationsRestored();
   }
 
   void resyncAfterForegroundResume() {
-    if (!stateService.notificationsDismissedWhilePaused) return;
-    stateService.notificationsDismissedWhilePaused = false;
-    stateService.unifiedNotificationSyncKey = null;
+    if (!_stateService.notificationsDismissedWhilePaused) return;
+    _stateService.notificationsDismissedWhilePaused = false;
+    _stateService.unifiedNotificationSyncKey = null;
     unawaited(_undismissNotifications());
     _onNotificationsRestored();
   }
 
-  Future<void> dispose() => stateService.dispose();
+  Future<void> dispose() => _stateService.dispose();
 }
 
 void _noop() {}

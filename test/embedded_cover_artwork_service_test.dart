@@ -129,10 +129,7 @@ void main() {
     final file = File('${directory.path}/malformed.m4a');
     await file.writeAsBytes(_malformedMp4WithOversizedCoverAtom(), flush: true);
 
-    expect(
-      await EmbeddedCoverArtworkService.resolveForPath(file.path),
-      isNull,
-    );
+    expect(await EmbeddedCoverArtworkService.resolveForPath(file.path), isNull);
   });
 }
 
@@ -217,27 +214,11 @@ void _addUint32Le(BytesBuilder builder, int value) {
 }
 
 Uint8List _malformedMp4WithOversizedCoverAtom() {
-  final dataPayload = Uint8List.fromList(const <int>[
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-  ]);
-  final data = _mp4Atom(
-    'data',
-    dataPayload,
-    declaredSize: 0xffffffff,
-  );
+  final dataPayload = Uint8List.fromList(const <int>[0, 0, 0, 0, 0, 0, 0, 0]);
+  final data = _mp4Atom('data', dataPayload, declaredSize: 0xffffffff);
   final covr = _mp4Atom('covr', data);
   final ilst = _mp4Atom('ilst', covr);
-  final meta = _mp4Atom(
-    'meta',
-    Uint8List.fromList(<int>[0, 0, 0, 0, ...ilst]),
-  );
+  final meta = _mp4Atom('meta', Uint8List.fromList(<int>[0, 0, 0, 0, ...ilst]));
   final udta = _mp4Atom('udta', meta);
   final moov = _mp4Atom('moov', udta);
   return Uint8List.fromList(<int>[
@@ -246,11 +227,7 @@ Uint8List _malformedMp4WithOversizedCoverAtom() {
   ]);
 }
 
-Uint8List _mp4Atom(
-  String type,
-  Uint8List payload, {
-  int? declaredSize,
-}) {
+Uint8List _mp4Atom(String type, Uint8List payload, {int? declaredSize}) {
   final bytes = BytesBuilder();
   final size = declaredSize ?? payload.length + 8;
   _addUint32(bytes, size);

@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
@@ -20,7 +20,7 @@ void main() {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       final settings = SettingsRepository()..syncSlice(isInitialized: true);
       final playback = PlaybackFacade.create(
-        databaseRepository: AudioDatabaseRepository(),
+        databaseRepository: TestPersistenceRepository(),
       );
       final notifications = NotificationFacade.create(
         service: PlaybackNotificationService(),

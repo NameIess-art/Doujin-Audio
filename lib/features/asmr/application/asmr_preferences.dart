@@ -1,43 +1,35 @@
 import '../../../core/app_language.dart';
 import '../domain/asmr_models.dart';
-import '../../../core/persistence/app_database.dart';
+import '../domain/asmr_persistence_repository.dart';
 
 class AsmrPreferencesStore {
-  AsmrPreferencesStore({required AppDatabase database}) : _database = database;
+  AsmrPreferencesStore({required AsmrPersistenceRepository repository})
+    : _repository = repository;
 
   static const String _lastSyncAtKey = 'asmr_last_sync_at_v1';
   static const String _syncOutboxSeededKey = 'asmr_sync_outbox_seeded_v2';
   static const String _contentLanguageKey = 'asmr_content_language_v1';
 
-  final AppDatabase _database;
+  final AsmrPersistenceRepository _repository;
 
   Future<void> clearForTest() async {
-    final db = await _database.databaseForTest;
-    final batch = db.batch();
-    batch.delete('asmr_sync_operations');
-    batch.delete('asmr_visible_categories');
-    batch.delete('asmr_work_lists');
-    batch.delete('asmr_work_tags');
-    batch.delete('asmr_work_voice_actors');
-    batch.delete('asmr_works');
+    await _repository.clearForTest();
     for (final key in [
       _contentLanguageKey,
       _lastSyncAtKey,
       _syncOutboxSeededKey,
     ]) {
-      batch.delete('app_kv_settings', where: 'key = ?', whereArgs: [key]);
+      await _repository.saveSetting(key, null);
     }
-    await batch.commit(noResult: true);
   }
 
   Future<List<AsmrCategoryType>> loadVisibleCategories() async {
-    final db = _database;
-    final stored = await db.loadAsmrVisibleCategoryNames();
+    final stored = await _repository.loadVisibleCategoryNames();
     return _sanitizeCategories(stored);
   }
 
   Future<void> saveVisibleCategories(List<AsmrCategoryType> categories) async {
-    await _database.saveAsmrVisibleCategoryNames(
+    await _repository.saveVisibleCategoryNames(
       _sanitizeCategories(
         categories.map((category) => category.name).toList(),
       ).map((category) => category.name).toList(growable: false),
@@ -45,38 +37,38 @@ class AsmrPreferencesStore {
   }
 
   Future<ContentLanguagePreference> loadContentLanguagePreference() async {
-    final raw = await _database.loadAppSetting(_contentLanguageKey);
+    final raw = await _repository.loadSetting(_contentLanguageKey);
     return ContentLanguagePreference.fromName(raw);
   }
 
   Future<void> saveContentLanguagePreference(
     ContentLanguagePreference preference,
   ) async {
-    await _database.saveAppSetting(_contentLanguageKey, preference.name);
+    await _repository.saveSetting(_contentLanguageKey, preference.name);
   }
 
   Future<List<AsmrWork>> loadFavoriteWorks() async {
-    return _database.loadAsmrWorkList('favorites');
+    return _repository.loadWorkList('favorites');
   }
 
   Future<void> saveFavoriteWorks(List<AsmrWork> works) async {
-    await _database.saveAsmrWorkList('favorites', works);
+    await _repository.saveWorkList('favorites', works);
   }
 
   Future<List<AsmrWork>> loadHistoryWorks() async {
-    return _database.loadAsmrWorkList('history');
+    return _repository.loadWorkList('history');
   }
 
   Future<void> saveHistoryWorks(List<AsmrWork> works) async {
-    await _database.saveAsmrWorkList('history', works);
+    await _repository.saveWorkList('history', works);
   }
 
   Future<List<AsmrSyncOperation>> loadSyncOperations() async {
-    return _database.loadAsmrSyncOperations();
+    return _repository.loadSyncOperations();
   }
 
   Future<void> saveSyncOperations(List<AsmrSyncOperation> operations) async {
-    await _database.saveAsmrSyncOperations(operations);
+    await _repository.saveSyncOperations(operations);
   }
 
   Future<void> saveWorkListAndSyncOperations(
@@ -84,7 +76,7 @@ class AsmrPreferencesStore {
     List<AsmrWork> works,
     List<AsmrSyncOperation> operations,
   ) {
-    return _database.saveAsmrWorkListAndSyncOperations(
+    return _repository.saveWorkListAndSyncOperations(
       listType,
       works,
       operations,
@@ -93,20 +85,20 @@ class AsmrPreferencesStore {
 
   Future<DateTime?> loadLastSyncAt() async {
     return DateTime.tryParse(
-      await _database.loadAppSetting(_lastSyncAtKey) ?? '',
+      await _repository.loadSetting(_lastSyncAtKey) ?? '',
     );
   }
 
   Future<void> saveLastSyncAt(DateTime value) async {
-    await _database.saveAppSetting(_lastSyncAtKey, value.toIso8601String());
+    await _repository.saveSetting(_lastSyncAtKey, value.toIso8601String());
   }
 
   Future<bool> isSyncOutboxSeeded() async {
-    return await _database.loadAppSetting(_syncOutboxSeededKey) == 'true';
+    return await _repository.loadSetting(_syncOutboxSeededKey) == 'true';
   }
 
   Future<void> markSyncOutboxSeeded() async {
-    await _database.saveAppSetting(_syncOutboxSeededKey, 'true');
+    await _repository.saveSetting(_syncOutboxSeededKey, 'true');
   }
 
   List<AsmrCategoryType> _sanitizeCategories(List<String>? raw) {

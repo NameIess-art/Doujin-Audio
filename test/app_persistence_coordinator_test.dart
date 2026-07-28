@@ -8,8 +8,7 @@ import 'package:nameless_audio/app/application/playback_command_coordinator.dart
 import 'package:nameless_audio/app/application/playback_keep_alive_coordinator.dart';
 import 'package:nameless_audio/core/errors/native_result.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
-import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
@@ -32,7 +31,7 @@ void main() {
       inMemoryDatabasePath,
     );
     await AppDatabase.createSchemaForTest(database);
-    final repository = AudioDatabaseRepository(
+    final repository = TestPersistenceRepository(
       database: AppDatabase.test(database),
     );
     final library = LibraryFacade.create(databaseRepository: repository);
@@ -76,14 +75,9 @@ void main() {
       notifyPlaybackChanged: () {},
       syncNotificationState: notifications.syncPlaybackState,
     );
-    library.attachCoverArtworkCacheService(
-      () => CoverArtworkCacheService(
-        libraryService: library.service,
-        databaseRepository: repository,
-        audioDetailCacheService: library.detailCacheService,
-        isActiveCoverKey: notifications.isActiveCoverKey,
-        onActiveCoverChanged: () {},
-      ),
+    library.configureCoverArtworkRuntime(
+      isActiveCoverKey: notifications.isActiveCoverKey,
+      onActiveCoverChanged: () {},
     );
     notifications.attachActions(
       playback: playback,
@@ -92,9 +86,7 @@ void main() {
       resumeSession: (session) =>
           commands.startSession(session, shouldStartTriggerCountdown: false),
       multiThreadPlaybackEnabled: () => settings.multiThreadPlaybackEnabled,
-      setFocusSessionId: (sessionId) {
-        notifications.stateService.notificationFocusSessionId = sessionId;
-      },
+      setFocusSessionId: notifications.setFocusedSession,
       notify: () {},
       syncKeepAlive: keepAlive.sync,
       hasPlaybackToKeepAlive: () => false,

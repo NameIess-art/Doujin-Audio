@@ -52,7 +52,7 @@ void registerAsmrControllerStateTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: _FakeAsmrApiService(),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -84,12 +84,12 @@ void registerAsmrControllerStateTests({
   test('backup preparation materializes the current ASMR language', () async {
     await resetPrefs();
     final recordingPreferences = _RecordingAsmrPreferencesStore(
-      database: AppDatabase.instance,
+      repository: TestPersistenceRepository(),
     );
     final controller = AsmrLibraryController(
       preferencesStore: recordingPreferences,
       apiService: _FakeAsmrApiService(),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -400,7 +400,7 @@ void registerAsmrControllerStateTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -431,7 +431,7 @@ void registerAsmrControllerStateTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: api,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -472,7 +472,7 @@ void registerAsmrControllerStateTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: api,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -517,7 +517,7 @@ void registerAsmrControllerStateTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -560,7 +560,7 @@ void registerAsmrControllerStateTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -604,7 +604,7 @@ void registerAsmrControllerStateTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: api,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -668,7 +668,7 @@ void registerAsmrControllerStateTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: _FakeAsmrApiService(largeRecommendationPool: true),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -703,7 +703,7 @@ void registerAsmrControllerStateTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -735,7 +735,7 @@ void registerAsmrControllerStateTests({
         repeatPaginatedWorks: true,
         recommendationPageCount: 3,
       ),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -775,7 +775,7 @@ void registerAsmrControllerStateTests({
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );

@@ -8,7 +8,6 @@ import '../../core/immutable_collections.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../core/media/music_track.dart';
 import '../../core/media/path_matcher.dart';
-import '../../core/persistence/audio_database_repository.dart';
 import '../../features/asmr/application/asmr_api_service.dart';
 import '../../features/asmr/application/asmr_playback_cache_service.dart';
 import '../../features/library/application/library_facade.dart';
@@ -21,7 +20,6 @@ import '../../features/player/application/playback_queue_resolver.dart';
 import '../../features/player/application/playback_session.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
-import '../../features/player/application/audio_state_services.dart';
 import '../../features/player/domain/audio_effects.dart';
 import '../../features/player/domain/playback_mode.dart';
 import '../../features/settings/application/settings_repository.dart';
@@ -78,31 +76,23 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
   final PlaybackNotificationSynchronizer _syncNotificationStateCallback;
   final Random _random;
 
-  Map<String, PlaybackSession> get _sessions =>
-      _playbackFacade.service.sessions;
-  PlaybackSessionService get _playbackService => _playbackFacade.service;
-  AudioDatabaseRepository get _audioDatabaseRepository =>
-      _libraryFacade.databaseRepository;
+  Map<String, PlaybackSession> get _sessions => _playbackFacade.sessions;
   NativePlaybackRepository get _nativePlaybackRepository =>
       _playbackFacade.nativeRepository;
   PlaybackCommandRunner get _playbackCommandRunner =>
       _playbackFacade.commandRunner;
   bool _isRegisteredSession(PlaybackSession session) =>
-      !session.isDisposed && identical(_sessions[session.id], session);
+      _playbackFacade.isRegisteredSession(session);
   bool get _multiThreadPlaybackEnabled =>
       _settingsRepository.multiThreadPlaybackEnabled;
   List<String> get _sortedLibraryTrackPaths =>
-      _libraryFacade.service.sortedLibraryTrackPaths;
+      _libraryFacade.sortedLibraryTrackPaths;
   Map<String, List<MusicTrack>> get _tracksByGroup =>
-      _libraryFacade.service.tracksByGroup;
-  List<MusicTrack> get _library => _libraryFacade.service.library;
-  Map<String, MusicTrack> get _libraryByPath =>
-      _libraryFacade.service.libraryByPath;
+      _libraryFacade.tracksByGroup;
   AsmrPlaybackCacheService get _asmrPlaybackCacheService =>
       _playbackFacade.playbackCacheService;
 
-  List<PlaybackSession> get activeSessions =>
-      _playbackFacade.service.activeSessions;
+  List<PlaybackSession> get activeSessions => _playbackFacade.activeSessions;
 
   Future<bool> _activateAudioSessionForPlayback() =>
       _keepAliveCoordinator.activateAudioSession();
@@ -162,18 +152,12 @@ final class PlaybackCommandCoordinator implements NotificationPlaybackCommands {
       position ?? session.position,
       subtitleTrack: _subtitleService.trackSync(trackPath),
     );
-    final state = _notificationFacade.stateService;
-    final previousText = state.notificationSubtitleTexts[session.id];
-    final previousTrackPath = state.notificationSubtitleTrackPaths[session.id];
-    if (previousTrackPath == trackPath && previousText == nextText) {
-      return false;
-    }
-    state.notificationSubtitleTexts[session.id] = nextText;
-    state.notificationSubtitleTrackPaths[session.id] = trackPath;
-    if (syncNotification && state.notificationFocusSessionId == session.id) {
-      _syncNotificationState();
-    }
-    return true;
+    return _notificationFacade.updateSessionSubtitle(
+      sessionId: session.id,
+      trackPath: trackPath,
+      text: nextText,
+      syncNotification: syncNotification,
+    );
   }
 
   @override

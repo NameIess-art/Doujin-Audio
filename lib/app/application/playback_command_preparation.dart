@@ -283,7 +283,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     } else if (forceStartAtZero) {
       session.setOptimisticPosition(target.startPosition);
     }
-    _playbackService.markActiveSessionsDirty();
+    _playbackFacade.markSessionStateDirty();
     _notifyPlaybackChanged();
   }
 

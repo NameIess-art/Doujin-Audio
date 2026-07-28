@@ -14,13 +14,14 @@ import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/app/presentation/main_screen.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
+import 'package:nameless_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:nameless_audio/features/library/presentation/library_tab.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
@@ -627,7 +628,7 @@ void main() {
     final themeProvider = ThemeProvider();
     final languageProvider = AppLanguageProvider();
     final notificationService = PlaybackNotificationService();
-    final audioDatabaseRepository = AudioDatabaseRepository();
+    final persistenceRepository = TestPersistenceRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     final libraryService = LibraryService();
     final playbackService = PlaybackSessionService();
@@ -636,7 +637,7 @@ void main() {
     final settingsRepository = SettingsRepository();
     final runtimeGraph = createTestRuntimeGraph(
       notificationService: notificationService,
-      audioDatabaseRepository: audioDatabaseRepository,
+      persistenceRepository: persistenceRepository,
       nativePlaybackRepository: nativePlaybackRepository,
       libraryService: libraryService,
       playbackService: playbackService,
@@ -783,7 +784,7 @@ void main() {
     final themeProvider = ThemeProvider();
     final languageProvider = AppLanguageProvider();
     final notificationService = PlaybackNotificationService();
-    final audioDatabaseRepository = AudioDatabaseRepository();
+    final persistenceRepository = TestPersistenceRepository();
     final nativePlaybackRepository = NativePlaybackRepository();
     final libraryService = LibraryService();
     final playbackService = PlaybackSessionService();
@@ -792,7 +793,7 @@ void main() {
     final settingsRepository = SettingsRepository();
     final runtimeGraph = createTestRuntimeGraph(
       notificationService: notificationService,
-      audioDatabaseRepository: audioDatabaseRepository,
+      persistenceRepository: persistenceRepository,
       nativePlaybackRepository: nativePlaybackRepository,
       libraryService: libraryService,
       playbackService: playbackService,
@@ -1410,7 +1411,8 @@ final class _AppShellHarness {
   final PlaybackSessionService playbackService;
 }
 
-final class _AppShellAudioDatabaseRepository extends AudioDatabaseRepository {
+final class _AppShellTestPersistenceRepository
+    extends TestPersistenceRepository {
   @override
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
     return const <TimeSegmentLabel>[];
@@ -1422,7 +1424,9 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     this.collectedHasMore = false,
     this.needsRetry = false,
   }) : super(
-         preferencesStore: AsmrPreferencesStore(database: AppDatabase.instance),
+         preferencesStore: AsmrPreferencesStore(
+           repository: SqliteAsmrRepository(database: AppDatabase.instance),
+         ),
        );
 
   final Completer<void> _recommendationRefresh = Completer<void>();
@@ -1569,7 +1573,7 @@ Future<_AppShellHarness> _pumpAppShell(
   final themeProvider = ThemeProvider();
   final languageProvider = AppLanguageProvider();
   final notificationService = PlaybackNotificationService();
-  final audioDatabaseRepository = _AppShellAudioDatabaseRepository();
+  final persistenceRepository = _AppShellTestPersistenceRepository();
   final nativePlaybackRepository = NativePlaybackRepository();
   final libraryService = LibraryService();
   final playbackService = PlaybackSessionService();
@@ -1578,7 +1582,7 @@ Future<_AppShellHarness> _pumpAppShell(
   final settingsRepository = SettingsRepository();
   final runtimeGraph = createTestRuntimeGraph(
     notificationService: notificationService,
-    audioDatabaseRepository: audioDatabaseRepository,
+    persistenceRepository: persistenceRepository,
     nativePlaybackRepository: nativePlaybackRepository,
     libraryService: libraryService,
     playbackService: playbackService,

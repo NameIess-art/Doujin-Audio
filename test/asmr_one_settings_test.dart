@@ -9,7 +9,7 @@ import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/core/app_language.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_api_service.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_account_sync_service.dart';
@@ -42,7 +42,9 @@ void main() {
     await AppDatabase.createSchemaForTest(db);
     final appDatabase = AppDatabase.test(db);
     AppDatabase.setInstanceForTest(appDatabase);
-    preferences = AsmrPreferencesStore(database: appDatabase);
+    preferences = AsmrPreferencesStore(
+      repository: TestPersistenceRepository(database: appDatabase),
+    );
   });
 
   tearDownAll(() async {
@@ -451,7 +453,7 @@ class _MemoryAsmrTokenStore implements AsmrTokenStore {
 }
 
 class _BlockingAsmrPreferencesStore extends AsmrPreferencesStore {
-  _BlockingAsmrPreferencesStore({required super.database});
+  _BlockingAsmrPreferencesStore({required super.repository});
 
   final Completer<void> saveStarted = Completer<void>();
   final Completer<void> releaseSave = Completer<void>();
@@ -469,7 +471,7 @@ class _BlockingAsmrPreferencesStore extends AsmrPreferencesStore {
 }
 
 class _RecordingAsmrPreferencesStore extends AsmrPreferencesStore {
-  _RecordingAsmrPreferencesStore({required super.database});
+  _RecordingAsmrPreferencesStore({required super.repository});
 
   ContentLanguagePreference? savedContentLanguage;
 
@@ -502,8 +504,8 @@ class _BlockingAsmrAuthService extends AsmrAuthService {
   }
 }
 
-class _FakeAudioDatabaseRepository extends AudioDatabaseRepository {
-  _FakeAudioDatabaseRepository(this.tracks);
+class _FakeTestPersistenceRepository extends TestPersistenceRepository {
+  _FakeTestPersistenceRepository(this.tracks);
 
   final List<MusicTrack> tracks;
 

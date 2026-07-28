@@ -15,7 +15,7 @@ void registerAsmrRemoteCatalogTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: api,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(<MusicTrack>[
+        persistenceRepository: _FakeTestPersistenceRepository(<MusicTrack>[
           _track(groupTitle: 'Dream Circle', tags: <String>['sleep']),
         ]),
       );
@@ -45,7 +45,7 @@ void registerAsmrRemoteCatalogTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -74,7 +74,7 @@ void registerAsmrRemoteCatalogTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -95,7 +95,7 @@ void registerAsmrRemoteCatalogTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -120,7 +120,7 @@ void registerAsmrRemoteCatalogTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -149,7 +149,7 @@ void registerAsmrRemoteCatalogTests({
         preferencesStore: preferences,
         apiService: api,
         authService: auth,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -186,7 +186,7 @@ void registerAsmrRemoteCatalogTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -227,7 +227,7 @@ void registerAsmrRemoteCatalogTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -254,7 +254,7 @@ void registerAsmrRemoteCatalogTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -284,7 +284,7 @@ void registerAsmrRemoteCatalogTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -326,7 +326,7 @@ void registerAsmrRemoteCatalogTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -369,7 +369,7 @@ void registerAsmrRemoteCatalogTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: api,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -412,7 +412,7 @@ void registerAsmrRemoteCatalogTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: api,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(<MusicTrack>[
+        persistenceRepository: _FakeTestPersistenceRepository(<MusicTrack>[
           _track(
             groupTitle: 'Local Circle',
             groupSubtitle: 'RJ000033',
@@ -445,7 +445,7 @@ void registerAsmrRemoteCatalogTests({
       await preferences.saveFavoriteWorks(<AsmrWork>[favorite]);
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -493,7 +493,7 @@ void registerAsmrRemoteCatalogTests({
       await preferences.saveHistoryWorks(<AsmrWork>[historyMatch, historyMiss]);
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );

@@ -45,8 +45,8 @@ extension NotificationFacadeSync on NotificationFacade {
 
   void _syncNotificationState({bool immediateUnifiedSync = false}) {
     if (!_synchronizationAttached) return;
-    if (stateService.synchronizationPaused) {
-      stateService.synchronizationPendingWhilePaused = true;
+    if (_stateService.synchronizationPaused) {
+      _stateService.synchronizationPendingWhilePaused = true;
       return;
     }
 
@@ -96,9 +96,9 @@ extension NotificationFacadeSync on NotificationFacade {
   }
 
   void _requestUnifiedPlaybackNotificationFlush() {
-    if (stateService.synchronizationPaused) {
+    if (_stateService.synchronizationPaused) {
       _unifiedNotificationSyncPending = false;
-      stateService.synchronizationPendingWhilePaused = true;
+      _stateService.synchronizationPendingWhilePaused = true;
       return;
     }
     _unifiedNotificationSyncPending = true;
@@ -112,9 +112,9 @@ extension NotificationFacadeSync on NotificationFacade {
   Future<void> _flushUnifiedPlaybackNotificationState() async {
     try {
       while (_unifiedNotificationSyncPending) {
-        if (stateService.synchronizationPaused) {
+        if (_stateService.synchronizationPaused) {
           _unifiedNotificationSyncPending = false;
-          stateService.synchronizationPendingWhilePaused = true;
+          _stateService.synchronizationPendingWhilePaused = true;
           break;
         }
         _unifiedNotificationSyncPending = false;
@@ -138,8 +138,8 @@ extension NotificationFacadeSync on NotificationFacade {
     String sessionId, {
     bool immediate = false,
   }) {
-    if (stateService.synchronizationPaused) {
-      stateService.synchronizationPendingWhilePaused = true;
+    if (_stateService.synchronizationPaused) {
+      _stateService.synchronizationPendingWhilePaused = true;
       return;
     }
     if (!_notificationsEnabled ||
@@ -185,9 +185,9 @@ extension NotificationFacadeSync on NotificationFacade {
           (_notificationsDismissedWhilePaused && !_hasPlaybackToKeepAlive)) {
         return;
       }
-      if (stateService.synchronizationPaused) {
+      if (_stateService.synchronizationPaused) {
         _queuedNotificationRefreshSessionId = queuedSessionId;
-        stateService.synchronizationPendingWhilePaused = true;
+        _stateService.synchronizationPendingWhilePaused = true;
         return;
       }
       _syncNotificationState();

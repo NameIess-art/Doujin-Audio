@@ -1,3 +1,4 @@
+import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -10,7 +11,7 @@ import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/app_language.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
@@ -548,7 +549,7 @@ void main() {
         await runtimeGraph.runtime.dispose();
         runtimeGraph = createTestRuntimeGraph(
           notificationService: notificationService,
-          audioDatabaseRepository: AudioDatabaseRepository(
+          persistenceRepository: TestPersistenceRepository(
             database: AppDatabase.test(db),
           ),
         );
@@ -803,7 +804,7 @@ void main() {
 
         await runtimeGraph.playback.spawnSession(track, autoPlay: false);
         await prepareStarted.future;
-        final session = runtimeGraph.playback.service.activeSessions.single;
+        final session = runtimeGraph.playback.activeSessions.single;
 
         final result = await pathCoordinator.renameAudioDetailTargetToName(
           AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
@@ -867,7 +868,7 @@ void main() {
         final oldTrackPath =
             '${tempDir.path}${Platform.pathSeparator}Old Folder${Platform.pathSeparator}01.mp3';
 
-        final restoredRepository = AudioDatabaseRepository(
+        final restoredRepository = TestPersistenceRepository(
           database: AppDatabase.test(db),
         );
         await restoredRepository.saveAllTracks(<MusicTrack>[
@@ -881,8 +882,8 @@ void main() {
             manualCoverPath: newCoverPath,
           ),
         ]);
-        await restoredRepository.saveAllSessions(<PersistedSession>[
-          PersistedSession(
+        await restoredRepository.saveAllSessions(<PersistedPlaybackSession>[
+          PersistedPlaybackSession(
             id: restoredSessionId,
             trackPath: newTrackPath,
             loopModeIndex: SessionLoopMode.folderSequential.index,
@@ -937,15 +938,14 @@ void main() {
 
         final restoredGraph = createTestRuntimeGraph(
           notificationService: notificationService,
-          audioDatabaseRepository: restoredRepository,
+          persistenceRepository: restoredRepository,
           skipPersistence: false,
         );
         addTearDown(restoredGraph.runtime.dispose);
         await restoredGraph.runtime.start();
 
-        expect(restoredGraph.playback.service.activeSessions, hasLength(1));
-        final restoredSession =
-            restoredGraph.playback.service.activeSessions.single;
+        expect(restoredGraph.playback.activeSessions, hasLength(1));
+        final restoredSession = restoredGraph.playback.activeSessions.single;
         expect(restoredSession.currentTrackPath, newTrackPath);
         final restoredTrack = restoredGraph.library.trackByPath(
           restoredSession.currentTrackPath,
@@ -1230,7 +1230,7 @@ void main() {
       );
       runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
-        audioDatabaseRepository: AudioDatabaseRepository(
+        persistenceRepository: TestPersistenceRepository(
           database: AppDatabase.test(db),
         ),
         coverArtworkCacheService: cache,
@@ -1278,7 +1278,7 @@ void main() {
       final cache = _PlaybackCoverWarmupRecordingCacheService();
       runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
-        audioDatabaseRepository: AudioDatabaseRepository(
+        persistenceRepository: TestPersistenceRepository(
           database: AppDatabase.test(db),
         ),
         coverArtworkCacheService: cache,

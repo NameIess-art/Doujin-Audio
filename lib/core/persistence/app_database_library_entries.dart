@@ -3,14 +3,16 @@ part of 'app_database.dart';
 extension AppDatabaseLibraryEntries on AppDatabase {
   // ---- Library entries ----
 
-  Future<List<LibraryEntry>> loadAllLibraryEntries() async {
+  Future<List<LibraryEntryRecord>> loadAllLibraryEntries() async {
     return _runDatabaseRead((db) async {
       final rows = await db.query('library_entries');
       return rows.map(_libraryEntryFromRow).toList();
     });
   }
 
-  Future<List<LibraryEntry>> loadLibraryEntries(String libraryPath) async {
+  Future<List<LibraryEntryRecord>> loadLibraryEntries(
+    String libraryPath,
+  ) async {
     return _runDatabaseRead((db) async {
       final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
       final rows = await db.query(
@@ -23,7 +25,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
   }
 
   Future<void> upsertLibraryEntries(
-    List<LibraryEntry> entries, {
+    List<LibraryEntryRecord> entries, {
     int? scanGeneration,
   }) async {
     if (entries.isEmpty) return;
@@ -84,7 +86,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
   Future<void> setLibraryEntriesState(
     String libraryPath,
     Iterable<String> entryPaths,
-    LibraryEntryState state,
+    String state,
   ) async {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     final paths = entryPaths.map(PathMatcher.normalize).toSet();
@@ -94,7 +96,7 @@ extension AppDatabaseLibraryEntries on AppDatabase {
       for (final entryPath in paths) {
         batch.update(
           'library_entries',
-          {'state': state.dbValue},
+          {'state': state},
           where: 'library_path = ? AND path = ?',
           whereArgs: [normalizedLibraryPath, entryPath],
         );

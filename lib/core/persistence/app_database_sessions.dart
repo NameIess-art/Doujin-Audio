@@ -1,7 +1,7 @@
 part of 'app_database.dart';
 
 extension AppDatabaseSessions on AppDatabase {
-  Future<List<PersistedSession>> loadAllSessions() async {
+  Future<List<PlaybackSessionRecord>> loadAllSessions() async {
     return _runDatabaseRead((db) async {
       final rows = await db.rawQuery('''
       SELECT
@@ -32,7 +32,7 @@ extension AppDatabaseSessions on AppDatabase {
       LEFT JOIN playback_queues queue ON queue.session_id = s.id
       ORDER BY s.sort_order ASC
     ''');
-      if (rows.isEmpty) return const <PersistedSession>[];
+      if (rows.isEmpty) return const <PlaybackSessionRecord>[];
       final sessionIds = rows.map((row) => row['id'] as String).toList();
       final eqBandsBySession = await _loadSessionEqBandsBySession(
         db,
@@ -43,7 +43,7 @@ extension AppDatabaseSessions on AppDatabase {
         sessionIds,
       );
       final queueTracksByEntry = await _loadQueueTracksByEntry(db, sessionIds);
-      final sessions = <PersistedSession>[];
+      final sessions = <PlaybackSessionRecord>[];
       for (final row in rows) {
         final id = row['id'] as String;
         sessions.add(
@@ -70,7 +70,7 @@ extension AppDatabaseSessions on AppDatabase {
     });
   }
 
-  Future<void> saveAllSessions(List<PersistedSession> sessions) async {
+  Future<void> saveAllSessions(List<PlaybackSessionRecord> sessions) async {
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
       batch.delete('playback_queue_entry_tracks');
@@ -120,7 +120,7 @@ extension AppDatabaseSessions on AppDatabase {
     });
   }
 
-  Future<void> upsertSessionPlaybackState(PersistedSession session) async {
+  Future<void> upsertSessionPlaybackState(PlaybackSessionRecord session) async {
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
       batch.insert(

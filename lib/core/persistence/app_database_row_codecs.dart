@@ -234,13 +234,13 @@ MusicTrack _trackFromRow(Map<String, dynamic> row, List<String>? tags) =>
     );
 
 Map<String, dynamic> _libraryEntryToRow(
-  LibraryEntry entry, {
+  LibraryEntryRecord entry, {
   int? scanGeneration,
 }) => {
   'library_path': PathMatcher.normalize(entry.libraryPath),
   'path': PathMatcher.normalize(entry.path),
-  'kind': entry.kind.dbValue,
-  'state': entry.state.dbValue,
+  'kind': entry.kind,
+  'state': entry.state,
   'parent_path': entry.parentPath == null
       ? null
       : PathMatcher.normalize(entry.parentPath!),
@@ -256,12 +256,12 @@ Map<String, dynamic> _libraryEntryToRow(
   'scan_generation': scanGeneration ?? 0,
 };
 
-LibraryEntry _libraryEntryFromRow(Map<String, dynamic> row) {
-  return LibraryEntry(
+LibraryEntryRecord _libraryEntryFromRow(Map<String, dynamic> row) {
+  return LibraryEntryRecord(
     libraryPath: row['library_path'] as String,
     path: row['path'] as String,
-    kind: LibraryEntryKind.fromDbValue(row['kind'] as String),
-    state: LibraryEntryState.fromDbValue(row['state'] as String),
+    kind: row['kind'] as String,
+    state: row['state'] as String,
     parentPath: row['parent_path'] as String?,
     displayName: row['display_name'] as String? ?? '',
     groupKey: row['group_key'] as String? ?? '',
@@ -301,7 +301,7 @@ Future<Map<int, List<String>>> _loadAsmrWorkTextValues(
   );
 }
 
-void _writeAsmrWorkToBatch(Batch batch, AsmrWork work) {
+void _writeAsmrWorkToBatch(Batch batch, AsmrWorkRecord work) {
   batch.insert('asmr_works', {
     'id': work.id,
     'title': work.title,
@@ -346,7 +346,7 @@ void _writeAsmrWorkToBatch(Batch batch, AsmrWork work) {
 void _replaceAsmrWorkListInBatch(
   Batch batch,
   String listType,
-  List<AsmrWork> works,
+  List<AsmrWorkRecord> works,
 ) {
   batch.delete(
     'asmr_work_lists',
@@ -365,13 +365,13 @@ void _replaceAsmrWorkListInBatch(
 
 void _replaceAsmrSyncOperationsInBatch(
   Batch batch,
-  List<AsmrSyncOperation> operations,
+  List<AsmrSyncOperationRecord> operations,
 ) {
   batch.delete('asmr_sync_operations');
   for (var i = 0; i < operations.length; i++) {
     final operation = operations[i];
     batch.insert('asmr_sync_operations', {
-      'type': operation.type.name,
+      'type': operation.type,
       'work_id': operation.workId,
       'source_id': operation.sourceId,
       'created_at_ms': operation.createdAt.millisecondsSinceEpoch,
@@ -381,12 +381,12 @@ void _replaceAsmrSyncOperationsInBatch(
   }
 }
 
-AsmrWork _asmrWorkFromRow(
+AsmrWorkRecord _asmrWorkFromRow(
   Map<String, dynamic> row, {
   List<String>? voiceActors,
   List<String>? tags,
 }) {
-  return AsmrWork(
+  return AsmrWorkRecord(
     id: (row['id'] as num?)?.toInt() ?? 0,
     title: row['title'] as String? ?? '',
     circleName: row['circle_name'] as String? ?? '',
@@ -411,28 +411,31 @@ AsmrWork _asmrWorkFromRow(
   );
 }
 
-Map<String, dynamic> _sessionCoreRow(PersistedSession session, int sortOrder) =>
-    {
-      'id': session.id,
-      'track_path': session.trackPath,
-      'loop_mode': session.loopModeIndex,
-      'created_at_ms': session.createdAtMs,
-      'updated_at_ms': session.updatedAtMs,
-      'last_played_at_ms': session.lastPlayedAtMs,
-      'sort_order': sortOrder,
-    };
-
-Map<String, dynamic> _sessionPlaybackStateRow(PersistedSession session) => {
-  'session_id': session.id,
-  'volume': session.volume,
-  'speed': session.speed,
-  'position_ms': session.positionMs,
-  'duration_ms': session.durationMs,
-  'current_queue_index': session.currentQueueIndex,
-  'channel_swap': session.channelSwapEnabled ? 1 : 0,
+Map<String, dynamic> _sessionCoreRow(
+  PlaybackSessionRecord session,
+  int sortOrder,
+) => {
+  'id': session.id,
+  'track_path': session.trackPath,
+  'loop_mode': session.loopModeIndex,
+  'created_at_ms': session.createdAtMs,
+  'updated_at_ms': session.updatedAtMs,
+  'last_played_at_ms': session.lastPlayedAtMs,
+  'sort_order': sortOrder,
 };
 
-Map<String, dynamic> _sessionAudioEffectsRow(PersistedSession session) => {
+Map<String, dynamic> _sessionPlaybackStateRow(PlaybackSessionRecord session) =>
+    {
+      'session_id': session.id,
+      'volume': session.volume,
+      'speed': session.speed,
+      'position_ms': session.positionMs,
+      'duration_ms': session.durationMs,
+      'current_queue_index': session.currentQueueIndex,
+      'channel_swap': session.channelSwapEnabled ? 1 : 0,
+    };
+
+Map<String, dynamic> _sessionAudioEffectsRow(PlaybackSessionRecord session) => {
   'session_id': session.id,
   'skip_silence_enabled': session.audioEffects.skipSilenceEnabled ? 1 : 0,
   'noise_reduction_enabled': session.audioEffects.noiseReductionEnabled ? 1 : 0,
@@ -445,7 +448,7 @@ Map<String, dynamic> _sessionAudioEffectsRow(PersistedSession session) => {
 
 void _writeSessionToBatch(
   Batch batch,
-  PersistedSession session,
+  PlaybackSessionRecord session,
   int sortOrder,
 ) {
   batch.insert(
@@ -456,7 +459,7 @@ void _writeSessionToBatch(
   _writeSessionDetailsToBatch(batch, session);
 }
 
-void _writeSessionDetailsToBatch(Batch batch, PersistedSession session) {
+void _writeSessionDetailsToBatch(Batch batch, PlaybackSessionRecord session) {
   batch.insert(
     'session_playback_state',
     _sessionPlaybackStateRow(session),
@@ -482,7 +485,7 @@ void _writeSessionDetailsToBatch(Batch batch, PersistedSession session) {
   _writePlaybackQueueToBatch(batch, session);
 }
 
-void _writePlaybackQueueToBatch(Batch batch, PersistedSession session) {
+void _writePlaybackQueueToBatch(Batch batch, PlaybackSessionRecord session) {
   batch.delete(
     'playback_queue_entry_tracks',
     where: 'session_id = ?',
@@ -527,7 +530,7 @@ void _writePlaybackQueueToBatch(Batch batch, PersistedSession session) {
     batch.insert('playback_queue_entries', {
       'session_id': session.id,
       'entry_id': entry.id,
-      'kind': entry.kind.name,
+      'kind': entry.kind,
       'title': entry.title,
       'work_root_path': entry.workRootPath,
       'sort_order': entryIndex,
@@ -573,12 +576,12 @@ Map<String, dynamic> _queueTrackRow({
   'sort_order': sortOrder,
 };
 
-PersistedSession _sessionFromRow(
+PlaybackSessionRecord _sessionFromRow(
   Map<String, dynamic> row, {
   required List<MusicTrack>? customQueueTracks,
-  required PlaybackQueueDefinition? playbackQueue,
-  required AudioEffectsState audioEffects,
-}) => PersistedSession(
+  required PlaybackQueueRecord? playbackQueue,
+  required AudioEffectsRecord audioEffects,
+}) => PlaybackSessionRecord(
   id: row['id'] as String,
   trackPath: row['track_path'] as String,
   loopModeIndex: row['loop_mode'] as int,
@@ -691,11 +694,11 @@ Future<Map<String, List<Map<String, dynamic>>>> _loadQueueTracksByEntry(
   return tracksByEntry;
 }
 
-AudioEffectsState _sessionAudioEffectsFromRow(
+AudioEffectsRecord _sessionAudioEffectsFromRow(
   Map<String, dynamic> row,
   Map<int, double> levels,
 ) {
-  return AudioEffectsState(
+  return AudioEffectsRecord(
     skipSilenceEnabled: (row['skip_silence_enabled'] as int? ?? 0) == 1,
     noiseReductionEnabled: (row['noise_reduction_enabled'] as int? ?? 0) == 1,
     volumeNormalizationEnabled:
@@ -720,7 +723,7 @@ List<MusicTrack>? _customQueueTracksForSession(
   return rows.map(_queueTrackFromRow).toList(growable: false);
 }
 
-PlaybackQueueDefinition? _playbackQueueForSession(
+PlaybackQueueRecord? _playbackQueueForSession(
   String sessionId,
   Map<String, dynamic> sessionRow,
   Map<String, List<Map<String, dynamic>>> queueEntriesBySession,
@@ -730,26 +733,23 @@ PlaybackQueueDefinition? _playbackQueueForSession(
   if (queueName == null) return null;
   final entryRows =
       queueEntriesBySession[sessionId] ?? const <Map<String, dynamic>>[];
-  final entries = <PlaybackQueueEntry>[];
+  final entries = <PlaybackQueueEntryRecord>[];
   for (final entryRow in entryRows) {
     final entryId = entryRow['entry_id'] as String;
     final trackRows =
         queueTracksByEntry[_queueEntryKey(sessionId, entryId)] ??
         const <Map<String, dynamic>>[];
     entries.add(
-      PlaybackQueueEntry(
+      PlaybackQueueEntryRecord(
         id: entryId,
-        kind: PlaybackQueueEntryKind.values.firstWhere(
-          (kind) => kind.name == entryRow['kind'],
-          orElse: () => PlaybackQueueEntryKind.track,
-        ),
+        kind: entryRow['kind'] as String? ?? 'track',
         title: entryRow['title'] as String? ?? '',
         workRootPath: entryRow['work_root_path'] as String?,
         tracks: trackRows.map(_queueTrackFromRow).toList(growable: false),
       ),
     );
   }
-  return PlaybackQueueDefinition(
+  return PlaybackQueueRecord(
     name: queueName,
     colorValue: (sessionRow['queue_color_value'] as num?)?.toInt(),
     entries: entries,
@@ -810,45 +810,4 @@ Map<String, Object?>? _decodeJsonMap(Object? value) {
 
 List<MusicTrack> _startupTracksFromRows(List<Map<String, Object?>> rows) {
   return rows.map(_trackStartupFromRow).toList(growable: false);
-}
-
-class PersistedSession {
-  PersistedSession({
-    required this.id,
-    required this.trackPath,
-    required this.loopModeIndex,
-    required this.volume,
-    this.speed = 1.0,
-    required this.positionMs,
-    required this.durationMs,
-    required List<MusicTrack>? customQueueTracks,
-    this.playbackQueue,
-    this.currentQueueIndex = 0,
-    required this.channelSwapEnabled,
-    AudioEffectsState? audioEffects,
-    required this.sortOrder,
-    this.createdAtMs,
-    this.updatedAtMs,
-    this.lastPlayedAtMs,
-  }) : customQueueTracks = customQueueTracks == null
-           ? null
-           : immutableList(customQueueTracks),
-       audioEffects = audioEffects ?? AudioEffectsState.flat;
-
-  final String id;
-  final String trackPath;
-  final int loopModeIndex;
-  final double volume;
-  final double speed;
-  final int positionMs;
-  final int durationMs;
-  final List<MusicTrack>? customQueueTracks;
-  final PlaybackQueueDefinition? playbackQueue;
-  final int currentQueueIndex;
-  final bool channelSwapEnabled;
-  final AudioEffectsState audioEffects;
-  final int sortOrder;
-  final int? createdAtMs;
-  final int? updatedAtMs;
-  final int? lastPlayedAtMs;
 }

@@ -4,8 +4,9 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
+import 'package:nameless_audio/features/library/domain/library_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/cover_image_cache_policy.dart';
 import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -33,7 +34,7 @@ void main() {
     appDatabase = AppDatabase.test(db);
     tempDir = await Directory.systemTemp.createTemp('audio_detail_test_');
     repository = AudioDetailRepository(
-      databaseRepository: AudioDatabaseRepository(database: appDatabase),
+      databaseRepository: TestPersistenceRepository(database: appDatabase),
       now: () => fixedNow,
       portableCoverDirectory: () async =>
           Directory('${tempDir.path}${Platform.pathSeparator}portable-covers'),
@@ -591,7 +592,7 @@ void main() {
           'primary%3AMusic%2FImportedWork%2Fartwork%2Fselected.jpg';
       final gateway = _MemoryFileCacheGateway();
       final contentRepository = AudioDetailRepository(
-        databaseRepository: AudioDatabaseRepository(database: appDatabase),
+        databaseRepository: TestPersistenceRepository(database: appDatabase),
         fileCacheGateway: gateway,
         now: () => fixedNow,
         portableCoverDirectory: () async => Directory(
@@ -639,7 +640,7 @@ void main() {
     await cacheFile.writeAsBytes(pngCoverBytes);
     final gateway = _MemoryFileCacheGateway();
     final contentRepository = AudioDetailRepository(
-      databaseRepository: AudioDatabaseRepository(database: appDatabase),
+      databaseRepository: TestPersistenceRepository(database: appDatabase),
       fileCacheGateway: gateway,
       now: () => fixedNow,
       portableCoverDirectory: () async => Directory(
@@ -689,7 +690,7 @@ void main() {
     await cacheFile.writeAsBytes(pngCoverBytes);
     final gateway = _MemoryFileCacheGateway();
     final contentRepository = AudioDetailRepository(
-      databaseRepository: AudioDatabaseRepository(database: appDatabase),
+      databaseRepository: TestPersistenceRepository(database: appDatabase),
       fileCacheGateway: gateway,
       now: () => fixedNow,
       portableCoverDirectory: () async => Directory(
@@ -792,7 +793,7 @@ void main() {
   test('explicit batch import reads a shared content backup once', () async {
     final gateway = _MemoryFileCacheGateway();
     repository = AudioDetailRepository(
-      databaseRepository: AudioDatabaseRepository(database: appDatabase),
+      databaseRepository: TestPersistenceRepository(database: appDatabase),
       fileCacheGateway: gateway,
       now: () => fixedNow,
       portableCoverDirectory: () async =>
@@ -1164,7 +1165,7 @@ void main() {
     var now = fixedNow;
     final gateway = _MemoryFileCacheGateway()..folderWriteSucceeds = false;
     final retryRepository = AudioDetailRepository(
-      databaseRepository: AudioDatabaseRepository(database: appDatabase),
+      databaseRepository: TestPersistenceRepository(database: appDatabase),
       fileCacheGateway: gateway,
       now: () => now,
       portableCoverDirectory: () async =>
@@ -1209,7 +1210,7 @@ void main() {
       final currentDetail = AudioDetail.empty(
         target,
       ).copyWith(workTitle: 'Current title');
-      final databaseRepository = _RevalidatingAudioDatabaseRepository(
+      final databaseRepository = _RevalidatingTestPersistenceRepository(
         target: target,
         staleDetail: staleDetail,
         currentDetail: currentDetail,
@@ -1341,8 +1342,8 @@ class _MemoryFileCacheGateway extends FileCachePlatformGateway {
   }
 }
 
-class _RevalidatingAudioDatabaseRepository extends AudioDatabaseRepository {
-  _RevalidatingAudioDatabaseRepository({
+class _RevalidatingTestPersistenceRepository extends TestPersistenceRepository {
+  _RevalidatingTestPersistenceRepository({
     required this.target,
     required this.staleDetail,
     required this.currentDetail,

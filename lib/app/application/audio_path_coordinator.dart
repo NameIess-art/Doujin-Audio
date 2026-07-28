@@ -26,7 +26,7 @@ final class AudioPathCoordinator {
         return track;
       }
     }
-    for (final session in _playback.service.sessions.values) {
+    for (final session in _playback.sessions.values) {
       final track = sessionTrackForPath(session.id, resolvedPath);
       if (track != null) return track;
     }
@@ -56,7 +56,7 @@ final class AudioPathCoordinator {
     if (track == null) return const <MusicTrack>[];
     final libraryTracks = _library.tracksInGroup(track.groupKey);
     if (libraryTracks.isNotEmpty) return libraryTracks;
-    for (final session in _playback.service.sessions.values) {
+    for (final session in _playback.sessions.values) {
       final queue = session.customQueueTracks;
       if (queue == null ||
           !queue.any(

@@ -5,14 +5,17 @@ import 'package:nameless_audio/features/library/domain/library_entry.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/features/player/domain/playback_queue.dart';
+import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:nameless_audio/features/player/domain/time_segment_label.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'package:nameless_audio/core/media/path_matcher.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'support/test_persistence_repository.dart';
 
 void main() {
   late Database db;
   late AppDatabase appDatabase;
+  late TestPersistenceRepository repository;
 
   setUpAll(() {
     sqfliteFfiInit();
@@ -23,6 +26,7 @@ void main() {
     db = await databaseFactoryFfi.openDatabase(inMemoryDatabasePath);
     await AppDatabase.createSchemaForTest(db);
     appDatabase = AppDatabase.test(db);
+    repository = TestPersistenceRepository(database: appDatabase);
   });
 
   tearDown(() => db.close());
@@ -89,10 +93,10 @@ void main() {
 
   test('audio detail save and backup queue generation use CAS', () async {
     final target = AudioDetailTarget.libraryRootFolder('/library/work');
-    final first = await appDatabase.upsertAudioDetailAndEnqueueBackupSync(
+    final first = await repository.upsertAudioDetailAndEnqueueBackupSync(
       AudioDetail.empty(target).copyWith(workTitle: 'First'),
     );
-    final second = await appDatabase.upsertAudioDetailAndEnqueueBackupSync(
+    final second = await repository.upsertAudioDetailAndEnqueueBackupSync(
       AudioDetail.empty(target).copyWith(workTitle: 'Second'),
     );
 
@@ -100,14 +104,14 @@ void main() {
     expect(second.generation, 2);
     expect((await appDatabase.loadAudioDetail(target))?.workTitle, 'Second');
     expect(
-      await appDatabase.deleteAudioDetailBackupSyncTask(
+      await repository.deleteAudioDetailBackupSyncTask(
         target,
         generation: first.generation,
       ),
       isFalse,
     );
     expect(
-      await appDatabase.deleteAudioDetailBackupSyncTask(
+      await repository.deleteAudioDetailBackupSyncTask(
         target,
         generation: second.generation,
       ),
@@ -117,14 +121,14 @@ void main() {
 
   test('audio detail backup queue records due retries', () async {
     final target = AudioDetailTarget.singleAudioFile('/library/track.mp3');
-    final task = await appDatabase.enqueueAudioDetailBackupSync(target);
+    final task = await repository.enqueueAudioDetailBackupSync(target);
 
     expect(
-      await appDatabase.loadDueAudioDetailBackupSyncTasks(nowMs: 0),
+      await repository.loadDueAudioDetailBackupSyncTasks(nowMs: 0),
       hasLength(1),
     );
     expect(
-      await appDatabase.recordAudioDetailBackupSyncFailure(
+      await repository.recordAudioDetailBackupSyncFailure(
         task,
         nextAttemptAtMs: 5000,
         error: 'write failed',
@@ -132,12 +136,10 @@ void main() {
       isTrue,
     );
     expect(
-      await appDatabase.loadDueAudioDetailBackupSyncTasks(nowMs: 4999),
+      await repository.loadDueAudioDetailBackupSyncTasks(nowMs: 4999),
       isEmpty,
     );
-    final due = await appDatabase.loadDueAudioDetailBackupSyncTasks(
-      nowMs: 5000,
-    );
+    final due = await repository.loadDueAudioDetailBackupSyncTasks(nowMs: 5000);
     expect(due.single.attemptCount, 1);
     expect(due.single.lastError, 'write failed');
   });
@@ -195,7 +197,7 @@ void main() {
         sourceId: replacementWork.sourceId,
         createdAt: DateTime.fromMillisecondsSinceEpoch(2),
       );
-      await appDatabase.saveAsmrWorkListAndSyncOperations(
+      await repository.saveWorkListAndSyncOperations(
         'favorites',
         <AsmrWork>[originalWork],
         <AsmrSyncOperation>[originalOperation],
@@ -209,7 +211,7 @@ void main() {
     ''');
 
       await expectLater(
-        appDatabase.saveAsmrWorkListAndSyncOperations(
+        repository.saveWorkListAndSyncOperations(
           'favorites',
           <AsmrWork>[replacementWork],
           <AsmrSyncOperation>[replacementOperation],
@@ -218,13 +220,11 @@ void main() {
       );
 
       expect(
-        (await appDatabase.loadAsmrWorkList(
-          'favorites',
-        )).map((work) => work.id),
+        (await repository.loadWorkList('favorites')).map((work) => work.id),
         <int>[originalWork.id],
       );
       expect(
-        (await appDatabase.loadAsmrSyncOperations()).map(
+        (await repository.loadSyncOperations()).map(
           (operation) => operation.workId,
         ),
         <int>[originalOperation.workId],
@@ -656,8 +656,8 @@ void main() {
       },
     );
 
-    await appDatabase.saveAllSessions(<PersistedSession>[
-      PersistedSession(
+    await repository.saveAllSessions(<PersistedPlaybackSession>[
+      PersistedPlaybackSession(
         id: 'session_1',
         trackPath: 'https://example.com/track.mp3',
         loopModeIndex: 1,
@@ -678,7 +678,7 @@ void main() {
       ),
     ]);
 
-    final loaded = await appDatabase.loadAllSessions();
+    final loaded = await repository.loadAllSessions();
     expect(loaded, hasLength(1));
     expect(loaded.single.trackPath, 'https://example.com/track.mp3');
     expect(loaded.single.speed, closeTo(1.5, 0.001));
@@ -724,8 +724,8 @@ void main() {
         ],
       );
 
-      await appDatabase.saveAllSessions(<PersistedSession>[
-        PersistedSession(
+      await repository.saveAllSessions(<PersistedPlaybackSession>[
+        PersistedPlaybackSession(
           id: 'queue_1',
           trackPath: track.path,
           loopModeIndex: 1,
@@ -740,7 +740,7 @@ void main() {
         ),
       ]);
 
-      final loaded = (await appDatabase.loadAllSessions()).single;
+      final loaded = (await repository.loadAllSessions()).single;
       expect(loaded.playbackQueue?.name, 'Night queue');
       expect(loaded.playbackQueue?.colorValue, 0xFF336699);
       expect(loaded.playbackQueue?.entries, hasLength(2));
@@ -808,8 +808,8 @@ void main() {
         ],
       );
 
-      await appDatabase.saveAllSessions(<PersistedSession>[
-        PersistedSession(
+      await repository.saveAllSessions(<PersistedPlaybackSession>[
+        PersistedPlaybackSession(
           id: 'session_b',
           trackPath: '/library/work-b/01.mp3',
           loopModeIndex: 2,
@@ -826,7 +826,7 @@ void main() {
           ),
           sortOrder: 0,
         ),
-        PersistedSession(
+        PersistedPlaybackSession(
           id: 'session_a',
           trackPath: '/library/work-a/01.mp3',
           loopModeIndex: 1,
@@ -845,7 +845,7 @@ void main() {
           ),
           sortOrder: 1,
         ),
-        PersistedSession(
+        PersistedPlaybackSession(
           id: 'session_c',
           trackPath: '/library/work-a/02.mp3',
           loopModeIndex: 1,
@@ -858,7 +858,7 @@ void main() {
         ),
       ]);
 
-      final loaded = await appDatabase.loadAllSessions();
+      final loaded = await repository.loadAllSessions();
 
       expect(loaded.map((session) => session.id), <String>[
         'session_b',
@@ -899,8 +899,8 @@ void main() {
   );
 
   test('updateSessionOrder only changes session sort order', () async {
-    await appDatabase.saveAllSessions(<PersistedSession>[
-      PersistedSession(
+    await repository.saveAllSessions(<PersistedPlaybackSession>[
+      PersistedPlaybackSession(
         id: 'session_1',
         trackPath: '/library/a.mp3',
         loopModeIndex: 1,
@@ -911,7 +911,7 @@ void main() {
         channelSwapEnabled: false,
         sortOrder: 0,
       ),
-      PersistedSession(
+      PersistedPlaybackSession(
         id: 'session_2',
         trackPath: '/library/b.mp3',
         loopModeIndex: 1,
@@ -924,9 +924,9 @@ void main() {
       ),
     ]);
 
-    await appDatabase.updateSessionOrder(['session_2', 'session_1']);
+    await repository.updateSessionOrder(['session_2', 'session_1']);
 
-    final loaded = await appDatabase.loadAllSessions();
+    final loaded = await repository.loadAllSessions();
     expect(loaded.map((session) => session.id), ['session_2', 'session_1']);
     expect(loaded.first.volume, closeTo(0.4, 0.001));
     expect(loaded.first.channelSwapEnabled, isTrue);
@@ -970,8 +970,8 @@ void main() {
         ],
       );
 
-      await appDatabase.saveAllSessions(<PersistedSession>[
-        PersistedSession(
+      await repository.saveAllSessions(<PersistedPlaybackSession>[
+        PersistedPlaybackSession(
           id: 'queue_1',
           trackPath: firstTrack.path,
           loopModeIndex: 1,
@@ -985,12 +985,12 @@ void main() {
         ),
       ]);
 
-      await appDatabase.updatePlaybackQueueEntryOrder('queue_1', [
+      await repository.updatePlaybackQueueEntryOrder('queue_1', [
         'entry_2',
         'entry_1',
       ]);
 
-      final loaded = (await appDatabase.loadAllSessions()).single;
+      final loaded = (await repository.loadAllSessions()).single;
       expect(loaded.playbackQueue?.entries.map((entry) => entry.id), [
         'entry_2',
         'entry_1',
@@ -1123,17 +1123,17 @@ void main() {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(2000),
     );
 
-    await appDatabase.upsertTimeSegmentLabel(first);
-    await appDatabase.upsertTimeSegmentLabel(second);
+    await repository.upsertTimeSegmentLabel(first);
+    await repository.upsertTimeSegmentLabel(second);
 
-    var labels = await appDatabase.loadTimeSegmentLabels('/library/a.mp3');
+    var labels = await repository.loadTimeSegmentLabels('/library/a.mp3');
     expect(labels.map((label) => label.id), ['segment_2', 'segment_1']);
     expect(labels.last.name, 'Opening');
     expect(labels.last.start, const Duration(seconds: 5));
 
-    await appDatabase.deleteTimeSegmentLabel('segment_2');
+    await repository.deleteTimeSegmentLabel('segment_2');
 
-    labels = await appDatabase.loadTimeSegmentLabels('/library/a.mp3');
+    labels = await repository.loadTimeSegmentLabels('/library/a.mp3');
     expect(labels.map((label) => label.id), ['segment_1']);
   });
 
@@ -1148,7 +1148,7 @@ void main() {
       createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(1000),
     );
-    await appDatabase.upsertTimeSegmentLabel(label);
+    await repository.upsertTimeSegmentLabel(label);
 
     await appDatabase.retargetTimeSegmentLabelsWithinPath(
       oldRoot: '/library/old',
@@ -1156,12 +1156,12 @@ void main() {
     );
 
     expect(
-      await appDatabase.loadTimeSegmentLabels(
+      await repository.loadTimeSegmentLabels(
         PathMatcher.normalize('/library/old/01.mp3'),
       ),
       isEmpty,
     );
-    final moved = await appDatabase.loadTimeSegmentLabels(
+    final moved = await repository.loadTimeSegmentLabels(
       PathMatcher.normalize('/library/new/01.mp3'),
     );
     expect(moved.single.id, 'segment_1');
@@ -1172,12 +1172,12 @@ void main() {
     );
 
     expect(
-      await appDatabase.loadTimeSegmentLabels(
+      await repository.loadTimeSegmentLabels(
         PathMatcher.normalize('/library/new/01.mp3'),
       ),
       isEmpty,
     );
-    final renamed = await appDatabase.loadTimeSegmentLabels(
+    final renamed = await repository.loadTimeSegmentLabels(
       PathMatcher.normalize('/library/new/renamed.mp3'),
     );
     expect(renamed.single.name, 'Part');
@@ -1219,13 +1219,13 @@ void main() {
       state: LibraryEntryState.active,
     );
 
-    await appDatabase.upsertLibraryEntries([folder, track]);
-    await appDatabase.setLibraryEntriesState('/library', [
+    await repository.upsertLibraryEntries([folder, track]);
+    await repository.setLibraryEntriesState('/library', [
       '/library/work',
       '/library/work/01.mp3',
     ], LibraryEntryState.excluded);
 
-    final loaded = await appDatabase.loadLibraryEntries('/library');
+    final loaded = await repository.loadLibraryEntries('/library');
     expect(loaded, hasLength(2));
     expect(
       loaded.where((entry) => entry.isExcluded).map((entry) => entry.path),

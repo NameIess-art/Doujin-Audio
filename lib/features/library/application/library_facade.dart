@@ -13,7 +13,8 @@ import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/media_file_support.dart';
 import '../../../core/media/path_display.dart';
-import '../../../core/persistence/audio_database_repository.dart';
+import '../../../core/persistence/app_database.dart';
+import '../../../infrastructure/sqlite/sqlite_library_repository.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
@@ -34,6 +35,7 @@ import 'library_service.dart';
 import '../domain/audio_library_category.dart';
 import '../domain/library_node.dart';
 import '../domain/library_entry.dart';
+import '../domain/library_persistence_repository.dart';
 import 'library_state_models.dart';
 
 /// Owns the library-side services used by the compatibility audio facade.
@@ -51,15 +53,16 @@ final class LibraryFacade implements LibraryCatalog {
     required this.detailCacheService,
     required this.metadataService,
     required this.asmrMetadataService,
-    required this.service,
+    required LibraryService service,
     required this.snapshotCacheService,
     LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
-  }) : entryEditorService = entryEditorService ?? LibraryEntryEditorService(),
+  }) : _service = service,
+       entryEditorService = entryEditorService ?? LibraryEntryEditorService(),
        _coverArtworkCacheService = coverArtworkCacheService;
 
   factory LibraryFacade.create({
-    AudioDatabaseRepository? databaseRepository,
+    LibraryPersistenceRepository? databaseRepository,
     AudioDetailRepository? detailRepository,
     AudioDetailCacheService? detailCacheService,
     DlsiteMetadataService? metadataService,
@@ -69,7 +72,9 @@ final class LibraryFacade implements LibraryCatalog {
     LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
   }) {
-    final resolvedDatabase = databaseRepository ?? AudioDatabaseRepository();
+    final resolvedDatabase =
+        databaseRepository ??
+        SqliteLibraryRepository(database: AppDatabase.instance);
     final resolvedDetailCache =
         detailCacheService ??
         AudioDetailCacheService(
@@ -95,11 +100,11 @@ final class LibraryFacade implements LibraryCatalog {
     );
   }
 
-  final AudioDatabaseRepository databaseRepository;
+  final LibraryPersistenceRepository databaseRepository;
   final AudioDetailCacheService detailCacheService;
   final DlsiteMetadataService metadataService;
   final AsmrMetadataService asmrMetadataService;
-  final LibraryService service;
+  final LibraryService _service;
   final LibrarySnapshotCacheService snapshotCacheService;
   final LibraryEntryEditorService entryEditorService;
   CoverArtworkCacheService? _coverArtworkCacheService;
@@ -124,29 +129,40 @@ final class LibraryFacade implements LibraryCatalog {
   static const _audioDetailPrimaryMigrationKey =
       'audio_detail_database_primary_migration_v1';
 
-  LibraryState get state => service.slice.state;
-  Stream<LibraryState> get states => service.slice.stream;
+  LibraryState get state => _service.slice.state;
+  Stream<LibraryState> get states => _service.slice.stream;
   List<LibraryNode> get libraryCards => snapshotCacheService.cards;
   @override
   List<MusicTrack> get library =>
-      UnmodifiableListView<MusicTrack>(service.library);
+      UnmodifiableListView<MusicTrack>(_service.library);
+  int get structureRevision => _service.structureRevision;
+  int get contentRevision => _service.contentRevision;
+  List<String> get sortedLibraryTrackPaths =>
+      UnmodifiableListView<String>(_service.sortedLibraryTrackPaths);
+  Map<String, List<MusicTrack>> get tracksByGroup =>
+      UnmodifiableMapView<String, List<MusicTrack>>(
+        _service.tracksByGroup.map(
+          (key, value) =>
+              MapEntry(key, UnmodifiableListView<MusicTrack>(value)),
+        ),
+      );
   @override
   List<String> get watchedFolders =>
-      UnmodifiableListView<String>(service.watchedFolders);
+      UnmodifiableListView<String>(_service.watchedFolders);
   @override
   List<String> get watchedLibraries =>
-      UnmodifiableListView<String>(service.watchedLibraries);
+      UnmodifiableListView<String>(_service.watchedLibraries);
   LocalLibraryImportSources get backupImportSources {
-    final libraries = _distinctImportPaths(service.watchedLibraries);
+    final libraries = _distinctImportPaths(_service.watchedLibraries);
     final folders = _distinctImportPaths(
-      service.watchedFolders.where(
+      _service.watchedFolders.where(
         (folder) => !libraries.any(
           (library) => PathMatcher.isWithinOrEqual(folder, library),
         ),
       ),
     );
     final files = _distinctImportPaths(
-      service.library
+      _service.library
           .where((track) => track.groupKey == '__single_files__')
           .map((track) => track.path),
     );
@@ -158,14 +174,14 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   @override
-  bool get isScanning => service.isScanning;
-  bool get isBackgroundScanning => service.isBackgroundScanning;
+  bool get isScanning => _service.isScanning;
+  bool get isBackgroundScanning => _service.isBackgroundScanning;
   @override
-  int get scanFoundCount => service.scanFoundCount;
+  int get scanFoundCount => _service.scanFoundCount;
   @override
-  int get scanDuplicateCount => service.scanDuplicateCount;
+  int get scanDuplicateCount => _service.scanDuplicateCount;
   @override
-  int get scanFailureCount => service.scanFailureCount;
+  int get scanFailureCount => _service.scanFailureCount;
   AudioLibraryCategorySnapshot? get categorySnapshot =>
       snapshotCacheService.categorySnapshotSync;
 
@@ -206,7 +222,7 @@ final class LibraryFacade implements LibraryCatalog {
     final tracks = await tracksFuture;
     final entries = await entriesFuture;
 
-    service
+    _service
       ..library.addAll(tracks)
       ..groupOrder.addAll((preferences[0] as List<String>?) ?? const <String>[])
       ..groupOrderSet.addAll(
@@ -222,17 +238,20 @@ final class LibraryFacade implements LibraryCatalog {
         (preferences[4] as List<String>?) ?? const <String>[],
       );
     final exclusions = preferences[3] as Map<String, dynamic>?;
-    _decodeExclusionMap(exclusions?['folders'], service.excludedLibraryFolders);
-    _decodeExclusionMap(exclusions?['tracks'], service.excludedLibraryTracks);
-    service
+    _decodeExclusionMap(
+      exclusions?['folders'],
+      _service.excludedLibraryFolders,
+    );
+    _decodeExclusionMap(exclusions?['tracks'], _service.excludedLibraryTracks);
+    _service
       ..replaceLibraryEntries(entries)
       ..rebuildExclusionsFromEntries(entries);
     _applyExclusionsToLibrary();
 
     beginLibraryBatch();
-    service.libraryBatchChanged = service.library.isNotEmpty;
+    _service.libraryBatchChanged = _service.library.isNotEmpty;
     await endLibraryBatch(notify: false, waitForPersistence: false);
-    service
+    _service
       ..syncGroupOrderFromLibrary()
       ..syncLibraryNodeOrder(persist: false);
     // The startup batch already builds and caches the shallow card tree used
@@ -264,8 +283,8 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<void> resetForBackupRestore() async {
     await prepareForBackupRestore();
-    service.scanProgressNotifyTimer?.cancel();
-    service
+    _service.scanProgressNotifyTimer?.cancel();
+    _service
       ..scanProgressNotifyTimer = null
       ..library.clear()
       ..libraryByPath.clear()
@@ -323,10 +342,10 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   void _applyExclusionsToLibrary() {
-    final excludedTracks = service.excludedLibraryTracks.values
+    final excludedTracks = _service.excludedLibraryTracks.values
         .expand((paths) => paths)
         .toSet();
-    final excludedFolders = service.excludedLibraryFolders.values
+    final excludedFolders = _service.excludedLibraryFolders.values
         .expand((paths) => paths)
         .toSet();
     if (excludedTracks.isEmpty && excludedFolders.isEmpty) return;
@@ -342,7 +361,7 @@ final class LibraryFacade implements LibraryCatalog {
 
   List<LibraryNode> get libraryTree {
     if (snapshotCacheService.treeSnapshotRevision !=
-        service.structureRevision) {
+        _service.structureRevision) {
       unawaited(loadLibraryTree());
     }
     return snapshotCacheService.tree;
@@ -364,12 +383,12 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   String? libraryRootForPath(String entityPath) {
-    for (final libraryPath in service.watchedLibraries) {
+    for (final libraryPath in _service.watchedLibraries) {
       if (PathMatcher.isWithinOrEqual(entityPath, libraryPath)) {
         return libraryPath;
       }
     }
-    for (final folderPath in service.watchedFolders) {
+    for (final folderPath in _service.watchedFolders) {
       if (PathMatcher.isWithinOrEqual(entityPath, folderPath)) {
         return folderPath;
       }
@@ -436,7 +455,7 @@ final class LibraryFacade implements LibraryCatalog {
     bool onlyMissing = false,
   }) async {
     final targetsByKey = <String, AudioDetailTarget>{};
-    for (final track in service.library) {
+    for (final track in _service.library) {
       final target = canonicalAudioDetailTarget(
         audioDetailTargetForTrack(track),
       );
@@ -481,8 +500,8 @@ final class LibraryFacade implements LibraryCatalog {
     return AudioDetailTarget.libraryRootFolder(
       const LibraryOrganizer().rootPathForTrack(
         track,
-        service.watchedFolders,
-        watchedLibraries: service.watchedLibraries,
+        _service.watchedFolders,
+        watchedLibraries: _service.watchedLibraries,
       ),
     );
   }
@@ -492,8 +511,8 @@ final class LibraryFacade implements LibraryCatalog {
     return AudioDetailTarget.libraryRootFolder(
       const LibraryOrganizer().rootFolderPath(
         target.targetPath,
-        service.watchedFolders,
-        watchedLibraries: service.watchedLibraries,
+        _service.watchedFolders,
+        watchedLibraries: _service.watchedLibraries,
       ),
     );
   }
@@ -550,7 +569,7 @@ final class LibraryFacade implements LibraryCatalog {
   }) async {
     final targetsByKey = <String, AudioDetailTarget>{};
     final tracksByTargetKey = <String, List<MusicTrack>>{};
-    for (final track in List<MusicTrack>.of(service.library)) {
+    for (final track in List<MusicTrack>.of(_service.library)) {
       final target = audioDetailTargetForTrack(track);
       final key = <String>[
         target.targetType.dbValue,
@@ -635,7 +654,7 @@ final class LibraryFacade implements LibraryCatalog {
     Future<Duration?> Function(String path)? durationReader,
   }) async {
     final epoch = _maintenanceEpoch;
-    final singleTracks = service.library
+    final singleTracks = _service.library
         .where(
           (track) =>
               track.isSingle &&
@@ -644,7 +663,7 @@ final class LibraryFacade implements LibraryCatalog {
         .toList(growable: false);
     final targetTracks = singleTracks.isNotEmpty
         ? singleTracks
-        : service.library
+        : _service.library
               .where(
                 (track) =>
                     !track.isSingle &&
@@ -740,11 +759,11 @@ final class LibraryFacade implements LibraryCatalog {
     await databaseRepository.upsertTracks(tracks);
     if (_disposed || epoch != _maintenanceEpoch) return false;
     for (final track in tracks) {
-      final index = service.libraryIndexByPath[track.path];
-      if (index != null) service.library[index] = track;
-      service.libraryByPath[track.path] = track;
+      final index = _service.libraryIndexByPath[track.path];
+      if (index != null) _service.library[index] = track;
+      _service.libraryByPath[track.path] = track;
     }
-    service.rebuildLibraryIndexes();
+    _service.rebuildLibraryIndexes();
     snapshotCacheService.markStructureChanged();
     _syncStateSlice();
     return true;
@@ -872,7 +891,7 @@ final class LibraryFacade implements LibraryCatalog {
   AudioDetail? resolvedAudioDetail(AudioDetailTarget target) =>
       detailCacheService.resolvedDetail(canonicalAudioDetailTarget(target));
   @override
-  MusicTrack? trackByPath(String trackPath) => service.trackByPath(trackPath);
+  MusicTrack? trackByPath(String trackPath) => _service.trackByPath(trackPath);
 
   MusicTrack? updatePlaybackHistory({
     required String trackPath,
@@ -880,29 +899,29 @@ final class LibraryFacade implements LibraryCatalog {
     required DateTime now,
     required bool updatePlayedAt,
   }) {
-    final track = service.libraryByPath[trackPath];
+    final track = _service.libraryByPath[trackPath];
     if (track == null) return null;
     final updated = _copyTrack(
       track,
       lastPlayedPosition: position,
       lastPlayedAt: updatePlayedAt ? now : track.lastPlayedAt,
     );
-    service.libraryByPath[track.path] = updated;
-    final index = service.libraryIndexByPath[track.path];
+    _service.libraryByPath[track.path] = updated;
+    final index = _service.libraryIndexByPath[track.path];
     if (index != null &&
-        index < service.library.length &&
-        service.library[index].path == track.path) {
-      service.library[index] = updated;
+        index < _service.library.length &&
+        _service.library[index].path == track.path) {
+      _service.library[index] = updated;
     }
     return updated;
   }
 
   List<MusicTrack> tracksInGroup(String groupKey) =>
       List<MusicTrack>.unmodifiable(
-        service.tracksByGroup[groupKey] ?? const <MusicTrack>[],
+        _service.tracksByGroup[groupKey] ?? const <MusicTrack>[],
       );
   int compareTracks(MusicTrack first, MusicTrack second) =>
-      service.compareTracks(first, second);
+      _service.compareTracks(first, second);
   String? resolvedCoverPathForTrack(MusicTrack? track, {String? trackPath}) =>
       coverArtworkCacheService.resolvedForTrack(track, trackPath: trackPath);
   String? resolvedPlaybackCoverPathForTrack(
@@ -1032,53 +1051,55 @@ final class LibraryFacade implements LibraryCatalog {
   String? libraryEntryDisplayNameForPath(
     String libraryPath,
     String entryPath,
-  ) => service.libraryEntryDisplayNameForPath(libraryPath, entryPath);
+  ) => _service.libraryEntryDisplayNameForPath(libraryPath, entryPath);
   List<String> excludedTracksForLibrary(String libraryPath) =>
-      service.excludedTracksForLibrary(libraryPath);
+      _service.excludedTracksForLibrary(libraryPath);
   List<String> excludedFoldersForLibrary(String libraryPath) =>
-      service.excludedFoldersForLibrary(libraryPath);
+      _service.excludedFoldersForLibrary(libraryPath);
   List<String> childFoldersForLibrary(String libraryPath) =>
-      service.childFoldersForLibrary(libraryPath);
+      _service.childFoldersForLibrary(libraryPath);
   @override
   List<LibraryEntry> libraryEntriesForLibrary(String libraryPath) =>
-      service.libraryEntriesForLibrary(libraryPath);
+      _service.libraryEntriesForLibrary(libraryPath);
   @override
   LibraryEntrySnapshot libraryEntrySnapshotForLibrary(String libraryPath) =>
-      service.libraryEntrySnapshotForLibrary(libraryPath);
+      _service.libraryEntrySnapshotForLibrary(libraryPath);
   @override
   LibraryExclusionMatcher libraryExclusionMatcherForLibrary(
     String libraryPath,
-  ) => service.libraryExclusionMatcherForLibrary(libraryPath);
+  ) => _service.libraryExclusionMatcherForLibrary(libraryPath);
   @override
   bool hasLibraryExclusions(String libraryPath) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    return (service.excludedLibraryFolders[normalizedLibraryPath]?.isNotEmpty ??
+    return (_service
+                .excludedLibraryFolders[normalizedLibraryPath]
+                ?.isNotEmpty ??
             false) ||
-        (service.excludedLibraryTracks[normalizedLibraryPath]?.isNotEmpty ??
+        (_service.excludedLibraryTracks[normalizedLibraryPath]?.isNotEmpty ??
             false);
   }
 
   bool isLibraryTrackExplicitlyExcluded(String libraryPath, String trackPath) =>
-      service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath);
+      _service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath);
   bool isLibraryFolderExplicitlyExcluded(
     String libraryPath,
     String folderPath,
-  ) => service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath);
+  ) => _service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath);
   @override
   bool isLibraryPathExcluded(String libraryPath, String entityPath) =>
-      service.isLibraryPathExcluded(libraryPath, entityPath);
+      _service.isLibraryPathExcluded(libraryPath, entityPath);
   bool isLibraryPathInheritedExcluded(String libraryPath, String entityPath) =>
-      service.isLibraryPathInheritedExcluded(libraryPath, entityPath);
+      _service.isLibraryPathInheritedExcluded(libraryPath, entityPath);
 
   @override
   bool isScanGenerationActive(int generation) =>
-      service.isScanning &&
+      _service.isScanning &&
       generation != 0 &&
-      generation == service.scanGeneration;
+      generation == _service.scanGeneration;
 
   @override
   void addWatchedFolder(String folderPath, {bool notify = true}) {
-    final changed = service.addWatchedFolder(
+    final changed = _service.addWatchedFolder(
       folderPath,
       onPersist: () => unawaited(_saveWatchedFolders()),
     );
@@ -1087,7 +1108,7 @@ final class LibraryFacade implements LibraryCatalog {
 
   @override
   void addWatchedLibrary(String folderPath, {bool notify = true}) {
-    final changed = service.addWatchedLibrary(
+    final changed = _service.addWatchedLibrary(
       folderPath,
       onPersist: () => unawaited(_saveWatchedLibraries()),
     );
@@ -1096,7 +1117,7 @@ final class LibraryFacade implements LibraryCatalog {
 
   @override
   void removeWatchedFolder(String folderPath, {bool notify = true}) {
-    final changed = service.removeWatchedFolder(
+    final changed = _service.removeWatchedFolder(
       folderPath,
       onPersist: () => unawaited(_saveWatchedFolders()),
     );
@@ -1104,7 +1125,7 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   void removeWatchedLibrary(String folderPath, {bool notify = true}) {
-    final changed = service.removeWatchedLibrary(
+    final changed = _service.removeWatchedLibrary(
       folderPath,
       onPersist: () => unawaited(_saveWatchedLibraries()),
     );
@@ -1112,21 +1133,21 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   Future<void> _saveWatchedFolders() async {
-    final value = json.encode(service.watchedFolders);
+    final value = json.encode(_service.watchedFolders);
     await _queuePreferenceWrite(
       () => AppPreferences.setString(_watchedFoldersPreferenceKey, value),
     );
   }
 
   Future<void> _saveWatchedLibraries() async {
-    final value = json.encode(service.watchedLibraries);
+    final value = json.encode(_service.watchedLibraries);
     await _queuePreferenceWrite(
       () => AppPreferences.setString(_watchedLibrariesPreferenceKey, value),
     );
   }
 
   void reorderLibraryNodes(int oldIndex, int newIndex) {
-    service.reorderLibraryNodes(
+    _service.reorderLibraryNodes(
       oldIndex,
       newIndex,
       currentTree: libraryCards,
@@ -1137,14 +1158,14 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   void syncLibraryNodeOrder({bool persist = true}) {
-    service.syncLibraryNodeOrder(
+    _service.syncLibraryNodeOrder(
       persist: persist,
       onPersist: () => unawaited(_saveLibraryNodeOrder()),
     );
   }
 
   Future<void> _saveLibraryNodeOrder() {
-    final value = json.encode(service.libraryNodeOrder);
+    final value = json.encode(_service.libraryNodeOrder);
     return _queuePreferenceWrite(
       () => AppPreferences.setString(_libraryNodeOrderPreferenceKey, value),
     );
@@ -1164,6 +1185,11 @@ final class LibraryFacade implements LibraryCatalog {
     _coverChangeHandler ??= handler;
   }
 
+  void detachRuntimeHandlers() {
+    _trackRemovalHandler = null;
+    _coverChangeHandler = null;
+  }
+
   @override
   void recordLibraryEntriesForTracks(
     String libraryPath,
@@ -1173,7 +1199,7 @@ final class LibraryFacade implements LibraryCatalog {
     LibraryExclusionMatcher? exclusionMatcher,
     LibraryEntrySnapshot? entrySnapshot,
   }) {
-    var entries = service.buildLibraryEntries(
+    var entries = _service.buildLibraryEntries(
       libraryPath,
       tracks,
       folderPaths: folderPaths,
@@ -1185,7 +1211,7 @@ final class LibraryFacade implements LibraryCatalog {
           .toList(growable: false);
     }
     if (entries.isEmpty) return;
-    service.replaceLibraryEntries(entries);
+    _service.replaceLibraryEntries(entries);
     entrySnapshot?.remember(entries);
     _queueOrPersistLibraryEntries(entries, persist: persist);
   }
@@ -1194,15 +1220,15 @@ final class LibraryFacade implements LibraryCatalog {
     final entries = <LibraryEntry>[];
     final tracksByLibrary = <String, List<MusicTrack>>{};
     for (final track in tracks) {
-      final libraryPath = service.libraryPathForTrack(track);
+      final libraryPath = _service.libraryPathForTrack(track);
       if (libraryPath == null || libraryPath.isEmpty) continue;
       tracksByLibrary.putIfAbsent(libraryPath, () => <MusicTrack>[]).add(track);
     }
     for (final entry in tracksByLibrary.entries) {
-      entries.addAll(service.buildLibraryEntries(entry.key, entry.value));
+      entries.addAll(_service.buildLibraryEntries(entry.key, entry.value));
     }
     if (entries.isEmpty) return;
-    service.replaceLibraryEntries(entries);
+    _service.replaceLibraryEntries(entries);
     _queueOrPersistLibraryEntries(entries, persist: persist);
   }
 
@@ -1213,7 +1239,7 @@ final class LibraryFacade implements LibraryCatalog {
     bool persist = true,
   }) {
     if (tracks.isEmpty) return;
-    final mutation = service.addTracks(tracks, persist: persist);
+    final mutation = _service.addTracks(tracks, persist: persist);
     if (mutation.tracks.isEmpty) return;
     recordEntriesForTracks(mutation.tracks, persist: persist);
     if (mutation.batched) return;
@@ -1232,7 +1258,7 @@ final class LibraryFacade implements LibraryCatalog {
     bool persist = true,
   }) {
     if (tracks.isEmpty) return;
-    final mutation = service.addOrReplaceTracks(tracks, persist: persist);
+    final mutation = _service.addOrReplaceTracks(tracks, persist: persist);
     if (mutation.tracks.isEmpty) return;
     recordEntriesForTracks(mutation.tracks, persist: persist);
     if (mutation.batched) return;
@@ -1256,7 +1282,7 @@ final class LibraryFacade implements LibraryCatalog {
     bool Function(MusicTrack track) test, {
     bool persist = true,
   }) {
-    final mutation = service.removeTracksWhere(test);
+    final mutation = _service.removeTracksWhere(test);
     final removedPaths = mutation.tracks
         .map((track) => track.path)
         .toList(growable: false);
@@ -1305,7 +1331,7 @@ final class LibraryFacade implements LibraryCatalog {
     String folderPath,
     Set<String> retainedPaths,
   ) {
-    final removedPaths = service.removeLibraryEntriesMissingFromFolderScan(
+    final removedPaths = _service.removeLibraryEntriesMissingFromFolderScan(
       libraryPath,
       folderPath,
       retainedPaths,
@@ -1322,7 +1348,7 @@ final class LibraryFacade implements LibraryCatalog {
     String libraryPath,
     Iterable<String> entryPaths,
   ) {
-    final removedPaths = service.removeLibraryEntriesByPaths(
+    final removedPaths = _service.removeLibraryEntriesByPaths(
       libraryPath,
       entryPaths,
     );
@@ -1336,7 +1362,7 @@ final class LibraryFacade implements LibraryCatalog {
   @override
   void clearLibraryExclusions(String libraryPath) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final result = service.clearLibraryExclusions(normalizedLibraryPath);
+    final result = _service.clearLibraryExclusions(normalizedLibraryPath);
     if (!result.changed) return;
     if (result.restoredTracks.isNotEmpty) {
       addOrReplaceTracks(result.restoredTracks, notify: false);
@@ -1358,14 +1384,14 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   Future<void> removeTrackFromLibrary(String trackPath) async {
-    final removedTrack = service.trackByPath(trackPath);
+    final removedTrack = _service.trackByPath(trackPath);
     if (removedTrack == null) return;
     final removedPaths = removeTracksMatching(
       (track) => PathMatcher.equalsNormalized(track.path, trackPath),
       persist: false,
     );
     if (removedPaths.isEmpty) return;
-    service.syncGroupOrderFromLibrary();
+    _service.syncGroupOrderFromLibrary();
     if (_persistenceEnabled) {
       await Future.wait(<Future<void>>[
         databaseRepository.deleteTracks(removedPaths),
@@ -1377,7 +1403,7 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<void> removeFolderFromLibrary(String folderPath) async {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
-    final wasWatched = service.watchedFolders.any(
+    final wasWatched = _service.watchedFolders.any(
       (folder) => PathMatcher.equalsNormalized(folder, normalizedFolderPath),
     );
     final removedPaths = removeTracksMatching(
@@ -1388,10 +1414,10 @@ final class LibraryFacade implements LibraryCatalog {
     );
     if (removedPaths.isEmpty && !wasWatched) return;
 
-    final removedWatchedFolder = service.removeWatchedFolder(
+    final removedWatchedFolder = _service.removeWatchedFolder(
       normalizedFolderPath,
     );
-    service
+    _service
       ..libraryEntriesByLibrary.remove(normalizedFolderPath)
       ..syncGroupOrderFromLibrary()
       ..syncLibraryNodeOrder(persist: false);
@@ -1422,7 +1448,7 @@ final class LibraryFacade implements LibraryCatalog {
     if (isScanning) cancelScan();
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
     beginLibraryBatch();
-    final removal = service.removeLibrary(normalizedLibraryPath);
+    final removal = _service.removeLibrary(normalizedLibraryPath);
     final removedTrackPaths = removeTracksMatching(
       (track) =>
           PathMatcher.isWithinOrEqual(track.path, normalizedLibraryPath) ||
@@ -1471,11 +1497,11 @@ final class LibraryFacade implements LibraryCatalog {
 
   void excludeLibraryFolder(String libraryPath, String folderPath) {
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final normalizedFolderPath = service.canonicalLibraryFolderPath(
+    final normalizedFolderPath = _service.canonicalLibraryFolderPath(
       normalizedLibraryPath,
       folderPath,
     );
-    final mutation = service.setLibraryFolderExcluded(
+    final mutation = _service.setLibraryFolderExcluded(
       normalizedLibraryPath,
       normalizedFolderPath,
       true,
@@ -1504,7 +1530,7 @@ final class LibraryFacade implements LibraryCatalog {
 
   void excludeLibraryTrack(String libraryPath, String trackPath) {
     final normalizedTrackPath = PathMatcher.normalize(trackPath);
-    final mutation = service.setLibraryTrackExcluded(
+    final mutation = _service.setLibraryTrackExcluded(
       libraryPath,
       normalizedTrackPath,
       true,
@@ -1538,11 +1564,11 @@ final class LibraryFacade implements LibraryCatalog {
       return;
     }
     final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
-    final normalizedFolderPath = service.canonicalLibraryFolderPath(
+    final normalizedFolderPath = _service.canonicalLibraryFolderPath(
       normalizedLibraryPath,
       folderPath,
     );
-    final mutation = service.setLibraryFolderExcluded(
+    final mutation = _service.setLibraryFolderExcluded(
       normalizedLibraryPath,
       normalizedFolderPath,
       false,
@@ -1576,7 +1602,7 @@ final class LibraryFacade implements LibraryCatalog {
       return;
     }
     final normalizedTrackPath = PathMatcher.normalize(trackPath);
-    final mutation = service.setLibraryTrackExcluded(
+    final mutation = _service.setLibraryTrackExcluded(
       libraryPath,
       normalizedTrackPath,
       false,
@@ -1603,7 +1629,7 @@ final class LibraryFacade implements LibraryCatalog {
     String folderPath,
   ) async {
     await Future<void>.value();
-    if (!service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath)) {
+    if (!_service.isLibraryFolderExplicitlyExcluded(libraryPath, folderPath)) {
       return;
     }
     beginLibraryBatch();
@@ -1620,7 +1646,7 @@ final class LibraryFacade implements LibraryCatalog {
     String trackPath,
   ) async {
     await Future<void>.value();
-    if (!service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath)) {
+    if (!_service.isLibraryTrackExplicitlyExcluded(libraryPath, trackPath)) {
       return;
     }
     beginLibraryBatch();
@@ -1635,9 +1661,9 @@ final class LibraryFacade implements LibraryCatalog {
     String trackPath,
   ) async {
     await Future<void>.value();
-    if (service.isLibraryPathExcluded(libraryPath, trackPath)) return;
-    if (service.libraryByPath.containsKey(trackPath)) return;
-    final entry = service.libraryEntryForPath(libraryPath, trackPath);
+    if (_service.isLibraryPathExcluded(libraryPath, trackPath)) return;
+    if (_service.libraryByPath.containsKey(trackPath)) return;
+    final entry = _service.libraryEntryForPath(libraryPath, trackPath);
     if (entry != null && entry.isTrack && entry.isActive) {
       await _addRestoredTracks(<MusicTrack>[entry.toTrack()]);
       return;
@@ -1655,7 +1681,7 @@ final class LibraryFacade implements LibraryCatalog {
     }
     final parentFolder = path.dirname(trackPath);
     final folderName = path.basename(parentFolder);
-    if (service.isLibraryPathExcluded(libraryPath, trackPath)) return;
+    if (_service.isLibraryPathExcluded(libraryPath, trackPath)) return;
     await _addRestoredTracks(<MusicTrack>[
       MusicTrack(
         path: trackPath,
@@ -1679,18 +1705,18 @@ final class LibraryFacade implements LibraryCatalog {
     String folderPath,
   ) async {
     await Future<void>.value();
-    if (service.isLibraryPathExcluded(libraryPath, folderPath)) return;
-    final persistedTracks = service
+    if (_service.isLibraryPathExcluded(libraryPath, folderPath)) return;
+    final persistedTracks = _service
         .libraryEntriesForLibrary(libraryPath)
         .where(
           (entry) =>
               entry.isTrack &&
               entry.isActive &&
               PathMatcher.isWithinOrEqual(entry.path, folderPath) &&
-              !service.isLibraryPathExcluded(libraryPath, entry.path),
+              !_service.isLibraryPathExcluded(libraryPath, entry.path),
         )
         .map((entry) => entry.toTrack())
-        .where((track) => !service.libraryByPath.containsKey(track.path))
+        .where((track) => !_service.libraryByPath.containsKey(track.path))
         .toList(growable: false);
     if (persistedTracks.isNotEmpty) {
       await _addRestoredTracks(persistedTracks);
@@ -1702,7 +1728,7 @@ final class LibraryFacade implements LibraryCatalog {
     );
     final candidates = restoredTracks
         .where(
-          (track) => !service.isLibraryPathExcluded(libraryPath, track.path),
+          (track) => !_service.isLibraryPathExcluded(libraryPath, track.path),
         )
         .toList(growable: false);
     if (candidates.isNotEmpty) {
@@ -1802,7 +1828,7 @@ final class LibraryFacade implements LibraryCatalog {
       oldRoot: oldFolderPath,
       newRoot: newFolderPath,
     );
-    final retargetResult = service.retargetLibraryFolder(
+    final retargetResult = _service.retargetLibraryFolder(
       oldFolderPath,
       newFolderPath,
       folderName,
@@ -1833,7 +1859,7 @@ final class LibraryFacade implements LibraryCatalog {
       oldTrackKey: PathMatcher.normalize(oldTrackPath),
       newTrackKey: PathMatcher.normalize(newTrackPath),
     );
-    final updatedTrack = service.retargetSingleTrack(
+    final updatedTrack = _service.retargetSingleTrack(
       oldTrackPath,
       newTrackPath,
       displayName,
@@ -1897,8 +1923,8 @@ final class LibraryFacade implements LibraryCatalog {
     }
 
     final value = json.encode(<String, Object?>{
-      'folders': encode(service.excludedLibraryFolders),
-      'tracks': encode(service.excludedLibraryTracks),
+      'folders': encode(_service.excludedLibraryFolders),
+      'tracks': encode(_service.excludedLibraryTracks),
     });
     return _queuePreferenceWrite(
       () => AppPreferences.setString(_libraryExclusionsPreferenceKey, value),
@@ -1906,7 +1932,7 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   Future<void> _saveGroupOrder() {
-    final value = json.encode(service.groupOrder);
+    final value = json.encode(_service.groupOrder);
     return _queuePreferenceWrite(
       () => AppPreferences.setString(_groupOrderPreferenceKey, value),
     );
@@ -1929,7 +1955,7 @@ final class LibraryFacade implements LibraryCatalog {
 
   @override
   void beginLibraryBatch() {
-    service.libraryBatchDepth++;
+    _service.libraryBatchDepth++;
   }
 
   @override
@@ -1963,7 +1989,7 @@ final class LibraryFacade implements LibraryCatalog {
     for (final folderPath in addWatchedFolders) {
       addWatchedFolder(folderPath, notify: false);
     }
-    final beforeCount = service.library.length;
+    final beforeCount = _service.library.length;
     if (tracks.isNotEmpty) {
       addOrReplaceTracks(tracks, notify: false, persist: persist);
     }
@@ -1973,7 +1999,7 @@ final class LibraryFacade implements LibraryCatalog {
     if (entriesToRemove.isNotEmpty) {
       removeLibraryEntriesByPaths(libraryRoot, entriesToRemove);
     }
-    return service.library.length - beforeCount;
+    return _service.library.length - beforeCount;
   }
 
   @override
@@ -1986,20 +2012,20 @@ final class LibraryFacade implements LibraryCatalog {
     bool notify = true,
     bool waitForPersistence = true,
   }) async {
-    if (service.libraryBatchDepth <= 0) return;
-    service.libraryBatchDepth--;
-    if (service.libraryBatchDepth > 0) return;
+    if (_service.libraryBatchDepth <= 0) return;
+    _service.libraryBatchDepth--;
+    if (_service.libraryBatchDepth > 0) return;
 
-    final didChangeLibrary = service.libraryBatchChanged;
+    final didChangeLibrary = _service.libraryBatchChanged;
     final entriesToPersist = List<LibraryEntry>.from(
-      service.libraryBatchPersistEntriesByKey.values,
+      _service.libraryBatchPersistEntriesByKey.values,
     );
     if (!didChangeLibrary && entriesToPersist.isEmpty) return;
     final tracksToPersist = List<MusicTrack>.from(
-      service.libraryBatchPersistTracks,
+      _service.libraryBatchPersistTracks,
     );
-    final didChangeGroupOrder = service.libraryBatchChangedGroupOrder;
-    service
+    final didChangeGroupOrder = _service.libraryBatchChangedGroupOrder;
+    _service
       ..libraryBatchChanged = false
       ..libraryBatchChangedGroupOrder = false
       ..libraryBatchPersistTracks.clear()
@@ -2007,27 +2033,27 @@ final class LibraryFacade implements LibraryCatalog {
 
     if (didChangeLibrary) {
       _coverArtworkCacheService?.invalidateAll();
-      service
+      _service
         ..syncGroupOrderFromLibrary()
         ..syncLibraryNodeOrder(persist: false);
-      final derivedGeneration = ++service.libraryDerivedGeneration;
+      final derivedGeneration = ++_service.libraryDerivedGeneration;
       final derivedSnapshot = await AppLogService.measureAsync(
         'library_derived_snapshot_build',
         () => compute(
           buildLibraryDerivedSnapshot,
           LibraryDerivedSnapshotPayload(
-            tracks: List<MusicTrack>.unmodifiable(service.library),
-            watchedFolders: List<String>.unmodifiable(service.watchedFolders),
+            tracks: List<MusicTrack>.unmodifiable(_service.library),
+            watchedFolders: List<String>.unmodifiable(_service.watchedFolders),
             watchedLibraries: List<String>.unmodifiable(
-              service.watchedLibraries,
+              _service.watchedLibraries,
             ),
-            nodeOrder: List<String>.unmodifiable(service.libraryNodeOrder),
+            nodeOrder: List<String>.unmodifiable(_service.libraryNodeOrder),
           ),
         ),
-        details: <String, Object?>{'tracks': service.library.length},
+        details: <String, Object?>{'tracks': _service.library.length},
       );
-      if (derivedGeneration == service.libraryDerivedGeneration) {
-        service
+      if (derivedGeneration == _service.libraryDerivedGeneration) {
+        _service
           ..library = List<MusicTrack>.of(derivedSnapshot.library)
           ..libraryByPath = Map<String, MusicTrack>.of(
             derivedSnapshot.libraryByPath,
@@ -2077,14 +2103,14 @@ final class LibraryFacade implements LibraryCatalog {
     required bool persist,
   }) {
     if (entries.isEmpty || !persist || !_persistenceEnabled) return;
-    if (service.libraryBatchDepth > 0) {
+    if (_service.libraryBatchDepth > 0) {
       for (final entry in entries) {
         final key = <String>[
           PathMatcher.normalize(entry.libraryPath),
           PathMatcher.normalize(entry.path),
           entry.kind.dbValue,
         ].join('\x1F');
-        service.libraryBatchPersistEntriesByKey[key] = entry;
+        _service.libraryBatchPersistEntriesByKey[key] = entry;
       }
       return;
     }
@@ -2093,11 +2119,11 @@ final class LibraryFacade implements LibraryCatalog {
 
   @override
   int tryBeginScan({required String source, bool background = false}) {
-    if (service.isScanning) return 0;
-    service.scanGenerationSeed++;
-    final generation = service.scanGenerationSeed;
+    if (_service.isScanning) return 0;
+    _service.scanGenerationSeed++;
+    final generation = _service.scanGenerationSeed;
     _setScanning(true, background: background);
-    service
+    _service
       ..scanGeneration = generation
       ..scanCurrentFolder = source
       ..scanStage = FolderScanStage.preparing
@@ -2109,7 +2135,7 @@ final class LibraryFacade implements LibraryCatalog {
 
   @override
   void cancelScan() {
-    if (!service.isScanning) return;
+    if (!_service.isScanning) return;
     _setScanning(false);
     unawaited(FileCachePlatformGateway.instance.cancelActiveFolderScan());
   }
@@ -2131,48 +2157,48 @@ final class LibraryFacade implements LibraryCatalog {
     int? processed,
     int? total,
   }) {
-    if (generation != null && generation != service.scanGeneration) return;
-    final nextFolder = currentFolder ?? service.scanCurrentFolder;
-    final nextFoundCount = foundCount ?? service.scanFoundCount;
-    final nextDuplicateCount = duplicateCount ?? service.scanDuplicateCount;
-    final nextFailureCount = failureCount ?? service.scanFailureCount;
-    final nextStage = stage ?? service.scanStage;
-    final nextProcessed = processed ?? service.scanProcessed;
-    final nextTotal = total ?? service.scanTotal;
+    if (generation != null && generation != _service.scanGeneration) return;
+    final nextFolder = currentFolder ?? _service.scanCurrentFolder;
+    final nextFoundCount = foundCount ?? _service.scanFoundCount;
+    final nextDuplicateCount = duplicateCount ?? _service.scanDuplicateCount;
+    final nextFailureCount = failureCount ?? _service.scanFailureCount;
+    final nextStage = stage ?? _service.scanStage;
+    final nextProcessed = processed ?? _service.scanProcessed;
+    final nextTotal = total ?? _service.scanTotal;
     final changed =
-        nextFolder != service.scanCurrentFolder ||
-        nextFoundCount != service.scanFoundCount ||
-        nextDuplicateCount != service.scanDuplicateCount ||
-        nextFailureCount != service.scanFailureCount ||
-        nextStage != service.scanStage ||
-        nextProcessed != service.scanProcessed ||
-        nextTotal != service.scanTotal;
+        nextFolder != _service.scanCurrentFolder ||
+        nextFoundCount != _service.scanFoundCount ||
+        nextDuplicateCount != _service.scanDuplicateCount ||
+        nextFailureCount != _service.scanFailureCount ||
+        nextStage != _service.scanStage ||
+        nextProcessed != _service.scanProcessed ||
+        nextTotal != _service.scanTotal;
     if (!changed) return;
-    if (currentFolder != null) service.scanCurrentFolder = currentFolder;
-    if (foundCount != null) service.scanFoundCount = foundCount;
+    if (currentFolder != null) _service.scanCurrentFolder = currentFolder;
+    if (foundCount != null) _service.scanFoundCount = foundCount;
     if (duplicateCount != null) {
-      service.scanDuplicateCount = duplicateCount;
+      _service.scanDuplicateCount = duplicateCount;
     }
-    if (failureCount != null) service.scanFailureCount = failureCount;
-    if (stage != null) service.scanStage = stage;
-    if (processed != null) service.scanProcessed = processed;
-    if (total != null) service.scanTotal = total;
-    if (service.isBackgroundScanning) return;
+    if (failureCount != null) _service.scanFailureCount = failureCount;
+    if (stage != null) _service.scanStage = stage;
+    if (processed != null) _service.scanProcessed = processed;
+    if (total != null) _service.scanTotal = total;
+    if (_service.isBackgroundScanning) return;
     _scheduleScanProgressSync();
   }
 
   void _setScanning(bool scanning, {bool background = false}) {
-    if (service.isScanning == scanning &&
-        service.isBackgroundScanning == background) {
+    if (_service.isScanning == scanning &&
+        _service.isBackgroundScanning == background) {
       return;
     }
-    service
+    _service
       ..isScanning = scanning
       ..isBackgroundScanning = scanning && background;
-    service.scanProgressNotifyTimer?.cancel();
-    service.scanProgressNotifyTimer = null;
+    _service.scanProgressNotifyTimer?.cancel();
+    _service.scanProgressNotifyTimer = null;
     if (scanning) {
-      service
+      _service
         ..scanCurrentFolder = ''
         ..scanFoundCount = 0
         ..scanDuplicateCount = 0
@@ -2181,7 +2207,7 @@ final class LibraryFacade implements LibraryCatalog {
         ..scanProcessed = 0
         ..scanTotal = null;
     } else {
-      service
+      _service
         ..scanGeneration = 0
         ..scanStage = FolderScanStage.idle
         ..scanTotal = null;
@@ -2190,26 +2216,26 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   void _scheduleScanProgressSync() {
-    if (!service.isScanning) {
+    if (!_service.isScanning) {
       _syncStateSlice();
       return;
     }
-    if (service.scanProgressNotifyTimer != null) return;
-    service.scanProgressNotifyTimer = Timer(
+    if (_service.scanProgressNotifyTimer != null) return;
+    _service.scanProgressNotifyTimer = Timer(
       const Duration(milliseconds: 160),
       () {
-        service.scanProgressNotifyTimer = null;
-        if (service.isScanning) _syncStateSlice();
+        _service.scanProgressNotifyTimer = null;
+        if (_service.isScanning) _syncStateSlice();
       },
     );
   }
 
   CoverArtworkCacheService get coverArtworkCacheService {
-    final service = _coverArtworkCacheService;
-    if (service == null) {
+    final coverService = _coverArtworkCacheService;
+    if (coverService == null) {
       throw StateError('LibraryFacade cover service has not been attached.');
     }
-    return service;
+    return coverService;
   }
 
   void attachCoverArtworkCacheService(
@@ -2218,12 +2244,45 @@ final class LibraryFacade implements LibraryCatalog {
     _coverArtworkCacheService ??= create();
   }
 
+  void configureCoverArtworkRuntime({
+    required bool Function(String key) isActiveCoverKey,
+    required void Function() onActiveCoverChanged,
+  }) {
+    _coverArtworkCacheService ??= CoverArtworkCacheService(
+      libraryService: _service,
+      databaseRepository: databaseRepository,
+      audioDetailCacheService: detailCacheService,
+      isActiveCoverKey: isActiveCoverKey,
+      onActiveCoverChanged: onActiveCoverChanged,
+    );
+  }
+
+  void cancelPendingScanProgressNotification() {
+    _service.scanProgressNotifyTimer?.cancel();
+    _service.scanProgressNotifyTimer = null;
+  }
+
+  void syncPresentationState({bool? isInitialized}) {
+    _syncStateSlice(isInitialized: isInitialized);
+  }
+
+  void updateTrackSnapshot(MusicTrack updatedTrack) {
+    final currentTrack = _service.libraryByPath[updatedTrack.path];
+    if (currentTrack == null) return;
+    _service.libraryByPath[updatedTrack.path] = updatedTrack;
+    final index = _service.library.indexOf(currentTrack);
+    if (index >= 0) _service.library[index] = updatedTrack;
+    if (_persistenceEnabled) {
+      unawaited(databaseRepository.upsertTracks(<MusicTrack>[updatedTrack]));
+    }
+  }
+
   Future<LibraryTreeSnapshot> ensureCardSnapshot() {
     return snapshotCacheService.cardSnapshot(onCommitted: _syncStateSlice);
   }
 
   void schedulePostStartupMaintenance() {
-    final retainedPaths = service.library
+    final retainedPaths = _service.library
         .map((track) => track.path)
         .toList(growable: false);
     _startupMaintenanceCoordinator.schedule(retainedPaths);
@@ -2246,14 +2305,14 @@ final class LibraryFacade implements LibraryCatalog {
   Future<void> _ensureEntriesForLoadedTracks(int epoch) async {
     if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
     final knownLibraries = <String>{
-      ...service.watchedLibraries,
-      ...service.watchedFolders,
+      ..._service.watchedLibraries,
+      ..._service.watchedFolders,
     };
-    if (knownLibraries.isEmpty || service.library.isEmpty) return;
+    if (knownLibraries.isEmpty || _service.library.isEmpty) return;
     final entriesToPersist = <LibraryEntry>[];
     for (final libraryPath in knownLibraries) {
-      if (service.hasLibraryEntriesForLibrary(libraryPath)) continue;
-      final tracks = service.library
+      if (_service.hasLibraryEntriesForLibrary(libraryPath)) continue;
+      final tracks = _service.library
           .where(
             (track) =>
                 PathMatcher.isWithinOrEqual(track.path, libraryPath) ||
@@ -2261,11 +2320,13 @@ final class LibraryFacade implements LibraryCatalog {
           )
           .toList(growable: false);
       if (tracks.isEmpty) continue;
-      entriesToPersist.addAll(service.buildLibraryEntries(libraryPath, tracks));
+      entriesToPersist.addAll(
+        _service.buildLibraryEntries(libraryPath, tracks),
+      );
     }
     if (entriesToPersist.isEmpty) return;
     if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
-    service.replaceLibraryEntries(entriesToPersist);
+    _service.replaceLibraryEntries(entriesToPersist);
     await databaseRepository.upsertLibraryEntries(entriesToPersist);
   }
 
@@ -2275,7 +2336,7 @@ final class LibraryFacade implements LibraryCatalog {
       _audioDetailPrimaryMigrationKey,
     );
     if (completed == '1') return;
-    while (service.isScanning &&
+    while (_service.isScanning &&
         !_disposed &&
         _startupMaintenanceCoordinator.isCurrent(epoch)) {
       await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -2298,8 +2359,8 @@ final class LibraryFacade implements LibraryCatalog {
   }
 
   void _syncStateSlice({bool? isInitialized}) {
-    final current = service.slice.state;
-    service.syncSlice(
+    final current = _service.slice.state;
+    _service.syncSlice(
       isInitialized: isInitialized ?? current.isInitialized,
       detailRevision: detailCacheService.revision,
       treeSnapshotRevision: snapshotCacheService.cardSnapshotRevision,
@@ -2312,10 +2373,9 @@ final class LibraryFacade implements LibraryCatalog {
     _maintenanceEpoch++;
     await _startupMaintenanceCoordinator.dispose();
     await detailCacheService.suspendAndWait();
-    service.scanProgressNotifyTimer?.cancel();
-    service.scanProgressNotifyTimer = null;
+    cancelPendingScanProgressNotification();
     _coverArtworkCacheService?.dispose();
-    await service.dispose();
+    await _service.dispose();
   }
 }
 

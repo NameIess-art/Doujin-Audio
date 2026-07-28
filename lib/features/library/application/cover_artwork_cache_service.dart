@@ -13,7 +13,7 @@ import '../../../core/media/music_track.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../settings/application/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
-import '../../../core/persistence/audio_database_repository.dart';
+import '../domain/library_persistence_repository.dart';
 import 'audio_detail_cache_service.dart';
 import 'cover_image_cache_policy.dart';
 import 'library_organizer.dart';
@@ -43,7 +43,7 @@ const String _asmrOneAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
 class CoverArtworkCacheService {
   CoverArtworkCacheService({
     required LibraryService libraryService,
-    AudioDatabaseRepository? databaseRepository,
+    LibraryPersistenceRepository? databaseRepository,
     AudioDetailCacheService? audioDetailCacheService,
     FileCachePlatformGateway? fileCacheGateway,
     Future<List<String>> Function(String rootPath, bool recursive)?
@@ -70,7 +70,7 @@ class CoverArtworkCacheService {
        _onActiveCoverChanged = onActiveCoverChanged;
 
   final LibraryService _libraryService;
-  final AudioDatabaseRepository? _databaseRepository;
+  final LibraryPersistenceRepository? _databaseRepository;
   final AudioDetailCacheService? _audioDetailCacheService;
   final FileCachePlatformGateway _fileCacheGateway;
   final Future<List<String>> Function(String rootPath, bool recursive)?

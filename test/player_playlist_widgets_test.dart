@@ -10,7 +10,7 @@ import 'package:just_audio/just_audio.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/core/media/subtitle_parser.dart';
-import 'package:nameless_audio/core/persistence/audio_database_repository.dart';
+import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
@@ -112,6 +112,7 @@ _pumpSubtitleDetail({
     isSingle: false,
   );
   final fixture = AppRuntimeWidgetTestFixture(
+    coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
     configureSettingsRepository: (settings) {
       settings.playbackDetailSubtitleStyle = style;
       settings.syncSlice(isInitialized: true);
@@ -282,7 +283,7 @@ void main() {
       isInitialized: true,
     );
     final playbackFacade = PlaybackFacade.create(
-      databaseRepository: AudioDatabaseRepository(),
+      databaseRepository: TestPersistenceRepository(),
       service: playbackService,
     );
     addTearDown(playbackFacade.dispose);
@@ -316,7 +317,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: fixture.runtimeGraph,
-        audioDatabaseRepository: fixture.audioDatabaseRepository,
+        persistenceRepository: fixture.persistenceRepository,
         nativePlaybackRepository: fixture.nativePlaybackRepository,
         playbackCommandRunner:
             AppRuntimeWidgetTestFixture.playbackCommandRunner,
@@ -404,7 +405,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -448,7 +449,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -561,7 +562,7 @@ void main() {
     );
     addTearDown(fixture.disposeAfterWarmups);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -606,7 +607,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -655,7 +656,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -720,7 +721,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -808,7 +809,7 @@ void main() {
     );
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -849,7 +850,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -892,7 +893,7 @@ void main() {
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
-    final audioDatabaseRepository = fixture.audioDatabaseRepository;
+    final persistenceRepository = fixture.persistenceRepository;
     final nativePlaybackRepository = fixture.nativePlaybackRepository;
     const playbackCommandRunner =
         AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -916,7 +917,7 @@ void main() {
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
         runtimeGraph: runtimeGraph,
-        audioDatabaseRepository: audioDatabaseRepository,
+        persistenceRepository: persistenceRepository,
         nativePlaybackRepository: nativePlaybackRepository,
         playbackCommandRunner: playbackCommandRunner,
         libraryService: libraryService,
@@ -947,20 +948,21 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      runtimeGraph.playback.service.activeSessions.where(
+      runtimeGraph.playback.activeSessions.where(
         (session) => session.isPlaybackQueue,
       ),
       hasLength(1),
     );
     expect(
-      runtimeGraph.playback.service.activeSessions
+      runtimeGraph.playback.activeSessions
           .singleWhere((session) => session.isPlaybackQueue)
           .playbackQueue
           ?.name,
       languageProvider.tr('default_playback_queue_name', {'number': 1}),
     );
-    final queueSession = runtimeGraph.playback.service.activeSessions
-        .singleWhere((session) => session.isPlaybackQueue);
+    final queueSession = runtimeGraph.playback.activeSessions.singleWhere(
+      (session) => session.isPlaybackQueue,
+    );
     final queueCard = tester
         .widgetList<SwipeRevealCard>(find.byType(SwipeRevealCard))
         .singleWhere((card) => card.key == ValueKey(queueSession.id));
@@ -1192,7 +1194,7 @@ void main() {
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final runtimeGraph = fixture.runtimeGraph;
-      final audioDatabaseRepository = fixture.audioDatabaseRepository;
+      final persistenceRepository = fixture.persistenceRepository;
       final nativePlaybackRepository = fixture.nativePlaybackRepository;
       const playbackCommandRunner =
           AppRuntimeWidgetTestFixture.playbackCommandRunner;
@@ -1244,7 +1246,7 @@ void main() {
       await tester.pumpWidget(
         buildAppRuntimeTestApp(
           runtimeGraph: runtimeGraph,
-          audioDatabaseRepository: audioDatabaseRepository,
+          persistenceRepository: persistenceRepository,
           nativePlaybackRepository: nativePlaybackRepository,
           playbackCommandRunner: playbackCommandRunner,
           libraryService: libraryService,

@@ -10,7 +10,7 @@ import '../application/app_persistence_coordinator.dart';
 import '../application/persisted_state_reloader.dart';
 import '../application/audio_path_coordinator.dart';
 import '../application/playback_queue_coordinator.dart';
-import '../application/audio_runtime_coordinator.dart';
+import '../application/app_runtime_lifecycle.dart';
 import '../application/audio_ui_warmup_coordinator.dart';
 import '../application/playback_command_coordinator.dart';
 import '../application/playback_keep_alive_coordinator.dart';
@@ -232,9 +232,7 @@ final themeStateProvider = StreamProvider<ThemeState>((ref) {
   return states.stream;
 });
 
-final audioRuntimeCoordinatorProvider = Provider<AudioRuntimeCoordinator>((
-  ref,
-) {
+final audioRuntimeCoordinatorProvider = Provider<AppRuntimeLifecycle>((ref) {
   throw UnimplementedError(
     'audioRuntimeCoordinatorProvider must be overridden in ProviderScope.',
   );
@@ -302,7 +300,7 @@ final playbackQueueCoordinatorProvider = Provider<PlaybackQueueCoordinator>((
 final playbackTimeSegmentServiceProvider = Provider<PlaybackTimeSegmentService>(
   (ref) {
     final service = PlaybackTimeSegmentService(
-      database: ref.watch(libraryFacadeProvider).databaseRepository,
+      database: ref.watch(playbackFacadeProvider).databaseRepository,
       playback: ref.watch(playbackFacadeProvider),
       paths: ref.watch(audioPathCoordinatorProvider),
     );
@@ -653,7 +651,7 @@ final sessionDetailTransportProvider =
 
 List<Override> createAppRuntimeOverrides({
   required AppPersistenceCoordinator persistence,
-  required AudioRuntimeCoordinator runtime,
+  required AppRuntimeLifecycle runtime,
   required AudioUiWarmupCoordinator warmup,
   required PlaybackCommandCoordinator playbackCommands,
   required PlaybackKeepAliveCoordinator keepAlive,

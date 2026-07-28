@@ -6,9 +6,12 @@ import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
+import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/features/player/application/timer_facade.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
+
+import 'support/test_persistence_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -16,9 +19,10 @@ void main() {
   test(
     'production facade constructor requires only five high-level owners',
     () {
-      final library = LibraryFacade.create();
+      final library = _createLibraryFacade();
       final playback = PlaybackFacade.create(
-        databaseRepository: library.databaseRepository,
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
       );
       final timer = TimerFacade.create();
       final notification = NotificationFacade.create(
@@ -54,9 +58,10 @@ void main() {
         await request.response.close();
       });
 
-      final library = LibraryFacade.create();
+      final library = _createLibraryFacade();
       final playback = PlaybackFacade.create(
-        databaseRepository: library.databaseRepository,
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
       );
       final runtimeGraph = createAppRuntimeGraph(
         library: library,
@@ -97,4 +102,8 @@ void main() {
       expect(subtitle!.cues.single.text, 'ASMR subtitle');
     },
   );
+}
+
+LibraryFacade _createLibraryFacade() {
+  return LibraryFacade.create(databaseRepository: TestPersistenceRepository());
 }

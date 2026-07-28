@@ -57,7 +57,7 @@ extension AppDatabaseAsmr on AppDatabase {
     });
   }
 
-  Future<List<AsmrWork>> loadAsmrWorkList(String listType) async {
+  Future<List<AsmrWorkRecord>> loadAsmrWorkList(String listType) async {
     return _runDatabaseRead((db) async {
       final rows = await db.rawQuery(
         '''
@@ -69,7 +69,7 @@ extension AppDatabaseAsmr on AppDatabase {
     ''',
         [listType],
       );
-      if (rows.isEmpty) return const <AsmrWork>[];
+      if (rows.isEmpty) return const <AsmrWorkRecord>[];
       final ids = rows.map((row) => row['id'] as int).toList(growable: false);
       final voiceActorsById = await _loadAsmrWorkTextValues(
         db,
@@ -97,7 +97,10 @@ extension AppDatabaseAsmr on AppDatabase {
     });
   }
 
-  Future<void> saveAsmrWorkList(String listType, List<AsmrWork> works) async {
+  Future<void> saveAsmrWorkList(
+    String listType,
+    List<AsmrWorkRecord> works,
+  ) async {
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
       _replaceAsmrWorkListInBatch(batch, listType, works);
@@ -105,7 +108,7 @@ extension AppDatabaseAsmr on AppDatabase {
     });
   }
 
-  Future<List<AsmrSyncOperation>> loadAsmrSyncOperations() async {
+  Future<List<AsmrSyncOperationRecord>> loadAsmrSyncOperations() async {
     return _runDatabaseRead((db) async {
       final rows = await db.query(
         'asmr_sync_operations',
@@ -113,8 +116,8 @@ extension AppDatabaseAsmr on AppDatabase {
       );
       return rows
           .map(
-            (row) => AsmrSyncOperation(
-              type: AsmrSyncOperationType.fromName(row['type'] as String?),
+            (row) => AsmrSyncOperationRecord(
+              type: row['type'] as String? ?? '',
               workId: (row['work_id'] as num?)?.toInt() ?? 0,
               sourceId: row['source_id'] as String? ?? '',
               createdAt:
@@ -129,7 +132,7 @@ extension AppDatabaseAsmr on AppDatabase {
   }
 
   Future<void> saveAsmrSyncOperations(
-    List<AsmrSyncOperation> operations,
+    List<AsmrSyncOperationRecord> operations,
   ) async {
     await _runDatabaseWrite((db) async {
       final batch = db.batch();
@@ -140,8 +143,8 @@ extension AppDatabaseAsmr on AppDatabase {
 
   Future<void> saveAsmrWorkListAndSyncOperations(
     String listType,
-    List<AsmrWork> works,
-    List<AsmrSyncOperation> operations,
+    List<AsmrWorkRecord> works,
+    List<AsmrSyncOperationRecord> operations,
   ) async {
     await _runDatabaseWrite((db) async {
       await db.transaction((txn) async {

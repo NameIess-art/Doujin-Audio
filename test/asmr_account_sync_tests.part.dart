@@ -55,7 +55,7 @@ void registerAsmrAccountSyncTests({
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -109,7 +109,7 @@ void registerAsmrAccountSyncTests({
           apiService: api,
           tokenStore: _MemoryAsmrTokenStore(),
         ),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -160,7 +160,7 @@ void registerAsmrAccountSyncTests({
           apiService: api,
           tokenStore: _MemoryAsmrTokenStore(),
         ),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -198,7 +198,7 @@ void registerAsmrAccountSyncTests({
           apiService: api,
           tokenStore: _MemoryAsmrTokenStore(),
         ),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -224,7 +224,7 @@ void registerAsmrAccountSyncTests({
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -254,7 +254,7 @@ void registerAsmrAccountSyncTests({
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -284,7 +284,7 @@ void registerAsmrAccountSyncTests({
         apiService: api,
         tokenStore: _MemoryAsmrTokenStore(),
       ),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -323,7 +323,7 @@ void registerAsmrAccountSyncTests({
         apiService: api,
         tokenStore: _MemoryAsmrTokenStore(),
       ),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -370,7 +370,7 @@ void registerAsmrAccountSyncTests({
         apiService: api,
         tokenStore: _MemoryAsmrTokenStore(),
       ),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -398,7 +398,7 @@ void registerAsmrAccountSyncTests({
         apiService: api,
         tokenStore: _MemoryAsmrTokenStore(),
       ),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -426,7 +426,7 @@ void registerAsmrAccountSyncTests({
         preferencesStore: preferences,
         apiService: api,
         authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -455,7 +455,7 @@ void registerAsmrAccountSyncTests({
         apiService: api,
         tokenStore: _MemoryAsmrTokenStore(),
       ),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -498,7 +498,7 @@ void registerAsmrAccountSyncTests({
         apiService: api,
         tokenStore: _MemoryAsmrTokenStore(),
       ),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -535,7 +535,7 @@ void registerAsmrAccountSyncTests({
           apiService: api,
           tokenStore: _MemoryAsmrTokenStore(),
         ),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -584,7 +584,7 @@ void registerAsmrAccountSyncTests({
         apiService: api,
         tokenStore: _MemoryAsmrTokenStore(),
       ),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );
@@ -615,7 +615,7 @@ void registerAsmrAccountSyncTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: _FakeAsmrApiService(),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -644,7 +644,7 @@ void registerAsmrAccountSyncTests({
     () async {
       await resetPrefs();
       final blockingPreferences = _BlockingAsmrPreferencesStore(
-        database: AppDatabase.instance,
+        repository: TestPersistenceRepository(),
       );
       final api = _FakeAsmrApiService();
       final tokenStore = _MemoryAsmrTokenStore();
@@ -682,7 +682,7 @@ void registerAsmrAccountSyncTests({
     () async {
       await resetPrefs();
       final blockingPreferences = _BlockingAsmrPreferencesStore(
-        database: AppDatabase.instance,
+        repository: TestPersistenceRepository(),
       );
       final api = _FakeAsmrApiService();
       final controller = AsmrLibraryController(
@@ -692,7 +692,7 @@ void registerAsmrAccountSyncTests({
           apiService: api,
           tokenStore: _MemoryAsmrTokenStore(),
         ),
-        audioDatabaseRepository: _FakeAudioDatabaseRepository(
+        persistenceRepository: _FakeTestPersistenceRepository(
           const <MusicTrack>[],
         ),
       );
@@ -732,7 +732,7 @@ void registerAsmrAccountSyncTests({
         apiService: api,
         tokenStore: _MemoryAsmrTokenStore(),
       ),
-      audioDatabaseRepository: _FakeAudioDatabaseRepository(
+      persistenceRepository: _FakeTestPersistenceRepository(
         const <MusicTrack>[],
       ),
     );

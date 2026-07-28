@@ -241,11 +241,7 @@ class LibraryEntryEditorService {
         );
       }
     }
-    return _snapshot(
-      audioFiles,
-      const <String>{},
-      authoritative: !scanFailed,
-    );
+    return _snapshot(audioFiles, const <String>{}, authoritative: !scanFailed);
   }
 
   Future<LibraryEntryDiskSnapshot> _loadNativeSnapshot(

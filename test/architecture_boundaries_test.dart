@@ -117,6 +117,23 @@ void main() {
 
     expect(violations, isEmpty, reason: violations.join('\n'));
   });
+
+  test('production code does not silently swallow exceptions', () {
+    final violations = <String>[];
+    final emptyCatch = RegExp(r'catch\s*\([^)]*\)\s*\{\s*\}', multiLine: true);
+    final emptyCatchError = RegExp(
+      r'catchError\s*\(\s*\([^)]*\)\s*\{\s*\}\s*\)',
+      multiLine: true,
+    );
+    for (final file in _dartFiles(libDirectory)) {
+      final source = file.readAsStringSync();
+      if (emptyCatch.hasMatch(source) || emptyCatchError.hasMatch(source)) {
+        violations.add(_normalizedPath(file));
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
 }
 
 Iterable<File> _dartFiles(Directory root) sync* {

@@ -109,11 +109,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
   void _handlePageTick() {
     final current = _pageNotifier.value;
     double nextPage = current;
-    try {
-      if (_pageController.hasClients) {
-        nextPage = _pageController.page ?? current;
-      }
-    } catch (_) {}
+    if (_pageController.positions.length == 1) {
+      nextPage = _pageController.page ?? current;
+    }
     if ((nextPage - current).abs() < 0.001) return;
     _pageNotifier.value = nextPage;
   }

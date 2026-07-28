@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 
@@ -24,8 +25,12 @@ Future<void> cleanupEmbeddedCoverPartial(
         await partial.delete();
       }
     }
-  } catch (_) {
-    // Cleanup is best effort and must not replace the extraction result.
+  } on FileSystemException catch (error, stackTrace) {
+    AppLogService.warning(
+      'embedded_cover_partial_cleanup_failed',
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 }
 
@@ -48,7 +53,7 @@ class EmbeddedCoverArtworkService {
     late final FileStat stat;
     try {
       stat = await trackFile.stat();
-    } catch (_) {
+    } on FileSystemException {
       return null;
     }
     if (stat.type != FileSystemEntityType.file) return null;
@@ -89,7 +94,19 @@ class EmbeddedCoverArtworkService {
             await _readMp4Picture(trackFile) ??
             await _readFlacPicture(trackFile);
       }
-    } catch (_) {}
+    } on FileSystemException catch (error, stackTrace) {
+      AppLogService.warning(
+        'embedded_cover_read_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } on FormatException catch (error, stackTrace) {
+      AppLogService.warning(
+        'embedded_cover_format_invalid',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
 
     if (picture == null || picture.isEmpty) return null;
 
@@ -110,7 +127,12 @@ class EmbeddedCoverArtworkService {
       if (await output.exists()) await output.delete();
       await partial.rename(output.path);
       return output.path;
-    } catch (_) {
+    } on FileSystemException catch (error, stackTrace) {
+      AppLogService.warning(
+        'embedded_cover_cache_write_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     } finally {
       await cleanupEmbeddedCoverPartial(partial);

@@ -73,7 +73,13 @@ class PlaybackSessionService {
 
   void enqueueSessionPreparation(Future<void> Function() prepare) {
     sessionPreparationQueue = sessionPreparationQueue
-        .catchError((_) {})
+        .catchError((Object error, StackTrace stackTrace) {
+          AppLogService.warning(
+            'playback_session_preparation_queue_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        })
         .then((_) => prepare());
   }
 

@@ -211,7 +211,13 @@ void _applyOrientationPreference(bool portraitLockEnabled) {
       portraitLockEnabled
           ? AppOrientationPolicy.portrait.allowedOrientations
           : AppOrientationPolicy.current.allowedOrientations,
-    ).catchError((_) {}),
+    ).catchError((Object error, StackTrace stackTrace) {
+      AppLogService.warning(
+        'orientation_preference_update_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }),
   );
 }
 

@@ -41,6 +41,25 @@ void main() {
     });
   });
 
+  group('PlaybackSessionService', () {
+    test('continues queued preparation after a predecessor fails', () async {
+      final service = PlaybackSessionService();
+      addTearDown(service.dispose);
+      var secondPreparationRan = false;
+
+      service.enqueueSessionPreparation(() async {
+        throw StateError('injected preparation failure');
+      });
+      service.enqueueSessionPreparation(() async {
+        secondPreparationRan = true;
+      });
+
+      await service.sessionPreparationQueue;
+
+      expect(secondPreparationRan, isTrue);
+    });
+  });
+
   group('SettingsRepository', () {
     test('loads persisted playback and converter settings', () async {
       final preferences = await SharedPreferences.getInstance();

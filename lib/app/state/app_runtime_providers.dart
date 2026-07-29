@@ -573,6 +573,11 @@ final coverImageResolutionProvider = Provider<CoverImageResolution>((ref) {
       ref.watch(settingsRepositoryProvider).slice.state.coverImageResolution;
 });
 
+final coverImageDisplayModeProvider = Provider<CoverImageDisplayMode>((ref) {
+  return ref.watch(settingsStateProvider).value?.coverImageDisplayMode ??
+      ref.watch(settingsRepositoryProvider).slice.state.coverImageDisplayMode;
+});
+
 final libraryTrackProvider = Provider.family<MusicTrack?, String>((
   ref,
   trackPath,

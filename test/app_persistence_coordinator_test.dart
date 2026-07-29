@@ -152,6 +152,7 @@ void main() {
       'uiBlurEffectEnabled',
       'hapticFeedbackEnabled',
       'coverImageResolution',
+      'coverImageDisplayMode',
       'asmrDownloadDestinationRoot',
       'asmrDownloadConflictPolicy',
       'asmrDownloadSaveMetadata',
@@ -168,6 +169,7 @@ void main() {
       'allowDuplicateWorks',
       'reduceAnimations',
     });
+    expect(playbackSettings['coverImageDisplayMode'], 'fill');
     expect(
       jsonDecode(preferences.getString('converter_settings_v1')!),
       <String, Object?>{'format': 'mp3', 'bitrate': '320k'},

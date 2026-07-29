@@ -21,6 +21,11 @@ List<Widget> _buildSettingsAppearanceSection({
     CoverImageResolution.ultraHigh: i18n.tr('cover_image_resolution_1200'),
     CoverImageResolution.original: i18n.tr('cover_image_resolution_original'),
   };
+  final coverDisplayModeLabels = <CoverImageDisplayMode, String>{
+    CoverImageDisplayMode.fill: i18n.tr('cover_image_display_mode_fill'),
+    CoverImageDisplayMode.stretch: i18n.tr('cover_image_display_mode_stretch'),
+    CoverImageDisplayMode.tile: i18n.tr('cover_image_display_mode_tile'),
+  };
 
   return <Widget>[
     _SettingsSectionCard(
@@ -151,6 +156,33 @@ List<Widget> _buildSettingsAppearanceSection({
                           value: value,
                           child: _settingsDropdownText(
                             coverResolutionLabels[value]!,
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+          ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+        ListTile(
+          title: _settingsTitle(i18n.tr('cover_image_display_mode')),
+          leading: _settingsIcon(Icons.aspect_ratio_rounded, cs.onSurface),
+          trailing: Consumer(
+            builder: (context, ref, _) =>
+                _settingsDropdown<CoverImageDisplayMode>(
+                  context,
+                  value: ref.watch(coverImageDisplayModeProvider),
+                  onChanged: (value) {
+                    if (value != null) {
+                      settings.setCoverImageDisplayMode(value);
+                    }
+                  },
+                  items: CoverImageDisplayMode.values
+                      .map(
+                        (value) => DropdownMenuItem<CoverImageDisplayMode>(
+                          value: value,
+                          child: _settingsDropdownText(
+                            coverDisplayModeLabels[value]!,
                           ),
                         ),
                       )

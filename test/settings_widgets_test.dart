@@ -858,6 +858,39 @@ void main() {
     );
   });
 
+  testWidgets('appearance changes the global cover display mode', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+
+    final title = find.text(i18n.tr('cover_image_display_mode'));
+    await Scrollable.ensureVisible(tester.element(title), alignment: 0.5);
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(DropdownButton<CoverImageDisplayMode>));
+    await tester.pumpAndSettle();
+
+    expect(find.text(i18n.tr('cover_image_display_mode_fill')), findsWidgets);
+    expect(
+      find.text(i18n.tr('cover_image_display_mode_stretch')),
+      findsOneWidget,
+    );
+    expect(find.text(i18n.tr('cover_image_display_mode_tile')), findsOneWidget);
+
+    await tester.tap(find.text(i18n.tr('cover_image_display_mode_tile')));
+    await tester.pumpAndSettle();
+    expect(
+      harness.settingsRepository.coverImageDisplayMode,
+      CoverImageDisplayMode.tile,
+    );
+  });
+
   testWidgets('appearance selects app and conditional ASMR theme colors', (
     tester,
   ) async {

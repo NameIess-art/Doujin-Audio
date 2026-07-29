@@ -774,6 +774,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   collapseController: _scrollController,
                   floatingReveal: true,
                   floatingRevealDistance: 56,
+                  bottomSpacing: 4,
                   trailing: SizedBox(
                     height: 44,
                     child: Row(

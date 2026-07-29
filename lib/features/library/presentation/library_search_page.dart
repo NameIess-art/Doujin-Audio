@@ -198,7 +198,10 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         ? _visibleSearchResult
         : null;
     if (result == null) {
-      return const _LibraryLoadingSkeleton(bottomInset: 16, topInset: 8);
+      return _LibraryLoadingSkeleton(
+        bottomInset: 16,
+        topInset: AppSearchPageScaffold.controlsTopInset(context),
+      );
     }
     final tree = result.tree;
     if (tree.isEmpty) {
@@ -225,7 +228,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       controller: _scrollController,
       padding: EdgeInsets.fromLTRB(
         16,
-        8,
+        AppSearchPageScaffold.controlsTopInset(context),
         16,
         MediaQuery.paddingOf(context).bottom + 16,
       ),
@@ -239,7 +242,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
           key: ValueKey<String>('search_${node.path}'),
           child: _LibraryTreeItem(
             node: node,
-            initiallyExpanded: true,
             searchQuery: _query,
             cardPositionsLocked: cardPositionsLocked,
           ),
@@ -304,7 +306,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       body = _buildCategoryBody(
         libraryFacade: libraryFacade,
         i18n: i18n,
-        topPadding: 8,
+        topPadding: AppSearchPageScaffold.controlsTopInset(context),
         bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
         cacheExtent: 320,
         structureRevision: structureRevision,

@@ -548,6 +548,18 @@ void main() {
           groupTitle: 'Ocean Waves',
           isSingle: true,
         ),
+        testMusicTrack(
+          name: 'Folder Track One',
+          path: '/library/folder/one.mp3',
+          groupKey: '/library/folder',
+          groupTitle: 'Folder Work',
+        ),
+        testMusicTrack(
+          name: 'Folder Track Two',
+          path: '/library/folder/two.mp3',
+          groupKey: '/library/folder',
+          groupTitle: 'Folder Work',
+        ),
       ],
       notify: false,
       persist: false,
@@ -624,6 +636,27 @@ void main() {
     await pumpUntilFound(
       tester,
       find.byKey(const ValueKey<String>('library_search_results_all')),
+    );
+    final searchResultExpansionTiles = find.descendant(
+      of: find.byKey(const ValueKey<String>('library_search_results_all')),
+      matching: find.byType(ExpansionTile),
+    );
+    expect(searchResultExpansionTiles, findsOneWidget);
+    expect(
+      tester
+          .widget<ExpansionTile>(searchResultExpansionTiles)
+          .initiallyExpanded,
+      isFalse,
+    );
+    expect(
+      tester.getTopLeft(searchResultExpansionTiles).dy,
+      greaterThanOrEqualTo(
+        tester
+            .getBottomLeft(
+              find.byKey(const ValueKey<String>('app_search_category_shell')),
+            )
+            .dy,
+      ),
     );
     expect(
       find.byKey(const ValueKey<String>('recent_search_list')),

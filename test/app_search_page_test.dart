@@ -24,9 +24,10 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           home: MediaQuery(
-            data: MediaQueryData.fromView(
-              tester.view,
-            ).copyWith(textScaler: const TextScaler.linear(2)),
+            data: MediaQueryData.fromView(tester.view).copyWith(
+              padding: const EdgeInsets.only(top: 24),
+              textScaler: const TextScaler.linear(2),
+            ),
             child: AppSearchPageScaffold<int>(
               controller: controller,
               focusNode: focusNode,
@@ -77,6 +78,57 @@ void main() {
         find.byKey(const ValueKey<String>('direct_search_content')),
         findsOneWidget,
       );
+      expect(
+        find.byKey(const ValueKey<String>('app_search_stack')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('app_search_body_layer')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('app_search_controls_overlay')),
+        findsOneWidget,
+      );
+      final stack = tester.widget<Stack>(
+        find.byKey(const ValueKey<String>('app_search_stack')),
+      );
+      expect(
+        tester
+            .getTopLeft(find.byKey(const ValueKey<String>('app_search_stack')))
+            .dy,
+        0,
+      );
+      expect(
+        tester
+            .getTopLeft(
+              find.byKey(const ValueKey<String>('app_search_field_shell')),
+            )
+            .dy,
+        32,
+      );
+      expect(
+        stack.children.first.key,
+        const ValueKey<String>('app_search_body_layer'),
+      );
+      expect(
+        stack.children.last.key,
+        const ValueKey<String>('app_search_controls_overlay'),
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('app_search_controls_overlay')),
+          matching: find.byType(BackdropFilter),
+        ),
+        findsNWidgets(2),
+      );
+      final inputDecorator = tester.widget<InputDecorator>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('app_search_field')),
+          matching: find.byType(InputDecorator),
+        ),
+      );
+      expect(inputDecorator.decoration.filled, isFalse);
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));

@@ -127,7 +127,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       isLoadPending: _loadPending,
       scrollController: _scrollControllers[_category]!,
       searchQuery: _query,
-      topInset: 8,
+      topInset: AppSearchPageScaffold.controlsTopInset(context),
       bottomInset: MediaQuery.paddingOf(context).bottom + 16,
       onRefresh: _refresh,
     );

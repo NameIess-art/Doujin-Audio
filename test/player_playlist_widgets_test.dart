@@ -333,6 +333,10 @@ void main() {
 
     const placeholderKey = ValueKey<String>('playlist_initial_placeholder');
     const contentKey = ValueKey<String>('playlist_loaded_content');
+    expect(
+      tester.widget<TopPageHeader>(find.byType(TopPageHeader)).bottomSpacing,
+      4,
+    );
     expect(find.byKey(placeholderKey), findsOneWidget);
     expect(find.byKey(contentKey), findsNothing);
 

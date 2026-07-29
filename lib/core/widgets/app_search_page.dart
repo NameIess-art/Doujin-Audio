@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
@@ -38,6 +40,9 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
   final Widget body;
   final Color? accentColor;
 
+  static double controlsTopInset(BuildContext context) =>
+      MediaQuery.paddingOf(context).top + 106;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -47,157 +52,192 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
     return Scaffold(
       backgroundColor: cs.surface,
       resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
-              child: SizedBox(
-                key: const ValueKey<String>('app_search_field_shell'),
-                height: 44,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: cs.surfaceContainerHigh,
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: cs.outlineVariant.withValues(alpha: 0.28),
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: cs.shadow.withValues(alpha: 0.08),
-                        blurRadius: 10,
-                        offset: const Offset(0, 2),
+      body: Stack(
+        key: const ValueKey<String>('app_search_stack'),
+        fit: StackFit.expand,
+        children: [
+          KeyedSubtree(
+            key: const ValueKey<String>('app_search_body_layer'),
+            child: body,
+          ),
+          Positioned(
+            key: const ValueKey<String>('app_search_controls_overlay'),
+            top: MediaQuery.paddingOf(context).top + 8,
+            left: 10,
+            right: 10,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  key: const ValueKey<String>('app_search_field_shell'),
+                  height: 44,
+                  child: _SearchFloatingCapsule(
+                    radius: 22,
+                    child: TextSelectionTheme(
+                      data: TextSelectionThemeData(
+                        cursorColor: accent,
+                        selectionColor: accent.withValues(alpha: 0.24),
+                        selectionHandleColor: accent,
                       ),
-                    ],
-                  ),
-                  child: TextSelectionTheme(
-                    data: TextSelectionThemeData(
-                      cursorColor: accent,
-                      selectionColor: accent.withValues(alpha: 0.24),
-                      selectionHandleColor: accent,
-                    ),
-                    child: TextField(
-                      key: const ValueKey<String>('app_search_field'),
-                      controller: controller,
-                      focusNode: focusNode,
-                      autofocus: true,
-                      cursorColor: accent,
-                      textInputAction: TextInputAction.search,
-                      onChanged: onChanged,
-                      onSubmitted: onSubmitted,
-                      style: theme.textTheme.bodyMedium?.copyWith(fontSize: 15),
-                      decoration: InputDecoration(
-                        prefixIcon: Icon(
-                          Icons.search_rounded,
-                          color: cs.onSurfaceVariant,
-                          size: 21,
-                        ),
-                        prefixIconConstraints: const BoxConstraints.tightFor(
-                          width: 42,
-                          height: 44,
-                        ),
-                        suffixIcon: IconButton(
-                          key: const ValueKey<String>('app_search_close'),
-                          onPressed: onCloseOrClear,
-                          icon: const Icon(Icons.close_rounded, size: 21),
-                          color: cs.onSurfaceVariant,
-                          padding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                        ),
-                        suffixIconConstraints: const BoxConstraints.tightFor(
-                          width: 42,
-                          height: 44,
-                        ),
-                        hintText: hintText,
-                        hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                          color: cs.onSurfaceVariant,
+                      child: TextField(
+                        key: const ValueKey<String>('app_search_field'),
+                        controller: controller,
+                        focusNode: focusNode,
+                        autofocus: true,
+                        cursorColor: accent,
+                        textInputAction: TextInputAction.search,
+                        onChanged: onChanged,
+                        onSubmitted: onSubmitted,
+                        style: theme.textTheme.bodyMedium?.copyWith(
                           fontSize: 15,
                         ),
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 12,
+                        decoration: InputDecoration(
+                          filled: false,
+                          fillColor: Colors.transparent,
+                          prefixIcon: Icon(
+                            Icons.search_rounded,
+                            color: cs.onSurfaceVariant,
+                            size: 21,
+                          ),
+                          prefixIconConstraints: const BoxConstraints.tightFor(
+                            width: 42,
+                            height: 44,
+                          ),
+                          suffixIcon: IconButton(
+                            key: const ValueKey<String>('app_search_close'),
+                            onPressed: onCloseOrClear,
+                            icon: const Icon(Icons.close_rounded, size: 21),
+                            color: cs.onSurfaceVariant,
+                            padding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          suffixIconConstraints: const BoxConstraints.tightFor(
+                            width: 42,
+                            height: 44,
+                          ),
+                          hintText: hintText,
+                          hintStyle: theme.textTheme.bodyMedium?.copyWith(
+                            color: cs.onSurfaceVariant,
+                            fontSize: 15,
+                          ),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                            vertical: 12,
+                          ),
                         ),
                       ),
                     ),
                   ),
                 ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
-              child: Container(
-                key: const ValueKey<String>('app_search_category_shell'),
-                height: 40,
-                decoration: BoxDecoration(
-                  color: cs.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: cs.outlineVariant.withValues(alpha: 0.24),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: cs.shadow.withValues(alpha: 0.06),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
-                  child: ListView.separated(
-                    key: const ValueKey<String>('app_search_categories'),
-                    padding: const EdgeInsets.all(4),
-                    scrollDirection: Axis.horizontal,
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: categories.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 2),
-                    itemBuilder: (context, index) {
-                      final category = categories[index];
-                      final selected = category.value == selectedCategory;
-                      return Semantics(
-                        button: true,
-                        selected: selected,
-                        child: InkWell(
-                          key: ValueKey<String>(
-                            'app_search_category_${category.value}',
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () => onCategorySelected(category.value),
-                          child: AnimatedContainer(
-                            duration: tokens.motionFast,
-                            alignment: Alignment.center,
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? accent.withValues(alpha: 0.17)
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(16),
+                const SizedBox(height: 6),
+                SizedBox(
+                  key: const ValueKey<String>('app_search_category_shell'),
+                  height: 40,
+                  child: _SearchFloatingCapsule(
+                    radius: 20,
+                    child: ListView.separated(
+                      key: const ValueKey<String>('app_search_categories'),
+                      padding: const EdgeInsets.all(4),
+                      scrollDirection: Axis.horizontal,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: categories.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 2),
+                      itemBuilder: (context, index) {
+                        final category = categories[index];
+                        final selected = category.value == selectedCategory;
+                        return Semantics(
+                          button: true,
+                          selected: selected,
+                          child: InkWell(
+                            key: ValueKey<String>(
+                              'app_search_category_${category.value}',
                             ),
-                            child: Text(
-                              category.label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.labelLarge?.copyWith(
-                                color: selected ? accent : cs.onSurfaceVariant,
-                                fontWeight: selected
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
+                            borderRadius: BorderRadius.circular(16),
+                            onTap: () => onCategorySelected(category.value),
+                            child: AnimatedContainer(
+                              duration: tokens.motionFast,
+                              alignment: Alignment.center,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                              ),
+                              decoration: BoxDecoration(
+                                color: selected
+                                    ? accent.withValues(alpha: 0.19)
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Text(
+                                category.label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  color: selected
+                                      ? accent
+                                      : cs.onSurfaceVariant,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w600,
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
                   ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchFloatingCapsule extends StatelessWidget {
+  const _SearchFloatingCapsule({required this.radius, required this.child});
+
+  final double radius;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final borderRadius = BorderRadius.circular(radius);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        boxShadow: [
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: 0.14),
+            blurRadius: 18,
+            spreadRadius: -5,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: background.withValues(alpha: isDark ? 0.80 : 0.86),
+              borderRadius: borderRadius,
+              border: Border.all(
+                color: cs.outlineVariant.withValues(
+                  alpha: isDark ? 0.24 : 0.42,
                 ),
               ),
             ),
-            Expanded(child: body),
-          ],
+            child: child,
+          ),
         ),
       ),
     );

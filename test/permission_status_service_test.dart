@@ -31,6 +31,7 @@ void main() {
     expect(snapshot.notificationsEnabled, isTrue);
     expect(snapshot.backgroundRunAllowed, isTrue);
     expect(snapshot.exactAlarmsAllowed, isTrue);
+    expect(snapshot.manageFilesAllowed, isTrue);
     expect(snapshot.overlayAllowed, isFalse);
     expect(snapshot.updateInstallsAllowed, isFalse);
   });
@@ -70,4 +71,7 @@ class _FakePowerService extends PowerPlatformService {
 
   @override
   Future<bool> canScheduleExactAlarms() async => true;
+
+  @override
+  Future<bool> canManageAllFilesAccess() async => true;
 }

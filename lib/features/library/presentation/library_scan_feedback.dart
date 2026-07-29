@@ -43,7 +43,7 @@ abstract final class LibraryScanPresentationMapper {
       );
     }
     final isFailure = switch (outcome.code) {
-      LibraryScanOutcomeCode.authorizationRequired ||
+      LibraryScanOutcomeCode.permissionDenied ||
       LibraryScanOutcomeCode.failed ||
       LibraryScanOutcomeCode.alreadyRunning => true,
       _ => false,
@@ -52,8 +52,8 @@ abstract final class LibraryScanPresentationMapper {
     return LibraryScanFeedback(
       message: switch (outcome.code) {
         LibraryScanOutcomeCode.noSources => '',
-        LibraryScanOutcomeCode.authorizationRequired => i18n.tr(
-          'library_source_authorization_required',
+        LibraryScanOutcomeCode.permissionDenied => i18n.tr(
+          'need_storage_permission_scan_folder',
         ),
         LibraryScanOutcomeCode.alreadyRunning => i18n.tr('scanning_title'),
         LibraryScanOutcomeCode.folderExists => i18n.tr('library_folder_exists'),

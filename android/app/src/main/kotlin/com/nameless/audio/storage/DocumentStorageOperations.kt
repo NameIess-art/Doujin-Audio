@@ -64,27 +64,6 @@ internal fun <T> replaceSafDocument(
     return true
 }
 
-internal data class PersistedTreeGrantCandidate(
-    val uri: String,
-    val readable: Boolean,
-    val isTree: Boolean,
-    val fileSystemPath: String?
-)
-
-internal fun findMatchingPersistedTreeGrant(
-    fileSystemPath: String,
-    candidates: Iterable<PersistedTreeGrantCandidate>
-): String? {
-    val target = File(fileSystemPath).absoluteFile.normalize().path
-    return candidates.firstOrNull { candidate ->
-        candidate.readable &&
-            candidate.isTree &&
-            candidate.fileSystemPath?.let {
-                File(it).absoluteFile.normalize().path == target
-            } == true
-    }?.uri
-}
-
 internal class DocumentStorageOperations(
     private val context: Context
 ) {
@@ -185,8 +164,9 @@ internal class DocumentStorageOperations(
 
             // For tree-root targets the SAF provider may refuse to rename the
             // directory because the app only holds a grant on that root itself,
-            // not on its parent. Try the compatible file-system representation
-            // when the provider exposes one, then fall back to SAF rename.
+            // not on its parent.  Fall back to java.io.File.renameTo which works
+            // when the app has MANAGE_EXTERNAL_STORAGE or the path is on primary
+            // external storage.
             if (target.treeRoot) {
                 val fileRenamedPath = tryRenameTreeRootViaFile(target, newName)
                 if (fileRenamedPath != null) {
@@ -225,9 +205,9 @@ internal class DocumentStorageOperations(
 
         /**
          * Attempts to rename a tree-root directory using [java.io.File].
-         * This may work when the provider exposes a writable primary-storage path
-         * and the document ID encodes the relative path (for example,
-         * "primary:Music/MyFolder").
+         * This works when the app has MANAGE_EXTERNAL_STORAGE or the path is on
+         * primary external storage and the document ID encodes the relative path
+         * (e.g. "primary:Music/MyFolder").
          *
          * Returns the new content URI string on success, or null if the rename
          * could not be performed via this path.
@@ -389,22 +369,6 @@ internal class DocumentStorageOperations(
             val relativePath = documentId.substring(colonIndex + 1)
             val volumeRoot = resolveVolumeRoot(volumeName) ?: return null
             return java.io.File(volumeRoot, relativePath).absolutePath
-        }
-
-        fun findPersistedTreeGrantForPath(fileSystemPath: String): String? {
-            val candidates = contentResolver.persistedUriPermissions.map { grant ->
-                val uri = grant.uri
-                PersistedTreeGrantCandidate(
-                    uri = uri.toString(),
-                    readable = grant.isReadPermission &&
-                        DocumentFile.fromTreeUri(context, uri)?.let {
-                            it.exists() && it.canRead()
-                        } == true,
-                    isTree = DocumentsContract.isTreeUri(uri),
-                    fileSystemPath = contentUriToFilePath(uri.toString())
-                )
-            }
-            return findMatchingPersistedTreeGrant(fileSystemPath, candidates)
         }
 
         /**

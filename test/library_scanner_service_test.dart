@@ -19,13 +19,10 @@ void main() {
   );
 
   test(
-    'backup restore reauthorizes legacy and inaccessible SAF sources',
+    'backup restore requests access and rebinds inaccessible SAF sources',
     () async {
       final dataSource = _BackupRestoreDataSource();
-      final scanner = LibraryScannerService(
-        dataSource: dataSource,
-        isAndroid: () => true,
-      );
+      final scanner = LibraryScannerService(dataSource: dataSource);
 
       final prepared = await scanner.prepareBackupRestoreSources(
         sources: LocalLibraryImportSources(
@@ -36,25 +33,29 @@ void main() {
         labels: labels,
       );
 
+      expect(dataSource.permissionSources, <String>[
+        'C:/music/folder',
+        'C:/music/song.mp3',
+      ]);
       expect(prepared?.libraries, <String>['content://new/library']);
       expect(prepared?.folders, <String>[
-        'content://new/legacy-folder',
+        'C:/music/folder',
         'content://new/folder',
       ]);
-      expect(prepared?.files, <String>['content://new/song.mp3']);
+      expect(prepared?.files, <String>[
+        'C:/music/song.mp3',
+        'content://new/song.mp3',
+      ]);
     },
   );
 
   test(
-    'backup restore preserves accessible SAF URIs without opening pickers',
+    'backup restore converts external-storage URIs without opening pickers',
     () async {
       final dataSource = _ResolvedBackupRestoreDataSource();
 
-      final prepared =
-          await LibraryScannerService(
-            dataSource: dataSource,
-            isAndroid: () => true,
-          ).prepareBackupRestoreSources(
+      final prepared = await LibraryScannerService(dataSource: dataSource)
+          .prepareBackupRestoreSources(
             sources: LocalLibraryImportSources(
               libraries: <String>['content://storage/tree/library'],
               folders: <String>['content://storage/tree/folder'],
@@ -63,9 +64,14 @@ void main() {
             labels: labels,
           );
 
-      expect(prepared?.libraries, <String>['content://storage/tree/library']);
-      expect(prepared?.folders, <String>['content://storage/tree/folder']);
-      expect(prepared?.files, <String>['content://storage/document/song.mp3']);
+      expect(prepared?.libraries, <String>['C:/media/library']);
+      expect(prepared?.folders, <String>['C:/media/folder']);
+      expect(prepared?.files, <String>['C:/media/song.mp3']);
+      expect(dataSource.permissionSources, <String>[
+        'C:/media/library',
+        'C:/media/folder',
+        'C:/media/song.mp3',
+      ]);
       expect(dataSource.folderPickerCalls, 0);
       expect(dataSource.filePickerCalls, 0);
     },
@@ -79,11 +85,8 @@ void main() {
           'primary%3AMusic';
       final dataSource = _DerivedFolderRestoreDataSource();
 
-      final prepared =
-          await LibraryScannerService(
-            dataSource: dataSource,
-            isAndroid: () => true,
-          ).prepareBackupRestoreSources(
+      final prepared = await LibraryScannerService(dataSource: dataSource)
+          .prepareBackupRestoreSources(
             sources: LocalLibraryImportSources(
               libraries: <String>[library],
               folders: <String>[
@@ -115,20 +118,6 @@ void main() {
     expect(prepared, isNull);
   });
 
-  test('backup restore rejects an unreadable replacement source', () async {
-    final prepared = await LibraryScannerService(
-      dataSource: _UnreadableReplacementDataSource(),
-      isAndroid: () => true,
-    ).prepareBackupRestoreSources(
-      sources: LocalLibraryImportSources(
-        libraries: <String>['/storage/emulated/0/Music'],
-      ),
-      labels: labels,
-    );
-
-    expect(prepared, isNull);
-  });
-
   test('backup restore treats an already imported file as restored', () async {
     const filePath = 'C:/music/song.mp3';
     final catalog = _RefreshCatalog(
@@ -150,71 +139,85 @@ void main() {
     expect(outcome.details['failureCount'], 0);
   });
 
-  test('folder import preserves and scans the selected SAF source', () async {
-    final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
-    final dataSource = _ResolvedPickedFolderDataSource();
+  test(
+    'folder import scans a resolvable SAF source by file-system path',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
+      final dataSource = _ResolvedPickedFolderDataSource();
 
-    await LibraryScannerService(
-      dataSource: dataSource,
-    ).addFolder(provider: catalog, labels: labels);
+      await LibraryScannerService(
+        dataSource: dataSource,
+      ).addFolder(provider: catalog, labels: labels);
 
-    expect(dataSource.scannedFolders, <String>['content://storage/tree/music']);
-    expect(catalog.watchedFolders, hasLength(1));
-    expect(
-      PathMatcher.equalsNormalized(
-        catalog.watchedFolders.single,
+      expect(dataSource.permissionSources, <String>['C:/media/music']);
+      expect(dataSource.scannedFolders, <String>['C:/media/music']);
+      expect(catalog.watchedFolders, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          catalog.watchedFolders.single,
+          'C:/media/music',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'library import scans a resolvable SAF source by file-system path',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
+      final dataSource = _ResolvedPickedFolderDataSource();
+
+      await LibraryScannerService(
+        dataSource: dataSource,
+      ).addLibrary(provider: catalog, labels: labels);
+
+      expect(dataSource.permissionSources, <String>['C:/media/music']);
+      expect(dataSource.childFolderListings, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          dataSource.childFolderListings.single,
+          'C:/media/music',
+        ),
+        isTrue,
+      );
+      expect(dataSource.scannedFolders, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          dataSource.scannedFolders.single,
+          'C:/media/music',
+        ),
+        isTrue,
+      );
+      expect(catalog.watchedLibraries, hasLength(1));
+      expect(
+        PathMatcher.equalsNormalized(
+          catalog.watchedLibraries.single,
+          'C:/media/music',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'folder import keeps the SAF source when file permission is denied',
+    () async {
+      final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
+      final dataSource = _ResolvedPickedFolderDataSource(
+        permissionGranted: false,
+      );
+
+      await LibraryScannerService(
+        dataSource: dataSource,
+      ).addFolder(provider: catalog, labels: labels);
+
+      expect(dataSource.permissionSources, <String>['C:/media/music']);
+      expect(dataSource.scannedFolders, <String>[
         'content://storage/tree/music',
-      ),
-      isTrue,
-    );
-  });
-
-  test('library import preserves and scans the selected SAF source', () async {
-    final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
-    final dataSource = _ResolvedPickedFolderDataSource();
-
-    await LibraryScannerService(
-      dataSource: dataSource,
-    ).addLibrary(provider: catalog, labels: labels);
-
-    expect(dataSource.childFolderListings, hasLength(1));
-    expect(
-      PathMatcher.equalsNormalized(
-        dataSource.childFolderListings.single,
-        'content://storage/tree/music',
-      ),
-      isTrue,
-    );
-    expect(dataSource.scannedFolders, hasLength(1));
-    expect(
-      PathMatcher.equalsNormalized(
-        dataSource.scannedFolders.single,
-        'content://storage/tree/music',
-      ),
-      isTrue,
-    );
-    expect(catalog.watchedLibraries, hasLength(1));
-    expect(
-      PathMatcher.equalsNormalized(
-        catalog.watchedLibraries.single,
-        'content://storage/tree/music',
-      ),
-      isTrue,
-    );
-  });
-
-  test('Android direct folder source requires SAF authorization', () async {
-    final catalog = _RefreshCatalog(watchedFolders: const <String>[]);
-    final dataSource = _DirectPickedFolderDataSource();
-
-    final outcome = await LibraryScannerService(
-      dataSource: dataSource,
-      isAndroid: () => true,
-    ).addFolder(provider: catalog, labels: labels);
-
-    expect(outcome?.code, LibraryScanOutcomeCode.authorizationRequired);
-    expect(catalog.watchedFolders, isEmpty);
-  });
+      ]);
+    },
+  );
 
   test(
     'file import always finishes scan when batch finalization fails',
@@ -414,6 +417,11 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
   var filesystemScanCalls = 0;
   var deliveredChunks = 0;
   var firstChunkWasCommittedBeforeSecond = false;
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    return true;
+  }
 
   @override
   Future<NativeScanResult> scanFolder(String folderPath) async {
@@ -729,20 +737,24 @@ class _PickedFilesDataSource implements LibraryScanDataSource {
 }
 
 class _BackupRestoreDataSource implements LibraryScanDataSource {
+  final permissionSources = <String>[];
   final _folderReplacements = <String>[
     'content://new/library',
-    'content://new/legacy-folder',
     'content://new/folder',
   ];
 
   @override
-  Future<String?> findPersistedTreeGrantForPath(String source) async => null;
+  Future<String> resolveRestorablePath(String source) async => source;
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    permissionSources.addAll(sources);
+    return true;
+  }
 
   @override
   Future<bool> sourceExists(String source) async {
-    return source.startsWith('content://new/') ||
-        source == 'C:/music/folder' ||
-        source == 'C:/music/song.mp3';
+    return source == 'C:/music/folder' || source == 'C:/music/song.mp3';
   }
 
   @override
@@ -764,8 +776,25 @@ class _BackupRestoreDataSource implements LibraryScanDataSource {
 }
 
 class _ResolvedBackupRestoreDataSource implements LibraryScanDataSource {
+  final permissionSources = <String>[];
   var folderPickerCalls = 0;
   var filePickerCalls = 0;
+
+  @override
+  Future<String> resolveRestorablePath(String source) async {
+    return switch (source) {
+      'content://storage/tree/library' => 'C:/media/library',
+      'content://storage/tree/folder' => 'C:/media/folder',
+      'content://storage/document/song.mp3' => 'C:/media/song.mp3',
+      _ => source,
+    };
+  }
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    permissionSources.addAll(sources);
+    return true;
+  }
 
   @override
   Future<bool> sourceExists(String source) async => true;
@@ -789,6 +818,10 @@ class _ResolvedBackupRestoreDataSource implements LibraryScanDataSource {
 }
 
 class _ResolvedPickedFolderDataSource implements LibraryScanDataSource {
+  _ResolvedPickedFolderDataSource({this.permissionGranted = true});
+
+  final bool permissionGranted;
+  final permissionSources = <String>[];
   final scannedFolders = <String>[];
   final childFolderListings = <String>[];
 
@@ -798,7 +831,18 @@ class _ResolvedPickedFolderDataSource implements LibraryScanDataSource {
   }
 
   @override
-  Future<bool> sourceExists(String source) async => true;
+  Future<String> resolveRestorablePath(String source) async {
+    return source == 'content://storage/tree/music' ? 'C:/media/music' : source;
+  }
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    permissionSources.addAll(sources);
+    return permissionGranted;
+  }
+
+  @override
+  Future<bool> sourceExists(String source) async => source == 'C:/media/music';
 
   @override
   Future<LibraryChildFolderListing> listImmediateChildFolders(
@@ -826,16 +870,6 @@ class _ResolvedPickedFolderDataSource implements LibraryScanDataSource {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
-class _DirectPickedFolderDataSource implements LibraryScanDataSource {
-  @override
-  Future<String?> pickAudioFolder({required String dialogTitle}) async {
-    return '/storage/emulated/0/Music';
-  }
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
 class _DerivedFolderRestoreDataSource implements LibraryScanDataSource {
   final _replacements = <String>[
     'content://new/library',
@@ -844,8 +878,15 @@ class _DerivedFolderRestoreDataSource implements LibraryScanDataSource {
   var folderPickerCalls = 0;
 
   @override
-  Future<bool> sourceExists(String source) async =>
-      source.startsWith('content://new/');
+  Future<String> resolveRestorablePath(String source) async => source;
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    return true;
+  }
+
+  @override
+  Future<bool> sourceExists(String source) async => false;
 
   @override
   Future<String?> pickAudioFolder({required String dialogTitle}) async {
@@ -859,25 +900,18 @@ class _DerivedFolderRestoreDataSource implements LibraryScanDataSource {
 
 class _CancelledRestoreDataSource implements LibraryScanDataSource {
   @override
+  Future<String> resolveRestorablePath(String source) async => source;
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    return true;
+  }
+
+  @override
   Future<bool> sourceExists(String source) async => false;
 
   @override
   Future<String?> pickAudioFolder({required String dialogTitle}) async => null;
-
-  @override
-  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-}
-
-class _UnreadableReplacementDataSource implements LibraryScanDataSource {
-  @override
-  Future<String?> findPersistedTreeGrantForPath(String source) async => null;
-
-  @override
-  Future<String?> pickAudioFolder({required String dialogTitle}) async =>
-      'content://unreadable/library';
-
-  @override
-  Future<bool> sourceExists(String source) async => false;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);

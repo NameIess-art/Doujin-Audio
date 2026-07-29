@@ -112,7 +112,6 @@ void main() {
       keepAlive: keepAlive,
       uiWarmup: warmup,
       subtitles: subtitles,
-      audioPaths: AudioPathCoordinator(library: library, playback: playback),
     );
     addTearDown(() async {
       coordinator.dispose();

@@ -37,47 +37,6 @@ void main() {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
 
-  test('rebindSource retargets a legacy filesystem library to SAF', () async {
-    const oldRoot = r'C:\Music';
-    const oldTrackPath = r'C:\Music\Album\01.mp3';
-    const newRoot =
-        'content://com.android.externalstorage.documents/tree/primary%3AMusic';
-    runtimeGraph.library.addWatchedLibrary(oldRoot, notify: false);
-    runtimeGraph.library.addTracks(
-      <MusicTrack>[
-        MusicTrack(
-          path: oldTrackPath,
-          displayName: '01',
-          groupKey: r'C:\Music\Album',
-          groupTitle: 'Album',
-          groupSubtitle: r'C:\Music\Album',
-          isSingle: false,
-        ),
-      ],
-      notify: false,
-      persist: false,
-    );
-
-    final result = await runtimeGraph.library.rebindSource(
-      issue: const LibrarySourceAccessIssue(
-        source: oldRoot,
-        kind: LibrarySourceKind.library,
-      ),
-      newSource: newRoot,
-    );
-
-    expect(result.oldSource, oldRoot);
-    expect(runtimeGraph.library.watchedLibraries, <String>[newRoot]);
-    expect(
-      runtimeGraph.library.library.single.path,
-      '$newRoot/document/primary%3AMusic%2FAlbum%2F01.mp3',
-    );
-    expect(
-      runtimeGraph.library.library.single.groupKey,
-      '$newRoot/document/primary%3AMusic%2FAlbum',
-    );
-  });
-
   test('missing folder durations include every audio track', () async {
     final folder = await Directory.systemTemp.createTemp(
       'folder_duration_sum_',

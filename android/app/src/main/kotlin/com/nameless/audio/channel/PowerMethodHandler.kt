@@ -10,6 +10,7 @@ import android.app.ApplicationExitInfo
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
+import android.os.Environment
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.annotation.RequiresApi
@@ -66,6 +67,9 @@ internal class PowerMethodHandler(
         val envelope = ChannelEnvelopeResult(result)
         try {
             when (call.method) {
+            PowerMethods.CAN_MANAGE_ALL_FILES_ACCESS -> envelope.success(canManageAllFilesAccess())
+            PowerMethods.OPEN_MANAGE_ALL_FILES_ACCESS_SETTINGS ->
+                envelope.success(openManageAllFilesAccessSettings())
             PowerMethods.IS_IGNORING_BATTERY_OPTIMIZATIONS ->
                 envelope.success(isIgnoringBatteryOptimizations())
             PowerMethods.OPEN_BATTERY_OPTIMIZATION_SETTINGS -> envelope.success(openBatteryOptimizationSettings())
@@ -123,6 +127,26 @@ internal class PowerMethodHandler(
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
         val manager = activity.getSystemService(Activity.POWER_SERVICE) as? PowerManager
         return manager?.isIgnoringBatteryOptimizations(activity.packageName) == true
+    }
+
+    private fun canManageAllFilesAccess(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return true
+        return try {
+            Environment.isExternalStorageManager()
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private fun openManageAllFilesAccessSettings(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return openApplicationDetailsSettings()
+        return openSettings(
+            Intent(
+                Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:${activity.packageName}")
+            )
+        ) || openSettings(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)) ||
+            openApplicationDetailsSettings()
     }
 
     private fun openBatteryOptimizationSettings(): Boolean {

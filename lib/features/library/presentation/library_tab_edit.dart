@@ -89,16 +89,14 @@ class LibraryManagementPage extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    final libraryState = ref.watch(libraryListUiProvider);
-    final libraries = libraryState.watchedLibraries;
-    final accessIssues = ref
-        .read(audioPathCoordinatorProvider)
-        .legacyAndroidSourceIssues;
+    final libraries = ref.watch(
+      libraryListUiProvider.select((state) => state.watchedLibraries),
+    );
     return Scaffold(
       backgroundColor: cs.surface,
       body: Stack(
         children: [
-          if (libraries.isEmpty && accessIssues.isEmpty)
+          if (libraries.isEmpty)
             Center(
               child: Text(
                 i18n.tr('library_manage_empty'),
@@ -109,87 +107,69 @@ class LibraryManagementPage extends ConsumerWidget {
               ),
             )
           else
-            ListView(
+            ListView.builder(
               padding: EdgeInsets.fromLTRB(
                 16,
                 MediaQuery.paddingOf(context).top + 92,
                 16,
                 24,
               ),
-              children: [
-                if (accessIssues.isNotEmpty) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 0, 4, 10),
-                    child: Text(
-                      i18n.tr('library_source_authorization_section'),
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        color: cs.error,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
+              itemCount: libraries.length,
+              itemBuilder: (context, index) {
+                final libraryPath = libraries[index];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  elevation: 0,
+                  color: cs.surfaceContainerHigh,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  for (final issue in accessIssues)
-                    _LegacySourceAuthorizationCard(
-                      issue: issue,
-                      onAuthorize: () =>
-                          _reauthorizeLegacySource(context, ref, issue),
-                    ),
-                  const SizedBox(height: 8),
-                ],
-                for (final libraryPath in libraries)
-                  Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    elevation: 0,
-                    color: cs.surfaceContainerHigh,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () => Navigator.of(context).push(
-                        buildAppPageRoute<void>(
-                          context: context,
-                          child: LibraryEditPage(libraryPath: libraryPath),
-                        ),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).push(
+                      buildAppPageRoute<void>(
+                        context: context,
+                        child: LibraryEditPage(libraryPath: libraryPath),
                       ),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 8,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 8,
+                      ),
+                      child: ListTile(
+                        title: Text(
+                          _displaySourceName(libraryPath),
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         ),
-                        child: ListTile(
-                          title: Text(
-                            _displaySourceName(libraryPath),
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            PathDisplay.displayPathFor(libraryPath),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: cs.onSurfaceVariant),
                           ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(
-                              PathDisplay.displayPathFor(libraryPath),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodyMedium
-                                  ?.copyWith(color: cs.onSurfaceVariant),
-                            ),
+                        ),
+                        trailing: IconButton(
+                          tooltip: i18n.tr('remove_library'),
+                          onPressed: () => _confirmRemoveWatchedLibrary(
+                            context,
+                            ref,
+                            libraryPath,
                           ),
-                          trailing: IconButton(
-                            tooltip: i18n.tr('remove_library'),
-                            onPressed: () => _confirmRemoveWatchedLibrary(
-                              context,
-                              ref,
-                              libraryPath,
-                            ),
-                            icon: Icon(
-                              Icons.delete_outline_rounded,
-                              color: cs.error.withValues(alpha: 0.8),
-                            ),
+                          icon: Icon(
+                            Icons.delete_outline_rounded,
+                            color: cs.error.withValues(alpha: 0.8),
                           ),
                         ),
                       ),
                     ),
                   ),
-              ],
+                );
+              },
             ),
           Positioned(
             top: 0,
@@ -209,92 +189,6 @@ class LibraryManagementPage extends ConsumerWidget {
           ),
         ],
       ),
-    );
-  }
-}
-
-class _LegacySourceAuthorizationCard extends ConsumerWidget {
-  const _LegacySourceAuthorizationCard({
-    required this.issue,
-    required this.onAuthorize,
-  });
-
-  final LibrarySourceAccessIssue issue;
-  final VoidCallback onAuthorize;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final cs = Theme.of(context).colorScheme;
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      color: cs.errorContainer.withValues(alpha: 0.32),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              PathDisplay.folderName(issue.source),
-              style: Theme.of(
-                context,
-              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              PathDisplay.displayPathFor(issue.source),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton.tonalIcon(
-                onPressed: onAuthorize,
-                icon: const Icon(Icons.folder_open_rounded),
-                label: Text(i18n.tr('reauthorize_library_source')),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-Future<void> _reauthorizeLegacySource(
-  BuildContext context,
-  WidgetRef ref,
-  LibrarySourceAccessIssue issue,
-) async {
-  final i18n = ref.read(appLanguageProviderInstanceProvider);
-  try {
-    final result = await ref
-        .read(audioPathCoordinatorProvider)
-        .reauthorizeLibrarySource(issue);
-    if (result == null || !context.mounted) return;
-    showAppSnackBar(
-      context,
-      i18n.tr('library_source_reauthorized'),
-      tone: AppFeedbackTone.success,
-      icon: Icons.verified_user_outlined,
-    );
-  } catch (error, stackTrace) {
-    AppLogService.warning(
-      'library_source_reauthorization_failed source=${issue.source}',
-      error: error,
-      stackTrace: stackTrace,
-    );
-    if (!context.mounted) return;
-    showAppSnackBar(
-      context,
-      i18n.tr('library_source_reauthorization_failed'),
-      tone: AppFeedbackTone.destructive,
-      icon: Icons.error_outline_rounded,
     );
   }
 }

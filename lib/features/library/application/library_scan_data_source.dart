@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
@@ -17,10 +18,24 @@ import '../../../core/media/path_matcher.dart';
 
 typedef LibraryChildFolderListing = ({List<String> folders, bool complete});
 
-abstract interface class LibraryScanDataSource {
-  Future<bool> sourceExists(String source);
+bool _hasRequiredAndroidMediaReadPermissions({
+  required bool legacyStorageGranted,
+  required bool audioGranted,
+  required bool videosGranted,
+}) {
+  return legacyStorageGranted || (audioGranted && videosGranted);
+}
 
-  Future<String?> findPersistedTreeGrantForPath(String source);
+bool _isGrantedOrLimited(PermissionStatus status) {
+  return status.isGranted || status.isLimited;
+}
+
+abstract interface class LibraryScanDataSource {
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources);
+
+  Future<String> resolveRestorablePath(String source);
+
+  Future<bool> sourceExists(String source);
 
   Future<NativeScanResult> scanFolder(String folderPath);
 
@@ -55,6 +70,44 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
   final bool Function() _isAndroid;
 
   @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async {
+    if (!_isAndroid()) return true;
+    final sourceList = sources
+        .where((source) => source.trim().isNotEmpty)
+        .toList(growable: false);
+    if (sourceList.isNotEmpty && sourceList.every(PathMatcher.isContentUri)) {
+      return true;
+    }
+    final manageStatus = await Permission.manageExternalStorage.request();
+    if (manageStatus.isGranted) return true;
+    final statuses = await [
+      Permission.audio,
+      Permission.videos,
+      Permission.storage,
+    ].request();
+    return _hasRequiredAndroidMediaReadPermissions(
+      legacyStorageGranted: _isGrantedOrLimited(
+        statuses[Permission.storage] ?? PermissionStatus.denied,
+      ),
+      audioGranted: _isGrantedOrLimited(
+        statuses[Permission.audio] ?? PermissionStatus.denied,
+      ),
+      videosGranted: _isGrantedOrLimited(
+        statuses[Permission.videos] ?? PermissionStatus.denied,
+      ),
+    );
+  }
+
+  @override
+  Future<String> resolveRestorablePath(String source) async {
+    final value = source.trim();
+    if (value.isEmpty || !PathMatcher.isContentUri(value) || !_isAndroid()) {
+      return value;
+    }
+    return await _platformGateway.resolveDocumentFileSystemPath(value) ?? value;
+  }
+
+  @override
   Future<bool> sourceExists(String source) async {
     final value = source.trim();
     if (value.isEmpty) return false;
@@ -64,16 +117,6 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
     }
     return await FileSystemEntity.type(value, followLinks: false) !=
         FileSystemEntityType.notFound;
-  }
-
-  @override
-  Future<String?> findPersistedTreeGrantForPath(String source) {
-    if (!_isAndroid() ||
-        source.trim().isEmpty ||
-        PathMatcher.isContentUri(source)) {
-      return Future<String?>.value();
-    }
-    return _platformGateway.findPersistedTreeGrantForPath(source.trim());
   }
 
   @override
@@ -132,13 +175,8 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
         final folderPath = await _platformGateway.pickAudioFolder();
         if (folderPath != null && folderPath.isNotEmpty) return folderPath;
         return null;
-      } on PlatformException catch (error, stackTrace) {
-        AppLogService.warning(
-          'android_audio_folder_picker_failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        return null;
+      } on PlatformException {
+        // Fall through to the cross-platform picker.
       }
     }
     return FilePicker.getDirectoryPath(dialogTitle: dialogTitle);
@@ -151,13 +189,8 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
     if (_isAndroid()) {
       try {
         return await _platformGateway.pickAudioFiles();
-      } on PlatformException catch (error, stackTrace) {
-        AppLogService.warning(
-          'android_audio_file_picker_failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
-        return null;
+      } on PlatformException {
+        // Fall through to the cross-platform picker.
       }
     }
 

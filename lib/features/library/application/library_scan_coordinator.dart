@@ -144,7 +144,7 @@ class LibraryScanCoordinator extends ChangeNotifier {
   }
 
   bool _canImportBackups(LibraryScanOutcomeCode code) {
-    return code != LibraryScanOutcomeCode.authorizationRequired &&
+    return code != LibraryScanOutcomeCode.permissionDenied &&
         code != LibraryScanOutcomeCode.alreadyRunning &&
         code != LibraryScanOutcomeCode.cancelled &&
         code != LibraryScanOutcomeCode.failed;
@@ -222,7 +222,7 @@ class LibraryScanCoordinator extends ChangeNotifier {
     if (code == LibraryScanOutcomeCode.cancelled) {
       return LibraryScanPhase.cancelled;
     }
-    if (code == LibraryScanOutcomeCode.authorizationRequired ||
+    if (code == LibraryScanOutcomeCode.permissionDenied ||
         code == LibraryScanOutcomeCode.failed ||
         code == LibraryScanOutcomeCode.alreadyRunning) {
       return LibraryScanPhase.failure;

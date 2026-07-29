@@ -57,14 +57,11 @@ class LibraryScannerService {
   LibraryScannerService({
     LibraryScanDataSource? dataSource,
     FileCachePlatformGateway? platformGateway,
-    bool Function()? isAndroid,
   }) : _dataSource =
            dataSource ??
-           PlatformLibraryScanDataSource(platformGateway: platformGateway),
-       _isAndroid = isAndroid ?? (() => Platform.isAndroid);
+           PlatformLibraryScanDataSource(platformGateway: platformGateway);
 
   final LibraryScanDataSource _dataSource;
-  final bool Function() _isAndroid;
   final LibraryScanRules _rules = const LibraryScanRules();
 
   void _rollbackScanAdditions({
@@ -112,15 +109,14 @@ class LibraryScannerService {
       );
     }
 
-    final legacySources = <String>[
+    final permissionGranted = await _dataSource.ensureReadPermissionForSources([
       ...watchedFolders,
       ...watchedLibraries,
-    ].where((source) => _requiresSafReauthorization(source)).toList();
-    if (legacySources.isNotEmpty) {
+    ]);
+    if (!permissionGranted) {
       return LibraryScanOutcome(
-        code: LibraryScanOutcomeCode.authorizationRequired,
+        code: LibraryScanOutcomeCode.permissionDenied,
         source: 'refresh',
-        details: <String, Object?>{'sources': legacySources},
       );
     }
 
@@ -1006,9 +1002,32 @@ class LibraryScannerService {
     required LocalLibraryImportSources sources,
     required LibraryScanLabels labels,
   }) async {
-    final resolvedLibraries = _distinctSourcePaths(sources.libraries);
-    final resolvedFolders = _distinctSourcePaths(sources.folders);
-    final resolvedFiles = _distinctSourcePaths(sources.files);
+    Future<List<String>> resolvePaths(Iterable<String> values) async {
+      final resolved = <String>[];
+      for (final value in values) {
+        final path = await _dataSource.resolveRestorablePath(value);
+        if (path.isNotEmpty) resolved.add(path);
+      }
+      return _distinctSourcePaths(resolved);
+    }
+
+    final resolvedLibraries = await resolvePaths(sources.libraries);
+    final resolvedFolders = await resolvePaths(sources.folders);
+    final resolvedFiles = await resolvePaths(sources.files);
+    final allSources = <String>[
+      ...resolvedLibraries,
+      ...resolvedFolders,
+      ...resolvedFiles,
+    ];
+    final fileSystemSources = allSources
+        .where((source) => !PathMatcher.isContentUri(source))
+        .toList(growable: false);
+    final fileSystemPermissionGranted = fileSystemSources.isEmpty
+        ? true
+        : await _dataSource.ensureReadPermissionForSources(fileSystemSources);
+    if (!fileSystemPermissionGranted) {
+      return null;
+    }
 
     Future<List<String>?> prepareFolders(
       Iterable<String> values,
@@ -1019,33 +1038,21 @@ class LibraryScannerService {
         final source = raw.trim();
         if (source.isEmpty) continue;
         if (!PathMatcher.isContentUri(source)) {
-          if (!_isAndroid() && await _dataSource.sourceExists(source)) {
+          if (fileSystemPermissionGranted &&
+              await _dataSource.sourceExists(source)) {
             prepared.add(source);
-            continue;
           }
-          final persistedGrant = _isAndroid()
-              ? await _dataSource.findPersistedTreeGrantForPath(source)
-              : null;
-          if (persistedGrant != null && persistedGrant.isNotEmpty) {
-            prepared.add(persistedGrant);
-            continue;
-          }
+          continue;
         }
-        if (PathMatcher.isContentUri(source) &&
-            await _dataSource.sourceExists(source)) {
+        if (await _dataSource.sourceExists(source)) {
           prepared.add(source);
           continue;
         }
         final replacement = await _dataSource.pickAudioFolder(
           dialogTitle: dialogTitle,
         );
-        final replacementValue = replacement?.trim() ?? '';
-        final validPlatformSource =
-            !_isAndroid() || PathMatcher.isContentUri(replacementValue);
-        if (replacementValue.isNotEmpty &&
-            validPlatformSource &&
-            await _dataSource.sourceExists(replacementValue)) {
-          prepared.add(replacementValue);
+        if (replacement != null && replacement.trim().isNotEmpty) {
+          prepared.add(replacement);
           continue;
         }
         return null;
@@ -1084,10 +1091,9 @@ class LibraryScannerService {
       final source = raw.trim();
       if (source.isEmpty) continue;
       if (!PathMatcher.isContentUri(source)) {
-        if (!_isAndroid() && await _dataSource.sourceExists(source)) {
+        if (fileSystemPermissionGranted &&
+            await _dataSource.sourceExists(source)) {
           preparedFiles.add(source);
-        } else {
-          needsFilePicker = true;
         }
         continue;
       }
@@ -1104,17 +1110,7 @@ class LibraryScannerService {
       if (replacements == null || replacements.isEmpty) {
         return null;
       }
-      for (final replacement in replacements) {
-        final uri = replacement.uri.trim();
-        final validPlatformSource =
-            !_isAndroid() || PathMatcher.isContentUri(uri);
-        if (uri.isEmpty ||
-            !validPlatformSource ||
-            !await _dataSource.sourceExists(uri)) {
-          return null;
-        }
-        preparedFiles.add(uri);
-      }
+      preparedFiles.addAll(replacements.map((file) => file.uri));
     }
 
     return LocalLibraryImportSources(
@@ -1173,7 +1169,7 @@ class LibraryScannerService {
   }
 
   bool _isRestoreFailure(LibraryScanOutcomeCode code) {
-    return code == LibraryScanOutcomeCode.authorizationRequired ||
+    return code == LibraryScanOutcomeCode.permissionDenied ||
         code == LibraryScanOutcomeCode.alreadyRunning ||
         code == LibraryScanOutcomeCode.cancelled ||
         code == LibraryScanOutcomeCode.failed;
@@ -1200,7 +1196,24 @@ class LibraryScannerService {
       dialogTitle: labels.chooseMusicFolder,
     );
     if (selectedPath == null || selectedPath.isEmpty) return null;
-    return _addFolderFromPath(selectedPath, provider, labels);
+    final folderPath = await _resolvePickedFolderSource(selectedPath);
+    return _addFolderFromPath(folderPath, provider, labels);
+  }
+
+  Future<String> _resolvePickedFolderSource(String source) async {
+    final resolved = await _dataSource.resolveRestorablePath(source);
+    if (resolved.isEmpty ||
+        PathMatcher.equalsNormalized(resolved, source) ||
+        PathMatcher.isContentUri(resolved)) {
+      return source;
+    }
+    final permissionGranted = await _dataSource.ensureReadPermissionForSources(
+      <String>[resolved],
+    );
+    if (!permissionGranted || !await _dataSource.sourceExists(resolved)) {
+      return source;
+    }
+    return resolved;
   }
 
   Future<LibraryScanOutcome> _addFolderFromPath(
@@ -1208,15 +1221,6 @@ class LibraryScannerService {
     LibraryCatalog provider,
     LibraryScanLabels labels,
   ) async {
-    if (_requiresSafReauthorization(folderPath)) {
-      return LibraryScanOutcome(
-        code: LibraryScanOutcomeCode.authorizationRequired,
-        source: 'import_folder',
-        details: <String, Object?>{
-          'sources': <String>[folderPath],
-        },
-      );
-    }
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     if (_rules.isFolderAlreadyInLibrary(
       folderPath: folderPath,
@@ -1396,7 +1400,8 @@ class LibraryScannerService {
       dialogTitle: labels.chooseLibraryFolder,
     );
     if (selectedPath == null || selectedPath.isEmpty) return null;
-    return _addLibraryFromPath(selectedPath, provider, labels);
+    final folderPath = await _resolvePickedFolderSource(selectedPath);
+    return _addLibraryFromPath(folderPath, provider, labels);
   }
 
   Future<LibraryScanOutcome> _addLibraryFromPath(
@@ -1404,15 +1409,6 @@ class LibraryScannerService {
     LibraryCatalog provider,
     LibraryScanLabels labels,
   ) async {
-    if (_requiresSafReauthorization(folderPath)) {
-      return LibraryScanOutcome(
-        code: LibraryScanOutcomeCode.authorizationRequired,
-        source: 'import_library',
-        details: <String, Object?>{
-          'sources': <String>[folderPath],
-        },
-      );
-    }
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
     final promotedFolders = _rules.watchedFoldersToPromote(
       folderPath: normalizedFolderPath,
@@ -1557,20 +1553,7 @@ class LibraryScannerService {
     required LibraryCatalog provider,
     required LibraryScanLabels labels,
   }) {
-    final sourcePaths = _distinctSourcePaths(paths);
-    final legacyPaths = sourcePaths
-        .where((source) => _requiresSafReauthorization(source))
-        .toList(growable: false);
-    if (legacyPaths.isNotEmpty) {
-      return Future<LibraryScanOutcome>.value(
-        LibraryScanOutcome(
-          code: LibraryScanOutcomeCode.authorizationRequired,
-          source: 'import_files',
-          details: <String, Object?>{'sources': legacyPaths},
-        ),
-      );
-    }
-    final pickedFiles = sourcePaths
+    final pickedFiles = _distinctSourcePaths(paths)
         .map(
           (filePath) => PickedAudioFile(
             uri: filePath,
@@ -1579,14 +1562,6 @@ class LibraryScannerService {
         )
         .toList(growable: false);
     return _addPickedFiles(pickedFiles, provider, labels);
-  }
-
-  bool _requiresSafReauthorization(String source) {
-    final value = source.trim();
-    return _isAndroid() &&
-        value.isNotEmpty &&
-        !PathMatcher.isContentUri(value) &&
-        !PathMatcher.isRemoteUri(value);
   }
 
   Future<LibraryScanOutcome> _addPickedFiles(

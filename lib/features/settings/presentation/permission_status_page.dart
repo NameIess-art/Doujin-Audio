@@ -216,6 +216,23 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
                       title: i18n.tr('permission_group_advanced'),
                     ),
                     _PermissionTile(
+                      title: i18n.tr('manage_files_permission_title'),
+                      description: i18n.tr(
+                        'permission_manage_files_description',
+                      ),
+                      icon: Icons.folder_open_rounded,
+                      enabled: status.manageFilesAllowed,
+                      disabledState: _PermissionUiState.unauthorized,
+                      i18n: i18n,
+                      onTap: () => _open(
+                        title: i18n.tr('manage_files_permission_title'),
+                        description: i18n.tr(
+                          'permission_manage_files_description',
+                        ),
+                        action: _powerService.openManageAllFilesAccessSettings,
+                      ),
+                    ),
+                    _PermissionTile(
                       title: i18n.tr('overlay_permission_title'),
                       description: i18n.tr('permission_overlay_description'),
                       icon: Icons.subtitles_rounded,

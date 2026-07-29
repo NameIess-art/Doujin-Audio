@@ -155,7 +155,6 @@ AppRuntimeGraph createAppRuntimeGraph({
     keepAlive: keepAlive,
     uiWarmup: warmup,
     subtitles: subtitles,
-    audioPaths: audioPaths,
   );
   final runtime = AppLifecycleBinding.attach(
     persistence: persistence,

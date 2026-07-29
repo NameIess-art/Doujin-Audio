@@ -9,7 +9,6 @@ import '../../features/player/application/timer_facade.dart';
 import '../../features/settings/application/settings_repository.dart';
 import '../../features/settings/application/settings_state.dart';
 import 'audio_ui_warmup_coordinator.dart';
-import 'audio_path_coordinator.dart';
 import 'persisted_state_reloader.dart';
 import 'playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
@@ -30,7 +29,6 @@ final class AppPersistenceCoordinator
     required PlaybackKeepAliveCoordinator keepAlive,
     required AudioUiWarmupCoordinator uiWarmup,
     required PlaybackSubtitleService subtitles,
-    required AudioPathCoordinator audioPaths,
   }) : _library = library,
        _playback = playback,
        _settings = settings,
@@ -39,8 +37,7 @@ final class AppPersistenceCoordinator
        _playbackCommands = playbackCommands,
        _keepAlive = keepAlive,
        _uiWarmup = uiWarmup,
-       _subtitles = subtitles,
-       _audioPaths = audioPaths;
+       _subtitles = subtitles;
 
   final LibraryFacade _library;
   final PlaybackFacade _playback;
@@ -51,7 +48,6 @@ final class AppPersistenceCoordinator
   final PlaybackKeepAliveCoordinator _keepAlive;
   final AudioUiWarmupCoordinator _uiWarmup;
   final PlaybackSubtitleService _subtitles;
-  final AudioPathCoordinator _audioPaths;
 
   int _loadEpoch = 0;
   bool _disposed = false;
@@ -95,11 +91,6 @@ final class AppPersistenceCoordinator
       }
 
       await _playback.loadPersistedState();
-      if (!isCurrent()) return;
-      await AppLogService.measureAsync(
-        'library_saf_source_migration',
-        () => _audioPaths.migratePersistedLibrarySources(isCurrent: isCurrent),
-      );
       if (!isCurrent()) return;
       if (!_settings.multiThreadPlaybackEnabled) {
         await AppLogService.measureAsync(

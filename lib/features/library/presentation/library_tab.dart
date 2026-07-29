@@ -24,7 +24,6 @@ import '../domain/library_entry.dart';
 import '../../../core/media/natural_sort.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
-import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';

@@ -41,7 +41,7 @@ class PlatformChannelsTest {
             FileCacheMethods.READ_AUDIO_DETAIL_BACKUP,
             FileCacheMethods.READ_SINGLE_FILE_DETAIL_BACKUP,
             FileCacheMethods.RENAME_DOCUMENT,
-            FileCacheMethods.FIND_PERSISTED_TREE_GRANT_FOR_PATH,
+            FileCacheMethods.RESOLVE_DOCUMENT_FILE_SYSTEM_PATH,
             FileCacheMethods.RESOLVE_TRACK_COVER,
             FileCacheMethods.RESOLVE_TRACK_SUBTITLE,
             FileCacheMethods.RESOLVE_VIDEO_FRAME,
@@ -64,10 +64,6 @@ class PlatformChannelsTest {
         assertEquals("startFolderScan", FileCacheMethods.START_FOLDER_SCAN)
         assertEquals("cancelFolderScan", FileCacheMethods.CANCEL_FOLDER_SCAN)
         assertEquals("exportFile", FileCacheMethods.EXPORT_FILE)
-        assertEquals(
-            "findPersistedTreeGrantForPath",
-            FileCacheMethods.FIND_PERSISTED_TREE_GRANT_FOR_PATH
-        )
         assertEquals(
             "syncUnifiedPlaybackNotifications",
             NotificationsMethods.SYNC_UNIFIED_PLAYBACK_NOTIFICATIONS

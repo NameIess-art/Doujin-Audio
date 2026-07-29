@@ -1,91 +1,20 @@
 import '../../core/media/audio_detail.dart';
-import '../../core/logging/app_log_service.dart';
 import '../../core/media/music_track.dart';
 import '../../core/media/path_display.dart';
 import '../../core/media/path_matcher.dart';
-import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/library/application/library_facade.dart';
-import '../../features/library/application/library_scan_models.dart';
 import '../../features/player/application/playback_facade.dart';
 
 /// Coordinates path changes that affect both the library and active playback.
 final class AudioPathCoordinator {
-  AudioPathCoordinator({
+  const AudioPathCoordinator({
     required LibraryFacade library,
     required PlaybackFacade playback,
-    FileCachePlatformGateway? fileGateway,
   }) : _library = library,
-       _playback = playback,
-       _fileGateway = fileGateway ?? FileCachePlatformGateway.instance;
+       _playback = playback;
 
   final LibraryFacade _library;
   final PlaybackFacade _playback;
-  final FileCachePlatformGateway _fileGateway;
-
-  List<LibrarySourceAccessIssue> get legacyAndroidSourceIssues =>
-      _library.legacyAndroidSourceIssues;
-
-  Future<List<LibrarySourceRebindResult>> migratePersistedLibrarySources({
-    bool Function()? isCurrent,
-  }) async {
-    final migrated = <LibrarySourceRebindResult>[];
-    for (final issue in List<LibrarySourceAccessIssue>.of(
-      legacyAndroidSourceIssues,
-    )) {
-      if (isCurrent != null && !isCurrent()) break;
-      if (issue.kind == LibrarySourceKind.singleFile) continue;
-      final grant = await _fileGateway.findPersistedTreeGrantForPath(
-        issue.source,
-      );
-      if (grant == null || grant.isEmpty) continue;
-      if (isCurrent != null && !isCurrent()) break;
-      try {
-        migrated.add(await _applySourceRebind(issue, grant));
-      } catch (error, stackTrace) {
-        AppLogService.warning(
-          'library_saf_source_migration_failed source=${issue.source}',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      }
-    }
-    return List<LibrarySourceRebindResult>.unmodifiable(migrated);
-  }
-
-  Future<LibrarySourceRebindResult?> reauthorizeLibrarySource(
-    LibrarySourceAccessIssue issue,
-  ) async {
-    final replacement = switch (issue.kind) {
-      LibrarySourceKind.library ||
-      LibrarySourceKind.folder => await _fileGateway.pickAudioFolder(),
-      LibrarySourceKind.singleFile => await _pickSingleAudioFile(),
-    };
-    if (replacement == null ||
-        replacement.isEmpty ||
-        !PathMatcher.isContentUri(replacement) ||
-        !await _fileGateway.documentPathExists(replacement)) {
-      return null;
-    }
-    return _applySourceRebind(issue, replacement);
-  }
-
-  Future<String?> _pickSingleAudioFile() async {
-    final files = await _fileGateway.pickAudioFiles();
-    if (files == null || files.length != 1) return null;
-    return files.single.uri;
-  }
-
-  Future<LibrarySourceRebindResult> _applySourceRebind(
-    LibrarySourceAccessIssue issue,
-    String replacement,
-  ) async {
-    final result = await _library.rebindSource(
-      issue: issue,
-      newSource: replacement,
-    );
-    await _playback.retargetPath(result.oldSource, result.newSource);
-    return result;
-  }
 
   MusicTrack? trackByPath(String trackPath) {
     final resolvedPath = _playback.resolveRetargetedPath(trackPath);

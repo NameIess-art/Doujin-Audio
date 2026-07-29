@@ -38,6 +38,7 @@ internal object NativePlaybackMethods {
 }
 
 internal object PowerMethods {
+    const val CAN_MANAGE_ALL_FILES_ACCESS = "canManageAllFilesAccess"
     const val CAN_SCHEDULE_EXACT_ALARMS = "canScheduleExactAlarms"
     const val EXECUTE_AUTO_RESUME_NOW = "executeAutoResumeNow"
     const val EXECUTE_TIMER_EXPIRED_NOW = "executeTimerExpiredNow"
@@ -47,6 +48,7 @@ internal object PowerMethods {
     const val OPEN_BACKGROUND_RUN_SETTINGS = "openBackgroundRunSettings"
     const val OPEN_BATTERY_OPTIMIZATION_SETTINGS = "openBatteryOptimizationSettings"
     const val OPEN_EXACT_ALARM_SETTINGS = "openExactAlarmSettings"
+    const val OPEN_MANAGE_ALL_FILES_ACCESS_SETTINGS = "openManageAllFilesAccessSettings"
     const val SYNC_PLAYBACK_TIMER_ALARMS = "syncPlaybackTimerAlarms"
 }
 
@@ -83,7 +85,7 @@ internal object FileCacheMethods {
     const val DELETE_DOCUMENT_PATH = "deleteDocumentPath"
     const val DISCOVER_ROOT_IMAGES = "discoverRootImages"
     const val DOCUMENT_PATH_EXISTS = "documentPathExists"
-    const val FIND_PERSISTED_TREE_GRANT_FOR_PATH = "findPersistedTreeGrantForPath"
+    const val RESOLVE_DOCUMENT_FILE_SYSTEM_PATH = "resolveDocumentFileSystemPath"
     const val ENFORCE_APPLICATION_CACHE_LIMIT = "enforceApplicationCacheLimit"
     const val ENSURE_FOLDER_PATH = "ensureFolderPath"
     const val EXPORT_FILE = "exportFile"

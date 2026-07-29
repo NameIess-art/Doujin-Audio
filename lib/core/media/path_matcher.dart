@@ -192,21 +192,6 @@ abstract final class PathMatcher {
       return value;
     }
 
-    if (!isContentUri(value) &&
-        !isContentUri(oldParent) &&
-        isContentUri(newParent)) {
-      final context = _contextFor(value, oldParent);
-      final relative = context
-          .relative(value, from: oldParent)
-          .replaceAll('\\', '/');
-      if (relative.isEmpty || relative == '.') return newParent;
-      final newDocumentPath = _documentPath(newParent);
-      final treeUri = _treeUriBase(newParent);
-      if (newDocumentPath == null || treeUri == null) return value;
-      final childDocumentPath = _joinDocumentPath(newDocumentPath, relative);
-      return '$treeUri/document/${Uri.encodeComponent(childDocumentPath)}';
-    }
-
     if (isContentUri(value) ||
         isContentUri(oldParent) ||
         isContentUri(newParent)) {

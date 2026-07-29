@@ -10,6 +10,7 @@ class PermissionStatusSnapshot {
     required this.notificationsEnabled,
     required this.backgroundRunAllowed,
     required this.exactAlarmsAllowed,
+    required this.manageFilesAllowed,
     required this.overlayAllowed,
     required this.updateInstallsAllowed,
   });
@@ -17,6 +18,7 @@ class PermissionStatusSnapshot {
   final bool notificationsEnabled;
   final bool backgroundRunAllowed;
   final bool exactAlarmsAllowed;
+  final bool manageFilesAllowed;
   final bool overlayAllowed;
   final bool updateInstallsAllowed;
 
@@ -24,6 +26,7 @@ class PermissionStatusSnapshot {
     'notificationsEnabled': notificationsEnabled,
     'backgroundRunAllowed': backgroundRunAllowed,
     'exactAlarmsAllowed': exactAlarmsAllowed,
+    'manageFilesAllowed': manageFilesAllowed,
     'overlayAllowed': overlayAllowed,
     'updateInstallsAllowed': updateInstallsAllowed,
   };
@@ -64,6 +67,7 @@ class PermissionStatusService {
         notificationsEnabled: true,
         backgroundRunAllowed: true,
         exactAlarmsAllowed: true,
+        manageFilesAllowed: true,
         overlayAllowed: true,
         updateInstallsAllowed: true,
       );
@@ -73,6 +77,7 @@ class PermissionStatusService {
       _check('notifications', _notificationsService.areNotificationsEnabled),
       _check('background_run', _powerService.isIgnoringBatteryOptimizations),
       _check('exact_alarms', _powerService.canScheduleExactAlarms),
+      _check('manage_files', _powerService.canManageAllFilesAccess),
       _check('overlay', _overlayCheck),
       _check('update_installs', _updateInstallCheck),
     ]);
@@ -80,8 +85,9 @@ class PermissionStatusService {
       notificationsEnabled: results[0],
       backgroundRunAllowed: results[1],
       exactAlarmsAllowed: results[2],
-      overlayAllowed: results[3],
-      updateInstallsAllowed: results[4],
+      manageFilesAllowed: results[3],
+      overlayAllowed: results[4],
+      updateInstallsAllowed: results[5],
     );
   }
 

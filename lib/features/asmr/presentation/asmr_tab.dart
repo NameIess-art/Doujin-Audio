@@ -1,7 +1,6 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,15 +12,14 @@ import '../application/asmr_api_service.dart';
 import '../application/asmr_library_controller.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/media/card_info_field.dart';
-import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
-import '../../../core/widgets/marquee_text.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -39,6 +37,7 @@ part 'asmr_tab_category_list.dart';
 part 'asmr_tab_panel.dart';
 part 'asmr_tab_work_tree.dart';
 part 'asmr_tab_cover.dart';
+part 'asmr_search_page.dart';
 
 class AsmrTab extends ConsumerStatefulWidget {
   const AsmrTab({super.key});
@@ -48,28 +47,10 @@ class AsmrTab extends ConsumerStatefulWidget {
 }
 
 class _AsmrTabState extends ConsumerState<AsmrTab>
-    with
-        AutomaticKeepAliveClientMixin,
-        TickerProviderStateMixin,
-        MainTabStateMixin<AsmrTab> {
-  final List<AsmrCategoryType> _categories = kAsmrSelectableCategories;
-  late final TabController _tabController = TabController(
-    length: _categories.length,
-    vsync: this,
-  );
-  late final Map<AsmrCategoryType, ScrollController> _scrollControllers =
-      <AsmrCategoryType, ScrollController>{
-        for (final category in _categories) category: ScrollController(),
-      };
-  final TextEditingController _searchController = TextEditingController();
-  Timer? _searchDebounceTimer;
-  final Object _tabSwitchInteraction = Object();
-  final Map<AsmrCategoryType, String> _pendingCategoryLoads =
-      <AsmrCategoryType, String>{};
-  int _lastHandledTabIndex = 0;
-  String _searchQuery = '';
+    with AutomaticKeepAliveClientMixin, MainTabStateMixin<AsmrTab> {
+  static const AsmrCategoryType _mainCategory = AsmrCategoryType.collected;
+  final ScrollController _scrollController = ScrollController();
   final GlobalKey _headerKey = GlobalKey();
-  final ScrollController _categoryScrollController = ScrollController();
   double _headerHeight = 0;
   double? _lastHeaderMeasureWidth;
   double? _lastHeaderMeasureTopPadding;
@@ -83,21 +64,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   int get tabIndex => 0;
 
   @override
-  double get headerControlsFullHeight => 86.0;
+  double get headerControlsFullHeight => 0;
 
   @override
-  ScrollController get mainScrollController =>
-      _scrollControllers[_currentCategory] ?? _categoryScrollController;
-
-  AsmrCategoryType get _currentCategory {
-    final index = _tabController.index;
-    if (index < 0 || index >= _categories.length) {
-      return _categories.first;
-    }
-    return _categories[index];
-  }
-
-  String get _normalizedSearchQuery => normalizeSearchQuery(_searchQuery);
+  ScrollController get mainScrollController => _scrollController;
 
   UiOperationService get _operations => UiOperationService.instance;
 
@@ -121,7 +91,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   void initState() {
     super.initState();
     initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
-    _tabController.addListener(_handleTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
         return;
@@ -141,7 +110,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           if (!mounted) {
             return;
           }
-          await _ensureCategoryLoaded(_currentCategory);
+          await _ensureCollectedLoaded();
           if (!mounted) {
             return;
           }
@@ -175,92 +144,15 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
   }
 
-  void _handleTabChanged() {
-    if (!mounted) return;
-    final coordinator = UiInteractionCoordinator.instance;
-    final category = _currentCategory;
-    final searchQuery = _searchQuery;
-    final normalizedQuery = normalizeSearchQuery(searchQuery);
-    final controller = ref.read(asmrLibraryControllerProvider);
-    final needsRefresh =
-        controller != null &&
-        _categoryNeedsRefresh(controller, category, normalizedQuery);
-    if (_tabController.indexIsChanging) {
-      coordinator.beginInteraction(_tabSwitchInteraction);
-      if (needsRefresh) {
-        _pendingCategoryLoads[category] = normalizedQuery;
-      }
-      setState(() {});
-      return;
-    }
-    if (_lastHandledTabIndex == _tabController.index) return;
-    _lastHandledTabIndex = _tabController.index;
-    if (needsRefresh) {
-      _pendingCategoryLoads[category] = normalizedQuery;
-    } else if (_pendingCategoryLoads[category] == normalizedQuery) {
-      _pendingCategoryLoads.remove(category);
-    }
-    setState(() {});
-    final generation = coordinator.beginGeneration();
-    coordinator.endInteraction(_tabSwitchInteraction);
-    if (!needsRefresh) {
-      return;
-    }
-    final scheduled = coordinator.scheduleAfterIdle(
-      key: 'asmr_category_${category.name}_$normalizedQuery',
-      generation: generation,
-      priority: 0,
-      task: () async {
-        try {
-          await _ensureCategoryLoaded(
-            category,
-            searchQuery: searchQuery,
-            managePendingMarker: false,
-          );
-        } finally {
-          _clearPendingCategoryLoad(category, normalizedQuery);
-        }
-      },
-    );
-    if (!scheduled) {
-      _clearPendingCategoryLoad(category, normalizedQuery);
-    }
-  }
-
-  bool _categoryNeedsRefresh(
-    AsmrLibraryController controller,
-    AsmrCategoryType category,
-    String normalizedQuery,
-  ) {
-    return controller.worksFor(category).isEmpty ||
-        controller.activeQueryFor(category) != normalizedQuery;
-  }
-
-  void _markPendingCategoryLoad(
-    AsmrCategoryType category,
-    String normalizedQuery,
-  ) {
-    if (_pendingCategoryLoads[category] == normalizedQuery) return;
-    setState(() => _pendingCategoryLoads[category] = normalizedQuery);
-  }
-
-  void _clearPendingCategoryLoad(
-    AsmrCategoryType category,
-    String normalizedQuery,
-  ) {
-    if (!mounted || _pendingCategoryLoads[category] != normalizedQuery) return;
-    setState(() => _pendingCategoryLoads.remove(category));
+  bool _collectedNeedsRefresh(AsmrLibraryController controller) {
+    return controller.worksFor(_mainCategory).isEmpty ||
+        controller.activeQueryFor(_mainCategory).isNotEmpty;
   }
 
   void _measureHeader() {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
-      final globalState = ref
-          .read(asmrLibraryControllerProvider)
-          ?.globalViewState;
-      final hasControls = globalState != null;
-      final measuredHeight =
-          box.size.height - (hasControls ? headerControlsFullHeight : 0);
+      final measuredHeight = box.size.height;
       final minimumHeight = _minimumExpandedHeaderHeight(context);
       final h = measuredHeight < minimumHeight ? minimumHeight : measuredHeight;
       if (h > 0 && (_headerHeight == 0 || h > _headerHeight + 0.5)) {
@@ -269,64 +161,29 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
   }
 
-  Future<void> _ensureCategoryLoaded(
-    AsmrCategoryType category, {
-    String? searchQuery,
-    bool managePendingMarker = true,
-  }) async {
+  Future<void> _ensureCollectedLoaded() async {
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
-    final requestedQuery = searchQuery ?? _searchQuery;
-    final normalizedQuery = normalizeSearchQuery(requestedQuery);
-    if (!_categoryNeedsRefresh(controller, category, normalizedQuery)) {
-      return;
-    }
-    await _runCategoryRefresh(
-      category,
-      searchQuery: requestedQuery,
-      managePendingMarker: managePendingMarker,
+    if (!_collectedNeedsRefresh(controller)) return;
+    await _runCollectedRefresh();
+  }
+
+  Future<void> _runCollectedRefresh() {
+    return _runAsmrOperation<void>(
+      scope: UiOperationScope.asmrCategory(
+        AsmrOperationKind.refresh,
+        _mainCategory.name,
+      ),
+      labelKey: 'loading_dot',
+      task: () =>
+          ref
+              .read(asmrLibraryControllerProvider)
+              ?.refreshCategory(_mainCategory) ??
+          Future<void>.value(),
     );
   }
 
-  Future<void> _runCategoryRefresh(
-    AsmrCategoryType category, {
-    required String searchQuery,
-    bool managePendingMarker = true,
-  }) async {
-    final normalizedQuery = normalizeSearchQuery(searchQuery);
-    final ownsPendingMarker =
-        managePendingMarker &&
-        _pendingCategoryLoads[category] != normalizedQuery;
-    if (ownsPendingMarker) {
-      _markPendingCategoryLoad(category, normalizedQuery);
-    }
-    try {
-      await _runAsmrOperation<void>(
-        scope: UiOperationScope.asmrCategory(
-          AsmrOperationKind.refresh,
-          category.name,
-        ),
-        labelKey: 'loading_dot',
-        task: () =>
-            ref
-                .read(asmrLibraryControllerProvider)
-                ?.refreshCategory(category, searchQuery: searchQuery) ??
-            Future<void>.value(),
-      );
-    } finally {
-      if (ownsPendingMarker) {
-        _clearPendingCategoryLoad(category, normalizedQuery);
-      }
-    }
-  }
-
-  Future<void> _refreshCurrentCategory() {
-    final category = _currentCategory;
-    return _runCategoryRefresh(category, searchQuery: _searchQuery);
-  }
-
-  Future<void> _refreshCategoryWithFeedback(
-    AsmrCategoryType category, {
+  Future<void> _refreshCollectedWithFeedback({
     bool showSnackbar = false,
   }) async {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -334,7 +191,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     if (controller == null) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final beforeIds = controller
-        .filteredWorksFor(category, searchQuery: _searchQuery)
+        .filteredWorksFor(_mainCategory)
         .map((work) => work.id)
         .toList(growable: false);
 
@@ -347,7 +204,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       );
     }
 
-    await _runCategoryRefresh(category, searchQuery: _searchQuery);
+    await _runCollectedRefresh();
 
     if (!mounted) {
       return;
@@ -365,7 +222,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
 
     final afterIds = controller
-        .filteredWorksFor(category, searchQuery: _searchQuery)
+        .filteredWorksFor(_mainCategory)
         .map((work) => work.id)
         .toList(growable: false);
     final hasUpdates = !listEquals(beforeIds, afterIds);
@@ -382,25 +239,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     );
   }
 
-  void _onSearchChanged(String value) {
-    _searchDebounceTimer?.cancel();
-    _searchDebounceTimer = Timer(const Duration(milliseconds: 240), () {
-      if (!mounted) {
-        return;
-      }
-      final nextQuery = value.trim();
-      if (_searchQuery == nextQuery) {
-        return;
-      }
-      setState(() {
-        _searchQuery = nextQuery;
-      });
-      final controller = _scrollControllers[_currentCategory];
-      if (controller != null && controller.hasClients) {
-        controller.jumpTo(0);
-      }
-      unawaited(_refreshCurrentCategory());
-    });
+  void _openSearchPage() {
+    Navigator.of(context).push(
+      buildAppPageRoute<void>(context: context, child: const _AsmrSearchPage()),
+    );
   }
 
   Future<T?> _showAsmrPanel<T>({required WidgetBuilder builder}) {
@@ -429,16 +271,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   void dispose() {
     disposeTabState();
-    UiInteractionCoordinator.instance.cancelInteraction(_tabSwitchInteraction);
-    _searchDebounceTimer?.cancel();
-    _searchController.dispose();
-    _tabController
-      ..removeListener(_handleTabChanged)
-      ..dispose();
-    _categoryScrollController.dispose();
-    for (final controller in _scrollControllers.values) {
-      controller.dispose();
-    }
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -450,13 +283,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     });
     final globalState = ref.watch(asmrLibraryGlobalStateProvider).value;
     final hasDownloadManager = ref.watch(asmrDownloadManagerProvider) != null;
-    final currentCategory = _currentCategory;
-    final currentCategoryState = ref
+    final collectedState = ref
         .watch(
-          asmrCategoryStateProvider((
-            category: currentCategory,
-            searchQuery: _normalizedSearchQuery,
-          )),
+          asmrCategoryStateProvider((category: _mainCategory, searchQuery: '')),
         )
         .value;
     final collectedCount =
@@ -468,116 +297,19 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     _schedulePageLanguageSync(i18n.language);
     final collectedSubtitle =
-        currentCategoryState == null ||
-            (currentCategoryState.works.isEmpty &&
-                !currentCategoryState.hasAttemptedLoad) ||
-            currentCategoryState.isLoading
+        collectedState == null ||
+            (collectedState.works.isEmpty &&
+                !collectedState.hasAttemptedLoad) ||
+            collectedState.isLoading
         ? i18n.tr('loading_dot')
         : i18n.tr('asmr_collected_count', {'count': collectedCount});
-    final currentScrollController = _scrollControllers[currentCategory]!;
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final bottomInset = MobileOverlayInset.of(context);
-    final headerControlsFullHeight = this.headerControlsFullHeight;
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : _minimumExpandedHeaderHeight(context);
-    final topTotalHeight = effectiveHeaderHeight + 4;
-    final headerContentHeight = topTotalHeight + headerControlsFullHeight;
-
-    Widget collapsingHeaderControls() {
-      return _AsmrCollapsingHeaderControls(
-        controller: currentScrollController,
-        height: headerControlsFullHeight,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              height: 42,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 1, 12, 7),
-                child: AnimatedBuilder(
-                  animation: _tabController,
-                  builder: (context, _) {
-                    final screenWidth = MediaQuery.sizeOf(context).width;
-                    const totalHorizontalPadding = 24.0;
-
-                    final isPortraitMobile =
-                        MediaQuery.orientationOf(context) ==
-                        Orientation.portrait;
-
-                    final itemWidth = isPortraitMobile
-                        ? (screenWidth - totalHorizontalPadding - 24.0) / 4
-                        : 86.0;
-
-                    return Listener(
-                      onPointerSignal: (pointerSignal) {
-                        if (pointerSignal is PointerScrollEvent) {
-                          if (_categoryScrollController.hasClients) {
-                            final newOffset =
-                                _categoryScrollController.offset +
-                                pointerSignal.scrollDelta.dy;
-                            _categoryScrollController.jumpTo(
-                              newOffset.clamp(
-                                0.0,
-                                _categoryScrollController
-                                    .position
-                                    .maxScrollExtent,
-                              ),
-                            );
-                          }
-                        }
-                      },
-                      child: ListView.separated(
-                        controller: _categoryScrollController,
-                        scrollDirection: Axis.horizontal,
-                        physics: const BouncingScrollPhysics(),
-                        itemCount: _categories.length,
-                        separatorBuilder: (context, index) =>
-                            const SizedBox(width: 8),
-                        itemBuilder: (context, index) {
-                          return SizedBox(
-                            width: itemWidth,
-                            child: _AsmrCategoryButton(
-                              label: i18n.tr(
-                                _asmrCategoryLabelKey(_categories[index]),
-                              ),
-                              selected: _tabController.index == index,
-                              onTap: () {
-                                if (_tabController.index == index) {
-                                  return;
-                                }
-                                FocusScope.of(context).unfocus();
-                                _tabController.animateTo(index);
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-            _AsmrSearchBar(
-              controller: _searchController,
-              onChanged: _onSearchChanged,
-              onClear: () {
-                _searchController.clear();
-                _searchDebounceTimer?.cancel();
-                if (_searchQuery.isEmpty) {
-                  return;
-                }
-                setState(() {
-                  _searchQuery = '';
-                });
-                unawaited(_refreshCurrentCategory());
-              },
-            ),
-          ],
-        ),
-      );
-    }
+    final headerContentHeight = effectiveHeaderHeight + 4;
 
     if (globalState == null) {
       return Stack(
@@ -607,13 +339,17 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               subtitle: collectedSubtitle,
               subtitleFontSize: 11,
               fitSubtitleToWidth: true,
-              collapseController: currentScrollController,
-              collapseDistance: headerControlsFullHeight,
+              trailing: IconButton(
+                key: const ValueKey<String>('asmr_search_button'),
+                onPressed: _openSearchPage,
+                icon: const Icon(Icons.search_rounded),
+                tooltip: i18n.tr('search'),
+              ),
+              collapseController: _scrollController,
               floatingReveal: true,
               floatingRevealDistance: 56,
               bottomSpacing: 4,
               padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-              additionalChild: collapsingHeaderControls(),
             ),
           ),
         ],
@@ -640,47 +376,15 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 ),
             ],
           ),
-          content: Stack(
-            fit: StackFit.expand,
-            clipBehavior: Clip.none,
-            children: [
-              for (int i = 0; i < _categories.length; i++)
-                (() {
-                  final category = _categories[i];
-                  final isActive = category == currentCategory;
-                  return IgnorePointer(
-                    ignoring: !isActive,
-                    child: AnimatedOpacity(
-                      key: ValueKey<String>('asmr_category_fade_$i'),
-                      opacity: isActive ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 120),
-                      curve: Curves.easeOutCubic,
-                      child: TickerMode(
-                        enabled: isActive,
-                        child: ExcludeFocus(
-                          excluding: !isActive,
-                          child: ExcludeSemantics(
-                            excluding: !isActive,
-                            child: _AsmrCategoryList(
-                              key: ValueKey(category),
-                              category: category,
-                              isLoadPending:
-                                  _pendingCategoryLoads[category] ==
-                                  _normalizedSearchQuery,
-                              scrollController: _scrollControllers[category]!,
-                              searchQuery: _searchQuery,
-                              topInset: headerContentHeight,
-                              bottomInset: bottomInset,
-                              onRefresh: () =>
-                                  _refreshCategoryWithFeedback(category),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                })(),
-            ],
+          content: _AsmrCategoryList(
+            key: const ValueKey(_mainCategory),
+            category: _mainCategory,
+            isLoadPending: false,
+            scrollController: _scrollController,
+            searchQuery: '',
+            topInset: headerContentHeight,
+            bottomInset: bottomInset,
+            onRefresh: _refreshCollectedWithFeedback,
           ),
         ),
         Positioned(
@@ -699,14 +403,17 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
+                  IconButton(
+                    key: const ValueKey<String>('asmr_search_button'),
+                    onPressed: _openSearchPage,
+                    icon: const Icon(Icons.search_rounded),
+                    tooltip: i18n.tr('search'),
+                  ),
                   if (isLandscape)
                     IconButton(
                       onPressed: globalState.initialized
                           ? () => unawaited(
-                              _refreshCategoryWithFeedback(
-                                currentCategory,
-                                showSnackbar: true,
-                              ),
+                              _refreshCollectedWithFeedback(showSnackbar: true),
                             )
                           : null,
                       icon: const Icon(Icons.refresh_rounded),
@@ -718,13 +425,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 ],
               ),
             ),
-            collapseController: currentScrollController,
-            collapseDistance: headerControlsFullHeight,
+            collapseController: _scrollController,
             floatingReveal: true,
             floatingRevealDistance: 56,
             bottomSpacing: 4,
             padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-            additionalChild: collapsingHeaderControls(),
           ),
         ),
       ],
@@ -745,7 +450,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       _pendingPageLanguageSync = null;
       final changed = controller.setPageLanguage(language);
       if (changed && mounted) {
-        await _refreshCurrentCategory();
+        await _runCollectedRefresh();
       }
     });
   }

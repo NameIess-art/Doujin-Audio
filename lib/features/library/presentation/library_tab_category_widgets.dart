@@ -1,6 +1,6 @@
 part of 'library_tab.dart';
 
-extension _LibraryTabCategoryView on _LibraryTabState {
+extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
   Set<String> get _selectedTermsForCurrentCategory {
     return switch (_categoryType) {
       AudioLibraryCategoryType.tags => _selectedTagTerms,
@@ -142,7 +142,6 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     required double topPadding,
     required double bottomPadding,
     required double cacheExtent,
-    required bool canPullRefresh,
     required int structureRevision,
     required int detailRevision,
     required int coverGeneration,
@@ -167,7 +166,6 @@ extension _LibraryTabCategoryView on _LibraryTabState {
         final terms = _termsForCategory(snapshot);
         final entries = _filterCategoryEntries(snapshot);
         _scheduleLibraryCoverWarmup(
-          libraryFacade: libraryFacade,
           tracks: entries.map((entry) => entry.firstTrack),
           structureRevision: structureRevision,
           detailRevision: detailRevision,
@@ -177,17 +175,13 @@ extension _LibraryTabCategoryView on _LibraryTabState {
         final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
         final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
 
-        Widget list = ListView.builder(
+        final list = ListView.builder(
           key: ValueKey('library_category_${_categoryType.name}'),
           controller: _scrollController,
           padding: EdgeInsets.fromLTRB(16, topPadding, 16, bottomPadding),
           cacheExtent: cacheExtent,
           clipBehavior: Clip.none,
-          physics: canPullRefresh
-              ? const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
-                )
-              : const BouncingScrollPhysics(),
+          physics: const BouncingScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           itemCount: itemCount,
           itemBuilder: (context, index) {
@@ -249,20 +243,6 @@ extension _LibraryTabCategoryView on _LibraryTabState {
           },
         );
 
-        if (canPullRefresh) {
-          list = GlassRefreshIndicator(
-            key: _refreshIndicatorKey,
-            color: Theme.of(context).colorScheme.primary,
-            backgroundColor: Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHighest,
-            onRefresh: _runLibraryPullRefresh,
-            edgeOffset: topPadding,
-            displacement: 32,
-            triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-            child: list,
-          );
-        }
         return PlaceholderContentTransition(
           showPlaceholder: false,
           placeholder: _LibraryLoadingSkeleton(

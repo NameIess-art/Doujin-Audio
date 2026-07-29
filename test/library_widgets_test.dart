@@ -448,12 +448,35 @@ void main() {
     );
     await tester.pump();
 
+    expect(find.byType(TextField), findsNothing);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_search_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 200));
     final tagsLabel = languageProvider.tr('library_category_tags');
     final voiceActorsLabel = languageProvider.tr(
       'library_category_voice_actors',
     );
-    await tester.tap(find.text(tagsLabel).last);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'app_search_category_AudioLibraryCategoryType.tags',
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 350));
+    expect(
+      find.byKey(const ValueKey<String>('library_category_tags')),
+      findsOneWidget,
+    );
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      'Categorized',
+    );
+    await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text('展开'), findsOneWidget);
     final expandButton = find.ancestor(
@@ -466,18 +489,32 @@ void main() {
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('收起'), findsOneWidget);
 
-    await tester.tap(find.text(voiceActorsLabel).last);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'app_search_category_AudioLibraryCategoryType.voiceActors',
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('展开'), findsOneWidget);
     expect(find.text('收起'), findsNothing);
 
-    await tester.tap(find.text(tagsLabel).last);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'app_search_category_AudioLibraryCategoryType.tags',
+        ),
+      ),
+    );
     await tester.pump(const Duration(milliseconds: 350));
     expect(find.text('展开'), findsOneWidget);
     expect(find.text('收起'), findsNothing);
+    expect(find.text(tagsLabel), findsOneWidget);
+    expect(find.text(voiceActorsLabel), findsOneWidget);
   });
 
-  testWidgets('library tab search submits asynchronously and removes misses', (
+  testWidgets('library search filters asynchronously and clears to content', (
     WidgetTester tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
@@ -534,7 +571,11 @@ void main() {
     );
     await tester.pump();
     expect(runtimeGraph.library.snapshotCacheService.treeSnapshotRevision, -1);
-    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('library_search_button')),
+      findsOneWidget,
+    );
 
     final scanGeneration = runtimeGraph.library.tryBeginScan(source: 'Music');
     runtimeGraph.library.setScanProgress(
@@ -568,7 +609,28 @@ void main() {
     runtimeGraph.library.finishScan(scanGeneration);
     await tester.pump();
 
-    await tester.enterText(find.byType(TextField), 'ocean');
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_search_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 200));
+    final searchField = find.byKey(const ValueKey<String>('app_search_field'));
+    expect(searchField, findsOneWidget);
+    expect(
+      tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
+      isTrue,
+    );
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('library_search_results_all')),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('recent_search_list')),
+      findsNothing,
+    );
+
+    await tester.enterText(searchField, 'ocean');
     await tester.pump(const Duration(milliseconds: 250));
     await pumpUntilFound(tester, find.text('Ocean Waves', findRichText: true));
     await pumpUntilNotFound(tester, find.text('Soft Rain', findRichText: true));
@@ -578,6 +640,13 @@ void main() {
     expect(
       runtimeGraph.library.snapshotCacheService.treeSnapshotRevision,
       libraryService.structureRevision,
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));
+    await tester.pump();
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('library_search_results_all')),
     );
 
     await tester.pumpWidget(const SizedBox.shrink());
@@ -690,7 +759,16 @@ void main() {
         -1,
       );
 
-      await tester.enterText(find.byType(TextField), 'forest');
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library_search_button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('app_search_field')),
+        'forest',
+      );
       await tester.pump(const Duration(milliseconds: 260));
       await pumpUntilFound(
         tester,

@@ -338,7 +338,8 @@ extension _MainScreenLayout on _MainScreenState {
               if (overlaySessions.isNotEmpty) const SizedBox(height: 6),
               if (!tinyMode)
                 FractionallySizedBox(
-                  widthFactor: 0.88,
+                  key: const ValueKey<String>('mobile_bottom_capsule_panel'),
+                  widthFactor: 0.96,
                   child: _FloatingGlassPanel(
                     padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
                     shadowOpacity: 0.12,

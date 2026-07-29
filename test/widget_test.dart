@@ -137,7 +137,6 @@ void main() {
           .any((theme) => theme.data.splashFactory == NoSplash.splashFactory),
       isTrue,
     );
-
     platformCalls.clear();
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
@@ -153,6 +152,32 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'capsule dock widens without changing the playback card viewport',
+    (tester) async {
+      tester.view.devicePixelRatio = 3;
+      tester.view.physicalSize = const Size(1080, 2400);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+
+      await _pumpAppShell(tester);
+
+      final bottomCapsule = tester.widget<FractionallySizedBox>(
+        find.byKey(const ValueKey<String>('mobile_bottom_capsule_panel')),
+      );
+      expect(bottomCapsule.widthFactor, 0.96);
+      final playbackCarouselPageView = tester.widget<PageView>(
+        find.descendant(
+          of: find.byType(ActiveSessionCarousel),
+          matching: find.byType(PageView),
+        ),
+      );
+      expect(playbackCarouselPageView.controller!.viewportFraction, 0.90);
+    },
+  );
 
   testWidgets('production app shell allows tooltips to become visible', (
     tester,
@@ -753,7 +778,36 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
       ),
-      const Size(64, 48),
+      const Size.square(64),
+    );
+    expect(
+      tester
+          .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage))
+          .displayMode,
+      CoverImageDisplayMode.fill,
+    );
+    expect(
+      tester
+          .widget<ClipRRect>(
+            find.byKey(
+              const ValueKey('active_session_card_asmr_error_session'),
+            ),
+          )
+          .borderRadius,
+      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+    );
+    expect(
+      tester
+          .widget<Material>(
+            find.descendant(
+              of: find.byKey(
+                const ValueKey('active_session_cover_asmr_error_session'),
+              ),
+              matching: find.byType(Material),
+            ),
+          )
+          .borderRadius,
+      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
     );
 
     expect(

@@ -27,7 +27,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       ),
     );
     final isBar = style == BottomNavigationStyle.bar;
-    final cardRadius = isBar ? 0.0 : 20.0;
+    final cardRadius = isBar ? 0.0 : LibraryLikeCardMetrics.cardRadius;
 
     final view = ref.watch(
       playbackStateProvider.select((value) {
@@ -157,6 +157,7 @@ class _ActiveSessionCard extends ConsumerWidget {
       container: true,
       value: '${position + 1} / $count',
       child: ClipRRect(
+        key: ValueKey<String>('active_session_card_${session.id}'),
         borderRadius: BorderRadius.circular(cardRadius),
         child: useBlur
             ? BackdropFilter(
@@ -655,22 +656,12 @@ class _ActiveSessionCover extends ConsumerWidget {
       ),
     );
 
-    final bottomNavStyle = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
-      ),
-    );
-    final borderRadius = bottomNavStyle == BottomNavigationStyle.capsule
-        ? 16.0
-        : 10.0;
-
-    return SizedBox(
+    return SizedBox.square(
       key: ValueKey<String>('active_session_cover_$sessionId'),
-      width: 64,
-      height: 64 / kStandardCoverAspectRatio,
+      dimension: 64,
       child: Material(
         type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(borderRadius),
+        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
         clipBehavior: Clip.antiAlias,
         child: AsyncLocalCoverImage(
           future: coverPathFuture,
@@ -680,6 +671,7 @@ class _ActiveSessionCover extends ConsumerWidget {
           cacheWidth: coverCacheWidth,
           useDefaultCacheWidth: coverCacheWidth != null,
           fit: BoxFit.cover,
+          displayMode: CoverImageDisplayMode.fill,
           compact: true,
           iconSize: 24,
         ),

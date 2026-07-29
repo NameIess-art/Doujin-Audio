@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/app_styles.dart';
 import 'package:nameless_audio/core/media/subtitle_parser.dart';
 import 'support/test_persistence_repository.dart';
@@ -1005,6 +1006,41 @@ void main() {
     final queueSession = runtimeGraph.playback.activeSessions.singleWhere(
       (session) => session.isPlaybackQueue,
     );
+    final queueTrack = testMusicTrack(
+      name: 'Queue track',
+      path: '/library/queue/track.mp3',
+      groupKey: '/library/queue',
+      groupTitle: 'Queue work',
+    );
+    runtimeGraph.library.addTracks(
+      <MusicTrack>[queueTrack],
+      notify: false,
+      persist: false,
+    );
+    queueSession
+      ..currentTrackPath = queueTrack.path
+      ..playbackQueue = PlaybackQueueDefinition(
+        name: queueSession.playbackQueue!.name,
+        entries: <PlaybackQueueEntry>[
+          PlaybackQueueEntry(
+            id: 'queue-entry',
+            kind: PlaybackQueueEntryKind.track,
+            title: queueTrack.displayName,
+            tracks: <MusicTrack>[queueTrack],
+          ),
+        ],
+      );
+    playbackService.markActiveSessionsDirty();
+    playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[queueSession],
+      playingSessionCount: 0,
+      focusedSessionId: queueSession.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pump();
+
     final queueCard = tester
         .widgetList<SwipeRevealCard>(find.byType(SwipeRevealCard))
         .singleWhere((card) => card.key == ValueKey(queueSession.id));
@@ -1019,6 +1055,42 @@ void main() {
       queueCard.closedColor,
       Theme.of(tester.element(find.byType(PlaylistTab))).colorScheme.surface,
     );
+    queueSession.state = PlayerState(true, ProcessingState.ready);
+    playbackService.markSessionStateDirty();
+    playbackService.syncSlice(
+      activeSessions: <PlaybackSession>[queueSession],
+      playingSessionCount: 1,
+      focusedSessionId: queueSession.id,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    await tester.pump();
+
+    final queueRowMaterial = tester.widget<Material>(
+      find.byKey(ValueKey('playback_queue_row_surface_${queueSession.id}')),
+    );
+    expect(queueRowMaterial.color, Colors.transparent);
+    final activeHighlight = tester.widget<DecoratedBox>(
+      find.byKey(
+        ValueKey('playback_queue_active_highlight_${queueSession.id}'),
+      ),
+    );
+    final activeGradient =
+        (activeHighlight.decoration as BoxDecoration).gradient!
+            as LinearGradient;
+    final playlistTheme = Theme.of(tester.element(find.byType(PlaylistTab)));
+    expect(activeGradient.colors, <Color>[
+      playlistTheme.colorScheme.primary.withValues(
+        alpha: playlistTheme.brightness == Brightness.dark ? 0.16 : 0.12,
+      ),
+      Colors.transparent,
+      Colors.transparent,
+      Colors.transparent,
+    ]);
+    expect(activeGradient.begin, Alignment.topLeft);
+    expect(activeGradient.end, Alignment.bottomRight);
+
     unawaited(
       showPlaybackQueueEditPanel(
         tester.element(find.byType(PlaylistTab)),
@@ -1060,6 +1132,27 @@ void main() {
     expect(
       (editAudioTileMaterial.shape! as RoundedRectangleBorder).side,
       BorderSide.none,
+    );
+    final iconRadius = AppDesignTokens.of(
+      tester.element(find.byType(PlaybackQueueEditPage)),
+    ).radiusSmall;
+    final headerIcon = tester.widget<Container>(
+      find.byKey(const ValueKey('playback_queue_edit_header_icon')),
+    );
+    expect(
+      (headerIcon.decoration! as BoxDecoration).borderRadius,
+      BorderRadius.circular(iconRadius),
+    );
+    final editAudioIcon = tester.widget<Container>(
+      find.byKey(
+        ValueKey(
+          'playback_queue_edit_tile_icon_${Icons.queue_music_rounded.codePoint}',
+        ),
+      ),
+    );
+    expect(
+      (editAudioIcon.decoration! as BoxDecoration).borderRadius,
+      BorderRadius.circular(iconRadius),
     );
 
     await tester.pump(const Duration(milliseconds: 300));

@@ -10,6 +10,27 @@ const RoundedRectangleBorder _playlistRowShape = RoundedRectangleBorder(
   ),
 );
 
+LinearGradient _playlistActiveHighlightGradient(
+  bool isPlaying,
+  Color highlightColor,
+) => LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: isPlaying
+      ? <Color>[
+          highlightColor,
+          Colors.transparent,
+          Colors.transparent,
+          Colors.transparent,
+        ]
+      : const <Color>[
+          Colors.transparent,
+          Colors.transparent,
+          Colors.transparent,
+          Colors.transparent,
+        ],
+);
+
 class _PlaylistLoadingSkeleton extends StatelessWidget {
   const _PlaylistLoadingSkeleton({
     super.key,
@@ -344,22 +365,9 @@ class _SessionListCard extends ConsumerWidget {
             shadowColor: Colors.transparent,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: isPlaying
-                      ? [
-                          highlightColor,
-                          Colors.transparent,
-                          Colors.transparent,
-                          Colors.transparent,
-                        ]
-                      : const [
-                          Colors.transparent,
-                          Colors.transparent,
-                          Colors.transparent,
-                          Colors.transparent,
-                        ],
+                gradient: _playlistActiveHighlightGradient(
+                  isPlaying,
+                  highlightColor,
                 ),
               ),
               child: InkWell(

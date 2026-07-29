@@ -43,6 +43,9 @@ class _PlaybackQueueCard extends ConsumerWidget {
         ? cs.primary
         : activeColor;
     final isPlaying = cardState.isPlaying;
+    final highlightColor = activeColor.withValues(
+      alpha: Theme.of(context).brightness == Brightness.dark ? 0.16 : 0.12,
+    );
     final coverTracks = queue.entries
         .where((entry) => entry.tracks.isNotEmpty)
         .map((entry) => entry.tracks.first)
@@ -62,9 +65,6 @@ class _PlaybackQueueCard extends ConsumerWidget {
     final currentTrack = tracks.isEmpty
         ? null
         : tracks[session.currentQueueIndex.clamp(0, tracks.length - 1)];
-    final rowColor = isPlaying
-        ? activeColor.withValues(alpha: 0.16)
-        : Colors.transparent;
     return SwipeRevealCard(
       key: ValueKey(session.id),
       shape: _playlistRowShape,
@@ -78,129 +78,139 @@ class _PlaybackQueueCard extends ConsumerWidget {
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: _playlistRowHeight),
         child: Material(
-          color: rowColor,
-          child: InkWell(
-            onTap: onOpen,
-            child: Padding(
-              padding: _playlistRowPadding,
-              child: Row(
-                children: [
-                  if (coverItems.isNotEmpty) ...[
-                    _QueueCoverGrid(
-                      items: coverItems,
-                      coverCacheWidth: coverCacheWidth,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          queue.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                color: isPlaying ? activeColor : cs.onSurface,
-                                fontSize: 14,
-                              ),
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          currentTrack?.displayName ??
-                              i18n.tr('empty_playback_queue'),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                                height: 1.12,
-                              ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        tooltip: cardState.isPlaying
-                            ? i18n.tr('pause')
-                            : i18n.tr('play'),
-                        onPressed: tracks.isEmpty
-                            ? null
-                            : () {
-                                AppInteractionFeedback.trigger(
-                                  AppInteractionFeedbackType.selection,
-                                );
-                                playback.toggleSessionPlayPause(session.id);
-                              },
-                        style: IconButton.styleFrom(
-                          foregroundColor: isPlaying
-                              ? activeColor
-                              : cs.onSurface,
-                          minimumSize: const Size(44, 44),
-                          maximumSize: const Size(44, 44),
-                          padding: EdgeInsets.zero,
-                        ),
-                        icon: AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 120),
-                          transitionBuilder: (child, animation) {
-                            return ScaleTransition(
-                              scale: Tween<double>(begin: 0.4, end: 1.0)
-                                  .animate(
-                                    CurvedAnimation(
-                                      parent: animation,
-                                      curve: Curves.easeOutBack,
-                                    ),
-                                  ),
-                              child: FadeTransition(
-                                opacity: animation,
-                                child: child,
-                              ),
-                            );
-                          },
-                          child: cardState.isLoading
-                              ? const SizedBox(
-                                  key: ValueKey('loading'),
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.3,
-                                  ),
-                                )
-                              : Icon(
-                                  isPlaying
-                                      ? Icons.pause_rounded
-                                      : Icons.play_arrow_rounded,
-                                  key: ValueKey(isPlaying),
-                                  size: 28,
-                                ),
-                        ),
+          key: ValueKey('playback_queue_row_surface_${session.id}'),
+          color: Colors.transparent,
+          child: DecoratedBox(
+            key: ValueKey('playback_queue_active_highlight_${session.id}'),
+            decoration: BoxDecoration(
+              gradient: _playlistActiveHighlightGradient(
+                isPlaying,
+                highlightColor,
+              ),
+            ),
+            child: InkWell(
+              onTap: onOpen,
+              child: Padding(
+                padding: _playlistRowPadding,
+                child: Row(
+                  children: [
+                    if (coverItems.isNotEmpty) ...[
+                      _QueueCoverGrid(
+                        items: coverItems,
+                        coverCacheWidth: coverCacheWidth,
                       ),
-                      if (!cardPositionsLocked) ...[
-                        const SizedBox(width: 4),
-                        ReorderableDragStartListener(
-                          index: index,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 8,
-                              horizontal: 4,
-                            ),
-                            color: Colors.transparent,
-                            child: const Icon(
-                              Icons.drag_handle_rounded,
-                              size: 24,
-                            ),
+                      const SizedBox(width: AppSpacing.xs),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            queue.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  color: isPlaying ? activeColor : cs.onSurface,
+                                  fontSize: 14,
+                                ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            currentTrack?.displayName ??
+                                i18n.tr('empty_playback_queue'),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                  height: 1.12,
+                                ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: cardState.isPlaying
+                              ? i18n.tr('pause')
+                              : i18n.tr('play'),
+                          onPressed: tracks.isEmpty
+                              ? null
+                              : () {
+                                  AppInteractionFeedback.trigger(
+                                    AppInteractionFeedbackType.selection,
+                                  );
+                                  playback.toggleSessionPlayPause(session.id);
+                                },
+                          style: IconButton.styleFrom(
+                            foregroundColor: isPlaying
+                                ? activeColor
+                                : cs.onSurface,
+                            minimumSize: const Size(44, 44),
+                            maximumSize: const Size(44, 44),
+                            padding: EdgeInsets.zero,
+                          ),
+                          icon: AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 120),
+                            transitionBuilder: (child, animation) {
+                              return ScaleTransition(
+                                scale: Tween<double>(begin: 0.4, end: 1.0)
+                                    .animate(
+                                      CurvedAnimation(
+                                        parent: animation,
+                                        curve: Curves.easeOutBack,
+                                      ),
+                                    ),
+                                child: FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                ),
+                              );
+                            },
+                            child: cardState.isLoading
+                                ? const SizedBox(
+                                    key: ValueKey('loading'),
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.3,
+                                    ),
+                                  )
+                                : Icon(
+                                    isPlaying
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
+                                    key: ValueKey(isPlaying),
+                                    size: 28,
+                                  ),
                           ),
                         ),
+                        if (!cardPositionsLocked) ...[
+                          const SizedBox(width: 4),
+                          ReorderableDragStartListener(
+                            index: index,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 8,
+                                horizontal: 4,
+                              ),
+                              color: Colors.transparent,
+                              child: const Icon(
+                                Icons.drag_handle_rounded,
+                                size: 24,
+                              ),
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
-                  ),
-                ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -432,6 +442,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     if (queue == null) return const SizedBox.shrink();
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     return Material(
       color: cs.surfaceContainerLow,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -445,11 +456,12 @@ class PlaybackQueueEditPage extends ConsumerWidget {
             Row(
               children: [
                 Container(
+                  key: const ValueKey('playback_queue_edit_header_icon'),
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
                     color: cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(tokens.radiusSmall),
                   ),
                   child: Icon(
                     Icons.edit_rounded,
@@ -529,6 +541,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     bool destructive = false,
   }) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     final foreground = destructive ? cs.error : cs.onSurface;
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
@@ -543,13 +556,16 @@ class PlaybackQueueEditPage extends ConsumerWidget {
             child: Row(
               children: [
                 Container(
+                  key: ValueKey(
+                    'playback_queue_edit_tile_icon_${icon.codePoint}',
+                  ),
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
                     color: destructive
                         ? cs.errorContainer
                         : cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(tokens.radiusSmall),
                   ),
                   child: Icon(
                     icon,

@@ -28,10 +28,10 @@ class _ActiveSessionCard extends ConsumerWidget {
     );
     final isBar = style == BottomNavigationStyle.bar;
     final cardRadius = isBar ? 0.0 : LibraryLikeCardMetrics.cardRadius;
-    final coverDimension = isBar ? 66.0 : 80.0;
+    final coverDimension = isBar ? 66.0 : 72.0;
     final contentPadding = isBar
         ? const EdgeInsets.fromLTRB(4, 3, 8, 4)
-        : const EdgeInsets.fromLTRB(3, 3, 8, 3);
+        : const EdgeInsets.fromLTRB(7, 3, 8, 3);
 
     final view = ref.watch(
       playbackStateProvider.select((value) {

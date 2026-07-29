@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 
+import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../ui/app_interaction_feedback_settings.dart';
 import '../ui/ui_operation_service.dart';
@@ -249,7 +253,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
   }
 }
 
-class AppFeedbackSurface extends StatelessWidget {
+class AppFeedbackSurface extends ConsumerWidget {
   const AppFeedbackSurface({
     super.key,
     required this.tone,
@@ -272,100 +276,113 @@ class AppFeedbackSurface extends StatelessWidget {
   final Color? iconColor;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.uiBlurEffectEnabled ?? true,
+      ),
+    );
     final accent = iconColor ?? _accentColor(context, tone);
     final chipBackground = accent.withValues(alpha: 0.12);
-    final resolvedBorderRadius = borderRadius ?? tokens.radiusOverlay;
+    final resolvedBorderRadius = borderRadius ?? tokens.radiusCard;
 
     final isDark = theme.brightness == Brightness.dark;
-    final surfaceColor = isDark
-        ? cs.surfaceContainerHighest.withValues(alpha: 0.95)
-        : cs.surfaceContainerHigh.withValues(alpha: 0.98);
+    final baseSurfaceColor = isDark
+        ? cs.surfaceContainerHighest
+        : cs.surfaceContainerHigh;
+    final surfaceColor = blurEnabled
+        ? baseSurfaceColor.withValues(alpha: isDark ? 0.80 : 0.86)
+        : baseSurfaceColor;
+
+    final surface = DecoratedBox(
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        borderRadius: BorderRadius.circular(resolvedBorderRadius),
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: 0.12),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
+          ),
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: padding,
+        child: Row(
+          children: [
+            Container(
+              width: tokens.iconContainerSize,
+              height: tokens.iconContainerSize,
+              decoration: BoxDecoration(
+                color: chipBackground,
+                borderRadius: BorderRadius.circular(tokens.radiusSmall),
+              ),
+              child: Icon(icon, size: 18, color: accent),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (title != null) ...[
+                    Text(
+                      title!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                  ],
+                  Text(
+                    message,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        (title != null
+                                ? theme.textTheme.bodyMedium
+                                : theme.textTheme.titleSmall)
+                            ?.copyWith(
+                              color: title != null
+                                  ? cs.onSurfaceVariant
+                                  : cs.onSurface,
+                              fontWeight: title != null
+                                  ? FontWeight.w600
+                                  : FontWeight.w800,
+                              height: 1.25,
+                            ),
+                  ),
+                ],
+              ),
+            ),
+            if (trailing != null) ...[const SizedBox(width: 12), trailing!],
+          ],
+        ),
+      ),
+    );
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(resolvedBorderRadius),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: surfaceColor,
-          borderRadius: BorderRadius.circular(resolvedBorderRadius),
-          border: Border.all(
-            color: cs.outlineVariant.withValues(
-              alpha: tokens.subtleBorderAlpha,
-            ),
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: 0.12),
-              blurRadius: 24,
-              offset: const Offset(0, 12),
-            ),
-            BoxShadow(
-              color: cs.shadow.withValues(alpha: 0.06),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Padding(
-          padding: padding,
-          child: Row(
-            children: [
-              Container(
-                width: tokens.iconContainerSize,
-                height: tokens.iconContainerSize,
-                decoration: BoxDecoration(
-                  color: chipBackground,
-                  borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                ),
-                child: Icon(icon, size: 18, color: accent),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (title != null) ...[
-                      Text(
-                        title!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: cs.onSurface,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                    ],
-                    Text(
-                      message,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style:
-                          (title != null
-                                  ? theme.textTheme.bodyMedium
-                                  : theme.textTheme.titleSmall)
-                              ?.copyWith(
-                                color: title != null
-                                    ? cs.onSurfaceVariant
-                                    : cs.onSurface,
-                                fontWeight: title != null
-                                    ? FontWeight.w600
-                                    : FontWeight.w800,
-                                height: 1.25,
-                              ),
-                    ),
-                  ],
-                ),
-              ),
-              if (trailing != null) ...[const SizedBox(width: 12), trailing!],
-            ],
-          ),
-        ),
-      ),
+      child: blurEnabled
+          ? BackdropFilter(
+              filter: ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: surface,
+            )
+          : surface,
     );
   }
 }

@@ -835,7 +835,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
       ),
-      const Size.square(80),
+      const Size.square(72),
     );
     final playbackCardRect = tester.getRect(
       find.byKey(const ValueKey('active_session_card_asmr_error_session')),
@@ -843,9 +843,9 @@ void main() {
     final playbackCoverRect = tester.getRect(
       find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
     );
-    expect(playbackCoverRect.left - playbackCardRect.left, 4);
-    expect(playbackCoverRect.top - playbackCardRect.top, 4);
-    expect(playbackCardRect.bottom - playbackCoverRect.bottom, 4);
+    expect(playbackCoverRect.left - playbackCardRect.left, 8);
+    expect(playbackCoverRect.top - playbackCardRect.top, 8);
+    expect(playbackCardRect.bottom - playbackCoverRect.bottom, 8);
     expect(
       tester
           .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage))

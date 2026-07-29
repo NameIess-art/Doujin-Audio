@@ -1,8 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/core/widgets/app_feedback.dart';
 import 'package:nameless_audio/core/widgets/confirm_action_dialog.dart';
+import 'package:nameless_audio/features/settings/application/settings_state.dart';
+
+Widget _feedbackApp({required bool blurEnabled, required Widget home}) {
+  return ProviderScope(
+    key: ValueKey<bool>(blurEnabled),
+    overrides: [
+      settingsStateProvider.overrideWith(
+        (ref) => Stream<SettingsState>.value(
+          SettingsState(uiBlurEffectEnabled: blurEnabled),
+        ),
+      ),
+    ],
+    child: MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: home),
+  );
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -63,7 +81,8 @@ void main() {
     var actionCount = 0;
 
     await tester.pumpWidget(
-      MaterialApp(
+      _feedbackApp(
+        blurEnabled: true,
         home: Scaffold(
           body: Builder(
             builder: (context) => TextButton(
@@ -96,6 +115,83 @@ void main() {
 
     expect(actionCount, 1);
     expect(find.text('Import failed'), findsNothing);
+  });
+
+  testWidgets('top feedback follows blur setting and keeps icon on the left', (
+    tester,
+  ) async {
+    Widget buildSurface(bool blurEnabled) {
+      return _feedbackApp(
+        blurEnabled: blurEnabled,
+        home: const Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              child: AppFeedbackSurface(
+                tone: AppFeedbackTone.info,
+                icon: Icons.info_outline_rounded,
+                title: 'Notice',
+                message: 'Operation is still running.',
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(buildSurface(true));
+    await tester.pumpAndSettle();
+
+    final surface = find.byType(AppFeedbackSurface);
+    final clip = tester.widget<ClipRRect>(
+      find.descendant(of: surface, matching: find.byType(ClipRRect)),
+    );
+    expect(
+      clip.borderRadius,
+      BorderRadius.circular(AppDesignTokens.dark.radiusCard),
+    );
+    expect(
+      find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+      findsOneWidget,
+    );
+    final blurredDecoration =
+        tester
+                .widget<DecoratedBox>(
+                  find
+                      .descendant(
+                        of: surface,
+                        matching: find.byType(DecoratedBox),
+                      )
+                      .first,
+                )
+                .decoration
+            as BoxDecoration;
+    expect(blurredDecoration.color!.a, lessThan(1));
+    expect(
+      tester.getCenter(find.byIcon(Icons.info_outline_rounded)).dx,
+      lessThan(tester.getCenter(find.text('Operation is still running.')).dx),
+    );
+
+    await tester.pumpWidget(buildSurface(false));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+      findsNothing,
+    );
+    final opaqueDecoration =
+        tester
+                .widget<DecoratedBox>(
+                  find
+                      .descendant(
+                        of: surface,
+                        matching: find.byType(DecoratedBox),
+                      )
+                      .first,
+                )
+                .decoration
+            as BoxDecoration;
+    expect(opaqueDecoration.color!.a, 1);
   });
 
   testWidgets('non-destructive confirmation uses the requested action', (

@@ -533,8 +533,6 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),
               ),
-              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-              bottomSpacing: 16,
             ),
           ),
         ],

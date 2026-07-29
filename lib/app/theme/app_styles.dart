@@ -49,3 +49,14 @@ class AppDurations {
   static const Duration normal = Duration(milliseconds: 250);
   static const Duration slow = Duration(milliseconds: 350);
 }
+
+abstract final class AppPageHeaderMetrics {
+  static const EdgeInsets padding = EdgeInsets.fromLTRB(
+    AppSpacing.md,
+    6,
+    AppSpacing.md,
+    0,
+  );
+  static const double bottomSpacing = AppSpacing.md;
+  static const double toolbarHeight = 66;
+}

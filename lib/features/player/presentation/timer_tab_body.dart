@@ -535,8 +535,6 @@ extension _TimerTabBody on _TimerTabState {
                   child: TopPageHeader(
                     icon: Icons.timer_rounded,
                     title: i18n.tr('timer_title'),
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                    bottomSpacing: 16,
                   ),
                 ),
             ],

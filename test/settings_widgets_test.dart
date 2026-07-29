@@ -15,6 +15,7 @@ import 'package:nameless_audio/features/settings/presentation/about_page.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
+import 'package:nameless_audio/app/theme/app_styles.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -113,6 +114,12 @@ void main() {
       findsAtLeastNWidgets(1),
     );
     final categoryHeader = find.byType(TopPageHeader);
+    final categoryHeaderWidget = tester.widget<TopPageHeader>(categoryHeader);
+    expect(categoryHeaderWidget.padding, AppPageHeaderMetrics.padding);
+    expect(
+      categoryHeaderWidget.bottomSpacing,
+      AppPageHeaderMetrics.bottomSpacing,
+    );
     final firstLanguageTile = find.widgetWithText(
       ListTile,
       i18n.tr('interface_language'),
@@ -434,6 +441,9 @@ void main() {
 
     final rjCode = i18n.tr('audio_detail_rj_code');
     final voiceActors = i18n.tr('audio_detail_voice_actors');
+    final initialReorderableKey = tester
+        .widget<ReorderableListView>(find.byType(ReorderableListView))
+        .key;
     final rjTile = find.widgetWithText(CheckboxListTile, rjCode);
     final rjHandle = find.descendant(
       of: rjTile,
@@ -443,6 +453,10 @@ void main() {
     await tester.drag(rjHandle, const Offset(0, 120));
     await tester.pumpAndSettle();
 
+    expect(
+      tester.widget<ReorderableListView>(find.byType(ReorderableListView)).key,
+      isNot(initialReorderableKey),
+    );
     expect(settingsRepository.cardInfoFieldUpdates.single, const [
       CardInfoField.voiceActors,
       CardInfoField.rjCode,
@@ -455,7 +469,10 @@ void main() {
       reason: 'The rendered order must update before persistence completes.',
     );
 
-    await tester.tap(find.widgetWithText(CheckboxListTile, rjCode));
+    final reorderedRjTile = find.widgetWithText(CheckboxListTile, rjCode);
+    await tester.tap(
+      find.descendant(of: reorderedRjTile, matching: find.byType(Checkbox)),
+    );
     await tester.pumpAndSettle();
     expect(settingsRepository.cardInfoFieldUpdates.last, const [
       CardInfoField.voiceActors,

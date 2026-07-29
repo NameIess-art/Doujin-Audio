@@ -1001,6 +1001,9 @@ class _CardInfoFieldsSettingsSheetState
             ),
             const SizedBox(height: 12),
             ReorderableListView.builder(
+              key: ValueKey<String>(
+                'card-info-order:${_selected.map((field) => field.name).join(',')}',
+              ),
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               buildDefaultDragHandles: false,
@@ -1009,7 +1012,7 @@ class _CardInfoFieldsSettingsSheetState
               itemBuilder: (context, index) {
                 final field = _selected[index];
                 return CheckboxListTile(
-                  key: ValueKey(('selected', field)),
+                  key: ValueKey<CardInfoField>(field),
                   value: true,
                   onChanged: (_) => _remove(field),
                   title: _settingsTitle(_cardInfoFieldLabel(i18n, field)),

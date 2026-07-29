@@ -8,6 +8,7 @@ import '../../core/platform/app_icon_platform_service.dart';
 import '../../core/ui/app_icon_color_group.dart';
 import '../../core/widgets/app_transitions.dart';
 import 'app_design_tokens.dart';
+import 'app_styles.dart';
 
 enum ThemeAccentPreset {
   coral,
@@ -482,6 +483,7 @@ class ThemeProvider
         foregroundColor: scheme.onSurface,
         surfaceTintColor: Colors.transparent,
         elevation: 0,
+        toolbarHeight: AppPageHeaderMetrics.toolbarHeight,
       ),
       snackBarTheme: SnackBarThemeData(
         backgroundColor: scheme.surfaceContainerLow,

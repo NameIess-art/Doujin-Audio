@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/app/theme/app_styles.dart';
 import 'package:nameless_audio/core/media/subtitle_parser.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
@@ -1026,22 +1027,64 @@ void main() {
     );
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 800));
 
     expect(find.text(languageProvider.tr('edit_queue_audio')), findsOneWidget);
     expect(find.text(languageProvider.tr('edit_queue_name')), findsOneWidget);
     expect(find.text(languageProvider.tr('edit_card_color')), findsOneWidget);
     expect(find.text(languageProvider.tr('remove_queue')), findsOneWidget);
+    final editPanelMaterial = tester.widget<Material>(
+      find
+          .descendant(
+            of: find.byType(PlaybackQueueEditPage),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(editPanelMaterial.color, isNotNull);
+    expect(editPanelMaterial.color!.a, 1);
+    expect(editPanelMaterial.elevation, 0);
+    expect(
+      (editPanelMaterial.shape! as RoundedRectangleBorder).side,
+      BorderSide.none,
+    );
+    final editAudioTileMaterial = tester.widget<Material>(
+      find
+          .ancestor(
+            of: find.text(languageProvider.tr('edit_queue_audio')),
+            matching: find.byType(Material),
+          )
+          .first,
+    );
+    expect(editAudioTileMaterial.color, editPanelMaterial.color);
+    expect(
+      (editAudioTileMaterial.shape! as RoundedRectangleBorder).side,
+      BorderSide.none,
+    );
 
     await tester.pump(const Duration(milliseconds: 300));
   });
 
-  testWidgets('queue add buttons keep 48px touch targets without overflow', (
+  testWidgets('queue edit rows stack 44px actions and provide haptics', (
     WidgetTester tester,
   ) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    final platformCalls = <MethodCall>[];
+    final previousHaptics = AppInteractionFeedback.hapticFeedbackEnabled;
+    AppInteractionFeedback.hapticFeedbackEnabled = true;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          platformCalls.add(call);
+          return null;
+        });
+    addTearDown(() {
+      AppInteractionFeedback.hapticFeedbackEnabled = previousHaptics;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
 
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
@@ -1085,14 +1128,50 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(
+      tester.widget<AppBar>(find.byType(AppBar)).toolbarHeight,
+      AppPageHeaderMetrics.toolbarHeight,
+    );
+
     final addAudio = find.byTooltip(
       fixture.languageProvider.tr('add_audio_to_queue'),
     );
     final addWork = find.byTooltip(
       fixture.languageProvider.tr('add_work_to_queue'),
     );
-    expect(tester.getSize(addAudio), const Size(48, 48));
-    expect(tester.getSize(addWork), const Size(48, 48));
+    expect(tester.getSize(addAudio), const Size(44, 44));
+    expect(tester.getSize(addWork), const Size(44, 44));
+    expect(tester.getCenter(addAudio).dx, tester.getCenter(addWork).dx);
+    expect(
+      tester.getCenter(addAudio).dy,
+      lessThan(tester.getCenter(addWork).dy),
+    );
+    final sourceCard = tester.widget<Card>(
+      find.ancestor(of: addAudio, matching: find.byType(Card)).first,
+    );
+    expect(sourceCard.margin, EdgeInsets.zero);
+    expect(
+      sourceCard.color,
+      Theme.of(tester.element(addAudio)).colorScheme.surface,
+    );
+    expect((sourceCard.shape! as RoundedRectangleBorder).side, BorderSide.none);
+
+    await tester.tap(addAudio);
+    await tester.pump();
+    expect(
+      platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
+      hasLength(1),
+    );
+    final removeAudio = find.byTooltip(fixture.languageProvider.tr('remove'));
+    expect(removeAudio, findsOneWidget);
+    await tester.tap(removeAudio);
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 800));
+    expect(
+      platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
+      hasLength(2),
+    );
     expect(tester.takeException(), isNull);
   });
 

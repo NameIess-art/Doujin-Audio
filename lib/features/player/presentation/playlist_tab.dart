@@ -870,7 +870,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       ],
                     ),
                   ),
-                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
                 );
               },
             ),

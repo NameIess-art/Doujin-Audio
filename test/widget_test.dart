@@ -201,7 +201,7 @@ void main() {
       );
       expect(
         tester.getSize(fadeMaskFinder).height,
-        200 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+        160 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
       );
       expect(
         tester

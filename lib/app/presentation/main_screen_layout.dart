@@ -323,7 +323,7 @@ extension _MainScreenLayout on _MainScreenState {
             left: 0,
             right: 0,
             bottom: 0,
-            height: 200 + systemBottom,
+            height: 160 + systemBottom,
             child: const AppEdgeFadeMask(
               key: ValueKey<String>('mobile_bottom_capsule_fade_mask'),
               direction: AppEdgeFadeDirection.towardBottom,

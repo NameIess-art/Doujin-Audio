@@ -481,11 +481,9 @@ const Map<String, String> appLanguageZh = {
   'data_and_support': '数据与支持',
   'data_and_support_subtitle': '数据备份、恢复及导出诊断报告。',
   'export_backup': '导出备份',
-  'export_backup_subtitle':
-      '导出曲库、设置和 ASMR.ONE 账号（含明文用户名、密码和 JWT/token）；不包含播放列表，备份 ZIP 不加密，请妥善保管并谨慎分享。',
+  'export_backup_subtitle': '导出曲库、设置和 ASMR.ONE 账号；不包含播放列表，备份未加密。',
   'restore_backup': '恢复备份',
-  'restore_backup_subtitle':
-      '恢复曲库、设置和 ASMR.ONE 账号（含明文用户名、密码和 JWT/token）；播放列表不会恢复。',
+  'restore_backup_subtitle': '恢复曲库、设置和 ASMR.ONE 账号；不恢复播放列表。',
   'restore_backup_confirm':
       '恢复将替换当前曲库数据库、设置和 ASMR.ONE 账号（含明文用户名、密码和 JWT/token），不恢复播放列表。失败时会自动回滚，是否继续？',
   'operation_completed': '已完成',

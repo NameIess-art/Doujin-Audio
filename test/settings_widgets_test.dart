@@ -64,6 +64,9 @@ void main() {
       ListTile,
       i18n.tr('section_language'),
     );
+    final rootHeaderRect = tester.getRect(find.byType(TopPageHeader));
+    final rootFirstItemSpacing =
+        tester.getTopLeft(rootLanguageTile).dy - rootHeaderRect.bottom;
     final rootLanguageIcon = tester.widget<Icon>(
       find.descendant(
         of: rootLanguageTile,
@@ -123,6 +126,12 @@ void main() {
     final firstLanguageTile = find.widgetWithText(
       ListTile,
       i18n.tr('interface_language'),
+    );
+    final categoryHeaderRect = tester.getRect(categoryHeader);
+    expect(categoryHeaderRect.height, closeTo(rootHeaderRect.height, 0.001));
+    expect(
+      tester.getTopLeft(firstLanguageTile).dy - categoryHeaderRect.bottom,
+      closeTo(rootFirstItemSpacing, 0.001),
     );
     final languageIcon = tester.widget<Icon>(
       find.descendant(
@@ -250,6 +259,25 @@ void main() {
     await tester.tap(aboutCategory);
     await tester.pumpAndSettle();
     expect(find.byType(AboutPage), findsOneWidget);
+    final aboutHeaderRect = tester.getRect(find.byType(TopPageHeader));
+    expect(aboutHeaderRect.height, closeTo(rootHeaderRect.height, 0.001));
+    final aboutTitle = find.text(i18n.tr('app_title'));
+    final aboutTitleContext = tester.element(aboutTitle);
+    final firstAboutCard = tester
+        .widgetList<Container>(
+          find.ancestor(of: aboutTitle, matching: find.byType(Container)),
+        )
+        .firstWhere(
+          (container) =>
+              container.decoration is BoxDecoration &&
+              (container.decoration! as BoxDecoration).color ==
+                  Theme.of(aboutTitleContext).colorScheme.surfaceContainerLow,
+        );
+    expect(
+      tester.getTopLeft(find.byWidget(firstAboutCard)).dy -
+          aboutHeaderRect.bottom,
+      closeTo(rootFirstItemSpacing, 0.001),
+    );
   });
 
   testWidgets(

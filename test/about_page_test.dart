@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/app/theme/app_styles.dart';
 import 'package:nameless_audio/core/widgets/app_brand_icon.dart';
+import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/features/settings/presentation/about_page.dart';
 
@@ -44,6 +46,11 @@ void main() {
       expect(rewardButton.onPressed, isNotNull);
       expect(find.text('NameIess-art'), findsOneWidget);
       expect(find.byType(BackButton), findsOneWidget);
+      final headerRect = tester.getRect(find.byType(TopPageHeader));
+      expect(
+        tester.getSize(find.byType(BackButton)),
+        const Size.square(AppPageHeaderMetrics.contentHeight),
+      );
       final appTitle = find.text(i18n.tr('app_title'));
       final appTitleContext = tester.element(appTitle);
       final aboutSurface = tester
@@ -60,6 +67,13 @@ void main() {
         (aboutSurface.decoration! as BoxDecoration).border,
         isNull,
         reason: 'About-page item groups should not paint a card outline.',
+      );
+      final aboutSurfaceRect = tester.getRect(
+        find.ancestor(of: appTitle, matching: find.byWidget(aboutSurface)),
+      );
+      expect(
+        aboutSurfaceRect.top - headerRect.bottom,
+        AppPageHeaderMetrics.firstContentSpacing,
       );
 
       final versionY = tester.getTopLeft(find.text('1.2.3')).dy;

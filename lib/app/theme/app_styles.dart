@@ -51,12 +51,14 @@ class AppDurations {
 }
 
 abstract final class AppPageHeaderMetrics {
+  static const double contentHeight = 44;
   static const EdgeInsets padding = EdgeInsets.fromLTRB(
     AppSpacing.md,
     6,
     AppSpacing.md,
     0,
   );
+  static const double firstContentSpacing = AppSpacing.xxs;
   static const double bottomSpacing = AppSpacing.md;
   static const double toolbarHeight = 66;
 }

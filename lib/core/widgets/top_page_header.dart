@@ -213,9 +213,14 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
           children: [
             Row(
               children: [
-                SizedBox(height: 44 * trailingFactor),
+                SizedBox(
+                  height: AppPageHeaderMetrics.contentHeight * trailingFactor,
+                ),
                 if (widget.leading != null) ...[
-                  widget.leading!,
+                  SizedBox.square(
+                    dimension: AppPageHeaderMetrics.contentHeight,
+                    child: widget.leading!,
+                  ),
                   const SizedBox(width: AppSpacing.xs),
                 ],
                 Expanded(

@@ -55,13 +55,17 @@ class AboutPage extends ConsumerWidget {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
-      body: Stack(
+      body: Column(
         children: [
-          Positioned.fill(
+          TopPageHeader(
+            leading: BackButton(color: Theme.of(context).colorScheme.onSurface),
+            title: i18n.tr('about'),
+          ),
+          Expanded(
             child: ListView(
               padding: EdgeInsets.fromLTRB(
                 tokens.pageHorizontalPadding,
-                104,
+                AppPageHeaderMetrics.firstContentSpacing,
                 tokens.pageHorizontalPadding,
                 bottomInset + AppSpacing.xl,
               ),
@@ -130,18 +134,6 @@ class AboutPage extends ConsumerWidget {
                   ],
                 ),
               ],
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              leading: BackButton(
-                color: Theme.of(context).colorScheme.onSurface,
-              ),
-              title: i18n.tr('about'),
-              padding: const EdgeInsets.fromLTRB(8, 6, 16, 0),
             ),
           ),
         ],

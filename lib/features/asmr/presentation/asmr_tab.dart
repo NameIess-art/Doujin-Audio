@@ -18,6 +18,7 @@ import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
+import '../../../core/widgets/app_scroll_physics.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/glass_refresh_indicator.dart';
 import '../../../core/widgets/library_like_cards.dart';

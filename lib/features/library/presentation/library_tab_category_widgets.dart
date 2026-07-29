@@ -181,7 +181,7 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
           padding: EdgeInsets.fromLTRB(16, topPadding, 16, bottomPadding),
           cacheExtent: cacheExtent,
           clipBehavior: Clip.none,
-          physics: const BouncingScrollPhysics(),
+          physics: const ClampingScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           itemCount: itemCount,
           itemBuilder: (context, index) {

@@ -35,6 +35,7 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
+import '../../../core/widgets/app_scroll_physics.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/content_bound_reorder_area.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -699,9 +700,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         topInset: relativeTop,
         physics: canPullRefresh
             ? const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
+                parent: RefreshTopScrollPhysics(),
               )
-            : const BouncingScrollPhysics(),
+            : const ClampingScrollPhysics(),
       );
     }
 
@@ -802,7 +803,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                   cacheExtent: listCacheExtent,
                                   physics: canPullRefresh
                                       ? const AlwaysScrollableScrollPhysics(
-                                          parent: BouncingScrollPhysics(),
+                                          parent: RefreshTopScrollPhysics(),
                                         )
                                       : null,
                                   keyboardDismissBehavior:
@@ -832,7 +833,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                     cacheExtent: listCacheExtent,
                                     physics: canPullRefresh
                                         ? const AlwaysScrollableScrollPhysics(
-                                            parent: BouncingScrollPhysics(),
+                                            parent: RefreshTopScrollPhysics(),
                                           )
                                         : null,
                                     autoScrollerVelocityScalar: 0,

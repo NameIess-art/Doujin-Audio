@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/features/library/presentation/library_tab.dart';
+import 'package:nameless_audio/core/widgets/app_scroll_physics.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
@@ -267,6 +268,12 @@ void main() {
     runtimeGraph.library.finishScan(scanGeneration);
     await tester.pump();
 
+    final libraryList = tester.widget<ListView>(
+      find.byKey(const PageStorageKey<String>('locked_library_list')),
+    );
+    expect(libraryList.physics, isA<AlwaysScrollableScrollPhysics>());
+    expect(libraryList.physics?.parent, isA<RefreshTopScrollPhysics>());
+
     final refreshGeneration = runtimeGraph.library.tryBeginScan(
       source: 'Pull to refresh',
     );
@@ -471,6 +478,14 @@ void main() {
       find.byKey(const ValueKey<String>('library_category_tags')),
       findsOneWidget,
     );
+    expect(
+      tester
+          .widget<ListView>(
+            find.byKey(const ValueKey<String>('library_category_tags')),
+          )
+          .physics,
+      isA<ClampingScrollPhysics>(),
+    );
 
     await tester.enterText(
       find.byKey(const ValueKey<String>('app_search_field')),
@@ -656,6 +671,14 @@ void main() {
       tester,
       find.byKey(const ValueKey<String>('library_search_results_all')),
     );
+    expect(
+      tester
+          .widget<ListView>(
+            find.byKey(const ValueKey<String>('library_search_results_all')),
+          )
+          .physics,
+      isA<ClampingScrollPhysics>(),
+    );
     final searchContentTransition = find.descendant(
       of: find.byKey(const ValueKey<String>('app_search_body_layer')),
       matching: find.byType(PlaceholderContentTransition),
@@ -666,6 +689,10 @@ void main() {
       matching: find.byType(ExpansionTile),
     );
     expect(searchResultExpansionTiles, findsOneWidget);
+    final searchHeroMode = tester.widget<HeroMode>(
+      find.byKey(const ValueKey<String>('library_search_hero_mode')),
+    );
+    expect(searchHeroMode.enabled, isFalse);
     expect(
       tester
           .widget<ExpansionTile>(searchResultExpansionTiles)

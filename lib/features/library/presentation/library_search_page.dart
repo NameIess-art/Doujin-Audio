@@ -230,7 +230,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
           MediaQuery.paddingOf(context).bottom + 16,
         ),
         cacheExtent: 320,
-        physics: const BouncingScrollPhysics(),
+        physics: const ClampingScrollPhysics(),
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         itemCount: tree.length,
         itemBuilder: (context, index) {
@@ -331,7 +331,11 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       onSubmitted: _onSubmitted,
       onCloseOrClear: _closeOrClear,
       blurEnabled: settings.uiBlurEffectEnabled,
-      body: body,
+      body: HeroMode(
+        key: const ValueKey<String>('library_search_hero_mode'),
+        enabled: false,
+        child: body,
+      ),
     );
   }
 }

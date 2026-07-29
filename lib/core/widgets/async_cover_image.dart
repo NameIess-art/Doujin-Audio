@@ -9,9 +9,10 @@ import '../media/music_track.dart' show MusicTrack;
 import '../media/cover_image_resolution.dart';
 import '../../app/state/app_runtime_providers.dart';
 import '../ui/ui_interaction_coordinator.dart';
+import 'app_transitions.dart';
 import 'scroll_activity_gate.dart';
 
-const Duration kCoverImageFadeDuration = Duration(milliseconds: 750);
+const Duration kCoverImageFadeDuration = kPlaceholderContentTransitionDuration;
 
 int? coverCacheWidthForResolution(CoverImageResolution resolution) {
   switch (resolution) {
@@ -619,7 +620,7 @@ class RetryingNetworkImage extends ConsumerWidget {
 
   final String url;
   final WidgetBuilder fallbackBuilder;
-  final ImageLoadingBuilder? loadingBuilder;
+  final WidgetBuilder? loadingBuilder;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
   final int? cacheWidth;
@@ -762,7 +763,7 @@ class RetryingFileImage extends ConsumerWidget {
 
   final String path;
   final WidgetBuilder fallbackBuilder;
-  final ImageLoadingBuilder? loadingBuilder;
+  final WidgetBuilder? loadingBuilder;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
   final int? cacheWidth;
@@ -833,7 +834,7 @@ class RetryingImage extends StatefulWidget {
   final Object retryKey;
   final ImageProvider<Object> Function() imageProviderBuilder;
   final WidgetBuilder fallbackBuilder;
-  final ImageLoadingBuilder? loadingBuilder;
+  final WidgetBuilder? loadingBuilder;
   final BoxFit? fit;
   final AlignmentGeometry alignment;
   final Color? color;
@@ -918,25 +919,16 @@ class _RetryingImageState extends State<RetryingImage> {
         frameBuilder: primary
             ? (context, child, frame, wasSynchronouslyLoaded) {
                 if (wasSynchronouslyLoaded) return child;
-                return AnimatedOpacity(
-                  opacity: frame == null ? 0 : 1,
-                  duration: kCoverImageFadeDuration,
-                  curve: Curves.easeInOutSine,
-                  child: child,
-                );
-              }
-            : null,
-        loadingBuilder: primary
-            ? (context, child, loadingProgress) {
-                if (loadingProgress == null) {
-                  return child;
-                }
                 final loadingBuilder = widget.loadingBuilder;
-                return loadingBuilder != null
-                    ? loadingBuilder(context, child, loadingProgress)
-                    : CoverLoadingArtwork(
-                        placeholder: widget.fallbackBuilder(context),
-                      );
+                return PlaceholderContentTransition(
+                  showPlaceholder: frame == null,
+                  placeholder: loadingBuilder != null
+                      ? loadingBuilder(context)
+                      : CoverLoadingArtwork(
+                          placeholder: widget.fallbackBuilder(context),
+                        ),
+                  content: child,
+                );
               }
             : null,
         errorBuilder: primary

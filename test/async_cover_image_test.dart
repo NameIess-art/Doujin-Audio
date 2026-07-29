@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -9,7 +10,37 @@ import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/settings/application/settings_state.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
+import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+final class _ControlledImageProvider
+    extends ImageProvider<_ControlledImageProvider> {
+  final Completer<ImageInfo> _imageInfo = Completer<ImageInfo>();
+
+  void complete(ui.Image image) {
+    _imageInfo.complete(ImageInfo(image: image));
+  }
+
+  @override
+  ImageStreamCompleter loadImage(
+    _ControlledImageProvider key,
+    ImageDecoderCallback decode,
+  ) {
+    return OneFrameImageStreamCompleter(_imageInfo.future);
+  }
+
+  @override
+  Future<_ControlledImageProvider> obtainKey(ImageConfiguration configuration) {
+    return SynchronousFuture<_ControlledImageProvider>(this);
+  }
+}
+
+Future<ui.Image> _createTestImage() {
+  final recorder = ui.PictureRecorder();
+  final canvas = ui.Canvas(recorder);
+  canvas.drawColor(const Color(0xFF336699), ui.BlendMode.src);
+  return recorder.endRecording().toImage(2, 2);
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -373,6 +404,85 @@ void main() {
 
     expect(providerBuilds, 2);
   });
+
+  testWidgets(
+    'RetryingImage keeps placeholder until first frame then fades for 750ms',
+    (tester) async {
+      final provider = _ControlledImageProvider();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            width: 120,
+            height: 90,
+            child: RetryingImage(
+              retryKey: 'controlled-cover',
+              imageProviderBuilder: () => provider,
+              fallbackBuilder: (_) => const ColoredBox(
+                key: ValueKey<String>('decoding_placeholder'),
+                color: Colors.pink,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        tester
+            .widget<PlaceholderContentTransition>(
+              find.byType(PlaceholderContentTransition),
+            )
+            .showPlaceholder,
+        isTrue,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('decoding_placeholder')),
+        findsOneWidget,
+      );
+
+      final image = await _createTestImage();
+      addTearDown(image.dispose);
+      provider.complete(image);
+      await tester.pump();
+      await tester.pump();
+
+      expect(
+        tester
+            .widget<PlaceholderContentTransition>(
+              find.byType(PlaceholderContentTransition),
+            )
+            .showPlaceholder,
+        isFalse,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(PlaceholderContentTransition),
+          matching: find.byType(FadeTransition),
+        ),
+        findsNWidgets(2),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('decoding_placeholder')),
+        findsOneWidget,
+      );
+
+      await tester.pump(
+        kCoverImageFadeDuration - const Duration(milliseconds: 1),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('decoding_placeholder')),
+        findsOneWidget,
+      );
+
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump(const Duration(milliseconds: 1));
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey<String>('decoding_placeholder')),
+        findsNothing,
+      );
+    },
+  );
 
   testWidgets('RetryingImage renders every cover display mode', (tester) async {
     final imageBytes = base64Decode(

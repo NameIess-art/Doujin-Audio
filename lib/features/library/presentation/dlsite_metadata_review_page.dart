@@ -335,15 +335,12 @@ class _DlsiteMetadataReviewPageState
                           fit: BoxFit.cover,
                           cacheWidth: coverCacheWidth,
                           useDefaultCacheWidth: coverCacheWidth != null,
-                          loadingBuilder: (context, child, loadingProgress) =>
-                              loadingProgress == null
-                              ? child
-                              : CoverLoadingArtwork(
-                                  placeholder: CoverFallbackArtwork(
-                                    seed: coverUrl,
-                                    showIcon: false,
-                                  ),
-                                ),
+                          loadingBuilder: (_) => CoverLoadingArtwork(
+                            placeholder: CoverFallbackArtwork(
+                              seed: coverUrl,
+                              showIcon: false,
+                            ),
+                          ),
                           fallbackBuilder: (_) => CoverFallbackArtwork(
                             seed: coverUrl,
                             icon: Icons.image_not_supported_rounded,

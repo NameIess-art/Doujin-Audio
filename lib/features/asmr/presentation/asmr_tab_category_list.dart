@@ -154,7 +154,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                 placeholder: ListView.builder(
                   key: const ValueKey('loading'),
                   physics: const AlwaysScrollableScrollPhysics(
-                    parent: _TopOnlyBouncingScrollPhysics(),
+                    parent: RefreshTopScrollPhysics(),
                   ),
                   padding: EdgeInsets.fromLTRB(
                     16,
@@ -180,7 +180,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   controller: widget.scrollController,
                   cacheExtent: 520,
                   physics: const AlwaysScrollableScrollPhysics(
-                    parent: BouncingScrollPhysics(),
+                    parent: RefreshTopScrollPhysics(),
                   ),
                   padding: EdgeInsets.fromLTRB(
                     16,
@@ -305,22 +305,5 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     await ref
         .read(asmrLibraryControllerProvider)
         ?.loadMoreCategory(widget.category, searchQuery: widget.searchQuery);
-  }
-}
-
-class _TopOnlyBouncingScrollPhysics extends BouncingScrollPhysics {
-  const _TopOnlyBouncingScrollPhysics({super.parent});
-
-  @override
-  _TopOnlyBouncingScrollPhysics applyTo(ScrollPhysics? ancestor) {
-    return _TopOnlyBouncingScrollPhysics(parent: buildParent(ancestor));
-  }
-
-  @override
-  double applyBoundaryConditions(ScrollMetrics position, double value) {
-    if (value > 0.0) {
-      return value - (position.pixels > 0.0 ? position.pixels : 0.0);
-    }
-    return super.applyBoundaryConditions(position, value);
   }
 }

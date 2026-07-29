@@ -299,6 +299,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   @override
   void didChangeMetrics() {
+    if (_isKeyboardVisible) {
+      _metricsRecoveryTimer?.cancel();
+      return;
+    }
     _metricsRecoveryTimer?.cancel();
     _metricsRecoveryTimer = Timer(
       const Duration(milliseconds: 16),
@@ -674,7 +678,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
             bottomNavigationStyle: bottomNavigationStyle,
           );
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
+    final content = AnnotatedRegion<SystemUiOverlayStyle>(
       value: overlayStyle,
       child: Scaffold(
         extendBody: !isDesktop,
@@ -747,6 +751,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
           ],
         ),
       ),
+    );
+    return MediaQuery.removeViewInsets(
+      key: const ValueKey<String>('main_screen_keyboard_inset_boundary'),
+      context: context,
+      removeBottom: true,
+      child: content,
     );
   }
 }

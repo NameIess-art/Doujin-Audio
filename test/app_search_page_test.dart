@@ -233,4 +233,64 @@ void main() {
       findsNothing,
     );
   });
+
+  testWidgets('keyboard insets do not relayout the search result tree', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+      tester.view.resetViewInsets();
+    });
+
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    var bodyBuildCount = 0;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppSearchPageScaffold<int>(
+          controller: controller,
+          focusNode: focusNode,
+          hintText: 'Search audio',
+          categories: const <AppSearchCategory<int>>[
+            AppSearchCategory(value: 0, label: 'All'),
+          ],
+          selectedCategory: 0,
+          onCategorySelected: (_) {},
+          onChanged: (_) {},
+          onSubmitted: (_) {},
+          onCloseOrClear: () {},
+          blurEnabled: true,
+          body: Builder(
+            builder: (context) {
+              bodyBuildCount++;
+              return Text(
+                '${MediaQuery.viewInsetsOf(context).bottom}',
+                key: const ValueKey<String>('search_body_keyboard_inset'),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('0.0'), findsOneWidget);
+    final initialBuildCount = bodyBuildCount;
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pump();
+
+    expect(find.text('0.0'), findsOneWidget);
+    expect(bodyBuildCount, initialBuildCount);
+    expect(
+      tester.widget<Scaffold>(find.byType(Scaffold)).resizeToAvoidBottomInset,
+      isFalse,
+    );
+  });
 }

@@ -789,6 +789,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 32));
 
     expect(mainPageStack().index, 3);
+    expect(
+      tester
+          .widget<MediaQuery>(
+            find.byKey(
+              const ValueKey<String>('main_screen_keyboard_inset_boundary'),
+            ),
+          )
+          .data
+          .viewInsets
+          .bottom,
+      0,
+    );
     expect(find.byType(ActiveSessionCarousel), findsOneWidget);
     expect(tester.takeException(), isNull);
 

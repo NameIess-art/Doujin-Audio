@@ -64,9 +64,9 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
     final cs = theme.colorScheme;
     final tokens = AppDesignTokens.of(context);
     final accent = accentColor ?? cs.primary;
-    return Scaffold(
+    final content = Scaffold(
       backgroundColor: cs.surface,
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false,
       body: Stack(
         key: const ValueKey<String>('app_search_stack'),
         fit: StackFit.expand,
@@ -221,6 +221,12 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
           ),
         ],
       ),
+    );
+    return MediaQuery.removeViewInsets(
+      key: const ValueKey<String>('app_search_keyboard_inset_boundary'),
+      context: context,
+      removeBottom: true,
+      child: content,
     );
   }
 }

@@ -629,6 +629,25 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     final searchField = find.byKey(const ValueKey<String>('app_search_field'));
     expect(searchField, findsOneWidget);
+    final searchControls = find.byKey(
+      const ValueKey<String>('app_search_controls_overlay'),
+    );
+    expect(
+      find.descendant(
+        of: searchControls,
+        matching: find.byType(BackdropFilter),
+      ),
+      findsNWidgets(2),
+    );
+    await settingsRepository.setUiBlurEffectEnabled(false);
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: searchControls,
+        matching: find.byType(BackdropFilter),
+      ),
+      findsNothing,
+    );
     expect(
       tester.widget<EditableText>(find.byType(EditableText)).focusNode.hasFocus,
       isTrue,
@@ -637,6 +656,11 @@ void main() {
       tester,
       find.byKey(const ValueKey<String>('library_search_results_all')),
     );
+    final searchContentTransition = find.descendant(
+      of: find.byKey(const ValueKey<String>('app_search_body_layer')),
+      matching: find.byType(PlaceholderContentTransition),
+    );
+    expect(searchContentTransition, findsOneWidget);
     final searchResultExpansionTiles = find.descendant(
       of: find.byKey(const ValueKey<String>('library_search_results_all')),
       matching: find.byType(ExpansionTile),
@@ -666,6 +690,28 @@ void main() {
     await tester.enterText(searchField, 'ocean');
     await tester.pump(const Duration(milliseconds: 250));
     await pumpUntilFound(tester, find.text('Ocean Waves', findRichText: true));
+    expect(
+      find.descendant(
+        of: searchContentTransition,
+        matching: find.byType(FadeTransition),
+      ),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(
+        of: searchContentTransition,
+        matching: find.byType(LibraryLikeSkeletonCard),
+      ),
+      findsWidgets,
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(
+      find.descendant(
+        of: searchContentTransition,
+        matching: find.byType(LibraryLikeSkeletonCard),
+      ),
+      findsWidgets,
+    );
     await pumpUntilNotFound(tester, find.text('Soft Rain', findRichText: true));
 
     expect(find.text('Soft Rain', findRichText: true), findsNothing);

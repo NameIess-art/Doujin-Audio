@@ -3,6 +3,34 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/widgets/app_search_page.dart';
 
 void main() {
+  testWidgets('search route uses a fade-through transition', (tester) async {
+    late BuildContext routeContext;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) {
+            routeContext = context;
+            return const SizedBox.expand();
+          },
+        ),
+      ),
+    );
+
+    final route = buildAppSearchPageRoute<void>(
+      context: routeContext,
+      child: const SizedBox.expand(),
+    );
+    final transition = route.transitionsBuilder(
+      routeContext,
+      const AlwaysStoppedAnimation<double>(0.5),
+      const AlwaysStoppedAnimation<double>(0),
+      const SizedBox.expand(),
+    );
+
+    expect(transition, isA<FadeTransition>());
+    expect((transition as FadeTransition).child, isA<ScaleTransition>());
+  });
+
   testWidgets(
     'search page stays usable in small landscape with keyboard and large text',
     (tester) async {
@@ -44,6 +72,7 @@ void main() {
               onChanged: (_) {},
               onSubmitted: (_) {},
               onCloseOrClear: () => closeCount++,
+              blurEnabled: true,
               body: const Center(
                 child: Text(
                   'Direct content',
@@ -135,4 +164,41 @@ void main() {
       expect(closeCount, 1);
     },
   );
+
+  testWidgets('search capsules remove backdrop blur when disabled', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AppSearchPageScaffold<int>(
+          controller: controller,
+          focusNode: focusNode,
+          hintText: 'Search audio',
+          categories: const <AppSearchCategory<int>>[
+            AppSearchCategory(value: 0, label: 'All'),
+          ],
+          selectedCategory: 0,
+          onCategorySelected: (_) {},
+          onChanged: (_) {},
+          onSubmitted: (_) {},
+          onCloseOrClear: () {},
+          blurEnabled: false,
+          body: const SizedBox.expand(),
+        ),
+      ),
+    );
+
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('app_search_controls_overlay')),
+        matching: find.byType(BackdropFilter),
+      ),
+      findsNothing,
+    );
+  });
 }

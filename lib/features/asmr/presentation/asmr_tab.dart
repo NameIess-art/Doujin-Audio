@@ -241,7 +241,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   void _openSearchPage() {
     Navigator.of(context).push(
-      buildAppPageRoute<void>(context: context, child: const _AsmrSearchPage()),
+      buildAppSearchPageRoute<void>(
+        context: context,
+        child: const _AsmrSearchPage(),
+      ),
     );
   }
 

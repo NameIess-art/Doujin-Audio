@@ -113,6 +113,11 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final accent = AppDesignTokens.of(context).asmrAccent;
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.uiBlurEffectEnabled ?? true,
+      ),
+    );
     final categories = kAsmrSelectableCategories
         .map(
           (category) => AppSearchCategory<AsmrCategoryType>(
@@ -141,6 +146,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       onChanged: _onChanged,
       onSubmitted: (value) => unawaited(_onSubmitted(value)),
       onCloseOrClear: _closeOrClear,
+      blurEnabled: blurEnabled,
       accentColor: accent,
       body: body,
     );

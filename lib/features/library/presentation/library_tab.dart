@@ -185,7 +185,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   void _openSearchPage() {
     Navigator.of(context).push(
-      buildAppPageRoute<void>(
+      buildAppSearchPageRoute<void>(
         context: context,
         child: const _LibrarySearchPage(),
       ),

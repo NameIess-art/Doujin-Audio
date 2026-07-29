@@ -197,15 +197,12 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
             _visibleSearchRevision == structureRevision
         ? _visibleSearchResult
         : null;
-    if (result == null) {
-      return _LibraryLoadingSkeleton(
-        bottomInset: 16,
-        topInset: AppSearchPageScaffold.controlsTopInset(context),
-      );
-    }
-    final tree = result.tree;
-    if (tree.isEmpty) {
-      return AppEmptyState(
+    final tree = result?.tree;
+    final Widget content;
+    if (tree == null) {
+      content = const SizedBox.shrink();
+    } else if (tree.isEmpty) {
+      content = AppEmptyState(
         key: const ValueKey<String>('library_search_empty'),
         icon: _query.isEmpty
             ? Icons.library_music_outlined
@@ -215,38 +212,47 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
           _query.isEmpty ? 'import_audio_hint' : 'search_try_another_term',
         ),
       );
+    } else {
+      _scheduleLibraryCoverWarmup(
+        tracks: _coverWarmupTracks(tree),
+        structureRevision: structureRevision,
+        detailRevision: detailRevision,
+        coverGeneration: coverGeneration,
+        scope: 'search_all',
+      );
+      content = ListView.builder(
+        key: const ValueKey<String>('library_search_results_all'),
+        controller: _scrollController,
+        padding: EdgeInsets.fromLTRB(
+          16,
+          AppSearchPageScaffold.controlsTopInset(context),
+          16,
+          MediaQuery.paddingOf(context).bottom + 16,
+        ),
+        cacheExtent: 320,
+        physics: const BouncingScrollPhysics(),
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        itemCount: tree.length,
+        itemBuilder: (context, index) {
+          final node = tree[index];
+          return RepaintBoundary(
+            key: ValueKey<String>('search_${node.path}'),
+            child: _LibraryTreeItem(
+              node: node,
+              searchQuery: _query,
+              cardPositionsLocked: cardPositionsLocked,
+            ),
+          );
+        },
+      );
     }
-    _scheduleLibraryCoverWarmup(
-      tracks: _coverWarmupTracks(tree),
-      structureRevision: structureRevision,
-      detailRevision: detailRevision,
-      coverGeneration: coverGeneration,
-      scope: 'search_all',
-    );
-    return ListView.builder(
-      key: const ValueKey<String>('library_search_results_all'),
-      controller: _scrollController,
-      padding: EdgeInsets.fromLTRB(
-        16,
-        AppSearchPageScaffold.controlsTopInset(context),
-        16,
-        MediaQuery.paddingOf(context).bottom + 16,
+    return PlaceholderContentTransition(
+      showPlaceholder: result == null,
+      placeholder: _LibraryLoadingSkeleton(
+        bottomInset: 16,
+        topInset: AppSearchPageScaffold.controlsTopInset(context),
       ),
-      cacheExtent: 320,
-      physics: const BouncingScrollPhysics(),
-      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-      itemCount: tree.length,
-      itemBuilder: (context, index) {
-        final node = tree[index];
-        return RepaintBoundary(
-          key: ValueKey<String>('search_${node.path}'),
-          child: _LibraryTreeItem(
-            node: node,
-            searchQuery: _query,
-            cardPositionsLocked: cardPositionsLocked,
-          ),
-        );
-      },
+      content: content,
     );
   }
 
@@ -270,9 +276,8 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     );
     final detailRevision = ref.watch(libraryDetailRevisionProvider);
     final coverGeneration = ref.watch(coverGenerationProvider);
-    final cardPositionsLocked =
-        (ref.watch(settingsStateProvider).value ?? SettingsState())
-            .cardPositionsLocked;
+    final settings = ref.watch(settingsStateProvider).value ?? SettingsState();
+    final cardPositionsLocked = settings.cardPositionsLocked;
     final categories = <AppSearchCategory<AudioLibraryCategoryType>>[
       AppSearchCategory(
         value: AudioLibraryCategoryType.all,
@@ -325,6 +330,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       onChanged: _onChanged,
       onSubmitted: _onSubmitted,
       onCloseOrClear: _closeOrClear,
+      blurEnabled: settings.uiBlurEffectEnabled,
       body: body,
     );
   }

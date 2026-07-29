@@ -320,6 +320,7 @@ void main() {
     expect(LibraryLikeCardMetrics.rootTileHeight, 150);
     expect(LibraryLikeCardMetrics.contentHeight, 134);
     expect(LibraryLikeCardMetrics.infoBlockHeight, 90);
+    expect(LibraryLikeCardMetrics.infoVerticalOffset, -4);
     expect(LibraryLikeCardMetrics.titleBlockHeight, 38);
     expect(LibraryLikeCardMetrics.actionButtonSize, 40);
     expect(LibraryLikeCardMetrics.coverRadius, 12);
@@ -336,6 +337,11 @@ void main() {
             LibraryLikeCardMetrics.coverAspectRatio,
         LibraryLikeCardMetrics.infoBlockHeight,
       ),
+    );
+    expect(
+      tester.getTopLeft(find.text('CV')).dy,
+      tester.getTopLeft(find.byKey(coverKey)).dy +
+          LibraryLikeCardMetrics.infoVerticalOffset,
     );
     expect(find.byType(MarqueeText), findsNothing);
     expect(find.byIcon(Icons.add_circle_rounded), findsOneWidget);

@@ -17,6 +17,7 @@ class LibraryLikeCardMetrics {
   static const double rootTileHeight = 150;
   static const double contentHeight = 134;
   static const double infoBlockHeight = 90;
+  static const double infoVerticalOffset = -4;
   static const double titleBlockHeight = 38;
   static const double coverAspectRatio = kStandardCoverAspectRatio;
   static const double coverRadius = 12;
@@ -312,21 +313,27 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
                   coverBuilder(coverWidth),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: SizedBox(
-                      height: infoBlockHeight,
-                      child: Column(
-                        children: [
-                          for (final line in visibleLines)
-                            LibraryLikeDetailInfoLine(
-                              label: line.label,
-                              text: line.text,
-                              style: infoStyle,
-                              loading: false,
-                              lines: line.lines,
-                              accentColor: accentColor,
-                              enableMarquee: enableMarquee,
-                            ),
-                        ],
+                    child: Transform.translate(
+                      offset: const Offset(
+                        0,
+                        LibraryLikeCardMetrics.infoVerticalOffset,
+                      ),
+                      child: SizedBox(
+                        height: infoBlockHeight,
+                        child: Column(
+                          children: [
+                            for (final line in visibleLines)
+                              LibraryLikeDetailInfoLine(
+                                label: line.label,
+                                text: line.text,
+                                style: infoStyle,
+                                loading: false,
+                                lines: line.lines,
+                                accentColor: accentColor,
+                                enableMarquee: enableMarquee,
+                              ),
+                          ],
+                        ),
                       ),
                     ),
                   ),

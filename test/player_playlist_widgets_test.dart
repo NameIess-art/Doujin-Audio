@@ -18,8 +18,10 @@ import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
+import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/duration_overlay.dart';
 import 'package:nameless_audio/core/widgets/app_feedback.dart';
+import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -349,10 +351,22 @@ void main() {
     final firstSkeleton = tester.widget<Container>(skeletonCards.first);
     expect(firstSkeleton.padding, const EdgeInsets.all(8));
     expect(
-      (firstSkeleton.decoration! as BoxDecoration).border,
+      firstSkeleton.decoration,
       isNull,
-      reason: 'Playlist loading items should match the borderless list style.',
+      reason: 'Playlist loading rows should blend into the page background.',
     );
+    final firstSkeletonCover = find
+        .descendant(
+          of: skeletonCards.first,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Container &&
+                widget.constraints ==
+                    const BoxConstraints.tightFor(width: 72, height: 72),
+          ),
+        )
+        .first;
+    expect(tester.getSize(firstSkeletonCover), const Size.square(72));
     final skeletonTrailingCircles = find.descendant(
       of: skeletonCards.first,
       matching: find.byWidgetPredicate((widget) {
@@ -741,6 +755,28 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('02:05'), findsNothing);
 
+    final workRow = find.byWidgetPredicate(
+      (widget) =>
+          widget is SwipeRevealCard &&
+          widget.key == const ValueKey('work-duration-session'),
+    );
+    final singleRow = find.byWidgetPredicate(
+      (widget) =>
+          widget is SwipeRevealCard &&
+          widget.key == const ValueKey('single-duration-session'),
+    );
+    expect(
+      tester.getBottomLeft(workRow).dy,
+      closeTo(tester.getTopLeft(singleRow).dy, 0.01),
+      reason: 'Playlist rows should form one continuous list.',
+    );
+    expect(
+      tester.getSize(
+        find.byKey(const ValueKey('playlist_cover_single-duration-session')),
+      ),
+      const Size.square(72),
+    );
+
     workSession.setOptimisticDuration(const Duration(minutes: 2, seconds: 5));
     singleSession.setOptimisticDuration(
       const Duration(minutes: 1, seconds: 10),
@@ -971,7 +1007,17 @@ void main() {
     final queueCard = tester
         .widgetList<SwipeRevealCard>(find.byType(SwipeRevealCard))
         .singleWhere((card) => card.key == ValueKey(queueSession.id));
-    expect((queueCard.shape as RoundedRectangleBorder).side, BorderSide.none);
+    final queueRowShape = queueCard.shape as RoundedRectangleBorder;
+    expect(queueRowShape.side, BorderSide.none);
+    expect(
+      queueRowShape.borderRadius.resolve(TextDirection.ltr),
+      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+    );
+    expect(queueCard.margin, EdgeInsets.zero);
+    expect(
+      queueCard.closedColor,
+      Theme.of(tester.element(find.byType(PlaylistTab))).colorScheme.surface,
+    );
     unawaited(
       showPlaybackQueueEditPanel(
         tester.element(find.byType(PlaylistTab)),
@@ -1131,15 +1177,65 @@ void main() {
       find.byType(SwipeRevealCard),
     );
     expect(swipeCard.color, isNull);
-    expect((swipeCard.shape as RoundedRectangleBorder).side, BorderSide.none);
+    expect(swipeCard.margin, EdgeInsets.zero);
+    final rowShape = swipeCard.shape as RoundedRectangleBorder;
+    expect(rowShape.side, BorderSide.none);
+    expect(
+      rowShape.borderRadius.resolve(TextDirection.ltr),
+      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+    );
+    expect(
+      swipeCard.closedColor,
+      Theme.of(tester.element(find.byType(PlaylistTab))).colorScheme.surface,
+    );
     expect(swipeCard.primaryActionIcon, Icons.delete_outline_rounded);
     expect(swipeCard.destructive, isTrue);
     final cardContent = tester.widget<Padding>(
       find.byKey(ValueKey<String>('playlist_card_content_${session.id}')),
     );
+    final visualCard = tester.widget<Card>(
+      find
+          .ancestor(
+            of: find.byKey(
+              ValueKey<String>('playlist_card_content_${session.id}'),
+            ),
+            matching: find.byType(Card),
+          )
+          .first,
+    );
+    expect(visualCard.clipBehavior, Clip.antiAlias);
+    expect(
+      (visualCard.shape as RoundedRectangleBorder).borderRadius.resolve(
+        TextDirection.ltr,
+      ),
+      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+    );
     expect(cardContent.padding, const EdgeInsets.all(8));
     final cardContentRow = cardContent.child! as Row;
     expect((cardContentRow.children[1] as SizedBox).width, 8);
+    expect(
+      tester
+          .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage))
+          .displayMode,
+      CoverImageDisplayMode.fill,
+    );
+
+    final errorColor = Theme.of(
+      tester.element(find.byType(PlaylistTab)),
+    ).colorScheme.error;
+    await tester.drag(find.byType(SwipeRevealCard), const Offset(-180, 0));
+    await tester.pumpAndSettle();
+    final revealPane = tester.widget<DecoratedBox>(
+      find.byWidgetPredicate((widget) {
+        if (widget is! DecoratedBox) return false;
+        final decoration = widget.decoration;
+        return decoration is ShapeDecoration && decoration.gradient != null;
+      }),
+    );
+    expect(
+      (revealPane.decoration as ShapeDecoration).gradient!.colors.last,
+      errorColor,
+    );
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 120));
@@ -1278,8 +1374,8 @@ void main() {
       final firstCell = find.byKey(
         const ValueKey('playback_queue_cover_cell_0'),
       );
-      expect(tester.getSize(grid), const Size(96, 72));
-      expect(tester.getSize(firstCell), const Size(96, 72));
+      expect(tester.getSize(grid), const Size.square(72));
+      expect(tester.getSize(firstCell), const Size.square(72));
 
       unawaited(
         Navigator.of(

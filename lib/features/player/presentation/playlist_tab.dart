@@ -676,9 +676,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   controller: _scrollController,
                                   physics: const ClampingScrollPhysics(),
                                   padding: const EdgeInsets.fromLTRB(
-                                    16,
+                                    _playlistListHorizontalPadding,
                                     topPadding,
-                                    16,
+                                    _playlistListHorizontalPadding,
                                     bottomPadding,
                                   ),
                                   cacheExtent: listCacheExtent,
@@ -695,9 +695,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   scrollController: _scrollController,
                                   physics: const ClampingScrollPhysics(),
                                   padding: const EdgeInsets.fromLTRB(
-                                    16,
+                                    _playlistListHorizontalPadding,
                                     topPadding,
-                                    16,
+                                    _playlistListHorizontalPadding,
                                     bottomPadding,
                                   ),
                                   cacheExtent: listCacheExtent,

@@ -62,35 +62,27 @@ class _PlaybackQueueCard extends ConsumerWidget {
     final currentTrack = tracks.isEmpty
         ? null
         : tracks[session.currentQueueIndex.clamp(0, tracks.length - 1)];
-    final cardColor = isPlaying
-        ? cs.surfaceContainerHigh
-        : cs.surfaceContainerLow;
-    final shape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
-    );
+    final rowColor = isPlaying
+        ? activeColor.withValues(alpha: 0.16)
+        : Colors.transparent;
     return SwipeRevealCard(
       key: ValueKey(session.id),
-      margin: const EdgeInsets.only(bottom: 6),
-      shape: shape,
+      shape: _playlistRowShape,
       color: revealActionColor,
-      closedColor: cardColor,
+      closedColor: cs.surface,
       destructive: false,
       primaryActionIcon: Icons.edit_rounded,
       actionLabel: i18n.tr('edit'),
       removeTooltip: i18n.tr('edit_playback_queue'),
       onRemove: onEdit,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 88),
-        child: Card(
-          margin: EdgeInsets.zero,
-          elevation: 0,
-          color: cardColor,
-          shape: shape,
-          clipBehavior: Clip.antiAlias,
+        constraints: const BoxConstraints(minHeight: _playlistRowHeight),
+        child: Material(
+          color: rowColor,
           child: InkWell(
             onTap: onOpen,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
+              padding: _playlistRowPadding,
               child: Row(
                 children: [
                   if (coverItems.isNotEmpty) ...[
@@ -98,7 +90,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
                       items: coverItems,
                       coverCacheWidth: coverCacheWidth,
                     ),
-                    const SizedBox(width: 14),
+                    const SizedBox(width: AppSpacing.xs),
                   ],
                   Expanded(
                     child: Column(
@@ -261,7 +253,7 @@ class _QueueCoverGrid extends StatelessWidget {
     return ClipRRect(
       key: const ValueKey('playback_queue_cover_grid'),
       borderRadius: BorderRadius.circular(16),
-      child: SizedBox(width: 96, height: 72, child: content),
+      child: SizedBox.square(dimension: _playlistCoverSize, child: content),
     );
   }
 
@@ -316,6 +308,7 @@ class _QueueTrackCover extends StatelessWidget {
     return RetryingFileImage(
       path: coverPath!,
       fit: BoxFit.cover,
+      displayMode: CoverImageDisplayMode.fill,
       cacheWidth: coverCacheWidth,
       useDefaultCacheWidth: coverCacheWidth != null,
       fallbackBuilder: (_) => CoverFallbackArtwork(seed: track.displayName),

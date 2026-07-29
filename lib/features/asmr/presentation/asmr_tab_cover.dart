@@ -10,7 +10,7 @@ class _AsmrWorkCover extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final width = this.width;
-    final height = width * 0.8;
+    final height = width / kStandardCoverAspectRatio;
     final url = this.url.trim();
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(coverImageResolutionProvider),

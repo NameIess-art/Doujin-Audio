@@ -696,7 +696,7 @@ class _LibraryCoverThumbnailState
     final coverUi = ref.read(libraryCoverUiControllerProvider);
     final coverPathFuture = _coverFutureFor(coverUi, coverGeneration);
     final width = widget.width;
-    final height = width * 0.8;
+    final height = width / kStandardCoverAspectRatio;
     final coverCacheWidth = coverCacheWidthForLogicalSize(
       logicalWidth: width,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
@@ -800,7 +800,7 @@ class _LibraryTrackCoverThumbnailState
     final track = widget.track;
 
     final width = widget.width;
-    final height = width * 0.8;
+    final height = width / kStandardCoverAspectRatio;
     final coverCacheWidth = coverCacheWidthForLogicalSize(
       logicalWidth: width,
       devicePixelRatio: MediaQuery.devicePixelRatioOf(context),

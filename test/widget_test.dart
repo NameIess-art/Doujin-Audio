@@ -750,6 +750,13 @@ void main() {
     await tester.pump();
 
     expect(
+      tester.getSize(
+        find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
+      ),
+      const Size(64, 48),
+    );
+
+    expect(
       find.text(languageProvider.tr('asmr_playback_network_failed_retry')),
       findsOneWidget,
     );

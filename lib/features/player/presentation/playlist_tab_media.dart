@@ -118,9 +118,6 @@ class _SessionCoverThumbnail extends ConsumerStatefulWidget {
     this.detailDuration,
   });
 
-  static const double _width = 96;
-  static const double _height = 72;
-
   final String sessionId;
   final MusicTrack? track;
   final String? coverPath;
@@ -161,8 +158,9 @@ class _SessionCoverThumbnailState
     return Stack(
       children: [
         SizedBox(
-          width: _SessionCoverThumbnail._width,
-          height: _SessionCoverThumbnail._height,
+          key: ValueKey<String>('playlist_cover_${widget.sessionId}'),
+          width: _playlistCoverSize,
+          height: _playlistCoverSize,
           child: Material(
             type: MaterialType.transparency,
             borderRadius: BorderRadius.circular(
@@ -181,6 +179,7 @@ class _SessionCoverThumbnailState
               cacheWidth: widget.coverCacheWidth,
               useDefaultCacheWidth: widget.coverCacheWidth != null,
               fit: BoxFit.cover,
+              displayMode: CoverImageDisplayMode.fill,
               compact: true,
               iconSize: 26,
             ),

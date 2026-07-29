@@ -9,6 +9,7 @@ import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/core/media/card_info_field.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
+import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
 import 'package:nameless_audio/core/widgets/scroll_activity_gate.dart';
@@ -316,12 +317,13 @@ void main() {
       ),
     );
 
-    expect(LibraryLikeCardMetrics.rootTileHeight, 164);
-    expect(LibraryLikeCardMetrics.contentHeight, 140);
-    expect(LibraryLikeCardMetrics.infoBlockHeight, 96);
+    expect(LibraryLikeCardMetrics.rootTileHeight, 158);
+    expect(LibraryLikeCardMetrics.contentHeight, 134);
+    expect(LibraryLikeCardMetrics.infoBlockHeight, 90);
     expect(LibraryLikeCardMetrics.titleBlockHeight, 38);
     expect(LibraryLikeCardMetrics.actionButtonSize, 40);
     expect(LibraryLikeCardMetrics.coverRadius, 12);
+    expect(LibraryLikeCardMetrics.coverAspectRatio, kStandardCoverAspectRatio);
 
     expect(
       tester.getSize(find.byType(LibraryLikeWorkCardContent)),
@@ -398,7 +400,10 @@ void main() {
     );
 
     expect(tester.getSize(find.byKey(coverKey)).width, 120);
-    expect(tester.getSize(find.byKey(coverKey)).height, 96);
+    expect(
+      tester.getSize(find.byKey(coverKey)).height,
+      120 / kStandardCoverAspectRatio,
+    );
     expect(find.byType(MarqueeText), findsNothing);
 
     final titleText = tester.widget<Text>(find.text(title));

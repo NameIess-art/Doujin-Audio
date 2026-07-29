@@ -67,7 +67,7 @@ class _SingleFileCoverPreviewState
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: AspectRatio(
-                aspectRatio: 1.45,
+                aspectRatio: kStandardCoverAspectRatio,
                 child: RetryingFileImage(
                   path: coverPath,
                   fit: BoxFit.cover,
@@ -257,7 +257,7 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
                 side: BorderSide(color: cs.outlineVariant),
               ),
               child: const AspectRatio(
-                aspectRatio: 1.45,
+                aspectRatio: kStandardCoverAspectRatio,
                 child: SizedBox.expand(),
               ),
             ),
@@ -282,7 +282,7 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
           key: const ValueKey('audio_detail_cover_content'),
           borderRadius: BorderRadius.circular(16),
           child: AspectRatio(
-            aspectRatio: 1.45,
+            aspectRatio: kStandardCoverAspectRatio,
             child: Stack(
               fit: StackFit.expand,
               children: [

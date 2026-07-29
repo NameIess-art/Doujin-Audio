@@ -13,6 +13,7 @@ import 'app_transitions.dart';
 import 'scroll_activity_gate.dart';
 
 const Duration kCoverImageFadeDuration = kPlaceholderContentTransitionDuration;
+const double kStandardCoverAspectRatio = 4 / 3;
 
 int? coverCacheWidthForResolution(CoverImageResolution resolution) {
   switch (resolution) {
@@ -333,6 +334,7 @@ class LocalCoverImage extends StatelessWidget {
     this.colorBlendMode,
     this.filterQuality = FilterQuality.medium,
     this.deferRetryDuringInteraction = false,
+    this.displayMode,
   });
 
   final String? path;
@@ -350,6 +352,7 @@ class LocalCoverImage extends StatelessWidget {
   final BlendMode? colorBlendMode;
   final FilterQuality filterQuality;
   final bool deferRetryDuringInteraction;
+  final CoverImageDisplayMode? displayMode;
 
   Widget _fallback(BuildContext context, {bool? showIconOverride}) {
     return CoverFallbackArtwork(
@@ -378,6 +381,7 @@ class LocalCoverImage extends StatelessWidget {
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
       deferRetryDuringInteraction: deferRetryDuringInteraction,
+      displayMode: displayMode,
       fallbackBuilder: (context) => _fallback(context),
     );
   }
@@ -406,6 +410,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
     this.hideIconWhileLoading = true,
     this.duration = kCoverImageFadeDuration,
     this.deferCommitDuringInteraction = false,
+    this.displayMode,
   });
 
   final Future<String?> future;
@@ -428,6 +433,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
   final bool hideIconWhileLoading;
   final Duration duration;
   final bool deferCommitDuringInteraction;
+  final CoverImageDisplayMode? displayMode;
 
   Widget _cover(BuildContext context, String? path, {required bool loading}) {
     return LocalCoverImage(
@@ -446,6 +452,7 @@ class AsyncLocalCoverImage extends StatelessWidget {
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
       deferRetryDuringInteraction: deferCommitDuringInteraction,
+      displayMode: displayMode,
     );
   }
 
@@ -759,6 +766,7 @@ class RetryingFileImage extends ConsumerWidget {
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
     this.deferRetryDuringInteraction = false,
+    this.displayMode,
   });
 
   final String path;
@@ -776,6 +784,7 @@ class RetryingFileImage extends ConsumerWidget {
   final Duration retryDelay;
   final int maxRetryAttempts;
   final bool deferRetryDuringInteraction;
+  final CoverImageDisplayMode? displayMode;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -787,7 +796,8 @@ class RetryingFileImage extends ConsumerWidget {
       cacheWidth: cacheWidth,
       useDefaultCacheWidth: useDefaultCacheWidth,
     );
-    final displayMode = ref.watch(coverImageDisplayModeProvider);
+    final CoverImageDisplayMode effectiveDisplayMode =
+        displayMode ?? ref.watch(coverImageDisplayModeProvider);
     return RetryingImage(
       retryKey: path,
       imageProviderBuilder: () => resizeFileImageIfNeeded(
@@ -807,7 +817,7 @@ class RetryingFileImage extends ConsumerWidget {
       retryDelay: retryDelay,
       maxRetryAttempts: maxRetryAttempts,
       deferRetryDuringInteraction: deferRetryDuringInteraction,
-      displayMode: displayMode,
+      displayMode: effectiveDisplayMode,
     );
   }
 }

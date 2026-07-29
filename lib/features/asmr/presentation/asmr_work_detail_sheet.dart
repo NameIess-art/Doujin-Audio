@@ -129,7 +129,7 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
                 ClipRRect(
                   borderRadius: BorderRadius.circular(16),
                   child: AspectRatio(
-                    aspectRatio: 1.45,
+                    aspectRatio: kStandardCoverAspectRatio,
                     child: AsyncRemoteCoverImage(
                       url: coverUrl,
                       future: library.coverPathFutureForRemoteCover(coverUrl),

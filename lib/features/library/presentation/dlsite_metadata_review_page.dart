@@ -329,7 +329,7 @@ class _DlsiteMetadataReviewPageState
                     ClipRRect(
                       borderRadius: BorderRadius.circular(16),
                       child: AspectRatio(
-                        aspectRatio: 4 / 3,
+                        aspectRatio: kStandardCoverAspectRatio,
                         child: RetryingNetworkImage(
                           url: coverUrl,
                           fit: BoxFit.cover,

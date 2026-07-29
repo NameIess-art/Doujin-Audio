@@ -1,13 +1,21 @@
 part of 'playlist_tab.dart';
 
+const double _playlistRowHeight = 88;
+const double _playlistCoverSize = 72;
+const double _playlistListHorizontalPadding = AppSpacing.xs;
+const EdgeInsets _playlistRowPadding = EdgeInsets.all(AppSpacing.xs);
+const RoundedRectangleBorder _playlistRowShape = RoundedRectangleBorder(
+  borderRadius: BorderRadius.all(
+    Radius.circular(LibraryLikeCardMetrics.cardRadius),
+  ),
+);
+
 class _PlaylistLoadingSkeleton extends StatelessWidget {
   const _PlaylistLoadingSkeleton({
     super.key,
     required this.topPadding,
     required this.bottomPadding,
   });
-
-  static const double _cardHeight = 88;
 
   final double topPadding;
   final double bottomPadding;
@@ -21,35 +29,26 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
           0.0,
           constraints.maxHeight - topPadding - bottomPadding,
         );
-        final cardCount = max(
-          1,
-          ((contentHeight + AppSpacing.xs) / (_cardHeight + AppSpacing.xs))
-              .ceil(),
-        );
+        final cardCount = max(1, (contentHeight / _playlistRowHeight).ceil());
         return ListView.builder(
           physics: const NeverScrollableScrollPhysics(),
           padding: EdgeInsets.fromLTRB(
-            AppSpacing.md,
+            _playlistListHorizontalPadding,
             topPadding,
-            AppSpacing.md,
+            _playlistListHorizontalPadding,
             bottomPadding,
           ),
           itemCount: cardCount,
           itemBuilder: (context, index) => Container(
             key: ValueKey<String>('playlist_skeleton_card_$index'),
-            height: _cardHeight,
-            margin: const EdgeInsets.only(bottom: AppSpacing.xs),
-            padding: const EdgeInsets.all(AppSpacing.xs),
-            decoration: BoxDecoration(
-              color: cs.surfaceContainerLow,
-              borderRadius: AppRadius.borderCard,
-            ),
+            height: _playlistRowHeight,
+            padding: _playlistRowPadding,
             child: ShimmerLoader(
               child: Row(
                 children: [
                   Container(
-                    width: 96,
-                    height: 72,
+                    width: _playlistCoverSize,
+                    height: _playlistCoverSize,
                     decoration: BoxDecoration(
                       color: cs.surfaceContainerHigh,
                       borderRadius: AppRadius.borderCard,
@@ -319,43 +318,32 @@ class _SessionListCard extends ConsumerWidget {
     final asmrBlue = tokens.asmrAccent;
     final localPlayRose = cs.primary;
 
-    final baseBgColor = isAsmrOne ? tokens.asmrSurface : cs.surfaceContainerLow;
-
     final highlightColor = isAsmrOne
         ? asmrBlue.withValues(alpha: isDark ? 0.18 : 0.14)
         : localPlayRose.withValues(alpha: isDark ? 0.16 : 0.12);
     final activeColor = isAsmrOne ? asmrBlue : localPlayRose;
     final showCover = shouldShowPlaylistCoverArtwork(track, coverPath);
 
-    final cardShape = RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
-    );
-    final itemColor = isPlaying ? cs.surfaceContainerHigh : baseBgColor;
-
     return SwipeRevealCard(
       key: ValueKey(sessionId),
-      margin: const EdgeInsets.only(bottom: 6),
-      shape: cardShape,
-      closedColor: itemColor,
+      shape: _playlistRowShape,
+      closedColor: cs.surface,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
       onRemove: () => _confirmRemoveSession(context),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 88),
+        constraints: const BoxConstraints(minHeight: _playlistRowHeight),
         child: Material(
           color: Colors.transparent,
           child: Card(
             margin: EdgeInsets.zero,
             clipBehavior: Clip.antiAlias,
-            shape: cardShape,
-            color: itemColor,
+            shape: _playlistRowShape,
+            color: Colors.transparent,
             elevation: 0,
             shadowColor: Colors.transparent,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(
-                  LibraryLikeCardMetrics.cardRadius,
-                ),
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
@@ -366,7 +354,7 @@ class _SessionListCard extends ConsumerWidget {
                           Colors.transparent,
                           Colors.transparent,
                         ]
-                      : [
+                      : const [
                           Colors.transparent,
                           Colors.transparent,
                           Colors.transparent,
@@ -384,7 +372,7 @@ class _SessionListCard extends ConsumerWidget {
                 },
                 child: Padding(
                   key: ValueKey<String>('playlist_card_content_$sessionId'),
-                  padding: const EdgeInsets.all(AppSpacing.xs),
+                  padding: _playlistRowPadding,
                   child: Row(
                     children: [
                       if (showCover) ...[
@@ -448,7 +436,7 @@ class _SessionListCard extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 10),
+                      const SizedBox(width: AppSpacing.xxs),
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../app/theme/app_styles.dart';
 import '../media/card_info_field.dart';
+import 'async_cover_image.dart';
 import 'app_feedback.dart';
 import 'marquee_text.dart';
 import 'shimmer_loading.dart';
@@ -13,11 +14,11 @@ const _libraryLikeInfoLineHeight = 16.0;
 class LibraryLikeCardMetrics {
   const LibraryLikeCardMetrics._();
 
-  static const double rootTileHeight = 164;
-  static const double contentHeight = 140;
-  static const double infoBlockHeight = 96;
+  static const double rootTileHeight = 158;
+  static const double contentHeight = 134;
+  static const double infoBlockHeight = 90;
   static const double titleBlockHeight = 38;
-  static const double coverAspectRatio = 1.25;
+  static const double coverAspectRatio = kStandardCoverAspectRatio;
   static const double coverRadius = 12;
   static const double cardRadius = 14;
   static const double actionButtonSize = 40;

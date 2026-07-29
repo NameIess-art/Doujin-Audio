@@ -4,8 +4,11 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/core/media/cover_image_resolution.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/settings/application/settings_state.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
@@ -519,5 +522,35 @@ void main() {
       containsAll(<BoxFit>[BoxFit.cover, BoxFit.contain]),
     );
     expect(find.byType(ImageFiltered), findsOneWidget);
+  });
+
+  testWidgets('RetryingFileImage can override the global display mode', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          coverImageResolutionProvider.overrideWithValue(
+            CoverImageResolution.balanced,
+          ),
+          coverImageDisplayModeProvider.overrideWithValue(
+            CoverImageDisplayMode.tile,
+          ),
+        ],
+        child: MaterialApp(
+          home: RetryingFileImage(
+            path: 'missing-cover.png',
+            fit: BoxFit.cover,
+            displayMode: CoverImageDisplayMode.fill,
+            fallbackBuilder: (_) => const SizedBox.shrink(),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      tester.widget<RetryingImage>(find.byType(RetryingImage)).displayMode,
+      CoverImageDisplayMode.fill,
+    );
   });
 }

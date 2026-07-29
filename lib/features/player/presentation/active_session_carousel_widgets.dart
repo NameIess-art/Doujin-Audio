@@ -665,8 +665,9 @@ class _ActiveSessionCover extends ConsumerWidget {
         : 10.0;
 
     return SizedBox(
+      key: ValueKey<String>('active_session_cover_$sessionId'),
       width: 64,
-      height: 64,
+      height: 64 / kStandardCoverAspectRatio,
       child: Material(
         type: MaterialType.transparency,
         borderRadius: BorderRadius.circular(borderRadius),

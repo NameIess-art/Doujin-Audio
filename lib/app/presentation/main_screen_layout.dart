@@ -313,45 +313,88 @@ extension _MainScreenLayout on _MainScreenState {
     bool tinyMode = false,
     bool isCurrent = true,
   }) {
-    return SafeArea(
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final systemBottom = MediaQuery.paddingOf(context).bottom;
+    return Stack(
       key: key,
-      top: false,
-      minimum: const EdgeInsets.fromLTRB(AppSpacing.sm, 0, AppSpacing.sm, 6),
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 430),
-          child: Column(
-            key: isCurrent ? _dockContentKey : null,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (overlaySessions.isNotEmpty)
-                ActiveSessionCarousel(
-                  sessions: overlaySessions,
-                  i18n: i18n,
-                  onOpenSession: (sessionId) {
-                    Navigator.of(
-                      context,
-                    ).push(buildSessionDetailRoute(sessionId: sessionId));
-                  },
-                ),
-              if (overlaySessions.isNotEmpty) const SizedBox(height: 6),
-              if (!tinyMode)
-                FractionallySizedBox(
-                  key: const ValueKey<String>('mobile_bottom_capsule_panel'),
-                  widthFactor: 0.96,
-                  child: _FloatingGlassPanel(
-                    padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
-                    shadowOpacity: 0.12,
-                    showTopHighlight: false,
-                    tinyMode: tinyMode,
-                    child: _buildBottomBar(context),
+      fit: StackFit.expand,
+      children: [
+        if (!tinyMode)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 152 + systemBottom,
+            child: IgnorePointer(
+              key: const ValueKey<String>(
+                'mobile_bottom_capsule_fade_mask_pointer',
+              ),
+              child: DecoratedBox(
+                key: const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[
+                      cs.surface.withValues(alpha: 0),
+                      cs.surface.withValues(alpha: isDark ? 0.12 : 0.08),
+                      cs.surface.withValues(alpha: isDark ? 0.50 : 0.38),
+                      cs.surface.withValues(alpha: isDark ? 0.82 : 0.72),
+                    ],
+                    stops: const <double>[0, 0.28, 0.68, 1],
                   ),
                 ),
-            ],
+              ),
+            ),
+          ),
+        SafeArea(
+          top: false,
+          minimum: const EdgeInsets.fromLTRB(
+            AppSpacing.sm,
+            0,
+            AppSpacing.sm,
+            6,
+          ),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 430),
+              child: Column(
+                key: isCurrent ? _dockContentKey : null,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (overlaySessions.isNotEmpty)
+                    ActiveSessionCarousel(
+                      sessions: overlaySessions,
+                      i18n: i18n,
+                      onOpenSession: (sessionId) {
+                        Navigator.of(
+                          context,
+                        ).push(buildSessionDetailRoute(sessionId: sessionId));
+                      },
+                    ),
+                  if (overlaySessions.isNotEmpty) const SizedBox(height: 6),
+                  if (!tinyMode)
+                    FractionallySizedBox(
+                      key: const ValueKey<String>(
+                        'mobile_bottom_capsule_panel',
+                      ),
+                      widthFactor: 0.96,
+                      child: _FloatingGlassPanel(
+                        padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
+                        shadowOpacity: 0.12,
+                        showTopHighlight: false,
+                        tinyMode: tinyMode,
+                        child: _buildBottomBar(context),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 

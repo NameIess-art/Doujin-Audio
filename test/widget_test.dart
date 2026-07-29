@@ -170,6 +170,37 @@ void main() {
         find.byKey(const ValueKey<String>('mobile_bottom_capsule_panel')),
       );
       expect(bottomCapsule.widthFactor, 0.96);
+      final fadeMaskFinder = find.byKey(
+        const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
+      );
+      final fadeMask = tester.widget<DecoratedBox>(fadeMaskFinder);
+      final fadeGradient =
+          (fadeMask.decoration as BoxDecoration).gradient! as LinearGradient;
+      final maskTheme = Theme.of(tester.element(fadeMaskFinder));
+      expect(fadeGradient.begin, Alignment.topCenter);
+      expect(fadeGradient.end, Alignment.bottomCenter);
+      expect(fadeGradient.stops, const <double>[0, 0.28, 0.68, 1]);
+      expect(fadeGradient.colors.first.a, 0);
+      expect(
+        fadeGradient.colors.last.a,
+        maskTheme.brightness == Brightness.dark ? 0.82 : 0.72,
+      );
+      expect(
+        tester.getSize(fadeMaskFinder).height,
+        152 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+      );
+      expect(
+        tester
+            .widget<IgnorePointer>(
+              find.byKey(
+                const ValueKey<String>(
+                  'mobile_bottom_capsule_fade_mask_pointer',
+                ),
+              ),
+            )
+            .ignoring,
+        isTrue,
+      );
       final playbackCarouselPageView = tester.widget<PageView>(
         find.descendant(
           of: find.byType(ActiveSessionCarousel),

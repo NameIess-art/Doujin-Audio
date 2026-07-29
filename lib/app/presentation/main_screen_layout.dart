@@ -183,12 +183,12 @@ extension _MainScreenLayout on _MainScreenState {
           child: Material(
             type: MaterialType.transparency,
             child: InkResponse(
+              key: ValueKey<String>('main_destination_ink_${item.labelKey}'),
               onTap: () => _switchPage(index),
               containedInkWell: true,
-              highlightShape: BoxShape.rectangle,
               radius: 32,
-              highlightColor: activeColor.withValues(alpha: 0.08),
-              splashColor: activeColor.withValues(alpha: 0.10),
+              highlightColor: Colors.transparent,
+              splashColor: Colors.transparent,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -313,8 +313,6 @@ extension _MainScreenLayout on _MainScreenState {
     bool tinyMode = false,
     bool isCurrent = true,
   }) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final systemBottom = MediaQuery.paddingOf(context).bottom;
     return Stack(
       key: key,
@@ -325,27 +323,10 @@ extension _MainScreenLayout on _MainScreenState {
             left: 0,
             right: 0,
             bottom: 0,
-            height: 152 + systemBottom,
-            child: IgnorePointer(
-              key: const ValueKey<String>(
-                'mobile_bottom_capsule_fade_mask_pointer',
-              ),
-              child: DecoratedBox(
-                key: const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: <Color>[
-                      cs.surface.withValues(alpha: 0),
-                      cs.surface.withValues(alpha: isDark ? 0.12 : 0.08),
-                      cs.surface.withValues(alpha: isDark ? 0.50 : 0.38),
-                      cs.surface.withValues(alpha: isDark ? 0.82 : 0.72),
-                    ],
-                    stops: const <double>[0, 0.28, 0.68, 1],
-                  ),
-                ),
-              ),
+            height: 200 + systemBottom,
+            child: const AppEdgeFadeMask(
+              key: ValueKey<String>('mobile_bottom_capsule_fade_mask'),
+              direction: AppEdgeFadeDirection.towardBottom,
             ),
           ),
         SafeArea(

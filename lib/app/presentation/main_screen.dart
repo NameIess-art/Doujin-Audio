@@ -33,6 +33,7 @@ import '../../features/settings/presentation/app_update_flow.dart';
 import '../../features/player/presentation/timer_tab.dart';
 import '../../features/player/presentation/active_session_carousel.dart';
 import '../../core/widgets/app_feedback.dart';
+import '../../core/widgets/app_edge_fade_mask.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/confirm_action_dialog.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';

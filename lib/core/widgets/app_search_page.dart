@@ -3,6 +3,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import '../../app/theme/app_design_tokens.dart';
+import 'app_edge_fade_mask.dart';
 import 'app_transitions.dart';
 
 PageRouteBuilder<T> buildAppSearchPageRoute<T>({
@@ -73,6 +74,16 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
           KeyedSubtree(
             key: const ValueKey<String>('app_search_body_layer'),
             child: body,
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: 300 + MediaQuery.paddingOf(context).top,
+            child: const AppEdgeFadeMask(
+              key: ValueKey<String>('app_search_top_fade_mask'),
+              direction: AppEdgeFadeDirection.towardTop,
+            ),
           ),
           Positioned(
             key: const ValueKey<String>('app_search_controls_overlay'),

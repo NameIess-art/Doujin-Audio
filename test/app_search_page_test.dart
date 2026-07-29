@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:nameless_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:nameless_audio/core/widgets/app_search_page.dart';
 
 void main() {
@@ -118,6 +119,37 @@ void main() {
       expect(
         find.byKey(const ValueKey<String>('app_search_controls_overlay')),
         findsOneWidget,
+      );
+      final fadeMaskFinder = find.byKey(
+        const ValueKey<String>('app_search_top_fade_mask'),
+      );
+      final fadeMask = tester.widget<AppEdgeFadeMask>(fadeMaskFinder);
+      expect(fadeMask.direction, AppEdgeFadeDirection.towardTop);
+      expect(tester.getSize(fadeMaskFinder).height, 324);
+      final fadeDecoration = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: fadeMaskFinder,
+          matching: find.byType(DecoratedBox),
+        ),
+      );
+      final fadeGradient =
+          (fadeDecoration.decoration as BoxDecoration).gradient!
+              as LinearGradient;
+      expect(fadeGradient.begin, Alignment.topCenter);
+      expect(fadeGradient.end, Alignment.bottomCenter);
+      expect(fadeGradient.stops, const <double>[0, 0.32, 0.72, 1]);
+      expect(fadeGradient.colors.first.a, 0.82);
+      expect(fadeGradient.colors.last.a, 0);
+      expect(
+        tester
+            .widget<IgnorePointer>(
+              find.descendant(
+                of: fadeMaskFinder,
+                matching: find.byType(IgnorePointer),
+              ),
+            )
+            .ignoring,
+        isTrue,
       );
       final stack = tester.widget<Stack>(
         find.byKey(const ValueKey<String>('app_search_stack')),

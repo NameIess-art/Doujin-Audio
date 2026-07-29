@@ -37,6 +37,7 @@ import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
+import 'package:nameless_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
@@ -166,6 +167,11 @@ void main() {
 
       await _pumpAppShell(tester);
 
+      final destinationInkResponse = tester.widget<InkResponse>(
+        find.byKey(const ValueKey<String>('main_destination_ink_nav_settings')),
+      );
+      expect(destinationInkResponse.highlightColor, Colors.transparent);
+      expect(destinationInkResponse.splashColor, Colors.transparent);
       final bottomCapsule = tester.widget<FractionallySizedBox>(
         find.byKey(const ValueKey<String>('mobile_bottom_capsule_panel')),
       );
@@ -173,9 +179,17 @@ void main() {
       final fadeMaskFinder = find.byKey(
         const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
       );
-      final fadeMask = tester.widget<DecoratedBox>(fadeMaskFinder);
+      final fadeMask = tester.widget<AppEdgeFadeMask>(fadeMaskFinder);
+      expect(fadeMask.direction, AppEdgeFadeDirection.towardBottom);
+      final fadeMaskDecoration = tester.widget<DecoratedBox>(
+        find.descendant(
+          of: fadeMaskFinder,
+          matching: find.byType(DecoratedBox),
+        ),
+      );
       final fadeGradient =
-          (fadeMask.decoration as BoxDecoration).gradient! as LinearGradient;
+          (fadeMaskDecoration.decoration as BoxDecoration).gradient!
+              as LinearGradient;
       final maskTheme = Theme.of(tester.element(fadeMaskFinder));
       expect(fadeGradient.begin, Alignment.topCenter);
       expect(fadeGradient.end, Alignment.bottomCenter);
@@ -183,19 +197,18 @@ void main() {
       expect(fadeGradient.colors.first.a, 0);
       expect(
         fadeGradient.colors.last.a,
-        maskTheme.brightness == Brightness.dark ? 0.82 : 0.72,
+        maskTheme.brightness == Brightness.dark ? 0.90 : 0.82,
       );
       expect(
         tester.getSize(fadeMaskFinder).height,
-        152 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+        200 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
       );
       expect(
         tester
             .widget<IgnorePointer>(
-              find.byKey(
-                const ValueKey<String>(
-                  'mobile_bottom_capsule_fade_mask_pointer',
-                ),
+              find.descendant(
+                of: fadeMaskFinder,
+                matching: find.byType(IgnorePointer),
               ),
             )
             .ignoring,

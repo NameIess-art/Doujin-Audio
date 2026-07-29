@@ -39,7 +39,7 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
             key: ValueKey<String>('playlist_skeleton_card_$index'),
             height: _cardHeight,
             margin: const EdgeInsets.only(bottom: AppSpacing.xs),
-            padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
+            padding: const EdgeInsets.all(AppSpacing.xs),
             decoration: BoxDecoration(
               color: cs.surfaceContainerLow,
               borderRadius: AppRadius.borderCard,
@@ -55,7 +55,7 @@ class _PlaylistLoadingSkeleton extends StatelessWidget {
                       borderRadius: AppRadius.borderCard,
                     ),
                   ),
-                  const SizedBox(width: 14),
+                  const SizedBox(width: AppSpacing.xs),
                   Expanded(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -383,7 +383,8 @@ class _SessionListCard extends ConsumerWidget {
                   onOpen();
                 },
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 7, 10, 6),
+                  key: ValueKey<String>('playlist_card_content_$sessionId'),
+                  padding: const EdgeInsets.all(AppSpacing.xs),
                   child: Row(
                     children: [
                       if (showCover) ...[
@@ -396,7 +397,7 @@ class _SessionListCard extends ConsumerWidget {
                           duration: track?.duration,
                           detailDuration: detailDuration,
                         ),
-                        const SizedBox(width: 14),
+                        const SizedBox(width: AppSpacing.xs),
                       ],
                       Expanded(
                         child: Semantics(

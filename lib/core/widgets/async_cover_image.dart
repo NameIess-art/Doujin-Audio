@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -642,6 +643,7 @@ class RetryingNetworkImage extends ConsumerWidget {
       cacheWidth: cacheWidth,
       useDefaultCacheWidth: useDefaultCacheWidth,
     );
+    final displayMode = ref.watch(coverImageDisplayModeProvider);
     return RetryingImage(
       retryKey: trimmedUrl,
       imageProviderBuilder: () => ResizeImage.resizeIfNeeded(
@@ -659,6 +661,7 @@ class RetryingNetworkImage extends ConsumerWidget {
       gaplessPlayback: gaplessPlayback,
       retryDelay: retryDelay,
       maxRetryAttempts: maxRetryAttempts,
+      displayMode: displayMode,
     );
   }
 }
@@ -783,6 +786,7 @@ class RetryingFileImage extends ConsumerWidget {
       cacheWidth: cacheWidth,
       useDefaultCacheWidth: useDefaultCacheWidth,
     );
+    final displayMode = ref.watch(coverImageDisplayModeProvider);
     return RetryingImage(
       retryKey: path,
       imageProviderBuilder: () => resizeFileImageIfNeeded(
@@ -802,6 +806,7 @@ class RetryingFileImage extends ConsumerWidget {
       retryDelay: retryDelay,
       maxRetryAttempts: maxRetryAttempts,
       deferRetryDuringInteraction: deferRetryDuringInteraction,
+      displayMode: displayMode,
     );
   }
 }
@@ -822,6 +827,7 @@ class RetryingImage extends StatefulWidget {
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
     this.deferRetryDuringInteraction = false,
+    this.displayMode = CoverImageDisplayMode.fill,
   });
 
   final Object retryKey;
@@ -837,6 +843,7 @@ class RetryingImage extends StatefulWidget {
   final Duration retryDelay;
   final int maxRetryAttempts;
   final bool deferRetryDuringInteraction;
+  final CoverImageDisplayMode displayMode;
 
   @override
   State<RetryingImage> createState() => _RetryingImageState();
@@ -896,38 +903,73 @@ class _RetryingImageState extends State<RetryingImage> {
   @override
   Widget build(BuildContext context) {
     final provider = widget.imageProviderBuilder();
-    return Image(
-      key: ValueKey('${widget.retryKey}#$_retryAttempt'),
-      image: provider,
-      fit: widget.fit,
-      alignment: widget.alignment,
-      color: widget.color,
-      colorBlendMode: widget.colorBlendMode,
-      filterQuality: widget.filterQuality,
-      gaplessPlayback: widget.gaplessPlayback,
-      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-        if (wasSynchronouslyLoaded) return child;
-        return AnimatedOpacity(
-          opacity: frame == null ? 0 : 1,
-          duration: kCoverImageFadeDuration,
-          curve: Curves.easeInOutSine,
-          child: child,
+    Widget image({required BoxFit? fit, required bool primary}) {
+      return Image(
+        key: ValueKey(
+          '${widget.retryKey}#$_retryAttempt${primary ? '' : '#backdrop'}',
+        ),
+        image: provider,
+        fit: fit,
+        alignment: widget.alignment,
+        color: widget.color,
+        colorBlendMode: widget.colorBlendMode,
+        filterQuality: widget.filterQuality,
+        gaplessPlayback: widget.gaplessPlayback,
+        frameBuilder: primary
+            ? (context, child, frame, wasSynchronouslyLoaded) {
+                if (wasSynchronouslyLoaded) return child;
+                return AnimatedOpacity(
+                  opacity: frame == null ? 0 : 1,
+                  duration: kCoverImageFadeDuration,
+                  curve: Curves.easeInOutSine,
+                  child: child,
+                );
+              }
+            : null,
+        loadingBuilder: primary
+            ? (context, child, loadingProgress) {
+                if (loadingProgress == null) {
+                  return child;
+                }
+                final loadingBuilder = widget.loadingBuilder;
+                return loadingBuilder != null
+                    ? loadingBuilder(context, child, loadingProgress)
+                    : CoverLoadingArtwork(
+                        placeholder: widget.fallbackBuilder(context),
+                      );
+              }
+            : null,
+        errorBuilder: primary
+            ? (context, error, stackTrace) {
+                _scheduleRetry(provider);
+                return widget.fallbackBuilder(context);
+              }
+            : (context, error, stackTrace) => const SizedBox.expand(),
+      );
+    }
+
+    switch (widget.displayMode) {
+      case CoverImageDisplayMode.fill:
+        return image(fit: widget.fit, primary: true);
+      case CoverImageDisplayMode.stretch:
+        return image(fit: BoxFit.fill, primary: true);
+      case CoverImageDisplayMode.tile:
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRect(
+              child: ImageFiltered(
+                imageFilter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Transform.scale(
+                  scale: 1.08,
+                  child: image(fit: BoxFit.cover, primary: false),
+                ),
+              ),
+            ),
+            image(fit: BoxFit.contain, primary: true),
+          ],
         );
-      },
-      loadingBuilder: (context, child, loadingProgress) {
-        if (loadingProgress == null) {
-          return child;
-        }
-        final loadingBuilder = widget.loadingBuilder;
-        return loadingBuilder != null
-            ? loadingBuilder(context, child, loadingProgress)
-            : CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
-      },
-      errorBuilder: (context, error, stackTrace) {
-        _scheduleRetry(provider);
-        return widget.fallbackBuilder(context);
-      },
-    );
+    }
   }
 }
 

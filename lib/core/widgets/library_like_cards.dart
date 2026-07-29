@@ -13,7 +13,7 @@ const _libraryLikeInfoLineHeight = 16.0;
 class LibraryLikeCardMetrics {
   const LibraryLikeCardMetrics._();
 
-  static const double rootTileHeight = 148;
+  static const double rootTileHeight = 164;
   static const double contentHeight = 140;
   static const double infoBlockHeight = 96;
   static const double titleBlockHeight = 38;
@@ -21,7 +21,9 @@ class LibraryLikeCardMetrics {
   static const double coverRadius = 12;
   static const double cardRadius = 14;
   static const double actionButtonSize = 40;
-  static const EdgeInsets rootTilePadding = EdgeInsets.fromLTRB(12, 2, 12, 2);
+  static const EdgeInsets rootTilePadding = EdgeInsets.symmetric(
+    horizontal: AppSpacing.sm,
+  );
 
   static RoundedRectangleBorder cardShape(
     ColorScheme colorScheme, {
@@ -60,7 +62,7 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
       color: colorScheme.surfaceContainerLow,
       elevation: 0,
       child: const SizedBox(
-        height: 158,
+        height: LibraryLikeCardMetrics.rootTileHeight,
         width: double.infinity,
         child: ShimmerLoader(
           child: Padding(

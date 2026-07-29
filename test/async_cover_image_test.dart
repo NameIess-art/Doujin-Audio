@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -371,5 +372,42 @@ void main() {
     await tester.pump();
 
     expect(providerBuilds, 2);
+  });
+
+  testWidgets('RetryingImage renders every cover display mode', (tester) async {
+    final imageBytes = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    );
+
+    Widget subject(CoverImageDisplayMode mode) {
+      return MaterialApp(
+        home: SizedBox(
+          width: 120,
+          height: 90,
+          child: RetryingImage(
+            retryKey: mode,
+            imageProviderBuilder: () => MemoryImage(imageBytes),
+            fallbackBuilder: (_) => const Text('fallback'),
+            fit: BoxFit.cover,
+            displayMode: mode,
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(subject(CoverImageDisplayMode.fill));
+    expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.cover);
+
+    await tester.pumpWidget(subject(CoverImageDisplayMode.stretch));
+    expect(tester.widget<Image>(find.byType(Image)).fit, BoxFit.fill);
+
+    await tester.pumpWidget(subject(CoverImageDisplayMode.tile));
+    final images = tester.widgetList<Image>(find.byType(Image)).toList();
+    expect(images, hasLength(2));
+    expect(
+      images.map((image) => image.fit),
+      containsAll(<BoxFit>[BoxFit.cover, BoxFit.contain]),
+    );
+    expect(find.byType(ImageFiltered), findsOneWidget);
   });
 }

@@ -48,6 +48,7 @@ class SettingsState {
     this.bottomNavigationStyle = BottomNavigationStyle.capsule,
     this.playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact,
     this.coverImageResolution = CoverImageResolution.balanced,
+    this.coverImageDisplayMode = CoverImageDisplayMode.fill,
     this.asmrDownloadDestinationRoot,
     this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
     this.asmrDownloadSaveMetadata = true,
@@ -88,6 +89,7 @@ class SettingsState {
   final BottomNavigationStyle bottomNavigationStyle;
   final PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle;
   final CoverImageResolution coverImageResolution;
+  final CoverImageDisplayMode coverImageDisplayMode;
   final String? asmrDownloadDestinationRoot;
   final AsmrDownloadConflictPolicy asmrDownloadConflictPolicy;
   final bool asmrDownloadSaveMetadata;
@@ -125,6 +127,7 @@ class SettingsState {
         other.bottomNavigationStyle == bottomNavigationStyle &&
         other.playbackDetailSubtitleStyle == playbackDetailSubtitleStyle &&
         other.coverImageResolution == coverImageResolution &&
+        other.coverImageDisplayMode == coverImageDisplayMode &&
         other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
         other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy &&
         other.asmrDownloadSaveMetadata == asmrDownloadSaveMetadata &&
@@ -167,6 +170,7 @@ class SettingsState {
     bottomNavigationStyle,
     playbackDetailSubtitleStyle,
     coverImageResolution,
+    coverImageDisplayMode,
     asmrDownloadDestinationRoot,
     asmrDownloadConflictPolicy,
     asmrDownloadSaveMetadata,

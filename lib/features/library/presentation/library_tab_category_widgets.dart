@@ -1,6 +1,6 @@
 part of 'library_tab.dart';
 
-extension _LibraryTabCategoryView on _LibraryTabState {
+extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
   Set<String> get _selectedTermsForCurrentCategory {
     return switch (_categoryType) {
       AudioLibraryCategoryType.tags => _selectedTagTerms,
@@ -142,7 +142,6 @@ extension _LibraryTabCategoryView on _LibraryTabState {
     required double topPadding,
     required double bottomPadding,
     required double cacheExtent,
-    required bool canPullRefresh,
     required int structureRevision,
     required int detailRevision,
     required int coverGeneration,
@@ -167,7 +166,6 @@ extension _LibraryTabCategoryView on _LibraryTabState {
         final terms = _termsForCategory(snapshot);
         final entries = _filterCategoryEntries(snapshot);
         _scheduleLibraryCoverWarmup(
-          libraryFacade: libraryFacade,
           tracks: entries.map((entry) => entry.firstTrack),
           structureRevision: structureRevision,
           detailRevision: detailRevision,
@@ -177,17 +175,13 @@ extension _LibraryTabCategoryView on _LibraryTabState {
         final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
         final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
 
-        Widget list = ListView.builder(
+        final list = ListView.builder(
           key: ValueKey('library_category_${_categoryType.name}'),
           controller: _scrollController,
           padding: EdgeInsets.fromLTRB(16, topPadding, 16, bottomPadding),
           cacheExtent: cacheExtent,
           clipBehavior: Clip.none,
-          physics: canPullRefresh
-              ? const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
-                )
-              : const BouncingScrollPhysics(),
+          physics: const BouncingScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
           itemCount: itemCount,
           itemBuilder: (context, index) {
@@ -249,20 +243,6 @@ extension _LibraryTabCategoryView on _LibraryTabState {
           },
         );
 
-        if (canPullRefresh) {
-          list = GlassRefreshIndicator(
-            key: _refreshIndicatorKey,
-            color: Theme.of(context).colorScheme.primary,
-            backgroundColor: Theme.of(
-              context,
-            ).colorScheme.surfaceContainerHighest,
-            onRefresh: _runLibraryPullRefresh,
-            edgeOffset: topPadding,
-            displacement: 32,
-            triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
-            child: list,
-          );
-        }
         return PlaceholderContentTransition(
           showPlaceholder: false,
           placeholder: _LibraryLoadingSkeleton(
@@ -827,20 +807,17 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     bool? useFeaturedCardOverride,
   }) {
     if (entry.isFolder) {
-      return SizedBox(
-        height: cardHeight,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-          child: _RootFolderCardContent(
-            folderPath: entry.path,
-            folderName: entry.title,
-            folderDuration: folder?.totalDuration ?? Duration.zero,
-            detail: entry.detail,
-            detailLoading: false,
-            expanded: false,
-            hasChildren: false,
-            onPlay: firstTrack == null ? () {} : () => _play(context, playback),
-          ),
+      return Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: _RootFolderCardContent(
+          folderPath: entry.path,
+          folderName: entry.title,
+          folderDuration: folder?.totalDuration ?? Duration.zero,
+          detail: entry.detail,
+          detailLoading: false,
+          expanded: false,
+          hasChildren: false,
+          onPlay: firstTrack == null ? () {} : () => _play(context, playback),
         ),
       );
     }
@@ -848,7 +825,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     Widget buildSingleFileContent(bool useFeaturedCard) {
       if (firstTrack != null && useFeaturedCard) {
         return ListTile(
-          contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+          contentPadding: LibraryLikeCardMetrics.rootTilePadding,
           minTileHeight: cardHeight,
           title: _SingleMediaFileCardContent(
             track: firstTrack,

@@ -79,6 +79,7 @@ void main() {
           'uiBlurEffectEnabled': false,
           'hapticFeedbackEnabled': false,
           'coverImageResolution': CoverImageResolution.ultraHigh.name,
+          'coverImageDisplayMode': CoverImageDisplayMode.tile.name,
           'asmrDownloadDestinationRoot': '/backup/asmr',
           'asmrDownloadConflictPolicy': AsmrDownloadConflictPolicy.skip.name,
           'audioDeviceDisconnectBehavior':
@@ -109,6 +110,7 @@ void main() {
       expect(repository.multiThreadPlaybackEnabled, isTrue);
       expect(repository.notificationsEnabled, isFalse);
       expect(repository.coverImageResolution, CoverImageResolution.ultraHigh);
+      expect(repository.coverImageDisplayMode, CoverImageDisplayMode.tile);
       expect(repository.startupPage, StartupPage.asmrOne);
       expect(repository.bottomNavigationStyle, BottomNavigationStyle.bar);
       expect(repository.asmrDownloadDestinationRoot, '/backup/asmr');
@@ -155,6 +157,7 @@ void main() {
         ..dlsiteMetadataLanguage = ContentLanguagePreference.en
         ..cardPositionsLocked = true
         ..asmrPlaybackCacheEnabled = true
+        ..coverImageDisplayMode = CoverImageDisplayMode.stretch
         ..asmrDownloadDestinationRoot = '/downloads/asmr'
         ..asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.skip
         ..audioDeviceDisconnectBehavior =
@@ -214,6 +217,11 @@ void main() {
               (state) => state.asmrPlaybackCacheEnabled,
               'asmr playback cache',
               isTrue,
+            )
+            .having(
+              (state) => state.coverImageDisplayMode,
+              'cover display mode',
+              CoverImageDisplayMode.stretch,
             )
             .having(
               (state) => state.asmrDownloadDestinationRoot,
@@ -289,6 +297,7 @@ void main() {
         state.playbackDetailSubtitleStyle,
         PlaybackDetailSubtitleStyle.compact,
       );
+      expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
     });
 
     test(
@@ -335,6 +344,28 @@ void main() {
         );
       },
     );
+
+    test('cover display mode persists with safe fallback', () async {
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      await repository.setCoverImageDisplayMode(CoverImageDisplayMode.tile);
+
+      final restored = SettingsRepository();
+      addTearDown(restored.dispose);
+      await restored.loadPersistedState();
+      expect(restored.coverImageDisplayMode, CoverImageDisplayMode.tile);
+
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'playback_settings_v1': json.encode(<String, Object?>{
+          'coverImageDisplayMode': 'unknown',
+        }),
+      });
+      final invalid = SettingsRepository();
+      addTearDown(invalid.dispose);
+      await invalid.loadPersistedState();
+      expect(invalid.coverImageDisplayMode, CoverImageDisplayMode.fill);
+    });
 
     test('portrait lock persists and defaults to disabled', () async {
       final repository = SettingsRepository();

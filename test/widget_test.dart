@@ -224,7 +224,7 @@ void main() {
     await tester.pump();
   });
 
-  testWidgets('ASMR initial shell keeps category and search controls visible', (
+  testWidgets('ASMR main page moves category and search controls to search', (
     tester,
   ) async {
     final harness = await _pumpAppShell(tester, includePlaybackSession: false);
@@ -234,12 +234,50 @@ void main() {
 
     expect(
       find.text(harness.language.tr('asmr_category_collected')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text(harness.language.tr('loading_dot')), findsOneWidget);
-    expect(find.byType(TextField), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('asmr_search_button')),
+      findsOneWidget,
+    );
     expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
     expect(find.text(harness.language.tr('asmr_empty_category')), findsNothing);
+
+    await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(harness.language.tr('asmr_category_collected')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asmr_search_collected')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('recent_search_list')),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asmr_search_button')),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -319,6 +357,18 @@ void main() {
       await tester.pump();
       await tester.pump();
 
+      await tester.tap(
+        find.byKey(const ValueKey<String>('asmr_search_button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('app_search_field')),
+        'sleep',
+      );
+      await tester.pump(const Duration(milliseconds: 260));
+
       final recommendationLabel = harness.languageProvider.tr(
         'asmr_category_recommendation',
       );
@@ -326,7 +376,7 @@ void main() {
       await tester.pump();
 
       final recommendationList = find.byKey(
-        const ValueKey(AsmrCategoryType.recommendation),
+        const ValueKey<String>('asmr_search_recommendation'),
       );
       expect(recommendationList, findsOneWidget);
       final recommendationSkeletons = find.descendant(
@@ -337,7 +387,7 @@ void main() {
         of: recommendationList,
         matching: find.text(harness.languageProvider.tr('asmr_empty_category')),
       );
-      expect(controller.recommendationRefreshCount, 0);
+      expect(controller.recommendationRefreshCount, 1);
       expect(recommendationSkeletons, findsWidgets);
       expect(recommendationEmptyState, findsNothing);
 

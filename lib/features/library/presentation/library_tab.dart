@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
@@ -36,6 +35,7 @@ import 'library_cover_ui_controller.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
+import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/content_bound_reorder_area.dart';
 import '../../../core/widgets/library_like_cards.dart';
@@ -63,6 +63,7 @@ part 'library_tab_empty_scan.dart';
 part 'library_tab_tree_widgets.dart';
 part 'library_tab_category_widgets.dart';
 part 'library_tab_edit.dart';
+part 'library_search_page.dart';
 
 String _displaySourceName(String sourcePath) {
   return PathDisplay.folderName(sourcePath);
@@ -87,6 +88,40 @@ Future<String?> _deferLibraryCardCoverLookup({
     );
   });
   return completer.future;
+}
+
+final class _LibraryCoverWarmupScheduler {
+  String? _lastSignature;
+
+  void schedule({
+    required LibraryCoverUiController controller,
+    required bool Function() canCommit,
+    required Iterable<MusicTrack?> tracks,
+    required int structureRevision,
+    required int detailRevision,
+    required int coverGeneration,
+    required String scope,
+  }) {
+    final warmupTracks = tracks
+        .whereType<MusicTrack>()
+        .where((track) => !track.isVideo)
+        .take(12)
+        .toList(growable: false);
+    if (warmupTracks.isEmpty) return;
+    final signature = <String>[
+      scope,
+      structureRevision.toString(),
+      detailRevision.toString(),
+      coverGeneration.toString(),
+      for (final track in warmupTracks) track.path,
+    ].join('|');
+    if (_lastSignature == signature) return;
+    _lastSignature = signature;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!canCommit() || _lastSignature != signature) return;
+      controller.warmupTracks(warmupTracks);
+    });
+  }
 }
 
 enum _LibraryMoreAction {
@@ -123,36 +158,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     if (mounted) setState(() {});
   }
 
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
-  Timer? _searchDebounceTimer;
   Timer? _startupRefreshIdleTimer;
   bool _startupRefreshWaiting = false;
   bool _startupLibraryRefreshCompleted = false;
   bool _initialLibraryContentReady = false;
-  FilteredLibraryTreeResult? _visibleSearchResult;
-  String _visibleSearchQuery = '';
-  int? _visibleSearchRevision;
-  String? _pendingSearchKey;
-  AudioLibraryCategoryType _categoryType = AudioLibraryCategoryType.all;
-  bool _hasSwitchedCategory = false;
-  final Set<String> _selectedTagTerms = <String>{};
-  final Set<String> _selectedVoiceActorTerms = <String>{};
-  final Set<String> _selectedCircleTerms = <String>{};
-  final Map<AudioLibraryCategoryType, String> _termSearchQueries = {};
-  AudioLibraryCategorySnapshot? _lastCategoryFilterSnapshot;
-  AudioLibraryCategoryType? _lastCategoryFilterType;
-  String? _lastCategoryFilterKey;
-  List<AudioLibraryCategoryEntry> _lastCategoryFilterResult = const [];
-  String get _termSearchQuery => _termSearchQueries[_categoryType] ?? '';
-  set _termSearchQuery(String value) {
-    if (value.isEmpty) {
-      _termSearchQueries.remove(_categoryType);
-    } else {
-      _termSearchQueries[_categoryType] = value;
-    }
-  }
-
   bool _refreshTriggeredInCurrentScroll = false;
   bool _isReordering = false;
 
@@ -162,7 +171,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   final ScrollController _scrollController = ScrollController();
   int? _categorySnapshotRequestStructureRevision;
   int? _categorySnapshotRequestDetailRevision;
-  String? _lastLibraryCoverWarmupSignature;
+  final _coverWarmupScheduler = _LibraryCoverWarmupScheduler();
   int? _durationBackfillStructureRevision;
   late final String _durationBackfillCommitKey;
 
@@ -170,59 +179,17 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   int get tabIndex => 1;
 
   @override
-  double get headerControlsFullHeight =>
-      _categoryType == AudioLibraryCategoryType.all ? 86.0 : 42.0;
+  double get headerControlsFullHeight => 0;
 
   @override
   ScrollController get mainScrollController => _scrollController;
 
-  String get _effectiveSearchQuery =>
-      _categoryType == AudioLibraryCategoryType.all ? _searchQuery : '';
-
-  void _setLocalState(VoidCallback fn) => setState(fn);
-
-  void _ensureFilteredSearchSnapshot({
-    required LibraryFacade libraryFacade,
-    required String query,
-    required int structureRevision,
-  }) {
-    if (query.isEmpty ||
-        (_visibleSearchQuery == query &&
-            _visibleSearchRevision == structureRevision) ||
-        _pendingSearchKey == '$structureRevision|$query') {
-      return;
-    }
-    final requestKey = '$structureRevision|$query';
-    _pendingSearchKey = requestKey;
-    final searchFuture = libraryFacade.loadLibraryTree().then((tree) {
-      final request = LibrarySearchSnapshotRequest(
-        tree: tree,
-        query: query,
-        structureRevision: structureRevision,
-      );
-      return libraryTreeTrackCount(tree) > 200
-          ? compute(buildFilteredLibraryTreeSnapshot, request)
-          : Future<FilteredLibraryTreeResult>.microtask(
-              () => buildFilteredLibraryTreeSnapshot(request),
-            );
-    });
-    unawaited(
-      searchFuture.then((result) {
-        if (!mounted || _pendingSearchKey != requestKey) return;
-        UiInteractionCoordinator.instance.scheduleCommit(
-          key: 'library_search',
-          priority: 5,
-          commit: () {
-            if (!mounted || _pendingSearchKey != requestKey) return;
-            setState(() {
-              _visibleSearchResult = result;
-              _visibleSearchQuery = query;
-              _visibleSearchRevision = structureRevision;
-              _pendingSearchKey = null;
-            });
-          },
-        );
-      }),
+  void _openSearchPage() {
+    Navigator.of(context).push(
+      buildAppPageRoute<void>(
+        context: context,
+        child: const _LibrarySearchPage(),
+      ),
     );
   }
 
@@ -532,7 +499,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _scheduleLibraryCoverWarmup({
-    required LibraryFacade libraryFacade,
     required Iterable<MusicTrack?> tracks,
     required int structureRevision,
     required int detailRevision,
@@ -540,29 +506,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     String scope = '',
   }) {
     if (_isReordering) return;
-    final warmupTracks = tracks
-        .whereType<MusicTrack>()
-        .where((track) => !track.isVideo)
-        .take(12)
-        .toList(growable: false);
-    if (warmupTracks.isEmpty) return;
-    final signature = <String>[
-      scope,
-      structureRevision.toString(),
-      detailRevision.toString(),
-      coverGeneration.toString(),
-      for (final track in warmupTracks) track.path,
-    ].join('|');
-    if (_lastLibraryCoverWarmupSignature == signature) return;
-    _lastLibraryCoverWarmupSignature = signature;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted ||
-          _isReordering ||
-          _lastLibraryCoverWarmupSignature != signature) {
-        return;
-      }
-      ref.read(libraryCoverUiControllerProvider).warmupTracks(warmupTracks);
-    });
+    if (_isReordering) return;
+    _coverWarmupScheduler.schedule(
+      controller: ref.read(libraryCoverUiControllerProvider),
+      canCommit: () => mounted && !_isReordering,
+      tracks: tracks,
+      structureRevision: structureRevision,
+      detailRevision: detailRevision,
+      coverGeneration: coverGeneration,
+      scope: scope,
+    );
   }
 
   Iterable<MusicTrack?> _libraryCoverWarmupTracksForTree(
@@ -586,9 +539,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     _startupRefreshIdleTimer?.cancel();
     UiInteractionCoordinator.instance.cancelCommit(_durationBackfillCommitKey);
     disposeTabState();
-    _searchDebounceTimer?.cancel();
     _scanCoordinator.dispose();
-    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -668,25 +619,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         detailRevision: detailRevision,
       );
     }
-    final searchQuery = _effectiveSearchQuery;
-    _ensureFilteredSearchSnapshot(
-      libraryFacade: libraryFacade,
-      query: searchQuery,
-      structureRevision: listStateStructureRevision,
-    );
-    final visibleSearchResult =
-        _visibleSearchQuery == searchQuery &&
-            _visibleSearchRevision == listStateStructureRevision
-        ? _visibleSearchResult
-        : null;
-    final tree = searchQuery.isEmpty
-        ? listStateRawTree
-        : visibleSearchResult?.tree ?? const <LibraryNode>[];
-    final matchCount = searchQuery.isEmpty
-        ? libraryHeaderAudioCount
-        : visibleSearchResult?.matchCount ?? 0;
-    final showSearchSkeleton =
-        searchQuery.isNotEmpty && visibleSearchResult == null;
+    final tree = listStateRawTree;
     final bottomInset = MobileOverlayInset.of(context);
 
     final headerControlsFullHeight = this.headerControlsFullHeight;
@@ -716,16 +649,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       _initialLibraryContentReady = true;
     }
     final showLibrarySkeleton =
-        _effectiveSearchQuery.isEmpty &&
         (libraryHeaderHasWatchedSources || hasLibrary) &&
         !_initialLibraryContentReady;
-    if (_categoryType == AudioLibraryCategoryType.all &&
-        _effectiveSearchQuery.isEmpty &&
-        !showLibrarySkeleton &&
+    if (!showLibrarySkeleton &&
         _startupLibraryRefreshCompleted &&
         listStateIsInitialized) {
       _scheduleLibraryCoverWarmup(
-        libraryFacade: libraryFacade,
         tracks: _libraryCoverWarmupTracksForTree(tree),
         structureRevision: listStateStructureRevision,
         detailRevision: detailRevision,
@@ -734,43 +663,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       );
     }
     final canPullRefresh = listStateCanPullRefresh;
-    Widget dynamicSearchBar() {
-      return _CollapsingSearchBar(
-        controller: _scrollController,
-        height: headerControlsFullHeight,
-        pinned: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildLibraryCategoryTabs(i18n),
-            if (_categoryType == AudioLibraryCategoryType.all)
-              _buildSearchBar(i18n, matchCount, libraryHeaderAudioCount),
-          ],
-        ),
-      );
-    }
-
-    Widget buildLibraryItem(BuildContext context, int index) {
-      if (index == tree.length) {
-        return const SizedBox.shrink(key: ValueKey('bottom_spacing_search'));
-      }
-      final node = tree[index];
-      final item = RepaintBoundary(
-        child: _effectiveSearchQuery.isNotEmpty
-            ? _LibraryTreeItem(
-                key: ValueKey(node.path),
-                node: node,
-                initiallyExpanded: true,
-                searchQuery: _effectiveSearchQuery,
-              )
-            : _LibraryTreeItem(key: ValueKey(node.path), node: node),
-      );
-
-      return KeyedSubtree(key: ValueKey(node.path), child: item)
-          .animate(delay: (index.clamp(0, 15) * 40).ms)
-          .fade(duration: 300.ms)
-          .slideY(begin: 0.15, duration: 300.ms, curve: Curves.easeOutCubic);
-    }
 
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {
       if (index == tree.length) {
@@ -793,48 +685,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       final relativeTop = listTopPadding;
       const relativeBottom = listBottomPadding;
 
-      if (showSearchSkeleton) {
-        return _LibraryLoadingSkeleton(
-          bottomInset: relativeBottom,
-          topInset: relativeTop,
-        );
-      }
-      if (_effectiveSearchQuery.isNotEmpty) {
-        return ListView(
-          physics: const AlwaysScrollableScrollPhysics(
-            parent: BouncingScrollPhysics(),
-          ),
-          padding: EdgeInsets.fromLTRB(
-            16,
-            relativeTop,
-            16,
-            relativeBottom + 12,
-          ),
-          children: [
-            SizedBox(
-              height: 300,
-              child: AppEmptyState(
-                icon: Icons.search_off_rounded,
-                title: hasLibrary
-                    ? i18n.tr('no_search_results')
-                    : i18n.tr('no_audio_files'),
-                message: hasLibrary
-                    ? i18n.tr('search_try_another_term')
-                    : i18n.tr('import_audio_hint'),
-                actionLabel: hasLibrary ? i18n.tr('clear') : null,
-                actionIcon: Icons.clear_rounded,
-                onAction: hasLibrary
-                    ? () {
-                        _searchController.clear();
-                        _searchDebounceTimer?.cancel();
-                        _setLocalState(() => _searchQuery = '');
-                      }
-                    : null,
-              ),
-            ),
-          ],
-        );
-      }
       if (showLibrarySkeleton) {
         return _LibraryLoadingSkeleton(
           bottomInset: relativeBottom,
@@ -882,8 +732,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               notification.metrics.pixels < -68 &&
               !_refreshTriggeredInCurrentScroll &&
               canPullRefresh &&
-              !listStateIsScanning &&
-              _effectiveSearchQuery.isEmpty) {
+              !listStateIsScanning) {
             _refreshTriggeredInCurrentScroll = true;
             unawaited(
               AppInteractionFeedback.trigger(
@@ -904,11 +753,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             MediaQuery(
               data: MediaQuery.of(context).copyWith(
                 padding: EdgeInsets.only(
-                  top:
-                      headerControlsFullHeight +
-                      (_categoryType == AudioLibraryCategoryType.all
-                          ? 4.0
-                          : 0.0),
+                  top: headerControlsFullHeight + 4,
                   bottom: listViewportBottomInset,
                   right: 4,
                 ),
@@ -923,49 +768,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 scrollbarMainAxisMargin: isLandscape ? 8 : 0,
                 child: PlaceholderContentTransition(
                   showPlaceholder:
-                      !listStateIsInitialized ||
-                      showSearchSkeleton ||
-                      showLibrarySkeleton,
+                      !listStateIsInitialized || showLibrarySkeleton,
                   placeholder: _LibraryLoadingSkeleton(
                     bottomInset: listBottomPadding,
                     topInset: listTopPadding,
                   ),
-                  content:
-                      _categoryType == AudioLibraryCategoryType.all &&
-                          tree.isEmpty
+                  content: tree.isEmpty
                       ? refreshableEmptyBody()
-                      : _categoryType != AudioLibraryCategoryType.all
-                      ? _buildCategoryBody(
-                          libraryFacade: libraryFacade,
-                          i18n: i18n,
-                          topPadding: listTopPadding,
-                          bottomPadding: listBottomPadding,
-                          cacheExtent: listCacheExtent,
-                          canPullRefresh: canPullRefresh,
-                          structureRevision: listStateStructureRevision,
-                          detailRevision: detailRevision,
-                          coverGeneration: coverGeneration,
-                        )
-                      : _effectiveSearchQuery.isNotEmpty
-                      ? ListView.builder(
-                          key: const ValueKey('search_results_list'),
-                          controller: _scrollController,
-                          padding: EdgeInsets.fromLTRB(
-                            16.0,
-                            listTopPadding,
-                            16.0,
-                            listBottomPadding,
-                          ),
-                          cacheExtent: listCacheExtent,
-                          clipBehavior: Clip.none,
-                          physics: const AlwaysScrollableScrollPhysics(
-                            parent: BouncingScrollPhysics(),
-                          ),
-                          keyboardDismissBehavior:
-                              ScrollViewKeyboardDismissBehavior.onDrag,
-                          itemCount: tree.length + 1,
-                          itemBuilder: buildLibraryItem,
-                        )
                       : GlassRefreshIndicator(
                           key: _refreshIndicatorKey,
                           color: Theme.of(context).colorScheme.primary,
@@ -1099,15 +908,20 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 subtitleFontSize: 11,
                 fitSubtitleToWidth: true,
                 collapseController: _scrollController,
-                collapseDistance: headerControlsFullHeight,
                 floatingReveal: true,
                 floatingRevealDistance: 56,
                 trailing: SizedBox(
-                  width: 104 + (isLandscape ? 52 : 0),
+                  width: 152 + (isLandscape ? 52 : 0),
                   height: 44,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
+                      IconButton(
+                        key: const ValueKey<String>('library_search_button'),
+                        onPressed: _openSearchPage,
+                        icon: const Icon(Icons.search_rounded),
+                        tooltip: i18n.tr('search'),
+                      ),
                       if (isLandscape)
                         IconButton(
                           onPressed: canPullRefresh && !libraryRefreshBusy
@@ -1208,54 +1022,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 ),
                 bottomSpacing: 4,
                 padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-                additionalChild: dynamicSearchBar(),
               ),
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-class _CollapsingSearchBar extends StatelessWidget {
-  const _CollapsingSearchBar({
-    required this.controller,
-    required this.height,
-    required this.pinned,
-    required this.child,
-  });
-
-  final ScrollController controller;
-  final double height;
-  final bool pinned;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: controller,
-      child: child,
-      builder: (context, child) {
-        final offset = controller.positions.length == 1
-            ? controller.positions.single.pixels
-            : 0.0;
-        final hidden = pinned ? 0.0 : offset.clamp(0.0, height);
-        return SizedBox(
-          height: height - hidden,
-          child: ClipRect(
-            child: OverflowBox(
-              maxHeight: height,
-              minHeight: height,
-              alignment: Alignment.topCenter,
-              child: Transform.translate(
-                offset: Offset(0, -hidden),
-                child: child,
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

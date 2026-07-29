@@ -38,6 +38,7 @@ class SettingsRepository {
   PlaybackDetailSubtitleStyle playbackDetailSubtitleStyle =
       PlaybackDetailSubtitleStyle.compact;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
+  CoverImageDisplayMode coverImageDisplayMode = CoverImageDisplayMode.fill;
   String? asmrDownloadDestinationRoot;
   AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
       AsmrDownloadConflictPolicy.overwrite;
@@ -100,6 +101,10 @@ class SettingsRepository {
       coverImageResolution = CoverImageResolution.values.firstWhere(
         (value) => value.name == playback['coverImageResolution'],
         orElse: () => CoverImageResolution.balanced,
+      );
+      coverImageDisplayMode = CoverImageDisplayMode.values.firstWhere(
+        (value) => value.name == playback['coverImageDisplayMode'],
+        orElse: () => CoverImageDisplayMode.fill,
       );
       asmrDownloadDestinationRoot = _optionalString(
         playback['asmrDownloadDestinationRoot'],
@@ -186,6 +191,7 @@ class SettingsRepository {
       'uiBlurEffectEnabled': uiBlurEffectEnabled,
       'hapticFeedbackEnabled': hapticFeedbackEnabled,
       'coverImageResolution': coverImageResolution.name,
+      'coverImageDisplayMode': coverImageDisplayMode.name,
       'asmrDownloadDestinationRoot': asmrDownloadDestinationRoot,
       'asmrDownloadConflictPolicy': asmrDownloadConflictPolicy.name,
       'asmrDownloadSaveMetadata': asmrDownloadSaveMetadata,
@@ -352,6 +358,12 @@ class SettingsRepository {
         update: () => coverImageResolution = resolution,
       );
 
+  Future<void> setCoverImageDisplayMode(CoverImageDisplayMode mode) =>
+      _setValue(
+        unchanged: coverImageDisplayMode == mode,
+        update: () => coverImageDisplayMode = mode,
+      );
+
   Future<void> setAsmrDownloadConflictPolicy(
     AsmrDownloadConflictPolicy policy,
   ) => _setValue(
@@ -445,6 +457,7 @@ class SettingsRepository {
     bottomNavigationStyle = BottomNavigationStyle.capsule;
     playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact;
     coverImageResolution = CoverImageResolution.balanced;
+    coverImageDisplayMode = CoverImageDisplayMode.fill;
     asmrDownloadDestinationRoot = null;
     asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
     asmrDownloadSaveMetadata = true;
@@ -496,6 +509,7 @@ class SettingsRepository {
         bottomNavigationStyle: bottomNavigationStyle,
         playbackDetailSubtitleStyle: playbackDetailSubtitleStyle,
         coverImageResolution: coverImageResolution,
+        coverImageDisplayMode: coverImageDisplayMode,
         asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
         asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,
         asmrDownloadSaveMetadata: asmrDownloadSaveMetadata,

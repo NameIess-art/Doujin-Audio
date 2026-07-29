@@ -34,6 +34,7 @@ import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
 import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
+import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
@@ -431,6 +432,62 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('ASMR work cards blend into the page surface', (tester) async {
+    final controller = _QueuedEmptyAsmrLibraryController();
+    addTearDown(controller.dispose);
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final workTitle = find.text('Loaded work', findRichText: true);
+    expect(workTitle, findsOneWidget);
+    final workCard = tester.widget<Card>(
+      find.ancestor(of: workTitle, matching: find.byType(Card)).first,
+    );
+    expect(workCard.color, Colors.transparent);
+    expect(workCard.elevation, 0);
+    expect(workCard.shadowColor, Colors.transparent);
+    expect(workCard.surfaceTintColor, Colors.transparent);
+    expect((workCard.shape as RoundedRectangleBorder).side, BorderSide.none);
+    final swipeCard = tester.widget<SwipeRevealCard>(
+      find.ancestor(of: workTitle, matching: find.byType(SwipeRevealCard)),
+    );
+    expect(
+      swipeCard.closedColor,
+      Theme.of(tester.element(workTitle)).colorScheme.surface,
+    );
+    final collectedCategory = find.byKey(
+      const ValueKey(AsmrCategoryType.collected),
+    );
+    final contentListFinder = find.descendant(
+      of: collectedCategory,
+      matching: find.byKey(const ValueKey('content')),
+    );
+    final contentList = tester.widget<ListView>(contentListFinder);
+    final listPadding = contentList.padding!.resolve(TextDirection.ltr);
+    expect(listPadding.left, LibraryLikeCardMetrics.listHorizontalPadding);
+    expect(listPadding.right, LibraryLikeCardMetrics.listHorizontalPadding);
+    final workCards = find.descendant(
+      of: contentListFinder,
+      matching: find.byType(SwipeRevealCard),
+    );
+    expect(workCards, findsNWidgets(2));
+    expect(
+      tester.getBottomLeft(workCards.at(0)).dy,
+      closeTo(tester.getTopLeft(workCards.at(1)).dy, 0.01),
+    );
+  });
 
   testWidgets('ASMR pagination shows progress without a pull-up hint', (
     tester,
@@ -1569,6 +1626,26 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     tags: const <String>[],
   );
 
+  static final AsmrWork _secondCollectedWork = AsmrWork(
+    id: 2,
+    title: 'Second loaded work',
+    circleName: 'Circle',
+    sourceId: 'RJ000002',
+    sourceType: 'DLSITE',
+    sourceUrl: '',
+    coverUrl: '',
+    thumbnailUrl: '',
+    mainCoverUrl: '',
+    releaseDate: null,
+    createDate: null,
+    duration: Duration.zero,
+    dlCount: 0,
+    reviewCount: 0,
+    rating: 0,
+    voiceActors: const <String>[],
+    tags: const <String>[],
+  );
+
   @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
     scheduleMicrotask(notifyListeners);
@@ -1590,7 +1667,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   @override
   List<AsmrWork> worksFor(AsmrCategoryType category) =>
       category == AsmrCategoryType.collected
-      ? <AsmrWork>[_collectedWork]
+      ? <AsmrWork>[_collectedWork, _secondCollectedWork]
       : const <AsmrWork>[];
 
   @override

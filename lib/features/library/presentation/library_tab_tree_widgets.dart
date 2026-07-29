@@ -181,7 +181,6 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final folder = _loadedFolder ?? widget.folder;
     final isRootFolder = folder.depth == 0;
     final rootDetailState = isRootFolder
@@ -193,10 +192,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         : null;
     final hasChildren =
         folder.children.isNotEmpty || folder.totalTrackCount > 0;
-    final cardShape = LibraryLikeCardMetrics.cardShape(
-      cs,
-      borderAlpha: isDark ? 0.26 : 0.42,
-    );
+    const cardShape = LibraryLikeCardMetrics.cardShape;
     final rootDetail = rootDetailState?.detail;
     final isRootDetailLoading = rootDetailState?.isLoading ?? false;
 
@@ -357,9 +353,8 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     }
 
     return SwipeRevealCard(
-      margin: const EdgeInsets.only(bottom: 6.0),
       shape: cardShape,
-      closedColor: cs.surfaceContainerLow,
+      closedColor: cs.surface,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio_folder'),
       secondaryActionLabel: i18n.tr('audio_detail'),
@@ -377,7 +372,10 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         margin: EdgeInsets.zero,
         clipBehavior: Clip.antiAlias,
         shape: cardShape,
-        color: cs.surfaceContainerLow,
+        color: Colors.transparent,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         child: content,
       ),
     );
@@ -439,7 +437,6 @@ class _TrackNodeWidget extends ConsumerWidget {
     final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final track = trackNode.track;
     final singleDetailState = track.isSingle
         ? ref.watch(
@@ -449,16 +446,7 @@ class _TrackNodeWidget extends ConsumerWidget {
           )
         : null;
     final isAlreadyPlaying = ref.watch(isTrackActiveProvider(track.path));
-    final cardShape = track.isSingle
-        ? LibraryLikeCardMetrics.cardShape(
-            cs,
-            borderAlpha: isDark ? 0.26 : 0.42,
-          )
-        : RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(
-              LibraryLikeCardMetrics.cardRadius,
-            ),
-          );
+    const cardShape = LibraryLikeCardMetrics.cardShape;
     final singleDetail = singleDetailState?.detail;
     final isSingleDetailLoading = singleDetailState?.isLoading ?? false;
     final resolvedCoverPath = library.resolvedCoverPathForTrack(track);
@@ -481,8 +469,8 @@ class _TrackNodeWidget extends ConsumerWidget {
 
     Widget buildSingleTrackCard(bool useFeaturedCard) {
       return SwipeRevealCard(
-        margin: const EdgeInsets.only(bottom: 6.0),
         shape: cardShape,
+        closedColor: cs.surface,
         actionLabel: i18n.tr('remove'),
         removeTooltip: i18n.tr('remove_audio'),
         secondaryActionLabel: i18n.tr('audio_detail'),
@@ -502,9 +490,12 @@ class _TrackNodeWidget extends ConsumerWidget {
           color: (isAlreadyPlaying && !track.isVideo)
               ? Color.alphaBlend(
                   cs.primaryContainer.withValues(alpha: 0.40),
-                  cs.surfaceContainerLow,
+                  cs.surface,
                 )
-              : cs.surfaceContainerLow,
+              : Colors.transparent,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
           child: useFeaturedCard
               ? ListTile(
                   contentPadding: LibraryLikeCardMetrics.rootTilePadding,
@@ -575,7 +566,7 @@ class _TrackNodeWidget extends ConsumerWidget {
       removeTooltip: i18n.tr('remove_audio'),
       onRemove: () => _removeTrack(context, library, track),
       child: ColoredBox(
-        color: cs.surfaceContainerLow,
+        color: Colors.transparent,
         child: SizedBox(
           height: 38,
           child: Padding(

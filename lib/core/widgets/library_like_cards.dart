@@ -14,7 +14,7 @@ const _libraryLikeInfoLineHeight = 16.0;
 class LibraryLikeCardMetrics {
   const LibraryLikeCardMetrics._();
 
-  static const double rootTileHeight = 158;
+  static const double rootTileHeight = 150;
   static const double contentHeight = 134;
   static const double infoBlockHeight = 90;
   static const double titleBlockHeight = 38;
@@ -22,21 +22,14 @@ class LibraryLikeCardMetrics {
   static const double coverRadius = 12;
   static const double cardRadius = 14;
   static const double actionButtonSize = 40;
+  static const double listHorizontalPadding = AppSpacing.xs;
   static const EdgeInsets rootTilePadding = EdgeInsets.symmetric(
-    horizontal: AppSpacing.sm,
+    horizontal: AppSpacing.xs,
   );
 
-  static RoundedRectangleBorder cardShape(
-    ColorScheme colorScheme, {
-    required double borderAlpha,
-  }) {
-    return RoundedRectangleBorder(
-      side: BorderSide(
-        color: colorScheme.outlineVariant.withValues(alpha: borderAlpha),
-      ),
-      borderRadius: BorderRadius.circular(cardRadius),
-    );
-  }
+  static const RoundedRectangleBorder cardShape = RoundedRectangleBorder(
+    borderRadius: BorderRadius.all(Radius.circular(cardRadius)),
+  );
 }
 
 class LibraryLikeSkeletonCard extends StatelessWidget {
@@ -44,30 +37,23 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
     const coverWidth =
         infoBlockHeight * LibraryLikeCardMetrics.coverAspectRatio;
 
-    return Card(
+    return const Card(
       margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        side: BorderSide(
-          color: colorScheme.outlineVariant.withValues(
-            alpha: isDark ? 0.26 : 0.42,
-          ),
-        ),
-        borderRadius: AppRadius.borderCard,
-      ),
-      color: colorScheme.surfaceContainerLow,
+      shape: LibraryLikeCardMetrics.cardShape,
+      color: Colors.transparent,
       elevation: 0,
-      child: const SizedBox(
+      shadowColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      child: SizedBox(
         height: LibraryLikeCardMetrics.rootTileHeight,
         width: double.infinity,
         child: ShimmerLoader(
           child: Padding(
-            padding: EdgeInsets.all(AppSpacing.sm),
+            padding: EdgeInsets.all(AppSpacing.xs),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

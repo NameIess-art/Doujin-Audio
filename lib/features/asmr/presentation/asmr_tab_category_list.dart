@@ -157,9 +157,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     parent: RefreshTopScrollPhysics(),
                   ),
                   padding: EdgeInsets.fromLTRB(
-                    16,
+                    LibraryLikeCardMetrics.listHorizontalPadding,
                     widget.topInset,
-                    16,
+                    LibraryLikeCardMetrics.listHorizontalPadding,
                     widget.bottomInset + 24,
                   ),
                   itemCount: 1,
@@ -167,10 +167,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     return Column(
                       children: [
                         for (int i = 0; i < 5; i++)
-                          const Padding(
-                            padding: EdgeInsets.only(bottom: 6),
-                            child: LibraryLikeSkeletonCard(),
-                          ),
+                          const LibraryLikeSkeletonCard(),
                       ],
                     );
                   },
@@ -183,9 +180,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                     parent: RefreshTopScrollPhysics(),
                   ),
                   padding: EdgeInsets.fromLTRB(
-                    16,
+                    LibraryLikeCardMetrics.listHorizontalPadding,
                     widget.topInset,
-                    16,
+                    LibraryLikeCardMetrics.listHorizontalPadding,
                     widget.bottomInset + 24,
                   ),
                   itemCount: works.isEmpty
@@ -245,13 +242,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                         ),
                       );
                     }
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: RepaintBoundary(
-                        child: _AsmrWorkTreeCard(
-                          work: works[index],
-                          searchQuery: widget.searchQuery,
-                        ),
+                    return RepaintBoundary(
+                      child: _AsmrWorkTreeCard(
+                        work: works[index],
+                        searchQuery: widget.searchQuery,
                       ),
                     );
                   },

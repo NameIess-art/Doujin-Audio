@@ -317,7 +317,7 @@ void main() {
       ),
     );
 
-    expect(LibraryLikeCardMetrics.rootTileHeight, 158);
+    expect(LibraryLikeCardMetrics.rootTileHeight, 150);
     expect(LibraryLikeCardMetrics.contentHeight, 134);
     expect(LibraryLikeCardMetrics.infoBlockHeight, 90);
     expect(LibraryLikeCardMetrics.titleBlockHeight, 38);
@@ -347,7 +347,20 @@ void main() {
     expect(titleText.softWrap, isTrue);
   });
 
-  testWidgets('library-like cover top and left card insets match', (
+  testWidgets('library-like skeleton cards blend into the page surface', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_buildSurface(const LibraryLikeSkeletonCard()));
+
+    final card = tester.widget<Card>(find.byType(Card));
+    expect(card.color, Colors.transparent);
+    expect(card.elevation, 0);
+    expect(card.shadowColor, Colors.transparent);
+    expect(card.surfaceTintColor, Colors.transparent);
+    expect((card.shape as RoundedRectangleBorder).side, BorderSide.none);
+  });
+
+  testWidgets('library-like card content keeps compact equal edge insets', (
     tester,
   ) async {
     const tileKey = ValueKey('library-like-tile');
@@ -369,13 +382,16 @@ void main() {
     );
 
     final tileRect = tester.getRect(find.byKey(tileKey));
-    final coverRect = tester.getRect(find.byKey(coverKey));
-    final topInset = coverRect.top - tileRect.top;
-    final leftInset = coverRect.left - tileRect.left;
+    final contentRect = tester.getRect(find.byType(LibraryLikeWorkCardContent));
+    final topInset = contentRect.top - tileRect.top;
+    final bottomInset = tileRect.bottom - contentRect.bottom;
+    final leftInset = contentRect.left - tileRect.left;
+    final rightInset = tileRect.right - contentRect.right;
 
-    expect(topInset, AppSpacing.sm);
-    expect(leftInset, AppSpacing.sm);
-    expect(topInset, leftInset);
+    expect(topInset, AppSpacing.xs);
+    expect(bottomInset, AppSpacing.xs);
+    expect(leftInset, AppSpacing.xs);
+    expect(rightInset, AppSpacing.xs);
   });
 
   testWidgets('ASMR-style cards reuse static Android list rhythm', (

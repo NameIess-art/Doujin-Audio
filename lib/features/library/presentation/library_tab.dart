@@ -795,9 +795,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                   controller: _scrollController,
                                   clipBehavior: Clip.none,
                                   padding: EdgeInsets.fromLTRB(
-                                    16.0,
+                                    LibraryLikeCardMetrics
+                                        .listHorizontalPadding,
                                     listTopPadding,
-                                    16.0,
+                                    LibraryLikeCardMetrics
+                                        .listHorizontalPadding,
                                     listBottomPadding,
                                   ),
                                   cacheExtent: listCacheExtent,
@@ -825,9 +827,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                                     // "empty" space above/below the restricted Positioned area.
                                     clipBehavior: Clip.none,
                                     padding: EdgeInsets.fromLTRB(
-                                      16.0,
+                                      LibraryLikeCardMetrics
+                                          .listHorizontalPadding,
                                       listTopPadding,
-                                      16.0,
+                                      LibraryLikeCardMetrics
+                                          .listHorizontalPadding,
                                       listBottomPadding,
                                     ),
                                     cacheExtent: listCacheExtent,
@@ -1044,14 +1048,13 @@ class _LibraryLoadingSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return ListView(
       physics: const NeverScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(16.0, topInset, 16.0, bottomInset),
-      children: [
-        for (int i = 0; i < 5; i++)
-          const Padding(
-            padding: EdgeInsets.only(bottom: 6),
-            child: LibraryLikeSkeletonCard(),
-          ),
-      ],
+      padding: EdgeInsets.fromLTRB(
+        LibraryLikeCardMetrics.listHorizontalPadding,
+        topInset,
+        LibraryLikeCardMetrics.listHorizontalPadding,
+        bottomInset,
+      ),
+      children: [for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard()],
     );
   }
 }

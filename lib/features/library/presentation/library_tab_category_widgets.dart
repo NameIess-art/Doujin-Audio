@@ -178,7 +178,12 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
         final list = ListView.builder(
           key: ValueKey('library_category_${_categoryType.name}'),
           controller: _scrollController,
-          padding: EdgeInsets.fromLTRB(16, topPadding, 16, bottomPadding),
+          padding: EdgeInsets.fromLTRB(
+            LibraryLikeCardMetrics.listHorizontalPadding,
+            topPadding,
+            LibraryLikeCardMetrics.listHorizontalPadding,
+            bottomPadding,
+          ),
           cacheExtent: cacheExtent,
           clipBehavior: Clip.none,
           physics: const ClampingScrollPhysics(),
@@ -735,11 +740,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     final isAlreadyPlaying = firstTrack == null
         ? false
         : ref.watch(isTrackActiveProvider(firstTrack.path));
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final cardShape = LibraryLikeCardMetrics.cardShape(
-      cs,
-      borderAlpha: isDark ? 0.26 : 0.42,
-    );
+    const cardShape = LibraryLikeCardMetrics.cardShape;
     const cardHeight = _FolderNodeWidgetState._rootFolderTileHeight;
     final folderNode = folder;
 
@@ -753,8 +754,8 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
     Widget buildEntryCard(bool useFeaturedCard) {
       return SwipeRevealCard(
-        margin: const EdgeInsets.only(bottom: 6),
         shape: cardShape,
+        closedColor: cs.surface,
         actionLabel: i18n.tr('remove'),
         removeTooltip: entry.isFolder
             ? i18n.tr('remove_audio_folder')
@@ -772,9 +773,12 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           color: isAlreadyPlaying
               ? Color.alphaBlend(
                   cs.primaryContainer.withValues(alpha: 0.40),
-                  cs.surfaceContainerLow,
+                  cs.surface,
                 )
-              : cs.surfaceContainerLow,
+              : Colors.transparent,
+          elevation: 0,
+          shadowColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
           child: _buildEntryContent(
             context,
             library,

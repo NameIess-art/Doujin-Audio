@@ -324,13 +324,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           ),
           ListView(
             physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(16, headerContentHeight, 16, 0),
+            padding: EdgeInsets.fromLTRB(
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              headerContentHeight,
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              0,
+            ),
             children: [
-              for (int i = 0; i < 5; i++)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 6),
-                  child: LibraryLikeSkeletonCard(),
-                ),
+              for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),
             ],
           ),
           Positioned(
@@ -371,13 +372,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           placeholder: ListView(
             key: const ValueKey('asmr_initial_placeholder'),
             physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(16, headerContentHeight, 16, 0),
+            padding: EdgeInsets.fromLTRB(
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              headerContentHeight,
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              0,
+            ),
             children: [
-              for (int i = 0; i < 5; i++)
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 6),
-                  child: LibraryLikeSkeletonCard(),
-                ),
+              for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),
             ],
           ),
           content: _AsmrCategoryList(

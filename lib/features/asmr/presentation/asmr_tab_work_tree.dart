@@ -123,10 +123,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
-    final cardShape = LibraryLikeCardMetrics.cardShape(
-      cs,
-      borderAlpha: tokens.standardBorderAlpha,
-    );
+    const cardShape = LibraryLikeCardMetrics.cardShape;
 
     return SwipeRevealCard(
       shape: cardShape,
@@ -156,12 +153,15 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
       onSecondaryAction: () => unawaited(_toggleFavorite(context)),
       onRemove: () => unawaited(showAsmrWorkDetailSheet(context, widget.work)),
       onWillReveal: _expansionController.collapse,
-      closedColor: cs.surfaceContainerLow,
+      closedColor: cs.surface,
       child: Card(
         margin: EdgeInsets.zero,
         clipBehavior: Clip.hardEdge,
         shape: cardShape,
-        color: cs.surfaceContainerLow,
+        color: Colors.transparent,
+        elevation: 0,
+        shadowColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
         child: Theme(
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
@@ -520,7 +520,7 @@ class _AsmrTrackLeafRow extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     return ColoredBox(
-      color: cs.surfaceContainerLow,
+      color: Colors.transparent,
       child: SizedBox(
         height: 38,
         child: Padding(

@@ -9,6 +9,7 @@ import 'package:nameless_audio/core/widgets/app_scroll_physics.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
+import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
@@ -238,6 +239,13 @@ void main() {
           groupTitle: 'Partially loaded work',
           isSingle: true,
         ),
+        testMusicTrack(
+          name: 'Second loaded work',
+          path: '/library/work-2/track.mp3',
+          groupKey: '/library/work-2/track.mp3',
+          groupTitle: 'Second loaded work',
+          isSingle: true,
+        ),
       ],
       notify: false,
       persist: false,
@@ -260,6 +268,23 @@ void main() {
       find.text('Partially loaded work', findRichText: true),
     );
 
+    final workTitle = find.text('Partially loaded work', findRichText: true);
+    final workCard = tester.widget<Card>(
+      find.ancestor(of: workTitle, matching: find.byType(Card)).first,
+    );
+    expect(workCard.color, Colors.transparent);
+    expect(workCard.elevation, 0);
+    expect(workCard.shadowColor, Colors.transparent);
+    expect(workCard.surfaceTintColor, Colors.transparent);
+    expect((workCard.shape as RoundedRectangleBorder).side, BorderSide.none);
+    final swipeCard = tester.widget<SwipeRevealCard>(
+      find.ancestor(of: workTitle, matching: find.byType(SwipeRevealCard)),
+    );
+    expect(
+      swipeCard.closedColor,
+      Theme.of(tester.element(workTitle)).colorScheme.surface,
+    );
+
     expect(runtimeGraph.library.categorySnapshot, isNotNull);
     await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
     expect(find.byType(LibraryLikeSkeletonCard), findsNothing);
@@ -270,6 +295,18 @@ void main() {
 
     final libraryList = tester.widget<ListView>(
       find.byKey(const PageStorageKey<String>('locked_library_list')),
+    );
+    final listPadding = libraryList.padding!.resolve(TextDirection.ltr);
+    expect(listPadding.left, LibraryLikeCardMetrics.listHorizontalPadding);
+    expect(listPadding.right, LibraryLikeCardMetrics.listHorizontalPadding);
+    final libraryCards = find.descendant(
+      of: find.byKey(const PageStorageKey<String>('locked_library_list')),
+      matching: find.byType(SwipeRevealCard),
+    );
+    expect(libraryCards, findsNWidgets(2));
+    expect(
+      tester.getBottomLeft(libraryCards.at(0)).dy,
+      closeTo(tester.getTopLeft(libraryCards.at(1)).dy, 0.01),
     );
     expect(libraryList.physics, isA<AlwaysScrollableScrollPhysics>());
     expect(libraryList.physics?.parent, isA<RefreshTopScrollPhysics>());

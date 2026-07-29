@@ -835,8 +835,17 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
       ),
-      const Size.square(64),
+      const Size.square(80),
     );
+    final playbackCardRect = tester.getRect(
+      find.byKey(const ValueKey('active_session_card_asmr_error_session')),
+    );
+    final playbackCoverRect = tester.getRect(
+      find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
+    );
+    expect(playbackCoverRect.left - playbackCardRect.left, 4);
+    expect(playbackCoverRect.top - playbackCardRect.top, 4);
+    expect(playbackCardRect.bottom - playbackCoverRect.bottom, 4);
     expect(
       tester
           .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage))
@@ -866,6 +875,25 @@ void main() {
           .borderRadius,
       BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
     );
+
+    await settingsRepository.setBottomNavigationStyle(
+      BottomNavigationStyle.bar,
+    );
+    await tester.pump();
+    final barCardRect = tester.getRect(
+      find.byKey(const ValueKey('active_session_card_asmr_error_session')),
+    );
+    final barCoverRect = tester.getRect(
+      find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
+    );
+    expect(barCoverRect.size, const Size.square(66));
+    expect(barCoverRect.left - barCardRect.left, 4);
+    expect(barCoverRect.top - barCardRect.top, 4);
+    expect(barCardRect.bottom - barCoverRect.bottom, 4);
+    await settingsRepository.setBottomNavigationStyle(
+      BottomNavigationStyle.capsule,
+    );
+    await tester.pump();
 
     expect(
       find.text(languageProvider.tr('asmr_playback_network_failed_retry')),

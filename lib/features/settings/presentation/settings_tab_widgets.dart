@@ -917,41 +917,71 @@ class _RgbSliderRowState extends State<_RgbSliderRow> {
   }
 }
 
-class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
+class _CardInfoFieldsSettingsSheet extends ConsumerStatefulWidget {
   const _CardInfoFieldsSettingsSheet();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final cs = Theme.of(context).colorScheme;
-    final settings = ref.read(settingsRepositoryProvider);
-    final selected = ref.watch(
-      settingsStateProvider.select(
-        (state) => state.value?.cardInfoFields ?? CardInfoField.defaults,
-      ),
-    );
-    final selectedSet = selected.toSet();
+  ConsumerState<_CardInfoFieldsSettingsSheet> createState() =>
+      _CardInfoFieldsSettingsSheetState();
+}
 
-    void toggle(CardInfoField field) {
-      final next = selected.toList(growable: true);
-      if (selectedSet.contains(field)) {
-        next.remove(field);
-      } else {
-        if (next.length >= CardInfoField.maxSelected) return;
-        next.add(field);
-      }
-      settings.setCardInfoFields(next);
+class _CardInfoFieldsSettingsSheetState
+    extends ConsumerState<_CardInfoFieldsSettingsSheet> {
+  late final List<CardInfoField> _selected;
+
+  @override
+  void initState() {
+    super.initState();
+    _selected = ref
+        .read(settingsRepositoryProvider)
+        .cardInfoFields
+        .toList(growable: true);
+  }
+
+  void _persistSelection() {
+    final snapshot = List<CardInfoField>.unmodifiable(_selected);
+    unawaited(ref.read(settingsRepositoryProvider).setCardInfoFields(snapshot));
+  }
+
+  void _remove(CardInfoField field) {
+    setState(() => _selected.remove(field));
+    _persistSelection();
+  }
+
+  void _add(CardInfoField field) {
+    if (_selected.contains(field) ||
+        _selected.length >= CardInfoField.maxSelected) {
+      return;
     }
+    setState(() => _selected.add(field));
+    _persistSelection();
+  }
+
+  void _reorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) newIndex--;
+      final field = _selected.removeAt(oldIndex);
+      _selected.insert(newIndex, field);
+    });
+    _persistSelection();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final cs = Theme.of(context).colorScheme;
+    final unselected = CardInfoField.values
+        .where((field) => !_selected.contains(field))
+        .toList(growable: false);
 
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
           children: [
             Text(
               i18n.tr('card_info_display'),
@@ -962,7 +992,7 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
             const SizedBox(height: 4),
             Text(
               i18n.tr('card_info_display_subtitle', {
-                'count': selected.length.toString(),
+                'count': _selected.length.toString(),
                 'max': CardInfoField.maxSelected.toString(),
               }),
               style: Theme.of(
@@ -970,13 +1000,37 @@ class _CardInfoFieldsSettingsSheet extends ConsumerWidget {
               ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
             ),
             const SizedBox(height: 12),
-            for (final field in CardInfoField.values)
+            ReorderableListView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              buildDefaultDragHandles: false,
+              itemCount: _selected.length,
+              onReorder: _reorder,
+              itemBuilder: (context, index) {
+                final field = _selected[index];
+                return CheckboxListTile(
+                  key: ValueKey(('selected', field)),
+                  value: true,
+                  onChanged: (_) => _remove(field),
+                  title: _settingsTitle(_cardInfoFieldLabel(i18n, field)),
+                  secondary: ReorderableDragStartListener(
+                    index: index,
+                    child: Icon(
+                      Icons.drag_handle_rounded,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                );
+              },
+            ),
+            for (final field in unselected)
               CheckboxListTile(
-                value: selectedSet.contains(field),
-                onChanged:
-                    selectedSet.contains(field) ||
-                        selected.length < CardInfoField.maxSelected
-                    ? (_) => toggle(field)
+                key: ValueKey(('unselected', field)),
+                value: false,
+                onChanged: _selected.length < CardInfoField.maxSelected
+                    ? (_) => _add(field)
                     : null,
                 title: _settingsTitle(_cardInfoFieldLabel(i18n, field)),
                 dense: true,

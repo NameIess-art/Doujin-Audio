@@ -406,6 +406,70 @@ void main() {
     );
   });
 
+  testWidgets('card info fields reorder like download folder name fields', (
+    tester,
+  ) async {
+    final settingsRepository = _DeferredCardInfoSettingsRepository();
+    final harness = AppRuntimeWidgetTestFixture(
+      providedSettingsRepository: settingsRepository,
+    );
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+    final cardInfoTile = find.widgetWithText(
+      ListTile,
+      i18n.tr('card_info_display'),
+    );
+    await Scrollable.ensureVisible(
+      tester.element(cardInfoTile),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(cardInfoTile);
+    await tester.pumpAndSettle();
+
+    final rjCode = i18n.tr('audio_detail_rj_code');
+    final voiceActors = i18n.tr('audio_detail_voice_actors');
+    final rjTile = find.widgetWithText(CheckboxListTile, rjCode);
+    final rjHandle = find.descendant(
+      of: rjTile,
+      matching: find.byType(ReorderableDragStartListener),
+    );
+
+    await tester.drag(rjHandle, const Offset(0, 120));
+    await tester.pumpAndSettle();
+
+    expect(settingsRepository.cardInfoFieldUpdates.single, const [
+      CardInfoField.voiceActors,
+      CardInfoField.rjCode,
+    ]);
+    expect(
+      tester.getTopLeft(find.widgetWithText(CheckboxListTile, voiceActors)).dy,
+      lessThan(
+        tester.getTopLeft(find.widgetWithText(CheckboxListTile, rjCode)).dy,
+      ),
+      reason: 'The rendered order must update before persistence completes.',
+    );
+
+    await tester.tap(find.widgetWithText(CheckboxListTile, rjCode));
+    await tester.pumpAndSettle();
+    expect(settingsRepository.cardInfoFieldUpdates.last, const [
+      CardInfoField.voiceActors,
+    ]);
+    expect(
+      tester
+          .widget<CheckboxListTile>(
+            find.widgetWithText(CheckboxListTile, rjCode),
+          )
+          .value,
+      isFalse,
+    );
+  });
+
   testWidgets('settings home uses separated category cards', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);
@@ -1076,6 +1140,22 @@ final class _DeferredFolderNameSettingsRepository extends SettingsRepository {
     Iterable<AsmrDownloadFolderNameField> fields,
   ) {
     folderNameFieldUpdates.add(List.of(fields));
+    return _pendingPersistence.future;
+  }
+}
+
+final class _DeferredCardInfoSettingsRepository extends SettingsRepository {
+  _DeferredCardInfoSettingsRepository() {
+    cardInfoFields = const [CardInfoField.rjCode, CardInfoField.voiceActors];
+    syncSlice(isInitialized: true);
+  }
+
+  final List<List<CardInfoField>> cardInfoFieldUpdates = [];
+  final Completer<void> _pendingPersistence = Completer<void>();
+
+  @override
+  Future<void> setCardInfoFields(Iterable<CardInfoField> fields) {
+    cardInfoFieldUpdates.add(List.of(fields));
     return _pendingPersistence.future;
   }
 }

@@ -28,6 +28,10 @@ class _ActiveSessionCard extends ConsumerWidget {
     );
     final isBar = style == BottomNavigationStyle.bar;
     final cardRadius = isBar ? 0.0 : LibraryLikeCardMetrics.cardRadius;
+    final coverDimension = isBar ? 66.0 : 80.0;
+    final contentPadding = isBar
+        ? const EdgeInsets.fromLTRB(4, 3, 8, 4)
+        : const EdgeInsets.fromLTRB(3, 3, 8, 3);
 
     final view = ref.watch(
       playbackStateProvider.select((value) {
@@ -126,6 +130,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                           sessionId: session.id,
                           track: currentTrack,
                           coverPathFuture: coverPathFuture,
+                          dimension: coverDimension,
                         ),
                       )
                     : _buildCardContent(
@@ -137,6 +142,8 @@ class _ActiveSessionCard extends ConsumerWidget {
                         displayName,
                         i18n: i18n,
                         showCover: false,
+                        coverDimension: coverDimension,
+                        contentPadding: contentPadding,
                       ))
               : _buildCardContent(
                   context,
@@ -147,6 +154,8 @@ class _ActiveSessionCard extends ConsumerWidget {
                   displayName,
                   i18n: i18n,
                   showCover: showCover,
+                  coverDimension: coverDimension,
+                  contentPadding: contentPadding,
                 ),
         ),
       ),
@@ -188,6 +197,8 @@ class _ActiveSessionCard extends ConsumerWidget {
     String displayName, {
     required AppLanguageProvider i18n,
     required bool showCover,
+    required double coverDimension,
+    required EdgeInsets contentPadding,
   }) {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final activeColor = currentTrack?.remoteMetadataKind == 'asmr.one'
@@ -197,7 +208,7 @@ class _ActiveSessionCard extends ConsumerWidget {
         view.error != null && currentTrack?.remoteMetadataKind == 'asmr.one';
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 5, 8, 5),
+      padding: contentPadding,
       child: Row(
         children: [
           Expanded(
@@ -212,6 +223,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                       sessionId: session.id,
                       track: currentTrack,
                       coverPathFuture: coverPathFuture,
+                      dimension: coverDimension,
                     ),
                     const SizedBox(width: 12),
                   ],
@@ -639,11 +651,13 @@ class _ActiveSessionCover extends ConsumerWidget {
     required this.sessionId,
     required this.track,
     required this.coverPathFuture,
+    required this.dimension,
   });
 
   final String sessionId;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
+  final double dimension;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -658,7 +672,7 @@ class _ActiveSessionCover extends ConsumerWidget {
 
     return SizedBox.square(
       key: ValueKey<String>('active_session_cover_$sessionId'),
-      dimension: 64,
+      dimension: dimension,
       child: Material(
         type: MaterialType.transparency,
         borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),

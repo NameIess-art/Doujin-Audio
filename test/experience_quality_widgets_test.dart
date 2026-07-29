@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/localization/app_language_en.dart';
 import 'package:nameless_audio/app/localization/app_language_zh.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/app/theme/app_styles.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/core/media/card_info_field.dart';
@@ -315,7 +316,7 @@ void main() {
       ),
     );
 
-    expect(LibraryLikeCardMetrics.rootTileHeight, 148);
+    expect(LibraryLikeCardMetrics.rootTileHeight, 164);
     expect(LibraryLikeCardMetrics.contentHeight, 140);
     expect(LibraryLikeCardMetrics.infoBlockHeight, 96);
     expect(LibraryLikeCardMetrics.titleBlockHeight, 38);
@@ -342,6 +343,37 @@ void main() {
     expect(titleText.maxLines, 2);
     expect(titleText.overflow, TextOverflow.ellipsis);
     expect(titleText.softWrap, isTrue);
+  });
+
+  testWidgets('library-like cover top and left card insets match', (
+    tester,
+  ) async {
+    const tileKey = ValueKey('library-like-tile');
+    const coverKey = ValueKey('library-like-cover');
+
+    await tester.pumpWidget(
+      _buildSurface(
+        ListTile(
+          key: tileKey,
+          contentPadding: LibraryLikeCardMetrics.rootTilePadding,
+          minTileHeight: LibraryLikeCardMetrics.rootTileHeight,
+          title: _buildFeaturedCard(
+            title: 'Work',
+            coverKey: coverKey,
+            lines: const <LibraryLikeInfoLineData>[],
+          ),
+        ),
+      ),
+    );
+
+    final tileRect = tester.getRect(find.byKey(tileKey));
+    final coverRect = tester.getRect(find.byKey(coverKey));
+    final topInset = coverRect.top - tileRect.top;
+    final leftInset = coverRect.left - tileRect.left;
+
+    expect(topInset, AppSpacing.sm);
+    expect(leftInset, AppSpacing.sm);
+    expect(topInset, leftInset);
   });
 
   testWidgets('ASMR-style cards reuse static Android list rhythm', (

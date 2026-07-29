@@ -827,20 +827,17 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     bool? useFeaturedCardOverride,
   }) {
     if (entry.isFolder) {
-      return SizedBox(
-        height: cardHeight,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
-          child: _RootFolderCardContent(
-            folderPath: entry.path,
-            folderName: entry.title,
-            folderDuration: folder?.totalDuration ?? Duration.zero,
-            detail: entry.detail,
-            detailLoading: false,
-            expanded: false,
-            hasChildren: false,
-            onPlay: firstTrack == null ? () {} : () => _play(context, playback),
-          ),
+      return Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: _RootFolderCardContent(
+          folderPath: entry.path,
+          folderName: entry.title,
+          folderDuration: folder?.totalDuration ?? Duration.zero,
+          detail: entry.detail,
+          detailLoading: false,
+          expanded: false,
+          hasChildren: false,
+          onPlay: firstTrack == null ? () {} : () => _play(context, playback),
         ),
       );
     }
@@ -848,7 +845,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     Widget buildSingleFileContent(bool useFeaturedCard) {
       if (firstTrack != null && useFeaturedCard) {
         return ListTile(
-          contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+          contentPadding: LibraryLikeCardMetrics.rootTilePadding,
           minTileHeight: cardHeight,
           title: _SingleMediaFileCardContent(
             track: firstTrack,

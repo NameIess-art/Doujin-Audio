@@ -343,6 +343,7 @@ void main() {
     });
     expect(skeletonCards, findsAtLeastNWidgets(5));
     final firstSkeleton = tester.widget<Container>(skeletonCards.first);
+    expect(firstSkeleton.padding, const EdgeInsets.all(8));
     expect(
       (firstSkeleton.decoration! as BoxDecoration).border,
       isNull,
@@ -1097,14 +1098,17 @@ void main() {
       groupTitle: 'Work A',
       groupSubtitle: workRoot,
       isSingle: false,
-    );
+    ).copyWith(manualCoverPath: '/covers/work.jpg');
     fixture.runtimeGraph.library.addWatchedLibrary(libraryRoot, notify: false);
     fixture.runtimeGraph.library.addTracks(
       <MusicTrack>[track],
       notify: false,
       persist: false,
     );
-    final session = fixture.runtimeGraph.playback.createTrackSession(track);
+    final session = fixture.runtimeGraph.playback.createTrackSession(
+      track,
+      customQueueTracks: <MusicTrack>[track],
+    );
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
@@ -1115,7 +1119,7 @@ void main() {
     );
 
     await tester.pumpWidget(fixture.build(const PlaylistTab()));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     expect(find.text('Work A'), findsOneWidget);
     expect(find.text('Library'), findsNothing);
@@ -1126,6 +1130,12 @@ void main() {
     expect((swipeCard.shape as RoundedRectangleBorder).side, BorderSide.none);
     expect(swipeCard.primaryActionIcon, Icons.delete_outline_rounded);
     expect(swipeCard.destructive, isTrue);
+    final cardContent = tester.widget<Padding>(
+      find.byKey(ValueKey<String>('playlist_card_content_${session.id}')),
+    );
+    expect(cardContent.padding, const EdgeInsets.all(8));
+    final cardContentRow = cardContent.child! as Row;
+    expect((cardContentRow.children[1] as SizedBox).width, 8);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 120));

@@ -203,7 +203,10 @@ void main() {
 
     final skeletonCards = find.byType(LibraryLikeSkeletonCard);
     expect(skeletonCards, findsNWidgets(5));
-    expect(tester.getSize(skeletonCards.first).height, 158);
+    expect(
+      tester.getSize(skeletonCards.first).height,
+      LibraryLikeCardMetrics.rootTileHeight,
+    );
     expect(find.byType(PlaceholderContentTransition), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());

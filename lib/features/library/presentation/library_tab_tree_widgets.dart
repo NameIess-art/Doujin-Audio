@@ -507,7 +507,7 @@ class _TrackNodeWidget extends ConsumerWidget {
               : cs.surfaceContainerLow,
           child: useFeaturedCard
               ? ListTile(
-                  contentPadding: const EdgeInsets.fromLTRB(12, 2, 12, 2),
+                  contentPadding: LibraryLikeCardMetrics.rootTilePadding,
                   minTileHeight: _FolderNodeWidgetState._rootFolderTileHeight,
                   title: _SingleMediaFileCardContent(
                     track: track,

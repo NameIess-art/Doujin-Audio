@@ -43,11 +43,13 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
 
   Future<void> _pickVideoFile() async {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final selectedPath = await UiOperationService.instance.run<String?>(
-      scope: UiOperationScope.videoConverterPick,
-      labelKey: 'source_video_file',
-      task: (_) => _inputService.pickVideoPath(),
-    );
+    final selectedPath = await ref
+        .read(uiOperationServiceProvider)
+        .run<String?>(
+          scope: UiOperationScope.videoConverterPick,
+          labelKey: 'source_video_file',
+          task: (_) => _inputService.pickVideoPath(),
+        );
     if (!mounted) return;
     if (selectedPath != null && selectedPath.isNotEmpty) {
       final videoPath = selectedPath;
@@ -65,11 +67,13 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   }
 
   Future<void> _pickOutputDirectory() async {
-    final result = await UiOperationService.instance.run<String?>(
-      scope: UiOperationScope.videoConverterPick,
-      labelKey: 'output_directory',
-      task: (_) => _inputService.pickOutputDirectory(),
-    );
+    final result = await ref
+        .read(uiOperationServiceProvider)
+        .run<String?>(
+          scope: UiOperationScope.videoConverterPick,
+          labelKey: 'output_directory',
+          task: (_) => _inputService.pickOutputDirectory(),
+        );
     if (!mounted) return;
     if (result != null && result.isNotEmpty) {
       _successResetTimer?.cancel();
@@ -82,11 +86,13 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   }
 
   Future<void> _getVideoDuration(String videoPath) async {
-    final durationMs = await UiOperationService.instance.run<int>(
-      scope: UiOperationScope.videoConverterPick,
-      labelKey: 'source_video_file',
-      task: (_) => _conversionRunner.readDurationMs(videoPath),
-    );
+    final durationMs = await ref
+        .read(uiOperationServiceProvider)
+        .run<int>(
+          scope: UiOperationScope.videoConverterPick,
+          labelKey: 'source_video_file',
+          task: (_) => _conversionRunner.readDurationMs(videoPath),
+        );
 
     if (!mounted) return;
     if (_selectedVideoPath != videoPath) return;
@@ -122,7 +128,8 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     });
 
     try {
-      final conversion = await UiOperationService.instance
+      final conversion = await ref
+          .read(uiOperationServiceProvider)
           .run<({VideoConversionResult result, String outputPath})>(
             scope: UiOperationScope.videoConverterConvert,
             labelKey: 'conversion_starting',

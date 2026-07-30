@@ -175,8 +175,8 @@ final asmrAuthStateProvider = StreamProvider<AsmrAuthViewState?>((ref) {
   );
 });
 
-final asmrTrackTreeStateProvider =
-    StreamProvider.family<AsmrTrackTreeViewState?, int>((ref, workId) {
+final asmrTrackTreeStateProvider = StreamProvider.autoDispose
+    .family<AsmrTrackTreeViewState?, int>((ref, workId) {
       final controller = ref.watch(asmrLibraryControllerProvider);
       if (controller == null) return Stream.value(null);
       return interactionDeferredListenableStream(
@@ -212,8 +212,8 @@ final asmrDownloadStateProvider = StreamProvider<AsmrDownloadState>((ref) {
   return states.stream;
 });
 
-final asmrDownloadTaskProvider =
-    Provider.family<AsmrDownloadTaskSnapshot?, int>((ref, workId) {
+final asmrDownloadTaskProvider = Provider.autoDispose
+    .family<AsmrDownloadTaskSnapshot?, int>((ref, workId) {
       final manager = ref.watch(asmrDownloadManagerProvider);
       return ref.watch(asmrDownloadStateProvider).value?.taskFor(workId) ??
           manager?.getTask(workId);
@@ -365,16 +365,18 @@ final uiOperationServiceProvider = Provider<UiOperationService>((ref) {
   );
 });
 
-final uiOperationStateProvider = StreamProvider<UiOperationRegistryState>((
-  ref,
-) {
-  return ref.watch(uiOperationServiceProvider).stream;
-});
+final _uiOperationScopeStateChangesProvider = StreamProvider.autoDispose
+    .family<UiOperationState, UiOperationScope>((ref, scope) {
+      final service = ref.watch(uiOperationServiceProvider);
+      return service.changes
+          .where((changedScope) => changedScope == scope)
+          .map((_) => service.operationFor(scope));
+    });
 
-final uiOperationForScopeProvider =
-    Provider.family<UiOperationState, UiOperationScope>((ref, scope) {
-      ref.watch(uiOperationStateProvider);
-      return ref.watch(uiOperationServiceProvider).state.forScope(scope);
+final uiOperationForScopeProvider = Provider.autoDispose
+    .family<UiOperationState, UiOperationScope>((ref, scope) {
+      ref.watch(_uiOperationScopeStateChangesProvider(scope));
+      return ref.watch(uiOperationServiceProvider).operationFor(scope);
     });
 
 final libraryStateProvider = StreamProvider<LibraryState>((ref) {
@@ -508,8 +510,8 @@ final libraryCategoryRevisionProvider = Provider<int>((ref) {
 
 typedef LibraryDetailUiState = ({AudioDetail? detail, bool isLoading});
 
-final libraryDetailForTargetProvider =
-    Provider.family<LibraryDetailUiState, AudioDetailTarget>((ref, target) {
+final libraryDetailForTargetProvider = Provider.autoDispose
+    .family<LibraryDetailUiState, AudioDetailTarget>((ref, target) {
       ref.watch(libraryCategoryRevisionProvider);
       ref.watch(libraryDetailRevisionProvider);
       final facade = ref.read(libraryFacadeProvider);
@@ -550,8 +552,8 @@ final playlistStructureUiProvider = Provider<PlaylistStructureState>((ref) {
   return playlistStructureStateFromPlaybackState(playbackState);
 });
 
-final playlistSessionCardStateProvider =
-    Provider.family<PlaylistSessionCardState?, String>((ref, sessionId) {
+final playlistSessionCardStateProvider = Provider.autoDispose
+    .family<PlaylistSessionCardState?, String>((ref, sessionId) {
       final playbackState =
           ref.watch(playbackStateProvider).value ??
           ref.watch(playbackFacadeProvider).state;
@@ -578,7 +580,7 @@ final coverImageDisplayModeProvider = Provider<CoverImageDisplayMode>((ref) {
       ref.watch(settingsRepositoryProvider).slice.state.coverImageDisplayMode;
 });
 
-final libraryTrackProvider = Provider.family<MusicTrack?, String>((
+final libraryTrackProvider = Provider.autoDispose.family<MusicTrack?, String>((
   ref,
   trackPath,
 ) {
@@ -600,7 +602,10 @@ final activeTrackPathsProvider = Provider<ActiveTrackPaths>((ref) {
   );
 });
 
-final isTrackActiveProvider = Provider.family<bool, String>((ref, trackPath) {
+final isTrackActiveProvider = Provider.autoDispose.family<bool, String>((
+  ref,
+  trackPath,
+) {
   final playbackState =
       ref.watch(playbackStateProvider).value ??
       ref.watch(playbackFacadeProvider).state;
@@ -633,22 +638,23 @@ final mainOverlayUiProvider = Provider<MainOverlayUiState>((ref) {
   );
 });
 
-final sessionDetailUiProvider = Provider.family<SessionDetailUiState, String>((
-  ref,
-  sessionId,
-) {
-  final playbackState =
-      ref.watch(playbackStateProvider).value ??
-      ref.watch(playbackFacadeProvider).state;
-  return SessionDetailUiState(
-    sessionOrder: sessionOrderStateFromPlaybackState(playbackState),
-    detail: sessionDetailViewStateFromPlaybackState(playbackState, sessionId),
-    coverGeneration: playbackState.coverGeneration,
-  );
-});
+final sessionDetailUiProvider = Provider.autoDispose
+    .family<SessionDetailUiState, String>((ref, sessionId) {
+      final playbackState =
+          ref.watch(playbackStateProvider).value ??
+          ref.watch(playbackFacadeProvider).state;
+      return SessionDetailUiState(
+        sessionOrder: sessionOrderStateFromPlaybackState(playbackState),
+        detail: sessionDetailViewStateFromPlaybackState(
+          playbackState,
+          sessionId,
+        ),
+        coverGeneration: playbackState.coverGeneration,
+      );
+    });
 
-final sessionDetailTransportProvider =
-    Provider.family<SessionDetailViewState?, String>((ref, sessionId) {
+final sessionDetailTransportProvider = Provider.autoDispose
+    .family<SessionDetailViewState?, String>((ref, sessionId) {
       return ref.watch(
         sessionDetailUiProvider(sessionId).select((state) => state.detail),
       );

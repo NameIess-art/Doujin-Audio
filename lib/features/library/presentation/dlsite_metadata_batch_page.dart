@@ -96,7 +96,8 @@ class _DlsiteMetadataBatchPageState
       _error = null;
     });
     try {
-      final snapshot = await UiOperationService.instance
+      final snapshot = await ref
+          .read(uiOperationServiceProvider)
           .run<AudioLibraryCategorySnapshot>(
             scope: UiOperationScope.metadataBatch,
             labelKey: 'batch_metadata',

@@ -70,7 +70,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   ScrollController get mainScrollController => _scrollController;
 
-  UiOperationService get _operations => UiOperationService.instance;
+  UiOperationService get _operations => ref.read(uiOperationServiceProvider);
 
   double _minimumExpandedHeaderHeight(BuildContext context) {
     return 72 + MediaQuery.paddingOf(context).top;

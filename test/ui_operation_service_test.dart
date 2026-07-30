@@ -18,9 +18,9 @@ void main() {
     test('publishes running, progress, and success states', () async {
       const scope = UiOperationScope('test:progress');
       final states = <UiOperationState>[];
-      final subscription = service.stream.listen(
-        (state) => states.add(state.forScope(scope)),
-      );
+      final subscription = service.changes
+          .where((changedScope) => changedScope == scope)
+          .listen((_) => states.add(service.operationFor(scope)));
 
       final result = await service.run<int>(
         scope: scope,
@@ -131,6 +131,73 @@ void main() {
       expect(service.operationFor(scope).labelKey, 'second');
       expect(service.operationFor(scope).phase, UiOperationPhase.failed);
       expect(service.operationFor(scope).error, isA<StateError>());
+    });
+
+    test('publishes only the scope that changed', () async {
+      const firstScope = UiOperationScope('test:first-scope');
+      const secondScope = UiOperationScope('test:second-scope');
+      final changes = <UiOperationScope>[];
+      final subscription = service.changes.listen(changes.add);
+
+      await service.run<void>(
+        scope: firstScope,
+        labelKey: 'first',
+        task: (_) async {},
+      );
+
+      expect(changes, everyElement(firstScope));
+      expect(changes, hasLength(2));
+      expect(changes, isNot(contains(secondScope)));
+      await subscription.cancel();
+    });
+
+    test('retains only the newest completed operations', () async {
+      await service.dispose();
+      service = UiOperationService(maxRetainedCompletedOperations: 2);
+      const scopes = <UiOperationScope>[
+        UiOperationScope('test:completed-1'),
+        UiOperationScope('test:completed-2'),
+        UiOperationScope('test:completed-3'),
+      ];
+
+      for (final scope in scopes) {
+        await service.run<void>(
+          scope: scope,
+          labelKey: scope.value,
+          task: (_) async {},
+        );
+      }
+
+      expect(service.operationFor(scopes[0]).phase, UiOperationPhase.idle);
+      expect(service.operationFor(scopes[1]).phase, UiOperationPhase.succeeded);
+      expect(service.operationFor(scopes[2]).phase, UiOperationPhase.succeeded);
+    });
+
+    test('never evicts running operations', () async {
+      await service.dispose();
+      service = UiOperationService(maxRetainedCompletedOperations: 1);
+      const runningScope = UiOperationScope('test:running');
+      final runningCompleter = Completer<void>();
+      final running = service.run<void>(
+        scope: runningScope,
+        labelKey: 'running',
+        task: (_) => runningCompleter.future,
+      );
+
+      for (var index = 0; index < 3; index++) {
+        await service.run<void>(
+          scope: UiOperationScope('test:completed-$index'),
+          labelKey: 'completed',
+          task: (_) async {},
+        );
+      }
+
+      expect(
+        service.operationFor(runningScope).phase,
+        UiOperationPhase.running,
+      );
+      runningCompleter.complete();
+      await running;
     });
   });
 }

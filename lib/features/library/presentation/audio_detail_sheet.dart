@@ -155,7 +155,8 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   Future<void> _load() async {
     try {
       final libraryFacade = ref.read(libraryFacadeProvider);
-      final result = await UiOperationService.instance
+      final result = await ref
+          .read(uiOperationServiceProvider)
           .run<AudioDetailLoadResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_title',
@@ -249,7 +250,8 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       _runningAction = true;
     });
     try {
-      final result = await UiOperationService.instance
+      final result = await ref
+          .read(uiOperationServiceProvider)
           .run<AudioDetailRenameResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_rename_folder_from_title',
@@ -300,7 +302,8 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
     });
     try {
       final libraryFacade = ref.read(libraryFacadeProvider);
-      final result = await UiOperationService.instance
+      final result = await ref
+          .read(uiOperationServiceProvider)
           .run<AudioDetailSaveResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_save_failed',
@@ -424,7 +427,8 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       _runningAction = true;
     });
     try {
-      final result = await UiOperationService.instance
+      final result = await ref
+          .read(uiOperationServiceProvider)
           .run<AudioDetailRenameResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_rename_folder_from_title',

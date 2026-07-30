@@ -35,20 +35,22 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _detailFuture ??= UiOperationService.instance.run<AsmrWorkDetail>(
-      scope: UiOperationScope.asmrWork(
-        AsmrOperationKind.detail,
-        widget.work.id,
-      ),
-      labelKey: 'loading_dot',
-      task: (_) async {
-        final controller = ref.read(asmrLibraryControllerProvider);
-        if (controller == null) {
-          throw StateError('ASMR library service is not configured.');
-        }
-        return controller.loadWorkDetail(widget.work);
-      },
-    );
+    _detailFuture ??= ref
+        .read(uiOperationServiceProvider)
+        .run<AsmrWorkDetail>(
+          scope: UiOperationScope.asmrWork(
+            AsmrOperationKind.detail,
+            widget.work.id,
+          ),
+          labelKey: 'loading_dot',
+          task: (_) async {
+            final controller = ref.read(asmrLibraryControllerProvider);
+            if (controller == null) {
+              throw StateError('ASMR library service is not configured.');
+            }
+            return controller.loadWorkDetail(widget.work);
+          },
+        );
   }
 
   @override

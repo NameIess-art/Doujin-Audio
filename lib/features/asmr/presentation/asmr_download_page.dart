@@ -43,7 +43,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
   Future<void> _bootstrap() async {
     var destinationMissing = false;
     try {
-      final result = await UiOperationService.instance
+      final result = await ref
+          .read(uiOperationServiceProvider)
           .run<({List<AsmrTrackFile> tree, String? destinationRoot})>(
             scope: UiOperationScope.asmrDownloadInit,
             labelKey: 'asmr_download_title',
@@ -188,18 +189,20 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
       _starting = true;
     });
     try {
-      await UiOperationService.instance.run<void>(
-        scope: UiOperationScope.asmrDownloadStart,
-        labelKey: 'asmr_download_starting',
-        task: (_) => downloadManager.startDownload(
-          work: widget.work,
-          selectedRoots: selectedRoots,
-          destinationRoot: destination!,
-          conflictPolicy: settings.asmrDownloadConflictPolicy,
-          saveMetadata: settings.asmrDownloadSaveMetadata,
-          folderNameFields: settings.asmrDownloadFolderNameFields,
-        ),
-      );
+      await ref
+          .read(uiOperationServiceProvider)
+          .run<void>(
+            scope: UiOperationScope.asmrDownloadStart,
+            labelKey: 'asmr_download_starting',
+            task: (_) => downloadManager.startDownload(
+              work: widget.work,
+              selectedRoots: selectedRoots,
+              destinationRoot: destination!,
+              conflictPolicy: settings.asmrDownloadConflictPolicy,
+              saveMetadata: settings.asmrDownloadSaveMetadata,
+              folderNameFields: settings.asmrDownloadFolderNameFields,
+            ),
+          );
       if (!mounted) return;
       showAppSnackBar(
         context,
@@ -724,7 +727,7 @@ class _AsmrDownloadNodeTileState extends ConsumerState<_AsmrDownloadNodeTile> {
                   ),
                 )
               : const SizedBox(width: 20),
-          children: hasChildren
+          children: hasChildren && _expanded
               ? [
                   for (final child in widget.node.children)
                     _AsmrDownloadNodeTile(
@@ -734,6 +737,8 @@ class _AsmrDownloadNodeTileState extends ConsumerState<_AsmrDownloadNodeTile> {
                       onSelectionChanged: widget.onSelectionChanged,
                     ),
                 ]
+              : hasChildren
+              ? const <Widget>[]
               : [
                   Padding(
                     padding: EdgeInsetsDirectional.only(

@@ -27,7 +27,8 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
     with WidgetsBindingObserver {
   final _powerService = PowerPlatformService();
   final _notificationsService = NotificationsPlatformService();
-  final _operationService = UiOperationService.instance;
+  UiOperationService get _operationService =>
+      ref.read(uiOperationServiceProvider);
   late final PermissionStatusService _statusService;
   late Future<PermissionStatusSnapshot> _snapshot;
   PermissionStatusSnapshot? _lastSnapshot;

@@ -107,7 +107,8 @@ class _DlsiteMetadataReviewPageState
       _candidateIndex = 0;
     });
     try {
-      final candidates = await UiOperationService.instance
+      final candidates = await ref
+          .read(uiOperationServiceProvider)
           .run<List<DlsiteMetadata>>(
             scope: _operationScope,
             labelKey: 'dlsite_review_title',
@@ -211,7 +212,8 @@ class _DlsiteMetadataReviewPageState
               listen: false,
             ).read(appLanguageProviderInstanceProvider).language,
           );
-      final result = await UiOperationService.instance
+      final result = await ref
+          .read(uiOperationServiceProvider)
           .run<DlsiteMetadataApplyResult>(
             scope: _operationScope,
             labelKey: 'audio_detail_save_failed',

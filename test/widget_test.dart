@@ -533,6 +533,40 @@ void main() {
     );
   });
 
+  testWidgets('ASMR track tree builds descendants only after expansion', (
+    tester,
+  ) async {
+    final controller = _QueuedEmptyAsmrLibraryController();
+    addTearDown(controller.dispose);
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.text('Loaded work', findRichText: true));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Disc 1'), findsOneWidget);
+    expect(find.text('Nested track'), findsNothing);
+
+    await tester.tap(find.text('Disc 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nested track'), findsOneWidget);
+
+    await tester.tap(find.text('Disc 1'));
+    await tester.pumpAndSettle();
+    expect(find.text('Nested track'), findsNothing);
+  });
+
   testWidgets('ASMR pagination shows progress without a pull-up hint', (
     tester,
   ) async {
@@ -1730,6 +1764,38 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     tags: const <String>[],
   );
 
+  static final AsmrTrackFile _nestedTrack = AsmrTrackFile(
+    hash: 'nested-track',
+    title: 'Nested track',
+    type: 'audio',
+    streamUrl: 'https://example.com/nested-track.mp3',
+    downloadUrl: 'https://example.com/nested-track.mp3',
+    lowQualityUrl: null,
+    duration: const Duration(minutes: 1),
+    size: 1024,
+    children: const <AsmrTrackFile>[],
+    workId: 1,
+    workTitle: 'Loaded work',
+    sourceId: 'RJ000001',
+    relativePath: 'Disc 1/Nested track.mp3',
+  );
+
+  static final AsmrTrackFile _trackFolder = AsmrTrackFile(
+    hash: 'disc-1',
+    title: 'Disc 1',
+    type: 'folder',
+    streamUrl: null,
+    downloadUrl: null,
+    lowQualityUrl: null,
+    duration: const Duration(minutes: 1),
+    size: 1024,
+    children: <AsmrTrackFile>[_nestedTrack],
+    workId: 1,
+    workTitle: 'Loaded work',
+    sourceId: 'RJ000001',
+    relativePath: 'Disc 1',
+  );
+
   @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
     scheduleMicrotask(notifyListeners);
@@ -1783,6 +1849,23 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
       totalCount: isPaginated ? works.length + 1 : works.length,
       activeQuery: searchQuery,
       lastError: null,
+      operationError: null,
+      revision: _revision,
+    );
+  }
+
+  @override
+  AsmrTrackTreeViewState trackTreeViewState(int workId) {
+    final tree = workId == _collectedWork.id
+        ? <AsmrTrackFile>[_trackFolder]
+        : const <AsmrTrackFile>[];
+    return AsmrTrackTreeViewState(
+      workId: workId,
+      tree: tree,
+      visibleTree: tree,
+      isLoading: false,
+      isRefreshing: false,
+      isStale: false,
       operationError: null,
       revision: _revision,
     );

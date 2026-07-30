@@ -164,30 +164,6 @@ class UiOperationState {
   );
 }
 
-@immutable
-class UiOperationRegistryState {
-  const UiOperationRegistryState(this.operations);
-
-  final Map<UiOperationScope, UiOperationState> operations;
-
-  static const empty = UiOperationRegistryState(
-    <UiOperationScope, UiOperationState>{},
-  );
-
-  UiOperationState forScope(UiOperationScope scope) {
-    return operations[scope] ?? UiOperationState.idle(scope);
-  }
-
-  @override
-  bool operator ==(Object other) {
-    return other is UiOperationRegistryState &&
-        mapEquals(other.operations, operations);
-  }
-
-  @override
-  int get hashCode => Object.hashAllUnordered(operations.entries);
-}
-
 class UiOperationProgress {
   const UiOperationProgress._(this._service, this._scope, this._operationId);
 
@@ -203,21 +179,19 @@ class UiOperationProgress {
 typedef UiOperationTask<T> = Future<T> Function(UiOperationProgress progress);
 
 class UiOperationService {
-  UiOperationService();
+  UiOperationService({this.maxRetainedCompletedOperations = 64})
+    : assert(maxRetainedCompletedOperations >= 0);
 
   static final UiOperationService instance = UiOperationService();
 
-  final StreamController<UiOperationRegistryState> _controller =
-      StreamController<UiOperationRegistryState>.broadcast();
+  final int maxRetainedCompletedOperations;
+  final StreamController<UiOperationScope> _controller =
+      StreamController<UiOperationScope>.broadcast();
   final Map<UiOperationScope, UiOperationState> _operations =
       <UiOperationScope, UiOperationState>{};
   int _nextOperationId = 0;
 
-  UiOperationRegistryState get state => UiOperationRegistryState(
-    Map<UiOperationScope, UiOperationState>.unmodifiable(_operations),
-  );
-
-  Stream<UiOperationRegistryState> get stream => _controller.stream;
+  Stream<UiOperationScope> get changes => _controller.stream;
 
   UiOperationState operationFor(UiOperationScope scope) {
     return _operations[scope] ?? UiOperationState.idle(scope);
@@ -255,7 +229,7 @@ class UiOperationService {
       phase: UiOperationPhase.running,
       startedAt: DateTime.now(),
     );
-    _emit();
+    _emit(scope);
 
     try {
       final value = await task(UiOperationProgress._(this, scope, operationId));
@@ -266,7 +240,9 @@ class UiOperationService {
           clearError: true,
           completedAt: DateTime.now(),
         );
-        _emit();
+        final evictedScopes = _trimCompletedOperations();
+        _emit(scope);
+        _emitAll(evictedScopes);
         await onSuccess?.call(value);
       }
       return value;
@@ -277,7 +253,9 @@ class UiOperationService {
           error: error,
           completedAt: DateTime.now(),
         );
-        _emit();
+        final evictedScopes = _trimCompletedOperations();
+        _emit(scope);
+        _emitAll(evictedScopes);
         await onError?.call(error, stackTrace);
       }
       rethrow;
@@ -285,7 +263,7 @@ class UiOperationService {
   }
 
   void clear(UiOperationScope scope) {
-    if (_operations.remove(scope) != null) _emit();
+    if (_operations.remove(scope) != null) _emit(scope);
   }
 
   void clearCompleted({
@@ -293,17 +271,17 @@ class UiOperationService {
     DateTime? now,
   }) {
     final cutoff = (now ?? DateTime.now()).subtract(olderThan);
-    var changed = false;
+    final removedScopes = <UiOperationScope>[];
     _operations.removeWhere((_, operation) {
       final completedAt = operation.completedAt;
       final remove =
           completedAt != null &&
           completedAt.isBefore(cutoff) &&
           !operation.isBusy;
-      changed = changed || remove;
+      if (remove) removedScopes.add(operation.scope);
       return remove;
     });
-    if (changed) _emit();
+    _emitAll(removedScopes);
   }
 
   bool _isCurrent(UiOperationScope scope, int operationId) {
@@ -319,11 +297,39 @@ class UiOperationService {
     _operations[scope] = operationFor(
       scope,
     ).copyWith(progress: progress.clamp(0, 1).toDouble());
-    _emit();
+    _emit(scope);
   }
 
-  void _emit() {
-    if (!_controller.isClosed) _controller.add(state);
+  List<UiOperationScope> _trimCompletedOperations() {
+    final completed = _operations.values
+        .where((operation) => !operation.isBusy)
+        .toList(growable: false);
+    final overflow = completed.length - maxRetainedCompletedOperations;
+    if (overflow <= 0) return const <UiOperationScope>[];
+    completed.sort((a, b) {
+      final completedComparison = (a.completedAt ?? a.startedAt).compareTo(
+        b.completedAt ?? b.startedAt,
+      );
+      if (completedComparison != 0) return completedComparison;
+      return a.operationId.compareTo(b.operationId);
+    });
+    final removedScopes = <UiOperationScope>[];
+    for (final operation in completed.take(overflow)) {
+      if (_operations.remove(operation.scope) != null) {
+        removedScopes.add(operation.scope);
+      }
+    }
+    return removedScopes;
+  }
+
+  void _emit(UiOperationScope scope) {
+    if (!_controller.isClosed) _controller.add(scope);
+  }
+
+  void _emitAll(Iterable<UiOperationScope> scopes) {
+    for (final scope in scopes) {
+      _emit(scope);
+    }
   }
 
   Future<void> dispose() => _controller.close();

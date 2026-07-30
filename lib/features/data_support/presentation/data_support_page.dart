@@ -20,7 +20,8 @@ class DataSupportPage extends ConsumerStatefulWidget {
 }
 
 class _DataSupportPageState extends ConsumerState<DataSupportPage> {
-  final _operationService = UiOperationService.instance;
+  UiOperationService get _operationService =>
+      ref.read(uiOperationServiceProvider);
   late final DataSupportFileService _fileService;
 
   @override
@@ -185,6 +186,26 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final exportBusy = ref
+        .watch(
+          uiOperationForScopeProvider(UiOperationScope.dataSupportBackupExport),
+        )
+        .isBusy;
+    final restoreBusy = ref
+        .watch(
+          uiOperationForScopeProvider(
+            UiOperationScope.dataSupportBackupRestore,
+          ),
+        )
+        .isBusy;
+    final diagnosticsBusy = ref
+        .watch(
+          uiOperationForScopeProvider(
+            UiOperationScope.dataSupportDiagnosticsExport,
+          ),
+        )
+        .isBusy;
+    final dataOperationBusy = exportBusy || restoreBusy || diagnosticsBusy;
     return SizedBox(
       height: MediaQuery.sizeOf(context).height * 0.75,
       child: Scaffold(
@@ -195,78 +216,58 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
           elevation: 0,
           automaticallyImplyLeading: false,
         ),
-        body: StreamBuilder<UiOperationRegistryState>(
-          stream: _operationService.stream,
-          initialData: _operationService.state,
-          builder: (context, snapshot) {
-            final operations = snapshot.data ?? UiOperationRegistryState.empty;
-            final exportBusy = operations
-                .forScope(UiOperationScope.dataSupportBackupExport)
-                .isBusy;
-            final restoreBusy = operations
-                .forScope(UiOperationScope.dataSupportBackupRestore)
-                .isBusy;
-            final diagnosticsBusy = operations
-                .forScope(UiOperationScope.dataSupportDiagnosticsExport)
-                .isBusy;
-            final dataOperationBusy =
-                exportBusy || restoreBusy || diagnosticsBusy;
-            return ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-              children: [
-                Text(
-                  i18n.tr('data_and_support_subtitle'),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+        body: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+          children: [
+            Text(
+              i18n.tr('data_and_support_subtitle'),
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 4,
+              child: dataOperationBusy ? const LinearProgressIndicator() : null,
+            ),
+            const SizedBox(height: 8),
+            _ActionCard(
+              key: const ValueKey('data-support-export-backup'),
+              title: i18n.tr('export_backup'),
+              subtitle: i18n.tr('export_backup_subtitle'),
+              icon: Icons.archive_outlined,
+              busy: exportBusy,
+              onTap: dataOperationBusy ? null : _exportBackup,
+            ),
+            _ActionCard(
+              key: const ValueKey('data-support-restore-backup'),
+              title: i18n.tr('restore_backup'),
+              subtitle: i18n.tr('restore_backup_subtitle'),
+              icon: Icons.restore_rounded,
+              busy: restoreBusy,
+              onTap: dataOperationBusy ? null : _restoreBackup,
+            ),
+            _ActionCard(
+              key: const ValueKey('data-support-export-diagnostics'),
+              title: i18n.tr('export_diagnostics'),
+              subtitle: i18n.tr('export_diagnostics_subtitle'),
+              icon: Icons.support_agent_rounded,
+              busy: diagnosticsBusy,
+              onTap: dataOperationBusy ? null : _exportDiagnostics,
+            ),
+            _ActionCard(
+              key: const ValueKey('data-support-privacy-summary'),
+              title: i18n.tr('privacy_summary_title'),
+              subtitle: i18n.tr('privacy_summary_local_body'),
+              icon: Icons.privacy_tip_outlined,
+              onTap: () => Navigator.of(context).push(
+                buildAppPageRoute<void>(
+                  context: context,
+                  child: const PrivacySummaryPage(),
                 ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 4,
-                  child: dataOperationBusy
-                      ? const LinearProgressIndicator()
-                      : null,
-                ),
-                const SizedBox(height: 8),
-                _ActionCard(
-                  key: const ValueKey('data-support-export-backup'),
-                  title: i18n.tr('export_backup'),
-                  subtitle: i18n.tr('export_backup_subtitle'),
-                  icon: Icons.archive_outlined,
-                  busy: exportBusy,
-                  onTap: dataOperationBusy ? null : _exportBackup,
-                ),
-                _ActionCard(
-                  key: const ValueKey('data-support-restore-backup'),
-                  title: i18n.tr('restore_backup'),
-                  subtitle: i18n.tr('restore_backup_subtitle'),
-                  icon: Icons.restore_rounded,
-                  busy: restoreBusy,
-                  onTap: dataOperationBusy ? null : _restoreBackup,
-                ),
-                _ActionCard(
-                  key: const ValueKey('data-support-export-diagnostics'),
-                  title: i18n.tr('export_diagnostics'),
-                  subtitle: i18n.tr('export_diagnostics_subtitle'),
-                  icon: Icons.support_agent_rounded,
-                  busy: diagnosticsBusy,
-                  onTap: dataOperationBusy ? null : _exportDiagnostics,
-                ),
-                _ActionCard(
-                  key: const ValueKey('data-support-privacy-summary'),
-                  title: i18n.tr('privacy_summary_title'),
-                  subtitle: i18n.tr('privacy_summary_local_body'),
-                  icon: Icons.privacy_tip_outlined,
-                  onTap: () => Navigator.of(context).push(
-                    buildAppPageRoute<void>(
-                      context: context,
-                      child: const PrivacySummaryPage(),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         ),
       ),
     );

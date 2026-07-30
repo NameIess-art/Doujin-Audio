@@ -182,22 +182,24 @@ class _TimerTabState extends ConsumerState<TimerTab>
   }
 
   Future<_TimerReliabilityStatus> _loadReliabilityStatus() async {
-    return UiOperationService.instance.run<_TimerReliabilityStatus>(
-      scope: UiOperationScope.timerReliability,
-      labelKey: 'timer_reliability_checking',
-      task: (_) async {
-        final results = await Future.wait<bool>([
-          _areNotificationsEnabled(),
-          _canScheduleExactAlarms(),
-          _isIgnoringBatteryOptimizations(),
-        ]);
-        return _TimerReliabilityStatus(
-          notificationsEnabled: results[0],
-          exactAlarmsEnabled: results[1],
-          backgroundRunAllowed: results[2],
+    return ref
+        .read(uiOperationServiceProvider)
+        .run<_TimerReliabilityStatus>(
+          scope: UiOperationScope.timerReliability,
+          labelKey: 'timer_reliability_checking',
+          task: (_) async {
+            final results = await Future.wait<bool>([
+              _areNotificationsEnabled(),
+              _canScheduleExactAlarms(),
+              _isIgnoringBatteryOptimizations(),
+            ]);
+            return _TimerReliabilityStatus(
+              notificationsEnabled: results[0],
+              exactAlarmsEnabled: results[1],
+              backgroundRunAllowed: results[2],
+            );
+          },
         );
-      },
-    );
   }
 
   Future<void> _setAutoResumeWithCapabilityCheck(

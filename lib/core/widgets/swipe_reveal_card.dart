@@ -129,6 +129,23 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     });
   }
 
+  bool _isRemoving = false;
+
+  void _runRemovalAction(VoidCallback? action) {
+    if (action == null) return;
+    if (_isRemoving) return;
+    _closePane(immediate: true);
+    setState(() {
+      _isRemoving = true;
+      _actionPaneActive = false;
+    });
+    Future.delayed(const Duration(milliseconds: 220), () {
+      if (mounted) {
+        action();
+      }
+    });
+  }
+
   void _handleHorizontalDragStart(DragStartDetails details) {
     _dragStartRevealedWidth = _revealedWidth;
     _dragDx = 0;
@@ -292,7 +309,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
     }
 
     final closedContent = Builder(builder: buildClosedContent);
-    return RepaintBoundary(
+    final cardWidget = RepaintBoundary(
       child: TapRegion(
         onTapOutside: (_) => _closePane(),
         child: Padding(
@@ -612,9 +629,15 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
                                                         : AppInteractionFeedbackType
                                                               .confirmation,
                                                   );
-                                                  _runActionAfterPaneClose(
-                                                    widget.onRemove,
-                                                  );
+                                                  if (widget.destructive) {
+                                                    _runRemovalAction(
+                                                      widget.onRemove,
+                                                    );
+                                                  } else {
+                                                    _runActionAfterPaneClose(
+                                                      widget.onRemove,
+                                                    );
+                                                  }
                                                 },
                                                 backgroundColor: primaryBg,
                                                 foregroundColor: primaryFg,
@@ -680,6 +703,15 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
           ),
         ),
       ),
+    );
+
+    return AnimatedSize(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeInOutCubic,
+      alignment: Alignment.topCenter,
+      child: _isRemoving
+          ? const SizedBox(width: double.infinity, height: 0)
+          : cardWidget,
     );
   }
 }

@@ -979,12 +979,13 @@ void main() {
     await tester.pump();
 
     expect(find.byTooltip(languageProvider.tr('more_actions')), findsOneWidget);
-    expect(find.byTooltip(languageProvider.tr('import_audio')), findsOneWidget);
+    expect(find.byTooltip(languageProvider.tr('import_audio')), findsNothing);
     expect(find.byTooltip(languageProvider.tr('edit_library')), findsNothing);
     await tester.tap(find.byTooltip(languageProvider.tr('more_actions')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
+    expect(find.text(languageProvider.tr('import_folder')), findsOneWidget);
     expect(find.text(languageProvider.tr('edit_library')), findsOneWidget);
     expect(find.text(languageProvider.tr('batch_metadata')), findsOneWidget);
     expect(

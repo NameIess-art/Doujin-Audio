@@ -127,6 +127,10 @@ final class _LibraryCoverWarmupScheduler {
 }
 
 enum _LibraryMoreAction {
+  importFolder,
+  importFiles,
+  addLibrary,
+  videoToAudio,
   manageLibraries,
   batchMetadata,
   toggleCardPositionsLocked,
@@ -917,7 +921,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 floatingReveal: true,
                 floatingRevealDistance: 56,
                 trailing: SizedBox(
-                  width: 152 + (isLandscape ? 52 : 0),
+                  width: 96 + (isLandscape ? 52 : 0),
                   height: 44,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
@@ -945,44 +949,32 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               : const Icon(Icons.refresh_rounded),
                           tooltip: i18n.tr('refresh_watched_folder'),
                         ),
-                      UnifiedPopupMenuButton<int>(
-                        enabled: !libraryRefreshBusy,
-                        icon: Icons.add_circle_outline_rounded,
-                        tooltip: i18n.tr('import_audio'),
-                        entries: [
-                          UnifiedMenuEntry<int>.action(
-                            value: 0,
-                            icon: Icons.create_new_folder_rounded,
-                            label: i18n.tr('import_folder'),
-                          ),
-                          UnifiedMenuEntry<int>.action(
-                            value: 2,
-                            icon: Icons.upload_file_rounded,
-                            label: i18n.tr('import_file'),
-                          ),
-                          UnifiedMenuEntry<int>.action(
-                            value: 1,
-                            icon: Icons.library_add_rounded,
-                            label: i18n.tr('choose_library'),
-                          ),
-                          const UnifiedMenuEntry<int>.divider(),
-                          UnifiedMenuEntry<int>.action(
-                            value: 3,
-                            icon: Icons.video_library_rounded,
-                            label: i18n.tr('video_to_audio'),
-                          ),
-                        ],
-                        onSelected: (value) {
-                          if (value == 0) _addFolder();
-                          if (value == 1) _addLibrary();
-                          if (value == 2) _addFiles();
-                          if (value == 3) _openVideoConverterPage();
-                        },
-                      ),
                       UnifiedPopupMenuButton<_LibraryMoreAction>(
+                        enabled: !libraryRefreshBusy,
                         icon: Icons.more_horiz_rounded,
                         tooltip: i18n.tr('more_actions'),
                         entries: [
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.importFolder,
+                            icon: Icons.create_new_folder_rounded,
+                            label: i18n.tr('import_folder'),
+                          ),
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.importFiles,
+                            icon: Icons.upload_file_rounded,
+                            label: i18n.tr('import_file'),
+                          ),
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.addLibrary,
+                            icon: Icons.library_add_rounded,
+                            label: i18n.tr('choose_library'),
+                          ),
+                          const UnifiedMenuEntry<_LibraryMoreAction>.divider(),
+                          UnifiedMenuEntry<_LibraryMoreAction>.action(
+                            value: _LibraryMoreAction.videoToAudio,
+                            icon: Icons.video_library_rounded,
+                            label: i18n.tr('video_to_audio'),
+                          ),
                           UnifiedMenuEntry<_LibraryMoreAction>.action(
                             value: _LibraryMoreAction.manageLibraries,
                             icon: Icons.edit_note_rounded,
@@ -1005,6 +997,18 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                         ],
                         onSelected: (value) {
                           switch (value) {
+                            case _LibraryMoreAction.importFolder:
+                              _addFolder();
+                              break;
+                            case _LibraryMoreAction.importFiles:
+                              _addFiles();
+                              break;
+                            case _LibraryMoreAction.addLibrary:
+                              _addLibrary();
+                              break;
+                            case _LibraryMoreAction.videoToAudio:
+                              _openVideoConverterPage();
+                              break;
                             case _LibraryMoreAction.manageLibraries:
                               _openLibraryManagementPage();
                               break;

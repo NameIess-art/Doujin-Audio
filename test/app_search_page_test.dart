@@ -125,7 +125,7 @@ void main() {
       );
       final fadeMask = tester.widget<AppEdgeFadeMask>(fadeMaskFinder);
       expect(fadeMask.direction, AppEdgeFadeDirection.towardTop);
-      expect(tester.getSize(fadeMaskFinder).height, 324);
+      expect(tester.getSize(fadeMaskFinder).height, 122);
       final fadeDecoration = tester.widget<DecoratedBox>(
         find.descendant(
           of: fadeMaskFinder,

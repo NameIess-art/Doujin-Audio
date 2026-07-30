@@ -111,19 +111,23 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     required LibraryFacade libraryFacade,
     required String query,
     required int structureRevision,
+    required int detailRevision,
   }) {
+    final categorySnapshot = libraryFacade.categorySnapshot;
+    final categoryRevision = categorySnapshot?.detailRevision ?? detailRevision;
     if ((_visibleSearchQuery == query &&
-            _visibleSearchRevision == structureRevision) ||
-        _pendingSearchKey == '$structureRevision|$query') {
+            _visibleSearchRevision == '$structureRevision|$categoryRevision') ||
+        _pendingSearchKey == '$structureRevision|$categoryRevision|$query') {
       return;
     }
-    final requestKey = '$structureRevision|$query';
+    final requestKey = '$structureRevision|$categoryRevision|$query';
     _pendingSearchKey = requestKey;
     final searchFuture = libraryFacade.loadLibraryTree().then((tree) {
       final request = LibrarySearchSnapshotRequest(
         tree: tree,
         query: query,
         structureRevision: structureRevision,
+        categorySnapshot: categorySnapshot,
       );
       return libraryTreeTrackCount(tree) > 200
           ? compute(buildFilteredLibraryTreeSnapshot, request)
@@ -142,7 +146,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
             setState(() {
               _visibleSearchResult = result;
               _visibleSearchQuery = query;
-              _visibleSearchRevision = structureRevision;
+              _visibleSearchRevision = '$structureRevision|$categoryRevision';
               _pendingSearchKey = null;
             });
           },
@@ -191,10 +195,14 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       libraryFacade: libraryFacade,
       query: _query,
       structureRevision: structureRevision,
+      detailRevision: detailRevision,
     );
+    final categorySnapshot = libraryFacade.categorySnapshot;
+    final categoryRevision = categorySnapshot?.detailRevision ?? detailRevision;
+    final expectedRevision = '$structureRevision|$categoryRevision';
     final result =
         _visibleSearchQuery == _query &&
-            _visibleSearchRevision == structureRevision
+            _visibleSearchRevision == expectedRevision
         ? _visibleSearchResult
         : null;
     final tree = result?.tree;
@@ -220,31 +228,34 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         coverGeneration: coverGeneration,
         scope: 'search_all',
       );
-      content = ListView.builder(
-        key: const ValueKey<String>('library_search_results_all'),
-        controller: _scrollController,
-        padding: EdgeInsets.fromLTRB(
-          16,
-          AppSearchPageScaffold.controlsTopInset(context),
-          16,
-          MediaQuery.paddingOf(context).bottom + 16,
+      content = SearchHighlightScope(
+        query: _query,
+        child: ListView.builder(
+          key: const ValueKey<String>('library_search_results_all'),
+          controller: _scrollController,
+          padding: EdgeInsets.fromLTRB(
+            16,
+            AppSearchPageScaffold.controlsTopInset(context),
+            16,
+            MediaQuery.paddingOf(context).bottom + 16,
+          ),
+          cacheExtent: 320,
+          physics: const ClampingScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          itemCount: tree.length,
+          itemBuilder: (context, index) {
+            final node = tree[index];
+            return RepaintBoundary(
+              key: ValueKey<String>('search_${node.path}'),
+              child: _LibraryTreeItem(
+                node: node,
+                initiallyExpanded: _query.isNotEmpty,
+                searchQuery: _query,
+                cardPositionsLocked: cardPositionsLocked,
+              ),
+            );
+          },
         ),
-        cacheExtent: 320,
-        physics: const ClampingScrollPhysics(),
-        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-        itemCount: tree.length,
-        itemBuilder: (context, index) {
-          final node = tree[index];
-          return RepaintBoundary(
-            key: ValueKey<String>('search_${node.path}'),
-            child: _LibraryTreeItem(
-              node: node,
-              initiallyExpanded: _query.isNotEmpty,
-              searchQuery: _query,
-              cardPositionsLocked: cardPositionsLocked,
-            ),
-          );
-        },
       );
     }
     return PlaceholderContentTransition(

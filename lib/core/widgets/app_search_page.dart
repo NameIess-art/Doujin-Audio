@@ -79,7 +79,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
             top: 0,
             left: 0,
             right: 0,
-            height: 300 + MediaQuery.paddingOf(context).top,
+            height: MediaQuery.paddingOf(context).top + 98,
             child: const AppEdgeFadeMask(
               key: ValueKey<String>('app_search_top_fade_mask'),
               direction: AppEdgeFadeDirection.towardTop,

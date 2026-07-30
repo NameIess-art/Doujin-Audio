@@ -195,9 +195,11 @@ class LibrarySearchIndex {
     required List<LibraryNode> tree,
     required String query,
     required int structureRevision,
+    AudioLibraryCategorySnapshot? categorySnapshot,
   }) {
     final searchTerms = extractSearchTerms(query);
-    final normalizedQuery = searchTerms.join(' ');
+    final detailRevision = categorySnapshot?.detailRevision ?? 0;
+    final normalizedQuery = '$detailRevision|${searchTerms.join(' ')}';
     if (_cachedRevision != structureRevision) {
       _cache.clear();
       _cachedRevision = structureRevision;
@@ -209,7 +211,7 @@ class LibrarySearchIndex {
       return cached;
     }
 
-    final result = _buildFilteredTree(tree, searchTerms);
+    final result = _buildFilteredTree(tree, searchTerms, categorySnapshot);
     _cache[normalizedQuery] = result;
     if (_cache.length > _maxEntries) {
       _cache.remove(_cache.keys.first);
@@ -220,6 +222,7 @@ class LibrarySearchIndex {
   FilteredLibraryTreeResult _buildFilteredTree(
     List<LibraryNode> tree,
     List<String> searchTerms,
+    AudioLibraryCategorySnapshot? categorySnapshot,
   ) {
     if (searchTerms.isEmpty) {
       return FilteredLibraryTreeResult(
@@ -233,7 +236,11 @@ class LibrarySearchIndex {
 
     for (final node in tree) {
       if (node is FolderNode) {
-        final folderResult = _filterFolderNode(node, searchTerms);
+        final folderResult = _filterFolderNode(
+          node,
+          searchTerms,
+          categorySnapshot,
+        );
         if (folderResult == null) continue;
         resultNodes.add(folderResult.node);
         totalMatches += folderResult.matchCount;
@@ -241,7 +248,7 @@ class LibrarySearchIndex {
       }
 
       final trackNode = node as TrackNode;
-      if (_trackMatchesQuery(trackNode, searchTerms)) {
+      if (_trackMatchesQuery(trackNode, searchTerms, categorySnapshot)) {
         resultNodes.add(trackNode);
         totalMatches++;
       }
@@ -256,9 +263,24 @@ class LibrarySearchIndex {
   _FilteredFolderNodeResult? _filterFolderNode(
     FolderNode folder,
     List<String> searchTerms,
+    AudioLibraryCategorySnapshot? categorySnapshot,
   ) {
+    final folderTargets = <AudioDetailTarget>[
+      AudioDetailTarget.libraryRootFolder(folder.path),
+      AudioDetailTarget.libraryFolder(folder.path),
+    ];
+    final folderEntries = categorySnapshot == null
+        ? const <AudioLibraryCategoryEntry>[]
+        : folderTargets
+            .map((t) => categorySnapshot.entryFor(t))
+            .whereType<AudioLibraryCategoryEntry>();
+
     final matchesFolderName = matchesSearchTerms(
-      <String>[folder.name],
+      <String>[
+        folder.name,
+        folder.path,
+        ...folderEntries.map((e) => e.searchableText),
+      ],
       '',
       terms: searchTerms,
     );
@@ -274,7 +296,11 @@ class LibrarySearchIndex {
 
     for (final child in folder.children) {
       if (child is FolderNode) {
-        final nestedResult = _filterFolderNode(child, searchTerms);
+        final nestedResult = _filterFolderNode(
+          child,
+          searchTerms,
+          categorySnapshot,
+        );
         if (nestedResult == null) continue;
         filteredChildren.add(nestedResult.node);
         matchCount += nestedResult.matchCount;
@@ -282,7 +308,7 @@ class LibrarySearchIndex {
       }
 
       final trackNode = child as TrackNode;
-      if (_trackMatchesQuery(trackNode, searchTerms)) {
+      if (_trackMatchesQuery(trackNode, searchTerms, categorySnapshot)) {
         filteredChildren.add(trackNode);
         matchCount++;
       }
@@ -301,14 +327,24 @@ class LibrarySearchIndex {
     );
   }
 
-  bool _trackMatchesQuery(TrackNode trackNode, List<String> searchTerms) {
+  bool _trackMatchesQuery(
+    TrackNode trackNode,
+    List<String> searchTerms,
+    AudioLibraryCategorySnapshot? categorySnapshot,
+  ) {
     final track = trackNode.track;
+    final trackEntry = categorySnapshot?.entryFor(
+      AudioDetailTarget.singleAudioFile(track.path),
+    );
+
     return matchesSearchTerms(
       <String>[
         track.displayName,
         track.groupTitle,
         track.groupSubtitle,
         track.path,
+        ...track.tags,
+        if (trackEntry != null) trackEntry.searchableText,
       ],
       '',
       terms: searchTerms,
@@ -333,11 +369,13 @@ class LibrarySearchSnapshotRequest {
     required this.tree,
     required this.query,
     required this.structureRevision,
+    this.categorySnapshot,
   });
 
   final List<LibraryNode> tree;
   final String query;
   final int structureRevision;
+  final AudioLibraryCategorySnapshot? categorySnapshot;
 }
 
 FilteredLibraryTreeResult buildFilteredLibraryTreeSnapshot(
@@ -347,6 +385,7 @@ FilteredLibraryTreeResult buildFilteredLibraryTreeSnapshot(
     tree: request.tree,
     query: request.query,
     structureRevision: request.structureRevision,
+    categorySnapshot: request.categorySnapshot,
   );
 }
 

@@ -95,15 +95,31 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
       return _lastCategoryFilterResult;
     }
 
+    final hasTextQuery = queryTerms.isNotEmpty;
+    final hasElementQuery =
+        normalizedSelectedTerms.isNotEmpty || termKeywords.isNotEmpty;
+
     final result = snapshot.entries
         .where((entry) {
           final entryTerms = entry.normalizedTermsForCategory(_categoryType);
-          if (!normalizedSelectedTerms.every(entryTerms.contains)) return false;
-          final matchesEveryKeyword = termKeywords.every(
+          final matchesSelected = normalizedSelectedTerms.every(
+            entryTerms.contains,
+          );
+          final matchesTermKeywords = termKeywords.every(
             (keyword) => entryTerms.any((term) => term.contains(keyword)),
           );
-          if (!matchesEveryKeyword) return false;
-          if (!queryTerms.every(entry.searchableText.contains)) return false;
+          final matchesElement =
+              hasElementQuery && matchesSelected && matchesTermKeywords;
+          final matchesText =
+              hasTextQuery && queryTerms.every(entry.searchableText.contains);
+
+          if (hasTextQuery && hasElementQuery) {
+            return matchesText && matchesElement;
+          } else if (hasTextQuery) {
+            return matchesText;
+          } else if (hasElementQuery) {
+            return matchesElement;
+          }
           return true;
         })
         .toList(growable: false);
@@ -166,77 +182,86 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
         final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
         final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
 
-        final list = ListView.builder(
-          key: ValueKey('library_category_${_categoryType.name}'),
-          controller: _scrollController,
-          padding: EdgeInsets.fromLTRB(
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            topPadding,
-            LibraryLikeCardMetrics.listHorizontalPadding,
-            bottomPadding,
-          ),
-          cacheExtent: cacheExtent,
-          clipBehavior: Clip.none,
-          physics: const ClampingScrollPhysics(),
-          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          itemCount: itemCount,
-          itemBuilder: (context, index) {
-            if (hasTermBox && index == 0) {
-              return _LibraryCategoryTermBox(
-                categoryType: _categoryType,
-                collapseOnMount: _hasSwitchedCategory,
-                terms: terms,
-                selectedTerms: _selectedTermsForCurrentCategory,
-                emptyText: _noTermsText(i18n),
-                clearLabel: i18n.tr('clear'),
-                searchHintText: _termSearchHintText(i18n),
-                searchQuery: _termSearchQuery,
-                onSearchQueryChanged: (val) {
-                  _setLocalState(() => _termSearchQuery = val);
-                },
-                onToggle: (term) {
-                  _setLocalState(() {
-                    final selected = _selectedTermsForCurrentCategory;
-                    if (!selected.remove(term)) selected.add(term);
-                  });
-                },
-                onClear: () {
-                  _setLocalState(
-                    () => _selectedTermsForCurrentCategory.clear(),
-                  );
-                },
-              );
-            }
+        final highlightTerms = <String>{
+          ...extractSearchTerms(_effectiveSearchQuery),
+          ..._selectedTermsForCurrentCategory,
+          ..._termSearchKeywords,
+        }.where((t) => t.trim().isNotEmpty).toList(growable: false);
 
-            final entryIndex = index - (hasTermBox ? 1 : 0);
-            if (entryIndex == entries.length) {
-              if (entries.isEmpty) {
-                return SizedBox(
-                  height: 220,
-                  child: Center(
-                    child: Text(
-                      i18n.tr('library_category_no_matches'),
-                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
+        final list = SearchHighlightScope.withTerms(
+          terms: highlightTerms,
+          child: ListView.builder(
+            key: ValueKey('library_category_${_categoryType.name}'),
+            controller: _scrollController,
+            padding: EdgeInsets.fromLTRB(
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              topPadding,
+              LibraryLikeCardMetrics.listHorizontalPadding,
+              bottomPadding,
+            ),
+            cacheExtent: cacheExtent,
+            clipBehavior: Clip.none,
+            physics: const ClampingScrollPhysics(),
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            itemCount: itemCount,
+            itemBuilder: (context, index) {
+              if (hasTermBox && index == 0) {
+                return _LibraryCategoryTermBox(
+                  categoryType: _categoryType,
+                  collapseOnMount: _hasSwitchedCategory,
+                  terms: terms,
+                  selectedTerms: _selectedTermsForCurrentCategory,
+                  emptyText: _noTermsText(i18n),
+                  clearLabel: i18n.tr('clear'),
+                  searchHintText: _termSearchHintText(i18n),
+                  searchQuery: _termSearchQuery,
+                  onSearchQueryChanged: (val) {
+                    _setLocalState(() => _termSearchQuery = val);
+                  },
+                  onToggle: (term) {
+                    _setLocalState(() {
+                      final selected = _selectedTermsForCurrentCategory;
+                      if (!selected.remove(term)) selected.add(term);
+                    });
+                  },
+                  onClear: () {
+                    _setLocalState(
+                      () => _selectedTermsForCurrentCategory.clear(),
+                    );
+                  },
                 );
               }
-              return const SizedBox.shrink(key: ValueKey('category_bottom'));
-            }
 
-            final entry = entries[entryIndex];
-            return RepaintBoundary(
-              key: ValueKey('category_${entry.target.targetPath}'),
-              child: _AudioLibraryCategoryEntryCard(
-                entry: entry,
-                folder: _folderForCategoryEntry(libraryFacade, entry),
-                secondaryIcon: _categoryIcon(),
-                secondaryText: _entrySecondaryText(i18n, entry),
-              ),
-            );
-          },
+              final entryIndex = index - (hasTermBox ? 1 : 0);
+              if (entryIndex == entries.length) {
+                if (entries.isEmpty) {
+                  return SizedBox(
+                    height: 220,
+                    child: Center(
+                      child: Text(
+                        i18n.tr('library_category_no_matches'),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                return const SizedBox.shrink(key: ValueKey('category_bottom'));
+              }
+
+              final entry = entries[entryIndex];
+              return RepaintBoundary(
+                key: ValueKey('category_${entry.target.targetPath}'),
+                child: _AudioLibraryCategoryEntryCard(
+                  entry: entry,
+                  folder: _folderForCategoryEntry(libraryFacade, entry),
+                  secondaryIcon: _categoryIcon(),
+                  secondaryText: _entrySecondaryText(i18n, entry),
+                ),
+              );
+            },
+          ),
         );
 
         return PlaceholderContentTransition(
@@ -578,7 +603,26 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                                   selected: selected,
                                   label: Padding(
                                     padding: const EdgeInsets.only(bottom: 2),
-                                    child: Text(term),
+                                    child: _localSearchQuery.isNotEmpty
+                                        ? SearchHighlightedText(
+                                            text: term,
+                                            terms: extractSearchTerms(
+                                              _localSearchQuery,
+                                            ),
+                                            style: Theme.of(context)
+                                                    .textTheme
+                                                    .labelSmall
+                                                    ?.copyWith(
+                                                      color: selected
+                                                          ? cs.onSecondaryContainer
+                                                          : cs.onSurfaceVariant,
+                                                      fontWeight: selected
+                                                          ? FontWeight.w800
+                                                          : FontWeight.w600,
+                                                    ) ??
+                                                const TextStyle(),
+                                          )
+                                        : Text(term),
                                   ),
                                   onSelected: (_) => widget.onToggle(term),
                                   showCheckmark: false,

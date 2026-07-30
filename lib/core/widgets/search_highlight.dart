@@ -10,6 +10,12 @@ class SearchHighlightScope extends InheritedWidget {
     required super.child,
   }) : terms = extractSearchTerms(query);
 
+  SearchHighlightScope.withTerms({
+    super.key,
+    required this.terms,
+    required super.child,
+  });
+
   final List<String> terms;
 
   static List<String> termsOf(BuildContext context) {

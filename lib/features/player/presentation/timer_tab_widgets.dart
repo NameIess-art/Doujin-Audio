@@ -26,8 +26,9 @@ class _ModeSelector extends ConsumerWidget {
       IconData icon,
     ) {
       final selected = value == mode;
+      final tokens = AppDesignTokens.of(context);
       return InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         onTap: () {
           AppInteractionFeedback.trigger(
             AppInteractionFeedbackType.tap,
@@ -43,8 +44,10 @@ class _ModeSelector extends ConsumerWidget {
             vertical: compact ? 10 : 12,
           ),
           decoration: BoxDecoration(
-            color: selected ? cs.primaryContainer : cs.surfaceContainerLow,
-            borderRadius: BorderRadius.circular(16),
+            color: selected
+                ? cs.primaryContainer.withValues(alpha: 0.6)
+                : cs.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(
               color: selected ? cs.primary : Colors.transparent,
               width: 1.5,
@@ -53,19 +56,21 @@ class _ModeSelector extends ConsumerWidget {
           child: Row(
             children: [
               Container(
-                width: compact ? 30 : 36,
-                height: compact ? 30 : 36,
+                width: 36,
+                height: 36,
                 decoration: BoxDecoration(
-                  color: selected ? cs.primary : cs.surfaceContainerHigh,
-                  borderRadius: BorderRadius.circular(16),
+                  color: selected
+                      ? cs.primary
+                      : cs.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(tokens.radiusSmall),
                 ),
                 child: Icon(
                   icon,
-                  size: compact ? 16 : 18,
-                  color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+                  size: 20,
+                  color: selected ? cs.onPrimary : cs.primary,
                 ),
               ),
-              SizedBox(width: compact ? 10 : 12),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,8 +78,8 @@ class _ModeSelector extends ConsumerWidget {
                     Text(
                       title,
                       style: TextStyle(
-                        fontSize: compact ? 13 : 15,
-                        fontWeight: FontWeight.w800,
+                        fontSize: compact ? 13 : 14,
+                        fontWeight: FontWeight.w700,
                         color: selected ? cs.onPrimaryContainer : cs.onSurface,
                       ),
                     ),
@@ -131,7 +136,7 @@ class _TimerPanelCard extends StatelessWidget {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(24),
         color: cs.surfaceContainerLow,
         border: accentColor == null
             ? null
@@ -211,6 +216,7 @@ class _TimerSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
 
     return Row(
       children: [
@@ -218,10 +224,10 @@ class _TimerSectionTitle extends StatelessWidget {
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: cs.primaryContainer,
-            borderRadius: BorderRadius.circular(16),
+            color: cs.primary.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(tokens.radiusSmall),
           ),
-          child: Icon(icon, color: cs.onPrimaryContainer, size: 20),
+          child: Icon(icon, color: cs.primary, size: 22),
         ),
         const SizedBox(width: 12),
         Expanded(

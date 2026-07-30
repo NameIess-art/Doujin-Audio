@@ -97,7 +97,5 @@ void compactCoverImageCacheForBackground({ImageCache? imageCache}) {
   applyCoverImageCachePolicy(
     CoverImageResolution.memorySaver,
     imageCache: cache,
-    clear: true,
   );
-  cache.clearLiveImages();
 }

@@ -35,7 +35,7 @@ class AppBottomSheet {
       elevation: elevation,
       clipBehavior: clipBehavior,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: builder,
     );

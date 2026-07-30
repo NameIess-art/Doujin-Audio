@@ -151,7 +151,7 @@ class _AsmrPanelCard extends StatelessWidget {
       constraints: BoxConstraints(maxHeight: maxHeight),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(24),
           color: cs.surfaceContainerLow.withValues(alpha: 0.96),
           boxShadow: [
             BoxShadow(
@@ -162,7 +162,7 @@ class _AsmrPanelCard extends StatelessWidget {
           ],
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -196,16 +196,17 @@ class _AsmrPanelTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     return Row(
       children: [
         Container(
           width: 40,
           height: 40,
           decoration: BoxDecoration(
-            color: cs.primaryContainer,
-            borderRadius: BorderRadius.circular(16),
+            color: cs.primary.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(tokens.radiusSmall),
           ),
-          child: Icon(icon, color: cs.onPrimaryContainer, size: 20),
+          child: Icon(icon, color: cs.primary, size: 22),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -219,6 +220,52 @@ class _AsmrPanelTitle extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _AsmrAccountStatusLine extends StatelessWidget {
+  const _AsmrAccountStatusLine({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: cs.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(tokens.radiusSmall),
+              ),
+              child: Icon(icon, size: 20, color: cs.primary),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                text,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: cs.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -564,42 +611,6 @@ class _AsmrAccountPanelState extends ConsumerState<_AsmrAccountPanel> {
 
   Color _accountAccentColor(BuildContext context) {
     return AppDesignTokens.of(context).asmrAccent;
-  }
-}
-
-class _AsmrAccountStatusLine extends StatelessWidget {
-  const _AsmrAccountStatusLine({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(alpha: 0.52),
-        borderRadius: BorderRadius.circular(tokens.radiusCard),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: cs.primary),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                text,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 

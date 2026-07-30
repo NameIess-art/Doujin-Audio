@@ -1221,10 +1221,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(
-      tester.widget<AppBar>(find.byType(AppBar)).toolbarHeight,
-      AppPageHeaderMetrics.toolbarHeight,
-    );
+    expect(find.byType(TopPageHeader), findsOneWidget);
 
     final addAudio = find.byTooltip(
       fixture.languageProvider.tr('add_audio_to_queue'),

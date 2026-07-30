@@ -75,33 +75,41 @@ extension _TimerTabDetailBody on _TimerTabState {
                         Container(
                           decoration: BoxDecoration(
                             color: cs.surfaceContainerLow,
-                            borderRadius: BorderRadius.circular(16),
+                            borderRadius: BorderRadius.circular(14),
                           ),
                           child: Padding(
-                            padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 10,
+                            ),
                             child: Row(
                               children: [
                                 Container(
-                                  width: 30,
-                                  height: 30,
+                                  width: 36,
+                                  height: 36,
                                   decoration: BoxDecoration(
-                                    color: cs.surfaceContainerHighest,
-                                    borderRadius: BorderRadius.circular(16),
+                                    color: cs.primary.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(
+                                      AppDesignTokens.of(context).radiusSmall,
+                                    ),
                                   ),
                                   child: Icon(
                                     Icons.restore_rounded,
-                                    size: 17,
-                                    color: cs.onSurfaceVariant,
+                                    size: 20,
+                                    color: cs.primary,
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
                                     i18n.tr('auto_resume_after_timer'),
                                     style: Theme.of(context)
                                         .textTheme
-                                        .labelLarge
-                                        ?.copyWith(fontWeight: FontWeight.w800),
+                                        .bodyMedium
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                        ),
                                   ),
                                 ),
                                 Switch.adaptive(
@@ -130,50 +138,65 @@ extension _TimerTabDetailBody on _TimerTabState {
                         if (timerState.autoResumeEnabled) ...[
                           const SizedBox(height: 8),
                           Material(
-                            color: Colors.transparent,
+                            color: cs.surfaceContainerLow,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            clipBehavior: Clip.antiAlias,
                             child: InkWell(
                               onTap: pickAutoResumeTime,
-                              borderRadius: BorderRadius.circular(16),
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: cs.surfaceContainerLow,
-                                  borderRadius: BorderRadius.circular(16),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 10,
                                 ),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 9,
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      const Icon(Icons.alarm_rounded, size: 18),
-                                      const SizedBox(width: 8),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              i18n.tr('resume_time', {
-                                                'time': _fmtClockTime(
-                                                  timerState.autoResumeHour,
-                                                  timerState.autoResumeMinute,
-                                                ),
-                                              }),
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .labelLarge
-                                                  ?.copyWith(
-                                                    fontWeight: FontWeight.w800,
-                                                  ),
-                                            ),
-                                          ],
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: cs.primary.withValues(
+                                          alpha: 0.12,
+                                        ),
+                                        borderRadius: BorderRadius.circular(
+                                          AppDesignTokens.of(
+                                            context,
+                                          ).radiusSmall,
                                         ),
                                       ),
-                                      const SizedBox(width: 8),
-                                      const Icon(Icons.chevron_right_rounded),
-                                    ],
-                                  ),
+                                      child: Icon(
+                                        Icons.alarm_rounded,
+                                        size: 20,
+                                        color: cs.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Text(
+                                        i18n.tr('resume_time', {
+                                          'time': _fmtClockTime(
+                                            timerState.autoResumeHour,
+                                            timerState.autoResumeMinute,
+                                          ),
+                                        }),
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 14,
+                                            ),
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.chevron_right_rounded,
+                                      size: 20,
+                                      color: cs.onSurface.withValues(
+                                        alpha: 0.5,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ),

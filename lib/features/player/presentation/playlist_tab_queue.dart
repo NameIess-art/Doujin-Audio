@@ -677,164 +677,193 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
     ).read(appLanguageProviderInstanceProvider);
     if (queue == null) return const SizedBox.shrink();
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(
-        toolbarHeight: AppPageHeaderMetrics.toolbarHeight,
-        title: Text(i18n.tr('edit_queue_audio')),
-      ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final isLandscape = constraints.maxWidth > constraints.maxHeight;
-          final queueEntries = queue.entries.toList();
+    final cs = Theme.of(context).colorScheme;
 
-          final addedToQueueSection = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xs,
-                  AppSpacing.sm,
-                  AppSpacing.xs,
-                  AppSpacing.xs,
-                ),
-                child: Text(
-                  i18n.tr('queue_added_audio'),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              if (queueEntries.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xs,
-                  ),
-                  child: ListTile(title: Text(i18n.tr('empty_playback_queue'))),
-                )
-              else
-                Expanded(
-                  child: ReorderableListView.builder(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.xs,
+    return Scaffold(
+      backgroundColor: cs.surface,
+      body: Column(
+        children: [
+          TopPageHeader(
+            leading: IconButton(
+              tooltip: i18n.tr('close'),
+              onPressed: () => Navigator.of(context).maybePop(),
+              icon: const Icon(Icons.arrow_back_rounded),
+            ),
+            title: i18n.tr('edit_queue_audio'),
+          ),
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isLandscape = constraints.maxWidth > constraints.maxHeight;
+                final queueEntries = queue.entries.toList();
+
+                final addedToQueueSection = Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.xs,
+                        AppSpacing.sm,
+                        AppSpacing.xs,
+                        AppSpacing.xs,
+                      ),
+                      child: Text(
+                        i18n.tr('queue_added_audio'),
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                     ),
-                    buildDefaultDragHandles: false,
-                    proxyDecorator: (child, index, animation) => child,
-                    itemCount: queueEntries.length,
-                    onReorder: (oldIndex, newIndex) {
-                      playback.reorderPlaybackQueueEntry(
-                        sessionId,
-                        oldIndex,
-                        newIndex,
-                      );
-                    },
-                    itemBuilder: (context, index) {
-                      final entry = queueEntries[index];
-                      return _AnimatedQueueEntryCard(
-                        key: ValueKey(entry.id),
-                        onRemove: () => playback.removePlaybackQueueEntry(
-                          sessionId,
-                          entry.id,
+                    if (queueEntries.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xs,
                         ),
-                        builder: (context, triggerRemove) {
-                          return _QueueAudioEditCard(
-                            track: entry.tracks.firstOrNull,
-                            title: entry.title,
-                            subtitle: i18n.tr('audio_count', {
-                              'count': entry.tracks.length,
-                            }),
-                            trailing: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                IconButton(
-                                  tooltip: i18n.tr('remove'),
-                                  constraints: const BoxConstraints.tightFor(
-                                    width: 40,
-                                    height: 32,
+                        child: ListTile(
+                          title: Text(i18n.tr('empty_playback_queue')),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ReorderableListView.builder(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: AppSpacing.xs,
+                          ),
+                          buildDefaultDragHandles: false,
+                          proxyDecorator: (child, index, animation) => child,
+                          itemCount: queueEntries.length,
+                          onReorder: (oldIndex, newIndex) {
+                            playback.reorderPlaybackQueueEntry(
+                              sessionId,
+                              oldIndex,
+                              newIndex,
+                            );
+                          },
+                          itemBuilder: (context, index) {
+                            final entry = queueEntries[index];
+                            return _AnimatedQueueEntryCard(
+                              key: ValueKey(entry.id),
+                              onRemove: () => playback.removePlaybackQueueEntry(
+                                sessionId,
+                                entry.id,
+                              ),
+                              builder: (context, triggerRemove) {
+                                return _QueueAudioEditCard(
+                                  track: entry.tracks.firstOrNull,
+                                  title: entry.title,
+                                  subtitle: i18n.tr('audio_count', {
+                                    'count': entry.tracks.length,
+                                  }),
+                                  trailing: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      IconButton(
+                                        tooltip: i18n.tr('remove'),
+                                        constraints:
+                                            const BoxConstraints.tightFor(
+                                              width: 40,
+                                              height: 32,
+                                            ),
+                                        padding: EdgeInsets.zero,
+                                        visualDensity: VisualDensity.compact,
+                                        icon: const Icon(
+                                          Icons.remove_circle_outline_rounded,
+                                          size: 22,
+                                        ),
+                                        onPressed: triggerRemove,
+                                      ),
+                                      ReorderableDragStartListener(
+                                        index: index,
+                                        child: Container(
+                                          width: 40,
+                                          height: 32,
+                                          alignment: Alignment.center,
+                                          child: const Icon(
+                                            Icons.drag_handle_rounded,
+                                            size: 22,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  padding: EdgeInsets.zero,
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(
-                                    Icons.remove_circle_outline_rounded,
-                                    size: 22,
-                                  ),
-                                  onPressed: triggerRemove,
-                                ),
-                                ReorderableDragStartListener(
-                                  index: index,
-                                  child: Container(
-                                    width: 40,
-                                    height: 32,
-                                    alignment: Alignment.center,
-                                    child: const Icon(
-                                      Icons.drag_handle_rounded,
-                                      size: 22,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                );
+
+                final playlistAudioSection = Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        AppSpacing.xs,
+                        AppSpacing.sm,
+                        AppSpacing.xs,
+                        AppSpacing.xs,
+                      ),
+                      child: Text(
+                        i18n.tr('playback_list_audio'),
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.xs,
+                        ),
+                        itemCount: playback.ordinarySessions.length,
+                        itemBuilder: (context, index) {
+                          final source = playback.ordinarySessions[index];
+                          return _QueueSourceAudioTile(
+                            queueSessionId: sessionId,
+                            source: source,
                           );
                         },
-                      );
-                    },
-                  ),
-                ),
-            ],
-          );
+                      ),
+                    ),
+                  ],
+                );
 
-          final playlistAudioSection = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.xs,
-                  AppSpacing.sm,
-                  AppSpacing.xs,
-                  AppSpacing.xs,
-                ),
-                child: Text(
-                  i18n.tr('playback_list_audio'),
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ),
-              Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: AppSpacing.xs,
-                  ),
-                  itemCount: playback.ordinarySessions.length,
-                  itemBuilder: (context, index) {
-                    final source = playback.ordinarySessions[index];
-                    return _QueueSourceAudioTile(
-                      queueSessionId: sessionId,
-                      source: source,
-                    );
-                  },
-                ),
-              ),
-            ],
-          );
-
-          if (isLandscape) {
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: addedToQueueSection),
-                const VerticalDivider(width: 1),
-                Expanded(child: playlistAudioSection),
-              ],
-            );
-          } else {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(child: addedToQueueSection),
-                const Divider(height: 1),
-                Expanded(child: playlistAudioSection),
-              ],
-            );
-          }
-        },
+                if (isLandscape) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: addedToQueueSection),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        child: VerticalDivider(
+                          width: 1,
+                          thickness: 1,
+                          color: cs.outlineVariant.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      Expanded(child: playlistAudioSection),
+                    ],
+                  );
+                } else {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: addedToQueueSection),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Divider(
+                          height: 1,
+                          thickness: 1,
+                          color: cs.outlineVariant.withValues(alpha: 0.35),
+                        ),
+                      ),
+                      Expanded(child: playlistAudioSection),
+                    ],
+                  );
+                }
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1046,17 +1075,17 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
     return Material(
-      color: cs.surfaceContainerLow.withValues(alpha: 0.96),
+      color: cs.surfaceContainerLow,
       elevation: 12,
       shadowColor: cs.shadow.withValues(alpha: 0.22),
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: cs.primary.withValues(alpha: 0.45)),
+        borderRadius: BorderRadius.circular(24),
       ),
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1067,10 +1096,10 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.22),
-                    borderRadius: BorderRadius.circular(16),
+                    color: color.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(tokens.radiusSmall),
                   ),
-                  child: Icon(Icons.palette_outlined, color: color, size: 20),
+                  child: Icon(Icons.palette_outlined, color: color, size: 22),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1093,7 +1122,7 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
               height: 54,
               decoration: BoxDecoration(
                 color: color.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: color.withValues(alpha: 0.42)),
               ),
               alignment: Alignment.center,

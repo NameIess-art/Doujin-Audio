@@ -115,12 +115,28 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   }) {
     final categorySnapshot = libraryFacade.categorySnapshot;
     final categoryRevision = categorySnapshot?.detailRevision ?? detailRevision;
-    if ((_visibleSearchQuery == query &&
-            _visibleSearchRevision == structureRevision) ||
-        _pendingSearchKey == '$structureRevision|$categoryRevision|$query') {
+    if (_visibleSearchQuery == query &&
+        _visibleSearchRevision == structureRevision) {
       return;
     }
+
     final requestKey = '$structureRevision|$categoryRevision|$query';
+    if (_pendingSearchKey == requestKey) {
+      return;
+    }
+
+    if (query.isEmpty && _visibleSearchResult == null) {
+      final currentTree = libraryFacade.libraryTree;
+      if (currentTree.isNotEmpty) {
+        _visibleSearchResult = FilteredLibraryTreeResult(
+          tree: currentTree,
+          matchCount: libraryTreeTrackCount(currentTree),
+        );
+        _visibleSearchQuery = query;
+        _visibleSearchRevision = structureRevision;
+      }
+    }
+
     _pendingSearchKey = requestKey;
     final searchFuture = libraryFacade.loadLibraryTree().then((tree) {
       final request = LibrarySearchSnapshotRequest(
@@ -152,6 +168,59 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
           },
         );
       }),
+    );
+  }
+
+  bool _hasTrackMatchesInFolder(
+    FolderNode folder,
+    String query,
+    AudioLibraryCategorySnapshot? categorySnapshot,
+  ) {
+    final terms = extractSearchTerms(query);
+    if (terms.isEmpty) return false;
+    return _folderContainsMatchingTrack(folder, terms, categorySnapshot);
+  }
+
+  bool _folderContainsMatchingTrack(
+    FolderNode folder,
+    List<String> terms,
+    AudioLibraryCategorySnapshot? categorySnapshot,
+  ) {
+    for (final child in folder.children) {
+      if (child is TrackNode) {
+        if (_trackMatchesQuery(child, terms, categorySnapshot)) {
+          return true;
+        }
+      } else if (child is FolderNode) {
+        if (_folderContainsMatchingTrack(child, terms, categorySnapshot)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  bool _trackMatchesQuery(
+    TrackNode trackNode,
+    List<String> searchTerms,
+    AudioLibraryCategorySnapshot? categorySnapshot,
+  ) {
+    final track = trackNode.track;
+    final trackEntry = categorySnapshot?.entryFor(
+      AudioDetailTarget.singleAudioFile(track.path),
+    );
+
+    return matchesSearchTerms(
+      <String>[
+        track.displayName,
+        track.groupTitle,
+        track.groupSubtitle,
+        track.path,
+        ...track.tags,
+        if (trackEntry != null) trackEntry.searchableText,
+      ],
+      '',
+      terms: searchTerms,
     );
   }
 
@@ -242,11 +311,18 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
           itemCount: tree.length,
           itemBuilder: (context, index) {
             final node = tree[index];
+            final shouldExpand = node is FolderNode &&
+                _query.isNotEmpty &&
+                _hasTrackMatchesInFolder(
+                  node,
+                  _query,
+                  libraryFacade.categorySnapshot,
+                );
             return RepaintBoundary(
               key: ValueKey<String>('search_${node.path}'),
               child: _LibraryTreeItem(
                 node: node,
-                initiallyExpanded: _query.isNotEmpty,
+                initiallyExpanded: shouldExpand,
                 searchQuery: _query,
                 cardPositionsLocked: cardPositionsLocked,
               ),

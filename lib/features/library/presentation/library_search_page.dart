@@ -116,7 +116,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     final categorySnapshot = libraryFacade.categorySnapshot;
     final categoryRevision = categorySnapshot?.detailRevision ?? detailRevision;
     if ((_visibleSearchQuery == query &&
-            _visibleSearchRevision == '$structureRevision|$categoryRevision') ||
+            _visibleSearchRevision == structureRevision) ||
         _pendingSearchKey == '$structureRevision|$categoryRevision|$query') {
       return;
     }
@@ -146,7 +146,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
             setState(() {
               _visibleSearchResult = result;
               _visibleSearchQuery = query;
-              _visibleSearchRevision = '$structureRevision|$categoryRevision';
+              _visibleSearchRevision = structureRevision;
               _pendingSearchKey = null;
             });
           },
@@ -197,12 +197,9 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       structureRevision: structureRevision,
       detailRevision: detailRevision,
     );
-    final categorySnapshot = libraryFacade.categorySnapshot;
-    final categoryRevision = categorySnapshot?.detailRevision ?? detailRevision;
-    final expectedRevision = '$structureRevision|$categoryRevision';
     final result =
         _visibleSearchQuery == _query &&
-            _visibleSearchRevision == expectedRevision
+            _visibleSearchRevision == structureRevision
         ? _visibleSearchResult
         : null;
     final tree = result?.tree;
@@ -234,9 +231,9 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
           key: const ValueKey<String>('library_search_results_all'),
           controller: _scrollController,
           padding: EdgeInsets.fromLTRB(
-            16,
+            LibraryLikeCardMetrics.listHorizontalPadding,
             AppSearchPageScaffold.controlsTopInset(context),
-            16,
+            LibraryLikeCardMetrics.listHorizontalPadding,
             MediaQuery.paddingOf(context).bottom + 16,
           ),
           cacheExtent: 320,

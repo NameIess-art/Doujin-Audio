@@ -39,11 +39,13 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
+    const titleBlockHeight = LibraryLikeCardMetrics.titleBlockHeight;
     const coverWidth =
         infoBlockHeight * LibraryLikeCardMetrics.coverAspectRatio;
 
-    return const Card(
+    return Card(
       margin: EdgeInsets.zero,
       shape: LibraryLikeCardMetrics.cardShape,
       color: Colors.transparent,
@@ -55,7 +57,7 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
         width: double.infinity,
         child: ShimmerLoader(
           child: Padding(
-            padding: EdgeInsets.all(AppSpacing.xs),
+            padding: const EdgeInsets.fromLTRB(4, 9, 4, 9),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -67,43 +69,106 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
                       height: infoBlockHeight,
                       borderRadius: LibraryLikeCardMetrics.coverRadius,
                     ),
-                    SizedBox(width: 10),
+                    const SizedBox(width: 10),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          SizedBox(height: 4),
-                          ShimmerContainer(height: 12, borderRadius: 6),
-                          SizedBox(height: 8),
-                          ShimmerContainer(
-                            width: 140,
-                            height: 12,
-                            borderRadius: 6,
+                      child: Transform.translate(
+                        offset: const Offset(
+                          0,
+                          LibraryLikeCardMetrics.infoVerticalOffset,
+                        ),
+                        child: const SizedBox(
+                          height: infoBlockHeight,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SkeletonInfoLine(labelWidth: 28, textWidth: 110),
+                              _SkeletonInfoLine(labelWidth: 28, textWidth: 140),
+                              _SkeletonInfoLine(labelWidth: 28, textWidth: 85),
+                              _SkeletonInfoLine(labelWidth: 28, textWidth: 160),
+                              _SkeletonInfoLine(labelWidth: 28, textWidth: 95),
+                            ],
                           ),
-                          SizedBox(height: 8),
-                          ShimmerContainer(
-                            width: 100,
-                            height: 12,
-                            borderRadius: 6,
-                          ),
-                          SizedBox(height: 8),
-                          ShimmerContainer(
-                            width: 160,
-                            height: 12,
-                            borderRadius: 6,
-                          ),
-                        ],
+                        ),
                       ),
                     ),
                   ],
                 ),
-                Spacer(),
-                ShimmerContainer(width: 220, height: 16),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
+                const SizedBox(
+                  height: titleBlockHeight,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            ShimmerContainer(
+                              height: 12,
+                              borderRadius: 4,
+                            ),
+                            SizedBox(height: 4),
+                            ShimmerContainer(
+                              width: 140,
+                              height: 12,
+                              borderRadius: 4,
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(width: 8),
+                      ShimmerContainer(
+                        width: 25,
+                        height: 25,
+                        borderRadius: 12.5,
+                      ),
+                      SizedBox(width: 6),
+                      ShimmerContainer(
+                        width: 16,
+                        height: 16,
+                        borderRadius: 8,
+                      ),
+                      SizedBox(width: 2),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SkeletonInfoLine extends StatelessWidget {
+  const _SkeletonInfoLine({
+    required this.labelWidth,
+    required this.textWidth,
+  });
+
+  final double labelWidth;
+  final double textWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _libraryLikeInfoLineHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ShimmerContainer(
+            width: labelWidth,
+            height: 11,
+            borderRadius: 4,
+          ),
+          const SizedBox(width: 5),
+          ShimmerContainer(
+            width: textWidth,
+            height: 11,
+            borderRadius: 4,
+          ),
+        ],
       ),
     );
   }

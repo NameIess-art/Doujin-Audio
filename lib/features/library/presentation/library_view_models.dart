@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import '../domain/library_node.dart';
 import '../application/library_scan_models.dart';
 import '../application/library_state_models.dart';
+import '../../../core/media/audio_detail.dart';
 import '../../../core/media/search_query_utils.dart';
+import '../domain/audio_library_category.dart';
 
 @immutable
 class LibraryHeaderState {
@@ -267,7 +269,6 @@ class LibrarySearchIndex {
   ) {
     final folderTargets = <AudioDetailTarget>[
       AudioDetailTarget.libraryRootFolder(folder.path),
-      AudioDetailTarget.libraryFolder(folder.path),
     ];
     final folderEntries = categorySnapshot == null
         ? const <AudioLibraryCategoryEntry>[]

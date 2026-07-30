@@ -57,7 +57,7 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
         width: double.infinity,
         child: ShimmerLoader(
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(4, 9, 4, 9),
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -117,18 +117,31 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
                         ),
                       ),
                       SizedBox(width: 8),
-                      ShimmerContainer(
-                        width: 25,
-                        height: 25,
-                        borderRadius: 12.5,
+                      SizedBox(
+                        width: LibraryLikeCardMetrics.actionButtonSize,
+                        height: titleBlockHeight,
+                        child: Center(
+                          child: ShimmerContainer(
+                            width: 25,
+                            height: 25,
+                            borderRadius: 12.5,
+                          ),
+                        ),
                       ),
-                      SizedBox(width: 6),
-                      ShimmerContainer(
-                        width: 16,
-                        height: 16,
-                        borderRadius: 8,
+                      SizedBox(
+                        width: 23,
+                        height: titleBlockHeight,
+                        child: Padding(
+                          padding: EdgeInsets.only(right: 2),
+                          child: Center(
+                            child: ShimmerContainer(
+                              width: 16,
+                              height: 16,
+                              borderRadius: 8,
+                            ),
+                          ),
+                        ),
                       ),
-                      SizedBox(width: 2),
                     ],
                   ),
                 ),
@@ -155,7 +168,7 @@ class _SkeletonInfoLine extends StatelessWidget {
     return SizedBox(
       height: _libraryLikeInfoLineHeight,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           ShimmerContainer(
             width: labelWidth,

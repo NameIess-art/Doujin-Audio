@@ -445,10 +445,10 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     final tokens = AppDesignTokens.of(context);
     return Material(
       color: cs.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -460,13 +460,13 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                   width: 40,
                   height: 40,
                   decoration: BoxDecoration(
-                    color: cs.primaryContainer,
+                    color: cs.primary.withValues(alpha: 0.14),
                     borderRadius: BorderRadius.circular(tokens.radiusSmall),
                   ),
                   child: Icon(
-                    Icons.edit_rounded,
-                    color: cs.onPrimaryContainer,
-                    size: 20,
+                    Icons.queue_music_rounded,
+                    color: cs.primary,
+                    size: 22,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -504,19 +504,21 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                       ),
                     ),
                   ),
+                  const SizedBox(height: 6),
                   _queueEditTile(
                     context,
                     Icons.drive_file_rename_outline_rounded,
                     i18n.tr('edit_queue_name'),
                     () => _editQueueName(context, playback, queue.name),
                   ),
+                  const SizedBox(height: 6),
                   _queueEditTile(
                     context,
                     Icons.palette_outlined,
                     i18n.tr('edit_card_color'),
                     () => showPlaybackQueueColorPanel(context, sessionId),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   _queueEditTile(
                     context,
                     Icons.delete_outline_rounded,
@@ -543,55 +545,54 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final foreground = destructive ? cs.error : cs.onSurface;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 2),
-      child: Material(
-        color: cs.surfaceContainerLow,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 8, 8),
-            child: Row(
-              children: [
-                Container(
-                  key: ValueKey(
-                    'playback_queue_edit_tile_icon_${icon.codePoint}',
-                  ),
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: destructive
-                        ? cs.errorContainer
-                        : cs.primaryContainer,
-                    borderRadius: BorderRadius.circular(tokens.radiusSmall),
-                  ),
-                  child: Icon(
-                    icon,
-                    size: 19,
-                    color: destructive ? cs.error : cs.onPrimaryContainer,
-                  ),
+    final iconColor = destructive ? cs.error : cs.primary;
+    final iconBgColor = destructive
+        ? cs.error.withValues(alpha: 0.14)
+        : cs.primary.withValues(alpha: 0.12);
+
+    return Material(
+      color: cs.surfaceContainerLow,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Container(
+                key: ValueKey(
+                  'playback_queue_edit_tile_icon_${icon.codePoint}',
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: foreground,
-                    ),
-                  ),
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  borderRadius: BorderRadius.circular(tokens.radiusSmall),
                 ),
-                Icon(
-                  destructive
-                      ? Icons.delete_forever_outlined
-                      : Icons.chevron_right_rounded,
+                child: Icon(
+                  icon,
                   size: 20,
-                  color: foreground.withValues(alpha: 0.72),
+                  color: iconColor,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                    color: foreground,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 20,
+                color: foreground.withValues(alpha: 0.5),
+              ),
+            ],
           ),
         ),
       ),
@@ -862,6 +863,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
       track: track,
       title: track.displayName,
       subtitle: track.groupTitle,
+      rowHeight: track.isSingle ? _playlistRowHeight : 88.0,
       trailing: Column(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
@@ -915,12 +917,14 @@ class _QueueAudioEditCard extends ConsumerWidget {
     required this.title,
     required this.subtitle,
     required this.trailing,
+    this.rowHeight = _playlistRowHeight,
   });
 
   final MusicTrack? track;
   final String title;
   final String subtitle;
   final Widget trailing;
+  final double rowHeight;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -942,7 +946,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
       shape: _playlistRowShape,
       clipBehavior: Clip.antiAlias,
       child: SizedBox(
-        height: _playlistRowHeight,
+        height: rowHeight,
         child: Row(
           children: [
             Expanded(
@@ -1017,7 +1021,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: AppSpacing.xxs),
-            SizedBox(width: 44, height: _playlistRowHeight, child: trailing),
+            SizedBox(width: 44, height: rowHeight, child: trailing),
           ],
         ),
       ),

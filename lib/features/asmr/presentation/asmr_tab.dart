@@ -329,7 +329,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               LibraryLikeCardMetrics.listHorizontalPadding,
               headerContentHeight,
               LibraryLikeCardMetrics.listHorizontalPadding,
-              0,
+              bottomInset + 24,
             ),
             children: [
               for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),
@@ -376,7 +376,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               LibraryLikeCardMetrics.listHorizontalPadding,
               headerContentHeight,
               LibraryLikeCardMetrics.listHorizontalPadding,
-              0,
+              bottomInset + 24,
             ),
             children: [
               for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),

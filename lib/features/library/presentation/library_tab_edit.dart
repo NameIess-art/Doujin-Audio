@@ -1199,6 +1199,11 @@ class _LibraryEditFolderTreeTileState
                             !explicitExcluded,
                           );
                         },
+                  style: explicitExcluded
+                      ? null
+                      : TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFFF4D6D),
+                        ),
                   icon: Icon(
                     explicitExcluded
                         ? Icons.restore_rounded
@@ -1300,14 +1305,24 @@ class _LibraryEditTrackTile extends ConsumerWidget {
             horizontal: 12,
             vertical: 2,
           ),
-          leading: Icon(
-            viewState.muted
-                ? Icons.music_off_rounded
-                : Icons.music_note_rounded,
-            color: viewState.muted
-                ? cs.onSurfaceVariant
-                : cs.primary.withValues(alpha: 0.8),
-            size: 20,
+          leading: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: viewState.muted
+                  ? cs.onSurfaceVariant.withValues(alpha: 0.12)
+                  : cs.primary.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              viewState.muted
+                  ? Icons.music_off_rounded
+                  : Icons.audio_file_rounded,
+              color: viewState.muted
+                  ? cs.onSurfaceVariant
+                  : cs.primary,
+              size: 16,
+            ),
           ),
           title: Text(
             viewState.title,
@@ -1322,10 +1337,10 @@ class _LibraryEditTrackTile extends ConsumerWidget {
           trailing: ConstrainedBox(
             constraints: const BoxConstraints(
               minWidth: 64,
-              maxWidth: 88,
+              maxWidth: 96,
               minHeight: 48,
             ),
-            child: TextButton(
+            child: TextButton.icon(
               onPressed: viewState.inheritedExcluded
                   ? null
                   : () {
@@ -1335,7 +1350,18 @@ class _LibraryEditTrackTile extends ConsumerWidget {
                         !viewState.explicitExcluded,
                       );
                     },
-              child: Text(
+              style: viewState.explicitExcluded
+                  ? null
+                  : TextButton.styleFrom(
+                      foregroundColor: const Color(0xFFFF4D6D),
+                    ),
+              icon: Icon(
+                viewState.explicitExcluded
+                    ? Icons.restore_rounded
+                    : Icons.block_rounded,
+                size: 14,
+              ),
+              label: Text(
                 viewState.explicitExcluded
                     ? i18n.tr('restore')
                     : i18n.tr('exclude'),

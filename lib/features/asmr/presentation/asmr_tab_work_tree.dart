@@ -211,29 +211,32 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
             showTrailingIcon: false,
             tilePadding: LibraryLikeCardMetrics.rootTilePadding,
             childrenPadding: const EdgeInsets.fromLTRB(8, 0, 0, 0),
-            title: LibraryLikeMetadataWorkCardContent(
-              title: widget.work.title,
-              fields: fields,
-              metadata: _workMetadata(widget.work),
-              circleLabel: i18n.tr('asmr_circle_label'),
-              tagsLabel: i18n.tr('asmr_tags_label'),
-              releaseDateLabel: i18n.tr('card_info_release_date'),
-              salesCountLabel: i18n.tr('card_info_sales_count'),
-              ratingLabel: i18n.tr('card_info_rating'),
-              listSeparator: '\u3001',
-              coverBuilder: (coverWidth) => _AsmrWorkCover(
-                url: _asmrWorkListCoverUrl(widget.work),
-                width: coverWidth,
-                duration: widget.work.duration,
+            title: SearchHighlightScope(
+              query: widget.searchQuery,
+              child: LibraryLikeMetadataWorkCardContent(
+                title: widget.work.title,
+                fields: fields,
+                metadata: _workMetadata(widget.work),
+                circleLabel: i18n.tr('asmr_circle_label'),
+                tagsLabel: i18n.tr('asmr_tags_label'),
+                releaseDateLabel: i18n.tr('card_info_release_date'),
+                salesCountLabel: i18n.tr('card_info_sales_count'),
+                ratingLabel: i18n.tr('card_info_rating'),
+                listSeparator: '\u3001',
+                coverBuilder: (coverWidth) => _AsmrWorkCover(
+                  url: _asmrWorkListCoverUrl(widget.work),
+                  width: coverWidth,
+                  duration: widget.work.duration,
+                ),
+                onPlay: () => unawaited(_playWork(context)),
+                expanded: _expanded,
+                showExpandIndicator: true,
+                playTooltip: i18n.tr('asmr_add_to_playlist'),
+                accentColor: asmrBlue,
+                enableMarquee: false,
+                enableTitleMarquee: false,
+                playLoading: playBusy,
               ),
-              onPlay: () => unawaited(_playWork(context)),
-              expanded: _expanded,
-              showExpandIndicator: true,
-              playTooltip: i18n.tr('asmr_add_to_playlist'),
-              accentColor: asmrBlue,
-              enableMarquee: false,
-              enableTitleMarquee: false,
-              playLoading: playBusy,
             ),
             children: _expanded
                 ? [
@@ -244,7 +247,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                           child: _AsmrTrackTreeNode(
                             work: widget.work,
                             node: node,
-                            searchQuery: widget.searchQuery,
                           ),
                         )
                     else if (treeError != null && tree == null)
@@ -311,15 +313,10 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
 }
 
 class _AsmrTrackTreeNode extends ConsumerStatefulWidget {
-  const _AsmrTrackTreeNode({
-    required this.work,
-    required this.node,
-    required this.searchQuery,
-  });
+  const _AsmrTrackTreeNode({required this.work, required this.node});
 
   final AsmrWork work;
   final AsmrTrackFile node;
-  final String searchQuery;
 
   @override
   ConsumerState<_AsmrTrackTreeNode> createState() => _AsmrTrackTreeNodeState();
@@ -456,11 +453,7 @@ class _AsmrTrackTreeNodeState extends ConsumerState<_AsmrTrackTreeNode> {
                   for (final child in visibleChildren)
                     Padding(
                       padding: EdgeInsets.zero,
-                      child: _AsmrTrackTreeNode(
-                        work: widget.work,
-                        node: child,
-                        searchQuery: widget.searchQuery,
-                      ),
+                      child: _AsmrTrackTreeNode(work: widget.work, node: child),
                     ),
                 ]
               : const <Widget>[],

@@ -1341,4 +1341,174 @@ void main() {
     expect(tileRects.first.bottom, lessThanOrEqualTo(tileRects.last.top));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('library search expands matched work folders and collapses back', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    final libraryService = fixture.libraryService;
+
+    runtimeGraph.library.addTracks(
+      [
+        testMusicTrack(
+          name: 'Ocean Chapter',
+          path: '/library/work/ocean_chapter.mp3',
+          groupKey: '/library/work',
+          groupTitle: 'Rain Work',
+        ),
+        testMusicTrack(
+          name: 'Quiet Chapter',
+          path: '/library/work/quiet_chapter.mp3',
+          groupKey: '/library/work',
+          groupTitle: 'Rain Work',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_search_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('library_search_results_all')),
+    );
+    expect(find.text('Ocean Chapter', findRichText: true), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      'ocean',
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    await pumpUntilFound(tester, find.text('Ocean Chapter', findRichText: true));
+    expect(find.text('Quiet Chapter', findRichText: true), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      '',
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    await pumpUntilNotFound(
+      tester,
+      find.text('Ocean Chapter', findRichText: true),
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pump();
+  });
+
+  testWidgets('library category page requires every text and element term', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    final libraryService = fixture.libraryService;
+    const healingPath = '/library/healing-work';
+    const whisperPath = '/library/whisper-work';
+
+    runtimeGraph.library.addTracks(
+      [
+        testMusicTrack(
+          name: 'Healing track',
+          path: '$healingPath/track.mp3',
+          groupKey: healingPath,
+          groupTitle: 'Healing work',
+        ),
+        testMusicTrack(
+          name: 'Whisper track',
+          path: '$whisperPath/track.mp3',
+          groupKey: whisperPath,
+          groupTitle: 'Whisper work',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    await tester.runAsync(() async {
+      await runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder(healingPath),
+        ).copyWith(tags: const <String>['healing', 'whisper']),
+      );
+      await runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(
+          AudioDetailTarget.libraryRootFolder(whisperPath),
+        ).copyWith(tags: const <String>['whisper']),
+      );
+    });
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(
+      tester,
+      runtimeGraph.library,
+      waitForCategorySnapshot: true,
+    );
+    await tester.pump();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_search_button')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'app_search_category_AudioLibraryCategoryType.tags',
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('healing-work', findRichText: true), findsOneWidget);
+    expect(find.text('whisper-work', findRichText: true), findsOneWidget);
+
+    // Element search with two keywords keeps only the entry carrying both tags.
+    await tester.enterText(
+      find.byKey(
+        const ValueKey<String>('library_category_term_search_field_tags'),
+      ),
+      'healing whisper',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('healing-work', findRichText: true), findsOneWidget);
+    expect(find.text('whisper-work', findRichText: true), findsNothing);
+
+    // The text query applies on top of the element filter, not instead of it.
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      'healing',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('healing-work', findRichText: true), findsOneWidget);
+
+    // Multi-term text queries require every term to match.
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      'healing,ocean',
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(find.text('healing-work', findRichText: true), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 30)),
+    );
+    await tester.pump();
+  });
 }

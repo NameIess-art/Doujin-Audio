@@ -77,13 +77,15 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
     AudioLibraryCategorySnapshot snapshot,
   ) {
     final selectedTerms = _selectedTermsForCurrentCategory;
-    final normalizedQuery = _effectiveSearchQuery.trim().toLowerCase();
+    final queryTerms = extractSearchTerms(_effectiveSearchQuery)
+        .map((term) => term.toLowerCase())
+        .toList(growable: false);
     final termKeywords = _termSearchKeywords;
     final normalizedSelectedTerms =
         selectedTerms.map((term) => term.toLowerCase()).toList(growable: false)
           ..sort();
     final filterKey = <String>[
-      normalizedQuery,
+      queryTerms.join('\n'),
       termKeywords.join('\n'),
       normalizedSelectedTerms.join('\n'),
     ].join('|');
@@ -96,23 +98,12 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
     final result = snapshot.entries
         .where((entry) {
           final entryTerms = entry.normalizedTermsForCategory(_categoryType);
-          if (selectedTerms.isNotEmpty) {
-            if (!normalizedSelectedTerms.any(entryTerms.contains)) return false;
-          }
-          if (termKeywords.isNotEmpty) {
-            bool hasMatchingTerm = false;
-            for (final term in entryTerms) {
-              if (termKeywords.any(term.contains)) {
-                hasMatchingTerm = true;
-                break;
-              }
-            }
-            if (!hasMatchingTerm) return false;
-          }
-          if (normalizedQuery.isNotEmpty &&
-              !entry.searchableText.contains(normalizedQuery)) {
-            return false;
-          }
+          if (!normalizedSelectedTerms.every(entryTerms.contains)) return false;
+          final matchesEveryKeyword = termKeywords.every(
+            (keyword) => entryTerms.any((term) => term.contains(keyword)),
+          );
+          if (!matchesEveryKeyword) return false;
+          if (!queryTerms.every(entry.searchableText.contains)) return false;
           return true;
         })
         .toList(growable: false);
@@ -434,6 +425,10 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                         child: SizedBox(
                           height: 28,
                           child: TextField(
+                            key: ValueKey<String>(
+                              'library_category_term_search_field_'
+                              '${widget.categoryType.name}',
+                            ),
                             controller: _searchController,
                             onChanged: _onSearchQueryChangedLocally,
                             style: Theme.of(context).textTheme.labelSmall

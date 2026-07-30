@@ -239,6 +239,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
             key: ValueKey<String>('search_${node.path}'),
             child: _LibraryTreeItem(
               node: node,
+              initiallyExpanded: _query.isNotEmpty,
               searchQuery: _query,
               cardPositionsLocked: cardPositionsLocked,
             ),

@@ -92,6 +92,13 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         _expansionController.expand();
         unawaited(_loadChildren());
       });
+      return;
+    }
+    if (!widget.initiallyExpanded && oldWidget.initiallyExpanded && _expanded) {
+      _expanded = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _expansionController.collapse();
+      });
     }
   }
 
@@ -262,9 +269,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _HighlightedText(
+                          SearchHighlightedText(
                             text: folder.name,
-                            query: widget.searchQuery,
+                            terms: extractSearchTerms(widget.searchQuery),
                             style:
                                 Theme.of(
                                   context,
@@ -580,9 +587,9 @@ class _TrackNodeWidget extends ConsumerWidget {
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
-                  child: _HighlightedText(
+                  child: SearchHighlightedText(
                     text: track.displayName,
-                    query: searchQuery,
+                    terms: extractSearchTerms(searchQuery),
                     maxLines: 1,
                     style:
                         Theme.of(context).textTheme.bodyMedium?.copyWith(
@@ -1049,67 +1056,4 @@ List<LibraryLikeInfoLineData> _audioDetailInfoLines(
     salesCountLabel: i18n.tr('card_info_sales_count'),
     ratingLabel: i18n.tr('card_info_rating'),
   );
-}
-
-class _HighlightedText extends StatelessWidget {
-  const _HighlightedText({
-    required this.text,
-    required this.query,
-    required this.style,
-    this.maxLines = 2,
-  });
-
-  final String text;
-  final String query;
-  final TextStyle style;
-  final int maxLines;
-
-  @override
-  Widget build(BuildContext context) {
-    if (query.isEmpty) {
-      return Text(
-        text,
-        style: style,
-        maxLines: maxLines,
-        overflow: TextOverflow.ellipsis,
-      );
-    }
-
-    final lowerText = text.toLowerCase();
-    final lowerQuery = query.toLowerCase();
-    final spans = <TextSpan>[];
-    var start = 0;
-
-    while (true) {
-      final index = lowerText.indexOf(lowerQuery, start);
-      if (index == -1) {
-        spans.add(TextSpan(text: text.substring(start)));
-        break;
-      }
-
-      if (index > start) {
-        spans.add(TextSpan(text: text.substring(start, index)));
-      }
-
-      spans.add(
-        TextSpan(
-          text: text.substring(index, index + query.length),
-          style: TextStyle(
-            backgroundColor: Theme.of(
-              context,
-            ).colorScheme.primary.withValues(alpha: 0.18),
-            color: Theme.of(context).colorScheme.primary,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      );
-      start = index + query.length;
-    }
-
-    return RichText(
-      text: TextSpan(style: style, children: spans),
-      maxLines: maxLines,
-      overflow: TextOverflow.ellipsis,
-    );
-  }
 }

@@ -7,6 +7,7 @@ import '../media/card_info_field.dart';
 import 'async_cover_image.dart';
 import 'app_feedback.dart';
 import 'marquee_text.dart';
+import 'search_highlight.dart';
 import 'shimmer_loading.dart';
 
 const _libraryLikeInfoLineHeight = 16.0;
@@ -641,10 +642,9 @@ class LibraryLikeDetailInfoLine extends StatelessWidget {
                 )
               : enableMarquee
               ? MarqueeText(text: text, style: fixedStyle, scrollSpeed: 24)
-              : Text(
-                  text,
+              : SearchHighlightedText(
+                  text: text,
                   maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                   style: fixedStyle,
                 ),
         ),
@@ -694,11 +694,10 @@ class _LibraryLikeMultiLineInfoText extends StatelessWidget {
       }
     }
 
-    return Text(
-      text,
+    return SearchHighlightedText(
+      text: text,
       maxLines: lines,
       softWrap: true,
-      overflow: TextOverflow.ellipsis,
       style: style,
       strutStyle: _libraryLikeFixedLineStrut(style),
     );
@@ -740,12 +739,7 @@ class LibraryLikeMarqueeLine extends StatelessWidget {
       height: 16,
       child: enableMarquee
           ? MarqueeText(text: text, style: style, scrollSpeed: 26)
-          : Text(
-              text,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: style,
-            ),
+          : SearchHighlightedText(text: text, maxLines: 1, style: style),
     );
   }
 }
@@ -768,11 +762,10 @@ class LibraryLikeTwoLineMarqueeText extends StatelessWidget {
       return SizedBox(
         width: double.infinity,
         height: 34,
-        child: Text(
-          text,
+        child: SearchHighlightedText(
+          text: text,
           maxLines: 2,
           softWrap: true,
-          overflow: TextOverflow.ellipsis,
           style: style,
         ),
       );

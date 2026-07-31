@@ -42,7 +42,16 @@ part 'asmr_tab_cover.dart';
 part 'asmr_search_page.dart';
 
 class AsmrTab extends ConsumerStatefulWidget {
-  const AsmrTab({super.key});
+  const AsmrTab({
+    super.key,
+    this.activeSectionListenable,
+    this.sectionIndex = 0,
+    this.onTitleSwipeRight,
+  });
+
+  final ValueListenable<int>? activeSectionListenable;
+  final int sectionIndex;
+  final VoidCallback? onTitleSwipeRight;
 
   @override
   ConsumerState<AsmrTab> createState() => _AsmrTabState();
@@ -61,6 +70,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  bool get handlesScrollToTop =>
+      widget.activeSectionListenable == null ||
+      widget.activeSectionListenable!.value == widget.sectionIndex;
 
   @override
   int get tabIndex => 0;
@@ -342,6 +356,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
             child: TopPageHeader(
               key: _headerKey,
               title: 'ASMR.ONE',
+              onTitleSwipeRight: widget.onTitleSwipeRight,
               subtitle: collectedSubtitle,
               subtitleFontSize: 11,
               fitSubtitleToWidth: true,
@@ -400,6 +415,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           child: TopPageHeader(
             key: _headerKey,
             title: 'ASMR.ONE',
+            onTitleSwipeRight: widget.onTitleSwipeRight,
             subtitle: collectedSubtitle,
             subtitleFontSize: 11,
             fitSubtitleToWidth: true,

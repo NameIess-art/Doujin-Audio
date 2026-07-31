@@ -72,7 +72,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   final ScrollController _scrollController = ScrollController();
 
   @override
-  int get tabIndex => 3;
+  int get tabIndex => 2;
 
   @override
   double get defaultHeaderHeight => 62.0;

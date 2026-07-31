@@ -19,6 +19,9 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   /// The primary scroll controller for this tab, used for scroll-to-top.
   ScrollController get mainScrollController;
 
+  /// Whether this tab should respond to the current scroll-to-top signal.
+  bool get handlesScrollToTop => true;
+
   /// Call this in `initState` after getting the listenable.
   void initTabState(ValueListenable<int?>? listenable) {
     _scrollToTopListenable = listenable;
@@ -35,7 +38,7 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
 
   void handleScrollToTopSignal() {
     if (!mounted) return;
-    if (_scrollToTopListenable?.value == tabIndex) {
+    if (_scrollToTopListenable?.value == tabIndex && handlesScrollToTop) {
       jumpToTop();
     }
   }

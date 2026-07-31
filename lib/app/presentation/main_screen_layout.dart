@@ -170,9 +170,7 @@ extension _MainScreenLayout on _MainScreenState {
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
 
       final tokens = AppDesignTokens.of(context);
-      final asmrBlue = tokens.asmrAccent;
-      final isAsmr = item.labelKey == 'ASMR.ONE';
-      final activeColor = (selected && isAsmr) ? asmrBlue : cs.primary;
+      final activeColor = cs.primary;
 
       return Expanded(
         child: Semantics(
@@ -604,11 +602,6 @@ extension _MainScreenLayout on _MainScreenState {
                         .map((entry) {
                           final item = entry.value;
                           final isSelected = _currentIndex == entry.key;
-                          final isAsmr =
-                              isSelected && item.labelKey == 'ASMR.ONE';
-                          final asmrBlue = AppDesignTokens.of(
-                            context,
-                          ).asmrAccent;
                           return NavigationRailDestination(
                             icon: Icon(
                               item.icon,
@@ -616,15 +609,12 @@ extension _MainScreenLayout on _MainScreenState {
                                 'main_destination_${item.labelKey}',
                               ),
                             ),
-                            selectedIcon: Icon(
-                              item.selectedIcon,
-                              color: isAsmr ? asmrBlue : null,
-                            ),
+                            selectedIcon: Icon(item.selectedIcon),
                             label: Text(
                               _isMenuCollapsed ? '' : i18n.tr(item.labelKey),
                               style: isSelected
                                   ? TextStyle(
-                                      color: isAsmr ? asmrBlue : cs.primary,
+                                      color: cs.primary,
                                       fontWeight: FontWeight.w700,
                                     )
                                   : null,

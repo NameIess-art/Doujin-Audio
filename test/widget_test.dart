@@ -112,17 +112,13 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_0')), findsOne);
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_0')),
+      find.byKey(const ValueKey<String>('main_page_fade_1')),
       findsNothing,
     );
     expect(
       find.byKey(const ValueKey<String>('main_page_fade_2')),
-      findsNothing,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('main_page_fade_3')),
       findsNothing,
     );
     final settingsDestination = find.byKey(
@@ -143,9 +139,9 @@ void main() {
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
 
-    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_2')), findsOne);
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_1')),
+      find.byKey(const ValueKey<String>('main_page_fade_0')),
       findsNothing,
     );
     expect(
@@ -299,7 +295,7 @@ void main() {
   ) async {
     final harness = await _pumpAppShell(tester, includePlaybackSession: false);
 
-    await _tapAsmrDestination(tester);
+    await _swipeToAsmrPage(tester);
     await _pumpMainScreenAnimations(tester);
 
     expect(
@@ -351,57 +347,49 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('ASMR and library animate while both page states stay mounted', (
+  testWidgets('audio library title swipe keeps both page states mounted', (
     tester,
   ) async {
-    await _pumpAppShell(tester, includePlaybackSession: false);
+    final harness = await _pumpAppShell(tester, includePlaybackSession: false);
 
     final libraryFinder = find.byType(LibraryTab, skipOffstage: false);
     final asmrFinder = find.byType(AsmrTab, skipOffstage: false);
     final libraryState = tester.state(libraryFinder);
     final asmrState = tester.state(asmrFinder);
     final stackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
-    final headerFinder = find.byType(TopPageHeader);
-
-    Future<void> finishPageTransition() async {
-      for (var frame = 0; frame < 30; frame++) {
-        await tester.pump(const Duration(milliseconds: 16));
-        if (headerFinder.evaluate().length == 1) return;
-      }
-      fail('Main page transition did not complete.');
-    }
+    final sectionStackFinder = find.byKey(
+      const ValueKey<String>('audio_library_section_stack'),
+    );
+    Finder headerTitle(String title) => find.descendant(
+      of: find.byType(TopPageHeader),
+      matching: find.text(title),
+    );
+    final localTitle = harness.language.tr('music_library');
 
     expect(
       tester.widget<AppFadeThroughIndexedStack>(stackFinder).children,
-      hasLength(4),
+      hasLength(3),
     );
-    expect(headerFinder, findsOneWidget);
+    expect(tester.widget<IndexedStack>(sectionStackFinder).index, 0);
+    expect(headerTitle(localTitle), findsOneWidget);
+    expect(headerTitle('ASMR.ONE'), findsNothing);
 
-    final asmrDestination = find.byKey(
-      const ValueKey<String>('main_destination_ASMR.ONE'),
-    );
-    await tester.tap(asmrDestination);
+    await tester.fling(headerTitle(localTitle), const Offset(-120, 0), 1000);
     await tester.pump();
 
     expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 0);
-    expect(headerFinder, findsNWidgets(2));
+    expect(tester.widget<IndexedStack>(sectionStackFinder).index, 1);
+    expect(headerTitle('ASMR.ONE'), findsOneWidget);
     expect(tester.state(libraryFinder), same(libraryState));
     expect(tester.state(asmrFinder), same(asmrState));
-    await finishPageTransition();
-    expect(headerFinder, findsOneWidget);
 
-    final libraryDestination = find.byKey(
-      const ValueKey<String>('main_destination_nav_library'),
-    );
-    await tester.tap(libraryDestination);
+    await tester.fling(headerTitle('ASMR.ONE'), const Offset(120, 0), 1000);
     await tester.pump();
 
-    expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 1);
-    expect(headerFinder, findsNWidgets(2));
+    expect(tester.widget<IndexedStack>(sectionStackFinder).index, 0);
+    expect(headerTitle(localTitle), findsOneWidget);
     expect(tester.state(libraryFinder), same(libraryState));
     expect(tester.state(asmrFinder), same(asmrState));
-    await finishPageTransition();
-    expect(headerFinder, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -757,13 +745,13 @@ void main() {
           find.byKey(const ValueKey<String>('main_page_stack')),
         );
 
-    expect(mainPageStack().index, 3);
+    expect(mainPageStack().index, 2);
 
     tester.view.physicalSize = const Size(2400, 1080);
     await tester.pump(const Duration(milliseconds: 32));
     await _pumpMainScreenAnimations(tester);
 
-    expect(mainPageStack().index, 3);
+    expect(mainPageStack().index, 2);
     expect(
       tester.state(find.byType(LibraryTab, skipOffstage: false)),
       same(libraryState),
@@ -772,12 +760,12 @@ void main() {
       tester.state(find.byType(AsmrTab, skipOffstage: false)),
       same(asmrState),
     );
-    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_2')), findsOne);
 
     await tester.tap(
       find.descendant(
         of: find.byType(NavigationRail),
-        matching: find.byIcon(Icons.podcasts_outlined),
+        matching: find.byIcon(Icons.library_music_outlined),
       ),
     );
     await _pumpMainScreenAnimations(tester);
@@ -813,7 +801,7 @@ void main() {
           find.byKey(const ValueKey<String>('main_page_stack')),
         );
 
-    expect(mainPageStack().index, 3);
+    expect(mainPageStack().index, 2);
     tester.view.viewInsets = const FakeViewPadding(bottom: 600);
     tester.view.physicalSize = const Size(1080, 1800);
     addTearDown(() {
@@ -822,7 +810,7 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 32));
 
-    expect(mainPageStack().index, 3);
+    expect(mainPageStack().index, 2);
     expect(
       tester
           .widget<MediaQuery>(
@@ -2025,7 +2013,7 @@ Future<void> _tapSettingsDestination(WidgetTester tester) async {
     tester
         .widget<NavigationRail>(navigationRail)
         .onDestinationSelected!
-        .call(3);
+        .call(2);
   } else {
     final destination = find.byKey(
       const ValueKey<String>('main_destination_nav_settings'),
@@ -2037,28 +2025,15 @@ Future<void> _tapSettingsDestination(WidgetTester tester) async {
         .onTap!
         .call();
   }
-  await _waitForMainPage(tester, 3);
+  await _waitForMainPage(tester, 2);
 }
 
-Future<void> _tapAsmrDestination(WidgetTester tester) async {
-  final navigationRail = find.byType(NavigationRail);
-  if (navigationRail.evaluate().isNotEmpty) {
-    tester
-        .widget<NavigationRail>(navigationRail)
-        .onDestinationSelected!
-        .call(0);
-  } else {
-    final destination = find.byKey(
-      const ValueKey<String>('main_destination_ASMR.ONE'),
-    );
-    tester
-        .widget<InkResponse>(
-          find.descendant(of: destination, matching: find.byType(InkResponse)),
-        )
-        .onTap!
-        .call();
-  }
-  await _waitForMainPage(tester, 0);
+Future<void> _swipeToAsmrPage(WidgetTester tester) async {
+  final localHeader = find.byWidgetPredicate(
+    (widget) => widget is TopPageHeader && widget.title != 'ASMR.ONE',
+  );
+  await tester.fling(localHeader, const Offset(-120, 0), 1000);
+  await tester.pump();
 }
 
 Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {

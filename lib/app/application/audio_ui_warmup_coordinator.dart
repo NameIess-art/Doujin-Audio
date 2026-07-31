@@ -21,8 +21,8 @@ final class AudioUiWarmupCoordinator {
        _subtitles = subtitles,
        _scheduler = scheduler ?? WarmupScheduler();
 
-  static const _libraryTabIndex = 1;
-  static const _playbackTabIndex = 2;
+  static const _libraryTabIndex = 0;
+  static const _playbackTabIndex = 1;
   final LibraryFacade _library;
   final PlaybackFacade _playback;
   final NotificationFacade _notifications;

@@ -25,8 +25,6 @@ import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
 import '../theme/app_styles.dart';
-import '../../features/asmr/presentation/asmr_tab.dart';
-import '../../features/library/presentation/library_tab.dart';
 import '../../features/player/presentation/playlist_tab.dart';
 import '../../features/settings/presentation/settings_tab.dart';
 import '../../features/settings/presentation/app_update_flow.dart';
@@ -37,6 +35,7 @@ import '../../core/widgets/app_edge_fade_mask.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/confirm_action_dialog.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
+import 'audio_library_page.dart';
 
 part 'main_screen_notifications.dart';
 part 'main_screen_layout.dart';
@@ -62,10 +61,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
   final NotificationsPlatformService _notificationsPlatformService =
       NotificationsPlatformService();
 
-  int _currentIndex = 1;
+  int _currentIndex = 0;
   bool _isMenuCollapsed = false;
   late final List<Widget> _pages;
   late final ValueNotifier<int> _activePageIndex;
+  late final ValueNotifier<int> _audioLibrarySectionIndex;
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
   int _pageSwitchCoordinatorGeneration = 0;
@@ -106,11 +106,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   static const List<_MainDestination> _destinations = [
     _MainDestination(
-      icon: Icons.podcasts_outlined,
-      selectedIcon: Icons.podcasts_rounded,
-      labelKey: 'ASMR.ONE',
-    ),
-    _MainDestination(
       icon: Icons.library_music_outlined,
       selectedIcon: Icons.library_music_rounded,
       labelKey: 'nav_library',
@@ -137,12 +132,18 @@ class _MainScreenState extends ConsumerState<MainScreen>
       updateService: ref.read(appUpdateServiceProvider),
     );
     _activePageIndex = ValueNotifier<int>(_currentIndex);
+    _audioLibrarySectionIndex = ValueNotifier<int>(
+      AudioLibraryPage.localSection,
+    );
     _pages = [
-      const AsmrTab(),
-      LibraryTab(activeTabIndexListenable: _activePageIndex),
+      AudioLibraryPage(
+        sectionIndex: _audioLibrarySectionIndex,
+        activePageIndex: _activePageIndex,
+        onSectionChanged: _switchAudioLibrarySection,
+      ),
       PlaylistTab(
         onTimerTap: _openTimerFromPlaylist,
-        onOpenLibrary: () => _switchPage(1),
+        onOpenLibrary: _openLocalLibrary,
         activeTabIndexListenable: _activePageIndex,
       ),
       const SettingsTab(),
@@ -200,8 +201,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
       final startupPage =
           ref.read(settingsStateProvider).value?.startupPage ??
           StartupPage.library;
+      _audioLibrarySectionIndex.value = startupPage == StartupPage.asmrOne
+          ? AudioLibraryPage.asmrSection
+          : AudioLibraryPage.localSection;
       setState(() {
-        _currentIndex = startupPage.index;
+        _currentIndex = startupPage == StartupPage.playlist ? 1 : 0;
         _isDataReady = true;
       });
       _activePageIndex.value = _currentIndex;
@@ -293,6 +297,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _permissionActionController.dispose();
     _notificationsPlatformService.setOpenSessionHandler(null);
     _activePageIndex.dispose();
+    _audioLibrarySectionIndex.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -580,7 +585,21 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _currentIndex = index;
     });
     _activePageIndex.value = index;
-    if (index == 0) {
+    if (index == 0 &&
+        _audioLibrarySectionIndex.value == AudioLibraryPage.asmrSection) {
+      unawaited(_showAsmrOnlineNoticeOnce());
+    }
+  }
+
+  void _openLocalLibrary() {
+    _switchAudioLibrarySection(AudioLibraryPage.localSection);
+    _switchPage(0);
+  }
+
+  void _switchAudioLibrarySection(int index) {
+    if (_audioLibrarySectionIndex.value == index) return;
+    _audioLibrarySectionIndex.value = index;
+    if (index == AudioLibraryPage.asmrSection) {
       unawaited(_showAsmrOnlineNoticeOnce());
     }
   }

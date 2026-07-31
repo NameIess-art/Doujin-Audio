@@ -20,7 +20,7 @@ const Map<String, String> appLanguageZh = {
   'privacy_summary_network_body': '网络仅用于 ASMR.ONE、元数据和应用更新等功能。',
   'privacy_summary_diagnostics_title': '诊断信息由你控制',
   'privacy_summary_diagnostics_body': '仅在你主动导出时生成脱敏诊断报告。',
-  'nav_library': '本地音频库',
+  'nav_library': '音频库',
   'open_library': '前往媒体库',
   'open_playback_details': '打开播放详情',
   'retry_playback': '重试播放',

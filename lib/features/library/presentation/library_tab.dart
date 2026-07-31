@@ -137,9 +137,18 @@ enum _LibraryMoreAction {
 }
 
 class LibraryTab extends ConsumerStatefulWidget {
-  const LibraryTab({super.key, this.activeTabIndexListenable});
+  const LibraryTab({
+    super.key,
+    this.activeTabIndexListenable,
+    this.activeSectionListenable,
+    this.sectionIndex = 0,
+    this.onTitleSwipeLeft,
+  });
 
   final ValueListenable<int>? activeTabIndexListenable;
+  final ValueListenable<int>? activeSectionListenable;
+  final int sectionIndex;
+  final VoidCallback? onTitleSwipeLeft;
 
   @override
   ConsumerState<LibraryTab> createState() => _LibraryTabState();
@@ -153,8 +162,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   bool get wantKeepAlive => true;
 
   bool get _isActive =>
-      widget.activeTabIndexListenable == null ||
-      widget.activeTabIndexListenable!.value == tabIndex;
+      (widget.activeTabIndexListenable == null ||
+          widget.activeTabIndexListenable!.value == tabIndex) &&
+      (widget.activeSectionListenable == null ||
+          widget.activeSectionListenable!.value == widget.sectionIndex);
+
+  @override
+  bool get handlesScrollToTop => _isActive;
 
   T _readOrWatch<T>(ProviderListenable<T> provider) {
     return _isActive ? ref.watch(provider) : ref.read(provider);
@@ -182,7 +196,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   late final String _durationBackfillCommitKey;
 
   @override
-  int get tabIndex => 1;
+  int get tabIndex => 0;
 
   @override
   double get headerControlsFullHeight => 0;
@@ -382,6 +396,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     _durationBackfillCommitKey =
         'library_duration_backfill:${identityHashCode(this)}';
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
+    widget.activeSectionListenable?.addListener(_handleActiveTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         unawaited(_refreshAfterStartupIdle());
@@ -539,6 +554,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   void dispose() {
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
+    widget.activeSectionListenable?.removeListener(_handleActiveTabChanged);
     UiInteractionCoordinator.instance.removeListener(
       _handleStartupRefreshInteractionChanged,
     );
@@ -912,6 +928,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 key: headerKey,
                 icon: Icons.library_music_rounded,
                 title: i18n.tr('music_library'),
+                onTitleSwipeLeft: widget.onTitleSwipeLeft,
                 subtitle:
                     '${i18n.tr('work_count', {'count': libraryHeaderWorkCount})} · '
                     '${i18n.tr('audio_count', {'count': libraryHeaderAudioCount})}',

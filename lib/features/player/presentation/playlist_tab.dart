@@ -374,7 +374,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   String? _lastPlaybackCoverWarmupSignature;
 
   @override
-  int get tabIndex => 2;
+  int get tabIndex => 1;
 
   @override
   ScrollController get mainScrollController => _scrollController;

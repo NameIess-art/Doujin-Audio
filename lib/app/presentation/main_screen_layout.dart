@@ -156,6 +156,14 @@ extension _MainScreenLayout on _MainScreenState {
   }
 
   Widget _buildBottomBar(BuildContext context) {
+    return ValueListenableBuilder<int>(
+      valueListenable: _audioLibrarySectionIndex,
+      builder: (context, sectionIndex, _) =>
+          _buildBottomBarContent(context, sectionIndex),
+    );
+  }
+
+  Widget _buildBottomBarContent(BuildContext context, int sectionIndex) {
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -166,7 +174,11 @@ extension _MainScreenLayout on _MainScreenState {
       final index = entry.key;
       final item = entry.value;
       final selected = index == _currentIndex;
-      final label = i18n.tr(item.labelKey);
+      final label = index == 0
+          ? sectionIndex == AudioLibraryPage.asmrSection
+                ? 'ASMR.ONE'
+                : i18n.tr('music_library')
+          : i18n.tr(item.labelKey);
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
 
       final tokens = AppDesignTokens.of(context);

@@ -499,17 +499,29 @@ void main() {
     );
     expect(fadeOpacity(localFadeFinder), 1);
     expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(
+      find.descendant(of: destination, matching: find.text(localTitle)),
+      findsOneWidget,
+    );
 
     await tester.fling(destination, const Offset(-80, 0), 600);
     await tester.pump();
     expect(fadeOpacity(localFadeFinder), 0);
     expect(fadeOpacity(asmrFadeFinder), 1);
+    expect(
+      find.descendant(of: destination, matching: find.text('ASMR.ONE')),
+      findsOneWidget,
+    );
     await tester.pump(const Duration(milliseconds: 300));
 
     await tester.fling(destination, const Offset(80, 0), 600);
     await tester.pump();
     expect(fadeOpacity(localFadeFinder), 1);
     expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(
+      find.descendant(of: destination, matching: find.text(localTitle)),
+      findsOneWidget,
+    );
     await tester.pump(const Duration(milliseconds: 300));
 
     final gesture = await tester.startGesture(tester.getCenter(destination));

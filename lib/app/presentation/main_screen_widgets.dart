@@ -42,11 +42,13 @@ class _BottomDestinationInkResponse extends StatelessWidget {
     required this.onTap,
     required this.child,
     this.onLongPress,
+    this.onHorizontalSwipe,
   });
 
   final Key inkKey;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+  final VoidCallback? onHorizontalSwipe;
   final Widget child;
 
   @override
@@ -60,18 +62,37 @@ class _BottomDestinationInkResponse extends StatelessWidget {
       splashColor: Colors.transparent,
       child: child,
     );
-    if (onLongPress == null) return inkResponse;
+    if (onLongPress == null && onHorizontalSwipe == null) return inkResponse;
+    var horizontalDragDistance = 0.0;
     return RawGestureDetector(
       key: const ValueKey<String>('main_destination_library_long_press'),
       behavior: HitTestBehavior.opaque,
       gestures: <Type, GestureRecognizerFactory>{
-        LongPressGestureRecognizer:
-            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-              () => LongPressGestureRecognizer(
-                duration: const Duration(seconds: 1),
+        if (onLongPress != null)
+          LongPressGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+                () => LongPressGestureRecognizer(
+                  duration: const Duration(seconds: 1),
+                ),
+                (recognizer) => recognizer.onLongPress = onLongPress,
               ),
-              (recognizer) => recognizer.onLongPress = onLongPress,
-            ),
+        if (onHorizontalSwipe != null)
+          HorizontalDragGestureRecognizer:
+              GestureRecognizerFactoryWithHandlers<
+                HorizontalDragGestureRecognizer
+              >(HorizontalDragGestureRecognizer.new, (recognizer) {
+                recognizer.onStart = (_) {
+                  horizontalDragDistance = 0;
+                };
+                recognizer.onUpdate = (details) {
+                  horizontalDragDistance += details.primaryDelta ?? 0;
+                };
+                recognizer.onEnd = (_) {
+                  if (horizontalDragDistance.abs() >= 24) {
+                    onHorizontalSwipe?.call();
+                  }
+                };
+              }),
       },
       child: inkResponse,
     );

@@ -485,8 +485,32 @@ void main() {
     );
 
     expect(destination, findsOneWidget);
+    expect(
+      find.byKey(
+        const ValueKey<String>('main_destination_library_left_indicator'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(
+        const ValueKey<String>('main_destination_library_right_indicator'),
+      ),
+      findsOneWidget,
+    );
     expect(fadeOpacity(localFadeFinder), 1);
     expect(fadeOpacity(asmrFadeFinder), 0);
+
+    await tester.fling(destination, const Offset(-80, 0), 600);
+    await tester.pump();
+    expect(fadeOpacity(localFadeFinder), 0);
+    expect(fadeOpacity(asmrFadeFinder), 1);
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.fling(destination, const Offset(80, 0), 600);
+    await tester.pump();
+    expect(fadeOpacity(localFadeFinder), 1);
+    expect(fadeOpacity(asmrFadeFinder), 0);
+    await tester.pump(const Duration(milliseconds: 300));
 
     final gesture = await tester.startGesture(tester.getCenter(destination));
     await tester.pump(const Duration(milliseconds: 900));

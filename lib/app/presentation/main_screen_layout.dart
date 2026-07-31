@@ -171,6 +171,17 @@ extension _MainScreenLayout on _MainScreenState {
 
       final tokens = AppDesignTokens.of(context);
       final activeColor = cs.primary;
+      final labelText = Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          fontSize: 10,
+          fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+          color: selected ? activeColor : inactive,
+          letterSpacing: 0,
+        ),
+      );
 
       return Expanded(
         child: Semantics(
@@ -184,6 +195,9 @@ extension _MainScreenLayout on _MainScreenState {
               inkKey: ValueKey<String>('main_destination_ink_${item.labelKey}'),
               onTap: () => _switchPage(index),
               onLongPress: index == 0
+                  ? _toggleAudioLibrarySectionFromNavigation
+                  : null,
+              onHorizontalSwipe: index == 0
                   ? _toggleAudioLibrarySectionFromNavigation
                   : null,
               child: Column(
@@ -231,17 +245,33 @@ extension _MainScreenLayout on _MainScreenState {
                     ],
                   ),
                   const SizedBox(height: 1),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      fontSize: 10,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                      color: selected ? activeColor : inactive,
-                      letterSpacing: 0,
-                    ),
-                  ),
+                  if (index == 0)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.chevron_left_rounded,
+                          key: const ValueKey<String>(
+                            'main_destination_library_left_indicator',
+                          ),
+                          size: 12,
+                          color: activeColor,
+                        ),
+                        const SizedBox(width: 1),
+                        Flexible(child: labelText),
+                        const SizedBox(width: 1),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          key: const ValueKey<String>(
+                            'main_destination_library_right_indicator',
+                          ),
+                          size: 12,
+                          color: activeColor,
+                        ),
+                      ],
+                    )
+                  else
+                    labelText,
                 ],
               ),
             ),

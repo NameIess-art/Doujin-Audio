@@ -133,7 +133,7 @@ internal class NativePlayerFactory(
         return ExoPlayer.Builder(context, renderersFactory)
             .setMediaSourceFactory(mediaSourceFactory)
             // The session applies the URI-specific mode before prepare().
-            .setWakeMode(C.WAKE_MODE_LOCAL)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
             .setHandleAudioBecomingNoisy(false)
             .build()
             .also { player ->

@@ -10,6 +10,7 @@ import '../application/asmr_download_manager.dart';
 import '../application/asmr_download_selection.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/operation_feedback.dart';
@@ -429,6 +430,67 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
   }
 }
 
+enum _TaskRemovalAction { removeEntry, deleteDownloaded }
+
+Future<_TaskRemovalAction?> _showTaskRemovalMenu(
+  BuildContext context, {
+  required String title,
+  required String removeEntryLabel,
+  required String deleteDownloadedLabel,
+}) {
+  return AppBottomSheet.show<_TaskRemovalAction>(
+    context: context,
+    isScrollControlled: false,
+    builder: (sheetContext) {
+      final cs = Theme.of(sheetContext).colorScheme;
+      return SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(
+                  title,
+                  style: Theme.of(sheetContext).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              ListTile(
+                key: const ValueKey<String>(
+                  'asmr_download_remove_entry_option',
+                ),
+                leading: const Icon(Icons.remove_circle_outline_rounded),
+                title: Text(removeEntryLabel),
+                onTap: () => Navigator.of(
+                  sheetContext,
+                ).pop(_TaskRemovalAction.removeEntry),
+              ),
+              ListTile(
+                key: const ValueKey<String>(
+                  'asmr_download_delete_downloaded_option',
+                ),
+                leading: Icon(Icons.delete_forever_rounded, color: cs.error),
+                title: Text(
+                  deleteDownloadedLabel,
+                  style: TextStyle(color: cs.error),
+                ),
+                onTap: () => Navigator.of(
+                  sheetContext,
+                ).pop(_TaskRemovalAction.deleteDownloaded),
+              ),
+            ],
+          ),
+        ),
+      );
+    },
+  );
+}
+
 class _TaskCard extends ConsumerWidget {
   const _TaskCard({required this.workId});
 
@@ -516,19 +578,46 @@ class _TaskCard extends ConsumerWidget {
                     width: 32,
                     height: 32,
                     child: IconButton(
+                      key: ValueKey<String>(
+                        'asmr_download_remove_task_${task.work.id}',
+                      ),
                       padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.cancel_rounded),
+                      icon: const Icon(Icons.delete_outline_rounded),
                       iconSize: 22,
                       color: cs.error.withValues(alpha: 0.8),
-                      tooltip: i18n.tr('cancel'),
+                      tooltip: i18n.tr('asmr_download_remove_task'),
                       onPressed: () async {
-                        await manager.cancelTask(task.work.id);
+                        final action = await _showTaskRemovalMenu(
+                          context,
+                          title: i18n.tr('asmr_download_remove_task'),
+                          removeEntryLabel: i18n.tr(
+                            'asmr_download_remove_entry',
+                          ),
+                          deleteDownloadedLabel: i18n.tr(
+                            'asmr_download_remove_and_delete',
+                          ),
+                        );
+                        if (!context.mounted || action == null) return;
+                        if (action == _TaskRemovalAction.removeEntry) {
+                          await manager.cancelTask(
+                            task.work.id,
+                            deleteDownloaded: false,
+                          );
+                        } else {
+                          await manager.deleteTask(task.work.id);
+                        }
                         if (!context.mounted) return;
                         showAppSnackBar(
                           context,
-                          i18n.tr('asmr_download_cancelled_and_cleared'),
+                          i18n.tr(
+                            action == _TaskRemovalAction.removeEntry
+                                ? 'asmr_download_task_removed'
+                                : 'asmr_download_task_removed_and_deleted',
+                          ),
                           tone: AppFeedbackTone.warning,
-                          icon: Icons.delete_sweep_rounded,
+                          icon: action == _TaskRemovalAction.removeEntry
+                              ? Icons.remove_circle_outline_rounded
+                              : Icons.delete_sweep_rounded,
                           iconColor: asmrBlue,
                         );
                       },

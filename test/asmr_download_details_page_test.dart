@@ -60,7 +60,7 @@ void main() {
       find.byKey(const ValueKey<String>('asmr_download_retry_Track.mp3')),
       findsOneWidget,
     );
-    expect(find.text('Retrying (1/5)'), findsOneWidget);
+    expect(find.text('Retrying (1/10)'), findsOneWidget);
 
     await tester.pumpWidget(
       _downloadDetailsApp(
@@ -70,7 +70,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Retrying (1/5)'), findsNothing);
+    expect(find.text('Retrying (1/10)'), findsNothing);
     expect(find.text('128 B / 1.0 KB'), findsNWidgets(2));
   });
 }

@@ -228,8 +228,9 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_task_not_found': 'Download task not found',
   'asmr_download_details_title': 'Download details',
   'asmr_download_no_files_selected': 'No files selected',
-  'asmr_download_cancel_and_clear':
-      'Cancel download and clear downloaded content',
+  'asmr_download_remove_task': 'Remove download task',
+  'asmr_download_remove_entry': 'Remove task entry',
+  'asmr_download_remove_and_delete': 'Also delete downloaded content',
   'asmr_download_no_tasks': 'No download tasks',
   'asmr_download_waiting': 'Waiting',
   'asmr_download_status': 'Status',
@@ -239,8 +240,9 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_failed_count': 'Failed',
   'asmr_download_downloaded': 'Downloaded',
   'asmr_download_total_size': 'Total size',
-  'asmr_download_cancelled_and_cleared':
-      'Download cancelled and downloaded content cleared',
+  'asmr_download_task_removed': 'Task entry removed',
+  'asmr_download_task_removed_and_deleted':
+      'Task removed and downloaded content deleted',
   'asmr_download_summary_selected': '{count} files selected, {size} total.',
   'asmr_download_empty_folder': 'Empty folder',
   'asmr_download_status_preparing': 'Preparing',

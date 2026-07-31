@@ -409,6 +409,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     FileCachePlatformGateway? fileCacheGateway,
     Future<Directory> Function()? temporaryDirectoryProvider,
     Future<Directory> Function()? stagingDirectoryProvider,
+    Duration automaticFileRetryDelay = const Duration(seconds: 2),
     bool persistTasks = true,
   }) : _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
@@ -416,22 +417,17 @@ class AsmrDownloadManager extends ChangeNotifier {
            stagingDirectoryProvider ??
            temporaryDirectoryProvider ??
            getApplicationSupportDirectory,
+       _automaticFileRetryDelay = automaticFileRetryDelay,
        _persistTasks = persistTasks;
 
   static const Duration _progressNotifyMinInterval = Duration(
     milliseconds: 120,
   );
-  static const int maxAutomaticFileRetries = 5;
-  static const List<Duration> _automaticFileRetryDelays = <Duration>[
-    Duration(milliseconds: 350),
-    Duration(milliseconds: 900),
-    Duration(milliseconds: 900),
-    Duration(milliseconds: 900),
-    Duration(milliseconds: 900),
-  ];
+  static const int maxAutomaticFileRetries = 10;
   static const int _progressNotifyMinByteDelta = 128 * 1024;
   final FileCachePlatformGateway _fileCacheGateway;
   final Future<Directory> Function() _stagingDirectoryProvider;
+  final Duration _automaticFileRetryDelay;
   final bool _persistTasks;
 
   final Map<int, AsmrDownloadTaskSnapshot> _tasks = {};
@@ -442,6 +438,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   final Map<int, List<_PlannedDownloadFile>> _plannedFilesMap = {};
 
   final Map<int, bool> _cancelRequested = {};
+  final Map<int, bool> _deleteDownloadedOnCancel = {};
   final Map<int, bool> _pauseRequested = {};
   final Map<int, Completer<void>> _downloadCompletions = {};
   final Map<int, HttpClient> _activeHttpClients = {};
@@ -609,7 +606,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     return Directory(normalized).exists();
   }
 
-  Future<void> cancelTask(int workId) async {
+  Future<void> cancelTask(int workId, {bool deleteDownloaded = true}) async {
     final task = _tasks[workId];
     if (task == null) {
       return;
@@ -628,6 +625,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     if (_activeTasks.contains(workId)) {
       _pauseRequested.remove(workId);
       _cancelRequested[workId] = true;
+      _deleteDownloadedOnCancel[workId] = deleteDownloaded;
       _tasks[workId] = task.copyWith(message: 'canceling');
       _notifyTaskChanged();
       final completion = _downloadCompletions[workId]?.future;
@@ -636,7 +634,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       if (completion != null) {
         await completion;
       }
-      if (removeWholeRoot) {
+      if (deleteDownloaded && removeWholeRoot) {
         await _deleteDownloadRoot(task.workRootPath);
       }
       _tasks.remove(workId);
@@ -647,7 +645,9 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     if (task.status == AsmrDownloadTaskStatus.failed ||
         task.status == AsmrDownloadTaskStatus.paused) {
-      await _cleanupCancelledTask(workId, task.workRootPath);
+      if (deleteDownloaded) {
+        await _cleanupCancelledTask(workId, task.workRootPath);
+      }
     }
     _workRootExistedBeforeTask.remove(workId);
     _createdOutputPaths.remove(workId);
@@ -1090,7 +1090,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       _plannedFilesMap.remove(workId);
       if (!_disposed &&
           _cancelRequested[workId] == true &&
-          _pauseRequested[workId] != true) {
+          _pauseRequested[workId] != true &&
+          _deleteDownloadedOnCancel[workId] == true) {
         await _cleanupCancelledTask(workId, workRootPath);
       }
       if (_cancelRequested[workId] == true) {
@@ -1098,6 +1099,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         _createdOutputPaths.remove(workId);
       }
       _cancelRequested.remove(workId);
+      _deleteDownloadedOnCancel.remove(workId);
       _pauseRequested.remove(workId);
       final completion = _downloadCompletions.remove(workId);
       if (completion != null && !completion.isCompleted) {
@@ -1284,7 +1286,7 @@ class AsmrDownloadManager extends ChangeNotifier {
           );
         }
 
-        if (!result.retryable || attempt >= _automaticFileRetryDelays.length) {
+        if (!result.retryable || attempt >= maxAutomaticFileRetries) {
           if (result.error case final error?) {
             AppLogService.error(
               'asmr_download_transfer_failed path=${item.relativePath}',
@@ -1303,7 +1305,7 @@ class AsmrDownloadManager extends ChangeNotifier {
           error: result.error,
           stackTrace: result.stackTrace,
         );
-        await Future<void>.delayed(_automaticFileRetryDelays[attempt]);
+        await Future<void>.delayed(_automaticFileRetryDelay);
       }
     } on _DownloadCancelled {
       rethrow;

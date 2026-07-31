@@ -818,6 +818,54 @@ void main() {
     },
   );
 
+  test('removing a task entry keeps downloaded files', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_remove_entry_',
+    );
+    final downloadedFile = File(
+      '${tempDir.path}${Platform.pathSeparator}Work'
+      '${Platform.pathSeparator}Track.mp3',
+    );
+    await downloadedFile.create(recursive: true);
+    await downloadedFile.writeAsBytes(const <int>[1, 2, 3]);
+    final manager = _manager();
+    manager.debugSetCurrentTaskForTesting(_failedTaskSnapshot(tempDir.path));
+
+    try {
+      await manager.cancelTask(1, deleteDownloaded: false);
+
+      expect(manager.getTask(1), isNull);
+      expect(await downloadedFile.readAsBytes(), const <int>[1, 2, 3]);
+    } finally {
+      manager.dispose();
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test('deleting a task removes downloaded content', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_delete_task_',
+    );
+    final workDir = Directory('${tempDir.path}${Platform.pathSeparator}Work');
+    final downloadedFile = File(
+      '${workDir.path}${Platform.pathSeparator}Track.mp3',
+    );
+    await downloadedFile.create(recursive: true);
+    await downloadedFile.writeAsBytes(const <int>[1, 2, 3]);
+    final manager = _manager();
+    manager.debugSetCurrentTaskForTesting(_failedTaskSnapshot(tempDir.path));
+
+    try {
+      await manager.deleteTask(1);
+
+      expect(manager.getTask(1), isNull);
+      expect(await workDir.exists(), isFalse);
+    } finally {
+      manager.dispose();
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
   test(
     'canceling a paused download removes task and downloaded files',
     () async {
@@ -1199,7 +1247,7 @@ void main() {
   });
 
   test(
-    'transient failures exhaust five retries and count one failure',
+    'transient failures exhaust ten retries and count one failure',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_retry_exhausted_',
@@ -1233,7 +1281,7 @@ void main() {
           allowFailure: true,
         );
 
-        expect(requests, 6);
+        expect(requests, 11);
         expect(manager.getTask(1)?.failedFiles, 1);
         expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
       } finally {
@@ -1696,7 +1744,25 @@ void main() {
 AsmrDownloadManager _manager() {
   return AsmrDownloadManager(
     temporaryDirectoryProvider: () async => Directory.systemTemp,
+    automaticFileRetryDelay: const Duration(milliseconds: 200),
     persistTasks: false,
+  );
+}
+
+AsmrDownloadTaskSnapshot _failedTaskSnapshot(String destinationRoot) {
+  return AsmrDownloadTaskSnapshot(
+    work: _work(),
+    destinationRoot: destinationRoot,
+    workFolderName: 'Work',
+    conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+    status: AsmrDownloadTaskStatus.failed,
+    totalFiles: 1,
+    completedFiles: 1,
+    skippedFiles: 0,
+    failedFiles: 1,
+    totalBytes: 3,
+    downloadedBytes: 3,
+    startedAt: DateTime(2026),
   );
 }
 

@@ -36,6 +36,48 @@ class _MainDestination {
   final String labelKey;
 }
 
+class _BottomDestinationInkResponse extends StatelessWidget {
+  const _BottomDestinationInkResponse({
+    required this.inkKey,
+    required this.onTap,
+    required this.child,
+    this.onLongPress,
+  });
+
+  final Key inkKey;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final inkResponse = InkResponse(
+      key: inkKey,
+      onTap: onTap,
+      containedInkWell: true,
+      radius: 32,
+      highlightColor: Colors.transparent,
+      splashColor: Colors.transparent,
+      child: child,
+    );
+    if (onLongPress == null) return inkResponse;
+    return RawGestureDetector(
+      key: const ValueKey<String>('main_destination_library_long_press'),
+      behavior: HitTestBehavior.opaque,
+      gestures: <Type, GestureRecognizerFactory>{
+        LongPressGestureRecognizer:
+            GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
+              () => LongPressGestureRecognizer(
+                duration: const Duration(seconds: 1),
+              ),
+              (recognizer) => recognizer.onLongPress = onLongPress,
+            ),
+      },
+      child: inkResponse,
+    );
+  }
+}
+
 class _GlobalUpdateOperationBanner extends ConsumerWidget {
   const _GlobalUpdateOperationBanner();
 

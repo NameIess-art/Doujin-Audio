@@ -180,13 +180,12 @@ extension _MainScreenLayout on _MainScreenState {
           label: label,
           child: Material(
             type: MaterialType.transparency,
-            child: InkResponse(
-              key: ValueKey<String>('main_destination_ink_${item.labelKey}'),
+            child: _BottomDestinationInkResponse(
+              inkKey: ValueKey<String>('main_destination_ink_${item.labelKey}'),
               onTap: () => _switchPage(index),
-              containedInkWell: true,
-              radius: 32,
-              highlightColor: Colors.transparent,
-              splashColor: Colors.transparent,
+              onLongPress: index == 0
+                  ? _toggleAudioLibrarySectionFromNavigation
+                  : null,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [

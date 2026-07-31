@@ -81,6 +81,7 @@ void showAppSnackBar(
   Duration? duration,
   String? actionLabel,
   VoidCallback? onAction,
+  bool provideHapticFeedback = true,
 }) {
   _showTopFeedback(
     context,
@@ -96,6 +97,7 @@ void showAppSnackBar(
             : const Duration(seconds: 2)),
     actionLabel: actionLabel,
     onAction: onAction,
+    provideHapticFeedback: provideHapticFeedback,
   );
 }
 
@@ -109,14 +111,17 @@ void _showTopFeedback(
   required Duration duration,
   String? actionLabel,
   VoidCallback? onAction,
+  required bool provideHapticFeedback,
 }) {
   final overlay = Overlay.of(context, rootOverlay: true);
   final resolvedIcon = icon ?? _defaultIconForTone(tone);
   final hasAction =
       actionLabel != null && actionLabel.trim().isNotEmpty && onAction != null;
-  unawaited(
-    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
-  );
+  if (provideHapticFeedback) {
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
+  }
 
   _activeFeedbackTimer?.cancel();
   _activeFeedbackRemove?.call();

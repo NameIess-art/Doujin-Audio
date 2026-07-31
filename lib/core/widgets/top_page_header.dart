@@ -236,6 +236,8 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
       final trailingOffset = (1 - trailingFactor) * 6;
       final prefersExpandedText =
           MediaQuery.textScalerOf(context).scale(1) > 1.3;
+      final hasTitleSwipe =
+          widget.onTitleSwipeLeft != null || widget.onTitleSwipeRight != null;
 
       return Padding(
         padding: resolvedPadding,
@@ -272,26 +274,60 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                             widget.onTitleSwipeRight == null
                         ? null
                         : _handleTitleDragEnd,
-                    child: widget.marqueeTitle
-                        ? SizedBox(
-                            height: titleHeight,
-                            child: MarqueeText(
-                              text: resolvedTitle,
-                              style: titleStyle,
-                              scrollSpeed: 24,
-                              edgePadding: 2,
-                              forceMarquee: widget.forceMarqueeTitle,
-                            ),
-                          )
-                        : Semantics(
-                            header: true,
-                            child: Text(
-                              resolvedTitle,
-                              maxLines: prefersExpandedText ? 2 : 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: titleStyle,
+                    child: Row(
+                      children: [
+                        if (hasTitleSwipe) ...[
+                          SizedBox(
+                            width: 14,
+                            child: Icon(
+                              Icons.chevron_left_rounded,
+                              key: const ValueKey<String>(
+                                'top_page_header_swipe_left_indicator',
+                              ),
+                              size: 16,
+                              color: cs.primary,
                             ),
                           ),
+                          const SizedBox(width: 2),
+                        ],
+                        Flexible(
+                          child: widget.marqueeTitle
+                              ? SizedBox(
+                                  height: titleHeight,
+                                  child: MarqueeText(
+                                    text: resolvedTitle,
+                                    style: titleStyle,
+                                    scrollSpeed: 24,
+                                    edgePadding: 2,
+                                    forceMarquee: widget.forceMarqueeTitle,
+                                  ),
+                                )
+                              : Semantics(
+                                  header: true,
+                                  child: Text(
+                                    resolvedTitle,
+                                    maxLines: prefersExpandedText ? 2 : 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: titleStyle,
+                                  ),
+                                ),
+                        ),
+                        if (hasTitleSwipe) ...[
+                          const SizedBox(width: 2),
+                          SizedBox(
+                            width: 14,
+                            child: Icon(
+                              Icons.chevron_right_rounded,
+                              key: const ValueKey<String>(
+                                'top_page_header_swipe_right_indicator',
+                              ),
+                              size: 16,
+                              color: cs.primary,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
                 if (widget.titleSuffix != null) ...[

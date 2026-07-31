@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -604,6 +605,17 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
   }
 
+  void _toggleAudioLibrarySectionFromNavigation() {
+    final nextSection =
+        _audioLibrarySectionIndex.value == AudioLibraryPage.localSection
+        ? AudioLibraryPage.asmrSection
+        : AudioLibraryPage.localSection;
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
+    _switchAudioLibrarySection(nextSection);
+  }
+
   void _handlePageTransitionCompleted(int index) {
     if (!mounted || _currentIndex != index) return;
     final warmup = ref.read(audioUiWarmupCoordinatorProvider);
@@ -638,6 +650,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
           .tr('asmr_online_optional_notice'),
       icon: Icons.cloud_outlined,
       duration: const Duration(seconds: 4),
+      provideHapticFeedback: false,
     );
   }
 

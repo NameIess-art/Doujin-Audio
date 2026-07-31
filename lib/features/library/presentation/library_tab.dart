@@ -143,12 +143,14 @@ class LibraryTab extends ConsumerStatefulWidget {
     this.activeSectionListenable,
     this.sectionIndex = 0,
     this.onTitleSwipeLeft,
+    this.onTitleSwipeRight,
   });
 
   final ValueListenable<int>? activeTabIndexListenable;
   final ValueListenable<int>? activeSectionListenable;
   final int sectionIndex;
   final VoidCallback? onTitleSwipeLeft;
+  final VoidCallback? onTitleSwipeRight;
 
   @override
   ConsumerState<LibraryTab> createState() => _LibraryTabState();
@@ -929,6 +931,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 icon: Icons.library_music_rounded,
                 title: i18n.tr('music_library'),
                 onTitleSwipeLeft: widget.onTitleSwipeLeft,
+                onTitleSwipeRight: widget.onTitleSwipeRight,
                 subtitle:
                     '${i18n.tr('work_count', {'count': libraryHeaderWorkCount})} · '
                     '${i18n.tr('audio_count', {'count': libraryHeaderAudioCount})}',

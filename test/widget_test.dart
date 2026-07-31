@@ -347,9 +347,19 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('audio library title swipe keeps both page states mounted', (
+  testWidgets('audio library title swipe fades between mounted pages', (
     tester,
   ) async {
+    final platformCalls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          platformCalls.add(call);
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
     final harness = await _pumpAppShell(tester, includePlaybackSession: false);
 
     final libraryFinder = find.byType(LibraryTab, skipOffstage: false);
@@ -360,36 +370,150 @@ void main() {
     final sectionStackFinder = find.byKey(
       const ValueKey<String>('audio_library_section_stack'),
     );
-    Finder headerTitle(String title) => find.descendant(
-      of: find.byType(TopPageHeader),
-      matching: find.text(title),
+    final localFadeFinder = find.byKey(
+      const ValueKey<String>('audio_library_local_fade'),
+    );
+    final asmrFadeFinder = find.byKey(
+      const ValueKey<String>('audio_library_asmr_fade'),
     );
     final localTitle = harness.language.tr('music_library');
+    final localTitleFinder = find.descendant(
+      of: localFadeFinder,
+      matching: find.text(localTitle),
+    );
+    final asmrTitleFinder = find.descendant(
+      of: asmrFadeFinder,
+      matching: find.text('ASMR.ONE'),
+    );
+
+    double fadeOpacity(Finder finder) =>
+        tester.widget<AnimatedOpacity>(finder).opacity;
 
     expect(
       tester.widget<AppFadeThroughIndexedStack>(stackFinder).children,
       hasLength(3),
     );
-    expect(tester.widget<IndexedStack>(sectionStackFinder).index, 0);
-    expect(headerTitle(localTitle), findsOneWidget);
-    expect(headerTitle('ASMR.ONE'), findsNothing);
+    expect(sectionStackFinder, findsOneWidget);
+    expect(fadeOpacity(localFadeFinder), 1);
+    expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(
+      find.descendant(
+        of: localFadeFinder,
+        matching: find.byKey(
+          const ValueKey<String>('top_page_header_swipe_left_indicator'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: asmrFadeFinder,
+        matching: find.byKey(
+          const ValueKey<String>('top_page_header_swipe_left_indicator'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: localFadeFinder,
+        matching: find.byKey(
+          const ValueKey<String>('top_page_header_swipe_right_indicator'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: asmrFadeFinder,
+        matching: find.byKey(
+          const ValueKey<String>('top_page_header_swipe_right_indicator'),
+        ),
+      ),
+      findsOneWidget,
+    );
+    platformCalls.clear();
 
-    await tester.fling(headerTitle(localTitle), const Offset(-120, 0), 1000);
+    await tester.fling(localTitleFinder, const Offset(-120, 0), 1000);
     await tester.pump();
+    expect(fadeOpacity(localFadeFinder), 0);
+    expect(fadeOpacity(asmrFadeFinder), 1);
+    expect(
+      tester.widget<AnimatedOpacity>(localFadeFinder).duration,
+      const Duration(milliseconds: 280),
+    );
+    expect(
+      platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
+      hasLength(1),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
 
     expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 0);
-    expect(tester.widget<IndexedStack>(sectionStackFinder).index, 1);
-    expect(headerTitle('ASMR.ONE'), findsOneWidget);
     expect(tester.state(libraryFinder), same(libraryState));
     expect(tester.state(asmrFinder), same(asmrState));
 
-    await tester.fling(headerTitle('ASMR.ONE'), const Offset(120, 0), 1000);
+    await tester.fling(asmrTitleFinder, const Offset(120, 0), 1000);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
 
-    expect(tester.widget<IndexedStack>(sectionStackFinder).index, 0);
-    expect(headerTitle(localTitle), findsOneWidget);
+    expect(fadeOpacity(localFadeFinder), 1);
+    expect(fadeOpacity(asmrFadeFinder), 0);
     expect(tester.state(libraryFinder), same(libraryState));
     expect(tester.state(asmrFinder), same(asmrState));
+
+    await tester.fling(localTitleFinder, const Offset(120, 0), 1000);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(fadeOpacity(asmrFadeFinder), 1);
+
+    await tester.fling(asmrTitleFinder, const Offset(-120, 0), 1000);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(fadeOpacity(localFadeFinder), 1);
+    expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(tester.state(libraryFinder), same(libraryState));
+    expect(tester.state(asmrFinder), same(asmrState));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('audio library bottom destination toggles after one second', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 800);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+    await _pumpAppShell(tester, includePlaybackSession: false);
+
+    final localFadeFinder = find.byKey(
+      const ValueKey<String>('audio_library_local_fade'),
+    );
+    final asmrFadeFinder = find.byKey(
+      const ValueKey<String>('audio_library_asmr_fade'),
+    );
+    double fadeOpacity(Finder finder) =>
+        tester.widget<AnimatedOpacity>(finder).opacity;
+    final destination = find.byKey(
+      const ValueKey<String>('main_destination_library_long_press'),
+    );
+
+    expect(destination, findsOneWidget);
+    expect(fadeOpacity(localFadeFinder), 1);
+    expect(fadeOpacity(asmrFadeFinder), 0);
+
+    final gesture = await tester.startGesture(tester.getCenter(destination));
+    await tester.pump(const Duration(milliseconds: 900));
+    expect(fadeOpacity(localFadeFinder), 1);
+    expect(fadeOpacity(asmrFadeFinder), 0);
+
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(fadeOpacity(localFadeFinder), 0);
+    expect(fadeOpacity(asmrFadeFinder), 1);
+    await gesture.up();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(tester.takeException(), isNull);
   });
 
@@ -2034,6 +2158,7 @@ Future<void> _swipeToAsmrPage(WidgetTester tester) async {
   );
   await tester.fling(localHeader, const Offset(-120, 0), 1000);
   await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
 }
 
 Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {

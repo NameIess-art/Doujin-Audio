@@ -46,11 +46,13 @@ class AsmrTab extends ConsumerStatefulWidget {
     super.key,
     this.activeSectionListenable,
     this.sectionIndex = 0,
+    this.onTitleSwipeLeft,
     this.onTitleSwipeRight,
   });
 
   final ValueListenable<int>? activeSectionListenable;
   final int sectionIndex;
+  final VoidCallback? onTitleSwipeLeft;
   final VoidCallback? onTitleSwipeRight;
 
   @override
@@ -356,6 +358,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
             child: TopPageHeader(
               key: _headerKey,
               title: 'ASMR.ONE',
+              onTitleSwipeLeft: widget.onTitleSwipeLeft,
               onTitleSwipeRight: widget.onTitleSwipeRight,
               subtitle: collectedSubtitle,
               subtitleFontSize: 11,
@@ -415,6 +418,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           child: TopPageHeader(
             key: _headerKey,
             title: 'ASMR.ONE',
+            onTitleSwipeLeft: widget.onTitleSwipeLeft,
             onTitleSwipeRight: widget.onTitleSwipeRight,
             subtitle: collectedSubtitle,
             subtitleFontSize: 11,

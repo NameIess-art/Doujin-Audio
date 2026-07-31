@@ -350,6 +350,12 @@ void main() {
   testWidgets('audio library title swipe fades between mounted pages', (
     tester,
   ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 800);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
     final platformCalls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(SystemChannels.platform, (call) async {
@@ -474,28 +480,6 @@ void main() {
     expect(fadeOpacity(asmrFadeFinder), 0);
     expect(tester.state(libraryFinder), same(libraryState));
     expect(tester.state(asmrFinder), same(asmrState));
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('audio library bottom destination toggles after one second', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(360, 800);
-    addTearDown(() {
-      tester.view.resetDevicePixelRatio();
-      tester.view.resetPhysicalSize();
-    });
-    await _pumpAppShell(tester, includePlaybackSession: false);
-
-    final localFadeFinder = find.byKey(
-      const ValueKey<String>('audio_library_local_fade'),
-    );
-    final asmrFadeFinder = find.byKey(
-      const ValueKey<String>('audio_library_asmr_fade'),
-    );
-    double fadeOpacity(Finder finder) =>
-        tester.widget<AnimatedOpacity>(finder).opacity;
     final destination = find.byKey(
       const ValueKey<String>('main_destination_library_long_press'),
     );

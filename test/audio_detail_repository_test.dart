@@ -263,7 +263,7 @@ void main() {
     expect(result.detail.workTitle, 'Current batch JSON title');
   });
 
-  test('automatic save uses the database value without reading JSON', () async {
+  test('automatic save preserves richer JSON fields before mirroring', () async {
     final workFolder = Directory(
       '${tempDir.path}${Platform.pathSeparator}stale-save-work',
     );
@@ -293,9 +293,9 @@ void main() {
       origin: AudioDetailSaveOrigin.automatic,
     );
 
-    expect(saved.detail.rjCode, isEmpty);
-    expect(saved.detail.workTitle, 'Stale cached title');
-    expect(saved.detail.circleName, isEmpty);
+    expect(saved.detail.rjCode, 'RJ998877');
+    expect(saved.detail.workTitle, 'Current JSON title');
+    expect(saved.detail.circleName, 'Current circle');
     expect(saved.detail.duration, const Duration(minutes: 8));
     final backup =
         json.decode(
@@ -304,8 +304,9 @@ void main() {
               ).readAsString(),
             )
             as Map<String, dynamic>;
-    expect(backup['rjCode'], isEmpty);
-    expect(backup['workTitle'], 'Stale cached title');
+    expect(backup['rjCode'], 'RJ998877');
+    expect(backup['workTitle'], 'Current JSON title');
+    expect(backup['circleName'], 'Current circle');
     expect(backup['durationMs'], const Duration(minutes: 8).inMilliseconds);
   });
 
@@ -930,28 +931,47 @@ void main() {
     },
   );
 
-  test(
-    'prefill extracts RJ code from folder name without overwriting',
-    () async {
-      final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+  test('prefill imports JSON before adding an RJ code', () async {
+    final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+    final backupFile = File(
+      '${tempDir.path}${Platform.pathSeparator}'
+      '${AudioDetailRepository.backupFileName}',
+    );
+    await backupFile.writeAsString(
+      json.encode(
+        AudioDetail.empty(target)
+            .copyWith(
+              workTitle: 'Backed up work',
+              circleName: 'Backed up circle',
+              voiceActors: const <String>['Voice actor'],
+            )
+            .toBackupJson(),
+      ),
+    );
 
-      final first = await repository.prefillRjCodeFromText(
-        target,
-        '[RJ123456] Work title',
-      );
+    final first = await repository.prefillRjCodeFromText(
+      target,
+      '[RJ123456] Work title',
+    );
 
-      expect(first?.detail.rjCode, 'RJ123456');
-      expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ123456');
+    expect(first?.detail.rjCode, 'RJ123456');
+    expect(first?.detail.workTitle, 'Backed up work');
+    expect(first?.detail.circleName, 'Backed up circle');
+    final persisted = await appDatabase.loadAudioDetail(target);
+    expect(persisted?.rjCode, 'RJ123456');
+    expect(persisted?.voiceActors, const <String>['Voice actor']);
+    final mirrored = json.decode(await backupFile.readAsString());
+    expect((mirrored as Map<String, dynamic>)['workTitle'], 'Backed up work');
+    expect(mirrored['circleName'], 'Backed up circle');
 
-      final second = await repository.prefillRjCodeFromText(
-        target,
-        'RJ654321 Other work',
-      );
+    final second = await repository.prefillRjCodeFromText(
+      target,
+      'RJ654321 Other work',
+    );
 
-      expect(second, isNull);
-      expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ123456');
-    },
-  );
+    expect(second, isNull);
+    expect((await appDatabase.loadAudioDetail(target))?.rjCode, 'RJ123456');
+  });
 
   test('RJ extraction accepts embedded lower-case codes', () {
     expect(AudioDetail.findRjCodeInText('circle_rj987654_title'), 'RJ987654');

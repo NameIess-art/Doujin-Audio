@@ -172,6 +172,12 @@ class AudioDetailRepository {
     AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
   }) async {
     var candidate = detail.copyWith(target: _normalizeTarget(detail.target));
+    if (origin == AudioDetailSaveOrigin.automatic) {
+      await importBackupsMany(<AudioDetailTarget>[candidate.target]);
+      _ensureCanCommit();
+      final current = (await load(candidate.target)).detail;
+      candidate = await _mergePreferredDetail(current, candidate);
+    }
     _ensureCanCommit();
     var normalized = candidate.normalizedForSave(_now());
     final persistedCover = await _persistDerivedCover(normalized);

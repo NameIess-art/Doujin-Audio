@@ -761,6 +761,7 @@ class AsmrLibraryController extends ChangeNotifier
     _trackTreeErrors.clear();
     _filteredWorksCache.clear();
     await initialize();
+    await restoreAsmrAccountSession();
   }
 
   Future<void> loginAsmrAccount(String name, String password) async {

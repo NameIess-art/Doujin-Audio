@@ -102,7 +102,9 @@ class AppPreferences {
     }
   }
 
-  static Future<Map<String, Object>> exportSafeValues() async {
+  static Future<Map<String, Object>> exportSafeValues({
+    AsmrTokenStore? tokenStore,
+  }) async {
     final prefs = await _prefs;
     final values = <String, Object>{};
     for (final key in prefs.getKeys()) {
@@ -115,6 +117,20 @@ class AppPreferences {
           value is List<String>) {
         values[key] = value as Object;
       }
+    }
+
+    final resolvedTokenStore = tokenStore ?? SecureAsmrTokenStore();
+    final token = await resolvedTokenStore.readToken();
+    final credentials = await resolvedTokenStore.readCredentials();
+    final account = <String, Object>{
+      if (token != null && token.trim().isNotEmpty) 'token': token,
+      if (credentials?['name'] case final String name when name.isNotEmpty)
+        'name': name,
+      if (credentials?['password'] case final String password)
+        'password': password,
+    };
+    if (account.isNotEmpty) {
+      values[asmrAccountBackupKey] = account;
     }
 
     return values;
@@ -132,6 +148,7 @@ class AppPreferences {
     final resolvedTokenStore = tokenStore ?? SecureAsmrTokenStore();
     final previousToken = await resolvedTokenStore.readToken();
     final previousCredentials = await resolvedTokenStore.readCredentials();
+    final restoredAccount = _readAsmrAccountBackup(values);
     try {
       for (final key in prefs.getKeys()) {
         if (!_isSensitiveKey(key) || _isLegacyAsmrCredentialKey(key)) {
@@ -150,8 +167,7 @@ class AppPreferences {
           throw StateError('Failed to restore preference: ${entry.key}');
         }
       }
-      await resolvedTokenStore.clearToken();
-      await resolvedTokenStore.clearCredentials();
+      await _restoreAsmrAccount(resolvedTokenStore, restoredAccount);
     } catch (error, stackTrace) {
       await _rollbackRestore(
         prefs,
@@ -161,6 +177,35 @@ class AppPreferences {
         previousCredentials,
       );
       Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  static Map<String, String> _readAsmrAccountBackup(
+    Map<String, Object?> values,
+  ) {
+    final rawAccount = values[asmrAccountBackupKey];
+    if (rawAccount is! Map) return const <String, String>{};
+    return <String, String>{
+      for (final key in const <String>['token', 'name', 'password'])
+        if (rawAccount[key] case final String value) key: value,
+    };
+  }
+
+  static Future<void> _restoreAsmrAccount(
+    AsmrTokenStore tokenStore,
+    Map<String, String> account,
+  ) async {
+    await tokenStore.clearToken();
+    await tokenStore.clearCredentials();
+
+    final token = account['token'];
+    if (token != null && token.trim().isNotEmpty) {
+      await tokenStore.writeToken(token);
+    }
+    final name = account['name'];
+    final password = account['password'];
+    if (name != null && name.isNotEmpty && password != null) {
+      await tokenStore.writeCredentials(name, password);
     }
   }
 

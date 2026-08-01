@@ -536,12 +536,12 @@ const Map<String, String> appLanguageEn = {
       'Back up and restore data, or export a diagnostic report.',
   'export_backup': 'Export backup',
   'export_backup_subtitle':
-      'Exports the library and settings. Playback lists and account credentials are excluded.',
+      'Exports the library, settings, and ASMR.ONE login credentials. Credentials are stored in plaintext in the backup; playback lists are excluded.',
   'restore_backup': 'Restore backup',
   'restore_backup_subtitle':
-      'Restores the library and settings. Playback lists are excluded, and you must log in again.',
+      'Restores the library, settings, and ASMR.ONE login. Playback lists are excluded.',
   'restore_backup_confirm':
-      'This replaces the current library database and settings, clears the ASMR.ONE login, and does not restore playback lists. Failed restores roll back automatically. Continue?',
+      'This replaces the current library database, settings, and ASMR.ONE login with data from the backup. Account credentials in the backup are plaintext, and playback lists are not restored. Failed restores roll back automatically. Continue?',
   'operation_completed': 'Completed',
   'operation_failed': 'Operation failed',
   'backup_exported': 'Backup exported to {path}',

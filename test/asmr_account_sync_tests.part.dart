@@ -86,6 +86,38 @@ void registerAsmrAccountSyncTests({
   );
 
   test(
+    'ASMR persisted state reload waits for the restored backup account',
+    () async {
+      await resetPrefs();
+      final api = _FakeAsmrApiService(emptyCheckSessionUserName: true);
+      final tokenStore = _MemoryAsmrTokenStore();
+      await tokenStore.writeToken('current-token');
+      await tokenStore.writeCredentials('current-user', 'current-password');
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        apiService: api,
+        authService: AsmrAuthService(apiService: api, tokenStore: tokenStore),
+        persistenceRepository: _FakeTestPersistenceRepository(
+          const <MusicTrack>[],
+        ),
+      );
+      addTearDown(controller.dispose);
+      await controller.initialize(defaultLanguage: AsmrContentLanguage.zh);
+      await controller.restoreAsmrAccountSession();
+      expect(controller.authViewState.userName, 'current-user');
+
+      await tokenStore.writeToken('backup-token');
+      await tokenStore.writeCredentials('backup-user', 'backup-password');
+
+      await controller.reloadPersistedState();
+
+      expect(controller.authViewState.isRestoring, isFalse);
+      expect(controller.authViewState.isLoggedIn, isTrue);
+      expect(controller.authViewState.userName, 'backup-user');
+    },
+  );
+
+  test(
     'ASMR account sync maps favorites to marked review progress and retries',
     () async {
       await resetPrefs();

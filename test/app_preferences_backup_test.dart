@@ -60,14 +60,19 @@ void main() {
     },
   );
 
-  test('backup excludes ASMR token and stored credentials', () async {
+  test('backup includes ASMR token and stored credentials', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       'language': 'zh',
       'session_order_v1': '["session-1"]',
       AppPreferences.asmrDownloadTasksKey: '{"tasks":[]}',
     });
     await AppPreferences.init();
-    final values = await AppPreferences.exportSafeValues();
+    final source = _FakeTokenStore(
+      token: 'backup-token',
+      name: 'backup-name',
+      password: 'backup-password',
+    );
+    final values = await AppPreferences.exportSafeValues(tokenStore: source);
     final restored = _FakeTokenStore(
       token: 'current-token',
       name: 'current-name',
@@ -76,14 +81,21 @@ void main() {
 
     await AppPreferences.restoreSafeValues(values, tokenStore: restored);
 
-    expect(values, isNot(contains(AppPreferences.asmrAccountBackupKey)));
+    expect(values[AppPreferences.asmrAccountBackupKey], <String, Object>{
+      'token': 'backup-token',
+      'name': 'backup-name',
+      'password': 'backup-password',
+    });
     expect(values, isNot(contains('session_order_v1')));
     expect(values, isNot(contains(AppPreferences.asmrDownloadTasksKey)));
-    expect(await restored.readToken(), isNull);
-    expect(await restored.readCredentials(), isNull);
+    expect(await restored.readToken(), 'backup-token');
+    expect(await restored.readCredentials(), const <String, String>{
+      'name': 'backup-name',
+      'password': 'backup-password',
+    });
   });
 
-  test('safe restore ignores account credentials from older backups', () async {
+  test('safe restore imports account credentials from older backups', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     await AppPreferences.init();
     final store = _FakeTokenStore(
@@ -101,8 +113,11 @@ void main() {
       },
     }, tokenStore: store);
 
-    expect(await store.readToken(), isNull);
-    expect(await store.readCredentials(), isNull);
+    expect(await store.readToken(), 'backup-token');
+    expect(await store.readCredentials(), const <String, String>{
+      'name': 'backup-name',
+      'password': 'backup-password',
+    });
     expect((await SharedPreferences.getInstance()).getString('language'), 'ja');
   });
 
@@ -164,6 +179,38 @@ void main() {
       'password': 'old-password',
     });
   });
+
+  test('failed account import restores the previous secure account', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'language': 'en',
+    });
+    await AppPreferences.init();
+    final store = _FakeTokenStore(
+      token: 'old-token',
+      name: 'old-name',
+      password: 'old-password',
+      failNextCredentialWrite: true,
+    );
+
+    await expectLater(
+      AppPreferences.restoreSafeValues(const <String, Object?>{
+        'language': 'zh',
+        AppPreferences.asmrAccountBackupKey: <String, Object>{
+          'token': 'backup-token',
+          'name': 'backup-name',
+          'password': 'backup-password',
+        },
+      }, tokenStore: store),
+      throwsStateError,
+    );
+
+    expect((await SharedPreferences.getInstance()).getString('language'), 'en');
+    expect(await store.readToken(), 'old-token');
+    expect(await store.readCredentials(), const <String, String>{
+      'name': 'old-name',
+      'password': 'old-password',
+    });
+  });
 }
 
 class _FakeTokenStore implements AsmrTokenStore {
@@ -172,12 +219,14 @@ class _FakeTokenStore implements AsmrTokenStore {
     this.name,
     this.password,
     this.failNextCredentialClear = false,
+    this.failNextCredentialWrite = false,
   });
 
   String? token;
   String? name;
   String? password;
   bool failNextCredentialClear;
+  bool failNextCredentialWrite;
 
   @override
   Future<void> clearCredentials() async {
@@ -203,6 +252,10 @@ class _FakeTokenStore implements AsmrTokenStore {
 
   @override
   Future<void> writeCredentials(String name, String password) async {
+    if (failNextCredentialWrite) {
+      failNextCredentialWrite = false;
+      throw StateError('credential write failed');
+    }
     this.name = name;
     this.password = password;
   }

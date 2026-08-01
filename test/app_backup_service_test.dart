@@ -687,34 +687,45 @@ void main() {
     },
   );
 
-  test(
-    'preferences JSON excludes the legacy ASMR account backup object',
-    () async {
-      preferences = <String, Object>{
-        AppPreferences.asmrAccountBackupKey: <String, Object>{
-          'token': 'plain-jwt-token',
-          'name': 'plain-user',
-          'password': 'plain-password',
-        },
-      };
-      final output = await createService().exportBackup(
-        '${tempDirectory.path}/plaintext_account.nalbackup',
-      );
-      final archive = ZipDecoder().decodeBytes(await output.readAsBytes());
-      final exportedPreferences =
-          jsonDecode(
-                utf8.decode(
-                  archive.findFile(AppBackupService.preferencesEntry)!.content
-                      as List<int>,
-                ),
-              )
-              as Map<String, dynamic>;
-      expect(
-        exportedPreferences,
-        isNot(contains(AppPreferences.asmrAccountBackupKey)),
-      );
-    },
-  );
+  test('preferences JSON preserves the ASMR account backup object', () async {
+    preferences = <String, Object>{
+      AppPreferences.asmrAccountBackupKey: <String, Object>{
+        'token': 'plain-jwt-token',
+        'name': 'plain-user',
+        'password': 'plain-password',
+      },
+    };
+    final output = await createService().exportBackup(
+      '${tempDirectory.path}/plaintext_account.nalbackup',
+    );
+    final archive = ZipDecoder().decodeBytes(await output.readAsBytes());
+    final exportedPreferences =
+        jsonDecode(
+              utf8.decode(
+                archive.findFile(AppBackupService.preferencesEntry)!.content
+                    as List<int>,
+              ),
+            )
+            as Map<String, dynamic>;
+    expect(
+      exportedPreferences[AppPreferences.asmrAccountBackupKey],
+      <String, Object?>{
+        'token': 'plain-jwt-token',
+        'name': 'plain-user',
+        'password': 'plain-password',
+      },
+    );
+
+    preferences = <String, Object>{'language': 'en'};
+    final restore = await createService().restoreBackup(output.path);
+
+    expect(restore.isValid, isTrue);
+    expect(preferences[AppPreferences.asmrAccountBackupKey], <String, Object?>{
+      'token': 'plain-jwt-token',
+      'name': 'plain-user',
+      'password': 'plain-password',
+    });
+  });
 
   test(
     'large database fixture exports validates and restores by stream',

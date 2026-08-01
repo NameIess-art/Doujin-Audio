@@ -490,11 +490,12 @@ const Map<String, String> appLanguageJa = {
   'data_and_support': 'データとサポート',
   'data_and_support_subtitle': 'データのバックアップ・復元と診断レポートの出力。',
   'export_backup': 'バックアップを出力',
-  'export_backup_subtitle': 'ライブラリと設定を出力します。再生リストとアカウント認証情報は含まれません。',
+  'export_backup_subtitle':
+      'ライブラリ、設定、ASMR.ONE のログイン認証情報を出力します。認証情報はバックアップに平文で保存され、再生リストは含まれません。',
   'restore_backup': 'バックアップを復元',
-  'restore_backup_subtitle': 'ライブラリと設定を復元します。再生リストは対象外で、復元後は再ログインが必要です。',
+  'restore_backup_subtitle': 'ライブラリ、設定、ASMR.ONE のログイン状態を復元します。再生リストは対象外です。',
   'restore_backup_confirm':
-      '復元すると現在のライブラリと設定が置き換わり、ASMR.ONE のログイン状態が消去されます。再生リストは復元されません。失敗時は自動的に元に戻します。続行しますか？',
+      'バックアップのデータで現在のライブラリ、設定、ASMR.ONE のログイン状態を置き換えます。バックアップ内の認証情報は平文で、再生リストは復元されません。失敗時は自動的に元に戻します。続行しますか？',
   'operation_completed': '完了',
   'operation_failed': '操作に失敗しました',
   'backup_exported': 'バックアップの出力先：{path}',

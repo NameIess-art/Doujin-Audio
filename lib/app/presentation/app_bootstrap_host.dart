@@ -4,13 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../application/app_bootstrap_controller.dart';
-import '../localization/app_language_en.dart';
-import '../localization/app_language_ja.dart';
 import '../localization/app_language_provider.dart';
-import '../localization/app_language_zh.dart';
 import '../theme/theme_provider.dart';
 import '../../core/ui/app_icon_color_group.dart';
-import '../../core/widgets/app_brand_icon.dart';
 import 'app_error_view.dart';
 
 class AppBootstrapHost extends StatelessWidget {
@@ -175,35 +171,6 @@ class AppBootstrapLoadingView extends StatelessWidget {
   const AppBootstrapLoadingView({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final strings = switch (Localizations.maybeLocaleOf(
-      context,
-    )?.languageCode) {
-      'zh' => appLanguageZh,
-      'ja' => appLanguageJa,
-      _ => appLanguageEn,
-    };
-    final label =
-        strings['startup_initializing'] ??
-        appLanguageEn['startup_initializing']!;
-    return Scaffold(
-      key: const ValueKey<String>('app_bootstrap_loading'),
-      body: Center(
-        child: Semantics(
-          liveRegion: true,
-          label: label,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const AppBrandIcon(size: 72),
-              const SizedBox(height: 20),
-              const CircularProgressIndicator(),
-              const SizedBox(height: 20),
-              Text(label),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) =>
+      const Scaffold(key: ValueKey<String>('app_bootstrap_loading'));
 }

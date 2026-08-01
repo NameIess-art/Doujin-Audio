@@ -1076,8 +1076,7 @@ Map<String, Object?> _withoutExcludedBackupPreferences(
 ) {
   return <String, Object?>{
     for (final entry in values.entries)
-      if (!_localLibraryPreferenceKeys.contains(entry.key) &&
-          entry.key != AppPreferences.asmrAccountBackupKey)
+      if (!_localLibraryPreferenceKeys.contains(entry.key))
         entry.key: entry.value,
   };
 }

@@ -11,6 +11,7 @@ import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/main.dart';
 import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
+import 'package:nameless_audio/app/presentation/audio_library_page.dart';
 import 'package:nameless_audio/app/presentation/main_screen.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
@@ -512,6 +513,81 @@ void main() {
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('local and ASMR library cards start at the same height', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 800);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(fileCacheChannel, (call) async {
+          return <String, Object?>{'ok': true, 'value': null};
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(fileCacheChannel, null),
+    );
+    final fixture = AppRuntimeWidgetTestFixture();
+    final asmrController = _QueuedEmptyAsmrLibraryController();
+    final sectionIndex = ValueNotifier<int>(AudioLibraryPage.localSection);
+    final activePageIndex = ValueNotifier<int>(0);
+    addTearDown(fixture.dispose);
+    addTearDown(asmrController.dispose);
+    addTearDown(sectionIndex.dispose);
+    addTearDown(activePageIndex.dispose);
+    fixture.runtimeGraph.library.addTracks(
+      <MusicTrack>[
+        testMusicTrack(
+          name: 'Local work',
+          path: '/library/local-work/track.mp3',
+          groupKey: '/library/local-work',
+          groupTitle: 'Local work',
+          isSingle: true,
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(
+      fixture.build(
+        AudioLibraryPage(
+          sectionIndex: sectionIndex,
+          activePageIndex: activePageIndex,
+          onSectionChanged: (index) => sectionIndex.value = index,
+        ),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(asmrController),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await pumpUntilFound(tester, find.text('Local work', findRichText: true));
+    await pumpUntilFound(tester, find.text('Loaded work', findRichText: true));
+
+    final localCard = find
+        .descendant(
+          of: find.byKey(const ValueKey<String>('audio_library_local_fade')),
+          matching: find.byType(SwipeRevealCard),
+        )
+        .first;
+    final asmrCard = find
+        .descendant(
+          of: find.byKey(const ValueKey<String>('audio_library_asmr_fade')),
+          matching: find.byType(SwipeRevealCard),
+        )
+        .first;
+    expect(
+      tester.getTopLeft(asmrCard).dy,
+      closeTo(tester.getTopLeft(localCard).dy, 0.01),
+    );
   });
 
   testWidgets(

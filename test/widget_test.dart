@@ -403,40 +403,16 @@ void main() {
     expect(fadeOpacity(localFadeFinder), 1);
     expect(fadeOpacity(asmrFadeFinder), 0);
     expect(
-      find.descendant(
-        of: localFadeFinder,
-        matching: find.byKey(
-          const ValueKey<String>('top_page_header_swipe_left_indicator'),
-        ),
+      find.byKey(
+        const ValueKey<String>('top_page_header_swipe_left_indicator'),
       ),
-      findsOneWidget,
+      findsNothing,
     );
     expect(
-      find.descendant(
-        of: asmrFadeFinder,
-        matching: find.byKey(
-          const ValueKey<String>('top_page_header_swipe_left_indicator'),
-        ),
+      find.byKey(
+        const ValueKey<String>('top_page_header_swipe_right_indicator'),
       ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: localFadeFinder,
-        matching: find.byKey(
-          const ValueKey<String>('top_page_header_swipe_right_indicator'),
-        ),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: asmrFadeFinder,
-        matching: find.byKey(
-          const ValueKey<String>('top_page_header_swipe_right_indicator'),
-        ),
-      ),
-      findsOneWidget,
+      findsNothing,
     );
     platformCalls.clear();
 

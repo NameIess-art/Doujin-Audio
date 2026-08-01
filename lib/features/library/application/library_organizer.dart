@@ -280,12 +280,6 @@ class LibraryOrganizer {
       _cacheFolderTreeMetrics(root);
     }
 
-    // Prune empty folders (those with 0 totalTrackCount)
-    for (final root in roots) {
-      _pruneEmptyFolders(root);
-      _cacheFolderTreeMetrics(root);
-    }
-
     final topLevel = <LibraryNode>[];
     for (final root in roots) {
       if (root.totalTrackCount > 0) {
@@ -316,16 +310,6 @@ class LibraryOrganizer {
       if (aIndex != null) return -1;
       if (bIndex != null) return 1;
       return compareNatural(a.name, b.name);
-    });
-  }
-
-  void _pruneEmptyFolders(FolderNode folder) {
-    folder.removeChildrenWhere((child) {
-      if (child is FolderNode) {
-        _pruneEmptyFolders(child);
-        return child.totalTrackCount == 0;
-      }
-      return false;
     });
   }
 

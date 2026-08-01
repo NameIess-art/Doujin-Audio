@@ -265,7 +265,7 @@ class AppBackupService {
       final preferencesBytes = Uint8List.fromList(
         utf8.encode(
           jsonEncode(
-            _withoutLocalLibraryPreferences(await _exportPreferences()),
+            _withoutExcludedBackupPreferences(await _exportPreferences()),
           ),
         ),
       );
@@ -659,7 +659,7 @@ class AppBackupService {
         folders: _preferencePaths(restoredPreferences, 'watched_folders_v1'),
         files: await _manualFilePathReader(databaseFile.path),
       );
-      final sanitizedPreferences = _withoutLocalLibraryPreferences(
+      final sanitizedPreferences = _withoutExcludedBackupPreferences(
         restoredPreferences,
       );
       await _databaseSanitizer(databaseFile.path);
@@ -1071,12 +1071,13 @@ const Set<String> _localLibraryPreferenceKeys = <String>{
   'library_exclusions_v1',
 };
 
-Map<String, Object?> _withoutLocalLibraryPreferences(
+Map<String, Object?> _withoutExcludedBackupPreferences(
   Map<String, Object?> values,
 ) {
   return <String, Object?>{
     for (final entry in values.entries)
-      if (!_localLibraryPreferenceKeys.contains(entry.key))
+      if (!_localLibraryPreferenceKeys.contains(entry.key) &&
+          entry.key != AppPreferences.asmrAccountBackupKey)
         entry.key: entry.value,
   };
 }

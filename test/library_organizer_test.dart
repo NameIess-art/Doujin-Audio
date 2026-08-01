@@ -191,4 +191,51 @@ void main() {
       <String>['/music/b'],
     );
   });
+
+  test('deep multi-root tree caches counts and first tracks correctly', () {
+    final snapshot = organizer.buildTree(
+      tracks: <MusicTrack>[
+        track('/library/a/Disc 2/02.mp3'),
+        track('/library/a/Disc 1/Sub/01.mp3'),
+        track('/library/b/Album/03.mp3'),
+      ],
+      watchedFolders: const <String>['/library/a', '/library/b'],
+      nodeOrder: const <String>[],
+    );
+
+    expect(snapshot.leafFolderCount, 3);
+    final firstRoot = snapshot.tree.first as FolderNode;
+    final secondRoot = snapshot.tree.last as FolderNode;
+    expect(firstRoot.totalTrackCount, 2);
+    expect(firstRoot.leafFolderCount, 2);
+    expect(firstRoot.firstTrack?.path, '/library/a/Disc 1/Sub/01.mp3');
+    expect(secondRoot.totalTrackCount, 1);
+    expect(secondRoot.leafFolderCount, 1);
+    expect(secondRoot.firstTrack?.path, '/library/b/Album/03.mp3');
+  });
+
+  test('10k-track tree benchmark records observational build time', () {
+    final tracks = List<MusicTrack>.generate(10000, (index) {
+      final folder = index % 100;
+      return track(
+        '/benchmark/Album ${folder.toString().padLeft(3, '0')}/'
+        '${index.toString().padLeft(5, '0')}.mp3',
+      );
+    }, growable: false);
+    final stopwatch = Stopwatch()..start();
+
+    final snapshot = organizer.buildTree(
+      tracks: tracks,
+      watchedFolders: const <String>['/benchmark'],
+      nodeOrder: const <String>[],
+    );
+    stopwatch.stop();
+
+    final root = snapshot.tree.single as FolderNode;
+    expect(root.totalTrackCount, 10000);
+    expect(root.leafFolderCount, 100);
+    // Observation only: CI hardware variance makes a hard threshold unreliable.
+    // ignore: avoid_print
+    print('library_organizer_10k_ms=${stopwatch.elapsedMilliseconds}');
+  });
 }

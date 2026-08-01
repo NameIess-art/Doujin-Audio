@@ -76,8 +76,19 @@ List<Widget> _buildSettingsPlaybackSection({
             );
             return SwitchListTile(
               value: multiThreadEnabled,
-              onChanged: (value) {
-                settingsController.setMultiThreadPlaybackEnabled(value);
+              onChanged: (value) async {
+                final updated = await settingsController
+                    .setMultiThreadPlaybackEnabled(value);
+                if (!context.mounted) return;
+                if (!updated) {
+                  showAppSnackBar(
+                    context,
+                    i18n.tr('operation_failed_retry'),
+                    tone: AppFeedbackTone.destructive,
+                    icon: Icons.error_outline_rounded,
+                  );
+                  return;
+                }
                 if (!value) {
                   ref
                       .read(subtitleSettingsProvider.notifier)

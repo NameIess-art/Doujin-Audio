@@ -12,49 +12,44 @@ Stream<T> interactionDeferredListenableStream<T>({
   required T Function() read,
   UiInteractionCoordinator? coordinator,
 }) {
-  late StreamController<T> controller;
   final interaction = coordinator ?? UiInteractionCoordinator.instance;
-  final commitKey =
-      'interaction_deferred_listenable_${_interactionDeferredStreamSeed++}';
-  Object? pendingValue = _noPendingValue;
+  return Stream<T>.multi((events) {
+    final commitKey =
+        'interaction_deferred_listenable_${_interactionDeferredStreamSeed++}';
+    Object? pendingValue = _noPendingValue;
 
-  void flushPending() {
-    final value = pendingValue;
-    pendingValue = _noPendingValue;
-    if (!controller.isClosed && !identical(value, _noPendingValue)) {
-      controller.add(value as T);
-    }
-  }
-
-  void emit() {
-    final value = read();
-    if (!interaction.isInteracting) {
-      interaction.cancelCommit(commitKey);
+    void flushPending() {
+      final value = pendingValue;
       pendingValue = _noPendingValue;
-      controller.add(value);
-      return;
+      if (!events.isClosed && !identical(value, _noPendingValue)) {
+        events.addSync(value as T);
+      }
     }
-    pendingValue = value;
-    interaction.scheduleCommit(
-      key: commitKey,
-      priority: 10,
-      commit: flushPending,
-    );
-  }
 
-  controller = StreamController<T>.broadcast(
-    sync: true,
-    onListen: () {
-      controller.add(read());
-      source.addListener(emit);
-    },
-    onCancel: () {
+    void emit() {
+      final value = read();
+      if (!interaction.isInteracting) {
+        interaction.cancelCommit(commitKey);
+        pendingValue = _noPendingValue;
+        events.addSync(value);
+        return;
+      }
+      pendingValue = value;
+      interaction.scheduleCommit(
+        key: commitKey,
+        priority: 10,
+        commit: flushPending,
+      );
+    }
+
+    events.addSync(read());
+    source.addListener(emit);
+    events.onCancel = () {
       source.removeListener(emit);
       interaction.cancelCommit(commitKey);
       pendingValue = _noPendingValue;
-    },
-  );
-  return controller.stream;
+    };
+  }, isBroadcast: true);
 }
 
 Stream<T> interactionDeferredValueStream<T>(

@@ -44,7 +44,7 @@ void main() {
     final notifications = NotificationFacade.create(
       service: PlaybackNotificationService(),
     );
-    final settings = SettingsRepository();
+    final settings = _FailOnceSettingsRepository();
     final paths = AudioPathCoordinator(library: library, playback: playback);
     late final PlaybackSubtitleService subtitles;
     subtitles = PlaybackSubtitleService(
@@ -175,13 +175,33 @@ void main() {
       <String, Object?>{'format': 'mp3', 'bitrate': '320k'},
     );
 
-    await coordinator.reloadPersistedState();
+    settings.failNextLoad = true;
+    await expectLater(coordinator.reloadPersistedState(), throwsStateError);
 
-    expect(native.clearAllCount, 1);
+    expect(settings.slice.state.isInitialized, isFalse);
+    expect(library.state.isInitialized, isFalse);
+    expect(playback.state.isInitialized, isFalse);
+
+    await coordinator.loadPersistedState();
+
+    expect(native.clearAllCount, 2);
     expect(settings.slice.state.isInitialized, isTrue);
     expect(library.state.isInitialized, isTrue);
     expect(playback.state.isInitialized, isTrue);
   });
+}
+
+final class _FailOnceSettingsRepository extends SettingsRepository {
+  bool failNextLoad = false;
+
+  @override
+  Future<void> loadPersistedState() async {
+    if (failNextLoad) {
+      failNextLoad = false;
+      throw StateError('settings unavailable');
+    }
+    await super.loadPersistedState();
+  }
 }
 
 final class _FakeNativePlaybackRepository extends NativePlaybackRepository {

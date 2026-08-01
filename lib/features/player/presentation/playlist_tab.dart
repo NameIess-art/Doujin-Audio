@@ -475,8 +475,17 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       icon: Icons.delete_sweep_rounded,
     );
     if (!confirmed || !mounted) return;
-    await playbackFacade.clearAllSessions();
+    final cleared = await playbackFacade.clearAllSessions();
     if (!mounted || !context.mounted) return;
+    if (!cleared) {
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+      return;
+    }
     showAppSnackBar(
       context,
       i18n.tr('all_sessions_cleared'),
@@ -830,7 +839,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   : null,
                             ),
                           ],
-                          onSelected: (value) {
+                          onSelected: (value) async {
                             if (value == 'add_playback_queue') {
                               final queueCount = structureState.entries
                                   .where((entry) => entry.isPlaybackQueue)
@@ -843,17 +852,26 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                     }),
                                   );
                             } else if (value == 'pause_all') {
-                              ref
+                              final paused = await ref
                                   .read(playbackFacadeProvider)
                                   .pauseAllSessions();
+                              if (!context.mounted) return;
                               showAppSnackBar(
                                 context,
-                                i18n.tr('all_paused'),
-                                tone: AppFeedbackTone.warning,
-                                icon: Icons.pause_circle_outline_rounded,
+                                i18n.tr(
+                                  paused
+                                      ? 'all_paused'
+                                      : 'operation_failed_retry',
+                                ),
+                                tone: paused
+                                    ? AppFeedbackTone.warning
+                                    : AppFeedbackTone.destructive,
+                                icon: paused
+                                    ? Icons.pause_circle_outline_rounded
+                                    : Icons.error_outline_rounded,
                               );
                             } else if (value == 'clear_all') {
-                              _confirmClearAll(
+                              await _confirmClearAll(
                                 context,
                                 ref.read(playbackFacadeProvider),
                               );

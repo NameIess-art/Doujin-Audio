@@ -52,11 +52,17 @@ final class AppPersistenceCoordinator
   int _loadEpoch = 0;
   bool _disposed = false;
   bool _reloading = false;
+  bool _needsResetBeforeLoad = false;
 
   Future<void> loadPersistedState() async {
     final epoch = ++_loadEpoch;
     bool isCurrent() => !_disposed && epoch == _loadEpoch;
     try {
+      if (_needsResetBeforeLoad) {
+        _needsResetBeforeLoad = false;
+        await _resetRuntimeState();
+        if (!isCurrent()) return;
+      }
       await _settings.loadPersistedState();
       if (!isCurrent()) return;
       AppInteractionFeedbackSettings.hapticFeedbackEnabled =
@@ -104,14 +110,15 @@ final class AppPersistenceCoordinator
       );
       if (!isCurrent()) return;
       _notifications.syncPlaybackState(immediateUnifiedSync: true);
+      await _completeLoad();
     } catch (error, stackTrace) {
+      if (isCurrent()) _needsResetBeforeLoad = true;
       AppLogService.error(
         'app_persistence_load_failed',
         error: error,
         stackTrace: stackTrace,
       );
-    } finally {
-      if (isCurrent()) await _completeLoad();
+      Error.throwWithStackTrace(error, stackTrace);
     }
   }
 
@@ -126,20 +133,20 @@ final class AppPersistenceCoordinator
     }
     _keepAlive.sync();
     await _library.ensureCardSnapshot();
-    _syncInitializedSlices();
+    _syncSlices(isInitialized: true);
     _library.schedulePostStartupMaintenance();
   }
 
-  void _syncInitializedSlices() {
-    _library.syncPresentationState(isInitialized: true);
+  void _syncSlices({required bool isInitialized}) {
+    _library.syncPresentationState(isInitialized: isInitialized);
     _playback.syncPresentationState(
       focusedSessionId: _notifications.focusedSessionId,
       multiThreadPlaybackEnabled: _settings.multiThreadPlaybackEnabled,
       coverGeneration: _library.coverArtworkCacheService.generation,
-      isInitialized: true,
+      isInitialized: isInitialized,
     );
-    _timer.syncPresentationState(isInitialized: true);
-    _settings.syncSlice(isInitialized: true);
+    _timer.syncPresentationState(isInitialized: isInitialized);
+    _settings.syncSlice(isInitialized: isInitialized);
     _notifications.syncPresentationState(
       activeQueueLength: _playback.activeSessions.length,
     );
@@ -166,6 +173,12 @@ final class AppPersistenceCoordinator
   Future<void> reloadPersistedState() async {
     if (_disposed) return;
     _loadEpoch++;
+    await _resetRuntimeState();
+    if (_disposed) return;
+    await loadPersistedState();
+  }
+
+  Future<void> _resetRuntimeState() async {
     _reloading = true;
     _playback.cancelScheduledPersistence();
     _library.cancelPendingScanProgressNotification();
@@ -178,8 +191,7 @@ final class AppPersistenceCoordinator
     await _settings.resetForBackupRestore();
     _subtitles.clear();
     await _notifications.resetForBackupRestore();
-    if (_disposed) return;
-    await loadPersistedState();
+    _syncSlices(isInitialized: false);
   }
 
   void dispose() {

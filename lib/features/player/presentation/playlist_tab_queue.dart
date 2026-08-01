@@ -570,11 +570,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                   color: iconBgColor,
                   borderRadius: BorderRadius.circular(tokens.radiusSmall),
                 ),
-                child: Icon(
-                  icon,
-                  size: 20,
-                  color: iconColor,
-                ),
+                child: Icon(icon, size: 20, color: iconColor),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -657,8 +653,18 @@ class PlaybackQueueEditPage extends ConsumerWidget {
       icon: Icons.delete_outline_rounded,
     );
     if (!confirmed || !context.mounted) return;
-    await playback.removeSession(sessionId);
-    if (context.mounted) Navigator.of(context).pop();
+    final removed = await playback.removeSession(sessionId);
+    if (!context.mounted) return;
+    if (removed) {
+      Navigator.of(context).pop();
+      return;
+    }
+    showAppSnackBar(
+      context,
+      i18n.tr('operation_failed_retry'),
+      tone: AppFeedbackTone.destructive,
+      icon: Icons.error_outline_rounded,
+    );
   }
 }
 
@@ -694,7 +700,8 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                final isLandscape = constraints.maxWidth > constraints.maxHeight;
+                final isLandscape =
+                    constraints.maxWidth > constraints.maxHeight;
                 final queueEntries = queue.entries.toList();
 
                 final addedToQueueSection = Column(
@@ -1080,9 +1087,7 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
       color: cs.surfaceContainerLow,
       elevation: 12,
       shadowColor: cs.shadow.withValues(alpha: 0.22),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),

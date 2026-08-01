@@ -4,13 +4,10 @@ import '../media/search_query_utils.dart';
 
 /// Carries the active search terms down to text widgets that highlight them.
 class SearchHighlightScope extends InheritedWidget {
-  SearchHighlightScope({
-    super.key,
-    required String query,
-    required super.child,
-  }) : terms = extractSearchTerms(query);
+  SearchHighlightScope({super.key, required String query, required super.child})
+    : terms = extractSearchTerms(query);
 
-  SearchHighlightScope.withTerms({
+  const SearchHighlightScope.withTerms({
     super.key,
     required this.terms,
     required super.child,

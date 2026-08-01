@@ -208,14 +208,14 @@ final class PlaybackFacade {
     );
   }
 
-  Future<void> removeSessionsForTrackPaths(Iterable<String> trackPaths) {
+  Future<void> removeSessionsForTrackPaths(Iterable<String> trackPaths) async {
     final removedPaths = trackPaths.toSet();
     final sessionIds = _service.sessions.values
         .where((session) => removedPaths.contains(session.currentTrackPath))
         .map((session) => session.id)
         .toList(growable: false);
-    if (sessionIds.isEmpty) return Future<void>.value();
-    return removeSessions(sessionIds, persist: false, notify: false);
+    if (sessionIds.isEmpty) return;
+    await removeSessions(sessionIds, persist: false, notify: false);
   }
 
   void applyFadeMultiplierToPlayingSessions(double multiplier) {
@@ -905,7 +905,12 @@ final class PlaybackFacade {
     _onSessionsReordered?.call();
   }
 
-  Future<void> pauseAllSessions() async {
+  Future<bool> pauseAllSessions() async {
+    final response = await nativeRepository.pauseAll();
+    if (response.isFailure) {
+      _logNativeCommandFailure('pauseAllSessions', response);
+      return false;
+    }
     for (final session in _service.sessions.values) {
       session.setOptimisticState(playing: false);
       session.isLoading = false;
@@ -913,56 +918,93 @@ final class PlaybackFacade {
     }
     _onRuntimeStateChanged?.call();
     _onSessionStateChanged?.call();
-    await nativeRepository.pauseAll();
     scheduleSessionStatePersistence();
+    return true;
   }
 
-  Future<void> removeSession(String sessionId) {
+  Future<bool> removeSession(String sessionId) {
     return removeSessions(<String>[sessionId]);
   }
 
-  Future<void> removeSessions(
+  Future<bool> removeSessions(
     Iterable<String> sessionIds, {
     bool persist = true,
     bool notify = true,
   }) async {
-    final removedSessions = _service.removeSessions(sessionIds);
-    if (removedSessions.isEmpty) return;
+    final candidates = sessionIds
+        .toSet()
+        .map((sessionId) => _service.sessions[sessionId])
+        .whereType<PlaybackSession>()
+        .toList(growable: false);
+    if (candidates.isEmpty) return true;
+
+    final removedSessionIds = <String>[];
+    var allSucceeded = true;
+    for (final session in candidates) {
+      final response = await nativeRepository.removeSession(session.id);
+      if (response.isOk) {
+        removedSessionIds.add(session.id);
+      } else {
+        allSucceeded = false;
+        _logNativeCommandFailure(
+          'removeSession',
+          response,
+          sessionId: session.id,
+        );
+      }
+    }
+
+    final removedSessions = _service.removeSessions(removedSessionIds);
+    if (removedSessions.isEmpty) return allSucceeded;
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
       _deferredVolumeReloadSessionIds.remove(session.id);
+      session.dispose();
     }
     _onSessionsRemoved?.call(removedSessions);
     if (notify) _onSessionStateChanged?.call();
-    await Future.wait(
-      removedSessions.map((session) async {
-        await nativeRepository.removeSession(session.id);
-        session.dispose();
-      }),
-    );
     _onRuntimeStateChanged?.call();
     if (persist) {
       _scheduleNewSessionPersistence(respectConfiguration: false);
     }
+    return allSucceeded;
   }
 
-  Future<void> clearAllSessions() async {
+  Future<bool> clearAllSessions() async {
+    final response = await nativeRepository.clearAll();
+    if (response.isFailure) {
+      _logNativeCommandFailure('clearAllSessions', response);
+      return false;
+    }
     final removedSessions = _service.removeSessions(
       _service.sessions.keys.toList(growable: false),
     );
-    if (removedSessions.isEmpty) return;
+    if (removedSessions.isEmpty) return true;
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
       _deferredVolumeReloadSessionIds.remove(session.id);
     }
     _onSessionsRemoved?.call(removedSessions);
     _onSessionStateChanged?.call();
-    await nativeRepository.clearAll();
     for (final session in removedSessions) {
       session.dispose();
     }
     _onRuntimeStateChanged?.call();
     _scheduleNewSessionPersistence(respectConfiguration: false);
+    return true;
+  }
+
+  void _logNativeCommandFailure<T>(
+    String command,
+    NativeResult<T> response, {
+    String? sessionId,
+  }) {
+    AppLogService.warning(
+      'PlaybackFacade.$command failed '
+      'code=${response.errorCodeOrNull} '
+      'sessionId=${sessionId ?? "none"} '
+      'error=${response.errorOrNull}',
+    );
   }
 
   Future<void> seekSession(String sessionId, Duration position) async {
@@ -1817,7 +1859,8 @@ final class PlaybackFacade {
   Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
     final matchingSessionIds = _matchingWorkSessionIds(track);
     if (matchingSessionIds.isNotEmpty) {
-      await removeSessions(matchingSessionIds);
+      final removed = await removeSessions(matchingSessionIds);
+      if (!removed) return;
     }
     final session = createTrackSession(track);
     unawaited(
@@ -1841,7 +1884,8 @@ final class PlaybackFacade {
     final startTrack = tracks[clampedStartIndex];
     final matchingSessionIds = _matchingWorkSessionIds(startTrack);
     if (matchingSessionIds.isNotEmpty) {
-      await removeSessions(matchingSessionIds);
+      final removed = await removeSessions(matchingSessionIds);
+      if (!removed) return;
     }
     final session = createTrackSession(
       startTrack,

@@ -9,17 +9,21 @@ import 'package:nameless_audio/features/settings/presentation/permission_status_
 import 'package:nameless_audio/features/settings/application/permission_status_service.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/widgets/operation_feedback.dart';
+import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 
 void main() {
   testWidgets('permission center groups optional capabilities by purpose', (
     tester,
   ) async {
     final language = AppLanguageProvider();
+    final operations = UiOperationService();
+    addTearDown(operations.dispose);
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appLanguageProviderInstanceProvider.overrideWithValue(language),
           appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+          uiOperationServiceProvider.overrideWithValue(operations),
         ],
         child: MaterialApp(
           home: PermissionStatusPage(
@@ -61,12 +65,15 @@ void main() {
     tester,
   ) async {
     final language = AppLanguageProvider();
+    final operations = UiOperationService();
+    addTearDown(operations.dispose);
     final completer = Completer<PermissionStatusSnapshot>();
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appLanguageProviderInstanceProvider.overrideWithValue(language),
           appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+          uiOperationServiceProvider.overrideWithValue(operations),
         ],
         child: MaterialApp(
           home: PermissionStatusPage(

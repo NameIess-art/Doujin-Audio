@@ -13,7 +13,7 @@ import '../../core/ui/app_icon_color_group.dart';
 import '../../core/widgets/app_brand_icon.dart';
 import 'app_error_view.dart';
 
-class AppBootstrapHost extends StatefulWidget {
+class AppBootstrapHost extends StatelessWidget {
   const AppBootstrapHost({
     required this.controller,
     required this.appBuilder,
@@ -32,10 +32,90 @@ class AppBootstrapHost extends StatefulWidget {
   final VoidCallback? onBootstrapSettled;
 
   @override
-  State<AppBootstrapHost> createState() => _AppBootstrapHostState();
+  Widget build(BuildContext context) {
+    final locale =
+        this.locale ?? WidgetsBinding.instance.platformDispatcher.locale;
+    final appThemeColor = ThemeProvider.readAppThemeColorSync();
+    final iconColorGroup = appThemeColor.iconColorGroup;
+    final lightScheme = appThemeColor
+        .colorScheme(Brightness.light)
+        .copyWith(surface: iconColorGroup.splashBackground(Brightness.light));
+    final darkScheme = appThemeColor
+        .colorScheme(Brightness.dark)
+        .copyWith(surface: iconColorGroup.splashBackground(Brightness.dark));
+    Widget shell(Widget home) => MaterialApp(
+      debugShowCheckedModeBanner: false,
+      color: lightScheme.surface,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: lightScheme,
+        scaffoldBackgroundColor: lightScheme.surface,
+        extensions: <ThemeExtension<dynamic>>[
+          AppBrandIconTheme.forGroup(iconColorGroup, Brightness.light),
+        ],
+      ),
+      darkTheme: ThemeData(
+        useMaterial3: true,
+        colorScheme: darkScheme,
+        scaffoldBackgroundColor: darkScheme.surface,
+        extensions: <ThemeExtension<dynamic>>[
+          AppBrandIconTheme.forGroup(iconColorGroup, Brightness.dark),
+        ],
+      ),
+      themeMode: ThemeProvider.readThemeModeSync(),
+      locale: locale,
+      supportedLocales: AppLanguageProvider.supportedLocales,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ],
+      home: home,
+    );
+    return AppBootstrapGate(
+      controller: controller,
+      disposeController: disposeController,
+      onBootstrapSettled: onBootstrapSettled,
+      readyBuilder: (_) => appBuilder(),
+      loadingBuilder: (_) => shell(const AppBootstrapLoadingView()),
+      failureBuilder: (_, state) => shell(
+        AppErrorView(
+          error: state.error ?? StateError('Unknown bootstrap failure'),
+          stackTrace: state.stackTrace,
+          onRetry: () => unawaited(controller.retry()),
+          exportDiagnostics: exportDiagnostics,
+        ),
+      ),
+    );
+  }
 }
 
-class _AppBootstrapHostState extends State<AppBootstrapHost> {
+typedef AppBootstrapFailureBuilder =
+    Widget Function(BuildContext context, AppBootstrapState state);
+
+class AppBootstrapGate extends StatefulWidget {
+  const AppBootstrapGate({
+    required this.controller,
+    required this.readyBuilder,
+    required this.loadingBuilder,
+    required this.failureBuilder,
+    this.disposeController = true,
+    this.onBootstrapSettled,
+    super.key,
+  });
+
+  final AppBootstrapController controller;
+  final WidgetBuilder readyBuilder;
+  final WidgetBuilder loadingBuilder;
+  final AppBootstrapFailureBuilder failureBuilder;
+  final bool disposeController;
+  final VoidCallback? onBootstrapSettled;
+
+  @override
+  State<AppBootstrapGate> createState() => _AppBootstrapGateState();
+}
+
+class _AppBootstrapGateState extends State<AppBootstrapGate> {
   Widget? _readyApp;
   bool _bootstrapSettledScheduled = false;
 
@@ -47,7 +127,7 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
   }
 
   @override
-  void didUpdateWidget(covariant AppBootstrapHost oldWidget) {
+  void didUpdateWidget(covariant AppBootstrapGate oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.controller == widget.controller) return;
     oldWidget.controller.removeListener(_handleStateChanged);
@@ -75,80 +155,11 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
     if (state.phase != AppBootstrapPhase.initializing) {
       _scheduleBootstrapSettled();
     }
-    if (state.phase == AppBootstrapPhase.ready) {
-      return _readyApp ??= widget.appBuilder();
-    }
-
-    final locale =
-        widget.locale ?? WidgetsBinding.instance.platformDispatcher.locale;
-    final strings = switch (locale.languageCode) {
-      'zh' => appLanguageZh,
-      'ja' => appLanguageJa,
-      _ => appLanguageEn,
+    return switch (state.phase) {
+      AppBootstrapPhase.ready => _readyApp ??= widget.readyBuilder(context),
+      AppBootstrapPhase.failure => widget.failureBuilder(context, state),
+      AppBootstrapPhase.initializing => widget.loadingBuilder(context),
     };
-    String tr(String key) => strings[key] ?? appLanguageEn[key] ?? key;
-    final appThemeColor = ThemeProvider.readAppThemeColorSync();
-    final iconColorGroup = appThemeColor.iconColorGroup;
-    final lightScheme = appThemeColor
-        .colorScheme(Brightness.light)
-        .copyWith(surface: iconColorGroup.splashBackground(Brightness.light));
-    final darkScheme = appThemeColor
-        .colorScheme(Brightness.dark)
-        .copyWith(surface: iconColorGroup.splashBackground(Brightness.dark));
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      color: lightScheme.surface,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: lightScheme,
-        scaffoldBackgroundColor: lightScheme.surface,
-        extensions: <ThemeExtension<dynamic>>[
-          AppBrandIconTheme.forGroup(iconColorGroup, Brightness.light),
-        ],
-      ),
-      darkTheme: ThemeData(
-        useMaterial3: true,
-        colorScheme: darkScheme,
-        scaffoldBackgroundColor: darkScheme.surface,
-        extensions: <ThemeExtension<dynamic>>[
-          AppBrandIconTheme.forGroup(iconColorGroup, Brightness.dark),
-        ],
-      ),
-      themeMode: ThemeProvider.readThemeModeSync(),
-      locale: locale,
-      supportedLocales: AppLanguageProvider.supportedLocales,
-      localizationsDelegates: const [
-        GlobalMaterialLocalizations.delegate,
-        GlobalCupertinoLocalizations.delegate,
-        GlobalWidgetsLocalizations.delegate,
-      ],
-      home: state.phase == AppBootstrapPhase.failure
-          ? AppErrorView(
-              error: state.error ?? StateError('Unknown bootstrap failure'),
-              stackTrace: state.stackTrace,
-              onRetry: () => unawaited(widget.controller.retry()),
-              exportDiagnostics: widget.exportDiagnostics,
-            )
-          : Scaffold(
-              key: const ValueKey<String>('app_bootstrap_loading'),
-              body: Center(
-                child: Semantics(
-                  liveRegion: true,
-                  label: tr('startup_initializing'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const AppBrandIcon(size: 72),
-                      const SizedBox(height: 20),
-                      const CircularProgressIndicator(),
-                      const SizedBox(height: 20),
-                      Text(tr('startup_initializing')),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-    );
   }
 
   void _scheduleBootstrapSettled() {
@@ -157,5 +168,42 @@ class _AppBootstrapHostState extends State<AppBootstrapHost> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) widget.onBootstrapSettled?.call();
     });
+  }
+}
+
+class AppBootstrapLoadingView extends StatelessWidget {
+  const AppBootstrapLoadingView({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final strings = switch (Localizations.maybeLocaleOf(
+      context,
+    )?.languageCode) {
+      'zh' => appLanguageZh,
+      'ja' => appLanguageJa,
+      _ => appLanguageEn,
+    };
+    final label =
+        strings['startup_initializing'] ??
+        appLanguageEn['startup_initializing']!;
+    return Scaffold(
+      key: const ValueKey<String>('app_bootstrap_loading'),
+      body: Center(
+        child: Semantics(
+          liveRegion: true,
+          label: label,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const AppBrandIcon(size: 72),
+              const SizedBox(height: 20),
+              const CircularProgressIndicator(),
+              const SizedBox(height: 20),
+              Text(label),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -60,19 +60,14 @@ void main() {
     },
   );
 
-  test('backup round-trips ASMR token and stored credentials', () async {
+  test('backup excludes ASMR token and stored credentials', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{
       'language': 'zh',
       'session_order_v1': '["session-1"]',
       AppPreferences.asmrDownloadTasksKey: '{"tasks":[]}',
     });
     await AppPreferences.init();
-    final source = _FakeTokenStore(
-      token: 'backup-token',
-      name: 'backup-name',
-      password: 'backup-password',
-    );
-    final values = await AppPreferences.exportSafeValues(tokenStore: source);
+    final values = await AppPreferences.exportSafeValues();
     final restored = _FakeTokenStore(
       token: 'current-token',
       name: 'current-name',
@@ -81,17 +76,34 @@ void main() {
 
     await AppPreferences.restoreSafeValues(values, tokenStore: restored);
 
-    expect(
-      values[AppPreferences.asmrAccountBackupKey],
-      isA<Map<Object?, Object?>>(),
-    );
+    expect(values, isNot(contains(AppPreferences.asmrAccountBackupKey)));
     expect(values, isNot(contains('session_order_v1')));
     expect(values, isNot(contains(AppPreferences.asmrDownloadTasksKey)));
-    expect(await restored.readToken(), 'backup-token');
-    expect(await restored.readCredentials(), const <String, String>{
-      'name': 'backup-name',
-      'password': 'backup-password',
-    });
+    expect(await restored.readToken(), isNull);
+    expect(await restored.readCredentials(), isNull);
+  });
+
+  test('safe restore ignores account credentials from older backups', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final store = _FakeTokenStore(
+      token: 'current-token',
+      name: 'current-name',
+      password: 'current-password',
+    );
+
+    await AppPreferences.restoreSafeValues(const <String, Object?>{
+      'language': 'ja',
+      AppPreferences.asmrAccountBackupKey: <String, Object>{
+        'token': 'backup-token',
+        'name': 'backup-name',
+        'password': 'backup-password',
+      },
+    }, tokenStore: store);
+
+    expect(await store.readToken(), isNull);
+    expect(await store.readCredentials(), isNull);
+    expect((await SharedPreferences.getInstance()).getString('language'), 'ja');
   });
 
   test(

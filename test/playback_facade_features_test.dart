@@ -78,6 +78,10 @@ void main() {
     );
 
     setUp(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            return <String, Object?>{'ok': true, 'value': null};
+          });
       runtimeGraph.library.addTracks(
         <MusicTrack>[first, second],
         notify: false,

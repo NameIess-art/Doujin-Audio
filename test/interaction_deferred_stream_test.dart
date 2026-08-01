@@ -19,6 +19,7 @@ void main() {
       read: () => source.value,
       coordinator: interaction,
     ).listen(values.add);
+    await Future<void>.delayed(Duration.zero);
     final interactionSource = Object();
 
     interaction.beginInteraction(interactionSource);

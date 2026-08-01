@@ -20,19 +20,27 @@ final class SubtitleOverlayController {
   final SubtitleOverlayStopTimerFactory _stopTimerFactory;
   Timer? _stopTimer;
   bool _disposed = false;
+  int _commandGeneration = 0;
 
   Future<bool> canDrawOverlays() => _platform.canDrawOverlays();
 
   Future<bool> openOverlaySettings() => _platform.openOverlaySettings();
 
-  Future<void> startOverlay() async {
-    if (_disposed) return;
+  Future<bool> startOverlay() async {
+    if (_disposed) return false;
+    final generation = ++_commandGeneration;
     _stopTimer?.cancel();
     _stopTimer = null;
     await _platform.startOverlay();
+    if (_disposed || generation != _commandGeneration) {
+      await _platform.stopOverlay();
+      return false;
+    }
+    return true;
   }
 
   Future<void> stopOverlay({bool immediate = false}) async {
+    final generation = ++_commandGeneration;
     _stopTimer?.cancel();
     _stopTimer = null;
     if (immediate) {
@@ -40,7 +48,9 @@ final class SubtitleOverlayController {
     } else {
       if (_disposed) return;
       _stopTimer = _stopTimerFactory(const Duration(milliseconds: 300), () {
-        unawaited(_doStop());
+        if (!_disposed && generation == _commandGeneration) {
+          unawaited(_doStop());
+        }
       });
     }
   }
@@ -79,6 +89,7 @@ final class SubtitleOverlayController {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    _commandGeneration++;
     _stopTimer?.cancel();
     _stopTimer = null;
     await _platform.stopOverlay();

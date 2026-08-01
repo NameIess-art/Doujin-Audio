@@ -41,7 +41,7 @@ void main() {
       expect(await controller.canDrawOverlays(), isTrue);
       await controller.stopOverlay();
       expect(delayedStop, isNotNull);
-      await controller.startOverlay();
+      expect(await controller.startOverlay(), isTrue);
       delayedStop!();
       await Future<void>.delayed(Duration.zero);
 
@@ -50,6 +50,42 @@ void main() {
         containsAllInOrder(<String>['canDrawOverlays', 'startOverlay']),
       );
       expect(calls.where((call) => call.method == 'stopOverlay'), isEmpty);
+    },
+  );
+
+  test(
+    'a stop requested during start prevents a stale overlay restart',
+    () async {
+      const channel = MethodChannel('test.subtitle.overlay.start-race');
+      final startEntered = Completer<void>();
+      final releaseStart = Completer<void>();
+      var stopCalls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'startOverlay') {
+              startEntered.complete();
+              await releaseStart.future;
+            } else if (call.method == 'stopOverlay') {
+              stopCalls++;
+            }
+            return <String, Object?>{'ok': true, 'value': true};
+          });
+      addTearDown(
+        () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null),
+      );
+      final controller = SubtitleOverlayController(
+        platform: SubtitleOverlayPlatformService(channel: channel),
+      );
+      addTearDown(controller.dispose);
+
+      final start = controller.startOverlay();
+      await startEntered.future;
+      await controller.stopOverlay(immediate: true);
+      releaseStart.complete();
+
+      expect(await start, isFalse);
+      expect(stopCalls, 2);
     },
   );
 }

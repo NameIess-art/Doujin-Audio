@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:nameless_audio/core/errors/native_result.dart';
+import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
@@ -75,4 +77,40 @@ void main() {
       expect((saved['customEqPresets'] as List<dynamic>), hasLength(1));
     },
   );
+
+  test('multi-thread setting is unchanged when pause all fails', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final settings = SettingsRepository()..syncSlice(isInitialized: true);
+    await settings.setMultiThreadPlaybackEnabled(true);
+    final playback = PlaybackFacade.create(
+      databaseRepository: TestPersistenceRepository(),
+      nativeRepository: _FailingPauseAllRepository(),
+    );
+    final notifications = NotificationFacade.create(
+      service: PlaybackNotificationService(),
+    );
+    final controller = SettingsCommandController(
+      settings: settings,
+      playback: playback,
+      notifications: notifications,
+    );
+    addTearDown(settings.dispose);
+    addTearDown(playback.dispose);
+    addTearDown(notifications.dispose);
+
+    final updated = await controller.setMultiThreadPlaybackEnabled(false);
+
+    expect(updated, isFalse);
+    expect(settings.multiThreadPlaybackEnabled, isTrue);
+  });
+}
+
+final class _FailingPauseAllRepository extends NativePlaybackRepository {
+  @override
+  Future<NativeResult<void>> pauseAll() async {
+    return const NativeFailure<void>('pause all failed');
+  }
+
+  @override
+  Future<void> dispose() async {}
 }

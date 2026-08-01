@@ -42,18 +42,33 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
 
   StreamSubscription<NativePlaybackSnapshot>? _snapshotSubscription;
   StreamSubscription<NativePlaybackProgressUpdate>? _progressSubscription;
+  Future<void>? _startFuture;
+  bool _listenersStarted = false;
   bool _started = false;
   bool _disposed = false;
   Future<void>? _disposeFuture;
 
   @override
-  Future<void> start() async {
-    if (_started || _disposed) return;
-    _started = true;
-    _startListening();
-    _snapshotSubscription = _snapshots.listen(_onSnapshot);
-    _progressSubscription = _progressUpdates.listen(_onProgress);
+  Future<void> start() {
+    if (_started || _disposed) return Future<void>.value();
+    final active = _startFuture;
+    if (active != null) return active;
+    final attempt = _start();
+    _startFuture = attempt;
+    return attempt.whenComplete(() {
+      if (identical(_startFuture, attempt)) _startFuture = null;
+    });
+  }
+
+  Future<void> _start() async {
+    if (!_listenersStarted) {
+      _listenersStarted = true;
+      _startListening();
+      _snapshotSubscription = _snapshots.listen(_onSnapshot);
+      _progressSubscription = _progressUpdates.listen(_onProgress);
+    }
     await _onStart();
+    if (!_disposed) _started = true;
   }
 
   @override
@@ -79,7 +94,7 @@ final class AudioRuntimeCoordinator implements AppRuntimeLifecycle {
     _disposed = true;
     await _snapshotSubscription?.cancel();
     await _progressSubscription?.cancel();
-    if (_started) await _stopListening();
+    if (_listenersStarted) await _stopListening();
     await _onDispose();
   }
 }

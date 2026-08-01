@@ -23,13 +23,12 @@ final class SettingsCommandController {
 
   SettingsRepository get settings => _settings;
 
-  Future<void> setMultiThreadPlaybackEnabled(bool enabled) async {
-    if (_settings.multiThreadPlaybackEnabled == enabled) return;
+  Future<bool> setMultiThreadPlaybackEnabled(bool enabled) async {
+    if (_settings.multiThreadPlaybackEnabled == enabled) return true;
+    if (!enabled && !await _playback.pauseAllSessions()) return false;
     await _settings.setMultiThreadPlaybackEnabled(enabled);
-    if (!enabled) {
-      await _playback.pauseAllSessions();
-    }
     await _notifications.handlePlaybackModeChanged();
+    return true;
   }
 
   Future<void> setCoverImageResolution(CoverImageResolution resolution) async {

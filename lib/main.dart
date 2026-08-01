@@ -180,7 +180,6 @@ Widget _createAudioPlayerApp() {
   );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaited(runtimeGraph.runtime.start());
     unawaited(
       asmrLibraryController.initialize(
         defaultLanguage: AsmrContentLanguage.fromAppLanguageName(
@@ -246,11 +245,32 @@ class _StretchOverscrollBehavior extends MaterialScrollBehavior {
   }
 }
 
-class MusicPlayerApp extends ConsumerWidget {
+class MusicPlayerApp extends ConsumerStatefulWidget {
   const MusicPlayerApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MusicPlayerApp> createState() => _MusicPlayerAppState();
+}
+
+class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
+  late final AppBootstrapController _runtimeBootstrapController;
+
+  @override
+  void initState() {
+    super.initState();
+    _runtimeBootstrapController = AppBootstrapController(
+      initializer: ref.read(audioRuntimeCoordinatorProvider).start,
+    );
+  }
+
+  @override
+  void dispose() {
+    _runtimeBootstrapController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.watch(appInteractionEffectsControllerProvider);
     ref.listen<AsyncValue<SettingsState>>(settingsStateProvider, (_, next) {
       final portraitLockEnabled = next.asData?.value.portraitLockEnabled;
@@ -300,7 +320,18 @@ class MusicPlayerApp extends ConsumerWidget {
           child: child ?? const SizedBox(),
         );
       },
-      home: const OnboardingGate(child: GlobalShortcuts(child: MainScreen())),
+      home: AppBootstrapGate(
+        controller: _runtimeBootstrapController,
+        disposeController: false,
+        readyBuilder: (_) =>
+            const OnboardingGate(child: GlobalShortcuts(child: MainScreen())),
+        loadingBuilder: (_) => const AppBootstrapLoadingView(),
+        failureBuilder: (_, state) => AppErrorView(
+          error: state.error ?? StateError('Unknown runtime startup failure'),
+          stackTrace: state.stackTrace,
+          onRetry: () => unawaited(_runtimeBootstrapController.retry()),
+        ),
+      ),
     );
   }
 }

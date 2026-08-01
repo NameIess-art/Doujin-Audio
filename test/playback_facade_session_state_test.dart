@@ -150,6 +150,85 @@ void main() {
     expect(runtimeChanges, 3);
   });
 
+  test('native pause failure keeps Flutter playback state unchanged', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository()..failPauseAll = true;
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('pause-failure')
+      ..setOptimisticState(playing: true)
+      ..isLoading = true
+      ..isPlaybackStarting = true;
+    playback.registerSession(session);
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    final paused = await playback.pauseAllSessions();
+
+    expect(paused, isFalse);
+    expect(session.state.playing, isTrue);
+    expect(session.isLoading, isTrue);
+    expect(session.isPlaybackStarting, isTrue);
+  });
+
+  test('batch removal commits only native successes', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository()
+      ..failedRemovalSessionIds.add('second');
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final first = _session('first');
+    final second = _session('second');
+    playback
+      ..registerSession(first)
+      ..registerSession(second);
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    final removed = await playback.removeSessions(<String>[
+      first.id,
+      second.id,
+    ]);
+
+    expect(removed, isFalse);
+    expect(playback.sessionById(first.id), isNull);
+    expect(first.isDisposed, isTrue);
+    expect(playback.sessionById(second.id), same(second));
+    expect(second.isDisposed, isFalse);
+  });
+
+  test('native clear failure keeps every local session', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository()..failClearAll = true;
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('clear-failure');
+    playback.registerSession(session);
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    final cleared = await playback.clearAllSessions();
+
+    expect(cleared, isFalse);
+    expect(playback.sessionById(session.id), same(session));
+    expect(session.isDisposed, isFalse);
+  });
+
   test('session removal wins over an in-flight speed command', () async {
     final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository();
@@ -998,6 +1077,9 @@ final class _RecordingNativePlaybackRepository
   final List<(double, bool)> volumeUpdates = <(double, bool)>[];
   final List<double> speedUpdates = <double>[];
   bool failSpeed = false;
+  bool failPauseAll = false;
+  bool failClearAll = false;
+  final Set<String> failedRemovalSessionIds = <String>{};
   Completer<NativeResult<NativePlaybackSnapshot>>? speedGate;
   int audioEffectsCalls = 0;
   bool failAudioEffects = false;
@@ -1005,18 +1087,23 @@ final class _RecordingNativePlaybackRepository
   @override
   Future<NativeResult<void>> pauseAll() async {
     pauseAllCount++;
+    if (failPauseAll) return const NativeFailure<void>('pause all failed');
     return const NativeSuccess<void>();
   }
 
   @override
   Future<NativeResult<void>> clearAll() async {
     clearAllCount++;
+    if (failClearAll) return const NativeFailure<void>('clear all failed');
     return const NativeSuccess<void>();
   }
 
   @override
   Future<NativeResult<void>> removeSession(String sessionId) async {
     removedSessionIds.add(sessionId);
+    if (failedRemovalSessionIds.contains(sessionId)) {
+      return const NativeFailure<void>('remove failed');
+    }
     return const NativeSuccess<void>();
   }
 

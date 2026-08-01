@@ -19,19 +19,15 @@ void main() {
     ValueKey('data-support-export-diagnostics'),
     ValueKey('data-support-privacy-summary'),
   ];
-  final operationService = UiOperationService.instance;
+  late UiOperationService operationService;
 
   setUp(() {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
-    operationService.clear(UiOperationScope.dataSupportBackupExport);
-    operationService.clear(UiOperationScope.dataSupportBackupRestore);
-    operationService.clear(UiOperationScope.dataSupportDiagnosticsExport);
+    operationService = UiOperationService();
   });
 
-  tearDown(() {
-    operationService.clear(UiOperationScope.dataSupportBackupExport);
-    operationService.clear(UiOperationScope.dataSupportBackupRestore);
-    operationService.clear(UiOperationScope.dataSupportDiagnosticsExport);
+  tearDown(() async {
+    await operationService.dispose();
   });
 
   testWidgets(
@@ -45,6 +41,7 @@ void main() {
               languageProvider,
             ),
             appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+            uiOperationServiceProvider.overrideWithValue(operationService),
           ],
           child: const MaterialApp(home: DataSupportPage()),
         ),

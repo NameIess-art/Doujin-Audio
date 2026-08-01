@@ -98,6 +98,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   bool _globalSubtitleOverlayRunning = false;
   bool _globalSubtitleOverlaySyncing = false;
   bool _globalSubtitleOverlaySyncPending = false;
+  int _globalSubtitleOverlayGeneration = 0;
   Timer? _globalSubtitleOverlayTimer;
   String? _globalSubtitleOverlaySessionId;
   String? _globalSubtitleOverlayTrackPath;
@@ -187,7 +188,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (!mounted) return;
       _rememberCurrentViewMetrics();
       final warmup = ref.read(audioUiWarmupCoordinatorProvider);
-      unawaited(_syncGlobalSubtitleOverlay());
+      _requestGlobalSubtitleOverlaySync();
       unawaited(_consumePendingNotificationSession());
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
@@ -406,6 +407,28 @@ class _MainScreenState extends ConsumerState<MainScreen>
     );
   }
 
+  void _requestGlobalSubtitleOverlaySync() {
+    _globalSubtitleOverlayGeneration++;
+    unawaited(_syncGlobalSubtitleOverlay());
+  }
+
+  bool _isGlobalSubtitleOverlayRequestCurrent(
+    int generation,
+    String sessionId,
+    String trackPath,
+  ) {
+    if (!mounted ||
+        generation != _globalSubtitleOverlayGeneration ||
+        !shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
+      return false;
+    }
+    final session = _globalSubtitleOverlaySession(
+      ref.read(playbackFacadeProvider),
+      ref.read(subtitleSettingsProvider),
+    );
+    return session?.id == sessionId && session?.currentTrackPath == trackPath;
+  }
+
   Future<void> _syncGlobalSubtitleOverlay() async {
     if (_globalSubtitleOverlaySyncing) {
       _globalSubtitleOverlaySyncPending = true;
@@ -415,6 +438,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         !shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
       return;
     }
+    final generation = _globalSubtitleOverlayGeneration;
     _globalSubtitleOverlaySyncing = true;
     try {
       final playback = ref.read(playbackFacadeProvider);
@@ -424,26 +448,59 @@ class _MainScreenState extends ConsumerState<MainScreen>
         await _stopGlobalSubtitleOverlay(immediate: true);
         return;
       }
+      final sessionId = session.id;
+      final trackPath = session.currentTrackPath;
       final canDraw = await _subtitleOverlay.canDrawOverlays();
+      if (!_isGlobalSubtitleOverlayRequestCurrent(
+        generation,
+        sessionId,
+        trackPath,
+      )) {
+        return;
+      }
       if (!canDraw) {
         await _stopGlobalSubtitleOverlay(immediate: true);
         return;
       }
       await _applyGlobalSubtitleOverlayStyle(settings);
-      await _subtitleOverlay.startOverlay();
+      if (!_isGlobalSubtitleOverlayRequestCurrent(
+        generation,
+        sessionId,
+        trackPath,
+      )) {
+        return;
+      }
+      final started = await _subtitleOverlay.startOverlay();
+      if (!started ||
+          !_isGlobalSubtitleOverlayRequestCurrent(
+            generation,
+            sessionId,
+            trackPath,
+          )) {
+        if (started) {
+          await _subtitleOverlay.stopOverlay(immediate: true);
+        }
+        return;
+      }
       _globalSubtitleOverlayRunning = true;
       _ensureGlobalSubtitleOverlayTimer();
       _updateGlobalSubtitleOverlayForSession(session);
     } finally {
       _globalSubtitleOverlaySyncing = false;
-      if (_globalSubtitleOverlaySyncPending) {
+      if (_globalSubtitleOverlaySyncPending &&
+          mounted &&
+          shouldRunGlobalSubtitleOverlay(appInForeground: _appInForeground)) {
         _globalSubtitleOverlaySyncPending = false;
         unawaited(_syncGlobalSubtitleOverlay());
+      } else {
+        _globalSubtitleOverlaySyncPending = false;
       }
     }
   }
 
   Future<void> _stopGlobalSubtitleOverlay({bool immediate = false}) async {
+    _globalSubtitleOverlayGeneration++;
+    _globalSubtitleOverlaySyncPending = false;
     _globalSubtitleOverlayTimer?.cancel();
     _globalSubtitleOverlayTimer = null;
     _globalSubtitleOverlaySessionId = null;
@@ -549,7 +606,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
         state == AppLifecycleState.hidden) {
       _appInForeground = false;
       unawaited(ref.read(audioRuntimeCoordinatorProvider).enterBackground());
-      unawaited(_syncGlobalSubtitleOverlay());
+      _requestGlobalSubtitleOverlaySync();
       return;
     }
     if (state != AppLifecycleState.resumed) {
@@ -657,7 +714,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   @override
   Widget build(BuildContext context) {
     ref.listen<SubtitleSettingsState>(subtitleSettingsProvider, (_, _) {
-      unawaited(_syncGlobalSubtitleOverlay());
+      _requestGlobalSubtitleOverlaySync();
     });
     final i18n = ProviderScope.containerOf(
       context,

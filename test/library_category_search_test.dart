@@ -10,11 +10,11 @@ void main() {
       tester,
     ) async {
       await tester.pumpWidget(
-        MaterialApp(
+        const MaterialApp(
           home: Scaffold(
             body: SearchHighlightScope.withTerms(
-              terms: const ['alpha', 'beta'],
-              child: const SearchHighlightedText(
+              terms: ['alpha', 'beta'],
+              child: SearchHighlightedText(
                 text: 'alpha test beta',
                 style: TextStyle(),
               ),

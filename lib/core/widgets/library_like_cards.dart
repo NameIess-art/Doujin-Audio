@@ -39,7 +39,6 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
     const infoBlockHeight = LibraryLikeCardMetrics.infoBlockHeight;
     const titleBlockHeight = LibraryLikeCardMetrics.titleBlockHeight;
     const coverWidth =
@@ -64,7 +63,7 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    ShimmerContainer(
+                    const ShimmerContainer(
                       width: coverWidth,
                       height: infoBlockHeight,
                       borderRadius: LibraryLikeCardMetrics.coverRadius,
@@ -103,10 +102,7 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            ShimmerContainer(
-                              height: 12,
-                              borderRadius: 4,
-                            ),
+                            ShimmerContainer(height: 12, borderRadius: 4),
                             SizedBox(height: 4),
                             ShimmerContainer(
                               width: 140,
@@ -134,11 +130,7 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
                         child: Padding(
                           padding: EdgeInsets.only(right: 2),
                           child: Center(
-                            child: ShimmerContainer(
-                              width: 16,
-                              height: 16,
-                              borderRadius: 8,
-                            ),
+                            child: ShimmerContainer(width: 16, height: 16),
                           ),
                         ),
                       ),
@@ -155,10 +147,7 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
 }
 
 class _SkeletonInfoLine extends StatelessWidget {
-  const _SkeletonInfoLine({
-    required this.labelWidth,
-    required this.textWidth,
-  });
+  const _SkeletonInfoLine({required this.labelWidth, required this.textWidth});
 
   final double labelWidth;
   final double textWidth;
@@ -168,19 +157,10 @@ class _SkeletonInfoLine extends StatelessWidget {
     return SizedBox(
       height: _libraryLikeInfoLineHeight,
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          ShimmerContainer(
-            width: labelWidth,
-            height: 11,
-            borderRadius: 4,
-          ),
+          ShimmerContainer(width: labelWidth, height: 11, borderRadius: 4),
           const SizedBox(width: 5),
-          ShimmerContainer(
-            width: textWidth,
-            height: 11,
-            borderRadius: 4,
-          ),
+          ShimmerContainer(width: textWidth, height: 11, borderRadius: 4),
         ],
       ),
     );
@@ -840,12 +820,7 @@ class LibraryLikeTwoLineMarqueeText extends StatelessWidget {
       return SizedBox(
         width: double.infinity,
         height: 34,
-        child: SearchHighlightedText(
-          text: text,
-          maxLines: 2,
-          softWrap: true,
-          style: style,
-        ),
+        child: SearchHighlightedText(text: text, softWrap: true, style: style),
       );
     }
     final lines = _splitLibraryLikeName(text);

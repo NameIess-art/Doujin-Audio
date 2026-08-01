@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../library/application/cover_artwork_cache_service.dart';
 
 import 'audio_state_services.dart';
@@ -395,7 +396,7 @@ final class NotificationFacade {
       final playback = _playback;
       if (session == null || playback == null || !session.state.playing) return;
       _setFocusSessionId(session.id);
-      await playback.nativeRepository.pause(session.id);
+      if (!await _pauseNativeSession(playback, session)) return;
       session.setOptimisticState(playing: false);
     });
   }
@@ -406,7 +407,7 @@ final class NotificationFacade {
       final playback = _playback;
       if (session == null || playback == null || session.isLoading) return;
       if (session.state.playing) {
-        await playback.nativeRepository.pause(session.id);
+        if (!await _pauseNativeSession(playback, session)) return;
         session.setOptimisticState(playing: false);
         return;
       }
@@ -420,7 +421,7 @@ final class NotificationFacade {
       final playback = _playback;
       if (session == null || playback == null) return;
       _setFocusSessionId(session.id);
-      await playback.nativeRepository.pause(session.id);
+      if (!await _pauseNativeSession(playback, session)) return;
       session.setOptimisticState(playing: false);
     });
   }
@@ -488,6 +489,10 @@ final class NotificationFacade {
   Future<void> dismissAfterPauseAll() async {
     final playback = _playback;
     if (playback == null) return;
+    if (!_hasPlaybackToKeepAlive && !await playback.pauseAllSessions()) {
+      _syncNotificationState(immediateUnifiedSync: true);
+      return;
+    }
     _stateService.notificationsDismissedWhilePaused = true;
     await playback.nativeRepository.dismissNotifications();
     if (_hasPlaybackToKeepAlive) {
@@ -497,10 +502,24 @@ final class NotificationFacade {
       return;
     }
     await _clearUnifiedNotifications();
-    await playback.pauseAllSessions();
     _setFocusSessionId(_preferredSessionId());
     _syncKeepAlive();
     _notifyNotificationChanged();
+  }
+
+  Future<bool> _pauseNativeSession(
+    PlaybackFacade playback,
+    PlaybackSession session,
+  ) async {
+    final response = await playback.nativeRepository.pause(session.id);
+    if (response.isOk) return true;
+    AppLogService.warning(
+      'NotificationFacade.pause failed '
+      'code=${response.errorCodeOrNull} '
+      'sessionId=${session.id} '
+      'error=${response.errorOrNull}',
+    );
+    return false;
   }
 
   Future<void> _guardAction(Future<void> Function() action) {

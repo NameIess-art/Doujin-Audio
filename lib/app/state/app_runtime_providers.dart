@@ -62,15 +62,10 @@ final appLanguageProviderInstanceProvider = Provider<AppLanguageProvider>((
 
 final appLanguageStateProvider = StreamProvider<AppLanguageState>((ref) {
   final controller = ref.watch(appLanguageProviderInstanceProvider);
-  final states = StreamController<AppLanguageState>.broadcast(sync: true);
-  void emit() => states.add(AppLanguageState.from(controller));
-  controller.addListener(emit);
-  emit();
-  ref.onDispose(() {
-    controller.removeListener(emit);
-    states.close();
-  });
-  return states.stream;
+  return interactionDeferredListenableStream(
+    source: controller,
+    read: () => AppLanguageState.from(controller),
+  );
 });
 
 final appUpdateServiceProvider = Provider<AppUpdateService>((ref) {
@@ -201,15 +196,10 @@ final asmrPlaybackCoordinatorProvider = Provider<AsmrPlaybackCoordinator?>(
 final asmrDownloadStateProvider = StreamProvider<AsmrDownloadState>((ref) {
   final manager = ref.watch(asmrDownloadManagerProvider);
   if (manager == null) return Stream.value(AsmrDownloadState.empty);
-  final states = StreamController<AsmrDownloadState>.broadcast(sync: true);
-  void emit() => states.add(manager.state);
-  manager.addListener(emit);
-  emit();
-  ref.onDispose(() {
-    manager.removeListener(emit);
-    states.close();
-  });
-  return states.stream;
+  return interactionDeferredListenableStream(
+    source: manager,
+    read: () => manager.state,
+  );
 });
 
 final asmrDownloadTaskProvider = Provider.autoDispose
@@ -221,15 +211,10 @@ final asmrDownloadTaskProvider = Provider.autoDispose
 
 final themeStateProvider = StreamProvider<ThemeState>((ref) {
   final controller = ref.watch(themeProviderInstanceProvider);
-  final states = StreamController<ThemeState>.broadcast(sync: true);
-  void emit() => states.add(ThemeState.from(controller));
-  controller.addListener(emit);
-  emit();
-  ref.onDispose(() {
-    controller.removeListener(emit);
-    states.close();
-  });
-  return states.stream;
+  return interactionDeferredListenableStream(
+    source: controller,
+    read: () => ThemeState.from(controller),
+  );
 });
 
 final audioRuntimeCoordinatorProvider = Provider<AppRuntimeLifecycle>((ref) {

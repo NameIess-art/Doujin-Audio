@@ -267,8 +267,22 @@ class _SessionListCard extends ConsumerWidget {
   final bool cardPositionsLocked;
   final VoidCallback onOpen;
 
-  void _confirmRemoveSession(BuildContext context) {
-    playback.removeSession(sessionId);
+  Future<void> _confirmRemoveSession(BuildContext context) async {
+    final removed = await playback.removeSession(sessionId);
+    if (!context.mounted) return;
+    if (!removed) {
+      final i18n = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appLanguageProviderInstanceProvider);
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+      return;
+    }
     ProviderScope.containerOf(
       context,
       listen: false,

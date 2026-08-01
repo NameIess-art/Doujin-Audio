@@ -78,6 +78,46 @@ void main() {
     expect(backgroundEntries, 1);
     expect(foregroundResumes, 1);
   });
+
+  test('failed startup can retry without duplicate subscriptions', () async {
+    final snapshots = StreamController<NativePlaybackSnapshot>.broadcast(
+      sync: true,
+    );
+    final progressUpdates =
+        StreamController<NativePlaybackProgressUpdate>.broadcast(sync: true);
+    addTearDown(snapshots.close);
+    addTearDown(progressUpdates.close);
+    var listeningStarts = 0;
+    var listeningStops = 0;
+    var attempts = 0;
+    var backgroundEntries = 0;
+    final coordinator = AudioRuntimeCoordinator(
+      snapshots: snapshots.stream,
+      progressUpdates: progressUpdates.stream,
+      startListening: () => listeningStarts++,
+      stopListening: () async => listeningStops++,
+      onSnapshot: (_) {},
+      onProgress: (_) {},
+      onStart: () async {
+        attempts++;
+        if (attempts == 1) throw StateError('persistence unavailable');
+      },
+      onEnterBackground: () => backgroundEntries++,
+      onResumeForeground: () {},
+      onDispose: () {},
+    );
+
+    await expectLater(coordinator.start(), throwsStateError);
+    await coordinator.enterBackground();
+    await coordinator.start();
+    await coordinator.enterBackground();
+
+    expect(attempts, 2);
+    expect(listeningStarts, 1);
+    expect(backgroundEntries, 1);
+    await coordinator.dispose();
+    expect(listeningStops, 1);
+  });
 }
 
 NativePlaybackSnapshot _snapshot(String sessionId) {

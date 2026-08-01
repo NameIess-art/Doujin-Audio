@@ -174,6 +174,53 @@ void main() {
     expect(focusedSessionId, session.id);
   });
 
+  test('notification pause failure keeps the session playing', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository()..failPause = true;
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    );
+    final facade = NotificationFacade.create(
+      service: PlaybackNotificationService(),
+    );
+    final session = PlaybackSession(
+      id: 'notification-pause-failure',
+      currentTrackPath: '/tracks/failure.mp3',
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(true, ProcessingState.ready),
+    );
+    playback.registerSession(session);
+    facade.attachActions(
+      playback: playback,
+      resolveSession: ([sessionId]) => session,
+      resolveActionSession: () => session,
+      resumeSession: (_) async {},
+      multiThreadPlaybackEnabled: () => false,
+      setFocusSessionId: (_) {},
+      notify: () {},
+      syncKeepAlive: () {},
+      hasPlaybackToKeepAlive: () => true,
+      clearUnifiedNotifications: () async {},
+      preferredSessionId: () => session.id,
+      notifyNotificationChanged: () {},
+    );
+    addTearDown(() async {
+      await facade.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+
+    await facade.pausePrimarySession();
+
+    expect(session.state.playing, isTrue);
+    expect(native.pausedSessionIds, <String>[session.id]);
+  });
+
   test(
     'NotificationFacade resets platform state after playback mode changes',
     () async {
@@ -347,6 +394,7 @@ final class _NoopNotificationPlaybackCommands
 final class _RecordingNativePlaybackRepository
     extends NativePlaybackRepository {
   final List<String> pausedSessionIds = <String>[];
+  bool failPause = false;
 
   @override
   Future<NativeResult<NativePlaybackSnapshot>> pause(
@@ -354,6 +402,9 @@ final class _RecordingNativePlaybackRepository
     int transportCommandId = 0,
   }) async {
     pausedSessionIds.add(sessionId);
+    if (failPause) {
+      return const NativeFailure<NativePlaybackSnapshot>('pause failed');
+    }
     return const NativeSuccess<NativePlaybackSnapshot>();
   }
 

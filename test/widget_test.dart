@@ -27,6 +27,7 @@ import 'package:nameless_audio/features/library/application/library_service.dart
 import 'package:nameless_audio/features/settings/application/settings_repository.dart';
 import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
+import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
@@ -197,7 +198,7 @@ void main() {
       );
       expect(
         tester.getSize(fadeMaskFinder).height,
-        160 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+        60 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
       );
       expect(
         tester
@@ -1787,10 +1788,10 @@ void main() {
 
     expect(detailFinder, findsNothing);
     expect(tester.takeException(), isNull);
-    await tester.pumpAndSettle();
     await _settleSessionDetailAsyncWork(tester);
     await tester.pump(const Duration(milliseconds: 220));
     await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 200));
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 }
@@ -1808,9 +1809,39 @@ final class _AppShellHarness {
 final class _AppShellTestPersistenceRepository
     extends TestPersistenceRepository {
   @override
+  Future<List<MusicTrack>> loadStartupTracks() async => const <MusicTrack>[];
+
+  @override
+  Future<List<LibraryEntry>> loadAllLibraryEntries() async =>
+      const <LibraryEntry>[];
+
+  @override
+  Future<List<AudioDetail>> loadAudioDetails(
+    Iterable<AudioDetailTarget> targets,
+  ) async => const <AudioDetail>[];
+
+  @override
+  Future<List<PersistedPlaybackSession>> loadAllSessions() async =>
+      const <PersistedPlaybackSession>[];
+
+  @override
+  Future<String?> loadAppSetting(String key) async => null;
+
+  @override
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) async {
     return const <TimeSegmentLabel>[];
   }
+}
+
+final class _AppShellNativePlaybackRepository extends NativePlaybackRepository {
+  @override
+  void startListening() {}
+
+  @override
+  Future<void> stopListening() async {}
+
+  @override
+  Future<void> dispose() async {}
 }
 
 final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
@@ -2037,7 +2068,7 @@ Future<_AppShellHarness> _pumpAppShell(
   final languageProvider = AppLanguageProvider();
   final notificationService = PlaybackNotificationService();
   final persistenceRepository = _AppShellTestPersistenceRepository();
-  final nativePlaybackRepository = NativePlaybackRepository();
+  final nativePlaybackRepository = _AppShellNativePlaybackRepository();
   final libraryService = LibraryService();
   final playbackService = PlaybackSessionService();
   final timerService = TimerService();
@@ -2056,6 +2087,7 @@ Future<_AppShellHarness> _pumpAppShell(
   addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
   settingsRepository.syncSlice(isInitialized: true);
   libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+  await tester.runAsync(runtimeGraph.runtime.start);
   if (includePlaybackSession) {
     if (playbackTrack != null) {
       runtimeGraph.library.addTracks(

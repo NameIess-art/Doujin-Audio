@@ -688,7 +688,7 @@ void main() {
   );
 
   test(
-    'preferences JSON keeps the plaintext ASMR account backup object',
+    'preferences JSON excludes the legacy ASMR account backup object',
     () async {
       preferences = <String, Object>{
         AppPreferences.asmrAccountBackupKey: <String, Object>{
@@ -710,12 +710,8 @@ void main() {
               )
               as Map<String, dynamic>;
       expect(
-        exportedPreferences[AppPreferences.asmrAccountBackupKey],
-        <String, dynamic>{
-          'token': 'plain-jwt-token',
-          'name': 'plain-user',
-          'password': 'plain-password',
-        },
+        exportedPreferences,
+        isNot(contains(AppPreferences.asmrAccountBackupKey)),
       );
     },
   );

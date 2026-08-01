@@ -122,6 +122,54 @@ void main() {
     expect(result.valueOrNull?.speed, closeTo(1.25, 0.001));
   });
 
+  test(
+    'temporary speed forwards nullable override without changing snapshot',
+    () async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            return <String, Object?>{
+              'ok': true,
+              'value': <String, Object?>{
+                'sessionId': 'session-1',
+                'playing': true,
+                'playWhenReady': true,
+                'processingState': 'ready',
+                'positionMs': 0,
+                'bufferedPositionMs': 0,
+                'durationMs': 5000,
+                'speed': 1.25,
+                'volume': 1.0,
+                'channelSwap': false,
+              },
+            };
+          });
+
+      final enabled = await NativePlaybackBridge.instance.setTemporarySpeed(
+        'session-1',
+        2.0,
+      );
+      final cleared = await NativePlaybackBridge.instance.setTemporarySpeed(
+        'session-1',
+        null,
+      );
+
+      expect(enabled.valueOrNull?.speed, 1.25);
+      expect(cleared.isOk, isTrue);
+      expect(calls, hasLength(2));
+      expect(calls.first.method, NativePlaybackMethod.setTemporarySpeed);
+      expect(calls.first.arguments, <String, Object?>{
+        'sessionId': 'session-1',
+        'speed': 2.0,
+      });
+      expect(calls.last.arguments, <String, Object?>{
+        'sessionId': 'session-1',
+        'speed': null,
+      });
+    },
+  );
+
   test('setAudioEffects forwards the complete effects payload', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

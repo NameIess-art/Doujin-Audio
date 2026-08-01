@@ -109,6 +109,13 @@ class NativePlaybackRepository {
     return _bridge.setSpeed(sessionId, speed);
   }
 
+  Future<NativeResult<NativePlaybackSnapshot>> setTemporarySpeed(
+    String sessionId,
+    double? speed,
+  ) {
+    return _bridge.setTemporarySpeed(sessionId, speed);
+  }
+
   Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(
     String sessionId,
     bool repeatOne, {

@@ -1,8 +1,99 @@
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
 typedef SessionVideoSurfaceBuilder = Widget Function(BuildContext context);
+
+enum SessionVideoGestureSide { left, right }
+
+SessionVideoGestureSide sessionVideoGestureSide(
+  double localX,
+  double viewportWidth,
+) {
+  return localX < viewportWidth / 2
+      ? SessionVideoGestureSide.left
+      : SessionVideoGestureSide.right;
+}
+
+double sessionVideoVerticalGestureValue({
+  required double startValue,
+  required double dragDy,
+  required double viewportHeight,
+  required double minimum,
+  required double maximum,
+}) {
+  if (viewportHeight <= 0 || maximum <= minimum) return startValue;
+  final range = maximum - minimum;
+  return (startValue - (dragDy / viewportHeight) * range).clamp(
+    minimum,
+    maximum,
+  );
+}
+
+Duration sessionVideoHorizontalSeekTarget({
+  required Duration startPosition,
+  required Duration duration,
+  required double dragDx,
+  required double viewportWidth,
+  Duration fullWidthDelta = const Duration(seconds: 90),
+}) {
+  if (viewportWidth <= 0 || duration <= Duration.zero) return startPosition;
+  final deltaMs = (dragDx / viewportWidth * fullWidthDelta.inMilliseconds)
+      .round();
+  final targetMs = (startPosition.inMilliseconds + deltaMs).clamp(
+    0,
+    duration.inMilliseconds,
+  );
+  return Duration(milliseconds: targetMs);
+}
+
+Duration sessionVideoSkipTarget({
+  required Duration position,
+  required Duration duration,
+  required Duration delta,
+}) {
+  if (duration <= Duration.zero) return position;
+  return Duration(
+    milliseconds: (position.inMilliseconds + delta.inMilliseconds).clamp(
+      0,
+      duration.inMilliseconds,
+    ),
+  );
+}
+
+class SessionVideoBlurredBackdrop extends StatelessWidget {
+  const SessionVideoBlurredBackdrop({
+    super.key,
+    required this.child,
+    this.sigma = 20,
+  });
+
+  final Widget child;
+  final double sigma;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      key: const ValueKey<String>('session_video_blurred_backdrop'),
+      fit: StackFit.expand,
+      children: [
+        Transform.scale(
+          scale: 1.08,
+          child: ImageFiltered(
+            imageFilter: ImageFilter.blur(
+              sigmaX: sigma,
+              sigmaY: sigma,
+              tileMode: TileMode.clamp,
+            ),
+            child: child,
+          ),
+        ),
+        ColoredBox(color: Colors.black.withValues(alpha: 0.26)),
+      ],
+    );
+  }
+}
 
 class SessionVideoViewport extends StatefulWidget {
   const SessionVideoViewport({

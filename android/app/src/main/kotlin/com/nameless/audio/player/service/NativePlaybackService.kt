@@ -1135,6 +1135,20 @@ class NativePlaybackService : MediaSessionService() {
         return okResult(session.snapshot())
     }
 
+    fun setTemporarySpeed(sessionId: String, speed: Float?): Map<String, Any?> {
+        val session = sessions[sessionId] ?: return errorResult("Unknown session.")
+        session.applyTemporarySpeed(speed)
+        publishSessionState(sessionId)
+        return okResult(session.snapshot())
+    }
+
+    fun clearTemporarySpeeds() {
+        sessions.values.forEach { session ->
+            session.applyTemporarySpeed(null)
+            session.snapshot()
+        }
+    }
+
     internal fun setAudioEffects(sessionId: String, effects: NativeAudioEffects): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         val previousChannelSwap = session.channelSwapEnabled

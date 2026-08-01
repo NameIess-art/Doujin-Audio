@@ -13,10 +13,12 @@ void main() {
       NotificationsChannel.name,
       SubtitleOverlayChannel.name,
       UpdateChannel.name,
+      VideoDisplayChannel.name,
     ];
 
     expect(names.toSet(), hasLength(names.length));
     expect(UpdateChannel.name, 'nameless_audio/update');
+    expect(VideoDisplayChannel.name, 'nameless_audio/video_display');
     expect(FileCacheChannel.name, 'nameless_audio/file_cache');
   });
 
@@ -67,6 +69,7 @@ void main() {
     );
     expect(NativePlaybackMethod.prepareSession, 'prepareSession');
     expect(NativePlaybackMethod.snapshot, 'snapshot');
+    expect(NativePlaybackMethod.setTemporarySpeed, 'setTemporarySpeed');
     expect(FileCacheMethod.startFolderScan, 'startFolderScan');
     expect(FileCacheMethod.cancelFolderScan, 'cancelFolderScan');
     expect(FileCacheMethod.exportFile, 'exportFile');

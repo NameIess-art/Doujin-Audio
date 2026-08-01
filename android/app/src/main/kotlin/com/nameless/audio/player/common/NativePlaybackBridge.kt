@@ -20,6 +20,7 @@ class NativePlaybackBridge(
     private var listening = false
     private var disposed = false
     private var attachedService: NativePlaybackService? = null
+    private var commandService: NativePlaybackService? = null
     private val listenerId = "flutter-${UUID.randomUUID()}"
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingCalls = linkedSetOf<PendingServiceCall>()
@@ -93,6 +94,10 @@ class NativePlaybackBridge(
                     call.requiredString("sessionId"),
                     call.requiredDouble("speed").toFloat()
                 )
+                NativePlaybackMethods.SET_TEMPORARY_SPEED -> service.setTemporarySpeed(
+                    call.requiredString("sessionId"),
+                    (call.argumentsMap()["speed"] as? Number)?.toFloat()
+                )
                 NativePlaybackMethods.SET_FADE_MULTIPLIER -> service.setFadeMultiplier(
                     call.requiredString("sessionId"),
                     call.requiredDouble("multiplier").toFloat()
@@ -162,6 +167,8 @@ class NativePlaybackBridge(
         pendingEventAttachment?.cancel()
         pendingCalls.toList().forEach(PendingServiceCall::cancel)
         mainHandler.removeCallbacksAndMessages(null)
+        commandService?.clearTemporarySpeeds()
+        commandService = null
         attachedService?.removeStateListener(listenerId)
         attachedService = null
         events = null
@@ -210,6 +217,7 @@ class NativePlaybackBridge(
                 ensureService()
             }
             if (service != null) {
+                commandService = service
                 attachEventListenerIfNeeded(service)
                 return
             }
@@ -313,6 +321,7 @@ internal fun isSupportedNativePlaybackMethod(method: String): Boolean = method i
     NativePlaybackMethods.SEEK,
     NativePlaybackMethods.SET_VOLUME,
     NativePlaybackMethods.SET_SPEED,
+    NativePlaybackMethods.SET_TEMPORARY_SPEED,
     NativePlaybackMethods.SET_FADE_MULTIPLIER,
     NativePlaybackMethods.SET_REPEAT_ONE,
     NativePlaybackMethods.SET_AUDIO_EFFECTS,
@@ -365,6 +374,10 @@ internal fun validatePlaybackArgumentsBeforeService(call: MethodCall) {
         NativePlaybackMethods.SET_SPEED -> {
             requireSessionId()
             requireFiniteInRange("speed", 0.5..2.0)
+        }
+        NativePlaybackMethods.SET_TEMPORARY_SPEED -> {
+            requireSessionId()
+            arguments.requiredNullableDouble("speed", 0.5..2.0)
         }
         NativePlaybackMethods.SET_FADE_MULTIPLIER -> {
             requireSessionId()

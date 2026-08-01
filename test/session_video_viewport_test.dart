@@ -5,6 +5,72 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/features/player/presentation/session_video_viewport.dart';
 
 void main() {
+  group('fullscreen video gesture math', () {
+    test('horizontal drag uses ninety seconds per viewport width', () {
+      expect(
+        sessionVideoHorizontalSeekTarget(
+          startPosition: const Duration(minutes: 10),
+          duration: const Duration(hours: 1),
+          dragDx: 200,
+          viewportWidth: 400,
+        ),
+        const Duration(minutes: 10, seconds: 45),
+      );
+      expect(
+        sessionVideoHorizontalSeekTarget(
+          startPosition: const Duration(seconds: 10),
+          duration: const Duration(minutes: 1),
+          dragDx: -400,
+          viewportWidth: 400,
+        ),
+        Duration.zero,
+      );
+    });
+
+    test('vertical drag and skip targets clamp to valid ranges', () {
+      expect(
+        sessionVideoVerticalGestureValue(
+          startValue: 0.5,
+          dragDy: -100,
+          viewportHeight: 400,
+          minimum: 0.05,
+          maximum: 1,
+        ),
+        closeTo(0.7375, 0.0001),
+      );
+      expect(
+        sessionVideoSkipTarget(
+          position: const Duration(seconds: 58),
+          duration: const Duration(minutes: 1),
+          delta: const Duration(seconds: 5),
+        ),
+        const Duration(minutes: 1),
+      );
+      expect(sessionVideoGestureSide(199, 400), SessionVideoGestureSide.left);
+      expect(sessionVideoGestureSide(200, 400), SessionVideoGestureSide.right);
+    });
+
+    test('unknown duration never rewinds an active video to zero', () {
+      expect(
+        sessionVideoHorizontalSeekTarget(
+          startPosition: const Duration(seconds: 37),
+          duration: Duration.zero,
+          dragDx: 300,
+          viewportWidth: 400,
+        ),
+        const Duration(seconds: 37),
+      );
+      expect(
+        sessionVideoSkipTarget(
+          position: const Duration(seconds: 37),
+          duration: Duration.zero,
+          delta: const Duration(seconds: 5),
+        ),
+        const Duration(seconds: 37),
+      );
+    });
+  });
+
   Widget buildViewport({
     required bool videoReady,
     required Future<void> Function() onFullscreen,
@@ -46,6 +112,27 @@ void main() {
       findsNothing,
     );
     expect(find.byIcon(Icons.fullscreen_rounded), findsNothing);
+  });
+
+  testWidgets('blurred backdrop remains visible before video is ready', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SizedBox.square(
+          dimension: 320,
+          child: SessionVideoBlurredBackdrop(
+            child: ColoredBox(color: Colors.blue),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('session_video_blurred_backdrop')),
+      findsOneWidget,
+    );
+    expect(find.byType(ImageFiltered), findsOneWidget);
   });
 
   testWidgets('tap reveals controls and timeout hides them', (tester) async {

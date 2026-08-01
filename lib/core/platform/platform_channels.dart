@@ -41,6 +41,10 @@ abstract final class UpdateChannel {
   static const String name = 'nameless_audio/update';
 }
 
+abstract final class VideoDisplayChannel {
+  static const String name = 'nameless_audio/video_display';
+}
+
 // ---------------------------------------------------------------------------
 // Method names — native_playback
 // ---------------------------------------------------------------------------
@@ -52,6 +56,7 @@ abstract final class NativePlaybackMethod {
   static const String seek = 'seek';
   static const String setVolume = 'setVolume';
   static const String setSpeed = 'setSpeed';
+  static const String setTemporarySpeed = 'setTemporarySpeed';
   static const String setRepeatOne = 'setRepeatOne';
   static const String setAudioEffects = 'setAudioEffects';
   static const String setFadeMultiplier = 'setFadeMultiplier';
@@ -63,6 +68,12 @@ abstract final class NativePlaybackMethod {
   static const String dismissNotifications = 'dismissNotifications';
   static const String undismissNotifications = 'undismissNotifications';
   static const String snapshot = 'snapshot';
+}
+
+abstract final class VideoDisplayMethod {
+  static const String beginBrightnessControl = 'beginBrightnessControl';
+  static const String setBrightness = 'setBrightness';
+  static const String endBrightnessControl = 'endBrightnessControl';
 }
 
 // ---------------------------------------------------------------------------

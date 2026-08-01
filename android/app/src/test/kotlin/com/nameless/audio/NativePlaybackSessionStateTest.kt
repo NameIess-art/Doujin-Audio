@@ -17,6 +17,47 @@ import java.nio.ByteOrder
 
 class NativePlaybackSessionStateTest {
     @Test
+    fun `temporary speed affects progress without changing persisted speed`() {
+        val descriptor = NativeMediaItemDescriptor(
+            path = "/video.mp4",
+            uri = "file:///video.mp4",
+            title = "Video",
+            subtitle = null,
+            artUri = null
+        )
+        val session = NativePlaybackSession(
+            sessionId = "video",
+            createPlayer = { _, _ -> error("player should stay deferred") },
+            logWarn = { _, _, _ -> },
+            elapsedRealtimeMs = { 1_000L }
+        )
+        session.configure(
+            descriptor = descriptor,
+            queue = listOf(descriptor),
+            queueStartIndex = 0,
+            startPositionMs = 0,
+            volume = 1f,
+            speed = 1.25f,
+            repeatOne = false,
+            repeatAll = false,
+            shuffleModeEnabled = false,
+            autoPlay = false,
+            deferPlayerCreation = true
+        )
+
+        session.applyTemporarySpeed(2f)
+        val temporarySnapshot = session.snapshot()
+
+        assertEquals(1.25, temporarySnapshot["speed"] as Double, 0.001)
+        assertEquals(1.25f, session.storedSnapshot().speed, 0.001f)
+        assertEquals(2f, session.progressAnchorSnapshot().speed, 0.001f)
+
+        session.applyTemporarySpeed(null)
+        session.snapshot()
+        assertEquals(1.25f, session.progressAnchorSnapshot().speed, 0.001f)
+    }
+
+    @Test
     fun `duration keeps zero duration but filters unset and negative values`() {
         assertNull(durationOrNull(C.TIME_UNSET))
         assertNull(durationOrNull(-1L))

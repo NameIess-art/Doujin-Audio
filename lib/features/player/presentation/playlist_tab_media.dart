@@ -25,6 +25,45 @@ class _SessionHeroArtwork extends ConsumerWidget {
         ),
       ),
     );
+    final coverPoster = Stack(
+      fit: StackFit.expand,
+      children: [
+        TickerMode(
+          // Do not freeze a cover image's loading fade mid-frame while the
+          // detail route is being dragged.
+          enabled: true,
+          child: AsyncLocalCoverImage(
+            future: coverPathFuture,
+            requestKey: sessionId,
+            deferCommitDuringInteraction: true,
+            initialPath: library.resolvedPlaybackCoverPathForTrack(track),
+            retryFutureBuilder: () => track == null
+                ? Future<String?>.value()
+                : library.playbackCoverPathFutureForTrack(track),
+            seed: track?.displayName ?? track?.path ?? sessionId,
+            cacheWidth: coverCacheWidth,
+            useDefaultCacheWidth: coverCacheWidth != null,
+            fit: BoxFit.cover,
+            iconSize: 56,
+          ),
+        ),
+        Positioned.fill(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withValues(alpha: 0.1),
+                  Colors.transparent,
+                  Colors.black.withValues(alpha: 0.2),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -72,47 +111,9 @@ class _SessionHeroArtwork extends ConsumerWidget {
                 fullscreenTooltip: ref
                     .read(appLanguageProviderInstanceProvider)
                     .tr('fullscreen'),
-                poster: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    TickerMode(
-                      // Do not freeze a cover image's loading fade mid-frame
-                      // while the detail route is being dragged.
-                      enabled: true,
-                      child: AsyncLocalCoverImage(
-                        future: coverPathFuture,
-                        requestKey: sessionId,
-                        deferCommitDuringInteraction: true,
-                        initialPath: library.resolvedPlaybackCoverPathForTrack(
-                          track,
-                        ),
-                        retryFutureBuilder: () => track == null
-                            ? Future<String?>.value()
-                            : library.playbackCoverPathFutureForTrack(track),
-                        seed: track?.displayName ?? track?.path ?? sessionId,
-                        cacheWidth: coverCacheWidth,
-                        useDefaultCacheWidth: coverCacheWidth != null,
-                        fit: BoxFit.cover,
-                        iconSize: 56,
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.1),
-                              Colors.transparent,
-                              Colors.black.withValues(alpha: 0.2),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                poster: track?.isVideo == true
+                    ? SessionVideoBlurredBackdrop(child: coverPoster)
+                    : coverPoster,
               ),
             ),
           ),

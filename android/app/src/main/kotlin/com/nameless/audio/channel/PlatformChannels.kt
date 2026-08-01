@@ -10,6 +10,7 @@ internal object PlatformChannelNames {
     const val POWER = "nameless_audio/power"
     const val SUBTITLE_OVERLAY = "nameless_audio/subtitle_overlay"
     const val UPDATE = "nameless_audio/update"
+    const val VIDEO_DISPLAY = "nameless_audio/video_display"
 }
 
 internal object AppIconMethods {
@@ -24,6 +25,7 @@ internal object NativePlaybackMethods {
     const val SEEK = "seek"
     const val SET_VOLUME = "setVolume"
     const val SET_SPEED = "setSpeed"
+    const val SET_TEMPORARY_SPEED = "setTemporarySpeed"
     const val SET_REPEAT_ONE = "setRepeatOne"
     const val SET_AUDIO_EFFECTS = "setAudioEffects"
     const val SET_FADE_MULTIPLIER = "setFadeMultiplier"
@@ -35,6 +37,12 @@ internal object NativePlaybackMethods {
     const val DISMISS_NOTIFICATIONS = "dismissNotifications"
     const val UNDISMISS_NOTIFICATIONS = "undismissNotifications"
     const val SNAPSHOT = "snapshot"
+}
+
+internal object VideoDisplayMethods {
+    const val BEGIN_BRIGHTNESS_CONTROL = "beginBrightnessControl"
+    const val SET_BRIGHTNESS = "setBrightness"
+    const val END_BRIGHTNESS_CONTROL = "endBrightnessControl"
 }
 
 internal object PowerMethods {

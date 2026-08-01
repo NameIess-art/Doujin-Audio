@@ -57,6 +57,24 @@ class ChannelContractTest {
     }
 
     @Test
+    fun `required nullable double accepts null and validates range`() {
+        val nullReader = MethodCall("temporarySpeed", mapOf("speed" to null))
+            .argumentReader()
+        val valueReader = MethodCall("temporarySpeed", mapOf("speed" to 2.0))
+            .argumentReader()
+
+        assertNull(nullReader.requiredNullableDouble("speed", 0.5..2.0))
+        assertEquals(2.0, valueReader.requiredNullableDouble("speed", 0.5..2.0))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `required nullable double rejects missing key`() {
+        MethodCall("temporarySpeed", emptyMap<String, Any?>())
+            .argumentReader()
+            .requiredNullableDouble("speed", 0.5..2.0)
+    }
+
+    @Test
     fun `argument reader validates supported boundary types`() {
         val reader = MethodCall(
             "prepare",

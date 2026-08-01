@@ -34,6 +34,8 @@ open class MainActivity : FlutterFragmentActivity() {
     private var fileCacheScanStreamHandler: FileCacheScanStreamHandler? = null
     private var audioPickerCoordinator: AudioPickerCoordinator? = null
     private var appIconThemeMethodHandler: AppIconThemeMethodHandler? = null
+    private var videoDisplayMethodChannel: MethodChannel? = null
+    private var videoDisplayMethodHandler: VideoDisplayMethodHandler? = null
     private var pendingNotificationSessionId: String? = null
     private val subtitleOverlayCoordinator by lazy { SubtitleOverlayCoordinator(this) }
 
@@ -63,6 +65,13 @@ open class MainActivity : FlutterFragmentActivity() {
             .setMethodCallHandler(PowerMethodHandler(this))
         MethodChannel(messenger, PlatformChannelNames.UPDATE)
             .setMethodCallHandler(UpdateMethodHandler(this))
+        videoDisplayMethodHandler?.dispose()
+        val videoDisplayMethodHandler = VideoDisplayMethodHandler(this)
+        this.videoDisplayMethodHandler = videoDisplayMethodHandler
+        videoDisplayMethodChannel = MethodChannel(
+            messenger,
+            PlatformChannelNames.VIDEO_DISPLAY
+        ).also { it.setMethodCallHandler(videoDisplayMethodHandler) }
         MethodChannel(messenger, PlatformChannelNames.SUBTITLE_OVERLAY)
             .setMethodCallHandler(SubtitleOverlayMethodHandler(subtitleOverlayCoordinator))
         val appIconThemeMethodHandler = AppIconThemeMethodHandler(applicationContext)
@@ -140,11 +149,13 @@ open class MainActivity : FlutterFragmentActivity() {
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         disposeNativePlaybackBridge()
+        disposeVideoDisplayChannel()
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
     override fun onDestroy() {
         disposeNativePlaybackBridge()
+        disposeVideoDisplayChannel()
         notificationsMethodChannel = null
         appIconThemeMethodHandler = null
         fileCacheMethodChannel?.setMethodCallHandler(null)
@@ -207,5 +218,12 @@ open class MainActivity : FlutterFragmentActivity() {
             null
         }
         return notificationSessionIdFromIntent(intent.action, sessionId)
+    }
+
+    private fun disposeVideoDisplayChannel() {
+        videoDisplayMethodChannel?.setMethodCallHandler(null)
+        videoDisplayMethodChannel = null
+        videoDisplayMethodHandler?.dispose()
+        videoDisplayMethodHandler = null
     }
 }

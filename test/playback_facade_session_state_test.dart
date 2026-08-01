@@ -176,6 +176,28 @@ void main() {
     expect(session.isPlaybackStarting, isTrue);
   });
 
+  test('native volume failure restores the previous session volume', () async {
+    final library = _createLibraryFacade();
+    final native = _RecordingNativePlaybackRepository()..failVolume = true;
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+      nativeRepository: native,
+    )..configurePersistence(enabled: false);
+    final session = _session('volume-failure');
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback.registerSession(session);
+
+    final changed = await playback.setSessionVolume(session.id, 1.8);
+
+    expect(changed, isFalse);
+    expect(session.volume, 1.0);
+    expect(native.volumeUpdates, <(double, bool)>[(1.8, true)]);
+  });
+
   test('batch removal commits only native successes', () async {
     final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository()
@@ -1077,6 +1099,7 @@ final class _RecordingNativePlaybackRepository
   final List<(double, bool)> volumeUpdates = <(double, bool)>[];
   final List<double> speedUpdates = <double>[];
   bool failSpeed = false;
+  bool failVolume = false;
   bool failPauseAll = false;
   bool failClearAll = false;
   final Set<String> failedRemovalSessionIds = <String>{};
@@ -1123,6 +1146,9 @@ final class _RecordingNativePlaybackRepository
     bool reloadSource = true,
   }) async {
     volumeUpdates.add((volume, reloadSource));
+    if (failVolume) {
+      return const NativeFailure<NativePlaybackSnapshot>('volume failed');
+    }
     return const NativeSuccess<NativePlaybackSnapshot>();
   }
 

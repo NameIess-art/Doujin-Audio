@@ -152,6 +152,7 @@ internal class NativePlaybackSession(
     var focusDuckMultiplier: Float = 1f
         private set
     var speed: Float = 1f
+    private var temporarySpeed: Float? = null
     var repeatOne: Boolean = false
     var repeatAll: Boolean = false
     var shuffleModeEnabled: Boolean = false
@@ -354,6 +355,11 @@ internal class NativePlaybackSession(
         playerOrNull()?.let(::applySpeedToPlayer)
     }
 
+    fun applyTemporarySpeed(speed: Float?) {
+        temporarySpeed = speed?.let(::normalizeSpeed)
+        playerOrNull()?.let(::applySpeedToPlayer)
+    }
+
     fun applyAudioEffects(effects: NativeAudioEffects) {
         val change = audioEffects.apply(effects)
         playerOrNull()?.let { player ->
@@ -376,8 +382,10 @@ internal class NativePlaybackSession(
     }
 
     private fun applySpeedToPlayer(player: ExoPlayer) {
-        player.playbackParameters = PlaybackParameters(normalizeSpeed(speed))
+        player.playbackParameters = PlaybackParameters(effectiveSpeed())
     }
+
+    private fun effectiveSpeed(): Float = temporarySpeed ?: normalizeSpeed(speed)
 
     private fun applyWakeModeToPlayer(player: ExoPlayer) {
         val uris = buildList {
@@ -511,7 +519,7 @@ internal class NativePlaybackSession(
             bufferedPositionMs = lastBufferedPositionMs,
             durationMs = lastDurationMs,
             capturedElapsedRealtimeMs = elapsedRealtimeMs(),
-            speed = speed,
+            speed = effectiveSpeed(),
             isPlaying = lastIsPlaying,
             playWhenReady = lastPlayWhenReady
         )

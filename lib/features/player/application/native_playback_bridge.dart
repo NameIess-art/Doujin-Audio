@@ -308,6 +308,11 @@ abstract interface class NativePlaybackBridgeBase {
     double speed,
   );
 
+  Future<NativeResult<NativePlaybackSnapshot>> setTemporarySpeed(
+    String sessionId,
+    double? speed,
+  );
+
   Future<NativeResult<NativePlaybackSnapshot>> setRepeatOne(
     String sessionId,
     bool repeatOne, {
@@ -641,6 +646,17 @@ class NativePlaybackBridge implements NativePlaybackBridgeBase {
     double speed,
   ) {
     return _invokeSnapshot(NativePlaybackMethod.setSpeed, {
+      'sessionId': sessionId,
+      'speed': speed,
+    });
+  }
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setTemporarySpeed(
+    String sessionId,
+    double? speed,
+  ) {
+    return _invokeSnapshot(NativePlaybackMethod.setTemporarySpeed, {
       'sessionId': sessionId,
       'speed': speed,
     });

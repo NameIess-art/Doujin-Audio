@@ -1478,7 +1478,7 @@ final class PlaybackFacade {
     return gainDb.clamp(capabilities.minGainDb, capabilities.maxGainDb);
   }
 
-  Future<void> setSessionVolume(
+  Future<bool> setSessionVolume(
     String sessionId,
     double volume, {
     bool persist = true,
@@ -1488,7 +1488,7 @@ final class PlaybackFacade {
     if (session == null ||
         session.isDisposed ||
         !identical(_service.sessions[session.id], session)) {
-      return;
+      return false;
     }
     final nextVolume = volume.clamp(0.0, maxSessionVolume);
     final hasDeferredReload = _deferredVolumeReloadSessionIds.contains(
@@ -1496,13 +1496,26 @@ final class PlaybackFacade {
     );
     if ((session.volume - nextVolume).abs() < 0.001) {
       if (persist && hasDeferredReload) {
-        await nativeRepository.setVolume(session.id, session.volume);
-        if (!_isCurrentSession(session)) return;
+        final response = await nativeRepository.setVolume(
+          session.id,
+          session.volume,
+        );
+        if (response.isFailure) {
+          _logNativeCommandFailure(
+            'setSessionVolume',
+            response,
+            sessionId: session.id,
+          );
+          return false;
+        }
+        if (!_isCurrentSession(session)) return true;
         _deferredVolumeReloadSessionIds.remove(session.id);
       }
       if (persist) await flushSessionStatePersistence();
-      return;
+      return true;
     }
+    final previousVolume = session.volume;
+    final previouslyDeferred = hasDeferredReload;
     session.volume = nextVolume;
     if (persist) {
       _deferredVolumeReloadSessionIds.remove(session.id);
@@ -1513,13 +1526,32 @@ final class PlaybackFacade {
       _service.markActiveSessionsDirty();
       _onSessionStateChanged?.call();
     }
-    await nativeRepository.setVolume(
+    final response = await nativeRepository.setVolume(
       session.id,
       session.volume,
       reloadSource: persist,
     );
-    if (!_isCurrentSession(session)) return;
+    if (!_isCurrentSession(session)) return response.isOk;
+    if (response.isFailure) {
+      session.volume = previousVolume;
+      if (previouslyDeferred) {
+        _deferredVolumeReloadSessionIds.add(session.id);
+      } else {
+        _deferredVolumeReloadSessionIds.remove(session.id);
+      }
+      if (notify) {
+        _service.markActiveSessionsDirty();
+        _onSessionStateChanged?.call();
+      }
+      _logNativeCommandFailure(
+        'setSessionVolume',
+        response,
+        sessionId: session.id,
+      );
+      return false;
+    }
     if (persist) await flushSessionStatePersistence();
+    return true;
   }
 
   Future<void> setSessionSpeed(
@@ -1555,6 +1587,26 @@ final class PlaybackFacade {
       return;
     }
     if (persist) await flushSessionStatePersistence();
+  }
+
+  Future<bool> setSessionTemporarySpeed(String sessionId, double? speed) async {
+    final session = _service.sessions[sessionId];
+    if (session == null ||
+        session.isDisposed ||
+        !identical(_service.sessions[session.id], session)) {
+      return false;
+    }
+    final normalizedSpeed = speed?.clamp(0.5, 2.0).toDouble();
+    final response = await nativeRepository.setTemporarySpeed(
+      session.id,
+      normalizedSpeed,
+    );
+    if (response.isOk) return true;
+    AppLogService.warning(
+      'PlaybackFacade.setSessionTemporarySpeed error: '
+      '${response.errorCodeOrNull} ${response.errorOrNull}',
+    );
+    return false;
   }
 
   bool _isCurrentSession(PlaybackSession? session) {

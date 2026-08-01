@@ -141,6 +141,19 @@ internal class ChannelArgumentReader(call: MethodCall) {
         return value
     }
 
+    fun requiredNullableDouble(
+        key: String,
+        range: ClosedRange<Double>? = null
+    ): Double? {
+        require(arguments.containsKey(key)) { "Missing argument: $key" }
+        if (arguments[key] == null) return null
+        val value = requiredDouble(key)
+        require(range == null || value in range) {
+            "Numeric argument is outside the allowed range: $key"
+        }
+        return value
+    }
+
     fun requiredBoolean(key: String): Boolean {
         val value = arguments[key]
         require(value is Boolean) { "Missing or invalid boolean argument: $key" }

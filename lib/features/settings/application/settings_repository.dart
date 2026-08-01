@@ -169,7 +169,7 @@ class SettingsRepository {
     syncSlice(isInitialized: true);
   }
 
-  Future<void> resetForBackupRestore() async {
+  Future<void> resetPersistedState() async {
     _resetValues();
     syncSlice();
   }
@@ -214,13 +214,6 @@ class SettingsRepository {
       'allowDuplicateWorks': allowDuplicateWorks,
       'reduceAnimations': reduceAnimations,
     });
-  }
-
-  Future<void> prepareForBackupExport() async {
-    await Future.wait<void>(<Future<void>>[
-      persist(),
-      _persistConverterSettings(),
-    ]);
   }
 
   Future<void> setConverterSettings({String? format, String? bitrate}) async {

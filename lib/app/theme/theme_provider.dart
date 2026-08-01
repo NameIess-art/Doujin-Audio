@@ -91,9 +91,7 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
   }
 }
 
-class ThemeProvider
-    with ChangeNotifier
-    implements PersistedStateReloader, PersistedStateExportPreparer {
+class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   static const _themeModeKey = 'themeMode';
   static const _differentiateAsmrThemeKey = 'differentiateAsmrTheme';
   static const _appThemeColorKey = 'appThemeColor';
@@ -200,19 +198,6 @@ class ThemeProvider
     _rebuildThemes();
     notifyListeners();
     await AppPreferences.setString(_asmrThemeColorKey, value.name);
-  }
-
-  @override
-  Future<void> prepareForPersistedStateExport() async {
-    await Future.wait<bool>(<Future<bool>>[
-      AppPreferences.setString(_themeModeKey, _themeMode.name),
-      AppPreferences.setBool(
-        _differentiateAsmrThemeKey,
-        _differentiateAsmrTheme,
-      ),
-      AppPreferences.setString(_appThemeColorKey, _appThemeColor.name),
-      AppPreferences.setString(_asmrThemeColorKey, _asmrThemeColor.name),
-    ]);
   }
 
   @override

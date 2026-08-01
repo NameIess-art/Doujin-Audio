@@ -471,13 +471,14 @@ class AudioDetailRepository {
         changed.add(imported);
         continue;
       }
-      final restored = await _restoreMissingDatabaseCoverFromBackup(
-        databaseDetail,
+      final merged = await _restoreMissingDatabaseCoverFromBackup(
+        await _mergePreferredDetail(databaseDetail, backupDetail),
         backupDetail,
       );
-      if (restored.cardCoverPath != databaseDetail.cardCoverPath ||
-          restored.cardCoverSelected != databaseDetail.cardCoverSelected) {
-        changed.add(restored);
+      if (_metadataScore(merged) > _metadataScore(databaseDetail) ||
+          merged.cardCoverPath != databaseDetail.cardCoverPath ||
+          merged.cardCoverSelected != databaseDetail.cardCoverSelected) {
+        changed.add(_normalizeImportedDetail(merged));
       }
       mirrorTargets.add(target);
     }

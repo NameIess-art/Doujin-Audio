@@ -16,12 +16,6 @@ class UiOperationScope {
   static const settingsPermissionStatus = UiOperationScope(
     'settings:permission-status',
   );
-  static const dataSupportBackupExport = UiOperationScope(
-    'data-support:backup-export',
-  );
-  static const dataSupportBackupRestore = UiOperationScope(
-    'data-support:backup-restore',
-  );
   static const dataSupportDiagnosticsExport = UiOperationScope(
     'data-support:diagnostics-export',
   );

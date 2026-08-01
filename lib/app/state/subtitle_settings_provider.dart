@@ -71,7 +71,7 @@ class SubtitleSettingsState {
 }
 
 class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
-    implements PersistedStateReloader, PersistedStateExportPreparer {
+    implements PersistedStateReloader {
   SubtitleSettingsNotifier() : super(SubtitleSettingsState()) {
     _loadFuture = _load();
   }
@@ -148,44 +148,6 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
       borderDepth: borderDepth,
       fontSize: fontSize,
     );
-  }
-
-  @override
-  Future<void> prepareForPersistedStateExport() async {
-    await _loadFuture;
-    final showList = state.showSubtitlesMap.entries
-        .map((entry) => '${entry.key}|${entry.value}')
-        .toList(growable: false);
-    final globalList = state.globalSubtitlesMap.entries
-        .map((entry) => '${entry.key}|${entry.value}')
-        .toList(growable: false);
-    final positions = state.positions.entries
-        .map((entry) => '${entry.key}|${entry.value}')
-        .toList(growable: false);
-    await Future.wait<bool>(<Future<bool>>[
-      AppPreferences.setStringList('subtitle_show_map', showList),
-      AppPreferences.setStringList('subtitle_global_map', globalList),
-      AppPreferences.setStringList('subtitle_positions', positions),
-      AppPreferences.setString('subtitle_font_family', state.fontFamily),
-      AppPreferences.setString(
-        'subtitle_font_color',
-        state.fontColor?.toARGB32().toRadixString(16).padLeft(8, '0') ?? '',
-      ),
-      AppPreferences.setString(
-        'subtitle_background_opacity',
-        state.backgroundOpacity.toString(),
-      ),
-      AppPreferences.setString(
-        'subtitle_background_color',
-        state.backgroundColor?.toARGB32().toRadixString(16).padLeft(8, '0') ??
-            '',
-      ),
-      AppPreferences.setString(
-        'subtitle_border_depth',
-        state.borderDepth.toString(),
-      ),
-      AppPreferences.setString('subtitle_font_size', state.fontSize.toString()),
-    ]);
   }
 
   @override

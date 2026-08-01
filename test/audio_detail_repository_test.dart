@@ -226,6 +226,55 @@ void main() {
     expect(persisted?.duration, const Duration(minutes: 12));
   });
 
+  test(
+    're-import keeps older JSON fields missing from a newer sparse database row',
+    () async {
+      final target = AudioDetailTarget.libraryRootFolder(tempDir.path);
+      await appDatabase.upsertAudioDetail(
+        AudioDetail.empty(target).copyWith(
+          rjCode: 'RJ123456',
+          duration: const Duration(minutes: 20),
+          createdAt: DateTime.utc(2026, 7, 20),
+          updatedAt: DateTime.utc(2026, 7, 21),
+        ),
+      );
+      final backupFile = File(
+        '${tempDir.path}${Platform.pathSeparator}'
+        '${AudioDetailRepository.backupFileName}',
+      );
+      await backupFile.writeAsString(
+        json.encode(
+          AudioDetail.empty(target)
+              .copyWith(
+                rjCode: 'RJ123456',
+                workTitle: 'Complete JSON title',
+                circleName: 'Complete circle',
+                voiceActors: const <String>['Voice actor'],
+                tags: const <String>['ASMR'],
+                createdAt: DateTime.utc(2026, 7, 18),
+                updatedAt: DateTime.utc(2026, 7, 19),
+              )
+              .toBackupJson(),
+        ),
+      );
+
+      await repository.importBackupsMany(<AudioDetailTarget>[target]);
+
+      final restored = (await repository.load(target)).detail;
+      expect(restored.workTitle, 'Complete JSON title');
+      expect(restored.circleName, 'Complete circle');
+      expect(restored.voiceActors, const <String>['Voice actor']);
+      expect(restored.tags, const <String>['ASMR']);
+      expect(restored.duration, const Duration(minutes: 20));
+      final mirrored = json.decode(await backupFile.readAsString());
+      expect(
+        (mirrored as Map<String, dynamic>)['workTitle'],
+        'Complete JSON title',
+      );
+      expect(mirrored['circleName'], 'Complete circle');
+    },
+  );
+
   test('loadMany reads details after an explicit JSON import', () async {
     final workFolder = Directory(
       '${tempDir.path}${Platform.pathSeparator}batch-work',

@@ -4,11 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../application/data_support_file_service.dart';
-import '../../library/presentation/library_scan_feedback.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
-import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../app/presentation/onboarding_page.dart';
 
@@ -28,79 +26,6 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   void initState() {
     super.initState();
     _fileService = ref.read(dataSupportFileServiceProvider);
-  }
-
-  Future<void> _exportBackup() async {
-    final dialogTitle = ref
-        .read(appLanguageProviderInstanceProvider)
-        .tr('export_backup');
-    await _run(
-      scope: UiOperationScope.dataSupportBackupExport,
-      labelKey: 'export_backup',
-      action: () async {
-        final savedPath = await ref
-            .read(backupRestoreCoordinatorProvider)
-            .exportBackup(dialogTitle: dialogTitle);
-        if (savedPath != null && mounted) {
-          _showSuccess(
-            'backup_exported',
-            titleKey: 'operation_completed',
-            detail: savedPath,
-            duration: const Duration(seconds: 5),
-          );
-        }
-      },
-    );
-  }
-
-  Future<void> _restoreBackup() async {
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('restore_backup'),
-      message: i18n.tr('restore_backup_confirm'),
-      confirmLabel: i18n.tr('restore'),
-      cancelLabel: i18n.tr('cancel'),
-      icon: Icons.restore_rounded,
-    );
-    if (!confirmed) return;
-
-    await _run(
-      scope: UiOperationScope.dataSupportBackupRestore,
-      labelKey: 'restore_backup',
-      action: () async {
-        final result = await ref
-            .read(backupRestoreCoordinatorProvider)
-            .pickAndRestoreBackup(
-              labels: LibraryScanPresentationMapper.labels(i18n),
-            );
-        if (result == null) return;
-        if (result.isCancelled) return;
-        if (!result.isValid) {
-          if (!mounted) return;
-          showAppSnackBar(
-            context,
-            i18n.tr('backup_invalid_next_step'),
-            tone: AppFeedbackTone.destructive,
-            title: i18n.tr('backup_invalid'),
-            icon: Icons.error_outline_rounded,
-            actionLabel: i18n.tr('export_diagnostics'),
-            onAction: _exportDiagnostics,
-            duration: const Duration(seconds: 6),
-          );
-          return;
-        }
-        if (!mounted) return;
-        showAppSnackBar(
-          context,
-          i18n.tr('backup_restored_loaded'),
-          tone: AppFeedbackTone.success,
-          title: i18n.tr('operation_completed'),
-          icon: Icons.check_circle_outline_rounded,
-          duration: const Duration(seconds: 4),
-        );
-      },
-    );
   }
 
   Future<void> _exportDiagnostics() async {
@@ -186,18 +111,6 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final exportBusy = ref
-        .watch(
-          uiOperationForScopeProvider(UiOperationScope.dataSupportBackupExport),
-        )
-        .isBusy;
-    final restoreBusy = ref
-        .watch(
-          uiOperationForScopeProvider(
-            UiOperationScope.dataSupportBackupRestore,
-          ),
-        )
-        .isBusy;
     final diagnosticsBusy = ref
         .watch(
           uiOperationForScopeProvider(
@@ -205,7 +118,7 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
           ),
         )
         .isBusy;
-    final dataOperationBusy = exportBusy || restoreBusy || diagnosticsBusy;
+    final dataOperationBusy = diagnosticsBusy;
     return SizedBox(
       height: MediaQuery.sizeOf(context).height * 0.75,
       child: Scaffold(
@@ -231,22 +144,6 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
               child: dataOperationBusy ? const LinearProgressIndicator() : null,
             ),
             const SizedBox(height: 8),
-            _ActionCard(
-              key: const ValueKey('data-support-export-backup'),
-              title: i18n.tr('export_backup'),
-              subtitle: i18n.tr('export_backup_subtitle'),
-              icon: Icons.archive_outlined,
-              busy: exportBusy,
-              onTap: dataOperationBusy ? null : _exportBackup,
-            ),
-            _ActionCard(
-              key: const ValueKey('data-support-restore-backup'),
-              title: i18n.tr('restore_backup'),
-              subtitle: i18n.tr('restore_backup_subtitle'),
-              icon: Icons.restore_rounded,
-              busy: restoreBusy,
-              onTap: dataOperationBusy ? null : _restoreBackup,
-            ),
             _ActionCard(
               key: const ValueKey('data-support-export-diagnostics'),
               title: i18n.tr('export_diagnostics'),

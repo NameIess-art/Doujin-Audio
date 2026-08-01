@@ -13,12 +13,8 @@ import 'persisted_state_reloader.dart';
 import 'playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
 
-/// Owns ordered startup loading and backup-restore runtime reloading.
-final class AppPersistenceCoordinator
-    implements
-        PersistedStateReloader,
-        PersistedStateExportPreparer,
-        PersistedStateReplacementPreparer {
+/// Owns ordered startup loading and runtime state reloading.
+final class AppPersistenceCoordinator implements PersistedStateReloader {
   AppPersistenceCoordinator({
     required LibraryFacade library,
     required PlaybackFacade playback,
@@ -153,23 +149,6 @@ final class AppPersistenceCoordinator
   }
 
   @override
-  Future<void> prepareForPersistedStateExport() async {
-    if (_disposed) return;
-    await _settings.prepareForBackupExport();
-    await _library.prepareForBackupExport();
-  }
-
-  @override
-  Future<void> prepareForPersistedStateReplacement() async {
-    if (_disposed) return;
-    _loadEpoch++;
-    _playback.cancelScheduledPersistence();
-    _library.cancelPendingScanProgressNotification();
-    _notifications.prepareForPersistenceReset();
-    await _library.prepareForBackupRestore();
-  }
-
-  @override
   Future<void> reloadPersistedState() async {
     if (_disposed) return;
     _loadEpoch++;
@@ -185,12 +164,12 @@ final class AppPersistenceCoordinator
     _uiWarmup.enterBackground();
     _notifications.prepareForPersistenceReset();
 
-    await _playback.resetForBackupRestore();
-    await _library.resetForBackupRestore();
-    await _timer.resetForBackupRestore();
-    await _settings.resetForBackupRestore();
+    await _playback.resetPersistedState();
+    await _library.resetPersistedState();
+    await _timer.resetPersistedState();
+    await _settings.resetPersistedState();
     _subtitles.clear();
-    await _notifications.resetForBackupRestore();
+    await _notifications.resetPersistedState();
     _syncSlices(isInitialized: false);
   }
 

@@ -228,7 +228,7 @@ final class TimerFacade {
     _applyFadeMultiplier(1.0);
   }
 
-  Future<void> resetForBackupRestore() async {
+  Future<void> resetPersistedState() async {
     _cachedPreferences = null;
     resetRuntimeState();
     _service

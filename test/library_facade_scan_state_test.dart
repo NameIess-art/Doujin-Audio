@@ -76,66 +76,6 @@ void main() {
     expect(facade.state.isBackgroundScanning, isFalse);
   });
 
-  test(
-    'backup export preparation flushes current folder and library roots',
-    () async {
-      final facade = LibraryFacade.create();
-      addTearDown(facade.dispose);
-      facade
-        ..addWatchedFolder('/music/folder')
-        ..addWatchedLibrary('/music/library');
-
-      await facade.prepareForBackupExport();
-
-      final preferences = await SharedPreferences.getInstance();
-      expect(jsonDecode(preferences.getString('watched_folders_v1')!), <String>[
-        '/music/folder',
-      ]);
-      expect(
-        jsonDecode(preferences.getString('watched_libraries_v1')!),
-        <String>['/music/library'],
-      );
-    },
-  );
-
-  test(
-    'backup source paths exclude derived library children and scanned tracks',
-    () {
-      final service = LibraryService()
-        ..watchedLibraries.add('/music/library')
-        ..watchedFolders.addAll(<String>[
-          '/music/library/work',
-          '/music/standalone',
-        ]);
-      service.addTracks(<MusicTrack>[
-        MusicTrack(
-          path: '/music/library/work/01.wav',
-          displayName: '01.wav',
-          groupKey: '/music/library/work',
-          groupTitle: 'work',
-          groupSubtitle: 'work',
-          isSingle: false,
-        ),
-        MusicTrack(
-          path: '/music/manual.mp3',
-          displayName: 'manual.mp3',
-          groupKey: '__single_files__',
-          groupTitle: 'Imported',
-          groupSubtitle: 'Manual',
-          isSingle: true,
-        ),
-      ], persist: false);
-      final facade = LibraryFacade.create(service: service);
-      addTearDown(facade.dispose);
-
-      final sources = facade.backupImportSources;
-
-      expect(sources.libraries, <String>['/music/library']);
-      expect(sources.folders, <String>['/music/standalone']);
-      expect(sources.files, <String>['/music/manual.mp3']);
-    },
-  );
-
   test('detail target uses the work root inside a watched library', () async {
     const libraryRoot =
         'content://com.android.externalstorage.documents/tree/'

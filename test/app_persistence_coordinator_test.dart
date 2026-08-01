@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/application/app_persistence_coordinator.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
@@ -25,7 +23,7 @@ void main() {
   sqfliteFfiInit();
   databaseFactory = databaseFactoryFfi;
 
-  test('loads owners and resets them in backup restore order', () async {
+  test('loads owners and resets them before a runtime reload', () async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final database = await databaseFactoryFfi.openDatabase(
       inMemoryDatabasePath,
@@ -130,50 +128,6 @@ void main() {
     expect(library.state.isInitialized, isTrue);
     expect(playback.state.isInitialized, isTrue);
     expect(timer.state.isInitialized, isTrue);
-
-    await coordinator.prepareForPersistedStateExport();
-    final preferences = await SharedPreferences.getInstance();
-    final playbackSettings =
-        jsonDecode(preferences.getString('playback_settings_v1')!)
-            as Map<String, dynamic>;
-    expect(playbackSettings.keys.toSet(), <String>{
-      'multiThreadPlaybackEnabled',
-      'notificationsEnabled',
-      'showPlaybackCard',
-      'startupPage',
-      'portraitLockEnabled',
-      'bottomNavigationStyle',
-      'playbackDetailSubtitleStyle',
-      'autoPlayAddedSessions',
-      'autoCheckUpdates',
-      'recordPlaybackProgress',
-      'asmrPlaybackCacheEnabled',
-      'blurPlayerBackgroundEnabled',
-      'uiBlurEffectEnabled',
-      'hapticFeedbackEnabled',
-      'coverImageResolution',
-      'coverImageDisplayMode',
-      'asmrDownloadDestinationRoot',
-      'asmrDownloadConflictPolicy',
-      'asmrDownloadSaveMetadata',
-      'asmrDownloadFolderNameFields',
-      'dlsiteMetadataLanguage',
-      'cardInfoFields',
-      'cardPositionsLocked',
-      'customEqPresets',
-      'maxCacheBytes',
-      'audioDeviceDisconnectBehavior',
-      'transientAudioFocusLossBehavior',
-      'interruptionResumeBehavior',
-      'startupPlaybackRestoreBehavior',
-      'allowDuplicateWorks',
-      'reduceAnimations',
-    });
-    expect(playbackSettings['coverImageDisplayMode'], 'fill');
-    expect(
-      jsonDecode(preferences.getString('converter_settings_v1')!),
-      <String, Object?>{'format': 'mp3', 'bitrate': '320k'},
-    );
 
     settings.failNextLoad = true;
     await expectLater(coordinator.reloadPersistedState(), throwsStateError);

@@ -1123,7 +1123,7 @@ void main() {
     );
 
     test(
-      'reload after backup restore replaces stale library and sessions',
+      'persisted state reload replaces stale library and sessions',
       () async {
         final oldTrack = MusicTrack(
           path: 'https://example.com/old.mp3',
@@ -1133,9 +1133,9 @@ void main() {
           groupSubtitle: 'Old',
           isSingle: false,
         );
-        const restoredSessionId = 'backup_restored_session';
+        const restoredSessionId = 'reloaded_session';
         final restoredTrack = MusicTrack(
-          path: 'https://example.com/restored-after-backup.mp3',
+          path: 'https://example.com/reloaded.mp3',
           displayName: 'restored',
           groupKey: 'restored',
           groupTitle: 'Restored',
@@ -1182,7 +1182,7 @@ void main() {
         await databaseRepository.saveAllSessions(<PersistedPlaybackSession>[
           PersistedPlaybackSession(
             id: restoredSessionId,
-            trackPath: 'https://example.com/restored-after-backup.mp3',
+            trackPath: 'https://example.com/reloaded.mp3',
             loopModeIndex: 1,
             volume: 1.0,
             positionMs: 0,

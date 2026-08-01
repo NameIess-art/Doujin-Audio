@@ -287,10 +287,7 @@ final class _AsmrControllerDependencies {
 }
 
 class AsmrLibraryController extends ChangeNotifier
-    implements
-        AsmrPlaybackSource,
-        PersistedStateReloader,
-        PersistedStateExportPreparer {
+    implements AsmrPlaybackSource, PersistedStateReloader {
   AsmrLibraryController({
     AsmrApiService? apiService,
     AsmrAuthService? authService,
@@ -741,14 +738,6 @@ class AsmrLibraryController extends ChangeNotifier
         isCurrent: () => requestEpoch == _authEpoch,
       );
     }
-  }
-
-  @override
-  Future<void> prepareForPersistedStateExport() async {
-    await initialize();
-    await _preferencesStore.saveContentLanguagePreference(
-      _contentLanguagePreference,
-    );
   }
 
   @override

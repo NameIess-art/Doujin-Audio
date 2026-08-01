@@ -152,27 +152,6 @@ final class LibraryFacade implements LibraryCatalog {
   @override
   List<String> get watchedLibraries =>
       UnmodifiableListView<String>(_service.watchedLibraries);
-  LocalLibraryImportSources get backupImportSources {
-    final libraries = _distinctImportPaths(_service.watchedLibraries);
-    final folders = _distinctImportPaths(
-      _service.watchedFolders.where(
-        (folder) => !libraries.any(
-          (library) => PathMatcher.isWithinOrEqual(folder, library),
-        ),
-      ),
-    );
-    final files = _distinctImportPaths(
-      _service.library
-          .where((track) => track.groupKey == '__single_files__')
-          .map((track) => track.path),
-    );
-    return LocalLibraryImportSources(
-      libraries: libraries,
-      folders: folders,
-      files: files,
-    );
-  }
-
   @override
   bool get isScanning => _service.isScanning;
   bool get isBackgroundScanning => _service.isBackgroundScanning;
@@ -184,15 +163,6 @@ final class LibraryFacade implements LibraryCatalog {
   int get scanFailureCount => _service.scanFailureCount;
   AudioLibraryCategorySnapshot? get categorySnapshot =>
       snapshotCacheService.categorySnapshotSync;
-
-  List<String> _distinctImportPaths(Iterable<String> values) {
-    final seen = <String>{};
-    return values
-        .map((value) => value.trim())
-        .where((value) => value.isNotEmpty)
-        .where((value) => seen.add(PathMatcher.equivalenceKey(value)))
-        .toList(growable: false);
-  }
 
   Future<void> loadPersistedState() async {
     final tracksFuture = databaseRepository.loadStartupTracks();
@@ -260,7 +230,7 @@ final class LibraryFacade implements LibraryCatalog {
     _syncStateSlice(isInitialized: true);
   }
 
-  Future<void> prepareForBackupRestore() async {
+  Future<void> prepareForPersistedStateReset() async {
     _maintenanceEpoch++;
     _missingDurationBackfill = null;
     _missingDurationBackfillRequestedAgain = false;
@@ -270,19 +240,8 @@ final class LibraryFacade implements LibraryCatalog {
     await detailCacheService.suspendAndWait();
   }
 
-  Future<void> prepareForBackupExport() async {
-    if (_disposed) return;
-    await Future.wait<void>(<Future<void>>[
-      _saveGroupOrder(),
-      _saveWatchedFolders(),
-      _saveWatchedLibraries(),
-      _saveLibraryExclusions(),
-      _saveLibraryNodeOrder(),
-    ]);
-  }
-
-  Future<void> resetForBackupRestore() async {
-    await prepareForBackupRestore();
+  Future<void> resetPersistedState() async {
+    await prepareForPersistedStateReset();
     _service.scanProgressNotifyTimer?.cancel();
     _service
       ..scanProgressNotifyTimer = null

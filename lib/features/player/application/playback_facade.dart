@@ -469,7 +469,7 @@ final class PlaybackFacade {
     );
   }
 
-  Future<void> resetForBackupRestore() async {
+  Future<void> resetPersistedState() async {
     cancelScheduledPersistence();
     final removedSessions = _service.sessions.values.toList(growable: false);
     _service.sessions.clear();
@@ -483,7 +483,7 @@ final class PlaybackFacade {
       await nativeRepository.clearAll();
     } catch (error, stackTrace) {
       AppLogService.error(
-        'playback_backup_restore_clear_failed',
+        'playback_persisted_state_reset_clear_failed',
         error: error,
         stackTrace: stackTrace,
       );

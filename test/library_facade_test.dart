@@ -543,7 +543,7 @@ void main() {
     },
   );
 
-  test('backup restore resets cached audio details', () async {
+  test('persisted state reset clears cached audio details', () async {
     final workDir = await Directory.systemTemp.createTemp(
       'library_detail_restore_cache_',
     );
@@ -566,13 +566,13 @@ void main() {
       ),
     );
 
-    await runtimeGraph.library.resetForBackupRestore();
+    await runtimeGraph.library.resetPersistedState();
     final reloaded = await runtimeGraph.library.loadAudioDetail(target);
 
     expect(reloaded.detail.workTitle, 'Restored database title');
   });
 
-  test('backup restore cancels stale duration detail writes', () async {
+  test('persisted state reset cancels stale duration detail writes', () async {
     final workDir = await Directory.systemTemp.createTemp(
       'library_detail_restore_race_',
     );
@@ -610,7 +610,7 @@ void main() {
     );
     await durationReadStarted.future;
 
-    await runtimeGraph.library.resetForBackupRestore();
+    await runtimeGraph.library.resetPersistedState();
     await runtimeGraph.library.databaseRepository.upsertAudioDetail(
       AudioDetail.empty(target).copyWith(
         workTitle: 'Restored database title',

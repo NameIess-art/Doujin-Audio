@@ -467,7 +467,7 @@ const Map<String, String> appLanguageJa = {
   'asmr_download_folder_field_circle_name': 'サークル',
   'asmr_download_folder_field_work_title': '作品名',
   'section_data_storage': 'データとストレージ',
-  'section_data_storage_subtitle': 'バックアップ、キャッシュ、データ管理',
+  'section_data_storage_subtitle': 'キャッシュとデータ管理',
   'section_updates_permissions': '更新と権限',
   'section_updates_permissions_subtitle': '権限、更新、バックグラウンド動作',
   'permission_center': '権限とバックグラウンド',
@@ -488,21 +488,9 @@ const Map<String, String> appLanguageJa = {
   'permission_update_install_description':
       'ユーザーが明示的にダウンロードした GitHub Release 更新のインストールにのみ使用します。',
   'data_and_support': 'データとサポート',
-  'data_and_support_subtitle': 'データのバックアップ・復元と診断レポートの出力。',
-  'export_backup': 'バックアップを出力',
-  'export_backup_subtitle':
-      'ライブラリ、設定、ASMR.ONE のログイン認証情報を出力します。認証情報はバックアップに平文で保存され、再生リストは含まれません。',
-  'restore_backup': 'バックアップを復元',
-  'restore_backup_subtitle': 'ライブラリ、設定、ASMR.ONE のログイン状態を復元します。再生リストは対象外です。',
-  'restore_backup_confirm':
-      'バックアップのデータで現在のライブラリ、設定、ASMR.ONE のログイン状態を置き換えます。バックアップ内の認証情報は平文で、再生リストは復元されません。失敗時は自動的に元に戻します。続行しますか？',
+  'data_and_support_subtitle': '診断レポートの出力とプライバシー概要の確認。',
   'operation_completed': '完了',
   'operation_failed': '操作に失敗しました',
-  'backup_exported': 'バックアップの出力先：{path}',
-  'backup_invalid': 'バックアップが無効、破損、または未対応です。',
-  'backup_invalid_next_step': '別のバックアップを選択してください。問題が続く場合は診断レポートを出力してください。',
-  'backup_restored_restart': 'バックアップを復元し、データを読み込みました。',
-  'backup_restored_loaded': '復元したデータと設定を読み込みました。',
   'export_diagnostics': '診断レポートを出力',
   'unexpected_error_title': 'Nameless Audio で予期しないエラーが発生しました',
   'unexpected_error_message':

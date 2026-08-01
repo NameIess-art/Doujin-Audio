@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
 import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -148,26 +147,6 @@ void main() {
     expect(provider.preference, AppLanguagePreference.en);
     expect(provider.language, AppLanguage.en);
   });
-
-  testWidgets(
-    'backup preparation materializes and reloads interface language',
-    (tester) async {
-      SharedPreferences.setMockInitialValues(const <String, Object>{});
-      await AppPreferences.init();
-      final provider = AppLanguageProvider();
-      addTearDown(provider.dispose);
-      await tester.pump();
-
-      await provider.prepareForPersistedStateExport();
-      final preferences = await SharedPreferences.getInstance();
-      expect(preferences.getString('app_language'), 'system');
-
-      await preferences.setString('app_language', 'ja');
-      await provider.reloadPersistedState();
-      expect(provider.preference, AppLanguagePreference.ja);
-      expect(provider.language, AppLanguage.ja);
-    },
-  );
 
   test('content language preference follows or overrides page language', () {
     expect(

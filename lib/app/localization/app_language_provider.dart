@@ -63,7 +63,7 @@ class AppLanguageState {
 
 class AppLanguageProvider
     with ChangeNotifier, WidgetsBindingObserver
-    implements PersistedStateReloader, PersistedStateExportPreparer {
+    implements PersistedStateReloader {
   static const _prefsKey = 'app_language';
 
   static const supportedLocales = [Locale('zh'), Locale('ja'), Locale('en')];
@@ -119,12 +119,6 @@ class AppLanguageProvider
       notifyListeners();
     }
     await AppPreferences.setString(_prefsKey, preference.name);
-  }
-
-  @override
-  Future<void> prepareForPersistedStateExport() async {
-    await _loadFuture;
-    await AppPreferences.setString(_prefsKey, _preference.name);
   }
 
   @override

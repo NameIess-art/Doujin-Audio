@@ -505,7 +505,7 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_folder_field_circle_name': 'Circle',
   'asmr_download_folder_field_work_title': 'Work title',
   'section_data_storage': 'Data & Storage',
-  'section_data_storage_subtitle': 'Backups, cache, and data management',
+  'section_data_storage_subtitle': 'Cache and data management',
   'section_updates_permissions': 'Updates & Permissions',
   'section_updates_permissions_subtitle':
       'Permissions, updates, and background access',
@@ -533,23 +533,9 @@ const Map<String, String> appLanguageEn = {
       'Only used to install GitHub Release updates you explicitly download.',
   'data_and_support': 'Data & support',
   'data_and_support_subtitle':
-      'Back up and restore data, or export a diagnostic report.',
-  'export_backup': 'Export backup',
-  'export_backup_subtitle':
-      'Exports the library, settings, and ASMR.ONE login credentials. Credentials are stored in plaintext in the backup; playback lists are excluded.',
-  'restore_backup': 'Restore backup',
-  'restore_backup_subtitle':
-      'Restores the library, settings, and ASMR.ONE login. Playback lists are excluded.',
-  'restore_backup_confirm':
-      'This replaces the current library database, settings, and ASMR.ONE login with data from the backup. Account credentials in the backup are plaintext, and playback lists are not restored. Failed restores roll back automatically. Continue?',
+      'Export diagnostics and review the privacy summary.',
   'operation_completed': 'Completed',
   'operation_failed': 'Operation failed',
-  'backup_exported': 'Backup exported to {path}',
-  'backup_invalid': 'The backup is invalid, damaged, or unsupported.',
-  'backup_invalid_next_step':
-      'Choose another backup, or export diagnostics if this keeps happening.',
-  'backup_restored_restart': 'Backup restored and loaded.',
-  'backup_restored_loaded': 'Restored data and settings have been loaded.',
   'export_diagnostics': 'Export diagnostics',
   'unexpected_error_title': 'Nameless Audio encountered an unexpected error',
   'unexpected_error_message':

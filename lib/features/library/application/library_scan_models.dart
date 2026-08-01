@@ -1,7 +1,6 @@
 import '../../../core/immutable_collections.dart';
 
 export '../../../core/platform/library_scan_wire_models.dart';
-export '../../../core/media/local_library_import_sources.dart';
 
 class LibraryScanLabels {
   const LibraryScanLabels({

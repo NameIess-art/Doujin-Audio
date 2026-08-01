@@ -5,8 +5,6 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/platform/app_platform.dart';
-import '../../../core/media/local_library_import_sources.dart';
-import 'app_backup_service.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'diagnostic_report_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
@@ -14,84 +12,20 @@ import '../../settings/application/app_update_service.dart';
 
 class DataSupportFileService {
   DataSupportFileService({
-    AppBackupService? backupService,
     DiagnosticReportService? diagnosticService,
     FileCachePlatformGateway? fileCacheGateway,
     AppUpdateService? appUpdateService,
     bool Function()? isAndroid,
-  }) : _backupService =
-           backupService ??
-           AppBackupService(appUpdateService: appUpdateService),
-       _diagnosticService =
+  }) : _diagnosticService =
            diagnosticService ??
            DiagnosticReportService(appUpdateService: appUpdateService),
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
        _isAndroid = isAndroid ?? (() => AppPlatform.isAndroid);
 
-  final AppBackupService _backupService;
   final DiagnosticReportService _diagnosticService;
   final FileCachePlatformGateway _fileCacheGateway;
   final bool Function() _isAndroid;
-
-  Future<String?> exportBackup({
-    required String dialogTitle,
-    LocalLibraryImportSources? librarySources,
-  }) async {
-    librarySources ??= LocalLibraryImportSources();
-    final temporary = await _temporaryFile(
-      'NamelessAudio-${_timestamp()}.nalbackup',
-    );
-    try {
-      final backup = await _backupService.exportBackup(
-        temporary.path,
-        librarySources: librarySources,
-      );
-      return await _saveGeneratedFile(
-        source: backup,
-        dialogTitle: dialogTitle,
-        allowedExtensions: const <String>['nalbackup'],
-        mimeType: 'application/zip',
-      );
-    } finally {
-      await _deleteTemporaryFile(temporary);
-    }
-  }
-
-  Future<BackupValidationResult?> pickAndRestoreBackup({
-    Future<LocalLibraryImportSources?> Function(LocalLibraryImportSources)?
-    beforeRestore,
-  }) async {
-    final selection = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const <String>['nalbackup'],
-      lockParentWindow: true,
-    );
-    final selected = selection?.files.singleOrNull;
-    if (selected == null) return null;
-    try {
-      final selectedPath = selected.path;
-      if (selectedPath == null || selectedPath.trim().isEmpty) {
-        throw const FileSystemException('Selected backup is not readable.');
-      }
-      return await _backupService.restoreBackup(
-        selectedPath,
-        beforeCommit: beforeRestore,
-      );
-    } finally {
-      if (_isAndroid()) {
-        try {
-          await FilePicker.clearTemporaryFiles();
-        } catch (error, stackTrace) {
-          AppLogService.warning(
-            'backup_picker_cache_cleanup_failed',
-            error: error,
-            stackTrace: stackTrace,
-          );
-        }
-      }
-    }
-  }
 
   Future<String?> exportDiagnostics({required String dialogTitle}) async {
     final temporary = await _temporaryFile(

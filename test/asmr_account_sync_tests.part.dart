@@ -86,7 +86,7 @@ void registerAsmrAccountSyncTests({
   );
 
   test(
-    'ASMR persisted state reload waits for the restored backup account',
+    'ASMR persisted state reload waits for updated secure account state',
     () async {
       await resetPrefs();
       final api = _FakeAsmrApiService(emptyCheckSessionUserName: true);
@@ -106,14 +106,14 @@ void registerAsmrAccountSyncTests({
       await controller.restoreAsmrAccountSession();
       expect(controller.authViewState.userName, 'current-user');
 
-      await tokenStore.writeToken('backup-token');
-      await tokenStore.writeCredentials('backup-user', 'backup-password');
+      await tokenStore.writeToken('updated-token');
+      await tokenStore.writeCredentials('updated-user', 'updated-password');
 
       await controller.reloadPersistedState();
 
       expect(controller.authViewState.isRestoring, isFalse);
       expect(controller.authViewState.isLoggedIn, isTrue);
-      expect(controller.authViewState.userName, 'backup-user');
+      expect(controller.authViewState.userName, 'updated-user');
     },
   );
 

@@ -562,7 +562,7 @@ void main() {
           nextPath: oldTrack.path,
         );
         await prepareStarted.future;
-        final resetFuture = runtimeGraph.playback.resetForBackupRestore();
+        final resetFuture = runtimeGraph.playback.resetPersistedState();
         expect(oldSession.isDisposed, isTrue);
         final replacementSession = PlaybackSession(
           id: oldSession.id,

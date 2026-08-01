@@ -81,28 +81,6 @@ void registerAsmrControllerStateTests({
     },
   );
 
-  test('backup preparation materializes the current ASMR language', () async {
-    await resetPrefs();
-    final recordingPreferences = _RecordingAsmrPreferencesStore(
-      repository: TestPersistenceRepository(),
-    );
-    final controller = AsmrLibraryController(
-      preferencesStore: recordingPreferences,
-      apiService: _FakeAsmrApiService(),
-      persistenceRepository: _FakeTestPersistenceRepository(
-        const <MusicTrack>[],
-      ),
-    );
-    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
-
-    await controller.prepareForPersistedStateExport();
-
-    expect(
-      recordingPreferences.savedContentLanguage,
-      ContentLanguagePreference.followPage,
-    );
-  });
-
   test('ASMR work parser uses selected locale for localizable tag names', () {
     final work = AsmrWork.fromJson(const <String, dynamic>{
       'id': 1,

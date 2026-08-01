@@ -270,7 +270,7 @@ final class NotificationFacade {
     _stateService.notificationActionGuardTimeout = null;
   }
 
-  Future<void> resetForBackupRestore() async {
+  Future<void> resetPersistedState() async {
     _stateService
       ..notificationFocusSessionId = null
       ..unifiedNotificationSyncKey = null

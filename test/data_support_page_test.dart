@@ -14,8 +14,6 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const cardKeys = <ValueKey<String>>[
-    ValueKey('data-support-export-backup'),
-    ValueKey('data-support-restore-backup'),
     ValueKey('data-support-export-diagnostics'),
     ValueKey('data-support-privacy-summary'),
   ];
@@ -48,6 +46,15 @@ void main() {
       );
       await tester.pump();
 
+      expect(
+        find.byKey(const ValueKey('data-support-export-backup')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('data-support-restore-backup')),
+        findsNothing,
+      );
+
       final firstCard = find.byKey(cardKeys.first);
       final firstCardContext = tester.element(firstCard);
       final firstCardIcon = tester.widget<Icon>(
@@ -71,11 +78,6 @@ void main() {
       }
 
       const operations = <(UiOperationScope, ValueKey<String>, String)>[
-        (
-          UiOperationScope.dataSupportBackupRestore,
-          ValueKey('data-support-restore-backup'),
-          'restore_backup',
-        ),
         (
           UiOperationScope.dataSupportDiagnosticsExport,
           ValueKey('data-support-export-diagnostics'),

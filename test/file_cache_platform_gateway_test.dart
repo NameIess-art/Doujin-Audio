@@ -69,24 +69,24 @@ void main() {
 
       expect(
         await gateway.exportFile(
-          sourcePath: '/tmp/backup.nalbackup',
-          fileName: 'backup.nalbackup',
+          sourcePath: '/tmp/diagnostic.zip',
+          fileName: 'diagnostic.zip',
           mimeType: 'application/zip',
         ),
         'content://exported',
       );
       expect(
         await gateway.exportFile(
-          sourcePath: '/tmp/backup.nalbackup',
-          fileName: 'backup.nalbackup',
+          sourcePath: '/tmp/diagnostic.zip',
+          fileName: 'diagnostic.zip',
           mimeType: 'application/zip',
         ),
         isNull,
       );
       expect(calls.first.method, FileCacheMethod.exportFile);
       expect(calls.first.arguments, <String, Object?>{
-        'sourcePath': '/tmp/backup.nalbackup',
-        'fileName': 'backup.nalbackup',
+        'sourcePath': '/tmp/diagnostic.zip',
+        'fileName': 'diagnostic.zip',
         'mimeType': 'application/zip',
       });
     },

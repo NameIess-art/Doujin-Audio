@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as path;
 
 import '../../../app/localization/app_language_provider.dart';
+import '../../../app/presentation/app_orientation_controller.dart';
 import '../../../app/application/audio_path_coordinator.dart';
 import '../../../app/application/audio_ui_warmup_coordinator.dart';
 import '../../../app/state/app_runtime_providers.dart';
@@ -42,6 +43,8 @@ import '../../../core/widgets/marquee_text.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import 'playback_position_ui_gate.dart';
 import 'playback_error_text.dart';
+import 'session_video_surface.dart';
+import 'session_video_viewport.dart';
 import '../../../core/widgets/reorder_auto_scroller.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/shimmer_loading.dart';
@@ -73,6 +76,7 @@ part 'playlist_tab_transport_controls.dart';
 part 'playlist_tab_time_segments.dart';
 part 'playlist_tab_audio_features.dart';
 part 'playlist_tab_speed_controls.dart';
+part 'playlist_tab_video.dart';
 part 'playlist_tab_volume_timer.dart';
 part 'playlist_tab_queue.dart';
 

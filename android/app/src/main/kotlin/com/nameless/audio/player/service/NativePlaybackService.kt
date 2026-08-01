@@ -8,6 +8,7 @@ import com.nameless.audio.player.common.*
 import com.nameless.audio.player.notification.*
 import com.nameless.audio.player.recovery.*
 import com.nameless.audio.player.session.*
+import com.nameless.audio.player.video.*
 import com.nameless.audio.storage.*
 
 import android.app.NotificationChannel
@@ -186,6 +187,14 @@ class NativePlaybackService : MediaSessionService() {
     private val sessions = linkedMapOf<String, NativePlaybackSession>()
     private val fileCacheOperations by lazy { FileCacheOperations(applicationContext) }
     private val stateListeners = ConcurrentHashMap<String, (Map<String, Any?>) -> Unit>()
+    private val videoOutputs = NativeVideoOutputRegistry<Player>(
+        playerForSession = { sessionId -> sessions[sessionId]?.playerOrNull() },
+        shouldKeepScreenOn = { player ->
+            player.playWhenReady &&
+                player.playbackState != Player.STATE_IDLE &&
+                player.playbackState != Player.STATE_ENDED
+        }
+    )
     private val mainHandler = Handler(Looper.getMainLooper())
     private val restoreExecutor = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "NativePlaybackRestore").apply { isDaemon = true }
@@ -783,6 +792,7 @@ class NativePlaybackService : MediaSessionService() {
                 "wakeLockHeld=${playbackWakeLock.isHeld()}"
         )
         stateListeners.clear()
+        videoOutputs.clear()
         restoreGeneration += 1
         if (audioDeviceDisconnectReceiverRegistered) {
             unregisterReceiver(audioDeviceDisconnectReceiver)
@@ -822,6 +832,22 @@ class NativePlaybackService : MediaSessionService() {
             mainHandler.removeCallbacks(positionTicker)
             tickerScheduled = false
         }
+    }
+
+    internal fun registerVideoOutput(
+        sessionId: String,
+        ownerId: String,
+        output: NativeVideoOutputBinding<Player>
+    ) {
+        videoOutputs.register(sessionId, ownerId, output)
+    }
+
+    internal fun refreshVideoOutput(sessionId: String, ownerId: String): Boolean {
+        return videoOutputs.refresh(sessionId, ownerId)
+    }
+
+    internal fun unregisterVideoOutput(sessionId: String, ownerId: String) {
+        videoOutputs.unregister(sessionId, ownerId)
     }
 
     internal fun settleForegroundAfterBridgeAttach() {

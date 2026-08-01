@@ -3,6 +3,7 @@ package com.nameless.audio
 import com.nameless.audio.channel.*
 import com.nameless.audio.player.notification.notificationSessionIdFromIntent
 import com.nameless.audio.player.common.*
+import com.nameless.audio.player.video.NativeVideoPlatformViewFactory
 import com.nameless.audio.scanner.*
 import com.nameless.audio.storage.*
 import com.nameless.audio.subtitle.*
@@ -41,6 +42,10 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
+        flutterEngine.platformViewsController.registry.registerViewFactory(
+            NativeVideoPlatformViewFactory.viewType,
+            NativeVideoPlatformViewFactory()
+        )
 
         disposeNativePlaybackBridge()
         val nativePlaybackBridge = NativePlaybackBridge(applicationContext)

@@ -14,6 +14,7 @@ import 'app/application/app_runtime_graph.dart';
 import 'app/state/app_runtime_providers.dart';
 import 'app/presentation/app_bootstrap_host.dart';
 import 'app/presentation/app_error_view.dart';
+import 'app/presentation/app_orientation_controller.dart';
 import 'app/presentation/global_shortcuts.dart';
 import 'app/presentation/main_screen.dart';
 import 'app/presentation/onboarding_page.dart';
@@ -192,39 +193,6 @@ Widget _createAudioPlayerApp() {
   return app;
 }
 
-class AppOrientationPolicy {
-  const AppOrientationPolicy._(this.allowedOrientations);
-
-  static const portrait = AppOrientationPolicy._([
-    DeviceOrientation.portraitUp,
-  ]);
-
-  // Swap this policy when landscape playback detail UI is added.
-  static const current = AppOrientationPolicy._([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
-
-  final List<DeviceOrientation> allowedOrientations;
-}
-
-void _applyOrientationPreference(bool portraitLockEnabled) {
-  unawaited(
-    SystemChrome.setPreferredOrientations(
-      portraitLockEnabled
-          ? AppOrientationPolicy.portrait.allowedOrientations
-          : AppOrientationPolicy.current.allowedOrientations,
-    ).catchError((Object error, StackTrace stackTrace) {
-      AppLogService.warning(
-        'orientation_preference_update_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }),
-  );
-}
-
 class _StretchOverscrollBehavior extends MaterialScrollBehavior {
   const _StretchOverscrollBehavior();
 
@@ -275,7 +243,11 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
     ref.listen<AsyncValue<SettingsState>>(settingsStateProvider, (_, next) {
       final portraitLockEnabled = next.asData?.value.portraitLockEnabled;
       if (portraitLockEnabled != null) {
-        _applyOrientationPreference(portraitLockEnabled);
+        unawaited(
+          ref
+              .read(appOrientationControllerProvider)
+              .setPortraitLockEnabled(portraitLockEnabled),
+        );
       }
     });
     final themeProvider =

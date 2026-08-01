@@ -29,6 +29,8 @@ const Map<String, String> appLanguageJa = {
   'timer': 'タイマー',
   'done': '完了',
   'close': '閉じる',
+  'fullscreen': '全画面',
+  'exit_fullscreen': '全画面表示を終了',
   'open_timer_settings': 'タイマー設定を開く',
   'timer_play_plus': '再生 + {time}',
   'asmr_player': 'NL Audio',

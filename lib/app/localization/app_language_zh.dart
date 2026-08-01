@@ -29,6 +29,8 @@ const Map<String, String> appLanguageZh = {
   'timer': '计时器',
   'done': '完成',
   'close': '关闭',
+  'fullscreen': '全屏',
+  'exit_fullscreen': '退出全屏',
   'open_timer_settings': '打开计时器设置',
   'timer_play_plus': '播放 + {time}',
   'asmr_player': 'NL Audio',

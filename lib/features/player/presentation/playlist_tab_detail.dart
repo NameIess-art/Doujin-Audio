@@ -877,7 +877,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   MediaQuery.orientationOf(context) ==
                                   Orientation.landscape;
                               Widget artworkWidget = _SessionHeroArtwork(
-                                sessionId: session.id,
+                                session: session,
                                 height: constraints.maxHeight,
                                 track: track,
                                 coverPathFuture: coverPathFuture,

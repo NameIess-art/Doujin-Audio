@@ -36,6 +36,8 @@ const Map<String, String> appLanguageEn = {
   'timer': 'Timer',
   'done': 'Done',
   'close': 'Close',
+  'fullscreen': 'Fullscreen',
+  'exit_fullscreen': 'Exit fullscreen',
   'open_timer_settings': 'Open timer settings',
   'timer_play_plus': 'Play + {time}',
   'asmr_player': 'NL Audio',

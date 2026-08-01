@@ -2,13 +2,13 @@ part of 'playlist_tab.dart';
 
 class _SessionHeroArtwork extends ConsumerWidget {
   const _SessionHeroArtwork({
-    required this.sessionId,
+    required this.session,
     required this.height,
     required this.track,
     required this.coverPathFuture,
   });
 
-  final String sessionId;
+  final PlaybackSession session;
   final double height;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
@@ -16,6 +16,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
+    final sessionId = session.id;
     final cs = Theme.of(context).colorScheme;
     final coverCacheWidth = coverCacheWidthForResolution(
       ref.watch(
@@ -58,46 +59,60 @@ class _SessionHeroArtwork extends ConsumerWidget {
               type: MaterialType.transparency,
               borderRadius: BorderRadius.circular(16),
               clipBehavior: Clip.antiAlias,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  TickerMode(
-                    // Do not freeze a cover image's loading fade mid-frame
-                    // while the detail route is being dragged.
-                    enabled: true,
-                    child: AsyncLocalCoverImage(
-                      future: coverPathFuture,
-                      requestKey: sessionId,
-                      deferCommitDuringInteraction: true,
-                      initialPath: library.resolvedPlaybackCoverPathForTrack(
-                        track,
+              child: SessionVideoViewport(
+                videoReady: _isSessionVideoReady(session, track),
+                surfaceBuilder: (_) =>
+                    NativeSessionVideoSurface(sessionId: sessionId),
+                onFullscreen: () => _showSessionVideoFullscreen(
+                  context,
+                  ref,
+                  sessionId: sessionId,
+                  trackPath: track!.path,
+                ),
+                fullscreenTooltip: ref
+                    .read(appLanguageProviderInstanceProvider)
+                    .tr('fullscreen'),
+                poster: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    TickerMode(
+                      // Do not freeze a cover image's loading fade mid-frame
+                      // while the detail route is being dragged.
+                      enabled: true,
+                      child: AsyncLocalCoverImage(
+                        future: coverPathFuture,
+                        requestKey: sessionId,
+                        deferCommitDuringInteraction: true,
+                        initialPath: library.resolvedPlaybackCoverPathForTrack(
+                          track,
+                        ),
+                        retryFutureBuilder: () => track == null
+                            ? Future<String?>.value()
+                            : library.playbackCoverPathFutureForTrack(track),
+                        seed: track?.displayName ?? track?.path ?? sessionId,
+                        cacheWidth: coverCacheWidth,
+                        useDefaultCacheWidth: coverCacheWidth != null,
+                        fit: BoxFit.cover,
+                        iconSize: 56,
                       ),
-                      retryFutureBuilder: () => track == null
-                          ? Future<String?>.value()
-                          : library.playbackCoverPathFutureForTrack(track),
-                      seed: track?.displayName ?? track?.path ?? sessionId,
-                      cacheWidth: coverCacheWidth,
-                      useDefaultCacheWidth: coverCacheWidth != null,
-                      fit: BoxFit.cover,
-                      iconSize: 56,
                     ),
-                  ),
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withValues(alpha: 0.1),
-                            Colors.transparent,
-                            Colors.black.withValues(alpha: 0.2),
-                          ],
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.1),
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.2),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

@@ -842,8 +842,12 @@ class NativePlaybackService : MediaSessionService() {
         videoOutputs.register(sessionId, ownerId, output)
     }
 
-    internal fun refreshVideoOutput(sessionId: String, ownerId: String): Boolean {
-        return videoOutputs.refresh(sessionId, ownerId)
+    internal fun refreshVideoOutput(
+        sessionId: String,
+        ownerId: String,
+        forceRebind: Boolean = false
+    ): Boolean {
+        return videoOutputs.refresh(sessionId, ownerId, forceRebind)
     }
 
     internal fun unregisterVideoOutput(sessionId: String, ownerId: String) {

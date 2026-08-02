@@ -38,7 +38,7 @@ Future<void> _showSessionVideoFullscreen(
   }
 }
 
-enum _FullscreenVideoPanMode { horizontalSeek, brightness, volume }
+enum _FullscreenVideoPanMode { horizontalSeek, brightness, volume, ignored }
 
 class _SessionVideoFullscreenPage extends ConsumerStatefulWidget {
   const _SessionVideoFullscreenPage({
@@ -83,7 +83,8 @@ class _SessionVideoFullscreenPageState
 
   Offset _panDelta = Offset.zero;
   _FullscreenVideoPanMode? _panMode;
-  SessionVideoGestureSide? _panSide;
+  SessionVideoGestureZone? _panZone;
+  SessionVideoVerticalGestureSide? _panVerticalSide;
   Duration _panStartPosition = Duration.zero;
   Duration? _panSeekTarget;
   double _panStartVolume = 1;
@@ -107,10 +108,7 @@ class _SessionVideoFullscreenPageState
         deferDuringInteraction: false,
       );
     }
-    _controlValues = Listenable.merge([
-      ?_positionGate,
-      _dragVolume,
-    ]);
+    _controlValues = Listenable.merge([?_positionGate, _dragVolume]);
     final paths = ref.read(audioPathCoordinatorProvider);
     final track = paths.trackByPath(widget.trackPath);
     _coverFuture = ref
@@ -183,10 +181,7 @@ class _SessionVideoFullscreenPageState
     _lastPlaying = playing;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (!playing) {
-        _controlsTimer?.cancel();
-        if (!_controlsVisible) setState(() => _controlsVisible = true);
-      } else if (_controlsVisible && !_sliderInteracting) {
+      if (_controlsVisible && !_sliderInteracting) {
         _scheduleControlsHide();
       }
     });
@@ -194,9 +189,20 @@ class _SessionVideoFullscreenPageState
 
   void _scheduleControlsHide() {
     _controlsTimer?.cancel();
-    if (_lastPlaying != true || _sliderInteracting) return;
+    if (!sessionVideoShouldAutoHideControls(
+      controlsVisible: _controlsVisible,
+      controlsInteracting: _sliderInteracting,
+    )) {
+      return;
+    }
     _controlsTimer = Timer(_controlsTimeout, () {
-      if (!mounted || _sliderInteracting || _lastPlaying != true) return;
+      if (!mounted ||
+          !sessionVideoShouldAutoHideControls(
+            controlsVisible: _controlsVisible,
+            controlsInteracting: _sliderInteracting,
+          )) {
+        return;
+      }
       setState(() => _controlsVisible = false);
     });
   }
@@ -208,12 +214,12 @@ class _SessionVideoFullscreenPageState
   }
 
   void _toggleControls() {
-    if (_lastPlaying != true) {
-      _showControls();
-      return;
-    }
     _controlsTimer?.cancel();
-    setState(() => _controlsVisible = !_controlsVisible);
+    setState(
+      () => _controlsVisible = sessionVideoControlsVisibleAfterBlankTap(
+        _controlsVisible,
+      ),
+    );
     if (_controlsVisible) _scheduleControlsHide();
   }
 
@@ -242,7 +248,11 @@ class _SessionVideoFullscreenPageState
     _controlsTimer?.cancel();
     _panDelta = Offset.zero;
     _panMode = null;
-    _panSide = sessionVideoGestureSide(
+    _panZone = sessionVideoGestureZone(
+      details.localPosition.dx,
+      viewportSize.width,
+    );
+    _panVerticalSide = sessionVideoVerticalGestureSide(
       details.localPosition.dx,
       viewportSize.width,
     );
@@ -262,9 +272,11 @@ class _SessionVideoFullscreenPageState
     if (_panMode == null) {
       if (_panDelta.distance < _gestureThreshold) return;
       if (_panDelta.dx.abs() >= _panDelta.dy.abs()) {
-        _panMode = _FullscreenVideoPanMode.horizontalSeek;
+        _panMode = _panZone == SessionVideoGestureZone.center
+            ? _FullscreenVideoPanMode.ignored
+            : _FullscreenVideoPanMode.horizontalSeek;
       } else {
-        _panMode = _panSide == SessionVideoGestureSide.left
+        _panMode = _panVerticalSide == SessionVideoVerticalGestureSide.left
             ? _FullscreenVideoPanMode.brightness
             : _FullscreenVideoPanMode.volume;
       }
@@ -340,6 +352,8 @@ class _SessionVideoFullscreenPageState
           ),
         );
         break;
+      case _FullscreenVideoPanMode.ignored:
+        break;
     }
   }
 
@@ -371,6 +385,8 @@ class _SessionVideoFullscreenPageState
           unawaited(_commitVolume(volume));
         }
         break;
+      case _FullscreenVideoPanMode.ignored:
+        break;
       case null:
         break;
     }
@@ -393,17 +409,32 @@ class _SessionVideoFullscreenPageState
 
   void _handleDoubleTap() {
     final position = _doubleTapPosition;
-    final gate = _positionGate;
-    if (position == null ||
-        gate == null ||
-        (gate.value.duration ?? Duration.zero) <= Duration.zero) {
-      return;
-    }
-    final side = sessionVideoGestureSide(
+    if (position == null) return;
+    final zone = sessionVideoGestureZone(
       position.dx,
       max(1, MediaQuery.sizeOf(context).width - 48),
     );
-    final delta = side == SessionVideoGestureSide.left
+    if (zone == SessionVideoGestureZone.center) {
+      final playing = _lastPlaying == true;
+      unawaited(
+        AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+      );
+      _setFeedback(
+        playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
+        ref
+            .read(appLanguageProviderInstanceProvider)
+            .tr(playing ? 'pause' : 'play'),
+      );
+      unawaited(_playback.toggleSessionPlayPause(widget.sessionId));
+      _scheduleControlsHide();
+      return;
+    }
+    final gate = _positionGate;
+    if (gate == null ||
+        (gate.value.duration ?? Duration.zero) <= Duration.zero) {
+      return;
+    }
+    final delta = zone == SessionVideoGestureZone.left
         ? const Duration(seconds: -5)
         : const Duration(seconds: 5);
     final target = sessionVideoSkipTarget(
@@ -415,14 +446,16 @@ class _SessionVideoFullscreenPageState
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
     _setFeedback(
-      side == SessionVideoGestureSide.left
+      zone == SessionVideoGestureZone.left
           ? Icons.replay_5_rounded
           : Icons.forward_5_rounded,
-      ref.read(appLanguageProviderInstanceProvider).tr(
-        side == SessionVideoGestureSide.left
-            ? 'seek_backward_five_seconds'
-            : 'seek_forward_five_seconds',
-      ),
+      ref
+          .read(appLanguageProviderInstanceProvider)
+          .tr(
+            zone == SessionVideoGestureZone.left
+                ? 'seek_backward_five_seconds'
+                : 'seek_forward_five_seconds',
+          ),
     );
     unawaited(_playback.seekSession(widget.sessionId, target));
     _scheduleControlsHide();
@@ -535,6 +568,10 @@ class _SessionVideoFullscreenPageState
         body: LayoutBuilder(
           builder: (context, constraints) {
             final viewportSize = constraints.biggest;
+            final gestureRect = sessionVideoFullscreenGestureRect(
+              viewportSize: viewportSize,
+              controlsVisible: _controlsVisible,
+            );
             return Stack(
               fit: StackFit.expand,
               children: [
@@ -558,9 +595,8 @@ class _SessionVideoFullscreenPageState
                 ),
                 if (_isSessionVideoReady(session, track))
                   NativeSessionVideoSurface(sessionId: widget.sessionId),
-                Positioned.fill(
-                  left: 24,
-                  right: 24,
+                Positioned.fromRect(
+                  rect: gestureRect,
                   child: GestureDetector(
                     key: const ValueKey<String>(
                       'fullscreen_video_gesture_surface',
@@ -577,8 +613,8 @@ class _SessionVideoFullscreenPageState
                     onPanStart: (details) => _handlePanStart(
                       details,
                       Size(
-                        max(1, viewportSize.width - 48),
-                        viewportSize.height,
+                        max(1, gestureRect.width),
+                        max(1, gestureRect.height),
                       ),
                     ),
                     onPanUpdate: _handlePanUpdate,
@@ -602,39 +638,40 @@ class _SessionVideoFullscreenPageState
         child: ValueListenableBuilder<({IconData icon, String text})?>(
           valueListenable: _feedback,
           builder: (context, feedback, _) {
-            return AnimatedOpacity(
+            return AnimatedSwitcher(
               key: const ValueKey<String>('fullscreen_video_gesture_feedback'),
-              opacity: feedback == null ? 0 : 1,
               duration: const Duration(milliseconds: 120),
-              child: Material(
-                color: Colors.black.withValues(alpha: 0.68),
-                borderRadius: BorderRadius.circular(18),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 22,
-                    vertical: 14,
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        feedback?.icon ?? Icons.play_arrow_rounded,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        feedback?.text ?? '',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
+              child: feedback == null
+                  ? const SizedBox.shrink()
+                  : Material(
+                      key: ValueKey<(IconData, String)>((
+                        feedback.icon,
+                        feedback.text,
+                      )),
+                      color: Colors.black.withValues(alpha: 0.68),
+                      borderRadius: BorderRadius.circular(18),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 22,
+                          vertical: 14,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(feedback.icon, color: Colors.white, size: 28),
+                            const SizedBox(width: 10),
+                            Text(
+                              feedback.text,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
+                    ),
             );
           },
         ),
@@ -692,8 +729,11 @@ class _SessionVideoFullscreenPageState
                 ),
               ),
             ),
-            Align(
-              alignment: Alignment.bottomCenter,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: sessionVideoFullscreenControlBarHeight,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -717,12 +757,15 @@ class _SessionVideoFullscreenPageState
                       final maxMs = max(1, duration.inMilliseconds).toDouble();
                       final positionMs =
                           (_sliderPositionMs ??
-                                  snapshot?.position.inMilliseconds.toDouble() ??
+                                  snapshot?.position.inMilliseconds
+                                      .toDouble() ??
                                   0)
                               .clamp(0, maxMs)
                               .toDouble();
                       final volume =
-                          (_dragVolume.value ?? detail?.volume ?? session.volume)
+                          (_dragVolume.value ??
+                                  detail?.volume ??
+                                  session.volume)
                               .clamp(0.0, PlaybackFacade.maxSessionVolume)
                               .toDouble();
                       return Row(
@@ -731,11 +774,15 @@ class _SessionVideoFullscreenPageState
                             key: const ValueKey<String>(
                               'fullscreen_video_play_pause',
                             ),
-                            tooltip: playing ? i18n.tr('pause') : i18n.tr('play'),
+                            tooltip: playing
+                                ? i18n.tr('pause')
+                                : i18n.tr('play'),
                             onPressed: () {
                               _showControls();
                               unawaited(
-                                _playback.toggleSessionPlayPause(widget.sessionId),
+                                _playback.toggleSessionPlayPause(
+                                  widget.sessionId,
+                                ),
                               );
                             },
                             color: Colors.white,
@@ -768,8 +815,9 @@ class _SessionVideoFullscreenPageState
                                   ? (_) => _beginControlInteraction()
                                   : null,
                               onChanged: duration > Duration.zero
-                                  ? (value) =>
-                                        setState(() => _sliderPositionMs = value)
+                                  ? (value) => setState(
+                                      () => _sliderPositionMs = value,
+                                    )
                                   : null,
                               onChangeEnd: duration > Duration.zero
                                   ? _endProgressInteraction

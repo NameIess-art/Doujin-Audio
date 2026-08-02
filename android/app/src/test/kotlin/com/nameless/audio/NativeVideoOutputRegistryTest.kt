@@ -50,6 +50,7 @@ class NativeVideoOutputRegistryTest {
         assertFalse(oldOutput.screenKeptOn)
         assertSame(player, newOutput.player)
         assertFalse(registry.refresh("session", "inline"))
+        assertFalse(registry.refresh("session", "inline", forceRebind = true))
         assertSame(player, newOutput.player)
     }
 
@@ -73,6 +74,23 @@ class NativeVideoOutputRegistryTest {
         registry.unregister("session", "fullscreen")
         assertNull(newOutput.player)
         assertFalse(newOutput.screenKeptOn)
+    }
+
+    @Test
+    fun `forced refresh rebinds the same player after surface recreation`() {
+        val player = FakePlayer(playing = true)
+        val output = FakeOutput()
+        val registry = NativeVideoOutputRegistry<FakePlayer>(
+            playerForSession = { player },
+            shouldKeepScreenOn = FakePlayer::playing
+        )
+
+        registry.register("session", "owner", output)
+
+        assertTrue(registry.refresh("session", "owner", forceRebind = true))
+        assertEquals(listOf(player, null, player), output.boundPlayers)
+        assertSame(player, output.player)
+        assertTrue(output.screenKeptOn)
     }
 }
 

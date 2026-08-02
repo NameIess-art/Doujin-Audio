@@ -5,15 +5,65 @@ import 'package:flutter/material.dart';
 
 typedef SessionVideoSurfaceBuilder = Widget Function(BuildContext context);
 
-enum SessionVideoGestureSide { left, right }
+enum SessionVideoGestureZone { left, center, right }
 
-SessionVideoGestureSide sessionVideoGestureSide(
+enum SessionVideoVerticalGestureSide { left, right }
+
+const sessionVideoFullscreenControlBarHeight = 64.0;
+const sessionVideoFullscreenGestureHorizontalInset = 24.0;
+
+bool sessionVideoControlsVisibleAfterBlankTap(bool controlsVisible) {
+  return !controlsVisible;
+}
+
+bool sessionVideoShouldAutoHideControls({
+  required bool controlsVisible,
+  required bool controlsInteracting,
+}) {
+  return controlsVisible && !controlsInteracting;
+}
+
+Rect sessionVideoFullscreenGestureRect({
+  required Size viewportSize,
+  required bool controlsVisible,
+}) {
+  final horizontalInset = sessionVideoFullscreenGestureHorizontalInset.clamp(
+    0.0,
+    viewportSize.width / 2,
+  );
+  final bottom =
+      (viewportSize.height -
+              (controlsVisible ? sessionVideoFullscreenControlBarHeight : 0))
+          .clamp(0.0, viewportSize.height);
+  return Rect.fromLTRB(
+    horizontalInset,
+    0,
+    viewportSize.width - horizontalInset,
+    bottom,
+  );
+}
+
+SessionVideoGestureZone sessionVideoGestureZone(
+  double localX,
+  double viewportWidth,
+) {
+  if (viewportWidth <= 0) return SessionVideoGestureZone.center;
+  if (localX < viewportWidth * 0.25) {
+    return SessionVideoGestureZone.left;
+  }
+  if (localX >= viewportWidth * 0.75) {
+    return SessionVideoGestureZone.right;
+  }
+  return SessionVideoGestureZone.center;
+}
+
+SessionVideoVerticalGestureSide sessionVideoVerticalGestureSide(
   double localX,
   double viewportWidth,
 ) {
   return localX < viewportWidth / 2
-      ? SessionVideoGestureSide.left
-      : SessionVideoGestureSide.right;
+      ? SessionVideoVerticalGestureSide.left
+      : SessionVideoVerticalGestureSide.right;
 }
 
 double sessionVideoVerticalGestureValue({

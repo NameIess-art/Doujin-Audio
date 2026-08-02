@@ -30,10 +30,17 @@ internal class NativeVideoOutputRegistry<P : Any>(
         refresh(sessionId, ownerId)
     }
 
-    fun refresh(sessionId: String, ownerId: String): Boolean {
+    fun refresh(
+        sessionId: String,
+        ownerId: String,
+        forceRebind: Boolean = false
+    ): Boolean {
         val entry = entries[sessionId]?.takeIf { it.ownerId == ownerId } ?: return false
         val player = playerForSession(sessionId)
-        if (entry.player !== player) {
+        if (forceRebind && player != null && entry.player === player) {
+            entry.output.bindPlayer(null)
+            entry.output.bindPlayer(player)
+        } else if (entry.player !== player) {
             entry.output.bindPlayer(player)
             entry.player = player
         }

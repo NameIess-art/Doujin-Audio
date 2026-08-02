@@ -41,8 +41,26 @@ private class NativeVideoPlatformView(
     private var boundService: NativePlaybackService? = null
     private var disposed = false
     private val connectRunnable = Runnable(::connectToPlaybackService)
+    private val surfaceRefreshRunnable = Runnable(::refreshVideoSurface)
+    private val attachStateListener = object : View.OnAttachStateChangeListener {
+        override fun onViewAttachedToWindow(view: View) {
+            scheduleVideoSurfaceRefresh()
+        }
+
+        override fun onViewDetachedFromWindow(view: View) {
+            playerView.removeCallbacks(surfaceRefreshRunnable)
+        }
+    }
+    private val layoutChangeListener = View.OnLayoutChangeListener {
+            _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+        val sizeChanged = right - left != oldRight - oldLeft ||
+            bottom - top != oldBottom - oldTop
+        if (sizeChanged) scheduleVideoSurfaceRefresh()
+    }
 
     init {
+        playerView.addOnAttachStateChangeListener(attachStateListener)
+        playerView.addOnLayoutChangeListener(layoutChangeListener)
         if (sessionId.isNotEmpty()) {
             playerView.post(connectRunnable)
         }
@@ -54,6 +72,9 @@ private class NativeVideoPlatformView(
         if (disposed) return
         disposed = true
         playerView.removeCallbacks(connectRunnable)
+        playerView.removeCallbacks(surfaceRefreshRunnable)
+        playerView.removeOnAttachStateChangeListener(attachStateListener)
+        playerView.removeOnLayoutChangeListener(layoutChangeListener)
         boundService?.let { service ->
             service.removeStateListener(stateListenerId)
             service.unregisterVideoOutput(sessionId, ownerId)
@@ -89,5 +110,20 @@ private class NativeVideoPlatformView(
                 }
             }
         }
+    }
+
+    private fun scheduleVideoSurfaceRefresh() {
+        if (disposed || boundService == null) return
+        playerView.removeCallbacks(surfaceRefreshRunnable)
+        playerView.post(surfaceRefreshRunnable)
+    }
+
+    private fun refreshVideoSurface() {
+        if (disposed || !playerView.isAttachedToWindow) return
+        boundService?.refreshVideoOutput(
+            sessionId,
+            ownerId,
+            forceRebind = true
+        )
     }
 }

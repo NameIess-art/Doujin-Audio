@@ -6,6 +6,45 @@ import 'package:nameless_audio/features/player/presentation/session_video_viewpo
 
 void main() {
   group('fullscreen video gesture math', () {
+    test(
+      'blank tap hides visible controls and inactivity ignores play state',
+      () {
+        expect(sessionVideoControlsVisibleAfterBlankTap(true), isFalse);
+        expect(sessionVideoControlsVisibleAfterBlankTap(false), isTrue);
+        expect(
+          sessionVideoShouldAutoHideControls(
+            controlsVisible: true,
+            controlsInteracting: false,
+          ),
+          isTrue,
+        );
+        expect(
+          sessionVideoShouldAutoHideControls(
+            controlsVisible: true,
+            controlsInteracting: true,
+          ),
+          isFalse,
+        );
+      },
+    );
+
+    test(
+      'visible bottom controls are excluded from the screen gesture area',
+      () {
+        final visibleRect = sessionVideoFullscreenGestureRect(
+          viewportSize: const Size(800, 400),
+          controlsVisible: true,
+        );
+        final hiddenRect = sessionVideoFullscreenGestureRect(
+          viewportSize: const Size(800, 400),
+          controlsVisible: false,
+        );
+
+        expect(visibleRect, const Rect.fromLTRB(24, 0, 776, 336));
+        expect(hiddenRect, const Rect.fromLTRB(24, 0, 776, 400));
+      },
+    );
+
     test('horizontal drag uses ninety seconds per viewport width', () {
       expect(
         sessionVideoHorizontalSeekTarget(
@@ -46,8 +85,18 @@ void main() {
         ),
         const Duration(minutes: 1),
       );
-      expect(sessionVideoGestureSide(199, 400), SessionVideoGestureSide.left);
-      expect(sessionVideoGestureSide(200, 400), SessionVideoGestureSide.right);
+      expect(sessionVideoGestureZone(99, 400), SessionVideoGestureZone.left);
+      expect(sessionVideoGestureZone(100, 400), SessionVideoGestureZone.center);
+      expect(sessionVideoGestureZone(299, 400), SessionVideoGestureZone.center);
+      expect(sessionVideoGestureZone(300, 400), SessionVideoGestureZone.right);
+      expect(
+        sessionVideoVerticalGestureSide(199, 400),
+        SessionVideoVerticalGestureSide.left,
+      );
+      expect(
+        sessionVideoVerticalGestureSide(200, 400),
+        SessionVideoVerticalGestureSide.right,
+      );
     });
 
     test('unknown duration never rewinds an active video to zero', () {

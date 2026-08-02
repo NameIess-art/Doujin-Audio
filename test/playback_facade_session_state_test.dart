@@ -431,6 +431,53 @@ void main() {
     expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
   });
 
+  test('previous and next preserve the session playback intent', () async {
+    final library = _createLibraryFacade();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+    )..configurePersistence(enabled: false);
+    final session = _session('adjacent_playback_intent')
+      ..state = PlayerState(false, ProcessingState.ready);
+    final autoPlayValues = <bool>[];
+    addTearDown(() async {
+      session.dispose();
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback
+      ..attachPlaybackCommands(
+        prepareSession:
+            (
+              session, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              autoPlayValues.add(autoPlay);
+              return true;
+            },
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+        resolveAdvance: (_, {required forward}) => PlaybackAdvanceResult(
+          path: forward ? '/tracks/next.mp3' : '/tracks/previous.mp3',
+        ),
+        hasAdjacent: (_, {required forward}) => true,
+      )
+      ..registerSession(session);
+
+    await playback.seekSessionToNext(session.id);
+    await playback.seekSessionToPrev(session.id);
+
+    session.state = PlayerState(true, ProcessingState.ready);
+    await playback.seekSessionToNext(session.id);
+    await playback.seekSessionToPrev(session.id);
+
+    expect(autoPlayValues, <bool>[false, false, true, true]);
+  });
+
   test('previous and next suppress transient playback loading', () async {
     final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(

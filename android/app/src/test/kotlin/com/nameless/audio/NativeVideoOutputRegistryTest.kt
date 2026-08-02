@@ -2,7 +2,9 @@ package com.nameless.audio
 
 import com.nameless.audio.player.video.NativeVideoOutputBinding
 import com.nameless.audio.player.video.NativeVideoOutputRegistry
+import com.nameless.audio.player.video.shouldRecoverPausedVideoFrame
 
+import androidx.media3.common.Player
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -11,6 +13,40 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class NativeVideoOutputRegistryTest {
+    @Test
+    fun `paused video frame recovery only runs for an attached current surface awaiting its first frame`() {
+        fun shouldRecover(
+            attached: Boolean = true,
+            awaiting: Boolean = true,
+            current: Boolean = true,
+            playWhenReady: Boolean = false,
+            state: Int = Player.STATE_READY,
+            hasItem: Boolean = true,
+            canSeek: Boolean = true
+        ): Boolean = shouldRecoverPausedVideoFrame(
+            isAttachedToWindow = attached,
+            isAwaitingFirstFrame = awaiting,
+            isCurrentPlayer = current,
+            playWhenReady = playWhenReady,
+            playbackState = state,
+            hasCurrentMediaItem = hasItem,
+            canSeekCurrentMediaItem = canSeek
+        )
+
+        assertTrue(shouldRecover())
+        assertTrue(
+            shouldRecover(state = Player.STATE_BUFFERING)
+        )
+        assertFalse(shouldRecover(attached = false))
+        assertFalse(shouldRecover(awaiting = false))
+        assertFalse(shouldRecover(current = false))
+        assertFalse(shouldRecover(playWhenReady = true))
+        assertFalse(shouldRecover(hasItem = false))
+        assertFalse(shouldRecover(canSeek = false))
+        assertFalse(shouldRecover(state = Player.STATE_IDLE))
+        assertFalse(shouldRecover(state = Player.STATE_ENDED))
+    }
+
     @Test
     fun `register binds the current player and refresh follows replacement`() {
         val firstPlayer = FakePlayer(playing = true)

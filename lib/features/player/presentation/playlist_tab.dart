@@ -137,6 +137,58 @@ List<MusicTrack> orderTracksForSessionSwitcher(
   return List<MusicTrack>.unmodifiable(sorted);
 }
 
+MusicTrack? resolveSessionSwitcherSelectedTrack({
+  required List<MusicTrack> displayedTracks,
+  required List<MusicTrack>? queueTracks,
+  required String currentPath,
+  required int currentQueueIndex,
+}) {
+  for (final track in displayedTracks) {
+    if (PathMatcher.equalsNormalized(track.path, currentPath)) return track;
+  }
+  if (queueTracks == null ||
+      currentQueueIndex < 0 ||
+      currentQueueIndex >= queueTracks.length) {
+    return null;
+  }
+  final queuedTrack = queueTracks[currentQueueIndex];
+  if (queuedTrack.remoteMetadataKind != 'asmr.one') return null;
+  for (final track in displayedTracks) {
+    if (_sameSessionSwitcherTrack(track, queuedTrack)) return track;
+  }
+  return null;
+}
+
+bool _sameSessionSwitcherTrack(MusicTrack left, MusicTrack right) {
+  if (identical(left, right) ||
+      PathMatcher.equalsNormalized(left.path, right.path)) {
+    return true;
+  }
+  if (left.remoteMetadataKind != 'asmr.one' ||
+      right.remoteMetadataKind != 'asmr.one') {
+    return false;
+  }
+  final leftRelative = left.remoteMetadata?['trackRelativePath']
+      ?.toString()
+      .trim();
+  final rightRelative = right.remoteMetadata?['trackRelativePath']
+      ?.toString()
+      .trim();
+  if (leftRelative == null ||
+      leftRelative.isEmpty ||
+      rightRelative == null ||
+      rightRelative.isEmpty ||
+      !PathMatcher.equalsNormalized(leftRelative, rightRelative)) {
+    return false;
+  }
+  final leftWorkId = left.remoteMetadata?['id']?.toString().trim();
+  final rightWorkId = right.remoteMetadata?['id']?.toString().trim();
+  if (leftWorkId?.isNotEmpty == true && rightWorkId?.isNotEmpty == true) {
+    return leftWorkId == rightWorkId;
+  }
+  return left.groupKey.isNotEmpty && left.groupKey == right.groupKey;
+}
+
 List<IconData> sessionFeatureBadgeIcons({
   required bool showSubtitles,
   required bool channelSwapEnabled,

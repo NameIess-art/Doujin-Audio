@@ -254,6 +254,54 @@ void main() {
     );
   });
 
+  test('ASMR session switcher restores selection from stable metadata', () {
+    MusicTrack asmrTrack(String url, String relativePath) => MusicTrack(
+      path: url,
+      displayName: 'Track',
+      groupKey: 'asmr-work-42',
+      groupTitle: 'Work',
+      groupSubtitle: 'RJ000042',
+      isSingle: false,
+      remoteMetadataKind: 'asmr.one',
+      remoteMetadata: <String, Object?>{
+        'id': 42,
+        'trackRelativePath': relativePath,
+      },
+    );
+
+    final queued = asmrTrack(
+      'https://old.example/audio.mp3?token=old',
+      r'mp3\01.mp3',
+    );
+    final refreshed = asmrTrack(
+      'https://new.example/audio.mp3?token=new',
+      'mp3/01.mp3',
+    );
+    final exactPathTrack = asmrTrack(
+      'https://new.example/audio-02.mp3?token=new',
+      'mp3/02.mp3',
+    );
+
+    expect(
+      resolveSessionSwitcherSelectedTrack(
+        displayedTracks: <MusicTrack>[refreshed],
+        queueTracks: <MusicTrack>[queued],
+        currentPath: queued.path,
+        currentQueueIndex: 0,
+      ),
+      same(refreshed),
+    );
+    expect(
+      resolveSessionSwitcherSelectedTrack(
+        displayedTracks: <MusicTrack>[refreshed, exactPathTrack],
+        queueTracks: <MusicTrack>[queued, exactPathTrack],
+        currentPath: exactPathTrack.path,
+        currentQueueIndex: 0,
+      ),
+      same(exactPathTrack),
+    );
+  });
+
   test('active track path provider exposes current session paths', () {
     final playbackService = PlaybackSessionService();
     addTearDown(playbackService.dispose);
@@ -1567,6 +1615,14 @@ void main() {
         ),
         findsNothing,
       );
+      final selectedMaterial = tester.widget<Material>(
+        find.byKey(ValueKey<String>('queue_switcher_track_${track.path}')),
+      );
+      expect(
+        selectedMaterial.borderRadius,
+        const BorderRadius.all(Radius.circular(12)),
+      );
+      expect(selectedMaterial.clipBehavior, Clip.antiAlias);
     },
   );
 

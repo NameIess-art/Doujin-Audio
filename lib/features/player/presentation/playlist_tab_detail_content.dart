@@ -660,6 +660,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
               }
               final node = tree[index - 1];
               return _QueueTreeNodeTile(
+                key: ValueKey<String>(node.stableKey),
                 node: node,
                 onTrackTap: (node) {
                   AppInteractionFeedback.trigger(
@@ -699,6 +700,15 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     required String currentPath,
   }) {
     final root = _QueueTreeNode.folder('');
+    final queueTracks = widget.session.isPlaybackQueue
+        ? widget.session.playbackQueue!.expandedTracks
+        : widget.session.customQueueTracks;
+    final selectedTrack = resolveSessionSwitcherSelectedTrack(
+      displayedTracks: tracks,
+      queueTracks: queueTracks,
+      currentPath: currentPath,
+      currentQueueIndex: widget.session.currentQueueIndex,
+    );
     if (widget.session.isPlaybackQueue) {
       var queueIndex = 0;
       for (final entry in widget.session.playbackQueue!.entries) {
@@ -751,7 +761,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
           trackParent.children.add(
             _QueueTreeNode.track(
               displayTrack,
-              selected: queueIndex == widget.session.currentQueueIndex,
+              selected: identical(track, selectedTrack),
               queueIndex: queueIndex,
             ),
           );
@@ -772,7 +782,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
       parent.children.add(
         _QueueTreeNode.track(
           track,
-          selected: PathMatcher.equalsNormalized(track.path, currentPath),
+          selected: identical(track, selectedTrack),
           queueIndex: index,
         ),
       );
@@ -871,6 +881,7 @@ class _QueueTreeNode {
   final List<_QueueTreeNode> children = <_QueueTreeNode>[];
 
   bool get isFolder => track == null;
+  String get stableKey => isFolder ? 'folder:$title' : 'track:${track!.path}';
   bool get containsSelected =>
       selected || children.any((child) => child.containsSelected);
 
@@ -901,7 +912,11 @@ class _QueueTreeNode {
 }
 
 class _QueueTreeNodeTile extends StatefulWidget {
-  const _QueueTreeNodeTile({required this.node, required this.onTrackTap});
+  const _QueueTreeNodeTile({
+    super.key,
+    required this.node,
+    required this.onTrackTap,
+  });
 
   final _QueueTreeNode node;
   final ValueChanged<_QueueTreeNode> onTrackTap;
@@ -911,7 +926,24 @@ class _QueueTreeNodeTile extends StatefulWidget {
 }
 
 class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
+  final _controller = ExpansibleController();
   late bool _expanded = widget.node.containsSelected;
+
+  @override
+  void didUpdateWidget(covariant _QueueTreeNodeTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.node.stableKey != widget.node.stableKey) {
+      _expanded = widget.node.containsSelected;
+    } else if (widget.node.containsSelected) {
+      final shouldExpand = !_expanded;
+      _expanded = true;
+      if (shouldExpand) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _controller.expand();
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -928,6 +960,7 @@ class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
     return Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
       child: ExpansionTile(
+        controller: _controller,
         expansionAnimationStyle: appExpansionAnimationStyle(context),
         initiallyExpanded: _expanded,
         minTileHeight: 52,
@@ -970,7 +1003,11 @@ class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
         ),
         children: [
           for (final child in node.children)
-            _QueueTreeNodeTile(node: child, onTrackTap: widget.onTrackTap),
+            _QueueTreeNodeTile(
+              key: ValueKey<String>(child.stableKey),
+              node: child,
+              onTrackTap: widget.onTrackTap,
+            ),
         ],
       ),
     );
@@ -991,59 +1028,71 @@ class _QueueTrackLeaf extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Material(
-      color: selected
-          ? cs.primaryContainer.withValues(alpha: 0.24)
-          : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: SizedBox(
-          height: 48,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
-            child: Row(
-              children: [
-                Icon(
-                  selected ? Icons.volume_up_rounded : Icons.audio_file_rounded,
-                  size: 16,
-                  color: selected
-                      ? cs.primary
-                      : cs.onSurfaceVariant.withValues(alpha: 0.6),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    track.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurface,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
-                      fontSize: 13,
+    const borderRadius = BorderRadius.all(Radius.circular(12));
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+      child: Material(
+        key: ValueKey<String>('queue_switcher_track_${track.path}'),
+        color: selected
+            ? cs.primaryContainer.withValues(alpha: 0.24)
+            : Colors.transparent,
+        borderRadius: borderRadius,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          borderRadius: borderRadius,
+          onTap: onTap,
+          child: SizedBox(
+            height: 44,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6),
+              child: Row(
+                children: [
+                  Icon(
+                    selected
+                        ? Icons.volume_up_rounded
+                        : Icons.audio_file_rounded,
+                    size: 16,
+                    color: selected
+                        ? cs.primary
+                        : cs.onSurfaceVariant.withValues(alpha: 0.6),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      track.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: cs.onSurface,
+                        fontWeight: selected
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                        fontSize: 13,
+                      ),
                     ),
                   ),
-                ),
-                Text(
-                  track.duration <= Duration.zero
-                      ? '--:--'
-                      : _formatSegmentTime(track.duration),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: cs.onSurfaceVariant,
-                    fontWeight: FontWeight.w700,
-                    fontFeatures: const [FontFeature.tabularFigures()],
+                  Text(
+                    track.duration <= Duration.zero
+                        ? '--:--'
+                        : _formatSegmentTime(track.duration),
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                      fontWeight: FontWeight.w700,
+                      fontFeatures: const [FontFeature.tabularFigures()],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Icon(
-                  selected
-                      ? Icons.check_circle_rounded
-                      : Icons.chevron_right_rounded,
-                  size: 20,
-                  color: selected
-                      ? cs.primary
-                      : cs.onSurfaceVariant.withValues(alpha: 0.55),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  Icon(
+                    selected
+                        ? Icons.check_circle_rounded
+                        : Icons.chevron_right_rounded,
+                    size: 20,
+                    color: selected
+                        ? cs.primary
+                        : cs.onSurfaceVariant.withValues(alpha: 0.55),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

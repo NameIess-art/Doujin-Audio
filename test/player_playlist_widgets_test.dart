@@ -668,7 +668,7 @@ void main() {
       isInitialized: true,
     );
     await tester.runAsync(() async {
-      runtimeGraph.warmup.schedule(currentPageIndex: 2, immediate: true);
+      runtimeGraph.warmup.schedule(currentPageIndex: 1, immediate: true);
       await runtimeGraph.warmup.waitUntilIdle();
     });
 

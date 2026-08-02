@@ -12,6 +12,7 @@ import '../application/asmr_api_service.dart';
 import '../application/asmr_library_controller.dart';
 import '../../../core/media/search_query_utils.dart';
 import '../../../core/media/card_info_field.dart';
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_states.dart';
@@ -44,12 +45,14 @@ part 'asmr_search_page.dart';
 class AsmrTab extends ConsumerStatefulWidget {
   const AsmrTab({
     super.key,
+    this.activeTabIndexListenable,
     this.activeSectionListenable,
     this.sectionIndex = 0,
     this.onTitleSwipeLeft,
     this.onTitleSwipeRight,
   });
 
+  final ValueListenable<int>? activeTabIndexListenable;
   final ValueListenable<int>? activeSectionListenable;
   final int sectionIndex;
   final VoidCallback? onTitleSwipeLeft;
@@ -69,14 +72,20 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   double? _lastHeaderMeasureTopPadding;
   double? _lastHeaderMeasureTextScale;
   AppLanguage? _pendingPageLanguageSync;
+  Future<void>? _activationTask;
+  bool _activationCompleted = false;
 
   @override
   bool get wantKeepAlive => true;
 
+  bool get _isActive =>
+      (widget.activeTabIndexListenable == null ||
+          widget.activeTabIndexListenable!.value == tabIndex) &&
+      (widget.activeSectionListenable == null ||
+          widget.activeSectionListenable!.value == widget.sectionIndex);
+
   @override
-  bool get handlesScrollToTop =>
-      widget.activeSectionListenable == null ||
-      widget.activeSectionListenable!.value == widget.sectionIndex;
+  bool get handlesScrollToTop => _isActive;
 
   @override
   int get tabIndex => 0;
@@ -108,38 +117,72 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   void initState() {
     super.initState();
+    widget.activeTabIndexListenable?.addListener(_handleActiveStateChanged);
+    widget.activeSectionListenable?.addListener(_handleActiveStateChanged);
     initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) {
-        return;
-      }
-      final asmrController = ref.read(asmrLibraryControllerProvider);
-      if (asmrController == null) {
-        return;
-      }
+      if (!mounted || !_isActive) return;
       _measureHeader();
-      final defaultLanguage = AsmrContentLanguage.fromAppLanguageName(
-        ref.read(appLanguageProviderInstanceProvider).language.name,
-      );
-      unawaited(
-        asmrController.initialize(defaultLanguage: defaultLanguage).then((
-          _,
-        ) async {
-          if (!mounted) {
-            return;
-          }
-          await _ensureCollectedLoaded();
-          if (!mounted) {
-            return;
-          }
-          await asmrController.restoreAsmrAccountSession();
-          if (!mounted || !asmrController.isAsmrAccountLoggedIn) {
-            return;
-          }
-          unawaited(asmrController.syncAsmrAccount());
-        }),
-      );
+      _ensureActivated();
     });
+  }
+
+  void _handleActiveStateChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (!_isActive) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isActive) return;
+      _measureHeader();
+      _ensureActivated();
+    });
+  }
+
+  void _ensureActivated() {
+    if (!_isActive || _activationCompleted || _activationTask != null) return;
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
+    final defaultLanguage = AsmrContentLanguage.fromAppLanguageName(
+      ref.read(appLanguageProviderInstanceProvider).language.name,
+    );
+    late final Future<void> task;
+    task = () async {
+      try {
+        await controller.initialize(defaultLanguage: defaultLanguage);
+        await _ensureCollectedLoaded();
+        await controller.restoreAsmrAccountSession();
+        if (controller.isAsmrAccountLoggedIn) {
+          await controller.syncAsmrAccount();
+        }
+        _activationCompleted = true;
+      } catch (error, stackTrace) {
+        AppLogService.warning(
+          'asmr_visible_activation_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      } finally {
+        if (identical(_activationTask, task)) _activationTask = null;
+      }
+    }();
+    _activationTask = task;
+  }
+
+  @override
+  void didUpdateWidget(covariant AsmrTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeTabIndexListenable != widget.activeTabIndexListenable) {
+      oldWidget.activeTabIndexListenable?.removeListener(
+        _handleActiveStateChanged,
+      );
+      widget.activeTabIndexListenable?.addListener(_handleActiveStateChanged);
+    }
+    if (oldWidget.activeSectionListenable != widget.activeSectionListenable) {
+      oldWidget.activeSectionListenable?.removeListener(
+        _handleActiveStateChanged,
+      );
+      widget.activeSectionListenable?.addListener(_handleActiveStateChanged);
+    }
   }
 
   @override
@@ -291,6 +334,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   @override
   void dispose() {
+    widget.activeTabIndexListenable?.removeListener(_handleActiveStateChanged);
+    widget.activeSectionListenable?.removeListener(_handleActiveStateChanged);
     disposeTabState();
     _scrollController.dispose();
     super.dispose();

@@ -16,6 +16,7 @@ class _AsmrWorkCover extends ConsumerWidget {
       ref.watch(coverImageResolutionProvider),
     );
     final library = ref.read(libraryFacadeProvider);
+    final coverUi = ref.read(libraryCoverUiControllerProvider);
     return ClipRRect(
       clipBehavior: Clip.hardEdge,
       borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
@@ -33,10 +34,9 @@ class _AsmrWorkCover extends ConsumerWidget {
                   )
                 : AsyncRemoteCoverImage(
                     url: url,
-                    future: library.coverPathFutureForRemoteCover(url),
+                    future: coverUi.deferredRemoteCover(url),
                     initialPath: library.resolvedCoverPathForRemoteCover(url),
-                    retryFutureBuilder: () =>
-                        library.coverPathFutureForRemoteCover(url),
+                    retryFutureBuilder: () => coverUi.deferredRemoteCover(url),
                     retryDelay: const Duration(seconds: 5),
                     maxRetryAttempts: 2,
                     fit: BoxFit.cover,

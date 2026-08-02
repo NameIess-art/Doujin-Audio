@@ -12,7 +12,6 @@ import 'package:path/path.dart' as path;
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/presentation/app_orientation_controller.dart';
 import '../../../app/application/audio_path_coordinator.dart';
-import '../../../app/application/audio_ui_warmup_coordinator.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../application/playback_facade.dart';
@@ -427,7 +426,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   bool _initialPlaceholderDismissed = false;
   bool _initialPlaceholderDismissScheduled = false;
   PlaylistListState? _reorderSnapshot;
-  String? _lastPlaybackCoverWarmupSignature;
 
   @override
   int get tabIndex => 1;
@@ -466,52 +464,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     super.initState();
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
-  }
-
-  void _schedulePlaybackCoverWarmup(
-    PlaylistStructureState structureState,
-    AudioPathCoordinator paths,
-    AudioUiWarmupCoordinator warmup,
-  ) {
-    if (_isReordering ||
-        !structureState.isInitialized ||
-        !structureState.hasSessions) {
-      return;
-    }
-    final tracks = <MusicTrack?>[];
-    final signatureParts = <String>[
-      structureState.coverGeneration.toString(),
-      structureState.entries.length.toString(),
-    ];
-    for (final structure in structureState.entries.take(10)) {
-      final session = structure.session;
-      signatureParts.add(structure.sessionId);
-      if (structure.isPlaybackQueue) {
-        for (final entry in session.playbackQueue!.entries.take(4)) {
-          final track = entry.tracks.firstOrNull;
-          if (track == null) continue;
-          signatureParts.add(track.path);
-          tracks.add(track);
-        }
-        continue;
-      }
-      signatureParts.add(structure.trackPath);
-      tracks.add(
-        paths.sessionTrackForPath(structure.sessionId, structure.trackPath),
-      );
-    }
-    if (tracks.isEmpty) return;
-    final signature = signatureParts.join('|');
-    if (_lastPlaybackCoverWarmupSignature == signature) return;
-    _lastPlaybackCoverWarmupSignature = signature;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted ||
-          _isReordering ||
-          _lastPlaybackCoverWarmupSignature != signature) {
-        return;
-      }
-      warmup.warmupPlaybackCovers(tracks);
-    });
   }
 
   Future<void> _confirmClearAll(
@@ -585,7 +537,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final paths = ref.read(audioPathCoordinatorProvider);
     final playback = ref.read(playbackFacadeProvider);
     final settings = ref.read(settingsRepositoryProvider);
-    final warmup = ref.read(audioUiWarmupCoordinatorProvider);
     final PlaylistListState? reorderSnapshot;
     final PlaylistStructureState structureState;
     if (_isReordering) {
@@ -615,7 +566,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     _scheduleInitialPlaceholderDismissal(
       isInitialized: structureState.isInitialized,
     );
-    _schedulePlaybackCoverWarmup(structureState, paths, warmup);
     final cardPositionsLocked = settingsState.cardPositionsLocked;
     final coverCacheWidth = coverCacheWidthForResolution(
       settingsState.coverImageResolution,

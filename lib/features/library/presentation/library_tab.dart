@@ -92,40 +92,6 @@ Future<String?> _deferLibraryCardCoverLookup({
   return completer.future;
 }
 
-final class _LibraryCoverWarmupScheduler {
-  String? _lastSignature;
-
-  void schedule({
-    required LibraryCoverUiController controller,
-    required bool Function() canCommit,
-    required Iterable<MusicTrack?> tracks,
-    required int structureRevision,
-    required int detailRevision,
-    required int coverGeneration,
-    required String scope,
-  }) {
-    final warmupTracks = tracks
-        .whereType<MusicTrack>()
-        .where((track) => !track.isVideo)
-        .take(12)
-        .toList(growable: false);
-    if (warmupTracks.isEmpty) return;
-    final signature = <String>[
-      scope,
-      structureRevision.toString(),
-      detailRevision.toString(),
-      coverGeneration.toString(),
-      for (final track in warmupTracks) track.path,
-    ].join('|');
-    if (_lastSignature == signature) return;
-    _lastSignature = signature;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!canCommit() || _lastSignature != signature) return;
-      controller.warmupTracks(warmupTracks);
-    });
-  }
-}
-
 enum _LibraryMoreAction {
   importFolder,
   importFiles,
@@ -177,10 +143,22 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   void _handleActiveTabChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    if (_isActive) {
+      _ensureStartupRefreshStarted();
+      if (_startupRefreshWaiting &&
+          !UiInteractionCoordinator.instance.isInteracting) {
+        _scheduleStartupRefreshAfter(const Duration(milliseconds: 500));
+      }
+    } else {
+      _startupRefreshIdleTimer?.cancel();
+      _startupRefreshIdleTimer = null;
+    }
   }
 
   Timer? _startupRefreshIdleTimer;
+  bool _startupRefreshStarted = false;
   bool _startupRefreshWaiting = false;
   bool _startupLibraryRefreshCompleted = false;
   bool _initialLibraryContentReady = false;
@@ -191,9 +169,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       GlobalKey<GlassRefreshIndicatorState>();
 
   final ScrollController _scrollController = ScrollController();
-  int? _categorySnapshotRequestStructureRevision;
-  int? _categorySnapshotRequestDetailRevision;
-  final _coverWarmupScheduler = _LibraryCoverWarmupScheduler();
+  int? _cardSnapshotRequestRevision;
   int? _durationBackfillStructureRevision;
   late final String _durationBackfillCommitKey;
 
@@ -400,11 +376,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.addListener(_handleActiveTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        unawaited(_refreshAfterStartupIdle());
-      }
+      if (mounted) _ensureStartupRefreshStarted();
     });
     initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
+  }
+
+  void _ensureStartupRefreshStarted() {
+    if (!_isActive || _startupRefreshStarted) return;
+    _startupRefreshStarted = true;
+    unawaited(_refreshAfterStartupIdle());
   }
 
   Future<void> _refreshAfterStartupIdle() async {
@@ -412,6 +392,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }
     if (!mounted) return;
+    if (!_isActive) {
+      _startupRefreshStarted = false;
+      return;
+    }
     _startupRefreshWaiting = true;
     UiInteractionCoordinator.instance.addListener(
       _handleStartupRefreshInteractionChanged,
@@ -425,7 +409,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     if (!_startupRefreshWaiting || !mounted) return;
     _startupRefreshIdleTimer?.cancel();
     _startupRefreshIdleTimer = null;
-    if (!UiInteractionCoordinator.instance.isInteracting) {
+    if (_isActive && !UiInteractionCoordinator.instance.isInteracting) {
       _scheduleStartupRefreshAfter(const Duration(milliseconds: 500));
     }
   }
@@ -434,7 +418,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     _startupRefreshIdleTimer?.cancel();
     _startupRefreshIdleTimer = Timer(quietWindow, () {
       _startupRefreshIdleTimer = null;
-      if (!mounted || UiInteractionCoordinator.instance.isInteracting) return;
+      if (!mounted ||
+          !_isActive ||
+          UiInteractionCoordinator.instance.isInteracting) {
+        return;
+      }
       _startupRefreshWaiting = false;
       UiInteractionCoordinator.instance.removeListener(
         _handleStartupRefreshInteractionChanged,
@@ -456,40 +444,26 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
   }
 
-  void _ensureCategorySnapshot({
+  void _ensureCardSnapshot({
     required LibraryFacade libraryFacade,
-    required int structureRevision,
-    required int detailRevision,
+    required int snapshotRevision,
   }) {
-    final snapshot = libraryFacade.categorySnapshot;
-    if (snapshot != null &&
-        snapshot.structureRevision == structureRevision &&
-        snapshot.detailRevision == detailRevision) {
+    final structureRevision = libraryFacade.structureRevision;
+    if (snapshotRevision == structureRevision ||
+        _cardSnapshotRequestRevision == structureRevision) {
       return;
     }
-    if (_categorySnapshotRequestStructureRevision == structureRevision &&
-        _categorySnapshotRequestDetailRevision == detailRevision) {
-      return;
-    }
-
-    _categorySnapshotRequestStructureRevision = structureRevision;
-    _categorySnapshotRequestDetailRevision = detailRevision;
+    _cardSnapshotRequestRevision = structureRevision;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _cardSnapshotRequestRevision != structureRevision) {
+        return;
+      }
       unawaited(
-        ref
-            .read(libraryFacadeProvider)
-            .audioLibraryCategorySnapshot()
-            .whenComplete(() {
-              if (!mounted ||
-                  _categorySnapshotRequestStructureRevision !=
-                      structureRevision ||
-                  _categorySnapshotRequestDetailRevision != detailRevision) {
-                return;
-              }
-              _categorySnapshotRequestStructureRevision = null;
-              _categorySnapshotRequestDetailRevision = null;
-            }),
+        libraryFacade.ensureCardSnapshot().whenComplete(() {
+          if (mounted && _cardSnapshotRequestRevision == structureRevision) {
+            _cardSnapshotRequestRevision = null;
+          }
+        }),
       );
     });
   }
@@ -519,38 +493,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         },
       );
     });
-  }
-
-  void _scheduleLibraryCoverWarmup({
-    required Iterable<MusicTrack?> tracks,
-    required int structureRevision,
-    required int detailRevision,
-    required int coverGeneration,
-    String scope = '',
-  }) {
-    if (_isReordering) return;
-    if (_isReordering) return;
-    _coverWarmupScheduler.schedule(
-      controller: ref.read(libraryCoverUiControllerProvider),
-      canCommit: () => mounted && !_isReordering,
-      tracks: tracks,
-      structureRevision: structureRevision,
-      detailRevision: detailRevision,
-      coverGeneration: coverGeneration,
-      scope: scope,
-    );
-  }
-
-  Iterable<MusicTrack?> _libraryCoverWarmupTracksForTree(
-    Iterable<LibraryNode> nodes,
-  ) sync* {
-    for (final node in nodes.take(12)) {
-      if (node is TrackNode) {
-        yield node.track;
-      } else if (node is FolderNode) {
-        yield node.firstTrack;
-      }
-    }
   }
 
   @override
@@ -604,9 +546,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listStateCanPullRefresh = _readOrWatch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
     );
-    final detailRevision = _readOrWatch(libraryDetailRevisionProvider);
-    _readOrWatch(libraryCategoryRevisionProvider);
-    final coverGeneration = _readOrWatch(coverGenerationProvider);
     final settingsState =
         _readOrWatch(settingsStateProvider).value ?? SettingsState();
     final cardPositionsLocked = settingsState.cardPositionsLocked;
@@ -627,22 +566,22 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         );
     final libraryRefreshBusy =
         libraryRefreshOperationBusy || libraryImportBusy || listStateIsScanning;
+    if (_isActive && listStateIsInitialized) {
+      _ensureCardSnapshot(
+        libraryFacade: libraryFacade,
+        snapshotRevision: listStateStructureRevision,
+      );
+    }
     _ensureMissingDurationBackfill(
       libraryFacade: libraryFacade,
       structureRevision: listStateStructureRevision,
       canRun:
+          _isActive &&
           listStateIsInitialized &&
           _startupLibraryRefreshCompleted &&
           !listStateIsScanning &&
           !listStateIsBackgroundScanning,
     );
-    if (listStateIsInitialized) {
-      _ensureCategorySnapshot(
-        libraryFacade: libraryFacade,
-        structureRevision: listStateStructureRevision,
-        detailRevision: detailRevision,
-      );
-    }
     final tree = listStateRawTree;
     final bottomInset = MobileOverlayInset.of(context);
 
@@ -662,30 +601,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     // scroll/swipe performance.
     const listCacheExtent = 320.0;
     final hasLibrary = listStateHasLibrary || libraryHeaderAudioCount > 0;
-    final categorySnapshot = libraryFacade.categorySnapshot;
-    final libraryCardDetailsReady =
-        categorySnapshot != null &&
-        categorySnapshot.structureRevision == listStateStructureRevision &&
-        categorySnapshot.detailRevision == detailRevision;
     if (!_initialLibraryContentReady &&
         listStateIsInitialized &&
-        libraryCardDetailsReady) {
+        listStateStructureRevision == libraryFacade.structureRevision) {
       _initialLibraryContentReady = true;
     }
     final showLibrarySkeleton =
         (libraryHeaderHasWatchedSources || hasLibrary) &&
         !_initialLibraryContentReady;
-    if (!showLibrarySkeleton &&
-        _startupLibraryRefreshCompleted &&
-        listStateIsInitialized) {
-      _scheduleLibraryCoverWarmup(
-        tracks: _libraryCoverWarmupTracksForTree(tree),
-        structureRevision: listStateStructureRevision,
-        detailRevision: detailRevision,
-        coverGeneration: coverGeneration,
-        scope: 'all',
-      );
-    }
     final canPullRefresh = listStateCanPullRefresh;
 
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {

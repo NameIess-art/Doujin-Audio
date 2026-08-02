@@ -46,6 +46,8 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   Duration? _draftEnd;
   int? _draftColorValue;
   Timer? _segmentNameDebounce;
+  Timer? _segmentLoadTimer;
+  bool _segmentLabelsLoaded = false;
   bool _syncingSegmentText = false;
   bool _savingSegment = false;
   bool _segmentSaveQueued = false;
@@ -60,6 +62,12 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
 
   void expandSegmentPanel() {
     if (_segmentPanelExpanded) return;
+    final trackKey = _segmentTrackKey;
+    if (trackKey != null && !_segmentLabelsLoaded && !_segmentLoading) {
+      _segmentLoadTimer?.cancel();
+      _segmentLoadTimer = null;
+      unawaited(_loadSegmentLabels(trackKey));
+    }
     setState(() {
       _segmentPanelExpanded = true;
     });
@@ -94,6 +102,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   @override
   void dispose() {
     _segmentNameDebounce?.cancel();
+    _segmentLoadTimer?.cancel();
     _segmentNameController.removeListener(_handleSegmentNameChanged);
     _segmentNameController.dispose();
     super.dispose();
@@ -106,6 +115,9 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
         : _timeSegments.trackKeyForTrack(track);
     if (nextKey == _segmentTrackKey) return;
     _segmentTrackKey = nextKey;
+    _segmentLabelsLoaded = false;
+    _segmentLabels = const <TimeSegmentLabel>[];
+    _segmentLoading = false;
     _segmentDraftGeneration++;
     _segmentEditorVisible = false;
     _selectedSegmentId = null;
@@ -113,7 +125,12 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     _draftEnd = null;
     _draftColorValue = null;
     _setSegmentNameText('');
-    unawaited(_loadSegmentLabels(nextKey));
+    _segmentLoadTimer?.cancel();
+    _segmentLoadTimer = Timer(const Duration(milliseconds: 220), () {
+      _segmentLoadTimer = null;
+      if (!mounted || _segmentTrackKey != nextKey) return;
+      unawaited(_loadSegmentLabels(nextKey));
+    });
   }
 
   Future<void> _loadSegmentLabels(String trackKey) async {
@@ -127,6 +144,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
         .firstOrNull;
     setState(() {
       _segmentLabels = labels;
+      _segmentLabelsLoaded = true;
       _segmentLoading = false;
       if (selected != null) {
         _applySelectedSegment(selected);

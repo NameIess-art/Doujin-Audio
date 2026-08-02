@@ -515,6 +515,48 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('ASMR library initializes only after its section is visible', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    final controller = _QueuedEmptyAsmrLibraryController();
+    final sectionIndex = ValueNotifier<int>(AudioLibraryPage.localSection);
+    final activePageIndex = ValueNotifier<int>(0);
+    addTearDown(fixture.dispose);
+    addTearDown(controller.dispose);
+    addTearDown(sectionIndex.dispose);
+    addTearDown(activePageIndex.dispose);
+
+    await tester.pumpWidget(
+      fixture.build(
+        AudioLibraryPage(
+          sectionIndex: sectionIndex,
+          activePageIndex: activePageIndex,
+          onSectionChanged: (index) => sectionIndex.value = index,
+        ),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    expect(controller.initializeCount, 0);
+
+    sectionIndex.value = AudioLibraryPage.asmrSection;
+    await tester.pump();
+    await tester.pump();
+    expect(controller.initializeCount, 1);
+
+    sectionIndex.value = AudioLibraryPage.localSection;
+    await tester.pump();
+    sectionIndex.value = AudioLibraryPage.asmrSection;
+    await tester.pump();
+    expect(controller.initializeCount, 1);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 3));
+  });
+
   testWidgets('local and ASMR library cards start at the same height', (
     tester,
   ) async {
@@ -1938,6 +1980,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   int _revision = 0;
   int recommendationRefreshCount = 0;
   int loadMoreCount = 0;
+  int initializeCount = 0;
 
   static final AsmrWork _collectedWork = AsmrWork(
     id: 1,
@@ -2013,6 +2056,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
 
   @override
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) async {
+    initializeCount++;
     scheduleMicrotask(notifyListeners);
   }
 

@@ -69,6 +69,7 @@ class AudioLibraryPage extends StatelessWidget {
                 child: ExcludeSemantics(
                   excluding: selectedSection != asmrSection,
                   child: AsmrTab(
+                    activeTabIndexListenable: activePageIndex,
                     activeSectionListenable: sectionIndex,
                     sectionIndex: asmrSection,
                     onTitleSwipeLeft: () => _switchSection(localSection),

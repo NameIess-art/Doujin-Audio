@@ -1,9 +1,7 @@
 import 'dart:async';
 
 import '../../core/ui/warmup_scheduler.dart';
-import '../../core/media/music_track.dart';
 import '../../features/library/application/library_facade.dart';
-import '../../features/library/domain/library_node.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
@@ -21,7 +19,6 @@ final class AudioUiWarmupCoordinator {
        _subtitles = subtitles,
        _scheduler = scheduler ?? WarmupScheduler();
 
-  static const _libraryTabIndex = 0;
   static const _playbackTabIndex = 1;
   final LibraryFacade _library;
   final PlaybackFacade _playback;
@@ -74,33 +71,6 @@ final class AudioUiWarmupCoordinator {
     });
   }
 
-  void warmupPlaybackCovers(Iterable<MusicTrack?> tracks) {
-    final generation = _scheduler.currentGeneration;
-    final scheduledKeys = <String>{};
-    var priority = 40;
-    for (final track in tracks) {
-      if (track == null) continue;
-      if (_library.resolvedPlaybackCoverPathForTrack(track) != null) continue;
-      final coverSearchKey = _library.coverArtworkCacheService
-          .coverSearchKeyForTrack(track);
-      if (coverSearchKey == null || !scheduledKeys.add(coverSearchKey)) {
-        continue;
-      }
-      _scheduler.schedule(
-        key:
-            'playlist_cover:$coverSearchKey:${_library.coverArtworkCacheService.generation}',
-        priority: priority++,
-        generation: generation,
-        group: 'playlist_cover',
-        task: () async {
-          if (_library.resolvedPlaybackCoverPathForTrack(track) == null) {
-            await _library.playbackCoverPathFutureForTrack(track);
-          }
-        },
-      );
-    }
-  }
-
   void enterBackground() {
     _pausedForLifecycle = true;
     _deferredTimer?.cancel();
@@ -137,54 +107,8 @@ final class AudioUiWarmupCoordinator {
   }) {
     if (_disposed || generation != _generation) return;
     _scheduler.beginGeneration(generation, cooldown: navigationCooldown);
-    _scheduleSessionWarmup(generation);
-    if ((currentPageIndex - _libraryTabIndex).abs() <= 1) {
-      _scheduleLibraryWarmup(generation);
-    }
-    if ((currentPageIndex - _playbackTabIndex).abs() <= 1) {
+    if (currentPageIndex == _playbackTabIndex) {
       _scheduleFocusedSessionWarmup(generation);
-    }
-  }
-
-  void _scheduleLibraryWarmup(int generation) {
-    if (_library.state.isScanning) return;
-    final folders = _library.libraryCards.whereType<FolderNode>().take(4);
-    var index = 0;
-    for (final folder in folders) {
-      _scheduler.schedule(
-        key:
-            'folder_cover:${folder.path}:${_library.coverArtworkCacheService.generation}',
-        priority: 30 + index++,
-        generation: generation,
-        group: 'library_cover',
-        task: () => _library.coverPathFutureForFolder(folder.path),
-      );
-    }
-  }
-
-  void _scheduleSessionWarmup(int generation) {
-    final sessions = _playback.state.activeSessions;
-    if (sessions.isEmpty) return;
-    final focusedId = _notifications.state.focusedSessionId;
-    var focusIndex = focusedId == null
-        ? -1
-        : sessions.indexWhere((session) => session.id == focusedId);
-    if (focusIndex < 0) {
-      focusIndex = sessions.indexWhere((session) => session.state.playing);
-    }
-    if (focusIndex < 0) focusIndex = 0;
-    final indices = <int>{
-      focusIndex,
-      if (focusIndex > 0) focusIndex - 1,
-      if (focusIndex + 1 < sessions.length) focusIndex + 1,
-    };
-    for (final index in indices) {
-      _scheduleTrack(
-        trackPath: sessions[index].currentTrackPath,
-        generation: generation,
-        coverPriority: index == focusIndex ? 0 : 8 + index,
-        subtitlePriority: index == focusIndex ? 1 : 12 + index,
-      );
     }
   }
 

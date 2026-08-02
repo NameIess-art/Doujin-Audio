@@ -32,7 +32,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   AudioLibraryCategoryType? _lastCategoryFilterType;
   String? _lastCategoryFilterKey;
   List<AudioLibraryCategoryEntry> _lastCategoryFilterResult = const [];
-  final _coverWarmupScheduler = _LibraryCoverWarmupScheduler();
 
   String get _effectiveSearchQuery => _query;
 
@@ -138,19 +137,22 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     }
 
     _pendingSearchKey = requestKey;
-    final searchFuture = libraryFacade.loadLibraryTree().then((tree) {
+    final searchFuture = () async {
+      final effectiveCategorySnapshot = query.isEmpty
+          ? categorySnapshot
+          : categorySnapshot ??
+                await libraryFacade.audioLibraryCategorySnapshot();
+      final tree = await libraryFacade.loadLibraryTree();
       final request = LibrarySearchSnapshotRequest(
         tree: tree,
         query: query,
         structureRevision: structureRevision,
-        categorySnapshot: categorySnapshot,
+        categorySnapshot: effectiveCategorySnapshot,
       );
       return libraryTreeTrackCount(tree) > 200
-          ? compute(buildFilteredLibraryTreeSnapshot, request)
-          : Future<FilteredLibraryTreeResult>.microtask(
-              () => buildFilteredLibraryTreeSnapshot(request),
-            );
-    });
+          ? await compute(buildFilteredLibraryTreeSnapshot, request)
+          : buildFilteredLibraryTreeSnapshot(request);
+    }();
     unawaited(
       searchFuture.then((result) {
         if (!mounted || _pendingSearchKey != requestKey) return;
@@ -224,40 +226,11 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     );
   }
 
-  void _scheduleLibraryCoverWarmup({
-    required Iterable<MusicTrack?> tracks,
-    required int structureRevision,
-    required int detailRevision,
-    required int coverGeneration,
-    String scope = '',
-  }) {
-    _coverWarmupScheduler.schedule(
-      controller: ref.read(libraryCoverUiControllerProvider),
-      canCommit: () => mounted,
-      tracks: tracks,
-      structureRevision: structureRevision,
-      detailRevision: detailRevision,
-      coverGeneration: coverGeneration,
-      scope: scope,
-    );
-  }
-
-  Iterable<MusicTrack?> _coverWarmupTracks(Iterable<LibraryNode> nodes) sync* {
-    for (final node in nodes.take(12)) {
-      if (node is TrackNode) {
-        yield node.track;
-      } else if (node is FolderNode) {
-        yield node.firstTrack;
-      }
-    }
-  }
-
   Widget _buildAllResults({
     required LibraryFacade libraryFacade,
     required AppLanguageProvider i18n,
     required int structureRevision,
     required int detailRevision,
-    required int coverGeneration,
     required bool cardPositionsLocked,
   }) {
     _ensureFilteredSearchSnapshot(
@@ -287,13 +260,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         ),
       );
     } else {
-      _scheduleLibraryCoverWarmup(
-        tracks: _coverWarmupTracks(tree),
-        structureRevision: structureRevision,
-        detailRevision: detailRevision,
-        coverGeneration: coverGeneration,
-        scope: 'search_all',
-      );
       content = SearchHighlightScope(
         query: _query,
         child: ListView.builder(
@@ -360,7 +326,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       libraryListUiProvider.select((state) => state.structureRevision),
     );
     final detailRevision = ref.watch(libraryDetailRevisionProvider);
-    final coverGeneration = ref.watch(coverGenerationProvider);
     final settings = ref.watch(settingsStateProvider).value ?? SettingsState();
     final cardPositionsLocked = settings.cardPositionsLocked;
     final categories = <AppSearchCategory<AudioLibraryCategoryType>>[
@@ -389,7 +354,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         i18n: i18n,
         structureRevision: structureRevision,
         detailRevision: detailRevision,
-        coverGeneration: coverGeneration,
         cardPositionsLocked: cardPositionsLocked,
       );
     } else {
@@ -399,9 +363,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         topPadding: AppSearchPageScaffold.controlsTopInset(context),
         bottomPadding: MediaQuery.paddingOf(context).bottom + 16,
         cacheExtent: 320,
-        structureRevision: structureRevision,
         detailRevision: detailRevision,
-        coverGeneration: coverGeneration,
       );
     }
 

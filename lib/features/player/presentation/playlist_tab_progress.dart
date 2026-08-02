@@ -769,6 +769,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
   int? _playbackSubtitleIndex;
   String? _loadedPath;
   bool _tickerModeEnabled = true;
+  Timer? _subtitleLoadTimer;
 
   @override
   void initState() {
@@ -777,7 +778,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
       session: widget.session,
       includeBufferedPosition: false,
     )..addListener(_handlePositionTick);
-    _loadSubtitleTrack();
+    _scheduleSubtitleTrackLoad();
   }
 
   @override
@@ -787,7 +788,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
       _positionGate.updateSession(widget.session);
     }
     if (_loadedPath != widget.session.currentTrackPath) {
-      _loadSubtitleTrack();
+      _scheduleSubtitleTrackLoad();
     }
   }
 
@@ -802,6 +803,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
 
   @override
   void dispose() {
+    _subtitleLoadTimer?.cancel();
     _positionGate
       ..removeListener(_handlePositionTick)
       ..dispose();
@@ -812,8 +814,9 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
     _updateSubtitleText(_positionGate.value.position);
   }
 
-  void _loadSubtitleTrack() {
+  void _scheduleSubtitleTrackLoad() {
     final trackPath = widget.session.currentTrackPath;
+    _subtitleLoadTimer?.cancel();
     _loadedPath = trackPath;
     _subtitleTextCache.clear();
     setState(() {
@@ -821,12 +824,25 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
       _subtitleText = null;
       _playbackSubtitleIndex = null;
     });
-    ref.read(playbackSubtitleServiceProvider).load(trackPath).then((track) {
+    final subtitles = ref.read(playbackSubtitleServiceProvider);
+    if (subtitles.hasResult(trackPath)) {
+      _applySubtitleTrack(trackPath, subtitles.trackSync(trackPath));
+      return;
+    }
+    _subtitleLoadTimer = Timer(const Duration(milliseconds: 180), () {
+      _subtitleLoadTimer = null;
       if (!mounted || _loadedPath != trackPath) return;
-      _subtitleTrack = track;
-      _subtitleTextCache.clear();
-      _updateSubtitleText(_positionGate.value.position);
+      subtitles
+          .load(trackPath)
+          .then((track) => _applySubtitleTrack(trackPath, track));
     });
+  }
+
+  void _applySubtitleTrack(String trackPath, SubtitleTrack? track) {
+    if (!mounted || _loadedPath != trackPath) return;
+    _subtitleTrack = track;
+    _subtitleTextCache.clear();
+    _updateSubtitleText(_positionGate.value.position);
   }
 
   void _updateSubtitleText(Duration position) {

@@ -784,11 +784,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               final cachedTrack = subtitles.trackSync(
                                 session.currentTrackPath,
                               );
-                              if (cachedTrack == null) {
-                                unawaited(
-                                  subtitles.load(session.currentTrackPath),
-                                );
-                              }
                               final hasSubtitle = cachedTrack != null;
                               final settings = ref.watch(
                                 subtitleSettingsProvider,
@@ -912,11 +907,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               final cachedTrack = subtitles.trackSync(
                                 session.currentTrackPath,
                               );
-                              if (cachedTrack == null) {
-                                unawaited(
-                                  subtitles.load(session.currentTrackPath),
-                                );
-                              }
                               final hasSubtitle = cachedTrack != null;
                               final subtitleSettings = ref.watch(
                                 subtitleSettingsProvider,

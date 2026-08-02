@@ -1223,121 +1223,54 @@ void main() {
       },
     );
 
-    test('playlist cover warmup skips resolved and duplicate tracks', () async {
-      await runtimeGraph.runtime.dispose();
-      final cache = _PlaybackCoverWarmupRecordingCacheService(
-        resolvedPaths: const <String>{'/library/resolved.flac'},
-      );
-      runtimeGraph = createTestRuntimeGraph(
-        notificationService: notificationService,
-        persistenceRepository: TestPersistenceRepository(
-          database: AppDatabase.test(db),
-        ),
-        coverArtworkCacheService: cache,
-      );
-      final unresolved = MusicTrack(
-        path: '/library/unresolved.flac',
-        displayName: 'Unresolved',
-        groupKey: '/library',
-        groupTitle: 'Library',
-        groupSubtitle: 'Library',
-        isSingle: false,
-      );
-      final duplicate = MusicTrack(
-        path: '/library/unresolved.flac',
-        displayName: 'Duplicate',
-        groupKey: '/library',
-        groupTitle: 'Library',
-        groupSubtitle: 'Library',
-        isSingle: false,
-      );
-      final resolved = MusicTrack(
-        path: '/library/resolved.flac',
-        displayName: 'Resolved',
-        groupKey: '/library',
-        groupTitle: 'Library',
-        groupSubtitle: 'Library',
-        isSingle: false,
-      );
+    test(
+      'visible library cover loading pauses during UI interaction',
+      () async {
+        await runtimeGraph.runtime.dispose();
+        final cache = _PlaybackCoverWarmupRecordingCacheService();
+        runtimeGraph = createTestRuntimeGraph(
+          notificationService: notificationService,
+          persistenceRepository: TestPersistenceRepository(
+            database: AppDatabase.test(db),
+          ),
+          coverArtworkCacheService: cache,
+        );
+        final track = MusicTrack(
+          path: '/library/paused.flac',
+          displayName: 'Paused',
+          groupKey: '/library',
+          groupTitle: 'Library',
+          groupSubtitle: 'Library',
+          isSingle: false,
+        );
+        final coverUi = LibraryCoverUiController(library: runtimeGraph.library);
+        addTearDown(coverUi.dispose);
+        coverUi.setInteractionPaused(true);
 
-      runtimeGraph.warmup.warmupPlaybackCovers(<MusicTrack?>[
-        unresolved,
-        duplicate,
-        resolved,
-        null,
-      ]);
-      for (var i = 0; i < 10 && cache.requestedPaths.isEmpty; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
+        final future = coverUi.deferredTrackCover(track);
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(cache.requestedPaths, isEmpty);
 
-      expect(cache.requestedPaths, <String>[unresolved.path]);
-    });
-
-    test('library cover warmup pauses during UI interaction', () async {
-      await runtimeGraph.runtime.dispose();
-      final cache = _PlaybackCoverWarmupRecordingCacheService();
-      runtimeGraph = createTestRuntimeGraph(
-        notificationService: notificationService,
-        persistenceRepository: TestPersistenceRepository(
-          database: AppDatabase.test(db),
-        ),
-        coverArtworkCacheService: cache,
-      );
-      final track = MusicTrack(
-        path: '/library/paused.flac',
-        displayName: 'Paused',
-        groupKey: '/library',
-        groupTitle: 'Library',
-        groupSubtitle: 'Library',
-        isSingle: false,
-      );
-      final coverUi = LibraryCoverUiController(library: runtimeGraph.library);
-      addTearDown(coverUi.dispose);
-      coverUi.setInteractionPaused(true);
-
-      coverUi.warmupTracks(<MusicTrack?>[track]);
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      expect(cache.requestedPaths, isEmpty);
-
-      coverUi.setInteractionPaused(false);
-      for (var i = 0; i < 10 && cache.requestedPaths.isEmpty; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      expect(cache.requestedPaths, <String>[track.path]);
-    });
+        coverUi.setInteractionPaused(false);
+        await future;
+        expect(cache.requestedPaths, <String>[track.path]);
+      },
+    );
   });
 }
 
 class _PlaybackCoverWarmupRecordingCacheService
     extends CoverArtworkCacheService {
-  _PlaybackCoverWarmupRecordingCacheService({
-    this.resolvedPaths = const <String>{},
-  }) : super(libraryService: LibraryService());
+  _PlaybackCoverWarmupRecordingCacheService()
+    : super(libraryService: LibraryService());
 
-  final Set<String> resolvedPaths;
   final List<String> requestedPaths = <String>[];
-
-  @override
-  String? resolvedForTrack(MusicTrack? track, {String? trackPath}) {
-    final path = track?.path ?? trackPath;
-    return path != null && resolvedPaths.contains(path)
-        ? '/resolved.image'
-        : null;
-  }
 
   @override
   Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) async {
     final path = track?.path ?? trackPath;
     if (path != null) requestedPaths.add(path);
     return path == null ? null : '/cover.image';
-  }
-
-  @override
-  String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
-    final path = track?.path ?? trackPath;
-    return path != null && resolvedPaths.contains(path)
-        ? '/resolved.image'
-        : null;
   }
 
   @override

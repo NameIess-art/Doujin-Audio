@@ -452,11 +452,8 @@ final libraryCategoryRevisionProvider = Provider<int>((ref) {
       serviceState.categorySnapshotRevision;
 });
 
-typedef LibraryDetailUiState = ({AudioDetail? detail, bool isLoading});
-
-final libraryDetailForTargetProvider = Provider.autoDispose
-    .family<LibraryDetailUiState, AudioDetailTarget>((ref, target) {
-      ref.watch(libraryCategoryRevisionProvider);
+final libraryDetailForTargetProvider = FutureProvider.autoDispose
+    .family<AudioDetail, AudioDetailTarget>((ref, target) async {
       ref.watch(libraryDetailRevisionProvider);
       final facade = ref.read(libraryFacadeProvider);
       final canonicalTarget = facade.canonicalAudioDetailTarget(target);
@@ -464,7 +461,21 @@ final libraryDetailForTargetProvider = Provider.autoDispose
       final detail =
           facade.resolvedAudioDetail(canonicalTarget) ??
           snapshot?.detailFor(canonicalTarget);
-      return (detail: detail, isLoading: detail == null);
+      if (detail != null) return detail;
+      return (await facade.loadAudioDetail(canonicalTarget)).detail;
+    });
+
+final libraryCoverForTrackProvider = FutureProvider.autoDispose
+    .family<String?, String>((ref, trackPath) async {
+      ref.watch(coverGenerationProvider);
+      final facade = ref.read(libraryFacadeProvider);
+      final track = facade.trackByPath(trackPath);
+      if (track == null || track.isVideo) return null;
+      final resolved = facade.resolvedCoverPathForTrack(track);
+      if (resolved != null && resolved.isNotEmpty) return resolved;
+      return ref
+          .read(libraryCoverUiControllerProvider)
+          .deferredTrackCover(track);
     });
 
 final playlistHeaderUiProvider = Provider<PlaylistHeaderState>((ref) {

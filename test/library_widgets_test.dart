@@ -285,7 +285,7 @@ void main() {
       Theme.of(tester.element(workTitle)).colorScheme.surface,
     );
 
-    expect(runtimeGraph.library.categorySnapshot, isNotNull);
+    expect(runtimeGraph.library.categorySnapshot, isNull);
     await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
     expect(find.byType(LibraryLikeSkeletonCard), findsNothing);
     expect(runtimeGraph.library.state.isScanning, isTrue);
@@ -420,11 +420,7 @@ void main() {
 
     await tester.pumpWidget(fixture.build(const LibraryTab()));
     await tester.pump();
-    await pumpUntilLibraryTreeReady(
-      tester,
-      runtimeGraph.library,
-      waitForCategorySnapshot: true,
-    );
+    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
     await tester.pump();
 
     expect(tester.takeException(), isNull);
@@ -485,11 +481,7 @@ void main() {
 
     await tester.pumpWidget(fixture.build(const LibraryTab()));
     await tester.pump();
-    await pumpUntilLibraryTreeReady(
-      tester,
-      runtimeGraph.library,
-      waitForCategorySnapshot: true,
-    );
+    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
     await tester.pump();
 
     expect(find.byType(TextField), findsNothing);
@@ -509,6 +501,11 @@ void main() {
           'app_search_category_AudioLibraryCategoryType.tags',
         ),
       ),
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('library_category_tags')),
     );
     await tester.pump(const Duration(milliseconds: 350));
     expect(
@@ -1456,11 +1453,7 @@ void main() {
 
     await tester.pumpWidget(fixture.build(const LibraryTab()));
     await tester.pump();
-    await pumpUntilLibraryTreeReady(
-      tester,
-      runtimeGraph.library,
-      waitForCategorySnapshot: true,
-    );
+    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
     await tester.pump();
 
     await tester.tap(
@@ -1476,6 +1469,10 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 350));
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('library_category_tags')),
+    );
     expect(find.text('healing-work', findRichText: true), findsOneWidget);
     expect(find.text('whisper-work', findRichText: true), findsOneWidget);
 

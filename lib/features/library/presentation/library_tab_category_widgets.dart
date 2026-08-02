@@ -149,9 +149,7 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
     required double topPadding,
     required double bottomPadding,
     required double cacheExtent,
-    required int structureRevision,
     required int detailRevision,
-    required int coverGeneration,
   }) {
     return FutureBuilder<AudioLibraryCategorySnapshot>(
       key: ValueKey('category_future_${_categoryType.name}_$detailRevision'),
@@ -172,13 +170,6 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
 
         final terms = _termsForCategory(snapshot);
         final entries = _filterCategoryEntries(snapshot);
-        _scheduleLibraryCoverWarmup(
-          tracks: entries.map((entry) => entry.firstTrack),
-          structureRevision: structureRevision,
-          detailRevision: detailRevision,
-          coverGeneration: coverGeneration,
-          scope: _categoryType.name,
-        );
         final hasTermBox = _categoryType != AudioLibraryCategoryType.all;
         final itemCount = entries.length + (hasTermBox ? 1 : 0) + 1;
 

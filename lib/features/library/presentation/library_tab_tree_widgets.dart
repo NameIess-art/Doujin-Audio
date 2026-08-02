@@ -200,7 +200,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     final hasChildren =
         folder.children.isNotEmpty || folder.totalTrackCount > 0;
     const cardShape = LibraryLikeCardMetrics.cardShape;
-    final rootDetail = rootDetailState?.detail;
+    final rootDetail = rootDetailState?.value;
     final isRootDetailLoading = rootDetailState?.isLoading ?? false;
 
     Widget content = Theme(
@@ -452,11 +452,15 @@ class _TrackNodeWidget extends ConsumerWidget {
             ),
           )
         : null;
+    final visibleCoverPath = track.isSingle && !track.isVideo
+        ? ref.watch(libraryCoverForTrackProvider(track.path)).value
+        : null;
     final isAlreadyPlaying = ref.watch(isTrackActiveProvider(track.path));
     const cardShape = LibraryLikeCardMetrics.cardShape;
-    final singleDetail = singleDetailState?.detail;
+    final singleDetail = singleDetailState?.value;
     final isSingleDetailLoading = singleDetailState?.isLoading ?? false;
-    final resolvedCoverPath = library.resolvedCoverPathForTrack(track);
+    final resolvedCoverPath =
+        visibleCoverPath ?? library.resolvedCoverPathForTrack(track);
     final useFeaturedSingleCard =
         track.isVideo || hasDisplayableCoverArtwork(track, resolvedCoverPath);
 

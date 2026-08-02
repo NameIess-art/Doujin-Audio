@@ -38,6 +38,15 @@ final class LibraryCoverUiController {
     );
   }
 
+  Future<String?> deferredRemoteCover(String url) {
+    final normalizedUrl = url.trim();
+    final generation = _library.coverArtworkCacheService.generation;
+    return _deferredLookup(
+      key: 'remote:$normalizedUrl:$generation',
+      lookup: () => _library.coverPathFutureForRemoteCover(normalizedUrl),
+    );
+  }
+
   Future<String?> _deferredLookup({
     required String key,
     required Future<String?> Function() lookup,
@@ -77,32 +86,6 @@ final class LibraryCoverUiController {
 
     unawaited(scheduleWhenAvailable());
     return completer.future;
-  }
-
-  void warmupTracks(Iterable<MusicTrack?> tracks) {
-    final generation = _scheduler.currentGeneration;
-    final scheduledKeys = <String>{};
-    var priority = 0;
-    for (final track in tracks) {
-      if (track == null || track.isVideo) continue;
-      if (_library.resolvedCoverPathForTrack(track) != null) continue;
-      final coverSearchKey = _library.coverArtworkCacheService
-          .coverSearchKeyForTrack(track);
-      if (coverSearchKey == null || !scheduledKeys.add(coverSearchKey)) {
-        continue;
-      }
-      _scheduler.schedule(
-        key: 'library_track_cover:$coverSearchKey',
-        priority: priority++,
-        generation: generation,
-        group: 'library_cover',
-        task: () async {
-          if (_library.resolvedCoverPathForTrack(track) == null) {
-            await _library.coverPathFutureForTrack(track);
-          }
-        },
-      );
-    }
   }
 
   void setInteractionPaused(bool paused) => _scheduler.setPaused(paused);

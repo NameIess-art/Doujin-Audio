@@ -117,8 +117,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                   _refreshIndicatorKey.currentState?.show();
                 }
                 final nearBottom =
-                    notification.metrics.pixels >
-                    notification.metrics.maxScrollExtent - 400;
+                    notification.metrics.extentAfter <=
+                    notification.metrics.viewportDimension;
                 final isManualUpwardDrag =
                     notification.dragDetails != null &&
                     (notification.scrollDelta ?? 0) > 0;
@@ -291,6 +291,9 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
           currentState.needsLoadMoreRetry) {
         return;
       }
+      if (!widget.scrollController.hasClients) return;
+      final position = widget.scrollController.position;
+      if (position.extentAfter > position.viewportDimension) return;
       unawaited(_loadMore());
     });
   }

@@ -347,7 +347,7 @@ class _SessionListCard extends ConsumerWidget {
               ref
                   .read(libraryFacadeProvider)
                   .audioDetailTargetForTrack(currentTrack),
-            ).select((state) => state.detail?.duration),
+            ).select((state) => state.value?.duration),
           );
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;

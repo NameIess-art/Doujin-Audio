@@ -22,7 +22,6 @@ import 'features/asmr/application/asmr_library_controller.dart';
 import 'features/asmr/application/asmr_download_manager.dart';
 import 'features/asmr/application/asmr_playback_coordinator.dart';
 import 'features/asmr/application/asmr_preferences.dart';
-import 'features/asmr/domain/asmr_models.dart';
 import 'infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'infrastructure/sqlite/sqlite_library_repository.dart';
 import 'infrastructure/sqlite/sqlite_playback_repository.dart';
@@ -181,13 +180,6 @@ Widget _createAudioPlayerApp() {
   );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaited(
-      asmrLibraryController.initialize(
-        defaultLanguage: AsmrContentLanguage.fromAppLanguageName(
-          appLanguageProvider.language.name,
-        ),
-      ),
-    );
     unawaited(asmrDownloadManager.initialize());
   });
   return app;

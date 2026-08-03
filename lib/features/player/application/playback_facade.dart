@@ -1056,6 +1056,7 @@ final class PlaybackFacade {
     await _prepareSession?.call(
       session,
       nextPath: newPath,
+      autoPlay: session.effectivePlaying,
       forceStartAtZero: true,
       showLoading: false,
     );
@@ -1073,6 +1074,7 @@ final class PlaybackFacade {
     await _prepareSession?.call(
       session,
       nextPath: tracks[index].path,
+      autoPlay: session.effectivePlaying,
       forceStartAtZero: true,
       showLoading: false,
       targetQueueIndex: index,

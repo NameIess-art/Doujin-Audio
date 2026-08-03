@@ -245,7 +245,10 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
 
 class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     with SingleTickerProviderStateMixin {
-  static const _opacityFloor = 0.92;
+  static const _transitionDuration = Duration(milliseconds: 260);
+  static const _incomingOffset = 0.16;
+  static const _outgoingOffset = 0.045;
+  static const _outgoingOpacityFloor = 0.86;
 
   late final AnimationController _controller;
   late int _currentIndex;
@@ -260,8 +263,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _targetIndex = widget.index;
     _controller = AnimationController(
       vsync: this,
-      duration: kAppMotionStandard,
-      reverseDuration: kAppMotionFast,
+      duration: _transitionDuration,
+      reverseDuration: _transitionDuration,
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
   }
@@ -319,44 +322,60 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       child: AnimatedBuilder(
         animation: _controller,
         builder: (context, _) {
-          final progress = _isAnimating
-              ? Curves.easeOutCubic.transform(_controller.value)
-              : 1.0;
+          final rawProgress = _isAnimating ? _controller.value : 1.0;
+          final progress = Curves.easeOutCubic.transform(rawProgress);
           final direction = _transitionDirection.toDouble();
+          final paintOrder = <int>[
+            for (var index = 0; index < widget.children.length; index++)
+              if (index != _currentIndex && index != _targetIndex) index,
+            _currentIndex,
+            if (_isAnimating && _targetIndex != _currentIndex) _targetIndex,
+          ];
 
           return ClipRect(
             child: Stack(
               fit: StackFit.expand,
-              children: List<Widget>.generate(widget.children.length, (index) {
-                final isOutgoing = _isAnimating && index == _currentIndex;
-                final isIncoming = _isAnimating && index == _targetIndex;
-                final isVisible =
-                    isOutgoing ||
-                    isIncoming ||
-                    (!_isAnimating && index == _currentIndex);
+              children: paintOrder
+                  .map((index) {
+                    final isOutgoing = _isAnimating && index == _currentIndex;
+                    final isIncoming = _isAnimating && index == _targetIndex;
+                    final isVisible =
+                        isOutgoing ||
+                        isIncoming ||
+                        (!_isAnimating && index == _currentIndex);
 
-                final translation = switch ((isOutgoing, isIncoming)) {
-                  (true, _) => Offset(-direction * progress, 0),
-                  (_, true) => Offset(direction * (1 - progress), 0),
-                  _ => Offset.zero,
-                };
-                final opacity = switch ((isOutgoing, isIncoming)) {
-                  (true, _) => 1 - progress * (1 - _opacityFloor),
-                  (_, true) => _opacityFloor + progress * (1 - _opacityFloor),
-                  _ => 1.0,
-                };
+                    final translation = switch ((isOutgoing, isIncoming)) {
+                      (true, _) => Offset(
+                        -direction * _outgoingOffset * progress,
+                        0,
+                      ),
+                      (_, true) => Offset(
+                        direction * _incomingOffset * (1 - progress),
+                        0,
+                      ),
+                      _ => Offset.zero,
+                    };
+                    final opacity = switch ((isOutgoing, isIncoming)) {
+                      (true, _) => 1 - progress * (1 - _outgoingOpacityFloor),
+                      (_, true) => 1.0,
+                      _ => 1.0,
+                    };
 
-                return Offstage(
-                  offstage: !isVisible,
-                  child: FractionalTranslation(
-                    translation: translation,
-                    child: Opacity(
-                      opacity: opacity,
-                      child: widget.children[index],
-                    ),
-                  ),
-                );
-              }),
+                    return KeyedSubtree(
+                      key: ValueKey<String>('app_indexed_page_$index'),
+                      child: Offstage(
+                        offstage: !isVisible,
+                        child: FractionalTranslation(
+                          translation: translation,
+                          child: Opacity(
+                            opacity: opacity,
+                            child: widget.children[index],
+                          ),
+                        ),
+                      ),
+                    );
+                  })
+                  .toList(growable: false),
             ),
           );
         },

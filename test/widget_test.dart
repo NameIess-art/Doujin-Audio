@@ -142,6 +142,10 @@ void main() {
     await _pumpMainScreenAnimations(tester);
 
     expect(find.byKey(const ValueKey<String>('main_page_fade_2')), findsOne);
+    final settingsCanvas = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey<String>('main_page_canvas_2')),
+    );
+    expect(settingsCanvas.color, isNot(Colors.transparent));
     expect(
       find.byKey(const ValueKey<String>('main_page_fade_0')),
       findsNothing,
@@ -150,6 +154,11 @@ void main() {
       platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
       isEmpty,
     );
+
+    final mainPageStack = find.byKey(const ValueKey<String>('main_page_stack'));
+    await tester.drag(mainPageStack, const Offset(600, 0));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 2);
     expect(tester.takeException(), isNull);
   });
 

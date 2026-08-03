@@ -97,7 +97,8 @@ extension _MainScreenLayout on _MainScreenState {
                     : BorderRadius.zero,
                 clipBehavior: isDesktop ? Clip.hardEdge : Clip.none,
                 child: ColoredBox(
-                  color: isDesktop ? cs.surface : Colors.transparent,
+                  key: ValueKey<String>('main_page_canvas_$actualIndex'),
+                  color: cs.surface,
                   child: RepaintBoundary(child: page),
                 ),
               ),

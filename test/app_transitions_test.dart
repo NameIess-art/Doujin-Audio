@@ -54,12 +54,34 @@ void main() {
       expect(find.text('second'), findsOneWidget);
 
       await tester.pump(const Duration(milliseconds: 80));
-      expect(_translationFor(tester, 'first').dx, lessThan(0));
-      expect(_translationFor(tester, 'second').dx, greaterThan(0));
+      final outgoingTranslation = _translationFor(tester, 'first');
+      final incomingTranslation = _translationFor(tester, 'second');
+      expect(outgoingTranslation.dx, lessThan(0));
+      expect(incomingTranslation.dx, greaterThan(0));
+      expect(
+        outgoingTranslation.dx.abs(),
+        lessThan(incomingTranslation.dx.abs()),
+      );
+      expect(_opacityFor(tester, 'second'), 1);
+      expect(_paintOrder(tester).last, const ValueKey('app_indexed_page_1'));
       expect(
         find.descendant(
           of: find.byType(AppFadeThroughIndexedStack),
           matching: find.byType(ScaleTransition),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AppFadeThroughIndexedStack),
+          matching: find.byType(PageView),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(AppFadeThroughIndexedStack),
+          matching: find.byType(GestureDetector),
         ),
         findsNothing,
       );
@@ -106,6 +128,7 @@ void main() {
 
     expect(_translationFor(tester, 'third').dx, greaterThan(0));
     expect(_translationFor(tester, 'first').dx, lessThan(0));
+    expect(_paintOrder(tester).last, const ValueKey('app_indexed_page_0'));
     expect(find.text('second'), findsNothing);
   });
 
@@ -204,4 +227,27 @@ Offset _translationFor(WidgetTester tester, String label) {
       .widgetList<FractionalTranslation>(finder)
       .map((widget) => widget.translation)
       .firstWhere((translation) => translation.dx.abs() > 0.001);
+}
+
+double _opacityFor(WidgetTester tester, String label) {
+  return tester
+      .widget<Opacity>(
+        find.ancestor(of: find.text(label), matching: find.byType(Opacity)),
+      )
+      .opacity;
+}
+
+List<Key?> _paintOrder(WidgetTester tester) {
+  final stack = tester
+      .widgetList<Stack>(
+        find.descendant(
+          of: find.byType(AppFadeThroughIndexedStack),
+          matching: find.byType(Stack),
+        ),
+      )
+      .firstWhere(
+        (candidate) =>
+            candidate.children.every((child) => child.key is ValueKey<String>),
+      );
+  return stack.children.map((child) => child.key).toList(growable: false);
 }

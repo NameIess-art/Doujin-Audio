@@ -431,14 +431,32 @@ void main() {
     expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
   });
 
-  test('previous and next preserve the session playback intent', () async {
+  test('track changes preserve the session playback intent', () async {
     final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
       databaseRepository:
           library.databaseRepository as PlaybackPersistenceRepository,
     )..configurePersistence(enabled: false);
     final session = _session('adjacent_playback_intent')
-      ..state = PlayerState(false, ProcessingState.ready);
+      ..state = PlayerState(false, ProcessingState.ready)
+      ..customQueueTracks = <MusicTrack>[
+        MusicTrack(
+          path: '/tracks/first.mp3',
+          displayName: 'First',
+          groupKey: '/tracks',
+          groupTitle: 'Tracks',
+          groupSubtitle: '',
+          isSingle: false,
+        ),
+        MusicTrack(
+          path: '/tracks/second.mp3',
+          displayName: 'Second',
+          groupKey: '/tracks',
+          groupTitle: 'Tracks',
+          groupSubtitle: '',
+          isSingle: false,
+        ),
+      ];
     final autoPlayValues = <bool>[];
     addTearDown(() async {
       session.dispose();
@@ -468,14 +486,27 @@ void main() {
       )
       ..registerSession(session);
 
+    await playback.switchSessionTrack(session.id, '/tracks/direct.mp3');
+    await playback.switchSessionQueueTrack(session.id, 1);
     await playback.seekSessionToNext(session.id);
     await playback.seekSessionToPrev(session.id);
 
     session.state = PlayerState(true, ProcessingState.ready);
+    await playback.switchSessionTrack(session.id, '/tracks/direct.mp3');
+    await playback.switchSessionQueueTrack(session.id, 1);
     await playback.seekSessionToNext(session.id);
     await playback.seekSessionToPrev(session.id);
 
-    expect(autoPlayValues, <bool>[false, false, true, true]);
+    expect(autoPlayValues, <bool>[
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   test('previous and next suppress transient playback loading', () async {

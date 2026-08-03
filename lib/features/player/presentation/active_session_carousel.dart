@@ -15,7 +15,6 @@ import '../../../core/media/subtitle_parser.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
-import '../application/audio_state_services.dart';
 import '../application/playback_session.dart';
 import '../../settings/application/settings_state.dart';
 import '../domain/audio_effects.dart';
@@ -221,10 +220,18 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     }
     final isBar = style == BottomNavigationStyle.bar;
 
-    final playbackState =
-        ref.watch(playbackStateProvider).value ?? PlaybackStateSliceData();
     final library = ref.read(libraryFacadeProvider);
-    final sessions = widget.sessions ?? playbackState.activeSessions;
+    final List<PlaybackSession> sessions;
+    final providedSessions = widget.sessions;
+    if (providedSessions != null) {
+      sessions = providedSessions;
+    } else {
+      sessions = ref.watch(
+        playbackStateProvider.select(
+          (state) => state.value?.activeSessions ?? const <PlaybackSession>[],
+        ),
+      );
+    }
     if (sessions.isEmpty) {
       return const SizedBox.shrink();
     }

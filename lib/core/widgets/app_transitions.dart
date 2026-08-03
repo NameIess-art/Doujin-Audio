@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 const kPlaceholderContentTransitionDuration = Duration(milliseconds: 750);
@@ -6,6 +7,8 @@ const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
 
 enum AppPageTransitionStyle { fadeThrough, sharedAxisX, sharedAxisZ }
+
+enum AppIndexedStackTransitionStyle { directional, crossFade }
 
 class PlaceholderContentTransition extends StatefulWidget {
   const PlaceholderContentTransition({
@@ -229,13 +232,16 @@ Widget buildAppPageTransition({
 class AppFadeThroughIndexedStack extends StatefulWidget {
   const AppFadeThroughIndexedStack({
     super.key,
-    required this.index,
+    required this.indexListenable,
     required this.children,
+    this.style = AppIndexedStackTransitionStyle.directional,
     this.onTransitionCompleted,
   });
 
-  final int index;
+  final ValueListenable<int> indexListenable;
+  int get index => indexListenable.value;
   final List<Widget> children;
+  final AppIndexedStackTransitionStyle style;
   final ValueChanged<int>? onTransitionCompleted;
 
   @override
@@ -259,42 +265,69 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.index;
-    _targetIndex = widget.index;
+    _currentIndex = _safeIndex(widget.indexListenable.value);
+    _targetIndex = _currentIndex;
     _controller = AnimationController(
       vsync: this,
       duration: _transitionDuration,
       reverseDuration: _transitionDuration,
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
+    widget.indexListenable.addListener(_handleIndexChanged);
   }
 
   @override
   void didUpdateWidget(covariant AppFadeThroughIndexedStack oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.index == _targetIndex) return;
+    if (!identical(oldWidget.indexListenable, widget.indexListenable)) {
+      oldWidget.indexListenable.removeListener(_handleIndexChanged);
+      widget.indexListenable.addListener(_handleIndexChanged);
+      _handleIndexChanged();
+    } else if (widget.children.length != oldWidget.children.length) {
+      _handleIndexChanged();
+    }
+  }
+
+  int _safeIndex(int index) {
+    if (widget.children.isEmpty) return 0;
+    return index.clamp(0, widget.children.length - 1);
+  }
+
+  void _handleIndexChanged() {
+    if (!mounted || widget.children.isEmpty) return;
+    final nextIndex = _safeIndex(widget.indexListenable.value);
+    if (nextIndex == _targetIndex) return;
     if (MediaQuery.disableAnimationsOf(context)) {
-      _currentIndex = widget.index;
-      _targetIndex = widget.index;
-      _isAnimating = false;
-      _controller.value = 1;
+      setState(() {
+        _currentIndex = nextIndex;
+        _targetIndex = nextIndex;
+        _isAnimating = false;
+        _controller.value = 1;
+      });
       widget.onTransitionCompleted?.call(_currentIndex);
       return;
     }
 
-    if (_isAnimating && _controller.value >= 0.5) {
-      _currentIndex = _targetIndex;
-    }
-    _targetIndex = widget.index;
-    if (_targetIndex == _currentIndex) {
-      _isAnimating = false;
-      _controller.value = 1;
+    final nextCurrent = _isAnimating && _controller.value >= 0.5
+        ? _targetIndex
+        : _currentIndex;
+    if (nextIndex == nextCurrent) {
+      setState(() {
+        _currentIndex = nextCurrent;
+        _targetIndex = nextIndex;
+        _isAnimating = false;
+        _controller.value = 1;
+      });
       widget.onTransitionCompleted?.call(_currentIndex);
       return;
     }
 
-    _transitionDirection = _targetIndex > _currentIndex ? 1 : -1;
-    _isAnimating = true;
+    setState(() {
+      _currentIndex = nextCurrent;
+      _targetIndex = nextIndex;
+      _transitionDirection = _targetIndex > _currentIndex ? 1 : -1;
+      _isAnimating = true;
+    });
     _controller.forward(from: 0);
   }
 
@@ -311,74 +344,98 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 
   @override
   void dispose() {
+    widget.indexListenable.removeListener(_handleIndexChanged);
     _controller.dispose();
     super.dispose();
   }
 
+  Widget _pageHost({required int index, required bool visible}) {
+    return Offstage(
+      offstage: !visible,
+      child: TickerMode(
+        enabled: visible,
+        child: ExcludeFocus(
+          excluding: !visible,
+          child: ExcludeSemantics(
+            excluding: !visible,
+            child: IgnorePointer(
+              ignoring: !visible,
+              child: widget.children[index],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _animatedPage({
+    required int index,
+    required bool outgoing,
+    required bool incoming,
+  }) {
+    final visible =
+        outgoing || incoming || (!_isAnimating && index == _currentIndex);
+    final page = _pageHost(index: index, visible: visible);
+    return AnimatedBuilder(
+      key: ValueKey<String>('app_indexed_page_$index'),
+      animation: outgoing || incoming
+          ? _controller
+          : const AlwaysStoppedAnimation<double>(1),
+      child: page,
+      builder: (context, child) {
+        final rawProgress = _isAnimating ? _controller.value : 1.0;
+        final progress = Curves.easeOutCubic.transform(rawProgress);
+        final direction = _transitionDirection.toDouble();
+        final crossFade =
+            widget.style == AppIndexedStackTransitionStyle.crossFade;
+        final translation = !outgoing && !incoming
+            ? Offset.zero
+            : crossFade
+            ? Offset.zero
+            : outgoing
+            ? Offset(-direction * _outgoingOffset * progress, 0)
+            : Offset(direction * _incomingOffset * (1 - progress), 0);
+        final opacity = !outgoing && !incoming
+            ? 1.0
+            : crossFade
+            ? outgoing
+                  ? 1 - progress
+                  : progress
+            : outgoing
+            ? 1 - progress * (1 - _outgoingOpacityFloor)
+            : 1.0;
+        return FractionalTranslation(
+          translation: translation,
+          child: Opacity(opacity: opacity, child: child),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (widget.children.isEmpty) return const SizedBox.shrink();
+    final paintOrder = <int>[
+      for (var index = 0; index < widget.children.length; index++)
+        if (index != _currentIndex && index != _targetIndex) index,
+      _currentIndex,
+      if (_isAnimating && _targetIndex != _currentIndex) _targetIndex,
+    ];
     return IgnorePointer(
       ignoring: _isAnimating,
-      child: AnimatedBuilder(
-        animation: _controller,
-        builder: (context, _) {
-          final rawProgress = _isAnimating ? _controller.value : 1.0;
-          final progress = Curves.easeOutCubic.transform(rawProgress);
-          final direction = _transitionDirection.toDouble();
-          final paintOrder = <int>[
-            for (var index = 0; index < widget.children.length; index++)
-              if (index != _currentIndex && index != _targetIndex) index,
-            _currentIndex,
-            if (_isAnimating && _targetIndex != _currentIndex) _targetIndex,
-          ];
-
-          return ClipRect(
-            child: Stack(
-              fit: StackFit.expand,
-              children: paintOrder
-                  .map((index) {
-                    final isOutgoing = _isAnimating && index == _currentIndex;
-                    final isIncoming = _isAnimating && index == _targetIndex;
-                    final isVisible =
-                        isOutgoing ||
-                        isIncoming ||
-                        (!_isAnimating && index == _currentIndex);
-
-                    final translation = switch ((isOutgoing, isIncoming)) {
-                      (true, _) => Offset(
-                        -direction * _outgoingOffset * progress,
-                        0,
-                      ),
-                      (_, true) => Offset(
-                        direction * _incomingOffset * (1 - progress),
-                        0,
-                      ),
-                      _ => Offset.zero,
-                    };
-                    final opacity = switch ((isOutgoing, isIncoming)) {
-                      (true, _) => 1 - progress * (1 - _outgoingOpacityFloor),
-                      (_, true) => 1.0,
-                      _ => 1.0,
-                    };
-
-                    return KeyedSubtree(
-                      key: ValueKey<String>('app_indexed_page_$index'),
-                      child: Offstage(
-                        offstage: !isVisible,
-                        child: FractionalTranslation(
-                          translation: translation,
-                          child: Opacity(
-                            opacity: opacity,
-                            child: widget.children[index],
-                          ),
-                        ),
-                      ),
-                    );
-                  })
-                  .toList(growable: false),
-            ),
-          );
-        },
+      child: ClipRect(
+        child: Stack(
+          fit: StackFit.expand,
+          children: paintOrder
+              .map(
+                (index) => _animatedPage(
+                  index: index,
+                  outgoing: _isAnimating && index == _currentIndex,
+                  incoming: _isAnimating && index == _targetIndex,
+                ),
+              )
+              .toList(growable: false),
+        ),
       ),
     );
   }

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 import 'package:path/path.dart' as path;
 
 import '../../../app/localization/app_language_provider.dart';
@@ -440,6 +441,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       widget.activeTabIndexListenable == null ||
       widget.activeTabIndexListenable!.value == tabIndex;
 
+  T _readOrWatch<T>(ProviderListenable<T> provider) {
+    return _isActive && !_isReordering
+        ? ref.watch(provider)
+        : ref.read(provider);
+  }
+
   void _handleActiveTabChanged() {
     if (mounted) setState(() {});
   }
@@ -550,14 +557,17 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           ? ref.watch(playlistStructureUiProvider)
           : ref.read(playlistStructureUiProvider);
     }
-    final settingsState =
-        (_isReordering
-                ? ref.read(settingsStateProvider)
-                : (_isActive
-                      ? ref.watch(settingsStateProvider)
-                      : ref.read(settingsStateProvider)))
-            .value ??
-        SettingsState();
+    final cardPositionsLocked = _readOrWatch(
+      settingsStateProvider.select(
+        (state) => state.value?.cardPositionsLocked ?? true,
+      ),
+    );
+    final coverImageResolution = _readOrWatch(
+      settingsStateProvider.select(
+        (state) =>
+            state.value?.coverImageResolution ?? CoverImageResolution.balanced,
+      ),
+    );
     final subtitleSettings = _isReordering
         ? ref.read(subtitleSettingsProvider)
         : (_isActive
@@ -566,10 +576,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     _scheduleInitialPlaceholderDismissal(
       isInitialized: structureState.isInitialized,
     );
-    final cardPositionsLocked = settingsState.cardPositionsLocked;
-    final coverCacheWidth = coverCacheWidthForResolution(
-      settingsState.coverImageResolution,
-    );
+    final coverCacheWidth = coverCacheWidthForResolution(coverImageResolution);
     final listBottomInset = MobileOverlayInset.of(context);
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;

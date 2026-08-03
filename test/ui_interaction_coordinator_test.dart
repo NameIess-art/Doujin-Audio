@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 
@@ -219,5 +220,142 @@ void main() {
 
     expect(value, 1);
     coordinator.dispose();
+  });
+
+  testWidgets('navigator observer follows push and pop animation status', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator(idleDelay: Duration.zero);
+    final observer = UiInteractionNavigatorObserver(coordinator: coordinator);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    addTearDown(() {
+      observer.resetForTest();
+      coordinator.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: <NavigatorObserver>[observer],
+        home: const SizedBox(),
+      ),
+    );
+
+    final route = PageRouteBuilder<void>(
+      transitionDuration: const Duration(milliseconds: 200),
+      reverseTransitionDuration: const Duration(milliseconds: 160),
+      pageBuilder: (_, _, _) => const SizedBox(key: ValueKey('route-page')),
+    );
+    unawaited(navigatorKey.currentState!.push(route));
+    await tester.pump();
+    expect(coordinator.isInteracting, isTrue);
+
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(route.animation!.status, AnimationStatus.forward);
+    expect(coordinator.isInteracting, isTrue);
+    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pumpAndSettle();
+    expect(coordinator.isInteracting, isFalse);
+
+    navigatorKey.currentState!.pop();
+    await tester.pump();
+    expect(coordinator.isInteracting, isTrue);
+    await tester.pump(const Duration(milliseconds: 180));
+    await tester.pumpAndSettle();
+    expect(coordinator.isInteracting, isFalse);
+  });
+
+  testWidgets('navigator observer releases zero-duration and gesture routes', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator(idleDelay: Duration.zero);
+    final observer = UiInteractionNavigatorObserver(coordinator: coordinator);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    addTearDown(() {
+      observer.resetForTest();
+      coordinator.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: <NavigatorObserver>[observer],
+        home: const SizedBox(),
+      ),
+    );
+    final route = PageRouteBuilder<void>(
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (_, _, _) => const SizedBox(),
+    );
+    unawaited(navigatorKey.currentState!.push(route));
+    await tester.pumpAndSettle();
+    expect(coordinator.isInteracting, isFalse);
+
+    observer.didStartUserGesture(route, null);
+    expect(coordinator.isInteracting, isTrue);
+    observer.didStopUserGesture();
+    await tester.pumpAndSettle();
+    await tester.pump();
+    expect(coordinator.isInteracting, isFalse);
+  });
+
+  testWidgets('navigator observer handles replacement and consecutive routes', (
+    tester,
+  ) async {
+    final coordinator = UiInteractionCoordinator(idleDelay: Duration.zero);
+    final observer = UiInteractionNavigatorObserver(coordinator: coordinator);
+    final navigatorKey = GlobalKey<NavigatorState>();
+    addTearDown(() {
+      observer.resetForTest();
+      coordinator.dispose();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        navigatorKey: navigatorKey,
+        navigatorObservers: <NavigatorObserver>[observer],
+        home: const SizedBox(),
+      ),
+    );
+    PageRoute<void> route(String name, Duration duration) =>
+        PageRouteBuilder<void>(
+          settings: RouteSettings(name: name),
+          transitionDuration: duration,
+          reverseTransitionDuration: duration,
+          pageBuilder: (_, _, _) => SizedBox(key: ValueKey<String>(name)),
+        );
+
+    unawaited(
+      navigatorKey.currentState!.push(
+        route('replace-source', const Duration(milliseconds: 180)),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 60));
+    unawaited(
+      navigatorKey.currentState!.pushReplacement(
+        route('replace-target', const Duration(milliseconds: 220)),
+      ),
+    );
+    await tester.pump();
+    expect(coordinator.isInteracting, isTrue);
+    await tester.pumpAndSettle();
+    expect(coordinator.isInteracting, isFalse);
+
+    unawaited(
+      navigatorKey.currentState!.push(
+        route('rapid-first', const Duration(milliseconds: 180)),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 40));
+    unawaited(
+      navigatorKey.currentState!.push(
+        route('rapid-second', const Duration(milliseconds: 240)),
+      ),
+    );
+    await tester.pump();
+    expect(coordinator.isInteracting, isTrue);
+    await tester.pumpAndSettle();
+    expect(coordinator.isInteracting, isFalse);
   });
 }

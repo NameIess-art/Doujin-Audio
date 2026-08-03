@@ -205,6 +205,7 @@ Widget buildAppRuntimeTestApp({
   required AppLanguageProvider languageProvider,
   PlaybackSubtitleService? subtitleService,
   UiOperationService? uiOperationService,
+  List<NavigatorObserver> navigatorObservers = const <NavigatorObserver>[],
   List<Override> overrides = const <Override>[],
   required Widget child,
 }) {
@@ -231,6 +232,7 @@ Widget buildAppRuntimeTestApp({
       ...overrides,
     ],
     child: MaterialApp(
+      navigatorObservers: navigatorObservers,
       home: Scaffold(
         body: Consumer(
           builder: (context, ref, _) {
@@ -312,6 +314,7 @@ final class AppRuntimeWidgetTestFixture {
   Widget build(
     Widget child, {
     PlaybackSubtitleService? subtitleService,
+    List<NavigatorObserver> navigatorObservers = const <NavigatorObserver>[],
     List<Override> overrides = const <Override>[],
   }) => buildAppRuntimeTestApp(
     runtimeGraph: runtimeGraph,
@@ -326,6 +329,7 @@ final class AppRuntimeWidgetTestFixture {
     uiOperationService: uiOperationService,
     languageProvider: languageProvider,
     subtitleService: subtitleService,
+    navigatorObservers: navigatorObservers,
     overrides: overrides,
     child: child,
   );

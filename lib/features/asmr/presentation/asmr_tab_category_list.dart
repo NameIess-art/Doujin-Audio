@@ -3,6 +3,7 @@ part of 'asmr_tab.dart';
 class _AsmrCategoryList extends ConsumerStatefulWidget {
   const _AsmrCategoryList({
     super.key,
+    required this.isActive,
     required this.category,
     required this.isLoadPending,
     required this.scrollController,
@@ -12,6 +13,7 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
     required this.onRefresh,
   });
 
+  final bool isActive;
   final AsmrCategoryType category;
   final bool isLoadPending;
   final ScrollController scrollController;
@@ -39,14 +41,15 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   Widget build(BuildContext context) {
     super.build(context);
     final normalizedSearchQuery = normalizeSearchQuery(widget.searchQuery);
-    final providerState = ref
-        .watch(
-          asmrCategoryStateProvider((
-            category: widget.category,
-            searchQuery: normalizedSearchQuery,
-          )),
-        )
-        .value;
+    final categoryProvider = asmrCategoryStateProvider((
+      category: widget.category,
+      searchQuery: normalizedSearchQuery,
+    ));
+    final providerState =
+        (widget.isActive
+                ? ref.watch(categoryProvider)
+                : ref.read(categoryProvider))
+            .value;
     final state =
         ref
             .read(asmrLibraryControllerProvider)
@@ -75,7 +78,11 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final showPlaceholder =
         works.isEmpty &&
         (widget.isLoadPending || state.isLoading || !state.hasAttemptedLoad);
-    ref.watch(appLanguageStateProvider);
+    if (widget.isActive) {
+      ref.watch(appLanguageStateProvider);
+    } else {
+      ref.read(appLanguageStateProvider);
+    }
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final theme = Theme.of(context);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -246,6 +253,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                       child: _AsmrWorkTreeCard(
                         work: works[index],
                         searchQuery: widget.searchQuery,
+                        isActive: widget.isActive,
                       ),
                     );
                   },
@@ -270,6 +278,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
 
   void _scheduleAutomaticLoadMore(AsmrCategoryViewState state) {
     if (_automaticLoadMoreScheduled ||
+        !widget.isActive ||
         state.isLoadingMore ||
         !state.hasMore ||
         state.needsLoadMoreRetry) {
@@ -278,7 +287,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     _automaticLoadMoreScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _automaticLoadMoreScheduled = false;
-      if (!mounted) return;
+      if (!mounted || !widget.isActive) return;
       final currentState = ref
           .read(asmrLibraryControllerProvider)
           ?.categoryViewState(

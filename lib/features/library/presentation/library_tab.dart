@@ -546,9 +546,11 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listStateCanPullRefresh = _readOrWatch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
     );
-    final settingsState =
-        _readOrWatch(settingsStateProvider).value ?? SettingsState();
-    final cardPositionsLocked = settingsState.cardPositionsLocked;
+    final cardPositionsLocked = _readOrWatch(
+      settingsStateProvider.select(
+        (state) => state.value?.cardPositionsLocked ?? true,
+      ),
+    );
     final libraryRefreshOperationBusy = _readOrWatch(
       uiOperationForScopeProvider(
         UiOperationScope.libraryRefresh,

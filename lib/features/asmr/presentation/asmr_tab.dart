@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show ProviderListenable;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
@@ -71,6 +72,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   double? _lastHeaderMeasureWidth;
   double? _lastHeaderMeasureTopPadding;
   double? _lastHeaderMeasureTextScale;
+  AppLanguage? _lastHeaderMeasureLanguage;
+  bool _headerMeasurementScheduled = false;
+  bool _forceHeaderMeasurement = false;
   AppLanguage? _pendingPageLanguageSync;
   Future<void>? _activationTask;
   bool _activationCompleted = false;
@@ -98,6 +102,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   UiOperationService get _operations => ref.read(uiOperationServiceProvider);
 
+  T _readOrWatch<T>(ProviderListenable<T> provider) {
+    return _isActive ? ref.watch(provider) : ref.read(provider);
+  }
+
   double _minimumExpandedHeaderHeight(BuildContext context) {
     return 72 + MediaQuery.paddingOf(context).top;
   }
@@ -122,7 +130,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_isActive) return;
-      _measureHeader();
+      _scheduleHeaderMeasurement(force: true);
       _ensureActivated();
     });
   }
@@ -131,11 +139,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     if (!mounted) return;
     setState(() {});
     if (!_isActive) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_isActive) return;
-      _measureHeader();
-      _ensureActivated();
-    });
+    _scheduleHeaderMeasurement();
+    _ensureActivated();
   }
 
   void _ensureActivated() {
@@ -201,7 +206,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     _lastHeaderMeasureTopPadding = topPadding;
     _lastHeaderMeasureTextScale = textScale;
     if (metricsChanged) {
-      _headerHeight = 0;
+      _scheduleHeaderMeasurement(force: true);
     }
   }
 
@@ -210,13 +215,27 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         controller.activeQueryFor(_mainCategory).isNotEmpty;
   }
 
-  void _measureHeader() {
+  void _scheduleHeaderMeasurement({bool force = false}) {
+    _forceHeaderMeasurement = _forceHeaderMeasurement || force;
+    if (_headerMeasurementScheduled || !_isActive) return;
+    _headerMeasurementScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _headerMeasurementScheduled = false;
+      final forceMeasurement = _forceHeaderMeasurement;
+      _forceHeaderMeasurement = false;
+      if (!mounted || !_isActive) return;
+      _measureHeader(force: forceMeasurement);
+    });
+  }
+
+  void _measureHeader({bool force = false}) {
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
       final measuredHeight = box.size.height;
       final minimumHeight = _minimumExpandedHeaderHeight(context);
       final h = measuredHeight < minimumHeight ? minimumHeight : measuredHeight;
-      if (h > 0 && (_headerHeight == 0 || h > _headerHeight + 0.5)) {
+      if (h > 0 &&
+          (force || _headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
         setState(() => _headerHeight = h);
       }
     }
@@ -344,23 +363,23 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _measureHeader();
-    });
-    final globalState = ref.watch(asmrLibraryGlobalStateProvider).value;
-    final hasDownloadManager = ref.watch(asmrDownloadManagerProvider) != null;
-    final collectedState = ref
-        .watch(
-          asmrCategoryStateProvider((category: _mainCategory, searchQuery: '')),
-        )
-        .value;
+    final globalState = _readOrWatch(asmrLibraryGlobalStateProvider).value;
+    final hasDownloadManager =
+        _readOrWatch(asmrDownloadManagerProvider) != null;
+    final collectedState = _readOrWatch(
+      asmrCategoryStateProvider((category: _mainCategory, searchQuery: '')),
+    ).value;
     final collectedCount =
         ref
             .read(asmrLibraryControllerProvider)
             ?.totalCountFor(AsmrCategoryType.collected) ??
         0;
-    ref.watch(appLanguageStateProvider);
+    _readOrWatch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    if (_lastHeaderMeasureLanguage != i18n.language) {
+      _lastHeaderMeasureLanguage = i18n.language;
+      _scheduleHeaderMeasurement(force: true);
+    }
     _schedulePageLanguageSync(i18n.language);
     final collectedSubtitle =
         collectedState == null ||
@@ -447,6 +466,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           ),
           content: _AsmrCategoryList(
             key: const ValueKey(_mainCategory),
+            isActive: _isActive,
             category: _mainCategory,
             isLoadPending: false,
             scrollController: _scrollController,

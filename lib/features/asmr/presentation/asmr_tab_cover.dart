@@ -1,10 +1,16 @@
 part of 'asmr_tab.dart';
 
 class _AsmrWorkCover extends ConsumerWidget {
-  const _AsmrWorkCover({required this.url, required this.width, this.duration});
+  const _AsmrWorkCover({
+    required this.url,
+    required this.width,
+    required this.isActive,
+    this.duration,
+  });
 
   final String url;
   final double width;
+  final bool isActive;
   final Duration? duration;
 
   @override
@@ -12,9 +18,10 @@ class _AsmrWorkCover extends ConsumerWidget {
     final width = this.width;
     final height = width / kStandardCoverAspectRatio;
     final url = this.url.trim();
-    final coverCacheWidth = coverCacheWidthForResolution(
-      ref.watch(coverImageResolutionProvider),
-    );
+    final coverResolution = isActive
+        ? ref.watch(coverImageResolutionProvider)
+        : ref.read(coverImageResolutionProvider);
+    final coverCacheWidth = coverCacheWidthForResolution(coverResolution);
     final library = ref.read(libraryFacadeProvider);
     final coverUi = ref.read(libraryCoverUiControllerProvider);
     return ClipRRect(

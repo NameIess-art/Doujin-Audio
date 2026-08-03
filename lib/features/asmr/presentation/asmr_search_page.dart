@@ -128,6 +128,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
         .toList(growable: false);
     final body = _AsmrCategoryList(
       key: ValueKey<String>('asmr_search_${_category.name}'),
+      isActive: true,
       category: _category,
       isLoadPending: _loadPending,
       scrollController: _scrollControllers[_category]!,

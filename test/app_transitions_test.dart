@@ -20,34 +20,29 @@ void main() {
   testWidgets(
     'slides in index order, keeps page states, and completes latest switch',
     (tester) async {
-      var index = 0;
+      final index = ValueNotifier<int>(0);
+      addTearDown(index.dispose);
       var completedIndex = -1;
-      late StateSetter update;
       final firstKey = GlobalKey<_StateProbeState>();
 
       await tester.pumpWidget(
         MaterialApp(
-          home: StatefulBuilder(
-            builder: (context, setState) {
-              update = setState;
-              return Scaffold(
-                body: AppFadeThroughIndexedStack(
-                  index: index,
-                  onTransitionCompleted: (value) => completedIndex = value,
-                  children: [
-                    _StateProbe(key: firstKey, label: 'first'),
-                    const _StateProbe(label: 'second'),
-                    const _StateProbe(label: 'third'),
-                  ],
-                ),
-              );
-            },
+          home: Scaffold(
+            body: AppFadeThroughIndexedStack(
+              indexListenable: index,
+              onTransitionCompleted: (value) => completedIndex = value,
+              children: [
+                _StateProbe(key: firstKey, label: 'first'),
+                const _StateProbe(label: 'second'),
+                const _StateProbe(label: 'third'),
+              ],
+            ),
           ),
         ),
       );
 
       final originalState = firstKey.currentState;
-      update(() => index = 1);
+      index.value = 1;
       await tester.pump();
 
       expect(find.text('first'), findsOneWidget);
@@ -86,7 +81,7 @@ void main() {
         findsNothing,
       );
 
-      update(() => index = 2);
+      index.value = 2;
       await tester.pump();
       expect(find.text('second'), findsNothing);
       expect(find.text('third'), findsOneWidget);
@@ -99,30 +94,25 @@ void main() {
   );
 
   testWidgets('lower indexes slide in from the left', (tester) async {
-    var index = 2;
-    late StateSetter update;
+    final index = ValueNotifier<int>(2);
+    addTearDown(index.dispose);
 
     await tester.pumpWidget(
       MaterialApp(
-        home: StatefulBuilder(
-          builder: (context, setState) {
-            update = setState;
-            return Scaffold(
-              body: AppFadeThroughIndexedStack(
-                index: index,
-                children: const [
-                  _StateProbe(label: 'first'),
-                  _StateProbe(label: 'second'),
-                  _StateProbe(label: 'third'),
-                ],
-              ),
-            );
-          },
+        home: Scaffold(
+          body: AppFadeThroughIndexedStack(
+            indexListenable: index,
+            children: const [
+              _StateProbe(label: 'first'),
+              _StateProbe(label: 'second'),
+              _StateProbe(label: 'third'),
+            ],
+          ),
         ),
       ),
     );
 
-    update(() => index = 0);
+    index.value = 0;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 80));
 
@@ -130,6 +120,81 @@ void main() {
     expect(_translationFor(tester, 'first').dx, lessThan(0));
     expect(_paintOrder(tester).last, const ValueKey('app_indexed_page_0'));
     expect(find.text('second'), findsNothing);
+  });
+
+  testWidgets('inactive pages isolate layout, tickers, focus and semantics', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppFadeThroughIndexedStack(
+            indexListenable: index,
+            children: const [
+              _StateProbe(label: 'first'),
+              _StateProbe(label: 'second'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    index.value = 1;
+    await tester.pumpAndSettle();
+    final hidden = find.text('first', skipOffstage: false);
+    expect(hidden, findsOneWidget);
+    expect(
+      tester
+          .widgetList<Offstage>(
+            find.ancestor(
+              of: hidden,
+              matching: find.byType(Offstage, skipOffstage: false),
+            ),
+          )
+          .any((widget) => widget.offstage),
+      isTrue,
+    );
+    expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isFalse);
+    expect(
+      tester
+          .widgetList<ExcludeFocus>(
+            find.ancestor(
+              of: hidden,
+              matching: find.byType(ExcludeFocus, skipOffstage: false),
+            ),
+          )
+          .any((widget) => widget.excluding),
+      isTrue,
+    );
+    expect(
+      tester
+          .widgetList<ExcludeSemantics>(
+            find.ancestor(
+              of: hidden,
+              matching: find.byType(ExcludeSemantics, skipOffstage: false),
+            ),
+          )
+          .any((widget) => widget.excluding),
+      isTrue,
+    );
+    expect(
+      tester
+          .widgetList<IgnorePointer>(
+            find.ancestor(
+              of: hidden,
+              matching: find.byType(IgnorePointer, skipOffstage: false),
+            ),
+          )
+          .any((widget) => widget.ignoring),
+      isTrue,
+    );
+
+    index.value = 0;
+    await tester.pump();
+    expect(TickerMode.valuesOf(tester.element(hidden)).enabled, isTrue);
   });
 
   testWidgets('shared-axis styles use horizontal and depth transforms', (
@@ -172,18 +237,17 @@ void main() {
   testWidgets('reduced motion makes routes, expansion and tabs immediate', (
     tester,
   ) async {
-    var index = 0;
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
     var completed = false;
-    late StateSetter update;
     late PageRoute<void> route;
 
     await tester.pumpWidget(
       MediaQuery(
         data: const MediaQueryData(disableAnimations: true),
         child: MaterialApp(
-          home: StatefulBuilder(
-            builder: (context, setState) {
-              update = setState;
+          home: Builder(
+            builder: (context) {
               route = buildAppPageRoute<void>(
                 context: context,
                 child: const SizedBox(),
@@ -194,7 +258,7 @@ void main() {
               );
               return Scaffold(
                 body: AppFadeThroughIndexedStack(
-                  index: index,
+                  indexListenable: index,
                   onTransitionCompleted: (_) => completed = true,
                   children: const [
                     _StateProbe(label: 'first'),
@@ -208,7 +272,7 @@ void main() {
       ),
     );
 
-    update(() => index = 1);
+    index.value = 1;
     await tester.pump();
 
     expect(route.transitionDuration, Duration.zero);

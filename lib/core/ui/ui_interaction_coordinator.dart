@@ -48,6 +48,10 @@ class UiInteractionCoordinator extends ChangeNotifier {
   void endInteraction(Object source) {
     if (!_activeSources.contains(source)) return;
     _idleTimers.remove(source)?.cancel();
+    if (idleDelay <= Duration.zero) {
+      if (_activeSources.remove(source)) _resumeIfIdle();
+      return;
+    }
     _idleTimers[source] = Timer(idleDelay, () {
       _idleTimers.remove(source);
       if (_activeSources.remove(source)) _resumeIfIdle();
@@ -243,40 +247,197 @@ class _PendingCommit {
 }
 
 class UiInteractionNavigatorObserver extends NavigatorObserver {
-  UiInteractionNavigatorObserver._();
+  UiInteractionNavigatorObserver({UiInteractionCoordinator? coordinator})
+    : _coordinator = coordinator ?? UiInteractionCoordinator.instance;
 
   static final UiInteractionNavigatorObserver instance =
-      UiInteractionNavigatorObserver._();
+      UiInteractionNavigatorObserver();
 
-  final Object _interactionSource = Object();
-  Timer? _transitionTimer;
+  final UiInteractionCoordinator _coordinator;
+  final Object _nonTransitionInteractionSource = Object();
+  final Object _gestureInteractionSource = Object();
+  final Map<TransitionRoute<dynamic>, _RouteInteraction> _routeInteractions =
+      <TransitionRoute<dynamic>, _RouteInteraction>{};
+  Route<dynamic>? _gestureRoute;
 
-  void _trackTransition(Route<dynamic>? route) {
-    final coordinator = UiInteractionCoordinator.instance;
-    coordinator.beginInteraction(_interactionSource);
-    _transitionTimer?.cancel();
-    final duration = route is TransitionRoute<dynamic>
-        ? route.transitionDuration
-        : const Duration(milliseconds: 300);
-    _transitionTimer = Timer(
-      duration,
-      () => coordinator.endInteraction(_interactionSource),
+  void _trackTransition(
+    Route<dynamic>? route, {
+    required Set<AnimationStatus> terminalStatuses,
+  }) {
+    if (route is! TransitionRoute<dynamic>) {
+      _coordinator.beginInteraction(_nonTransitionInteractionSource);
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _coordinator.endInteraction(_nonTransitionInteractionSource),
+      );
+      SchedulerBinding.instance.scheduleFrame();
+      return;
+    }
+    _releaseRoute(route);
+    final interaction = _RouteInteraction();
+    _routeInteractions[route] = interaction;
+    _coordinator.beginInteraction(interaction.source);
+    _attachRouteAnimation(
+      route,
+      interaction,
+      terminalStatuses: terminalStatuses,
     );
+  }
+
+  void _attachRouteAnimation(
+    TransitionRoute<dynamic> route,
+    _RouteInteraction interaction, {
+    required Set<AnimationStatus> terminalStatuses,
+  }) {
+    if (!identical(_routeInteractions[route], interaction)) return;
+    final animation = route.animation;
+    if (animation == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!identical(_routeInteractions[route], interaction)) return;
+        if (route.animation == null) {
+          _releaseRoute(route);
+          return;
+        }
+        _attachRouteAnimation(
+          route,
+          interaction,
+          terminalStatuses: terminalStatuses,
+        );
+      });
+      SchedulerBinding.instance.scheduleFrame();
+      return;
+    }
+    if (route.transitionDuration == Duration.zero) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _releaseRoute(route));
+      SchedulerBinding.instance.scheduleFrame();
+      return;
+    }
+
+    late final AnimationStatusListener listener;
+    listener = (status) {
+      if (status == AnimationStatus.forward ||
+          status == AnimationStatus.reverse) {
+        interaction.terminalGeneration++;
+        _coordinator.beginInteraction(interaction.source);
+        return;
+      }
+      if (terminalStatuses.contains(status)) {
+        _scheduleStableRouteRelease(route, interaction, status);
+      }
+    };
+    interaction.listener = listener;
+    animation.addStatusListener(listener);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!identical(_routeInteractions[route], interaction)) return;
+      final status = animation.status;
+      if (terminalStatuses.contains(status)) {
+        _scheduleStableRouteRelease(route, interaction, status);
+      }
+    });
+    SchedulerBinding.instance.scheduleFrame();
+  }
+
+  void _scheduleStableRouteRelease(
+    TransitionRoute<dynamic> route,
+    _RouteInteraction interaction,
+    AnimationStatus terminalStatus,
+  ) {
+    final generation = ++interaction.terminalGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!identical(_routeInteractions[route], interaction) ||
+          interaction.terminalGeneration != generation ||
+          route.animation?.status != terminalStatus) {
+        return;
+      }
+      _releaseRoute(route);
+    });
+    SchedulerBinding.instance.scheduleFrame();
+  }
+
+  void _releaseRoute(TransitionRoute<dynamic> route) {
+    final interaction = _routeInteractions.remove(route);
+    if (interaction == null) return;
+    final listener = interaction.listener;
+    if (listener != null) route.animation?.removeStatusListener(listener);
+    _coordinator.endInteraction(interaction.source);
   }
 
   @override
   void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
     if (previousRoute == null) return;
-    _trackTransition(route);
+    _trackTransition(
+      route,
+      terminalStatuses: const <AnimationStatus>{AnimationStatus.completed},
+    );
   }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    _trackTransition(route);
+    _trackTransition(
+      route,
+      terminalStatuses: const <AnimationStatus>{AnimationStatus.dismissed},
+    );
   }
 
   @override
   void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
-    _trackTransition(newRoute ?? oldRoute);
+    if (oldRoute is TransitionRoute<dynamic>) _releaseRoute(oldRoute);
+    if (newRoute != null) {
+      _trackTransition(
+        newRoute,
+        terminalStatuses: const <AnimationStatus>{AnimationStatus.completed},
+      );
+    }
   }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (route is TransitionRoute<dynamic>) _releaseRoute(route);
+  }
+
+  @override
+  void didStartUserGesture(
+    Route<dynamic> route,
+    Route<dynamic>? previousRoute,
+  ) {
+    _gestureRoute = route;
+    _coordinator.beginInteraction(_gestureInteractionSource);
+  }
+
+  @override
+  void didStopUserGesture() {
+    final route = _gestureRoute;
+    _gestureRoute = null;
+    if (route != null) {
+      _trackTransition(
+        route,
+        terminalStatuses: const <AnimationStatus>{
+          AnimationStatus.completed,
+          AnimationStatus.dismissed,
+        },
+      );
+    }
+    _coordinator.endInteraction(_gestureInteractionSource);
+  }
+
+  @visibleForTesting
+  void resetForTest() {
+    for (final entry in _routeInteractions.entries) {
+      final listener = entry.value.listener;
+      if (listener != null) {
+        entry.key.animation?.removeStatusListener(listener);
+      }
+      _coordinator.cancelInteraction(entry.value.source);
+    }
+    _routeInteractions.clear();
+    _gestureRoute = null;
+    _coordinator.cancelInteraction(_nonTransitionInteractionSource);
+    _coordinator.cancelInteraction(_gestureInteractionSource);
+  }
+}
+
+class _RouteInteraction {
+  final Object source = Object();
+  AnimationStatusListener? listener;
+  int terminalGeneration = 0;
 }

@@ -358,7 +358,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('audio library title swipe fades between mounted pages', (
+  testWidgets('audio library title swipe transitions between mounted pages', (
     tester,
   ) async {
     tester.view.devicePixelRatio = 1;
@@ -387,32 +387,39 @@ void main() {
     final sectionStackFinder = find.byKey(
       const ValueKey<String>('audio_library_section_stack'),
     );
-    final localFadeFinder = find.byKey(
-      const ValueKey<String>('audio_library_local_fade'),
+    final localPageFinder = find.byKey(
+      const ValueKey<String>('audio_library_local_page'),
+      skipOffstage: false,
     );
-    final asmrFadeFinder = find.byKey(
-      const ValueKey<String>('audio_library_asmr_fade'),
+    final asmrPageFinder = find.byKey(
+      const ValueKey<String>('audio_library_asmr_page'),
+      skipOffstage: false,
     );
     final localTitle = harness.language.tr('music_library');
     final localTitleFinder = find.descendant(
-      of: localFadeFinder,
+      of: localPageFinder,
       matching: find.text(localTitle),
+      skipOffstage: false,
     );
     final asmrTitleFinder = find.descendant(
-      of: asmrFadeFinder,
+      of: asmrPageFinder,
       matching: find.text('ASMR.ONE'),
+      skipOffstage: false,
     );
 
-    double fadeOpacity(Finder finder) =>
-        tester.widget<AnimatedOpacity>(finder).opacity;
+    bool pageIsOffstage(Finder finder) => tester
+        .widgetList<Offstage>(
+          find.ancestor(of: finder, matching: find.byType(Offstage)),
+        )
+        .any((widget) => widget.offstage);
 
     expect(
       tester.widget<AppFadeThroughIndexedStack>(stackFinder).children,
       hasLength(3),
     );
     expect(sectionStackFinder, findsOneWidget);
-    expect(fadeOpacity(localFadeFinder), 1);
-    expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(pageIsOffstage(localPageFinder), isFalse);
+    expect(pageIsOffstage(asmrPageFinder), isTrue);
     expect(
       find.byKey(
         const ValueKey<String>('top_page_header_swipe_left_indicator'),
@@ -429,17 +436,15 @@ void main() {
 
     await tester.fling(localTitleFinder, const Offset(-120, 0), 1000);
     await tester.pump();
-    expect(fadeOpacity(localFadeFinder), 0);
-    expect(fadeOpacity(asmrFadeFinder), 1);
-    expect(
-      tester.widget<AnimatedOpacity>(localFadeFinder).duration,
-      const Duration(milliseconds: 280),
-    );
+    expect(pageIsOffstage(localPageFinder), isFalse);
+    expect(pageIsOffstage(asmrPageFinder), isFalse);
     expect(
       platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
       hasLength(1),
     );
     await tester.pump(const Duration(milliseconds: 300));
+    expect(pageIsOffstage(localPageFinder), isTrue);
+    expect(pageIsOffstage(asmrPageFinder), isFalse);
 
     expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 0);
     expect(tester.state(libraryFinder), same(libraryState));
@@ -449,22 +454,22 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(fadeOpacity(localFadeFinder), 1);
-    expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(pageIsOffstage(localPageFinder), isFalse);
+    expect(pageIsOffstage(asmrPageFinder), isTrue);
     expect(tester.state(libraryFinder), same(libraryState));
     expect(tester.state(asmrFinder), same(asmrState));
 
     await tester.fling(localTitleFinder, const Offset(120, 0), 1000);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
-    expect(fadeOpacity(asmrFadeFinder), 1);
+    expect(pageIsOffstage(asmrPageFinder), isFalse);
 
     await tester.fling(asmrTitleFinder, const Offset(-120, 0), 1000);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(fadeOpacity(localFadeFinder), 1);
-    expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(pageIsOffstage(localPageFinder), isFalse);
+    expect(pageIsOffstage(asmrPageFinder), isTrue);
     expect(tester.state(libraryFinder), same(libraryState));
     expect(tester.state(asmrFinder), same(asmrState));
     final destination = find.byKey(
@@ -484,8 +489,8 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(fadeOpacity(localFadeFinder), 1);
-    expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(pageIsOffstage(localPageFinder), isFalse);
+    expect(pageIsOffstage(asmrPageFinder), isTrue);
     expect(
       find.descendant(of: destination, matching: find.text(localTitle)),
       findsOneWidget,
@@ -493,8 +498,8 @@ void main() {
 
     await tester.fling(destination, const Offset(-80, 0), 600);
     await tester.pump();
-    expect(fadeOpacity(localFadeFinder), 0);
-    expect(fadeOpacity(asmrFadeFinder), 1);
+    expect(pageIsOffstage(localPageFinder), isFalse);
+    expect(pageIsOffstage(asmrPageFinder), isFalse);
     expect(
       find.descendant(of: destination, matching: find.text('ASMR.ONE')),
       findsOneWidget,
@@ -503,8 +508,8 @@ void main() {
 
     await tester.fling(destination, const Offset(80, 0), 600);
     await tester.pump();
-    expect(fadeOpacity(localFadeFinder), 1);
-    expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(pageIsOffstage(localPageFinder), isFalse);
+    expect(pageIsOffstage(asmrPageFinder), isFalse);
     expect(
       find.descendant(of: destination, matching: find.text(localTitle)),
       findsOneWidget,
@@ -513,12 +518,12 @@ void main() {
 
     final gesture = await tester.startGesture(tester.getCenter(destination));
     await tester.pump(const Duration(milliseconds: 900));
-    expect(fadeOpacity(localFadeFinder), 1);
-    expect(fadeOpacity(asmrFadeFinder), 0);
+    expect(pageIsOffstage(localPageFinder), isFalse);
+    expect(pageIsOffstage(asmrPageFinder), isTrue);
 
     await tester.pump(const Duration(milliseconds: 120));
-    expect(fadeOpacity(localFadeFinder), 0);
-    expect(fadeOpacity(asmrFadeFinder), 1);
+    expect(pageIsOffstage(localPageFinder), isFalse);
+    expect(pageIsOffstage(asmrPageFinder), isFalse);
     await gesture.up();
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.takeException(), isNull);
@@ -561,6 +566,52 @@ void main() {
     sectionIndex.value = AudioLibraryPage.asmrSection;
     await tester.pump();
     expect(controller.initializeCount, 1);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 3));
+  });
+
+  testWidgets('inactive ASMR section detaches category subscriptions', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    final controller = _QueuedEmptyAsmrLibraryController();
+    final sectionIndex = ValueNotifier<int>(AudioLibraryPage.asmrSection);
+    final activePageIndex = ValueNotifier<int>(0);
+    addTearDown(fixture.dispose);
+    addTearDown(controller.dispose);
+    addTearDown(sectionIndex.dispose);
+    addTearDown(activePageIndex.dispose);
+
+    await tester.pumpWidget(
+      fixture.build(
+        AudioLibraryPage(
+          sectionIndex: sectionIndex,
+          activePageIndex: activePageIndex,
+          onSectionChanged: (index) => sectionIndex.value = index,
+        ),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    sectionIndex.value = AudioLibraryPage.localSection;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    final inactiveReadCount = controller.categoryViewReadCount;
+    controller.emitPresentationChange();
+    await tester.pump();
+    await tester.pump();
+    expect(controller.categoryViewReadCount, inactiveReadCount);
+
+    sectionIndex.value = AudioLibraryPage.asmrSection;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(controller.categoryViewReadCount, greaterThan(inactiveReadCount));
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 3));
@@ -621,18 +672,29 @@ void main() {
     await tester.pump();
     await tester.pump();
     await pumpUntilFound(tester, find.text('Local work', findRichText: true));
+    sectionIndex.value = AudioLibraryPage.asmrSection;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     await pumpUntilFound(tester, find.text('Loaded work', findRichText: true));
 
     final localCard = find
         .descendant(
-          of: find.byKey(const ValueKey<String>('audio_library_local_fade')),
-          matching: find.byType(SwipeRevealCard),
+          of: find.byKey(
+            const ValueKey<String>('audio_library_local_page'),
+            skipOffstage: false,
+          ),
+          matching: find.byType(SwipeRevealCard, skipOffstage: false),
+          skipOffstage: false,
         )
         .first;
     final asmrCard = find
         .descendant(
-          of: find.byKey(const ValueKey<String>('audio_library_asmr_fade')),
-          matching: find.byType(SwipeRevealCard),
+          of: find.byKey(
+            const ValueKey<String>('audio_library_asmr_page'),
+            skipOffstage: false,
+          ),
+          matching: find.byType(SwipeRevealCard, skipOffstage: false),
+          skipOffstage: false,
         )
         .first;
     expect(
@@ -1990,6 +2052,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   int recommendationRefreshCount = 0;
   int loadMoreCount = 0;
   int initializeCount = 0;
+  int categoryViewReadCount = 0;
 
   static final AsmrWork _collectedWork = AsmrWork(
     id: 1,
@@ -2099,6 +2162,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     AsmrCategoryType category, {
     String searchQuery = '',
   }) {
+    categoryViewReadCount++;
     final works = worksFor(category);
     final isLoading =
         category == AsmrCategoryType.recommendation && _recommendationLoading;
@@ -2158,6 +2222,11 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     if (!_recommendationRefresh.isCompleted) {
       _recommendationRefresh.complete();
     }
+  }
+
+  void emitPresentationChange() {
+    _revision++;
+    notifyListeners();
   }
 
   @override

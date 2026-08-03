@@ -1,10 +1,15 @@
 part of 'asmr_tab.dart';
 
 class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
-  const _AsmrWorkTreeCard({required this.work, required this.searchQuery});
+  const _AsmrWorkTreeCard({
+    required this.work,
+    required this.searchQuery,
+    required this.isActive,
+  });
 
   final AsmrWork work;
   final String searchQuery;
+  final bool isActive;
 
   @override
   ConsumerState<_AsmrWorkTreeCard> createState() => _AsmrWorkTreeCardState();
@@ -14,6 +19,10 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   static const double _rootTileHeight = LibraryLikeCardMetrics.rootTileHeight;
   final ExpansibleController _expansionController = ExpansibleController();
   bool _expanded = false;
+
+  T _readOrWatch<T>(ProviderListenable<T> provider) {
+    return widget.isActive ? ref.watch(provider) : ref.read(provider);
+  }
 
   Future<void> _loadTrackTree() async {
     final controller = ref.read(asmrLibraryControllerProvider);
@@ -118,26 +127,24 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   Widget build(BuildContext context) {
     final controller = ref.read(asmrLibraryControllerProvider);
     final treeState = _expanded
-        ? ref.watch(asmrTrackTreeStateProvider(widget.work.id)).value ??
+        ? _readOrWatch(asmrTrackTreeStateProvider(widget.work.id)).value ??
               controller?.trackTreeViewState(widget.work.id)
         : null;
     final tree = treeState?.tree;
     final visibleTree = treeState?.visibleTree;
     final isTreeLoading = treeState?.isLoading ?? false;
     final treeError = treeState?.operationError;
-    ref.watch(appLanguageStateProvider);
+    _readOrWatch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final asmrBlue = tokens.asmrAccent;
-    final playBusy = ref
-        .watch(
-          uiOperationForScopeProvider(
-            UiOperationScope.asmrWork(AsmrOperationKind.play, widget.work.id),
-          ),
-        )
-        .isBusy;
-    final fields = ref.watch(
+    final playBusy = _readOrWatch(
+      uiOperationForScopeProvider(
+        UiOperationScope.asmrWork(AsmrOperationKind.play, widget.work.id),
+      ),
+    ).isBusy;
+    final fields = _readOrWatch(
       settingsStateProvider.select(
         (state) => state.value?.cardInfoFields ?? CardInfoField.defaults,
       ),
@@ -227,6 +234,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                   url: _asmrWorkListCoverUrl(widget.work),
                   width: coverWidth,
                   duration: widget.work.duration,
+                  isActive: widget.isActive,
                 ),
                 onPlay: () => unawaited(_playWork(context)),
                 expanded: _expanded,
@@ -247,6 +255,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                           child: _AsmrTrackTreeNode(
                             work: widget.work,
                             node: node,
+                            isActive: widget.isActive,
                           ),
                         )
                     else if (treeError != null && tree == null)
@@ -313,10 +322,15 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
 }
 
 class _AsmrTrackTreeNode extends ConsumerStatefulWidget {
-  const _AsmrTrackTreeNode({required this.work, required this.node});
+  const _AsmrTrackTreeNode({
+    required this.work,
+    required this.node,
+    required this.isActive,
+  });
 
   final AsmrWork work;
   final AsmrTrackFile node;
+  final bool isActive;
 
   @override
   ConsumerState<_AsmrTrackTreeNode> createState() => _AsmrTrackTreeNodeState();
@@ -339,13 +353,14 @@ class _AsmrTrackTreeNodeState extends ConsumerState<_AsmrTrackTreeNode> {
           .toList(growable: false);
       final cs = Theme.of(context).colorScheme;
       final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-      final busy = ref
-          .watch(
-            uiOperationForScopeProvider(
-              _trackPlayScope(widget.work, widget.node),
-            ),
-          )
-          .isBusy;
+      final operationProvider = uiOperationForScopeProvider(
+        _trackPlayScope(widget.work, widget.node),
+      );
+      final busy =
+          (widget.isActive
+                  ? ref.watch(operationProvider)
+                  : ref.read(operationProvider))
+              .isBusy;
       return Theme(
         data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
         child: ExpansionTile(
@@ -453,14 +468,22 @@ class _AsmrTrackTreeNodeState extends ConsumerState<_AsmrTrackTreeNode> {
                   for (final child in visibleChildren)
                     Padding(
                       padding: EdgeInsets.zero,
-                      child: _AsmrTrackTreeNode(work: widget.work, node: child),
+                      child: _AsmrTrackTreeNode(
+                        work: widget.work,
+                        node: child,
+                        isActive: widget.isActive,
+                      ),
                     ),
                 ]
               : const <Widget>[],
         ),
       );
     }
-    return _AsmrTrackLeafRow(work: widget.work, node: widget.node);
+    return _AsmrTrackLeafRow(
+      work: widget.work,
+      node: widget.node,
+      isActive: widget.isActive,
+    );
   }
 
   Future<void> _playFolder(BuildContext context) async {
@@ -497,18 +520,26 @@ class _AsmrTrackTreeNodeState extends ConsumerState<_AsmrTrackTreeNode> {
 }
 
 class _AsmrTrackLeafRow extends ConsumerWidget {
-  const _AsmrTrackLeafRow({required this.work, required this.node});
+  const _AsmrTrackLeafRow({
+    required this.work,
+    required this.node,
+    required this.isActive,
+  });
 
   final AsmrWork work;
   final AsmrTrackFile node;
+  final bool isActive;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final busy = ref
-        .watch(uiOperationForScopeProvider(_trackPlayScope(work, node)))
-        .isBusy;
+    final operationProvider = uiOperationForScopeProvider(
+      _trackPlayScope(work, node),
+    );
+    final busy =
+        (isActive ? ref.watch(operationProvider) : ref.read(operationProvider))
+            .isBusy;
     return ColoredBox(
       color: Colors.transparent,
       child: SizedBox(

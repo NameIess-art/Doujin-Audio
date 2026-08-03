@@ -62,7 +62,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   final NotificationsPlatformService _notificationsPlatformService =
       NotificationsPlatformService();
 
-  int _currentIndex = 0;
   bool _isMenuCollapsed = false;
   late final List<Widget> _pages;
   late final ValueNotifier<int> _activePageIndex;
@@ -133,7 +132,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       languageProvider: ref.read(appLanguageProviderInstanceProvider),
       updateService: ref.read(appUpdateServiceProvider),
     );
-    _activePageIndex = ValueNotifier<int>(_currentIndex);
+    _activePageIndex = ValueNotifier<int>(0);
     _audioLibrarySectionIndex = ValueNotifier<int>(
       AudioLibraryPage.localSection,
     );
@@ -192,7 +191,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       unawaited(_consumePendingNotificationSession());
       Future.delayed(const Duration(milliseconds: 750), () {
         if (!mounted) return;
-        warmup.schedule(currentPageIndex: _currentIndex, immediate: true);
+        warmup.schedule(
+          currentPageIndex: _activePageIndex.value,
+          immediate: true,
+        );
       });
     });
   }
@@ -206,11 +208,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       _audioLibrarySectionIndex.value = startupPage == StartupPage.asmrOne
           ? AudioLibraryPage.asmrSection
           : AudioLibraryPage.localSection;
-      setState(() {
-        _currentIndex = startupPage == StartupPage.playlist ? 1 : 0;
-        _isDataReady = true;
-      });
-      _activePageIndex.value = _currentIndex;
+      final startupIndex = startupPage == StartupPage.playlist ? 1 : 0;
+      setState(() => _isDataReady = true);
+      _activePageIndex.value = startupIndex;
     }
     _queueAutoUpdateCheckIfReady();
   }
@@ -386,7 +386,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       if (!mounted) return;
       ref
           .read(audioUiWarmupCoordinatorProvider)
-          .schedule(currentPageIndex: _currentIndex, immediate: true);
+          .schedule(currentPageIndex: _activePageIndex.value, immediate: true);
     });
   }
 
@@ -620,7 +620,10 @@ class _MainScreenState extends ConsumerState<MainScreen>
       ref.read(audioRuntimeCoordinatorProvider).resumeForeground().then((_) {
         if (!mounted) return;
         final warmup = ref.read(audioUiWarmupCoordinatorProvider);
-        warmup.schedule(currentPageIndex: _currentIndex, immediate: true);
+        warmup.schedule(
+          currentPageIndex: _activePageIndex.value,
+          immediate: true,
+        );
       }),
     );
     if (!_notificationSettingsOpened) {
@@ -631,7 +634,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _switchPage(int index) {
-    if (index == _currentIndex) {
+    if (index == _activePageIndex.value) {
       ref.read(mainScreenControllerProvider).requestScrollToTop(index);
       return;
     }
@@ -639,9 +642,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     final coordinator = UiInteractionCoordinator.instance;
     coordinator.beginInteraction(_pageSwitchInteraction);
     _pageSwitchCoordinatorGeneration = coordinator.beginGeneration();
-    setState(() {
-      _currentIndex = index;
-    });
     _activePageIndex.value = index;
     if (index == 0 &&
         _audioLibrarySectionIndex.value == AudioLibraryPage.asmrSection) {
@@ -674,7 +674,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   void _handlePageTransitionCompleted(int index) {
-    if (!mounted || _currentIndex != index) return;
+    if (!mounted || _activePageIndex.value != index) return;
     final warmup = ref.read(audioUiWarmupCoordinatorProvider);
     final coordinator = UiInteractionCoordinator.instance;
     final generation = _pageSwitchCoordinatorGeneration;
@@ -689,7 +689,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       generation: generation,
       priority: 0,
       task: () async {
-        if (!mounted || _currentIndex != index) return;
+        if (!mounted || _activePageIndex.value != index) return;
         warmup.schedule(currentPageIndex: index, immediate: true);
       },
     );

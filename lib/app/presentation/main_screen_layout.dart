@@ -102,6 +102,7 @@ extension _MainScreenLayout on _MainScreenState {
     return AppFadeThroughIndexedStack(
       key: const ValueKey<String>('main_page_stack'),
       indexListenable: _activePageIndex,
+      duration: const Duration(milliseconds: 350),
       onTransitionCompleted: _handlePageTransitionCompleted,
       children: List<Widget>.generate(_pages.length, pageShell),
     );
@@ -182,15 +183,21 @@ extension _MainScreenLayout on _MainScreenState {
 
       final tokens = AppDesignTokens.of(context);
       final activeColor = cs.primary;
-      final labelText = Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+      final labelText = AnimatedDefaultTextStyle(
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 350),
+        curve: Curves.easeOutCubic,
+        style: Theme.of(context).textTheme.labelSmall!.copyWith(
           fontSize: 10,
           fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
           color: selected ? activeColor : inactive,
           letterSpacing: 0,
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
       );
 
@@ -220,8 +227,8 @@ extension _MainScreenLayout on _MainScreenState {
                       AnimatedContainer(
                         duration: MediaQuery.disableAnimationsOf(context)
                             ? Duration.zero
-                            : tokens.motionSlow,
-                        curve: Curves.easeOutQuint,
+                            : const Duration(milliseconds: 350),
+                        curve: Curves.easeOutCubic,
                         width: selected ? 56 : 0,
                         height: 26,
                         decoration: BoxDecoration(

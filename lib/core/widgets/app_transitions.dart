@@ -235,6 +235,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     required this.indexListenable,
     required this.children,
     this.style = AppIndexedStackTransitionStyle.directional,
+    this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
   });
 
@@ -242,6 +243,7 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
   int get index => indexListenable.value;
   final List<Widget> children;
   final AppIndexedStackTransitionStyle style;
+  final Duration duration;
   final ValueChanged<int>? onTransitionCompleted;
 
   @override
@@ -251,10 +253,9 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
 
 class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     with SingleTickerProviderStateMixin {
-  static const _transitionDuration = Duration(milliseconds: 260);
-  static const _incomingOffset = 0.16;
-  static const _outgoingOffset = 0.045;
-  static const _outgoingOpacityFloor = 0.86;
+  static const _incomingOffset = 0.12;
+  static const _outgoingOffset = 0.035;
+  static const _outgoingOpacityFloor = 0.0;
 
   late final AnimationController _controller;
   late int _currentIndex;
@@ -269,8 +270,8 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     _targetIndex = _currentIndex;
     _controller = AnimationController(
       vsync: this,
-      duration: _transitionDuration,
-      reverseDuration: _transitionDuration,
+      duration: widget.duration,
+      reverseDuration: widget.duration,
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
     widget.indexListenable.addListener(_handleIndexChanged);
@@ -279,6 +280,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   @override
   void didUpdateWidget(covariant AppFadeThroughIndexedStack oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.duration != widget.duration) {
+      _controller.duration = widget.duration;
+      _controller.reverseDuration = widget.duration;
+    }
     if (!identical(oldWidget.indexListenable, widget.indexListenable)) {
       oldWidget.indexListenable.removeListener(_handleIndexChanged);
       widget.indexListenable.addListener(_handleIndexChanged);
@@ -381,7 +386,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       animation: outgoing || incoming
           ? _controller
           : const AlwaysStoppedAnimation<double>(1),
-      child: page,
+      child: RepaintBoundary(child: page),
       builder: (context, child) {
         final rawProgress = _isAnimating ? _controller.value : 1.0;
         final progress = Curves.easeOutCubic.transform(rawProgress);
@@ -402,7 +407,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
                   ? 1 - progress
                   : progress
             : outgoing
-            ? 1 - progress * (1 - _outgoingOpacityFloor)
+            ? (1 - progress * (1 - _outgoingOpacityFloor)).clamp(0.0, 1.0)
             : 1.0;
         return FractionalTranslation(
           translation: translation,

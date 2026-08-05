@@ -61,13 +61,22 @@ Future<void> main() async {
         return AppErrorView.fromFlutterError(details);
       };
     }
+    var firstFrameAllowed = false;
+    void allowFirstFrameOnce() {
+      if (firstFrameAllowed) return;
+      firstFrameAllowed = true;
+      binding.allowFirstFrame();
+    }
+
     runApp(
       AppBootstrapHost(
         controller: AppBootstrapController(
           initializer: _initializeAudioPlayerApp,
         ),
-        appBuilder: _createAudioPlayerApp,
-        onBootstrapSettled: binding.allowFirstFrame,
+        deferReadySettlement: true,
+        appBuilder: () =>
+            _createAudioPlayerApp(onBootstrapSettled: allowFirstFrameOnce),
+        onBootstrapSettled: allowFirstFrameOnce,
       ),
     );
   }, AppLogService.logZoneError);
@@ -104,7 +113,7 @@ Future<void> _initializeAudioPlayerApp() async {
   );
 }
 
-Widget _createAudioPlayerApp() {
+Widget _createAudioPlayerApp({VoidCallback? onBootstrapSettled}) {
   final notificationService = PlaybackNotificationService();
   final database = AppDatabase.instance;
   final libraryRepository = SqliteLibraryRepository(database: database);
@@ -176,7 +185,7 @@ Widget _createAudioPlayerApp() {
         asmrPlaybackCoordinator,
       ),
     ],
-    child: const MusicPlayerApp(),
+    child: MusicPlayerApp(onBootstrapSettled: onBootstrapSettled),
   );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -206,7 +215,9 @@ class _StretchOverscrollBehavior extends MaterialScrollBehavior {
 }
 
 class MusicPlayerApp extends ConsumerStatefulWidget {
-  const MusicPlayerApp({super.key});
+  const MusicPlayerApp({this.onBootstrapSettled, super.key});
+
+  final VoidCallback? onBootstrapSettled;
 
   @override
   ConsumerState<MusicPlayerApp> createState() => _MusicPlayerAppState();
@@ -287,6 +298,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
       home: AppBootstrapGate(
         controller: _runtimeBootstrapController,
         disposeController: false,
+        onBootstrapSettled: widget.onBootstrapSettled,
         readyBuilder: (_) =>
             const OnboardingGate(child: GlobalShortcuts(child: MainScreen())),
         loadingBuilder: (_) => const AppBootstrapLoadingView(),

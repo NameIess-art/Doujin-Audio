@@ -105,6 +105,79 @@ void main() {
     expect(bootstrapSettledCalls, 1);
   });
 
+  testWidgets('nested runtime keeps the native splash until it settles', (
+    tester,
+  ) async {
+    final appInitialization = Completer<void>();
+    final runtimeInitialization = Completer<void>();
+    final appController = AppBootstrapController(
+      initializer: () => appInitialization.future,
+    );
+    final runtimeController = AppBootstrapController(
+      initializer: () => runtimeInitialization.future,
+    );
+    var bootstrapSettledCalls = 0;
+
+    await tester.pumpWidget(
+      AppBootstrapHost(
+        controller: appController,
+        locale: const Locale('en'),
+        deferReadySettlement: true,
+        onBootstrapSettled: () => bootstrapSettledCalls++,
+        appBuilder: () => MaterialApp(
+          home: AppBootstrapGate(
+            controller: runtimeController,
+            onBootstrapSettled: () => bootstrapSettledCalls++,
+            readyBuilder: (_) => const Text('runtime ready'),
+            loadingBuilder: (_) => const AppBootstrapLoadingView(),
+            failureBuilder: (_, _) => const Text('runtime failed'),
+          ),
+        ),
+      ),
+    );
+
+    appInitialization.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+      findsOneWidget,
+    );
+    expect(bootstrapSettledCalls, 0);
+
+    runtimeInitialization.complete();
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('runtime ready'), findsOneWidget);
+    expect(bootstrapSettledCalls, 1);
+  });
+
+  testWidgets('deferred ready settlement still releases startup failures', (
+    tester,
+  ) async {
+    var bootstrapSettledCalls = 0;
+    final controller = AppBootstrapController(
+      initializer: () async => throw StateError('startup failed'),
+    );
+
+    await tester.pumpWidget(
+      AppBootstrapHost(
+        controller: controller,
+        locale: const Locale('en'),
+        deferReadySettlement: true,
+        onBootstrapSettled: () => bootstrapSettledCalls++,
+        appBuilder: () => const SizedBox(),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('app_error_view')),
+      findsOneWidget,
+    );
+    expect(bootstrapSettledCalls, 1);
+  });
+
   testWidgets('startup diagnostics export failures stay in the error shell', (
     tester,
   ) async {

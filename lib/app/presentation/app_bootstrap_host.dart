@@ -15,6 +15,7 @@ class AppBootstrapHost extends StatelessWidget {
     required this.appBuilder,
     this.exportDiagnostics,
     this.disposeController = true,
+    this.deferReadySettlement = false,
     this.locale,
     this.onBootstrapSettled,
     super.key,
@@ -24,6 +25,7 @@ class AppBootstrapHost extends StatelessWidget {
   final Widget Function() appBuilder;
   final Future<void> Function()? exportDiagnostics;
   final bool disposeController;
+  final bool deferReadySettlement;
   final Locale? locale;
   final VoidCallback? onBootstrapSettled;
 
@@ -71,7 +73,12 @@ class AppBootstrapHost extends StatelessWidget {
     return AppBootstrapGate(
       controller: controller,
       disposeController: disposeController,
-      onBootstrapSettled: onBootstrapSettled,
+      onBootstrapSettled: () {
+        if (!deferReadySettlement ||
+            controller.state.phase == AppBootstrapPhase.failure) {
+          onBootstrapSettled?.call();
+        }
+      },
       readyBuilder: (_) => appBuilder(),
       loadingBuilder: (_) => shell(const AppBootstrapLoadingView()),
       failureBuilder: (_, state) => shell(

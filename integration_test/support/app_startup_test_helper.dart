@@ -3,6 +3,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/presentation/main_screen.dart';
 import 'package:nameless_audio/app/presentation/onboarding_page.dart';
 
+/// Starts the app while preserving Flutter test's process-wide error widget.
+///
+/// The production entry point installs its crash-safe [ErrorWidget.builder].
+/// Flutter's test binding correctly treats that process-wide change as test
+/// pollution unless the integration test restores its own builder at teardown.
+Future<void> startAppForTest(
+  Future<void> Function() start,
+) async {
+  final errorWidgetBuilder = ErrorWidget.builder;
+  addTearDown(() {
+    ErrorWidget.builder = errorWidgetBuilder;
+  });
+  await start();
+}
+
 Future<void> enterMainScreen(WidgetTester tester) async {
   await _waitForStartupWidget(tester);
   if (find.byType(OnboardingPage).evaluate().isNotEmpty) {

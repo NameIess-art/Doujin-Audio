@@ -21,7 +21,7 @@ void main() {
   testWidgets(
     'Android version channel and native playback critical path',
     (tester) async {
-      await app.main();
+      await startAppForTest(app.main);
       await enterMainScreen(tester);
 
       final container = ProviderScope.containerOf(

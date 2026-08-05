@@ -1,33 +1,5 @@
 import '../media/music_track.dart';
 
-final class AudioDetailBackupSyncRecord {
-  const AudioDetailBackupSyncRecord({
-    required this.targetType,
-    required this.targetPath,
-    required this.generation,
-    required this.attemptCount,
-    required this.nextAttemptAtMs,
-    this.lastError,
-  });
-
-  final String targetType;
-  final String targetPath;
-  final int generation;
-  final int attemptCount;
-  final int nextAttemptAtMs;
-  final String? lastError;
-
-  factory AudioDetailBackupSyncRecord.fromRow(Map<String, Object?> row) =>
-      AudioDetailBackupSyncRecord(
-        targetType: row['target_type']! as String,
-        targetPath: row['target_path']! as String,
-        generation: row['generation']! as int,
-        attemptCount: row['attempt_count']! as int,
-        nextAttemptAtMs: row['next_attempt_at_ms']! as int,
-        lastError: row['last_error'] as String?,
-      );
-}
-
 final class AudioEffectsRecord {
   AudioEffectsRecord({
     this.skipSilenceEnabled = false,
@@ -149,6 +121,43 @@ final class LibraryEntryRecord {
   final DateTime? scannedAt;
   final int? fileSizeBytes;
   final DateTime? modifiedAt;
+}
+
+final class AudioDetailRecord {
+  AudioDetailRecord({
+    required this.targetType,
+    required this.targetPath,
+    required this.rjCode,
+    required this.workTitle,
+    required this.circleName,
+    required List<String> voiceActors,
+    required List<String> tags,
+    this.cardCoverPath,
+    required this.cardCoverSelected,
+    this.releaseDate,
+    this.duration,
+    this.salesCount,
+    this.rating,
+    this.createdAt,
+    this.updatedAt,
+  }) : voiceActors = List<String>.unmodifiable(voiceActors),
+       tags = List<String>.unmodifiable(tags);
+
+  final String targetType;
+  final String targetPath;
+  final String rjCode;
+  final String workTitle;
+  final String circleName;
+  final List<String> voiceActors;
+  final List<String> tags;
+  final String? cardCoverPath;
+  final bool cardCoverSelected;
+  final DateTime? releaseDate;
+  final Duration? duration;
+  final int? salesCount;
+  final double? rating;
+  final DateTime? createdAt;
+  final DateTime? updatedAt;
 }
 
 final class AsmrWorkRecord {

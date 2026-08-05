@@ -8,7 +8,11 @@ import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'support/test_persistence_repository.dart';
-import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_document_repository.dart';
+import 'package:nameless_audio/features/library/data/audio_detail_json_codec.dart';
+import 'package:nameless_audio/features/library/domain/audio_detail_store.dart';
+import 'package:nameless_audio/features/library/application/library_scan_coordinator.dart';
+import 'package:nameless_audio/features/library/application/library_scan_data_source.dart';
 import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
 import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
@@ -36,6 +40,88 @@ void main() {
   tearDown(() async {
     await fixture.dispose(currentGraph: runtimeGraph);
   });
+
+  test(
+    'adding folders and libraries preserves every JSON file byte-for-byte',
+    () async {
+      const labels = LibraryScanLabels(
+        chooseMusicFolder: 'folder',
+        chooseLibraryFolder: 'library',
+        chooseAudioFiles: 'files',
+        importedFiles: 'imported',
+        manuallySelectedFiles: 'selected',
+      );
+      final root = await Directory.systemTemp.createTemp(
+        'library_scan_json_preservation_',
+      );
+      addTearDown(() async {
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+      final standalone = await Directory(
+        path.join(root.path, 'standalone'),
+      ).create();
+      final library = await Directory(path.join(root.path, 'library')).create();
+      final work = await Directory(path.join(library.path, 'work')).create();
+      final dataSource = _JsonPreservationScanDataSource();
+      final coordinator = LibraryScanCoordinator(
+        scanner: LibraryScannerService(dataSource: dataSource),
+      );
+      addTearDown(coordinator.dispose);
+
+      Future<Map<File, List<int>>> seedJsonFiles(Directory folder) async {
+        final target = AudioDetailTarget.libraryRootFolder(folder.path);
+        final files = <File, List<int>>{
+          File(
+            path.join(folder.path, audioDetailDocumentName),
+          ): const AudioDetailJsonCodec().encodeNew(
+            AudioDetail.empty(target).copyWith(workTitle: 'Original metadata'),
+          ),
+          File(path.join(folder.path, 'third-party.JSON')): utf8.encode(
+            '{\r\n  "preserve": true\r\n}\r\n',
+          ),
+        };
+        for (final entry in files.entries) {
+          await entry.key.writeAsBytes(entry.value, flush: true);
+        }
+        return files;
+      }
+
+      Future<void> expectUnchanged(Map<File, List<int>> files) async {
+        for (final entry in files.entries) {
+          expect(await entry.key.readAsBytes(), entry.value);
+        }
+      }
+
+      final standaloneJson = await seedJsonFiles(standalone);
+      dataSource.configure(
+        selectedPath: standalone.path,
+        tracks: <ScannedTrack>[
+          _scannedTrackForPath(path.join(standalone.path, 'track.mp3')),
+        ],
+      );
+      await coordinator.importFolder(
+        catalog: runtimeGraph.library,
+        labels: labels,
+      );
+      await pumpEventQueue();
+      await expectUnchanged(standaloneJson);
+
+      final workJson = await seedJsonFiles(work);
+      dataSource.configure(
+        selectedPath: library.path,
+        childFolders: <String>[work.path],
+        tracks: <ScannedTrack>[
+          _scannedTrackForPath(path.join(work.path, 'track.mp3')),
+        ],
+      );
+      await coordinator.importLibrary(
+        catalog: runtimeGraph.library,
+        labels: labels,
+      );
+      await pumpEventQueue();
+      await expectUnchanged(workJson);
+    },
+  );
 
   test('missing folder durations include every audio track', () async {
     final folder = await Directory.systemTemp.createTemp(
@@ -170,7 +256,7 @@ void main() {
   });
 
   test(
-    'duration backfill does not overwrite a richer local detail backup',
+    'duration backfill keeps a richer local detail backup byte-identical',
     () async {
       final workFolder = await Directory.systemTemp.createTemp(
         'detail_duration_backup_race_',
@@ -205,33 +291,37 @@ void main() {
           circleName: 'Original circle',
         ),
       );
-      await db.delete('audio_details');
-      await runtimeGraph.library.databaseRepository.upsertAudioDetail(
-        AudioDetail.empty(target).copyWith(
-          createdAt: DateTime.utc(2026, 7, 26, 10),
-          updatedAt: DateTime.utc(2026, 7, 26, 10, 1),
-        ),
+      final backupFile = File(
+        path.join(workFolder.path, audioDetailDocumentName),
       );
+      final originalBackup = await backupFile.readAsString();
+      final thirdPartyJson = File(
+        path.join(workFolder.path, 'third-party.json'),
+      );
+      const originalThirdPartyJson = '{"keep":"this exact content"}\n';
+      await thirdPartyJson.writeAsString(originalThirdPartyJson, flush: true);
+      await db.delete('audio_details');
+      await (runtimeGraph.library.databaseRepository as AudioDetailStore)
+          .upsert(
+            AudioDetail.empty(target).copyWith(
+              createdAt: DateTime.utc(2026, 7, 26, 10),
+              updatedAt: DateTime.utc(2026, 7, 26, 10, 1),
+            ),
+          );
       runtimeGraph.library.detailCacheService.clear();
 
       await runtimeGraph.library.backfillMissingLibraryDurations(
         durationReader: (_) async => const Duration(minutes: 2),
       );
 
-      final backup =
-          json.decode(
-                await File(
-                  path.join(
-                    workFolder.path,
-                    AudioDetailRepository.backupFileName,
-                  ),
-                ).readAsString(),
-              )
-              as Map<String, dynamic>;
-      expect(backup['rjCode'], 'RJ123456');
-      expect(backup['workTitle'], 'Original title');
-      expect(backup['circleName'], 'Original circle');
-      expect(backup['durationMs'], const Duration(minutes: 2).inMilliseconds);
+      expect(await backupFile.readAsString(), originalBackup);
+      expect(await thirdPartyJson.readAsString(), originalThirdPartyJson);
+      expect(
+        (await (runtimeGraph.library.databaseRepository as AudioDetailStore)
+                .load(target))
+            ?.duration,
+        const Duration(minutes: 2),
+      );
     },
   );
 
@@ -271,7 +361,7 @@ void main() {
   });
 
   test(
-    'library duration backfill persists work and single details to database and JSON',
+    'library duration backfill persists work and single details only to database',
     () async {
       final root = await Directory.systemTemp.createTemp(
         'library_duration_backfill_',
@@ -371,31 +461,15 @@ void main() {
         ),
       );
 
-      final workBackup =
-          json.decode(
-                await File(
-                  path.join(workDir.path, AudioDetailRepository.backupFileName),
-                ).readAsString(),
-              )
-              as Map<String, dynamic>;
       expect(
-        workBackup['durationMs'],
-        const Duration(minutes: 3).inMilliseconds,
+        await File(path.join(workDir.path, audioDetailDocumentName)).exists(),
+        isFalse,
       );
-      final singleBackups =
-          json.decode(
-                await File(
-                  path.join(
-                    singlesDir.path,
-                    AudioDetailRepository.backupFileName,
-                  ),
-                ).readAsString(),
-              )
-              as List<dynamic>;
-      expect(singleBackups, hasLength(1));
       expect(
-        (singleBackups.single as Map<String, dynamic>)['durationMs'],
-        const Duration(seconds: 45).inMilliseconds,
+        await File(
+          path.join(singlesDir.path, audioDetailDocumentName),
+        ).exists(),
+        isFalse,
       );
     },
   );
@@ -482,7 +556,7 @@ void main() {
         AudioDetail.empty(target).copyWith(workTitle: 'Database title'),
       );
       await File(
-        path.join(workDir.path, AudioDetailRepository.backupFileName),
+        path.join(workDir.path, audioDetailDocumentName),
       ).writeAsString('{invalid json');
       runtimeGraph.library.detailCacheService.clear();
 
@@ -558,7 +632,7 @@ void main() {
       (await runtimeGraph.library.loadAudioDetail(target)).detail.workTitle,
       'Before restore',
     );
-    await runtimeGraph.library.databaseRepository.upsertAudioDetail(
+    await (runtimeGraph.library.databaseRepository as AudioDetailStore).upsert(
       AudioDetail.empty(target).copyWith(
         workTitle: 'Restored database title',
         createdAt: DateTime.utc(2100),
@@ -611,7 +685,7 @@ void main() {
     await durationReadStarted.future;
 
     await runtimeGraph.library.resetPersistedState();
-    await runtimeGraph.library.databaseRepository.upsertAudioDetail(
+    await (runtimeGraph.library.databaseRepository as AudioDetailStore).upsert(
       AudioDetail.empty(target).copyWith(
         workTitle: 'Restored database title',
         createdAt: DateTime.utc(2100),
@@ -621,8 +695,9 @@ void main() {
     releaseDurationRead.complete();
     await backfill;
 
-    final persisted = await runtimeGraph.library.databaseRepository
-        .loadAudioDetail(target);
+    final persisted =
+        await (runtimeGraph.library.databaseRepository as AudioDetailStore)
+            .load(target);
     expect(persisted?.workTitle, 'Restored database title');
     expect(persisted?.duration, isNull);
     expect(runtimeGraph.library.trackByPath(trackPath), isNull);
@@ -1555,6 +1630,85 @@ void main() {
       expect(runtimeGraph.library.hasLibraryExclusions(folder.path), isFalse);
     });
   });
+}
+
+ScannedTrack _scannedTrackForPath(String trackPath) {
+  final folder = path.dirname(trackPath);
+  return ScannedTrack(
+    path: trackPath,
+    groupKey: folder,
+    groupTitle: path.basename(folder),
+    groupSubtitle: folder,
+    isSingle: false,
+    isVideo: false,
+  );
+}
+
+class _JsonPreservationScanDataSource implements LibraryScanDataSource {
+  String _selectedPath = '';
+  List<String> _childFolders = const <String>[];
+  List<ScannedTrack> _tracks = const <ScannedTrack>[];
+
+  void configure({
+    required String selectedPath,
+    List<String> childFolders = const <String>[],
+    required List<ScannedTrack> tracks,
+  }) {
+    _selectedPath = selectedPath;
+    _childFolders = childFolders;
+    _tracks = tracks;
+  }
+
+  @override
+  Future<bool> ensureReadPermissionForSources(Iterable<String> sources) async =>
+      true;
+
+  @override
+  Future<LibraryChildFolderListing> listImmediateChildFolders(
+    String folderPath,
+  ) async => (folders: _childFolders, complete: true);
+
+  @override
+  Future<String?> pickAudioFolder({required String dialogTitle}) async =>
+      _selectedPath;
+
+  @override
+  Future<List<PickedAudioFile>?> pickAudioFiles({
+    required String dialogTitle,
+  }) async => const <PickedAudioFile>[];
+
+  @override
+  Future<String> resolveRestorablePath(String source) async => source;
+
+  @override
+  Future<NativeScanResult> scanFileSystemFolderChunked(
+    String folderPath,
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk,
+  ) => scanFolderChunked(folderPath, onChunk);
+
+  @override
+  Future<NativeScanResult> scanFolder(String folderPath) async =>
+      _resultForCurrentTracks();
+
+  @override
+  Future<NativeScanResult> scanFolderChunked(
+    String folderPath,
+    FutureOr<bool> Function(FolderScanChunk chunk) onChunk, {
+    FutureOr<void> Function(FolderScanSessionEvent event)? onProgress,
+  }) async {
+    final paths = _tracks.map((track) => track.path).toSet();
+    await onChunk(FolderScanChunk(tracks: _tracks, paths: paths));
+    return _resultForCurrentTracks();
+  }
+
+  @override
+  Future<bool> sourceExists(String source) async => true;
+
+  NativeScanResult _resultForCurrentTracks() => NativeScanResult.success(
+    _tracks,
+    _tracks.map((track) => track.path).toSet(),
+    completenessKnown: true,
+  );
 }
 
 class _CountingTestPersistenceRepository extends TestPersistenceRepository {

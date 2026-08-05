@@ -12,7 +12,7 @@ import 'support/runtime_test_models.dart';
 import 'package:nameless_audio/core/app_language.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
 import 'support/test_persistence_repository.dart';
-import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_document_repository.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/features/library/presentation/library_cover_ui_controller.dart';
@@ -438,7 +438,7 @@ void main() {
 
         final backupFile = File(
           '${workDir.path}${Platform.pathSeparator}'
-          '${AudioDetailRepository.backupFileName}',
+          '$audioDetailDocumentName',
         );
         final selectedCoverBackup =
             json.decode(await backupFile.readAsString())
@@ -530,7 +530,7 @@ void main() {
 
         final backupFile = File(
           '${workDir.path}${Platform.pathSeparator}'
-          '${AudioDetailRepository.backupFileName}',
+          '$audioDetailDocumentName',
         );
         expect(await backupFile.exists(), isTrue);
         final backup =

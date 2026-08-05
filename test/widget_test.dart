@@ -418,6 +418,11 @@ void main() {
       hasLength(3),
     );
     expect(sectionStackFinder, findsOneWidget);
+    final sectionTransitionDuration = tester
+        .widget<AppFadeThroughIndexedStack>(sectionStackFinder)
+        .duration;
+    final sectionTransitionSettlement =
+        sectionTransitionDuration + const Duration(milliseconds: 1);
     expect(pageIsOffstage(localPageFinder), isFalse);
     expect(pageIsOffstage(asmrPageFinder), isTrue);
     expect(
@@ -442,7 +447,7 @@ void main() {
       platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
       hasLength(1),
     );
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(sectionTransitionSettlement);
     expect(pageIsOffstage(localPageFinder), isTrue);
     expect(pageIsOffstage(asmrPageFinder), isFalse);
 
@@ -452,7 +457,7 @@ void main() {
 
     await tester.fling(asmrTitleFinder, const Offset(120, 0), 1000);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(sectionTransitionSettlement);
 
     expect(pageIsOffstage(localPageFinder), isFalse);
     expect(pageIsOffstage(asmrPageFinder), isTrue);
@@ -461,12 +466,12 @@ void main() {
 
     await tester.fling(localTitleFinder, const Offset(120, 0), 1000);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(sectionTransitionSettlement);
     expect(pageIsOffstage(asmrPageFinder), isFalse);
 
     await tester.fling(asmrTitleFinder, const Offset(-120, 0), 1000);
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(sectionTransitionSettlement);
 
     expect(pageIsOffstage(localPageFinder), isFalse);
     expect(pageIsOffstage(asmrPageFinder), isTrue);
@@ -504,7 +509,7 @@ void main() {
       find.descendant(of: destination, matching: find.text('ASMR.ONE')),
       findsOneWidget,
     );
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(sectionTransitionSettlement);
 
     await tester.fling(destination, const Offset(80, 0), 600);
     await tester.pump();
@@ -514,7 +519,7 @@ void main() {
       find.descendant(of: destination, matching: find.text(localTitle)),
       findsOneWidget,
     );
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(sectionTransitionSettlement);
 
     final gesture = await tester.startGesture(tester.getCenter(destination));
     await tester.pump(const Duration(milliseconds: 900));
@@ -525,7 +530,7 @@ void main() {
     expect(pageIsOffstage(localPageFinder), isFalse);
     expect(pageIsOffstage(asmrPageFinder), isFalse);
     await gesture.up();
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(sectionTransitionSettlement);
     expect(tester.takeException(), isNull);
   });
 
@@ -2005,7 +2010,7 @@ final class _AppShellTestPersistenceRepository
       const <LibraryEntry>[];
 
   @override
-  Future<List<AudioDetail>> loadAudioDetails(
+  Future<List<AudioDetail>> loadMany(
     Iterable<AudioDetailTarget> targets,
   ) async => const <AudioDetail>[];
 

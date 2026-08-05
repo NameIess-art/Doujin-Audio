@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:nameless_audio/core/persistence/json_document_store.dart';
 import 'package:nameless_audio/features/library/domain/library_node.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
@@ -446,24 +447,21 @@ class _FakeAudioDetailRepository implements AudioDetailRepository {
   }
 
   @override
-  Future<AudioDetailBackupSyncFlushResult> flushPendingBackupSync() async {
-    return const AudioDetailBackupSyncFlushResult();
-  }
-
-  @override
-  Future<void> removeBackupMirror(AudioDetailTarget target) async {}
-
-  @override
-  Future<AudioDetailSaveResult> save(
-    AudioDetail detail, {
-    AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
-  }) async {
+  Future<AudioDetailSaveResult> save(AudioDetail detail) async {
     return AudioDetailSaveResult(
       detail: detail,
-      backupAttempted: false,
-      backupSaved: false,
+      documentStatus: JsonDocumentWriteStatus.preserved,
     );
   }
+
+  @override
+  Future<AudioDetailSaveResult> retarget(
+    AudioDetailTarget previousTarget,
+    AudioDetail detail,
+  ) => save(detail);
+
+  @override
+  Future<AudioDetail> updateDerivedFields(AudioDetail detail) async => detail;
 
   @override
   Future<void> delete(AudioDetailTarget target) async {}

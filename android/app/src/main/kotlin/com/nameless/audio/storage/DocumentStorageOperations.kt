@@ -9,10 +9,12 @@ import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
+import org.json.JSONTokener
 import java.io.File
 import java.io.FileOutputStream
-import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.Locale
+import java.util.UUID
 
 internal fun <T> replaceSafDocument(
     targetName: String,
@@ -64,12 +66,35 @@ internal fun <T> replaceSafDocument(
     return true
 }
 
+internal fun <T> createSafDocumentIfAbsent(
+    listFiles: () -> List<T>,
+    isTarget: (T) -> Boolean,
+    sameDocument: (T, T) -> Boolean,
+    create: () -> T?,
+    write: (T) -> Boolean,
+    delete: (T) -> Boolean
+): Boolean {
+    if (listFiles().any(isTarget)) return false
+    val created = runCatching { create() }.getOrNull() ?: return false
+    // Some SAF providers return an existing same-name document from
+    // createFile(). Never write to or delete that URI.
+    if (isTarget(created)) return false
+    if (listFiles().any { isTarget(it) && !sameDocument(it, created) }) {
+        runCatching { delete(created) }
+        return false
+    }
+    if (!runCatching { write(created) }.getOrDefault(false)) {
+        runCatching { delete(created) }
+        return false
+    }
+    return true
+}
+
 internal class DocumentStorageOperations(
     private val context: Context
 ) {
     private val contentResolver get() = context.contentResolver
     private val filesDir get() = context.filesDir
-    private val audioDetailBackupFileName = "nameless-audio.json"
 
     private data class DocumentRenameTarget(
         val uri: Uri,
@@ -78,6 +103,210 @@ internal class DocumentStorageOperations(
         val syntheticParentRelative: String?,
         val treeRoot: Boolean
     )
+
+    fun readJsonDocument(
+        locationKind: String,
+        basePath: String,
+        name: String
+    ): Map<String, Any?> {
+        val folder = resolveJsonDocumentFolder(locationKind, basePath)
+            ?: return mapOf("status" to "unreadable", "error" to "folder_unavailable")
+        val target = runCatching { folder.listFiles().firstOrNull {
+            it.isFile && sameDocumentName(it.name, name)
+        } }.getOrElse {
+            return mapOf("status" to "unreadable", "error" to it.toString())
+        } ?: return mapOf("status" to "missing")
+        return runCatching {
+            val bytes = contentResolver.openInputStream(target.uri)?.use { it.readBytes() }
+                ?: return mapOf("status" to "unreadable", "error" to "open_failed")
+            mapOf(
+                "status" to "found",
+                "bytes" to bytes,
+                "revision" to sha256(bytes)
+            )
+        }.getOrElse {
+            mapOf("status" to "unreadable", "error" to it.toString())
+        }
+    }
+
+    fun writeJsonDocument(
+        locationKind: String,
+        basePath: String,
+        name: String,
+        bytes: ByteArray,
+        mode: String,
+        expectedRevision: String?
+    ): Map<String, Any?> {
+        if (!isValidJson(bytes)) {
+            return jsonWriteConflict("invalid_json")
+        }
+        if (mode != "createIfAbsent" && mode != "replaceIfRevision") {
+            throw IllegalArgumentException("Unsupported JSON document write mode")
+        }
+        if (mode == "replaceIfRevision" && expectedRevision.isNullOrBlank()) {
+            throw IllegalArgumentException("expectedRevision is required")
+        }
+        val folder = resolveJsonDocumentFolder(locationKind, basePath)
+            ?: return jsonWriteConflict("folder_unavailable")
+        val initialDocuments = runCatching { folder.listFiles().toList() }.getOrElse {
+            return jsonWriteConflict(it.toString())
+        }
+        val existing = initialDocuments.firstOrNull {
+            it.isFile && sameDocumentName(it.name, name)
+        }
+        if (mode == "createIfAbsent" && existing != null) {
+            return jsonPreserved(existing)
+        }
+        if (mode == "replaceIfRevision") {
+            if (existing == null) return jsonWriteConflict("document_missing")
+            val revision = documentRevision(existing)
+                ?: return jsonWriteConflict("document_unreadable")
+            if (revision != expectedRevision) {
+                return jsonWriteConflict("revision_mismatch", revision)
+            }
+        }
+
+        val token = UUID.randomUUID().toString()
+        val temporaryName = ".$name.$token.part"
+        val temporary = runCatching {
+            folder.createFile("application/octet-stream", temporaryName)
+        }.getOrNull() ?: return jsonWriteConflict("staging_create_failed")
+        if (temporary.uri == existing?.uri ||
+            !sameDocumentName(temporary.name, temporaryName)) {
+            return jsonWriteConflict("staging_collided_with_target")
+        }
+        fun deleteTemporary() {
+            runCatching { temporary.delete() }
+        }
+        val staged = runCatching {
+            contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->
+                output.write(bytes)
+                output.flush()
+            } != null
+        }.getOrDefault(false)
+        if (!staged) {
+            deleteTemporary()
+            return jsonWriteConflict("staging_write_failed")
+        }
+        val stagedBytes = runCatching {
+            contentResolver.openInputStream(temporary.uri)?.use { it.readBytes() }
+        }.getOrNull()
+        if (stagedBytes == null || !isValidJson(stagedBytes) || sha256(stagedBytes) != sha256(bytes)) {
+            deleteTemporary()
+            return jsonWriteConflict("staging_validation_failed")
+        }
+
+        val current = runCatching { folder.listFiles().firstOrNull {
+            it.isFile && sameDocumentName(it.name, name)
+        } }.getOrNull()
+        if (mode == "createIfAbsent" && current != null) {
+            deleteTemporary()
+            return jsonPreserved(current)
+        }
+        if (mode == "replaceIfRevision") {
+            val revision = current?.let(::documentRevision)
+            if (revision != expectedRevision) {
+                deleteTemporary()
+                return jsonWriteConflict("revision_mismatch", revision)
+            }
+        }
+
+        var backup: DocumentFile? = null
+        if (current != null) {
+            val backupName = ".$name.$token.bak"
+            backup = renameDocumentFile(current, backupName)
+            if (backup == null || !sameDocumentName(backup.name, backupName)) {
+                deleteTemporary()
+                return jsonWriteConflict("backup_rename_failed")
+            }
+        }
+        val committed = renameDocumentFile(temporary, name)
+        if (committed == null || !sameDocumentName(committed.name, name)) {
+            if (backup != null) runCatching { renameDocumentFile(backup, name) }
+            deleteTemporary()
+            return jsonWriteConflict("commit_rename_failed")
+        }
+        val committedRevision = documentRevision(committed)
+        if (committedRevision != sha256(bytes)) {
+            runCatching { committed.delete() }
+            if (backup != null) runCatching { renameDocumentFile(backup, name) }
+            return jsonWriteConflict("commit_validation_failed")
+        }
+        if (backup != null) runCatching { backup.delete() }
+        return mapOf(
+            "status" to if (mode == "createIfAbsent") "created" else "replaced",
+            "revision" to committedRevision,
+            "bytesWritten" to bytes.size
+        )
+    }
+
+    fun deleteJsonDocument(
+        locationKind: String,
+        basePath: String,
+        name: String,
+        expectedRevision: String
+    ): Map<String, Any?> {
+        val folder = resolveJsonDocumentFolder(locationKind, basePath)
+            ?: return mapOf("status" to "conflict", "error" to "folder_unavailable")
+        val target = runCatching { folder.listFiles().firstOrNull {
+            it.isFile && sameDocumentName(it.name, name)
+        } }.getOrElse {
+            return mapOf("status" to "conflict", "error" to it.toString())
+        } ?: return mapOf("status" to "missing")
+        val revision = documentRevision(target)
+            ?: return mapOf("status" to "conflict", "error" to "document_unreadable")
+        if (revision != expectedRevision) {
+            return mapOf("status" to "conflict", "error" to "revision_mismatch")
+        }
+        return if (runCatching { target.delete() }.getOrDefault(false)) {
+            mapOf("status" to "deleted")
+        } else {
+            mapOf("status" to "conflict", "error" to "delete_failed")
+        }
+    }
+
+    private fun resolveJsonDocumentFolder(
+        locationKind: String,
+        basePath: String
+    ): DocumentFile? = when (locationKind) {
+        "folderChild" -> resolveDocumentFileForFolderPath(basePath)
+        "fileSibling" -> resolveParentFolderForFile(basePath)
+        else -> throw IllegalArgumentException("Unsupported JSON document location")
+    }
+
+    private fun documentRevision(document: DocumentFile): String? = runCatching {
+        contentResolver.openInputStream(document.uri)?.use { sha256(it.readBytes()) }
+    }.getOrNull()
+
+    private fun jsonPreserved(document: DocumentFile): Map<String, Any?> = mapOf(
+        "status" to "preserved",
+        "revision" to documentRevision(document),
+        "bytesWritten" to 0
+    )
+
+    private fun jsonWriteConflict(
+        error: String,
+        revision: String? = null
+    ): Map<String, Any?> = mapOf(
+        "status" to "conflict",
+        "revision" to revision,
+        "bytesWritten" to 0,
+        "error" to error
+    )
+
+    private fun sha256(bytes: ByteArray): String = MessageDigest
+        .getInstance("SHA-256")
+        .digest(bytes)
+        .joinToString("") { "%02x".format(it) }
+
+    private fun isValidJson(bytes: ByteArray): Boolean = runCatching {
+        if (bytes.isEmpty()) return false
+        val text = bytes.toString(Charsets.UTF_8)
+        if (text.isBlank()) return false
+        val tokenizer = JSONTokener(text)
+        tokenizer.nextValue()
+        tokenizer.nextClean() == 0.toChar()
+    }.getOrDefault(false)
 
     fun cacheFromUri(uriString: String, name: String, index: Int): String {
         val uri = Uri.parse(uriString)
@@ -292,50 +521,6 @@ internal class DocumentStorageOperations(
             }
         }
 
-        fun readAudioDetailBackup(folderPath: String): String? {
-            val folder = resolveDocumentFileForFolderPath(folderPath)
-            if (folder != null && folder.exists()) {
-                val backup = folder.listFiles().firstOrNull {
-                    it.isFile && it.name == audioDetailBackupFileName
-                }
-                if (backup != null) {
-                    return contentResolver.openInputStream(backup.uri)?.use { input ->
-                        input.bufferedReader(Charsets.UTF_8).readText()
-                    }
-                }
-            }
-            // SAF access failed (e.g. after a File.renameTo) 閳?fall back to File I/O.
-            val filePath = contentUriToFilePath(folderPath) ?: return null
-            val backupFile = java.io.File(filePath, audioDetailBackupFileName)
-            if (backupFile.exists()) return backupFile.readText(Charsets.UTF_8)
-            return null
-        }
-
-        fun writeAudioDetailBackup(folderPath: String, json: String): Boolean {
-            val folder = resolveDocumentFileForFolderPath(folderPath)
-            if (folder != null && folder.exists()) {
-                val backup = folder.listFiles().firstOrNull {
-                    it.isFile && it.name == audioDetailBackupFileName
-                } ?: folder.createFile("application/json", audioDetailBackupFileName)
-                if (backup != null) {
-                    contentResolver.openOutputStream(backup.uri, "wt")?.use { output ->
-                        output.write(json.toByteArray(Charsets.UTF_8))
-                        output.flush()
-                    } ?: return false
-                    return true
-                }
-            }
-            // SAF access failed 閳?fall back to File I/O.
-            val filePath = contentUriToFilePath(folderPath) ?: return false
-            return try {
-                val backupFile = java.io.File(filePath, audioDetailBackupFileName)
-                backupFile.writeText(json, Charsets.UTF_8)
-                true
-            } catch (_: Exception) {
-                false
-            }
-        }
-
         /**
          * Converts a content URI (tree or document) to an actual file-system path
          * by parsing the document ID (e.g. "primary:Music/MyFolder").
@@ -369,38 +554,6 @@ internal class DocumentStorageOperations(
             val relativePath = documentId.substring(colonIndex + 1)
             val volumeRoot = resolveVolumeRoot(volumeName) ?: return null
             return java.io.File(volumeRoot, relativePath).absolutePath
-        }
-
-        /**
-         * Reads the `nameless-audio.json` file from the parent directory of the
-         * given single-file content URI.  Returns the raw JSON string, or null if
-         * the file does not exist or cannot be read.
-         */
-        fun readSingleFileDetailBackup(filePath: String): String? {
-            val parentFolder = resolveParentFolderForFile(filePath) ?: return null
-            val backup = parentFolder.listFiles().firstOrNull {
-                it.isFile && it.name == audioDetailBackupFileName
-            } ?: return null
-            return contentResolver.openInputStream(backup.uri)?.use { input ->
-                input.bufferedReader(Charsets.UTF_8).readText()
-            }
-        }
-
-        /**
-         * Writes [json] into `nameless-audio.json` in the parent directory of the
-         * given single-file content URI.  Returns true on success.
-         */
-        fun writeSingleFileDetailBackup(filePath: String, json: String): Boolean {
-            val parentFolder = resolveParentFolderForFile(filePath) ?: return false
-            val backup = parentFolder.listFiles().firstOrNull {
-                it.isFile && it.name == audioDetailBackupFileName
-            } ?: parentFolder.createFile("application/json", audioDetailBackupFileName)
-                ?: return false
-            contentResolver.openOutputStream(backup.uri, "wt")?.use { output ->
-                output.write(json.toByteArray(Charsets.UTF_8))
-                output.flush()
-            } ?: return false
-            return true
         }
 
         /**
@@ -487,19 +640,17 @@ internal class DocumentStorageOperations(
             val trimmed = targetPath.trim()
             if (!trimmed.startsWith("content://")) return false
             if (trimmed.contains("::")) {
-                return runCatching {
-                    resolveDocumentFileForFolderPath(trimmed)?.exists() == true
-                }.getOrDefault(false)
+                val syntheticIndex = trimmed.indexOf("::")
+                val base = trimmed.substring(0, syntheticIndex)
+                val relative = trimmed.substring(syntheticIndex + 2).trim('/')
+                val root = DocumentFile.fromTreeUri(context, Uri.parse(base)) ?: return false
+                return resolveRelativeDocument(root, relative)?.exists() == true
             }
             val uri = Uri.parse(trimmed)
             val document = DocumentFile.fromSingleUri(context, uri)
-            val documentExists = runCatching {
-                document?.exists() == true
-            }.getOrDefault(false)
+            val documentExists = document?.exists() == true
             if (documentExists) return true
-            return runCatching {
-                DocumentFile.fromTreeUri(context, uri)?.exists() == true
-            }.getOrDefault(false)
+            return DocumentFile.fromTreeUri(context, uri)?.exists() == true
         }
 
         fun copyFileToFolder(
@@ -524,9 +675,28 @@ internal class DocumentStorageOperations(
             val targetName = normalizedRelative.substringAfterLast('/')
             val documents = targetFolder.listFiles()
             val existing = documents.firstOrNull {
-                it.isFile && normalizeDisplayName(it.name?.trim().orEmpty()) == targetName
+                it.isFile && sameDocumentName(it.name, targetName)
             }
             if (existing != null && !overwrite) return false
+
+            val mimeType = MimeTypeMap.getSingleton()
+                .getMimeTypeFromExtension(targetName.substringAfterLast('.', "").lowercase(Locale.US))
+                ?: "application/octet-stream"
+            if (!overwrite) {
+                return writeSafDocumentIfAbsent(
+                    folder = targetFolder,
+                    targetName = targetName,
+                    mimeType = mimeType
+                ) { target ->
+                    java.io.FileInputStream(source).use { input ->
+                        contentResolver.openOutputStream(target.uri, "w")?.use { output ->
+                            input.copyTo(output)
+                            output.flush()
+                        } ?: return@writeSafDocumentIfAbsent false
+                    }
+                    true
+                }
+            }
 
             val backupName = "$targetName.nameless.bak"
             val staleBackup = documents.firstOrNull {
@@ -540,9 +710,6 @@ internal class DocumentStorageOperations(
                 return false
             }
 
-            val mimeType = MimeTypeMap.getSingleton()
-                .getMimeTypeFromExtension(targetName.substringAfterLast('.', "").lowercase(Locale.US))
-                ?: "application/octet-stream"
             return replaceSafDocument(
                 targetName = targetName,
                 existing = existing,
@@ -622,11 +789,13 @@ internal class DocumentStorageOperations(
             for (segment in relativeDirectory.split('/')) {
                 if (segment.isBlank()) continue
                 val next = current?.listFiles()?.firstOrNull {
-                    normalizeDisplayName(it.name?.trim().orEmpty()) == segment
+                    sameDocumentName(it.name, segment)
                 }
                 current = when {
                     next == null -> current?.createDirectory(segment)
                     next.isDirectory -> next
+                    segment.substringAfterLast('.', "")
+                        .equals("json", ignoreCase = true) -> return null
                     overwrite -> {
                         if (!next.delete()) return null
                         current?.createDirectory(segment)
@@ -820,7 +989,21 @@ internal class DocumentStorageOperations(
         var current: DocumentFile = root
         for (segment in relativePath.split('/').filter { it.isNotBlank() }) {
             current = current.listFiles().firstOrNull {
-                it.isDirectory && normalizeDisplayName(it.name?.trim().orEmpty()) == segment
+                it.isDirectory && sameDocumentName(it.name, segment)
+            } ?: return null
+        }
+        return current
+    }
+
+    private fun resolveRelativeDocument(
+        root: DocumentFile,
+        relativePath: String
+    ): DocumentFile? {
+        if (relativePath.isBlank()) return root
+        var current = root
+        for (segment in relativePath.split('/').filter { it.isNotBlank() }) {
+            current = current.listFiles().firstOrNull {
+                sameDocumentName(it.name, segment)
             } ?: return null
         }
         return current
@@ -829,4 +1012,26 @@ internal class DocumentStorageOperations(
     private fun normalizeDisplayName(raw: String): String {
         return raw.replace("%2F", "/", ignoreCase = true)
     }
+
+    private fun sameDocumentName(raw: String?, expected: String): Boolean {
+        return normalizeDisplayName(raw?.trim().orEmpty())
+            .equals(expected, ignoreCase = true)
+    }
+
+    private fun writeSafDocumentIfAbsent(
+        folder: DocumentFile,
+        targetName: String,
+        mimeType: String,
+        write: (DocumentFile) -> Boolean
+    ): Boolean {
+        return createSafDocumentIfAbsent(
+            listFiles = { folder.listFiles().toList() },
+            isTarget = { it.isFile && sameDocumentName(it.name, targetName) },
+            sameDocument = { first, second -> first.uri == second.uri },
+            create = { folder.createFile(mimeType, targetName) },
+            write = write,
+            delete = { it.delete() }
+        )
+    }
+
 }

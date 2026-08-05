@@ -1,14 +1,50 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/application/app_bootstrap_controller.dart';
+import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/app/presentation/app_bootstrap_host.dart';
+import 'package:nameless_audio/app/presentation/onboarding_page.dart';
+import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/core/widgets/app_brand_icon.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
+import 'package:nameless_audio/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('first frame policy releases onboarding and startup failures', () {
+    expect(
+      shouldReleaseFirstFrameAfterAppBootstrap(
+        phase: AppBootstrapPhase.ready,
+        shouldShowOnboarding: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldReleaseFirstFrameAfterAppBootstrap(
+        phase: AppBootstrapPhase.ready,
+        shouldShowOnboarding: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldReleaseFirstFrameAfterAppBootstrap(
+        phase: AppBootstrapPhase.failure,
+        shouldShowOnboarding: false,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldReleaseFirstFrameAfterAppBootstrap(
+        phase: AppBootstrapPhase.initializing,
+        shouldShowOnboarding: true,
+      ),
+      isFalse,
+    );
+  });
+
   test('bootstrap attempts are single-flight', () async {
     final completer = Completer<void>();
     var attempts = 0;
@@ -105,77 +141,165 @@ void main() {
     expect(bootstrapSettledCalls, 1);
   });
 
-  testWidgets('nested runtime keeps the native splash until it settles', (
+  testWidgets('a preinitialized bootstrap gate does not restart its work', (
     tester,
   ) async {
-    final appInitialization = Completer<void>();
-    final runtimeInitialization = Completer<void>();
-    final appController = AppBootstrapController(
-      initializer: () => appInitialization.future,
+    var attempts = 0;
+    final controller = AppBootstrapController(
+      initializer: () async {
+        attempts++;
+      },
     );
+    addTearDown(controller.dispose);
+    await controller.initialize();
+
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: AppBootstrapGate(
+          controller: controller,
+          disposeController: false,
+          readyBuilder: (_) => const Text('ready'),
+          loadingBuilder: (_) => const Text('loading'),
+          failureBuilder: (_, _) => const Text('failure'),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('ready'), findsOneWidget);
+    expect(attempts, 1);
+  });
+
+  testWidgets(
+    'fresh-install snapshot releases onboarding before pending runtime',
+    (tester) async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final showOnboarding = AppPreferences.shouldShowOnboardingSync();
+      await AppPreferences.completeOnboarding();
+      expect(AppPreferences.shouldShowOnboardingSync(), isFalse);
+
+      final runtimeInitialization = Completer<void>();
+      var runtimeAttempts = 0;
+      final runtimeController = AppBootstrapController(
+        initializer: () {
+          runtimeAttempts++;
+          return runtimeInitialization.future;
+        },
+      );
+      addTearDown(runtimeController.dispose);
+      final language = AppLanguageProvider();
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appLanguageProviderInstanceProvider.overrideWithValue(language),
+          ],
+          child: MaterialApp(
+            home: OnboardingRuntimeGate(
+              showOnboarding: showOnboarding,
+              runtimeController: runtimeController,
+              child: AppBootstrapGate(
+                controller: runtimeController,
+                disposeController: false,
+                readyBuilder: (_) => const Text('runtime ready'),
+                loadingBuilder: (_) => const Text('runtime loading'),
+                failureBuilder: (_, _) => const Text('runtime failed'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text(language.tr('onboarding_title')), findsOneWidget);
+      expect(find.text('runtime loading'), findsNothing);
+      expect(runtimeAttempts, 0);
+      await tester.pump();
+      expect(runtimeAttempts, 1);
+      expect(
+        shouldReleaseFirstFrameAfterAppBootstrap(
+          phase: AppBootstrapPhase.ready,
+          shouldShowOnboarding: showOnboarding,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  testWidgets('existing install waits for the runtime settlement', (
+    tester,
+  ) async {
+    final runtimeInitialization = Completer<void>();
     final runtimeController = AppBootstrapController(
       initializer: () => runtimeInitialization.future,
     );
-    var bootstrapSettledCalls = 0;
+    addTearDown(runtimeController.dispose);
+    var runtimeSettledCalls = 0;
 
     await tester.pumpWidget(
-      AppBootstrapHost(
-        controller: appController,
-        locale: const Locale('en'),
-        deferReadySettlement: true,
-        onBootstrapSettled: () => bootstrapSettledCalls++,
-        appBuilder: () => MaterialApp(
-          home: AppBootstrapGate(
+      MaterialApp(
+        home: OnboardingRuntimeGate(
+          showOnboarding: false,
+          runtimeController: runtimeController,
+          child: AppBootstrapGate(
             controller: runtimeController,
-            onBootstrapSettled: () => bootstrapSettledCalls++,
+            disposeController: false,
+            onBootstrapSettled: () => runtimeSettledCalls++,
             readyBuilder: (_) => const Text('runtime ready'),
-            loadingBuilder: (_) => const AppBootstrapLoadingView(),
+            loadingBuilder: (_) => const Text('runtime loading'),
             failureBuilder: (_, _) => const Text('runtime failed'),
           ),
         ),
       ),
     );
 
-    appInitialization.complete();
-    await tester.pump();
-    await tester.pump();
+    expect(find.text('runtime loading'), findsOneWidget);
+    expect(runtimeSettledCalls, 0);
     expect(
-      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
-      findsOneWidget,
+      shouldReleaseFirstFrameAfterAppBootstrap(
+        phase: AppBootstrapPhase.ready,
+        shouldShowOnboarding: false,
+      ),
+      isFalse,
     );
-    expect(bootstrapSettledCalls, 0);
 
     runtimeInitialization.complete();
     await tester.pump();
     await tester.pump();
     expect(find.text('runtime ready'), findsOneWidget);
-    expect(bootstrapSettledCalls, 1);
+    expect(runtimeSettledCalls, 1);
   });
 
-  testWidgets('deferred ready settlement still releases startup failures', (
+  testWidgets('runtime failure settles and exposes recovery UI', (
     tester,
   ) async {
-    var bootstrapSettledCalls = 0;
-    final controller = AppBootstrapController(
-      initializer: () async => throw StateError('startup failed'),
+    final runtimeController = AppBootstrapController(
+      initializer: () async => throw StateError('runtime failed'),
     );
+    addTearDown(runtimeController.dispose);
+    var runtimeSettledCalls = 0;
 
     await tester.pumpWidget(
-      AppBootstrapHost(
-        controller: controller,
-        locale: const Locale('en'),
-        deferReadySettlement: true,
-        onBootstrapSettled: () => bootstrapSettledCalls++,
-        appBuilder: () => const SizedBox(),
+      MaterialApp(
+        home: OnboardingRuntimeGate(
+          showOnboarding: false,
+          runtimeController: runtimeController,
+          child: AppBootstrapGate(
+            controller: runtimeController,
+            disposeController: false,
+            onBootstrapSettled: () => runtimeSettledCalls++,
+            readyBuilder: (_) => const Text('runtime ready'),
+            loadingBuilder: (_) => const Text('runtime loading'),
+            failureBuilder: (_, _) => const Text('runtime failed'),
+          ),
+        ),
       ),
     );
     await tester.pump();
 
-    expect(
-      find.byKey(const ValueKey<String>('app_error_view')),
-      findsOneWidget,
-    );
-    expect(bootstrapSettledCalls, 1);
+    expect(find.text('runtime failed'), findsOneWidget);
+    expect(runtimeSettledCalls, 1);
   });
 
   testWidgets('startup diagnostics export failures stay in the error shell', (

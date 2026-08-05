@@ -173,30 +173,44 @@ internal class FileCacheMethodHandler(
                     operations.renameDocumentTarget(targetPath, name)
                 }
             }
-            FileCacheMethods.READ_AUDIO_DETAIL_BACKUP -> {
-                val folder = arguments.requiredString("folder")
-                runAsync(result, errorCode = { "detail_backup_read_failed" }) {
-                    operations.readAudioDetailBackup(folder)
+            FileCacheMethods.READ_JSON_DOCUMENT -> {
+                val locationKind = arguments.requiredString("locationKind")
+                val basePath = arguments.requiredString("basePath")
+                val name = arguments.requiredString("name")
+                runAsync(result, errorCode = { "json_document_read_failed" }) {
+                    operations.readJsonDocument(locationKind, basePath, name)
                 }
             }
-            FileCacheMethods.WRITE_AUDIO_DETAIL_BACKUP -> {
-                val folder = arguments.requiredString("folder")
-                val json = arguments.requiredString("json", allowBlank = true)
-                runAsync(result, errorCode = { "detail_backup_write_failed" }) {
-                    operations.writeAudioDetailBackup(folder, json)
+            FileCacheMethods.WRITE_JSON_DOCUMENT -> {
+                val locationKind = arguments.requiredString("locationKind")
+                val basePath = arguments.requiredString("basePath")
+                val name = arguments.requiredString("name")
+                val bytes = arguments.requiredByteArray("bytes")
+                val mode = arguments.requiredString("mode")
+                val expectedRevision = arguments.optionalString("expectedRevision")
+                runAsync(result, errorCode = { "json_document_write_failed" }) {
+                    operations.writeJsonDocument(
+                        locationKind,
+                        basePath,
+                        name,
+                        bytes,
+                        mode,
+                        expectedRevision
+                    )
                 }
             }
-            FileCacheMethods.READ_SINGLE_FILE_DETAIL_BACKUP -> {
-                val filePath = arguments.requiredString("filePath")
-                runAsync(result, errorCode = { "single_detail_backup_read_failed" }) {
-                    operations.readSingleFileDetailBackup(filePath)
-                }
-            }
-            FileCacheMethods.WRITE_SINGLE_FILE_DETAIL_BACKUP -> {
-                val filePath = arguments.requiredString("filePath")
-                val json = arguments.requiredString("json", allowBlank = true)
-                runAsync(result, errorCode = { "single_detail_backup_write_failed" }) {
-                    operations.writeSingleFileDetailBackup(filePath, json)
+            FileCacheMethods.DELETE_JSON_DOCUMENT -> {
+                val locationKind = arguments.requiredString("locationKind")
+                val basePath = arguments.requiredString("basePath")
+                val name = arguments.requiredString("name")
+                val expectedRevision = arguments.requiredString("expectedRevision")
+                runAsync(result, errorCode = { "json_document_delete_failed" }) {
+                    operations.deleteJsonDocument(
+                        locationKind,
+                        basePath,
+                        name,
+                        expectedRevision
+                    )
                 }
             }
             FileCacheMethods.WRITE_FILE_BYTES_TO_FOLDER -> {

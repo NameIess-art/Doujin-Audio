@@ -112,6 +112,12 @@ abstract final class PathMatcher {
     return equivalenceKey(_contextFor(normalized).dirname(normalized));
   }
 
+  static String? parentPath(String value) {
+    final normalized = normalize(value);
+    if (isContentUri(normalized) || isRemoteUri(normalized)) return null;
+    return _contextFor(normalized).dirname(normalized);
+  }
+
   static bool isWithinOrEqual(String child, String parent) {
     final normalizedChild = normalize(child);
     final normalizedParent = normalize(parent);

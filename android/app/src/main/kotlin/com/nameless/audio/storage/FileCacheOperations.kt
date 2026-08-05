@@ -30,20 +30,42 @@ internal class FileCacheOperations(context: Context) {
     fun renameDocumentTarget(path: String, name: String): HashMap<String, String> =
         documentStorage.renameDocumentTarget(path, name)
 
-    fun readAudioDetailBackup(folder: String): String? =
-        documentStorage.readAudioDetailBackup(folder)
+    fun readJsonDocument(
+        locationKind: String,
+        basePath: String,
+        name: String
+    ): Map<String, Any?> = documentStorage.readJsonDocument(locationKind, basePath, name)
 
-    fun writeAudioDetailBackup(folder: String, json: String): Boolean =
-        documentStorage.writeAudioDetailBackup(folder, json)
+    fun writeJsonDocument(
+        locationKind: String,
+        basePath: String,
+        name: String,
+        bytes: ByteArray,
+        mode: String,
+        expectedRevision: String?
+    ): Map<String, Any?> = documentStorage.writeJsonDocument(
+        locationKind,
+        basePath,
+        name,
+        bytes,
+        mode,
+        expectedRevision
+    )
+
+    fun deleteJsonDocument(
+        locationKind: String,
+        basePath: String,
+        name: String,
+        expectedRevision: String
+    ): Map<String, Any?> = documentStorage.deleteJsonDocument(
+        locationKind,
+        basePath,
+        name,
+        expectedRevision
+    )
 
     internal fun contentUriToFilePath(uri: String): String? =
         documentStorage.contentUriToFilePath(uri)
-
-    fun readSingleFileDetailBackup(path: String): String? =
-        documentStorage.readSingleFileDetailBackup(path)
-
-    fun writeSingleFileDetailBackup(path: String, json: String): Boolean =
-        documentStorage.writeSingleFileDetailBackup(path, json)
 
     fun writeFileBytesToFolder(
         folder: String,

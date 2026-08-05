@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:nameless_audio/core/persistence/json_document_store.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
@@ -19,7 +20,10 @@ void main() {
 
   test('facade owns scan generation and rejects stale progress', () async {
     final service = LibraryService();
-    final facade = LibraryFacade.create(service: service);
+    final facade = LibraryFacade.create(
+      databaseRepository: _RestoredLibraryRepository(),
+      service: service,
+    );
     addTearDown(facade.dispose);
 
     final generation = facade.tryBeginScan(source: '/library');
@@ -60,7 +64,9 @@ void main() {
   });
 
   test('facade cancellation invalidates the active generation', () async {
-    final facade = LibraryFacade.create();
+    final facade = LibraryFacade.create(
+      databaseRepository: _RestoredLibraryRepository(),
+    );
     addTearDown(facade.dispose);
 
     final generation = facade.tryBeginScan(
@@ -83,7 +89,10 @@ void main() {
     const firstWork = 'First work';
     const nestedWork = 'Nested work';
     final service = LibraryService()..watchedLibraries.add(libraryRoot);
-    final facade = LibraryFacade.create(service: service);
+    final facade = LibraryFacade.create(
+      databaseRepository: _RestoredLibraryRepository(),
+      service: service,
+    );
     addTearDown(facade.dispose);
 
     for (final track in <MusicTrack>[
@@ -122,6 +131,7 @@ void main() {
       final repository = _RecordingAudioDetailRepository();
       final service = LibraryService()..watchedLibraries.add(libraryRoot);
       final facade = LibraryFacade.create(
+        databaseRepository: _RestoredLibraryRepository(),
         service: service,
         detailCacheService: AudioDetailCacheService(repository: repository),
       );
@@ -203,15 +213,17 @@ final class _RecordingAudioDetailRepository extends AudioDetailRepository {
   }
 
   @override
-  Future<AudioDetailSaveResult> save(
-    AudioDetail detail, {
-    AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
-  }) async {
+  Future<AudioDetailSaveResult> save(AudioDetail detail) async {
     savedTargets.add(detail.target);
     return AudioDetailSaveResult(
       detail: detail,
-      backupAttempted: true,
-      backupSaved: true,
+      documentStatus: JsonDocumentWriteStatus.replaced,
     );
+  }
+
+  @override
+  Future<AudioDetail> updateDerivedFields(AudioDetail detail) async {
+    savedTargets.add(detail.target);
+    return detail;
   }
 }

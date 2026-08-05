@@ -426,6 +426,7 @@ class CoverArtworkCacheService {
       normalizedFolder,
       normalizedCover,
       selected: true,
+      writeDocument: true,
     );
     final effectiveCoverPath = hasDurableSource
         ? normalizedCover
@@ -1115,12 +1116,14 @@ class CoverArtworkCacheService {
     AudioDetailTarget target,
     String? coverPath, {
     bool? selected,
+    bool writeDocument = false,
   }) async {
     try {
       return await _audioDetailCacheService?.saveCardCoverPath(
         target,
         coverPath,
         selected: selected,
+        writeDocument: writeDocument,
       );
     } catch (error, stackTrace) {
       AppLogService.warning(
@@ -1136,6 +1139,7 @@ class CoverArtworkCacheService {
     String folderPath,
     String? coverPath, {
     bool? selected,
+    bool writeDocument = false,
   }) {
     final target = _cardCoverTargetForFolder(folderPath);
     final persistedCoverPath = coverPath == null
@@ -1143,7 +1147,12 @@ class CoverArtworkCacheService {
         : _persistedFolderCoverPath(coverPath);
     return target == null
         ? Future<String?>.value()
-        : _saveCardCoverPath(target, persistedCoverPath, selected: selected);
+        : _saveCardCoverPath(
+            target,
+            persistedCoverPath,
+            selected: selected,
+            writeDocument: writeDocument,
+          );
   }
 
   String _persistedFolderCoverPath(String displayPath) {

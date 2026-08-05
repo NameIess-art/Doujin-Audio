@@ -31,8 +31,8 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('schema starts from version 5', () {
-    expect(AppDatabase.schemaVersion, 5);
+  test('schema starts from version 6', () {
+    expect(AppDatabase.schemaVersion, 6);
   });
 
   test('version 3 migration adds audio detail duration', () async {
@@ -74,74 +74,72 @@ void main() {
     expect(selectedColumn['dflt_value'], '0');
   });
 
-  test(
-    'version 5 migration creates the audio detail backup sync queue',
-    () async {
-      await db.execute('DROP TABLE audio_detail_backup_sync');
+  test('version 6 migration normalizes lists and removes sync table', () async {
+    await db.execute('DROP TABLE audio_details');
+    await db.execute('DELETE FROM audio_detail_voice_actors');
+    await db.execute('DELETE FROM audio_detail_tags');
+    await db.execute('''
+      CREATE TABLE audio_details (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        rj_code TEXT NOT NULL DEFAULT '',
+        work_title TEXT NOT NULL DEFAULT '',
+        circle_name TEXT NOT NULL DEFAULT '',
+        voice_actors_json TEXT NOT NULL DEFAULT '[]',
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        card_cover_path TEXT,
+        card_cover_selected INTEGER NOT NULL DEFAULT 0,
+        release_date_ms INTEGER NOT NULL DEFAULT 0,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        sales_count INTEGER,
+        rating REAL,
+        created_at_ms INTEGER NOT NULL DEFAULT 0,
+        updated_at_ms INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(target_type, target_path)
+      )
+    ''');
+    await db.execute('''
+      CREATE TABLE audio_detail_backup_sync (
+        target_type TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        generation INTEGER NOT NULL,
+        PRIMARY KEY(target_type, target_path)
+      )
+    ''');
+    await db.insert('audio_details', <String, Object?>{
+      'target_type': 'libraryRootFolder',
+      'target_path': '/library/work',
+      'work_title': 'Kept',
+      'voice_actors_json': '["A", "B", "A"]',
+      'tags_json': '{broken',
+    });
 
-      await AppDatabase.upgradeSchemaForTest(db, 4, 5);
+    await AppDatabase.upgradeSchemaForTest(db, 5, 6);
 
-      final tables = await db.rawQuery(
-        "SELECT name FROM sqlite_master WHERE type = 'table'",
-      );
-      expect(
-        tables.map((row) => row['name']),
-        contains('audio_detail_backup_sync'),
-      );
-    },
-  );
-
-  test('audio detail save and backup queue generation use CAS', () async {
-    final target = AudioDetailTarget.libraryRootFolder('/library/work');
-    final first = await repository.upsertAudioDetailAndEnqueueBackupSync(
-      AudioDetail.empty(target).copyWith(workTitle: 'First'),
-    );
-    final second = await repository.upsertAudioDetailAndEnqueueBackupSync(
-      AudioDetail.empty(target).copyWith(workTitle: 'Second'),
-    );
-
-    expect(first.generation, 1);
-    expect(second.generation, 2);
-    expect((await appDatabase.loadAudioDetail(target))?.workTitle, 'Second');
+    final columns = await db.rawQuery('PRAGMA table_info(audio_details)');
     expect(
-      await repository.deleteAudioDetailBackupSyncTask(
-        target,
-        generation: first.generation,
-      ),
-      isFalse,
+      columns.map((row) => row['name']),
+      isNot(contains('voice_actors_json')),
     );
-    expect(
-      await repository.deleteAudioDetailBackupSyncTask(
-        target,
-        generation: second.generation,
-      ),
-      isTrue,
-    );
-  });
-
-  test('audio detail backup queue records due retries', () async {
-    final target = AudioDetailTarget.singleAudioFile('/library/track.mp3');
-    final task = await repository.enqueueAudioDetailBackupSync(target);
-
-    expect(
-      await repository.loadDueAudioDetailBackupSyncTasks(nowMs: 0),
-      hasLength(1),
-    );
-    expect(
-      await repository.recordAudioDetailBackupSyncFailure(
-        task,
-        nextAttemptAtMs: 5000,
-        error: 'write failed',
-      ),
-      isTrue,
+    expect(columns.map((row) => row['name']), isNot(contains('tags_json')));
+    final actors = await db.query(
+      'audio_detail_voice_actors',
+      orderBy: 'sort_order',
     );
     expect(
-      await repository.loadDueAudioDetailBackupSyncTasks(nowMs: 4999),
-      isEmpty,
+      actors.map((row) => row['voice_actor']),
+      orderedEquals(<String>['A', 'B']),
     );
-    final due = await repository.loadDueAudioDetailBackupSyncTasks(nowMs: 5000);
-    expect(due.single.attemptCount, 1);
-    expect(due.single.lastError, 'write failed');
+    expect(await db.query('audio_detail_tags'), isEmpty);
+    expect((await db.query('audio_details')).single['work_title'], 'Kept');
+    final tables = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'table'",
+    );
+    expect(
+      tables.map((row) => row['name']),
+      isNot(contains('audio_detail_backup_sync')),
+    );
   });
 
   test(
@@ -1025,10 +1023,10 @@ void main() {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(2000),
     );
 
-    await appDatabase.upsertAudioDetail(detail);
-    await appDatabase.upsertAudioDetail(AudioDetail.empty(secondTarget));
+    await repository.upsert(detail);
+    await repository.upsert(AudioDetail.empty(secondTarget));
 
-    final loaded = await appDatabase.loadAudioDetail(target);
+    final loaded = await repository.load(target);
     expect(loaded?.rjCode, 'RJ123456');
     expect(loaded?.voiceActors, const <String>['A', 'B']);
     expect(loaded?.tags, const <String>['tag']);
@@ -1039,57 +1037,15 @@ void main() {
     expect(loaded?.salesCount, 1234);
     expect(loaded?.rating, 4.5);
 
-    await appDatabase.deleteAudioDetails(<AudioDetailTarget>[
+    await repository.deleteMany(<AudioDetailTarget>[
       target,
       secondTarget,
       target,
     ]);
 
-    expect(await appDatabase.loadAudioDetail(target), isNull);
-    expect(await appDatabase.loadAudioDetail(secondTarget), isNull);
+    expect(await repository.load(target), isNull);
+    expect(await repository.load(secondTarget), isNull);
   });
-
-  test(
-    'audio detail backup json keeps optional extended fields compatible',
-    () {
-      final target = AudioDetailTarget.libraryRootFolder('/library/root');
-      final detail = AudioDetail.empty(target).copyWith(
-        cardCoverPath: '/library/root/cover.jpg',
-        cardCoverSelected: true,
-        releaseDate: DateTime(2024, 5, 6),
-        duration: const Duration(hours: 1, minutes: 2, seconds: 3),
-        salesCount: 1234,
-        rating: 4.5,
-      );
-
-      final restored = AudioDetail.fromBackupJson(
-        target,
-        detail.toBackupJson(),
-      );
-      expect(restored, isNotNull);
-      expect(restored.releaseDate, DateTime(2024, 5, 6));
-      expect(
-        restored.duration,
-        const Duration(hours: 1, minutes: 2, seconds: 3),
-      );
-      expect(restored.salesCount, 1234);
-      expect(restored.rating, 4.5);
-      expect(restored.cardCoverPath, '/library/root/cover.jpg');
-      expect(restored.cardCoverSelected, isTrue);
-
-      final oldRestored = AudioDetail.fromBackupJson(target, {
-        'schemaVersion': 1,
-        'type': 'audio-detail',
-      });
-      expect(oldRestored, isNotNull);
-      expect(oldRestored.releaseDate, isNull);
-      expect(oldRestored.duration, isNull);
-      expect(oldRestored.salesCount, isNull);
-      expect(oldRestored.rating, isNull);
-      expect(oldRestored.cardCoverPath, isNull);
-      expect(oldRestored.cardCoverSelected, isFalse);
-    },
-  );
 
   test('schema creates audio detail target index', () async {
     final indexes = await db.rawQuery('PRAGMA index_list(audio_details)');

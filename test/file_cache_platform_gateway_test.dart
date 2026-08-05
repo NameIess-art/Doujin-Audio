@@ -59,6 +59,47 @@ void main() {
     });
   });
 
+  test('JSON delete sends a revision-guarded structured request', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success(<String, Object?>{'status': 'deleted'});
+    });
+
+    final result = await gateway.deleteJsonDocument(
+      location: const <String, Object?>{
+        'locationKind': 'folderChild',
+        'basePath': 'content://library',
+        'name': 'nameless-audio.json',
+      },
+      expectedRevision: 'revision-1',
+    );
+
+    expect(result?['status'], 'deleted');
+    expect(calls.single.method, FileCacheMethod.deleteJsonDocument);
+    expect(calls.single.arguments, <String, Object?>{
+      'locationKind': 'folderChild',
+      'basePath': 'content://library',
+      'name': 'nameless-audio.json',
+      'expectedRevision': 'revision-1',
+    });
+  });
+
+  test(
+    'document existence keeps native query failure distinct from missing',
+    () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        return <String, Object?>{
+          'ok': false,
+          'errorCode': 'document_path_exists_failed',
+          'error': 'provider unavailable',
+        };
+      });
+
+      expect(await gateway.documentPathExistence('content://library'), isNull);
+      expect(await gateway.documentPathExists('content://library'), isFalse);
+    },
+  );
+
   test(
     'exportFile maps arguments and preserves success or cancellation',
     () async {
@@ -161,43 +202,63 @@ void main() {
     );
   });
 
-  test('typed backup and byte-write helpers preserve values', () async {
-    messenger.setMockMethodCallHandler(channel, (call) async {
-      calls.add(call);
-      return success(switch (call.method) {
-        FileCacheMethod.writeAudioDetailBackup => true,
-        FileCacheMethod.writeFileBytesToFolder => <String, String>{
-          'path': '/cache/saved.jpg',
-          'sourcePath': 'content://saved',
-        },
-        _ => null,
+  test(
+    'structured JSON document and byte-write helpers preserve values',
+    () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return success(switch (call.method) {
+          FileCacheMethod.writeJsonDocument => <String, Object?>{
+            'status': 'created',
+            'revision': 'abc',
+            'bytesWritten': 2,
+          },
+          FileCacheMethod.writeFileBytesToFolder => <String, String>{
+            'path': '/cache/saved.jpg',
+            'sourcePath': 'content://saved',
+          },
+          _ => null,
+        });
       });
-    });
 
-    expect(
-      await gateway.writeAudioDetailBackup(
-        folder: 'content://folder',
-        json: '{"ok":true}',
-      ),
-      isTrue,
-    );
-    expect(
-      await gateway.writeFileBytesToFolder(
-        folder: 'content://folder',
-        name: 'cover.jpg',
-        bytes: Uint8List.fromList(<int>[1, 2, 3]),
-        mimeType: 'image/jpeg',
-      ),
-      const CoverImageReference(
-        displayPath: '/cache/saved.jpg',
-        sourcePath: 'content://saved',
-      ),
-    );
-    expect(calls.map((call) => call.method), <String>[
-      FileCacheMethod.writeAudioDetailBackup,
-      FileCacheMethod.writeFileBytesToFolder,
-    ]);
-  });
+      expect(
+        await gateway.writeJsonDocument(
+          location: <String, Object?>{
+            'locationKind': 'folderChild',
+            'basePath': 'content://folder',
+            'name': 'data.json',
+          },
+          bytes: Uint8List.fromList(<int>[123, 125]),
+          mode: 'createIfAbsent',
+        ),
+        containsPair('status', 'created'),
+      );
+      expect(
+        await gateway.writeFileBytesToFolder(
+          folder: 'content://folder',
+          name: 'cover.jpg',
+          bytes: Uint8List.fromList(<int>[1, 2, 3]),
+          mimeType: 'image/jpeg',
+        ),
+        const CoverImageReference(
+          displayPath: '/cache/saved.jpg',
+          sourcePath: 'content://saved',
+        ),
+      );
+      expect(calls.map((call) => call.method), <String>[
+        FileCacheMethod.writeJsonDocument,
+        FileCacheMethod.writeFileBytesToFolder,
+      ]);
+      expect(calls.first.arguments, <String, Object?>{
+        'locationKind': 'folderChild',
+        'basePath': 'content://folder',
+        'name': 'data.json',
+        'bytes': Uint8List.fromList(<int>[123, 125]),
+        'mode': 'createIfAbsent',
+        'expectedRevision': null,
+      });
+    },
+  );
 
   test(
     'malformed and failed optional envelopes keep technical errors out of values',

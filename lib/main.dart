@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:audio_session/audio_session.dart';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -45,14 +44,32 @@ import 'features/settings/application/settings_state.dart';
 import 'core/persistence/app_database.dart';
 
 Future<void> main() async {
-  await runZonedGuarded<Future<void>>(() async {
-    final binding = WidgetsFlutterBinding.ensureInitialized();
-    binding.deferFirstFrame();
-    await AppLogService.initialize();
-    AppLogService.installFlutterErrorHandler();
-    AppLogService.installPlatformErrorHandler();
-    if (kReleaseMode) {
+  final binding = WidgetsFlutterBinding.ensureInitialized();
+  binding.deferFirstFrame();
+  var firstFrameAllowed = false;
+  Timer? firstFrameWatchdog;
+  void allowFirstFrameOnce() {
+    if (firstFrameAllowed) return;
+    firstFrameAllowed = true;
+    firstFrameWatchdog?.cancel();
+    binding.allowFirstFrame();
+  }
+
+  // Never leave the Android splash animation locked indefinitely if a plugin
+  // call stops responding before the bootstrap controller can settle.
+  firstFrameWatchdog = Timer(const Duration(seconds: 15), allowFirstFrameOnce);
+
+  await runZonedGuarded<Future<void>>(
+    () async {
+      AppLogService.installFlutterErrorHandler();
+      final logFlutterError = FlutterError.onError;
+      FlutterError.onError = (details) {
+        allowFirstFrameOnce();
+        logFlutterError?.call(details);
+      };
+      AppLogService.installPlatformErrorHandler();
       ErrorWidget.builder = (details) {
+        allowFirstFrameOnce();
         AppLogService.error(
           'release_error_widget',
           error: details.exception,
@@ -60,29 +77,55 @@ Future<void> main() async {
         );
         return AppErrorView.fromFlutterError(details);
       };
-    }
-    var firstFrameAllowed = false;
-    void allowFirstFrameOnce() {
-      if (firstFrameAllowed) return;
-      firstFrameAllowed = true;
-      binding.allowFirstFrame();
-    }
 
-    runApp(
-      AppBootstrapHost(
-        controller: AppBootstrapController(
-          initializer: _initializeAudioPlayerApp,
+      bool? shouldShowOnboarding;
+
+      final appBootstrapController = AppBootstrapController(
+        initializer: () async {
+          await _initializeAudioPlayerApp();
+          shouldShowOnboarding = AppPreferences.shouldShowOnboardingSync();
+        },
+      );
+
+      runApp(
+        AppBootstrapHost(
+          controller: appBootstrapController,
+          appBuilder: () => _createAudioPlayerApp(
+            shouldShowOnboarding: shouldShowOnboarding!,
+            onBootstrapSettled: allowFirstFrameOnce,
+          ),
+          onBootstrapSettled: () {
+            if (shouldReleaseFirstFrameAfterAppBootstrap(
+              phase: appBootstrapController.state.phase,
+              shouldShowOnboarding: shouldShowOnboarding ?? false,
+            )) {
+              allowFirstFrameOnce();
+            }
+          },
         ),
-        deferReadySettlement: true,
-        appBuilder: () =>
-            _createAudioPlayerApp(onBootstrapSettled: allowFirstFrameOnce),
-        onBootstrapSettled: allowFirstFrameOnce,
-      ),
-    );
-  }, AppLogService.logZoneError);
+      );
+    },
+    (error, stackTrace) {
+      allowFirstFrameOnce();
+      AppLogService.logZoneError(error, stackTrace);
+    },
+  );
+}
+
+@visibleForTesting
+bool shouldReleaseFirstFrameAfterAppBootstrap({
+  required AppBootstrapPhase phase,
+  required bool shouldShowOnboarding,
+}) {
+  return switch (phase) {
+    AppBootstrapPhase.failure => true,
+    AppBootstrapPhase.ready => shouldShowOnboarding,
+    AppBootstrapPhase.initializing => false,
+  };
 }
 
 Future<void> _initializeAudioPlayerApp() async {
+  await AppLogService.initialize();
   applyCoverImageCachePolicy(CoverImageResolution.balanced);
 
   // Start essential services in parallel to minimize blocking before runApp
@@ -113,7 +156,10 @@ Future<void> _initializeAudioPlayerApp() async {
   );
 }
 
-Widget _createAudioPlayerApp({VoidCallback? onBootstrapSettled}) {
+Widget _createAudioPlayerApp({
+  required bool shouldShowOnboarding,
+  VoidCallback? onBootstrapSettled,
+}) {
   final notificationService = PlaybackNotificationService();
   final database = AppDatabase.instance;
   final libraryRepository = SqliteLibraryRepository(database: database);
@@ -185,7 +231,10 @@ Widget _createAudioPlayerApp({VoidCallback? onBootstrapSettled}) {
         asmrPlaybackCoordinator,
       ),
     ],
-    child: MusicPlayerApp(onBootstrapSettled: onBootstrapSettled),
+    child: MusicPlayerApp(
+      shouldShowOnboarding: shouldShowOnboarding,
+      onBootstrapSettled: onBootstrapSettled,
+    ),
   );
 
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -215,8 +264,13 @@ class _StretchOverscrollBehavior extends MaterialScrollBehavior {
 }
 
 class MusicPlayerApp extends ConsumerStatefulWidget {
-  const MusicPlayerApp({this.onBootstrapSettled, super.key});
+  const MusicPlayerApp({
+    this.shouldShowOnboarding,
+    this.onBootstrapSettled,
+    super.key,
+  });
 
+  final bool? shouldShowOnboarding;
   final VoidCallback? onBootstrapSettled;
 
   @override
@@ -225,6 +279,7 @@ class MusicPlayerApp extends ConsumerStatefulWidget {
 
 class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   late final AppBootstrapController _runtimeBootstrapController;
+  late final bool _shouldShowOnboarding;
 
   @override
   void initState() {
@@ -232,6 +287,9 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
     _runtimeBootstrapController = AppBootstrapController(
       initializer: ref.read(audioRuntimeCoordinatorProvider).start,
     );
+    _shouldShowOnboarding =
+        widget.shouldShowOnboarding ??
+        AppPreferences.shouldShowOnboardingSync();
   }
 
   @override
@@ -295,17 +353,20 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
           child: child ?? const SizedBox(),
         );
       },
-      home: AppBootstrapGate(
-        controller: _runtimeBootstrapController,
-        disposeController: false,
-        onBootstrapSettled: widget.onBootstrapSettled,
-        readyBuilder: (_) =>
-            const OnboardingGate(child: GlobalShortcuts(child: MainScreen())),
-        loadingBuilder: (_) => const AppBootstrapLoadingView(),
-        failureBuilder: (_, state) => AppErrorView(
-          error: state.error ?? StateError('Unknown runtime startup failure'),
-          stackTrace: state.stackTrace,
-          onRetry: () => unawaited(_runtimeBootstrapController.retry()),
+      home: OnboardingRuntimeGate(
+        showOnboarding: _shouldShowOnboarding,
+        runtimeController: _runtimeBootstrapController,
+        child: AppBootstrapGate(
+          controller: _runtimeBootstrapController,
+          disposeController: false,
+          onBootstrapSettled: widget.onBootstrapSettled,
+          readyBuilder: (_) => const GlobalShortcuts(child: MainScreen()),
+          loadingBuilder: (_) => const AppBootstrapLoadingView(),
+          failureBuilder: (_, state) => AppErrorView(
+            error: state.error ?? StateError('Unknown runtime startup failure'),
+            stackTrace: state.stackTrace,
+            onRetry: () => unawaited(_runtimeBootstrapController.retry()),
+          ),
         ),
       ),
     );

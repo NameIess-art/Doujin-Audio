@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +7,7 @@ import 'package:nameless_audio/core/media/audio_detail.dart';
 import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:nameless_audio/features/library/data/audio_detail_json_codec.dart';
 import 'package:nameless_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -73,7 +73,7 @@ void main() {
   });
 
   test('concurrent starts for the same work create one task', () async {
-    final gateway = _BlockingPathGateway();
+    final gateway = _ExistingJsonSafGateway();
     final manager = AsmrDownloadManager(
       fileCacheGateway: gateway,
       temporaryDirectoryProvider: () async => Directory.systemTemp,
@@ -83,7 +83,7 @@ void main() {
         'content://com.android.externalstorage.documents/tree/primary%3ADownload';
 
     try {
-      final firstStart = manager.startDownload(
+      Future<void> start() => manager.startDownload(
         work: _work(),
         selectedRoots: <AsmrTrackFile>[
           _file(downloadUrl: 'https://example.invalid/track.mp3'),
@@ -92,30 +92,12 @@ void main() {
         conflictPolicy: AsmrDownloadConflictPolicy.skip,
         saveMetadata: false,
       );
-      await gateway.pathCheckStarted.future;
-
-      final secondStart = manager.startDownload(
-        work: _work(),
-        selectedRoots: <AsmrTrackFile>[
-          _file(downloadUrl: 'https://example.invalid/track.mp3'),
-        ],
-        destinationRoot: destinationRoot,
-        conflictPolicy: AsmrDownloadConflictPolicy.skip,
-        saveMetadata: false,
-      );
-      await secondStart;
-
-      expect(gateway.pathCheckCount, 1);
-      gateway.releasePathCheck.complete();
-      await firstStart;
-      await gateway.ensureFolderCalled.future;
+      await Future.wait<void>(<Future<void>>[start(), start()]);
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(gateway.ensureFolderCount, 1);
       expect(manager.getTask(1), isNotNull);
     } finally {
-      if (!gateway.releasePathCheck.isCompleted) {
-        gateway.releasePathCheck.complete();
-      }
       manager.dispose();
     }
   });
@@ -741,12 +723,11 @@ void main() {
       final backupPath =
           '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}nameless-audio.json';
-      final backup = await File(backupPath).readAsString();
-      final detail = AudioDetail.fromBackupJson(
+      final detail = const AudioDetailJsonCodec().decode(
+        File(backupPath).readAsBytesSync(),
         AudioDetailTarget.libraryRootFolder(
           '${tempDir.path}${Platform.pathSeparator}Work',
         ),
-        Map<String, dynamic>.from(jsonDecode(backup) as Map),
       );
       expect(detail.releaseDate, DateTime(2024, 5, 6));
       expect(detail.duration, const Duration(hours: 1, minutes: 2, seconds: 3));
@@ -757,6 +738,146 @@ void main() {
       if (await tempDir.exists()) {
         await tempDir.delete(recursive: true);
       }
+    }
+  });
+
+  test(
+    'download preserves every existing JSON file for every conflict policy',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requestCount = 0;
+      server.listen((request) async {
+        requestCount++;
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentLength = 2
+          ..write('{}');
+        await request.response.close();
+      });
+      try {
+        for (final policy in AsmrDownloadConflictPolicy.values) {
+          final tempDir = await Directory.systemTemp.createTemp(
+            'asmr_download_preserve_any_json_',
+          );
+          final manager = _manager();
+          try {
+            final workFolder = Directory(
+              '${tempDir.path}${Platform.pathSeparator}Work',
+            );
+            await workFolder.create();
+            final jsonFile = File(
+              '${workFolder.path}${Platform.pathSeparator}Metadata.JSON',
+            );
+            final backup = File(
+              '${workFolder.path}${Platform.pathSeparator}nameless-audio.json',
+            );
+            const originalJson = '{\n  "external": true\n}\n';
+            const originalBackup = '{"externalMetadata":true}';
+            await jsonFile.writeAsString(originalJson, flush: true);
+            await backup.writeAsString(originalBackup, flush: true);
+
+            await manager.startDownload(
+              work: _work(),
+              selectedRoots: <AsmrTrackFile>[
+                _file(
+                  downloadUrl:
+                      'http://${server.address.host}:${server.port}/metadata.json',
+                  size: 2,
+                  title: 'Metadata.JSON ',
+                ),
+              ],
+              destinationRoot: tempDir.path,
+              conflictPolicy: policy,
+            );
+            await _waitForTaskStatus(
+              manager,
+              1,
+              AsmrDownloadTaskStatus.completed,
+            );
+
+            expect(await jsonFile.readAsString(), originalJson);
+            expect(await backup.readAsString(), originalBackup);
+            expect(manager.getTask(1)?.skippedFiles, 2);
+          } finally {
+            manager.dispose();
+            if (await tempDir.exists()) await tempDir.delete(recursive: true);
+          }
+        }
+        expect(requestCount, 0);
+      } finally {
+        await server.close(force: true);
+      }
+    },
+  );
+
+  test('SAF download never copies over an existing JSON file', () async {
+    final gateway = _ExistingJsonSafGateway();
+    final manager = AsmrDownloadManager(
+      fileCacheGateway: gateway,
+      temporaryDirectoryProvider: () async => Directory.systemTemp,
+      persistTasks: false,
+    );
+    const destinationRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3ADownload';
+    try {
+      await manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(
+            downloadUrl: 'https://example.invalid/Metadata.JSON',
+            size: 128,
+            title: 'Metadata.JSON',
+          ),
+        ],
+        destinationRoot: destinationRoot,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+      );
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+      expect(manager.getTask(1)?.skippedFiles, 1);
+      expect(gateway.copyCount, 0);
+    } finally {
+      manager.dispose();
+    }
+  });
+
+  test('cancel never deletes a SAF root whose existence check failed', () async {
+    final gateway = _UnknownExistingRootSafGateway();
+    final manager = AsmrDownloadManager(
+      fileCacheGateway: gateway,
+      temporaryDirectoryProvider: () async => Directory.systemTemp,
+      persistTasks: false,
+    );
+    const destinationRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3ADownload';
+    try {
+      await manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(
+            downloadUrl: 'https://example.invalid/track.mp3',
+            size: 128,
+            title: 'track.mp3',
+          ),
+        ],
+        destinationRoot: destinationRoot,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+      );
+      await _waitForTaskStatus(
+        manager,
+        1,
+        AsmrDownloadTaskStatus.failed,
+        allowFailure: true,
+      );
+
+      final workRoot = manager.getTask(1)!.workRootPath;
+      await manager.cancelTask(1);
+
+      expect(gateway.deletedPaths, isNot(contains(workRoot)));
+    } finally {
+      manager.dispose();
     }
   });
 
@@ -913,12 +1034,11 @@ void main() {
         await manager.cancelTask(1).timeout(const Duration(seconds: 5));
 
         expect(manager.getTask(1), isNull);
-        expect(
-          await Directory(
-            '${tempDir.path}${Platform.pathSeparator}Work',
-          ).exists(),
-          isFalse,
+        final workDirectory = Directory(
+          '${tempDir.path}${Platform.pathSeparator}Work',
         );
+        expect(await workDirectory.exists(), isTrue);
+        expect(await workDirectory.list().toList(), isEmpty);
       } finally {
         manager.dispose();
         await server.close(force: true);
@@ -1766,22 +1886,17 @@ AsmrDownloadTaskSnapshot _failedTaskSnapshot(String destinationRoot) {
   );
 }
 
-final class _BlockingPathGateway extends FileCachePlatformGateway {
-  _BlockingPathGateway() : super(isAndroid: () => true);
+final class _ExistingJsonSafGateway extends FileCachePlatformGateway {
+  _ExistingJsonSafGateway() : super(isAndroid: () => true);
 
-  final Completer<void> pathCheckStarted = Completer<void>();
-  final Completer<void> releasePathCheck = Completer<void>();
-  final Completer<void> ensureFolderCalled = Completer<void>();
-  int pathCheckCount = 0;
+  int copyCount = 0;
   int ensureFolderCount = 0;
 
   @override
-  Future<bool> documentPathExists(String path) async {
-    pathCheckCount++;
-    if (!pathCheckStarted.isCompleted) pathCheckStarted.complete();
-    await releasePathCheck.future;
-    return false;
-  }
+  Future<bool> documentPathExists(String path) async => true;
+
+  @override
+  Future<bool?> documentPathExistence(String path) async => true;
 
   @override
   Future<bool> ensureFolderPath({
@@ -1790,8 +1905,44 @@ final class _BlockingPathGateway extends FileCachePlatformGateway {
     required bool overwrite,
   }) async {
     ensureFolderCount++;
-    if (!ensureFolderCalled.isCompleted) ensureFolderCalled.complete();
+    return true;
+  }
+
+  @override
+  Future<bool> copyFileToFolder({
+    required String sourcePath,
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async {
+    copyCount++;
     return false;
+  }
+}
+
+final class _UnknownExistingRootSafGateway extends FileCachePlatformGateway {
+  _UnknownExistingRootSafGateway() : super(isAndroid: () => true);
+
+  final List<String> deletedPaths = <String>[];
+
+  @override
+  Future<bool> documentPathExists(String path) =>
+      Future<bool>.error(const FileSystemException('query failed'));
+
+  @override
+  Future<bool?> documentPathExistence(String path) async => null;
+
+  @override
+  Future<bool> ensureFolderPath({
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async => true;
+
+  @override
+  Future<bool> deleteDocumentPath(String path) async {
+    deletedPaths.add(path);
+    return true;
   }
 }
 

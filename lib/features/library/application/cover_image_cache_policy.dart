@@ -1,40 +1,7 @@
 import 'package:flutter/painting.dart';
-import 'package:mime/mime.dart';
 
+export '../../../core/media/cover_image_format.dart';
 import '../../settings/application/settings_state.dart';
-
-const int maxCoverFileBytes = 8 * 1024 * 1024;
-const Set<String> supportedCoverMimeTypes = <String>{
-  'image/jpeg',
-  'image/png',
-  'image/webp',
-  'image/gif',
-  'image/bmp',
-  'image/avif',
-  'image/heic',
-  'image/heif',
-};
-
-String? detectCoverMimeType(String filePath, List<int> headerBytes) {
-  final detected = lookupMimeType(
-    filePath,
-    headerBytes: headerBytes,
-  )?.toLowerCase();
-  return supportedCoverMimeTypes.contains(detected) ? detected : null;
-}
-
-String extensionForCoverMimeType(String mimeType) {
-  return switch (mimeType.toLowerCase()) {
-    'image/jpeg' => 'jpg',
-    'image/png' => 'png',
-    'image/webp' => 'webp',
-    'image/gif' => 'gif',
-    'image/bmp' => 'bmp',
-    'image/avif' => 'avif',
-    'image/heic' || 'image/heif' => 'heic',
-    _ => 'image',
-  };
-}
 
 class CoverImageCacheBudget {
   const CoverImageCacheBudget({

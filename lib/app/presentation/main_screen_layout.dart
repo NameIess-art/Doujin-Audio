@@ -102,7 +102,6 @@ extension _MainScreenLayout on _MainScreenState {
     return AppFadeThroughIndexedStack(
       key: const ValueKey<String>('main_page_stack'),
       indexListenable: _activePageIndex,
-      duration: const Duration(milliseconds: 350),
       onTransitionCompleted: _handlePageTransitionCompleted,
       children: List<Widget>.generate(_pages.length, pageShell),
     );
@@ -194,11 +193,7 @@ extension _MainScreenLayout on _MainScreenState {
           color: selected ? activeColor : inactive,
           letterSpacing: 0,
         ),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
       );
 
       return Expanded(

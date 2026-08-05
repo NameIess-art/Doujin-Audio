@@ -332,17 +332,10 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
           tone: AppFeedbackTone.warning,
         );
       }
-      if (result.backupFailed) {
+      if (result.documentFailed) {
         showAppSnackBar(
           context,
           i18n.tr('audio_detail_backup_failed'),
-          tone: AppFeedbackTone.warning,
-        );
-      }
-      if (result.coverPortabilitySkipped) {
-        showAppSnackBar(
-          context,
-          i18n.tr('audio_detail_cover_portability_skipped'),
           tone: AppFeedbackTone.warning,
         );
       }

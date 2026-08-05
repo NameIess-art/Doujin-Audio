@@ -29,7 +29,6 @@ Future<void> _onCreate(Database db, int version) async {
   await _createSessionDetailTables(db);
   await _createAsmrTables(db);
   await _createAudioDetailsTable(db);
-  await _createAudioDetailBackupSyncTable(db);
   await _createLibraryEntriesTable(db);
   await _createTimeSegmentLabelsTable(db);
 }
@@ -55,8 +54,8 @@ Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
       'INTEGER NOT NULL DEFAULT 0',
     );
   }
-  if (oldVersion < 5) {
-    await _createAudioDetailBackupSyncTable(db);
+  if (oldVersion < 6 && newVersion >= 6) {
+    await _migrateAudioDetailsToV6(db);
   }
 }
 
@@ -352,8 +351,6 @@ Future<void> _createAudioDetailsTable(Database db) async {
         rj_code TEXT NOT NULL DEFAULT '',
         work_title TEXT NOT NULL DEFAULT '',
         circle_name TEXT NOT NULL DEFAULT '',
-        voice_actors_json TEXT NOT NULL DEFAULT '[]',
-        tags_json TEXT NOT NULL DEFAULT '[]',
         card_cover_path TEXT,
         card_cover_selected INTEGER NOT NULL DEFAULT 0,
         release_date_ms INTEGER NOT NULL DEFAULT 0,
@@ -369,24 +366,112 @@ Future<void> _createAudioDetailsTable(Database db) async {
     'CREATE INDEX IF NOT EXISTS idx_audio_details_target '
     'ON audio_details(target_type, target_path)',
   );
+  await _createAudioDetailValueTables(db);
 }
 
-Future<void> _createAudioDetailBackupSyncTable(Database db) async {
+Future<void> _createAudioDetailValueTables(Database db) async {
   await db.execute('''
-      CREATE TABLE IF NOT EXISTS audio_detail_backup_sync (
+      CREATE TABLE IF NOT EXISTS audio_detail_voice_actors (
         target_type TEXT NOT NULL,
         target_path TEXT NOT NULL,
-        generation INTEGER NOT NULL DEFAULT 1,
-        attempt_count INTEGER NOT NULL DEFAULT 0,
-        next_attempt_at_ms INTEGER NOT NULL DEFAULT 0,
-        last_error TEXT,
-        PRIMARY KEY(target_type, target_path)
+        voice_actor TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(target_type, target_path, voice_actor)
+      )
+    ''');
+  await db.execute('''
+      CREATE TABLE IF NOT EXISTS audio_detail_tags (
+        target_type TEXT NOT NULL,
+        target_path TEXT NOT NULL,
+        tag TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY(target_type, target_path, tag)
       )
     ''');
   await db.execute(
-    'CREATE INDEX IF NOT EXISTS idx_audio_detail_backup_sync_due '
-    'ON audio_detail_backup_sync(next_attempt_at_ms)',
+    'CREATE INDEX IF NOT EXISTS idx_audio_detail_voice_actors_target '
+    'ON audio_detail_voice_actors(target_type, target_path, sort_order)',
   );
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_audio_detail_tags_target '
+    'ON audio_detail_tags(target_type, target_path, sort_order)',
+  );
+}
+
+Future<void> _migrateAudioDetailsToV6(Database db) async {
+  final columns = await db.rawQuery('PRAGMA table_info(audio_details)');
+  final hasLegacyLists = columns.any(
+    (row) => row['name'] == 'voice_actors_json',
+  );
+  if (!hasLegacyLists) {
+    await _createAudioDetailValueTables(db);
+    await db.execute('DROP TABLE IF EXISTS audio_detail_backup_sync');
+    return;
+  }
+
+  final legacyRows = await db.query('audio_details');
+  await _createAudioDetailValueTables(db);
+  for (final row in legacyRows) {
+    final targetType = row['target_type'] as String;
+    final targetPath = row['target_path'] as String;
+    final voiceActors = _decodeLegacyAudioDetailList(row['voice_actors_json']);
+    final tags = _decodeLegacyAudioDetailList(row['tags_json']);
+    for (var index = 0; index < voiceActors.length; index++) {
+      await db.insert('audio_detail_voice_actors', <String, Object?>{
+        'target_type': targetType,
+        'target_path': targetPath,
+        'voice_actor': voiceActors[index],
+        'sort_order': index,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    for (var index = 0; index < tags.length; index++) {
+      await db.insert('audio_detail_tags', <String, Object?>{
+        'target_type': targetType,
+        'target_path': targetPath,
+        'tag': tags[index],
+        'sort_order': index,
+      }, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+  }
+
+  await db.execute('ALTER TABLE audio_details RENAME TO audio_details_v5');
+  await _createAudioDetailsTable(db);
+  await db.execute('''
+      INSERT INTO audio_details (
+        id, target_type, target_path, rj_code, work_title, circle_name,
+        card_cover_path, card_cover_selected, release_date_ms, duration_ms,
+        sales_count, rating, created_at_ms, updated_at_ms
+      )
+      SELECT
+        id, target_type, target_path, rj_code, work_title, circle_name,
+        card_cover_path, card_cover_selected, release_date_ms, duration_ms,
+        sales_count, rating, created_at_ms, updated_at_ms
+      FROM audio_details_v5
+    ''');
+  await db.execute('DROP TABLE audio_details_v5');
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_audio_details_target '
+    'ON audio_details(target_type, target_path)',
+  );
+  await db.execute('DROP TABLE IF EXISTS audio_detail_backup_sync');
+}
+
+List<String> _decodeLegacyAudioDetailList(Object? value) {
+  if (value is! String || value.trim().isEmpty) return const <String>[];
+  try {
+    final decoded = json.decode(value);
+    if (decoded is! List) return const <String>[];
+    final seen = <String>{};
+    final values = <String>[];
+    for (final item in decoded.whereType<String>()) {
+      final normalized = item.trim();
+      if (normalized.isNotEmpty && seen.add(normalized)) values.add(normalized);
+    }
+    return values;
+  } on Object catch (error) {
+    debugPrint('audio_detail_v6_list_migration_warning: $error');
+    return const <String>[];
+  }
 }
 
 Future<void> _createLibraryEntriesTable(Database db) async {

@@ -1786,6 +1786,7 @@ class _MemoryAudioDetailCacheService extends AudioDetailCacheService {
     AudioDetailTarget target,
     String? coverPath, {
     bool? selected,
+    bool writeDocument = false,
   }) async {
     savedTargets.add(target);
     final key = _key(target);

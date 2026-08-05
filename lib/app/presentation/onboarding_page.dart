@@ -1,21 +1,26 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../application/app_bootstrap_controller.dart';
 import '../state/app_runtime_providers.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 
 class OnboardingGate extends StatefulWidget {
-  const OnboardingGate({super.key, required this.child});
+  const OnboardingGate({super.key, required this.child, this.initiallyVisible});
 
   final Widget child;
+  final bool? initiallyVisible;
 
   @override
   State<OnboardingGate> createState() => _OnboardingGateState();
 }
 
 class _OnboardingGateState extends State<OnboardingGate> {
-  late bool _showOnboarding = AppPreferences.shouldShowOnboardingSync();
+  late bool _showOnboarding =
+      widget.initiallyVisible ?? AppPreferences.shouldShowOnboardingSync();
 
   Future<void> _complete() async {
     await AppPreferences.completeOnboarding();
@@ -27,6 +32,46 @@ class _OnboardingGateState extends State<OnboardingGate> {
     if (!_showOnboarding) return widget.child;
     return OnboardingPage(onComplete: _complete);
   }
+}
+
+/// Keeps the onboarding decision stable while starting the full runtime only
+/// after a fresh install has rendered its first onboarding frame.
+class OnboardingRuntimeGate extends StatefulWidget {
+  const OnboardingRuntimeGate({
+    super.key,
+    required this.showOnboarding,
+    required this.runtimeController,
+    required this.child,
+  });
+
+  final bool showOnboarding;
+  final AppBootstrapController runtimeController;
+  final Widget child;
+
+  @override
+  State<OnboardingRuntimeGate> createState() => _OnboardingRuntimeGateState();
+}
+
+class _OnboardingRuntimeGateState extends State<OnboardingRuntimeGate> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.showOnboarding) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(widget.runtimeController.initialize());
+        });
+        WidgetsBinding.instance.scheduleFrame();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => OnboardingGate(
+    initiallyVisible: widget.showOnboarding,
+    child: widget.child,
+  );
 }
 
 class OnboardingPage extends ConsumerWidget {

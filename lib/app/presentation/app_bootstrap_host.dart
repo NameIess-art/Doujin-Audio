@@ -15,7 +15,6 @@ class AppBootstrapHost extends StatelessWidget {
     required this.appBuilder,
     this.exportDiagnostics,
     this.disposeController = true,
-    this.deferReadySettlement = false,
     this.locale,
     this.onBootstrapSettled,
     super.key,
@@ -25,7 +24,6 @@ class AppBootstrapHost extends StatelessWidget {
   final Widget Function() appBuilder;
   final Future<void> Function()? exportDiagnostics;
   final bool disposeController;
-  final bool deferReadySettlement;
   final Locale? locale;
   final VoidCallback? onBootstrapSettled;
 
@@ -73,12 +71,7 @@ class AppBootstrapHost extends StatelessWidget {
     return AppBootstrapGate(
       controller: controller,
       disposeController: disposeController,
-      onBootstrapSettled: () {
-        if (!deferReadySettlement ||
-            controller.state.phase == AppBootstrapPhase.failure) {
-          onBootstrapSettled?.call();
-        }
-      },
+      onBootstrapSettled: onBootstrapSettled,
       readyBuilder: (_) => appBuilder(),
       loadingBuilder: (_) => shell(const AppBootstrapLoadingView()),
       failureBuilder: (_, state) => shell(
@@ -126,7 +119,7 @@ class _AppBootstrapGateState extends State<AppBootstrapGate> {
   void initState() {
     super.initState();
     widget.controller.addListener(_handleStateChanged);
-    unawaited(widget.controller.initialize());
+    _initializeIfNeeded();
   }
 
   @override
@@ -138,7 +131,13 @@ class _AppBootstrapGateState extends State<AppBootstrapGate> {
     _readyApp = null;
     _bootstrapSettledScheduled = false;
     widget.controller.addListener(_handleStateChanged);
-    unawaited(widget.controller.initialize());
+    _initializeIfNeeded();
+  }
+
+  void _initializeIfNeeded() {
+    if (widget.controller.state.phase == AppBootstrapPhase.initializing) {
+      unawaited(widget.controller.initialize());
+    }
   }
 
   void _handleStateChanged() {

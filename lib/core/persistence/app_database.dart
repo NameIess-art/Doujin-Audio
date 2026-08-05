@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
-import '../media/audio_detail.dart';
 import '../media/music_track.dart';
 import '../media/path_matcher.dart';
 import 'persistence_records.dart';
@@ -22,7 +21,7 @@ const int _sqliteInClauseBatchSize = 900;
 class AppDatabase {
   AppDatabase._();
 
-  static const int schemaVersion = 5;
+  static const int schemaVersion = 6;
   static const String fileName = 'audio_player.db';
 
   @visibleForTesting

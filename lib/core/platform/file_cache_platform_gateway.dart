@@ -307,48 +307,6 @@ class FileCachePlatformGateway {
     return result.valueOrNull;
   }
 
-  Future<bool> writeAudioDetailBackup({
-    required String folder,
-    required String json,
-  }) async {
-    final result = await _client.invoke<bool>(
-      FileCacheMethod.writeAudioDetailBackup,
-      arguments: <String, Object?>{'folder': folder, 'json': json},
-      decode: (value) => value as bool,
-    );
-    return result.valueOrNull ?? false;
-  }
-
-  Future<String?> readAudioDetailBackup(String folder) async {
-    final result = await _client.invoke<String?>(
-      FileCacheMethod.readAudioDetailBackup,
-      arguments: <String, Object?>{'folder': folder},
-      decode: (value) => value as String?,
-    );
-    return result.valueOrNull;
-  }
-
-  Future<String?> readSingleFileDetailBackup(String filePath) async {
-    final result = await _client.invoke<String?>(
-      FileCacheMethod.readSingleFileDetailBackup,
-      arguments: <String, Object?>{'filePath': filePath},
-      decode: (value) => value as String?,
-    );
-    return result.valueOrNull;
-  }
-
-  Future<bool> writeSingleFileDetailBackup({
-    required String filePath,
-    required String json,
-  }) async {
-    final result = await _client.invoke<bool>(
-      FileCacheMethod.writeSingleFileDetailBackup,
-      arguments: <String, Object?>{'filePath': filePath, 'json': json},
-      decode: (value) => value as bool,
-    );
-    return result.valueOrNull ?? false;
-  }
-
   Future<CoverImageReference?> writeFileBytesToFolder({
     required String folder,
     required String name,
@@ -368,13 +326,17 @@ class FileCachePlatformGateway {
     return result.valueOrNull;
   }
 
-  Future<bool> documentPathExists(String path) async {
+  Future<bool?> documentPathExistence(String path) async {
     final result = await _client.invoke<bool>(
       FileCacheMethod.documentPathExists,
       arguments: <String, Object?>{'path': path},
       decode: (value) => value as bool,
     );
-    return result.valueOrNull ?? false;
+    return result.valueOrNull;
+  }
+
+  Future<bool> documentPathExists(String path) async {
+    return await documentPathExistence(path) ?? false;
   }
 
   Future<String?> resolveDocumentFileSystemPath(String path) async {
@@ -590,6 +552,54 @@ class FileCachePlatformGateway {
       if (!eventLifecycle.isCompleted) unawaited(_cancelFolderScan(taskId));
       if (_activeScanTaskId == taskId) _activeScanTaskId = null;
     }
+  }
+
+  Future<Map<String, Object?>?> readJsonDocument(
+    Map<String, Object?> location,
+  ) async {
+    final result = await _client.invoke<Map<String, Object?>?>(
+      FileCacheMethod.readJsonDocument,
+      arguments: location,
+      decode: (Object? value) =>
+          value == null ? null : Map<String, Object?>.from(value as Map),
+    );
+    return result.valueOrNull;
+  }
+
+  Future<Map<String, Object?>?> writeJsonDocument({
+    required Map<String, Object?> location,
+    required Uint8List bytes,
+    required String mode,
+    String? expectedRevision,
+  }) async {
+    final result = await _client.invoke<Map<String, Object?>?>(
+      FileCacheMethod.writeJsonDocument,
+      arguments: <String, Object?>{
+        ...location,
+        'bytes': bytes,
+        'mode': mode,
+        'expectedRevision': expectedRevision,
+      },
+      decode: (Object? value) =>
+          value == null ? null : Map<String, Object?>.from(value as Map),
+    );
+    return result.valueOrNull;
+  }
+
+  Future<Map<String, Object?>?> deleteJsonDocument({
+    required Map<String, Object?> location,
+    required String expectedRevision,
+  }) async {
+    final result = await _client.invoke<Map<String, Object?>?>(
+      FileCacheMethod.deleteJsonDocument,
+      arguments: <String, Object?>{
+        ...location,
+        'expectedRevision': expectedRevision,
+      },
+      decode: (Object? value) =>
+          value == null ? null : Map<String, Object?>.from(value as Map),
+    );
+    return result.valueOrNull;
   }
 
   Future<NativeScanResult> _scanFolderStreamChunked(

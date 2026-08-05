@@ -13,8 +13,6 @@ import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/media_file_support.dart';
 import '../../../core/media/path_display.dart';
-import '../../../core/persistence/app_database.dart';
-import '../../../infrastructure/sqlite/sqlite_library_repository.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
@@ -33,6 +31,7 @@ import 'library_scan_models.dart';
 import 'library_organizer.dart';
 import 'library_service.dart';
 import '../domain/audio_library_category.dart';
+import '../domain/audio_detail_store.dart';
 import '../domain/library_node.dart';
 import '../domain/library_entry.dart';
 import '../domain/library_persistence_repository.dart';
@@ -62,7 +61,8 @@ final class LibraryFacade implements LibraryCatalog {
        _coverArtworkCacheService = coverArtworkCacheService;
 
   factory LibraryFacade.create({
-    LibraryPersistenceRepository? databaseRepository,
+    required LibraryPersistenceRepository databaseRepository,
+    AudioDetailStore? audioDetailStore,
     AudioDetailRepository? detailRepository,
     AudioDetailCacheService? detailCacheService,
     DlsiteMetadataService? metadataService,
@@ -72,15 +72,24 @@ final class LibraryFacade implements LibraryCatalog {
     LibraryEntryEditorService? entryEditorService,
     CoverArtworkCacheService? coverArtworkCacheService,
   }) {
-    final resolvedDatabase =
-        databaseRepository ??
-        SqliteLibraryRepository(database: AppDatabase.instance);
+    final resolvedDatabase = databaseRepository;
+    final resolvedAudioDetailStore =
+        audioDetailStore ??
+        (resolvedDatabase is AudioDetailStore
+            ? resolvedDatabase as AudioDetailStore
+            : throw ArgumentError.value(
+                resolvedDatabase,
+                'databaseRepository',
+                'must also implement AudioDetailStore',
+              ));
     final resolvedDetailCache =
         detailCacheService ??
         AudioDetailCacheService(
           repository:
               detailRepository ??
-              AudioDetailRepository(databaseRepository: resolvedDatabase),
+              AudioDetailRepository(
+                databaseRepository: resolvedAudioDetailStore,
+              ),
         );
     final resolvedService = service ?? LibraryService();
     return LibraryFacade(
@@ -122,12 +131,11 @@ final class LibraryFacade implements LibraryCatalog {
     cleanupOrphanedImports: (retainedPaths) =>
         AppCacheService.cleanupOrphanedPersistentImports(retainedPaths),
     ensureEntries: _ensureEntriesForLoadedTracks,
-    migrateAudioDetails: _migrateAudioDetailsToDatabasePrimary,
-    flushBackupSync: _flushPendingAudioDetailBackupSync,
+    migrateAudioDetails: _importAudioDetailDocumentsOnce,
   );
 
-  static const _audioDetailPrimaryMigrationKey =
-      'audio_detail_database_primary_migration_v1';
+  static const _audioDetailDocumentImportKey =
+      'audio_detail_document_read_only_import_v2';
 
   LibraryState get state => _service.slice.state;
   Stream<LibraryState> get states => _service.slice.stream;
@@ -367,18 +375,10 @@ final class LibraryFacade implements LibraryCatalog {
   Future<AudioDetailLoadResult> loadAudioDetail(AudioDetailTarget target) =>
       detailCacheService.load(canonicalAudioDetailTarget(target));
 
-  Future<AudioDetailSaveResult> saveAudioDetail(
-    AudioDetail detail, {
-    AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
-  }) async {
+  Future<AudioDetailSaveResult> saveAudioDetail(AudioDetail detail) async {
     final result = await detailCacheService.save(
       detail.copyWith(target: canonicalAudioDetailTarget(detail.target)),
-      origin: origin,
     );
-    final retryAt = result.backupRetryAt;
-    if (retryAt != null) {
-      _startupMaintenanceCoordinator.scheduleBackupSync(retryAt);
-    }
     snapshotCacheService.markDetailChanged(result.detail);
     _syncStateSlice();
     return result;
@@ -399,10 +399,6 @@ final class LibraryFacade implements LibraryCatalog {
       text,
     );
     if (result != null) {
-      final retryAt = result.backupRetryAt;
-      if (retryAt != null) {
-        _startupMaintenanceCoordinator.scheduleBackupSync(retryAt);
-      }
       snapshotCacheService.markDetailChanged(result.detail);
       _syncStateSlice();
     }
@@ -430,10 +426,6 @@ final class LibraryFacade implements LibraryCatalog {
       ];
     }
     final result = await detailCacheService.importBackupsMany(targets);
-    final retryAt = result.nextRetryAt;
-    if (retryAt != null) {
-      _startupMaintenanceCoordinator.scheduleBackupSync(retryAt);
-    }
     if (result.changedDetails.isNotEmpty) {
       snapshotCacheService.markDetailChanged();
       _syncStateSlice();
@@ -550,15 +542,10 @@ final class LibraryFacade implements LibraryCatalog {
     }
     if (targetsWithMissingDetails.isNotEmpty) {
       // A rescan can expose a track before the explicit backup import finishes.
-      // Restore sparse details before automatic duration writes can mirror them
-      // back to nameless-audio.json.
+      // Restore sparse details before automatic duration updates reach SQLite.
       final import = await detailCacheService.importBackupsMany(
         targetsWithMissingDetails,
       );
-      final retryAt = import.nextRetryAt;
-      if (retryAt != null) {
-        _startupMaintenanceCoordinator.scheduleBackupSync(retryAt);
-      }
       if (import.changedDetails.isNotEmpty) {
         snapshotCacheService.markDetailChanged();
         _syncStateSlice();
@@ -597,12 +584,11 @@ final class LibraryFacade implements LibraryCatalog {
       final latestDetail =
           detailCacheService.resolvedDetail(detail.target) ?? detail;
       if (latestDetail.duration == null) {
-        final result = await detailCacheService.save(
+        final updated = await detailCacheService.updateDerivedFields(
           latestDetail.copyWith(duration: duration),
-          origin: AudioDetailSaveOrigin.automatic,
         );
         if (_disposed || epoch != _maintenanceEpoch) return;
-        snapshotCacheService.markDetailChanged(result.detail);
+        snapshotCacheService.markDetailChanged(updated);
         _syncStateSlice();
       }
     }
@@ -1754,18 +1740,13 @@ final class LibraryFacade implements LibraryCatalog {
         newPath,
       ),
     );
-    final saveResult = await saveAudioDetail(renamedDetail);
-    var backupFailed = saveResult.backupFailed;
-    try {
-      await detailCacheService.removeBackupMirror(oldTarget);
-    } catch (error, stackTrace) {
-      backupFailed = true;
-      AppLogService.warning(
-        'audio_detail_rename_backup_cleanup_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
+    final saveResult = await detailCacheService.retarget(
+      oldTarget,
+      renamedDetail,
+    );
+    snapshotCacheService.markDetailChanged(saveResult.detail);
+    _syncStateSlice();
+    final backupFailed = saveResult.documentFailed;
     await deleteAudioDetail(oldTarget);
     return AudioDetailRenameResult(
       detail: saveResult.detail,
@@ -2289,32 +2270,15 @@ final class LibraryFacade implements LibraryCatalog {
     await databaseRepository.upsertLibraryEntries(entriesToPersist);
   }
 
-  Future<void> _migrateAudioDetailsToDatabasePrimary(int epoch) async {
+  Future<void> _importAudioDetailDocumentsOnce(int epoch) async {
     if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
     final completed = await databaseRepository.loadAppSetting(
-      _audioDetailPrimaryMigrationKey,
+      _audioDetailDocumentImportKey,
     );
     if (completed == '1') return;
-    while (_service.isScanning &&
-        !_disposed &&
-        _startupMaintenanceCoordinator.isCurrent(epoch)) {
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-    }
-    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
     await importAudioDetailBackups();
     if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
-    await databaseRepository.saveAppSetting(
-      _audioDetailPrimaryMigrationKey,
-      '1',
-    );
-  }
-
-  Future<DateTime?> _flushPendingAudioDetailBackupSync(int epoch) async {
-    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) {
-      return null;
-    }
-    final result = await detailCacheService.flushPendingBackupSync();
-    return result.nextRetryAt;
+    await databaseRepository.saveAppSetting(_audioDetailDocumentImportKey, '1');
   }
 
   void _syncStateSlice({bool? isInitialized}) {

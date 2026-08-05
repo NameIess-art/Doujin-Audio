@@ -29,6 +29,7 @@ class PlatformChannelsTest {
             FileCacheMethods.CLEAR_APPLICATION_CACHE,
             FileCacheMethods.COPY_FILE_TO_FOLDER,
             FileCacheMethods.DELETE_DOCUMENT_PATH,
+            FileCacheMethods.DELETE_JSON_DOCUMENT,
             FileCacheMethods.DISCOVER_ROOT_IMAGES,
             FileCacheMethods.DOCUMENT_PATH_EXISTS,
             FileCacheMethods.ENFORCE_APPLICATION_CACHE_LIMIT,
@@ -38,8 +39,7 @@ class PlatformChannelsTest {
             FileCacheMethods.PICK_AUDIO_FILES,
             FileCacheMethods.PICK_AUDIO_FOLDER,
             FileCacheMethods.PICK_AUDIO_SOURCE,
-            FileCacheMethods.READ_AUDIO_DETAIL_BACKUP,
-            FileCacheMethods.READ_SINGLE_FILE_DETAIL_BACKUP,
+            FileCacheMethods.READ_JSON_DOCUMENT,
             FileCacheMethods.RENAME_DOCUMENT,
             FileCacheMethods.RESOLVE_DOCUMENT_FILE_SYSTEM_PATH,
             FileCacheMethods.RESOLVE_TRACK_COVER,
@@ -49,9 +49,8 @@ class PlatformChannelsTest {
             FileCacheMethods.START_FOLDER_SCAN,
             FileCacheMethods.CANCEL_FOLDER_SCAN,
             FileCacheMethods.SET_APPLICATION_CACHE_LIMIT,
-            FileCacheMethods.WRITE_AUDIO_DETAIL_BACKUP,
+            FileCacheMethods.WRITE_JSON_DOCUMENT,
             FileCacheMethods.WRITE_FILE_BYTES_TO_FOLDER,
-            FileCacheMethods.WRITE_SINGLE_FILE_DETAIL_BACKUP
         )
 
         assertEquals(methods.size, methods.toSet().size)

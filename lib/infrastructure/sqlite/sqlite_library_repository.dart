@@ -3,9 +3,11 @@ import '../../core/media/music_track.dart';
 import '../../core/persistence/app_database.dart';
 import '../../core/persistence/persistence_records.dart';
 import '../../features/library/domain/library_entry.dart';
+import '../../features/library/domain/audio_detail_store.dart';
 import '../../features/library/domain/library_persistence_repository.dart';
 
-class SqliteLibraryRepository implements LibraryPersistenceRepository {
+class SqliteLibraryRepository
+    implements LibraryPersistenceRepository, AudioDetailStore {
   SqliteLibraryRepository({required AppDatabase database})
     : _database = database;
 
@@ -48,63 +50,38 @@ class SqliteLibraryRepository implements LibraryPersistenceRepository {
       _database.deleteTracksMissingFromGeneration(generation);
 
   @override
-  Future<AudioDetail?> loadAudioDetail(AudioDetailTarget target) =>
-      _database.loadAudioDetail(target);
+  Future<AudioDetail?> load(AudioDetailTarget target) async {
+    final record = await _database.loadAudioDetailRecord(
+      targetType: target.targetType.dbValue,
+      targetPath: target.targetPath,
+    );
+    return record == null ? null : _audioDetailFromRecord(record);
+  }
+
   @override
-  Future<List<AudioDetail>> loadAudioDetails(
+  Future<List<AudioDetail>> loadMany(
     Iterable<AudioDetailTarget> targets,
-  ) => _database.loadAudioDetails(targets);
+  ) async => (await _database.loadAudioDetailRecords(
+    targets.map((target) => (target.targetType.dbValue, target.targetPath)),
+  )).map(_audioDetailFromRecord).toList(growable: false);
   @override
-  Future<void> upsertAudioDetail(AudioDetail detail) =>
-      _database.upsertAudioDetail(detail);
+  Future<void> upsert(AudioDetail detail) =>
+      _database.upsertAudioDetailRecord(_audioDetailToRecord(detail));
   @override
-  Future<AudioDetailBackupSyncTask> upsertAudioDetailAndEnqueueBackupSync(
-    AudioDetail detail,
-  ) async => _backupTaskFromRecord(
-    await _database.upsertAudioDetailAndEnqueueBackupSync(detail),
-  );
+  Future<void> upsertMany(Iterable<AudioDetail> details) =>
+      _database.upsertAudioDetailRecords(details.map(_audioDetailToRecord));
   @override
-  Future<AudioDetailBackupSyncTask> enqueueAudioDetailBackupSync(
-    AudioDetailTarget target,
-  ) async => _backupTaskFromRecord(
-    await _database.enqueueAudioDetailBackupSync(target),
-  );
+  Future<void> delete(AudioDetailTarget target) =>
+      _database.deleteAudioDetailRecord(
+        targetType: target.targetType.dbValue,
+        targetPath: target.targetPath,
+      );
+
   @override
-  Future<List<AudioDetailBackupSyncTask>> loadDueAudioDetailBackupSyncTasks({
-    required int nowMs,
-    int limit = 100,
-  }) async => (await _database.loadDueAudioDetailBackupSyncTasks(
-    nowMs: nowMs,
-    limit: limit,
-  )).map(_backupTaskFromRecord).toList(growable: false);
-  @override
-  Future<int?> loadNextAudioDetailBackupSyncAtMs() =>
-      _database.loadNextAudioDetailBackupSyncAtMs();
-  @override
-  Future<bool> deleteAudioDetailBackupSyncTask(
-    AudioDetailTarget target, {
-    required int generation,
-  }) =>
-      _database.deleteAudioDetailBackupSyncTask(target, generation: generation);
-  @override
-  Future<bool> recordAudioDetailBackupSyncFailure(
-    AudioDetailBackupSyncTask task, {
-    required int nextAttemptAtMs,
-    required String error,
-  }) => _database.recordAudioDetailBackupSyncFailure(
-    _backupTaskToRecord(task),
-    nextAttemptAtMs: nextAttemptAtMs,
-    error: error,
-  );
-  @override
-  Future<void> upsertAudioDetails(Iterable<AudioDetail> details) =>
-      _database.upsertAudioDetails(details);
-  @override
-  Future<void> deleteAudioDetail(AudioDetailTarget target) =>
-      _database.deleteAudioDetail(target);
-  @override
-  Future<void> deleteAudioDetails(Iterable<AudioDetailTarget> targets) =>
-      _database.deleteAudioDetails(targets);
+  Future<void> deleteMany(Iterable<AudioDetailTarget> targets) =>
+      _database.deleteAudioDetailRecords(
+        targets.map((target) => (target.targetType.dbValue, target.targetPath)),
+      );
   @override
   Future<String?> loadAppSetting(String key) => _database.loadAppSetting(key);
   @override
@@ -198,26 +175,40 @@ LibraryEntry _entryFromRecord(LibraryEntryRecord record) => LibraryEntry(
   modifiedAt: record.modifiedAt,
 );
 
-AudioDetailBackupSyncTask _backupTaskFromRecord(
-  AudioDetailBackupSyncRecord record,
-) => AudioDetailBackupSyncTask(
+AudioDetailRecord _audioDetailToRecord(AudioDetail detail) => AudioDetailRecord(
+  targetType: detail.target.targetType.dbValue,
+  targetPath: detail.target.targetPath,
+  rjCode: detail.rjCode,
+  workTitle: detail.workTitle,
+  circleName: detail.circleName,
+  voiceActors: detail.voiceActors,
+  tags: detail.tags,
+  cardCoverPath: detail.cardCoverPath,
+  cardCoverSelected: detail.cardCoverSelected,
+  releaseDate: detail.releaseDate,
+  duration: detail.duration,
+  salesCount: detail.salesCount,
+  rating: detail.rating,
+  createdAt: detail.createdAt,
+  updatedAt: detail.updatedAt,
+);
+
+AudioDetail _audioDetailFromRecord(AudioDetailRecord record) => AudioDetail(
   target: AudioDetailTarget(
     targetType: AudioDetailTargetType.fromDbValue(record.targetType)!,
     targetPath: record.targetPath,
   ),
-  generation: record.generation,
-  attemptCount: record.attemptCount,
-  nextAttemptAtMs: record.nextAttemptAtMs,
-  lastError: record.lastError,
-);
-
-AudioDetailBackupSyncRecord _backupTaskToRecord(
-  AudioDetailBackupSyncTask task,
-) => AudioDetailBackupSyncRecord(
-  targetType: task.target.targetType.dbValue,
-  targetPath: task.target.targetPath,
-  generation: task.generation,
-  attemptCount: task.attemptCount,
-  nextAttemptAtMs: task.nextAttemptAtMs,
-  lastError: task.lastError,
+  rjCode: record.rjCode,
+  workTitle: record.workTitle,
+  circleName: record.circleName,
+  voiceActors: record.voiceActors,
+  tags: record.tags,
+  cardCoverPath: record.cardCoverPath,
+  cardCoverSelected: record.cardCoverSelected,
+  releaseDate: record.releaseDate,
+  duration: record.duration,
+  salesCount: record.salesCount,
+  rating: record.rating,
+  createdAt: record.createdAt,
+  updatedAt: record.updatedAt,
 );

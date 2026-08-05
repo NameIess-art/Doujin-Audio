@@ -10,6 +10,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/media/audio_detail.dart';
+import '../../../core/persistence/json_document_store.dart';
 import '../../../core/immutable_collections.dart';
 import '../domain/asmr_download.dart';
 import '../domain/asmr_models.dart';
@@ -20,6 +21,7 @@ import '../../../core/logging/app_log_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
+import '../../library/data/audio_detail_json_codec.dart';
 
 const String _asmrMediaAcceptLanguage = 'zh-CN,zh;q=0.9,en;q=0.8';
 
@@ -56,7 +58,7 @@ typedef LocalFileRename =
     Future<File> Function(File source, String destination);
 
 @visibleForTesting
-Future<void> commitLocalDownloadedFile({
+Future<bool> commitLocalDownloadedFile({
   required File staging,
   required File target,
   LocalFileRename? rename,
@@ -105,6 +107,7 @@ Future<void> commitLocalDownloadedFile({
       stackTrace: stackTrace,
     );
   }
+  return true;
 }
 
 enum AsmrDownloadTaskStatus {
@@ -407,12 +410,19 @@ class AsmrDownloadTaskHeaderViewState {
 class AsmrDownloadManager extends ChangeNotifier {
   AsmrDownloadManager({
     FileCachePlatformGateway? fileCacheGateway,
+    JsonDocumentStore? jsonDocumentStore,
     Future<Directory> Function()? temporaryDirectoryProvider,
     Future<Directory> Function()? stagingDirectoryProvider,
     Duration automaticFileRetryDelay = const Duration(seconds: 2),
     bool persistTasks = true,
   }) : _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
+       _jsonDocumentStore =
+           jsonDocumentStore ??
+           DefaultJsonDocumentStore(
+             platformGateway:
+                 fileCacheGateway ?? FileCachePlatformGateway.instance,
+           ),
        _stagingDirectoryProvider =
            stagingDirectoryProvider ??
            temporaryDirectoryProvider ??
@@ -426,6 +436,9 @@ class AsmrDownloadManager extends ChangeNotifier {
   static const int maxAutomaticFileRetries = 10;
   static const int _progressNotifyMinByteDelta = 128 * 1024;
   final FileCachePlatformGateway _fileCacheGateway;
+  final JsonDocumentStore _jsonDocumentStore;
+  static const AudioDetailJsonCodec _audioDetailJsonCodec =
+      AudioDetailJsonCodec();
   final Future<Directory> Function() _stagingDirectoryProvider;
   final Duration _automaticFileRetryDelay;
   final bool _persistTasks;
@@ -442,8 +455,8 @@ class AsmrDownloadManager extends ChangeNotifier {
   final Map<int, bool> _pauseRequested = {};
   final Map<int, Completer<void>> _downloadCompletions = {};
   final Map<int, HttpClient> _activeHttpClients = {};
-  final Map<int, bool> _workRootExistedBeforeTask = {};
   final Map<int, Set<String>> _createdOutputPaths = {};
+  final Map<int, Map<String, _CreatedJsonDocument>> _createdJsonDocuments = {};
   final Map<int, int> _liveDownloadedBytes = {};
   final Map<int, Map<String, int>> _liveFileDownloadedBytes = {};
 
@@ -550,9 +563,9 @@ class AsmrDownloadManager extends ChangeNotifier {
                 status: AsmrDownloadTaskStatus.paused,
                 message: 'paused',
               );
-              _workRootExistedBeforeTask[task.work.id] =
-                  restored.workRootExistedBeforeTask;
               _createdOutputPaths[task.work.id] = restored.createdOutputPaths;
+              _createdJsonDocuments[task.work.id] =
+                  restored.createdJsonDocuments;
             }
           }
         } catch (error, stackTrace) {
@@ -614,8 +627,8 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     if (_queue.contains(workId)) {
       _queue.remove(workId);
-      _workRootExistedBeforeTask.remove(workId);
       _createdOutputPaths.remove(workId);
+      _createdJsonDocuments.remove(workId);
       _tasks.remove(workId);
       _notifyTaskChanged();
       await _persistenceTail;
@@ -629,13 +642,9 @@ class AsmrDownloadManager extends ChangeNotifier {
       _tasks[workId] = task.copyWith(message: 'canceling');
       _notifyTaskChanged();
       final completion = _downloadCompletions[workId]?.future;
-      final removeWholeRoot = _workRootExistedBeforeTask[workId] == false;
       _activeHttpClients[workId]?.close(force: true);
       if (completion != null) {
         await completion;
-      }
-      if (deleteDownloaded && removeWholeRoot) {
-        await _deleteDownloadRoot(task.workRootPath);
       }
       _tasks.remove(workId);
       _notifyTaskChanged();
@@ -646,11 +655,11 @@ class AsmrDownloadManager extends ChangeNotifier {
     if (task.status == AsmrDownloadTaskStatus.failed ||
         task.status == AsmrDownloadTaskStatus.paused) {
       if (deleteDownloaded) {
-        await _cleanupCancelledTask(workId, task.workRootPath);
+        await _cleanupCancelledTask(workId);
       }
     }
-    _workRootExistedBeforeTask.remove(workId);
     _createdOutputPaths.remove(workId);
+    _createdJsonDocuments.remove(workId);
     _tasks.remove(workId);
     _notifyTaskChanged();
     await _persistenceTail;
@@ -668,8 +677,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       await _persistenceTail;
     }
     await _deleteDownloadRoot(workRootPath);
-    _workRootExistedBeforeTask.remove(workId);
     _createdOutputPaths.remove(workId);
+    _createdJsonDocuments.remove(workId);
   }
 
   Future<void> pauseTask(int workId) async {
@@ -756,18 +765,12 @@ class AsmrDownloadManager extends ChangeNotifier {
         normalizedDestination,
         workFolderName,
       );
-      _workRootExistedBeforeTask[workId] = await _pathExists(workRootPath);
       if (_disposed) {
-        _workRootExistedBeforeTask.remove(workId);
         return;
       }
       final backupBytes = saveMetadata
-          ? utf8
-                .encode(
-                  const JsonEncoder.withIndent('  ').convert(
-                    _buildBackupDetail(work, workRootPath).toBackupJson(),
-                  ),
-                )
+          ? _audioDetailJsonCodec
+                .encodeNew(_buildBackupDetail(work, workRootPath))
                 .length
           : 0;
       final totalFiles = plannedFiles.length + (saveMetadata ? 1 : 0);
@@ -852,16 +855,15 @@ class AsmrDownloadManager extends ChangeNotifier {
     final backup = saveMetadata ? _buildBackupDetail(work, workRootPath) : null;
     final backupBytes = backup == null
         ? 0
-        : utf8
-              .encode(
-                const JsonEncoder.withIndent(
-                  '  ',
-                ).convert(backup.toBackupJson()),
-              )
-              .length;
+        : _audioDetailJsonCodec.encodeNew(backup).length;
+    var metadataCreated = false;
 
     try {
       _createdOutputPaths.putIfAbsent(workId, () => <String>{});
+      _createdJsonDocuments.putIfAbsent(
+        workId,
+        () => <String, _CreatedJsonDocument>{},
+      );
       final rootReady = await _ensureFolderPath(
         basePath: normalizedDestination,
         relativePath: workFolderName,
@@ -873,10 +875,15 @@ class AsmrDownloadManager extends ChangeNotifier {
 
       if (backup != null) {
         final backupPath = _joinFolderPath(workRootPath, 'nameless-audio.json');
-        final backupExisted = await _pathExists(backupPath);
-        await _writeWorkDetailBackup(backup, workRootPath);
-        if (!backupExisted) {
+        final location = JsonDocumentLocation.folderChild(
+          folder: workRootPath,
+          name: 'nameless-audio.json',
+        );
+        final write = await _writeWorkDetailBackup(backup, location);
+        metadataCreated = write.status == JsonDocumentWriteStatus.created;
+        if (metadataCreated) {
           _createdOutputPaths[workId]?.add(backupPath);
+          _recordCreatedJson(workId, backupPath, location, write);
         }
       }
       _throwIfCancelled(workId);
@@ -887,8 +894,12 @@ class AsmrDownloadManager extends ChangeNotifier {
       var failed = 0;
       var downloadedBytes = resumedTask.downloadedBytes;
       if (saveMetadata && completed == 0) {
-        completed = 1;
-        downloadedBytes += backupBytes;
+        if (metadataCreated) {
+          completed = 1;
+          downloadedBytes += backupBytes;
+        } else {
+          skipped++;
+        }
       }
       final fileDownloadedBytes = Map<String, int>.from(
         resumedTask.fileDownloadedBytes,
@@ -1092,11 +1103,11 @@ class AsmrDownloadManager extends ChangeNotifier {
           _cancelRequested[workId] == true &&
           _pauseRequested[workId] != true &&
           _deleteDownloadedOnCancel[workId] == true) {
-        await _cleanupCancelledTask(workId, workRootPath);
+        await _cleanupCancelledTask(workId);
       }
       if (_cancelRequested[workId] == true) {
-        _workRootExistedBeforeTask.remove(workId);
         _createdOutputPaths.remove(workId);
+        _createdJsonDocuments.remove(workId);
       }
       _cancelRequested.remove(workId);
       _deleteDownloadedOnCancel.remove(workId);
@@ -1109,8 +1120,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       _liveDownloadedBytes.remove(workId);
       _liveFileDownloadedBytes.remove(workId);
       if (_tasks[workId]?.status == AsmrDownloadTaskStatus.completed) {
-        _workRootExistedBeforeTask.remove(workId);
         _createdOutputPaths.remove(workId);
+        _createdJsonDocuments.remove(workId);
       }
       if (!_disposed) {
         AppCacheService.scheduleEnforce();
@@ -1162,28 +1173,44 @@ class AsmrDownloadManager extends ChangeNotifier {
     required HttpClient client,
   }) async {
     _throwIfCancelled(workId);
+    final normalizedRelativePath = _validatedDownloadRelativePath(
+      item.relativePath,
+    );
+    final preserveExistingJson =
+        path.extension(normalizedRelativePath).toLowerCase() == '.json';
+    final jsonLocation = preserveExistingJson
+        ? _jsonDownloadLocation(workRootPath, normalizedRelativePath)
+        : null;
+    if (jsonLocation != null) {
+      final existingJson = await _jsonDocumentStore.read(jsonLocation);
+      if (existingJson.status == JsonDocumentReadStatus.found) {
+        return _WriteResult.skipped(bytesDownloaded: item.size);
+      }
+    }
 
     File? localTargetFile;
     if (!PathMatcher.isContentUri(workRootPath)) {
       localTargetFile = File(
-        _resolveLocalPathWithin(workRootPath, item.relativePath),
+        _resolveLocalPathWithin(workRootPath, normalizedRelativePath),
       );
-      if (conflictPolicy == AsmrDownloadConflictPolicy.skip &&
+      if ((preserveExistingJson ||
+              conflictPolicy == AsmrDownloadConflictPolicy.skip) &&
           await localTargetFile.exists()) {
         return _WriteResult.skipped(bytesDownloaded: item.size);
       }
       await localTargetFile.parent.create(recursive: true);
     } else {
-      final docPath = _joinFolderPath(workRootPath, item.relativePath);
+      final docPath = _joinFolderPath(workRootPath, normalizedRelativePath);
       if (await _fileCacheGateway.documentPathExists(docPath)) {
-        if (conflictPolicy == AsmrDownloadConflictPolicy.skip) {
+        if (preserveExistingJson ||
+            conflictPolicy == AsmrDownloadConflictPolicy.skip) {
           return _WriteResult.skipped(bytesDownloaded: item.size);
         }
       }
     }
 
     final stagingFile = localTargetFile == null
-        ? await _persistentStagingFile(workRootPath, item.relativePath)
+        ? await _persistentStagingFile(workRootPath, normalizedRelativePath)
         : File('${localTargetFile.path}.nameless.part');
     final stagingExisted = await stagingFile.exists();
     if (!stagingExisted) _createdOutputPaths[workId]?.add(stagingFile.path);
@@ -1199,15 +1226,58 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     try {
       _throwIfCancelled(workId);
+      if (jsonLocation != null) {
+        final parentRelative = path.posix.dirname(normalizedRelativePath);
+        if (parentRelative != '.' &&
+            !await _ensureFolderPath(
+              basePath: workRootPath,
+              relativePath: parentRelative,
+              overwrite: false,
+            )) {
+          return _WriteResult.failure(
+            bytesDownloaded: tempResult.bytesDownloaded,
+          );
+        }
+        final write = await _jsonDocumentStore.write(
+          location: jsonLocation,
+          bytes: await tempResult.file.readAsBytes(),
+          mode: JsonDocumentWriteMode.createIfAbsent,
+        );
+        if (write.status == JsonDocumentWriteStatus.preserved) {
+          return _WriteResult.skipped(
+            bytesDownloaded: tempResult.bytesDownloaded,
+          );
+        }
+        if (write.status != JsonDocumentWriteStatus.created) {
+          return _WriteResult.failure(
+            bytesDownloaded: tempResult.bytesDownloaded,
+          );
+        }
+        _createdOutputPaths[workId]?.add(
+          _joinFolderPath(workRootPath, normalizedRelativePath),
+        );
+        _recordCreatedJson(
+          workId,
+          _joinFolderPath(workRootPath, normalizedRelativePath),
+          jsonLocation,
+          write,
+        );
+        return _WriteResult.success(
+          bytesDownloaded: tempResult.bytesDownloaded,
+        );
+      }
       if (PathMatcher.isContentUri(workRootPath)) {
-        final targetPath = _joinFolderPath(workRootPath, item.relativePath);
+        final targetPath = _joinFolderPath(
+          workRootPath,
+          normalizedRelativePath,
+        );
         final targetExisted = await _fileCacheGateway.documentPathExists(
           targetPath,
         );
         final saved = await _fileCacheGateway.copyFileToFolder(
           sourcePath: tempResult.file.path,
           folder: workRootPath,
-          relativePath: item.relativePath,
+          relativePath: normalizedRelativePath,
           overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
         );
         if (!saved) {
@@ -1234,10 +1304,15 @@ class AsmrDownloadManager extends ChangeNotifier {
           return _WriteResult.skipped(bytesDownloaded: item.size);
         }
       }
-      await commitLocalDownloadedFile(
+      final committed = await commitLocalDownloadedFile(
         staging: tempResult.file,
         target: targetFile,
       );
+      if (!committed) {
+        return _WriteResult.skipped(
+          bytesDownloaded: tempResult.bytesDownloaded,
+        );
+      }
       if (!targetExisted) {
         _createdOutputPaths[workId]?.add(targetFile.path);
       }
@@ -1511,26 +1586,42 @@ class AsmrDownloadManager extends ChangeNotifier {
     _notifyProgressChanged();
   }
 
-  Future<void> _writeWorkDetailBackup(
+  Future<JsonDocumentWriteResult> _writeWorkDetailBackup(
     AudioDetail detail,
-    String workRootPath,
+    JsonDocumentLocation location,
   ) async {
-    final payload = const JsonEncoder.withIndent(
-      '  ',
-    ).convert(detail.toBackupJson());
-    if (PathMatcher.isContentUri(workRootPath)) {
-      final saved = await _fileCacheGateway.writeAudioDetailBackup(
-        folder: workRootPath,
-        json: payload,
-      );
-      if (!saved) {
-        throw const FileSystemException('Unable to write work detail backup.');
-      }
+    final result = await _jsonDocumentStore.write(
+      location: location,
+      bytes: _audioDetailJsonCodec.encodeNew(detail),
+      mode: JsonDocumentWriteMode.createIfAbsent,
+    );
+    if (result.status == JsonDocumentWriteStatus.created ||
+        result.status == JsonDocumentWriteStatus.preserved) {
+      return result;
+    }
+    throw FileSystemException(
+      'Unable to write work detail backup.',
+      result.error,
+    );
+  }
+
+  void _recordCreatedJson(
+    int workId,
+    String path,
+    JsonDocumentLocation location,
+    JsonDocumentWriteResult result,
+  ) {
+    final revision = result.revision;
+    if (result.status != JsonDocumentWriteStatus.created || revision == null) {
       return;
     }
-
-    final backupFile = File(path.join(workRootPath, 'nameless-audio.json'));
-    await backupFile.writeAsString(payload, flush: true);
+    _createdJsonDocuments.putIfAbsent(
+      workId,
+      () => <String, _CreatedJsonDocument>{},
+    )[path] = _CreatedJsonDocument(
+      location: location,
+      revision: revision,
+    );
   }
 
   Future<bool> _ensureFolderPath({
@@ -1563,6 +1654,20 @@ class AsmrDownloadManager extends ChangeNotifier {
       return '${_trimRightSlash(basePath)}::$normalizedRelative';
     }
     return _resolveLocalPathWithin(basePath, normalizedRelative);
+  }
+
+  JsonDocumentLocation _jsonDownloadLocation(
+    String workRootPath,
+    String relativePath,
+  ) {
+    final parentRelative = path.posix.dirname(relativePath);
+    final folder = parentRelative == '.'
+        ? workRootPath
+        : _joinFolderPath(workRootPath, parentRelative);
+    return JsonDocumentLocation.folderChild(
+      folder: folder,
+      name: path.posix.basename(relativePath),
+    );
   }
 
   String _validatedDownloadRelativePath(String relativePath) {
@@ -1689,10 +1794,11 @@ class AsmrDownloadManager extends ChangeNotifier {
         .map(
           (task) => _downloadTaskToJson(
             task,
-            workRootExistedBeforeTask:
-                _workRootExistedBeforeTask[task.work.id] ?? true,
             createdOutputPaths:
                 _createdOutputPaths[task.work.id] ?? const <String>{},
+            createdJsonDocuments:
+                _createdJsonDocuments[task.work.id] ??
+                const <String, _CreatedJsonDocument>{},
           ),
         )
         .toList(growable: false);
@@ -1745,8 +1851,8 @@ class AsmrDownloadManager extends ChangeNotifier {
         .toList(growable: false);
     for (final obsoleteWorkId in obsoleteTaskIds) {
       _tasks.remove(obsoleteWorkId);
-      _workRootExistedBeforeTask.remove(obsoleteWorkId);
       _createdOutputPaths.remove(obsoleteWorkId);
+      _createdJsonDocuments.remove(obsoleteWorkId);
     }
   }
 
@@ -1885,7 +1991,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       try {
         await _fileCacheGateway.deleteDocumentPath(workRootPath);
       } catch (_) {
-        // Temporary task directory cleanup is best effort.
+        // Explicit task deletion is best effort.
       }
       return;
     }
@@ -1911,27 +2017,22 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
   }
 
-  Future<bool> _pathExists(String targetPath) async {
-    if (PathMatcher.isContentUri(targetPath)) {
-      try {
-        return await _fileCacheGateway.documentPathExists(targetPath);
-      } catch (_) {
-        return false;
-      }
-    }
-    return FileSystemEntity.type(targetPath, followLinks: false).then(
-      (type) => type != FileSystemEntityType.notFound,
-      onError: (_) => false,
-    );
-  }
-
-  Future<void> _cleanupCancelledTask(int workId, String workRootPath) async {
-    if (_workRootExistedBeforeTask[workId] != true) {
-      await _deleteDownloadRoot(workRootPath);
-      return;
-    }
+  Future<void> _cleanupCancelledTask(int workId) async {
     for (final createdPath in _createdOutputPaths[workId] ?? const <String>{}) {
       try {
+        final createdJson = _createdJsonDocuments[workId]?[createdPath];
+        if (createdJson != null) {
+          await _jsonDocumentStore.delete(
+            location: createdJson.location,
+            expectedRevision: createdJson.revision,
+          );
+          continue;
+        }
+        if (createdPath.toLowerCase().endsWith('.json')) {
+          // A restored legacy task has no revision token. Preserve the JSON
+          // instead of risking deletion of a document modified after download.
+          continue;
+        }
         if (PathMatcher.isContentUri(createdPath)) {
           await _fileCacheGateway.deleteDocumentPath(createdPath);
         } else {
@@ -1949,8 +2050,8 @@ class AsmrDownloadManager extends ChangeNotifier {
 
 Map<String, Object?> _downloadTaskToJson(
   AsmrDownloadTaskSnapshot task, {
-  required bool workRootExistedBeforeTask,
   required Set<String> createdOutputPaths,
+  required Map<String, _CreatedJsonDocument> createdJsonDocuments,
 }) => <String, Object?>{
   'work': task.work.toJson(),
   'destinationRoot': task.destinationRoot,
@@ -1971,8 +2072,11 @@ Map<String, Object?> _downloadTaskToJson(
   'fileTotalBytes': task.fileTotalBytes,
   'completedFilePaths': task.completedFilePaths.toList(growable: false),
   'selectedRoots': task.selectedRoots.map(_downloadTrackToJson).toList(),
-  'workRootExistedBeforeTask': workRootExistedBeforeTask,
   'createdOutputPaths': createdOutputPaths.toList(growable: false),
+  'createdJsonDocuments': <String, Object?>{
+    for (final entry in createdJsonDocuments.entries)
+      entry.key: entry.value.toJson(),
+  },
 };
 
 _PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
@@ -2021,12 +2125,28 @@ _PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
               .toSet(),
       selectedRoots: selectedRoots,
     ),
-    workRootExistedBeforeTask:
-        json['workRootExistedBeforeTask'] as bool? ?? true,
     createdOutputPaths: (json['createdOutputPaths'] as List? ?? const [])
         .whereType<String>()
         .toSet(),
+    createdJsonDocuments: _createdJsonDocumentsFromJson(
+      json['createdJsonDocuments'],
+    ),
   );
+}
+
+Map<String, _CreatedJsonDocument> _createdJsonDocumentsFromJson(Object? value) {
+  if (value is! Map<Object?, Object?>) {
+    return const <String, _CreatedJsonDocument>{};
+  }
+  final result = <String, _CreatedJsonDocument>{};
+  for (final entry in value.entries) {
+    if (entry.key is! String || entry.value is! Map<Object?, Object?>) continue;
+    final decoded = _CreatedJsonDocument.fromJson(
+      Map<String, Object?>.from(entry.value as Map<Object?, Object?>),
+    );
+    if (decoded != null) result[entry.key as String] = decoded;
+  }
+  return result;
 }
 
 Map<String, Object?> _downloadTrackToJson(AsmrTrackFile track) =>
@@ -2089,13 +2209,47 @@ T _enumByName<T extends Enum>(List<T> values, Object? name, T fallback) {
 class _PersistedDownloadTask {
   const _PersistedDownloadTask({
     required this.task,
-    required this.workRootExistedBeforeTask,
     required this.createdOutputPaths,
+    required this.createdJsonDocuments,
   });
 
   final AsmrDownloadTaskSnapshot task;
-  final bool workRootExistedBeforeTask;
   final Set<String> createdOutputPaths;
+  final Map<String, _CreatedJsonDocument> createdJsonDocuments;
+}
+
+final class _CreatedJsonDocument {
+  const _CreatedJsonDocument({required this.location, required this.revision});
+
+  final JsonDocumentLocation location;
+  final String revision;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    ...location.toPlatformArguments(),
+    'revision': revision,
+  };
+
+  static _CreatedJsonDocument? fromJson(Map<String, Object?> json) {
+    final kind = switch (json['locationKind']) {
+      'folderChild' => JsonDocumentLocationKind.folderChild,
+      'fileSibling' => JsonDocumentLocationKind.fileSibling,
+      _ => null,
+    };
+    final basePath = json['basePath'];
+    final name = json['name'];
+    final revision = json['revision'];
+    if (kind == null ||
+        basePath is! String ||
+        name is! String ||
+        revision is! String ||
+        revision.isEmpty) {
+      return null;
+    }
+    final location = kind == JsonDocumentLocationKind.folderChild
+        ? JsonDocumentLocation.folderChild(folder: basePath, name: name)
+        : JsonDocumentLocation.fileSibling(filePath: basePath, name: name);
+    return _CreatedJsonDocument(location: location, revision: revision);
+  }
 }
 
 class _PlannedDownloadFile {

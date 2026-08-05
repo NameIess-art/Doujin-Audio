@@ -1,11 +1,56 @@
 package com.nameless.audio
 
 import com.nameless.audio.storage.replaceSafDocument
+import com.nameless.audio.storage.createSafDocumentIfAbsent
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafDocumentReplacementTest {
+    @Test
+    fun `createFile returning the target never opens or deletes it`() {
+        val files = mutableListOf("metadata.json")
+        var writeCalled = false
+        var deleteCalled = false
+
+        val result = createSafDocumentIfAbsent(
+            listFiles = { emptyList() },
+            isTarget = { it.equals("metadata.json", ignoreCase = true) },
+            sameDocument = { first, second -> first == second },
+            create = { "metadata.json" },
+            write = { writeCalled = true; true },
+            delete = { deleteCalled = true; files.remove(it) }
+        )
+
+        assertFalse(result)
+        assertFalse(writeCalled)
+        assertFalse(deleteCalled)
+        assertTrue(files.single() == "metadata.json")
+    }
+
+    @Test
+    fun `preserve create removes its new document when a target wins the race`() {
+        val files = mutableListOf<String>()
+        var listCount = 0
+        var writeCalled = false
+
+        val result = createSafDocumentIfAbsent(
+            listFiles = {
+                listCount++
+                if (listCount == 1) emptyList() else files + "concurrent"
+            },
+            isTarget = { it == "concurrent" },
+            sameDocument = { first, second -> first == second },
+            create = { "created".also(files::add) },
+            write = { writeCalled = true; true },
+            delete = { files.remove(it) }
+        )
+
+        assertFalse(result)
+        assertFalse(writeCalled)
+        assertFalse(files.contains("created"))
+    }
+
     @Test
     fun `create failure preserves existing target`() {
         val files = linkedMapOf("track.mp3" to "old")

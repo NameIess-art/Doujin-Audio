@@ -1,282 +1,80 @@
 part of 'app_database.dart';
 
 extension AppDatabaseAudioDetails on AppDatabase {
-  Future<AudioDetail?> loadAudioDetail(AudioDetailTarget target) async {
-    return _runDatabaseRead((db) async {
-      final normalizedTargetPath = PathMatcher.normalize(target.targetPath);
-      final rows = await db.query(
-        'audio_details',
-        where: 'target_type = ? AND target_path = ?',
-        whereArgs: [target.targetType.dbValue, normalizedTargetPath],
-        limit: 1,
-      );
-      if (rows.isEmpty) return null;
-      return AudioDetail.fromRow(rows.first);
-    });
-  }
-
-  Future<List<AudioDetail>> loadAudioDetails(
-    Iterable<AudioDetailTarget> targets,
-  ) async {
-    return _runDatabaseRead((db) async {
-      final pathsByType = <String, Set<String>>{};
-      for (final target in targets) {
-        pathsByType
-            .putIfAbsent(target.targetType.dbValue, () => <String>{})
-            .add(PathMatcher.normalize(target.targetPath));
-      }
-      if (pathsByType.isEmpty) return const <AudioDetail>[];
-
-      final details = <AudioDetail>[];
-      for (final entry in pathsByType.entries) {
-        final paths = entry.value.toList(growable: false);
-        if (paths.isEmpty) continue;
-        const chunkSize = 900;
-        for (var start = 0; start < paths.length; start += chunkSize) {
-          final end = (start + chunkSize).clamp(0, paths.length);
-          final chunk = paths.sublist(start, end);
-          final placeholders = List.filled(chunk.length, '?').join(', ');
-          final rows = await db.query(
-            'audio_details',
-            where: 'target_type = ? AND target_path IN ($placeholders)',
-            whereArgs: [entry.key, ...chunk],
-          );
-          details.addAll(rows.map(AudioDetail.fromRow));
-        }
-      }
-      return details;
-    });
-  }
-
-  Future<void> upsertAudioDetail(AudioDetail detail) async {
-    await _runDatabaseWrite((db) async {
-      final row = detail.toRow();
-      row['target_path'] = PathMatcher.normalize(detail.target.targetPath);
-      await db.insert(
-        'audio_details',
-        row,
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
-    });
-  }
-
-  Future<AudioDetailBackupSyncRecord> upsertAudioDetailAndEnqueueBackupSync(
-    AudioDetail detail,
-  ) async {
-    late AudioDetailBackupSyncRecord task;
-    await _runDatabaseWrite((db) async {
-      await db.transaction((transaction) async {
-        final normalizedPath = PathMatcher.normalize(detail.target.targetPath);
-        final row = detail.toRow()..['target_path'] = normalizedPath;
-        await transaction.insert(
-          'audio_details',
-          row,
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-        final existing = await transaction.query(
-          'audio_detail_backup_sync',
-          columns: const <String>['generation'],
-          where: 'target_type = ? AND target_path = ?',
-          whereArgs: <Object?>[
-            detail.target.targetType.dbValue,
-            normalizedPath,
-          ],
-          limit: 1,
-        );
-        final generation = existing.isEmpty
-            ? 1
-            : (existing.single['generation']! as int) + 1;
-        task = AudioDetailBackupSyncRecord(
-          targetType: detail.target.targetType.dbValue,
-          targetPath: normalizedPath,
-          generation: generation,
-          attemptCount: 0,
-          nextAttemptAtMs: 0,
-        );
-        await transaction.insert('audio_detail_backup_sync', <String, Object?>{
-          'target_type': task.targetType,
-          'target_path': task.targetPath,
-          'generation': generation,
-          'attempt_count': 0,
-          'next_attempt_at_ms': 0,
-          'last_error': null,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
-      });
-    });
-    return task;
-  }
-
-  Future<AudioDetailBackupSyncRecord> enqueueAudioDetailBackupSync(
-    AudioDetailTarget target,
-  ) async {
-    late AudioDetailBackupSyncRecord task;
-    await _runDatabaseWrite((db) async {
-      final normalizedPath = PathMatcher.normalize(target.targetPath);
-      await db.transaction((transaction) async {
-        final existing = await transaction.query(
-          'audio_detail_backup_sync',
-          columns: const <String>['generation'],
-          where: 'target_type = ? AND target_path = ?',
-          whereArgs: <Object?>[target.targetType.dbValue, normalizedPath],
-          limit: 1,
-        );
-        final generation = existing.isEmpty
-            ? 1
-            : (existing.single['generation']! as int) + 1;
-        task = AudioDetailBackupSyncRecord(
-          targetType: target.targetType.dbValue,
-          targetPath: normalizedPath,
-          generation: generation,
-          attemptCount: 0,
-          nextAttemptAtMs: 0,
-        );
-        await transaction.insert('audio_detail_backup_sync', <String, Object?>{
-          'target_type': target.targetType.dbValue,
-          'target_path': normalizedPath,
-          'generation': generation,
-          'attempt_count': 0,
-          'next_attempt_at_ms': 0,
-          'last_error': null,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
-      });
-    });
-    return task;
-  }
-
-  Future<List<AudioDetailBackupSyncRecord>> loadDueAudioDetailBackupSyncTasks({
-    required int nowMs,
-    int limit = 100,
-  }) {
-    return _runDatabaseRead((db) async {
-      final rows = await db.query(
-        'audio_detail_backup_sync',
-        where: 'next_attempt_at_ms <= ?',
-        whereArgs: <Object?>[nowMs],
-        orderBy: 'next_attempt_at_ms ASC, target_type ASC, target_path ASC',
-        limit: limit,
-      );
-      return rows
-          .map(AudioDetailBackupSyncRecord.fromRow)
-          .toList(growable: false);
-    });
-  }
-
-  Future<int?> loadNextAudioDetailBackupSyncAtMs() {
-    return _runDatabaseRead((db) async {
-      final rows = await db.rawQuery(
-        'SELECT MIN(next_attempt_at_ms) AS next_attempt_at_ms '
-        'FROM audio_detail_backup_sync',
-      );
-      return rows.single['next_attempt_at_ms'] as int?;
-    });
-  }
-
-  Future<bool> deleteAudioDetailBackupSyncTask(
-    AudioDetailTarget target, {
-    required int generation,
+  Future<AudioDetailRecord?> loadAudioDetailRecord({
+    required String targetType,
+    required String targetPath,
   }) async {
-    var deleted = 0;
-    await _runDatabaseWrite((db) async {
-      deleted = await db.delete(
-        'audio_detail_backup_sync',
-        where: 'target_type = ? AND target_path = ? AND generation = ?',
-        whereArgs: <Object?>[
-          target.targetType.dbValue,
-          PathMatcher.normalize(target.targetPath),
-          generation,
-        ],
-      );
+    return _runDatabaseRead((db) async {
+      final records = await _loadAudioDetailRecords(db, <(String, String)>[
+        (targetType, PathMatcher.normalize(targetPath)),
+      ]);
+      return records.isEmpty ? null : records.first;
     });
-    return deleted > 0;
   }
 
-  Future<bool> recordAudioDetailBackupSyncFailure(
-    AudioDetailBackupSyncRecord task, {
-    required int nextAttemptAtMs,
-    required String error,
-  }) async {
-    var updated = 0;
-    await _runDatabaseWrite((db) async {
-      updated = await db.update(
-        'audio_detail_backup_sync',
-        <String, Object?>{
-          'attempt_count': task.attemptCount + 1,
-          'next_attempt_at_ms': nextAttemptAtMs,
-          'last_error': error,
-        },
-        where: 'target_type = ? AND target_path = ? AND generation = ?',
-        whereArgs: <Object?>[
-          task.targetType,
-          PathMatcher.normalize(task.targetPath),
-          task.generation,
-        ],
-      );
-    });
-    return updated > 0;
+  Future<List<AudioDetailRecord>> loadAudioDetailRecords(
+    Iterable<(String, String)> targets,
+  ) async {
+    final normalized = targets
+        .map((target) => (target.$1, PathMatcher.normalize(target.$2)))
+        .toList(growable: false);
+    return _runDatabaseRead((db) => _loadAudioDetailRecords(db, normalized));
   }
 
-  Future<void> upsertAudioDetails(Iterable<AudioDetail> details) async {
+  Future<void> upsertAudioDetailRecord(AudioDetailRecord detail) async {
+    await _runDatabaseWrite((db) async {
+      await db.transaction(
+        (transaction) => _upsertAudioDetailRecord(transaction, detail),
+      );
+    });
+  }
+
+  Future<void> upsertAudioDetailRecords(
+    Iterable<AudioDetailRecord> details,
+  ) async {
     final values = details.toList(growable: false);
     if (values.isEmpty) return;
     await _runDatabaseWrite((db) async {
-      final batch = db.batch();
-      for (final detail in values) {
-        final row = detail.toRow();
-        row['target_path'] = PathMatcher.normalize(detail.target.targetPath);
-        batch.insert(
-          'audio_details',
-          row,
-          conflictAlgorithm: ConflictAlgorithm.replace,
-        );
-      }
-      await batch.commit(noResult: true);
+      await db.transaction((transaction) async {
+        for (final detail in values) {
+          await _upsertAudioDetailRecord(transaction, detail);
+        }
+      });
     });
   }
 
-  Future<void> deleteAudioDetail(AudioDetailTarget target) async {
+  Future<void> deleteAudioDetailRecord({
+    required String targetType,
+    required String targetPath,
+  }) async {
     await _runDatabaseWrite((db) async {
-      final normalizedTargetPath = PathMatcher.normalize(target.targetPath);
-      final batch = db.batch();
-      batch.delete(
-        'audio_detail_backup_sync',
-        where: 'target_type = ? AND target_path = ?',
-        whereArgs: [target.targetType.dbValue, normalizedTargetPath],
+      await _deleteAudioDetailRows(
+        db,
+        targetType,
+        PathMatcher.normalize(targetPath),
       );
-      batch.delete(
-        'audio_details',
-        where: 'target_type = ? AND target_path = ?',
-        whereArgs: [target.targetType.dbValue, normalizedTargetPath],
-      );
-      await batch.commit(noResult: true);
     });
   }
 
-  Future<void> deleteAudioDetails(Iterable<AudioDetailTarget> targets) async {
-    final uniqueTargets = <String, AudioDetailTarget>{};
+  Future<void> deleteAudioDetailRecords(
+    Iterable<(String, String)> targets,
+  ) async {
+    final uniqueTargets = <String, (String, String)>{};
     for (final target in targets) {
-      final normalizedPath = PathMatcher.normalize(target.targetPath);
-      uniqueTargets['${target.targetType.dbValue}\x1F$normalizedPath'] =
-          AudioDetailTarget(
-            targetType: target.targetType,
-            targetPath: normalizedPath,
-          );
+      final normalizedPath = PathMatcher.normalize(target.$2);
+      uniqueTargets['${target.$1}\x1F$normalizedPath'] = (
+        target.$1,
+        normalizedPath,
+      );
     }
     if (uniqueTargets.isEmpty) return;
     await _runDatabaseWrite((db) async {
-      final batch = db.batch();
-      for (final target in uniqueTargets.values) {
-        batch.delete(
-          'audio_detail_backup_sync',
-          where: 'target_type = ? AND target_path = ?',
-          whereArgs: [target.targetType.dbValue, target.targetPath],
-        );
-        batch.delete(
-          'audio_details',
-          where: 'target_type = ? AND target_path = ?',
-          whereArgs: [target.targetType.dbValue, target.targetPath],
-        );
-      }
-      await batch.commit(noResult: true);
+      await db.transaction((transaction) async {
+        for (final target in uniqueTargets.values) {
+          await _deleteAudioDetailRows(transaction, target.$1, target.$2);
+        }
+      });
     });
   }
 
@@ -357,5 +155,173 @@ extension AppDatabaseAudioDetails on AppDatabase {
       }
       await batch.commit(noResult: true);
     });
+  }
+}
+
+Future<List<AudioDetailRecord>> _loadAudioDetailRecords(
+  DatabaseExecutor db,
+  Iterable<(String, String)> targets,
+) async {
+  final pathsByType = <String, Set<String>>{};
+  for (final target in targets) {
+    pathsByType.putIfAbsent(target.$1, () => <String>{}).add(target.$2);
+  }
+  if (pathsByType.isEmpty) return const <AudioDetailRecord>[];
+
+  final parentRows = <Map<String, Object?>>[];
+  for (final entry in pathsByType.entries) {
+    final paths = entry.value.toList(growable: false);
+    for (
+      var start = 0;
+      start < paths.length;
+      start += _sqliteInClauseBatchSize
+    ) {
+      final end = (start + _sqliteInClauseBatchSize).clamp(0, paths.length);
+      final chunk = paths.sublist(start, end);
+      final placeholders = List.filled(chunk.length, '?').join(', ');
+      parentRows.addAll(
+        await db.query(
+          'audio_details',
+          where: 'target_type = ? AND target_path IN ($placeholders)',
+          whereArgs: <Object?>[entry.key, ...chunk],
+        ),
+      );
+    }
+  }
+  if (parentRows.isEmpty) return const <AudioDetailRecord>[];
+
+  final valuesByTable = <String, Map<String, List<String>>>{};
+  for (final table in <String>[
+    'audio_detail_voice_actors',
+    'audio_detail_tags',
+  ]) {
+    final byTarget = <String, List<String>>{};
+    for (
+      var start = 0;
+      start < parentRows.length;
+      start += _sqliteInClauseBatchSize ~/ 2
+    ) {
+      final end = (start + _sqliteInClauseBatchSize ~/ 2).clamp(
+        0,
+        parentRows.length,
+      );
+      final chunk = parentRows.sublist(start, end);
+      final clauses = List.filled(
+        chunk.length,
+        '(target_type = ? AND target_path = ?)',
+      ).join(' OR ');
+      final args = <Object?>[];
+      for (final row in chunk) {
+        args
+          ..add(row['target_type'])
+          ..add(row['target_path']);
+      }
+      final rows = await db.query(
+        table,
+        where: clauses,
+        whereArgs: args,
+        orderBy: 'target_type, target_path, sort_order',
+      );
+      final valueColumn = table == 'audio_detail_tags' ? 'tag' : 'voice_actor';
+      for (final row in rows) {
+        final key = '${row['target_type']}\x1F${row['target_path']}';
+        byTarget
+            .putIfAbsent(key, () => <String>[])
+            .add(row[valueColumn]! as String);
+      }
+    }
+    valuesByTable[table] = byTarget;
+  }
+
+  return parentRows
+      .map((row) {
+        final key = '${row['target_type']}\x1F${row['target_path']}';
+        final durationMs = (row['duration_ms'] as num?)?.toInt() ?? 0;
+        return AudioDetailRecord(
+          targetType: row['target_type']! as String,
+          targetPath: row['target_path']! as String,
+          rjCode: row['rj_code'] as String? ?? '',
+          workTitle: row['work_title'] as String? ?? '',
+          circleName: row['circle_name'] as String? ?? '',
+          voiceActors:
+              valuesByTable['audio_detail_voice_actors']?[key] ??
+              const <String>[],
+          tags: valuesByTable['audio_detail_tags']?[key] ?? const <String>[],
+          cardCoverPath: row['card_cover_path'] as String?,
+          cardCoverSelected: (row['card_cover_selected'] as num?)?.toInt() == 1,
+          releaseDate: _dateTimeFromMs(row['release_date_ms']),
+          duration: durationMs <= 0 ? null : Duration(milliseconds: durationMs),
+          salesCount: (row['sales_count'] as num?)?.toInt(),
+          rating: (row['rating'] as num?)?.toDouble(),
+          createdAt: _dateTimeFromMs(row['created_at_ms']),
+          updatedAt: _dateTimeFromMs(row['updated_at_ms']),
+        );
+      })
+      .toList(growable: false);
+}
+
+Future<void> _upsertAudioDetailRecord(
+  DatabaseExecutor db,
+  AudioDetailRecord detail,
+) async {
+  final targetPath = PathMatcher.normalize(detail.targetPath);
+  await db.insert('audio_details', <String, Object?>{
+    'target_type': detail.targetType,
+    'target_path': targetPath,
+    'rj_code': detail.rjCode,
+    'work_title': detail.workTitle,
+    'circle_name': detail.circleName,
+    'card_cover_path': detail.cardCoverPath,
+    'card_cover_selected': detail.cardCoverSelected ? 1 : 0,
+    'release_date_ms': detail.releaseDate?.millisecondsSinceEpoch ?? 0,
+    'duration_ms': detail.duration?.inMilliseconds ?? 0,
+    'sales_count': detail.salesCount,
+    'rating': detail.rating,
+    'created_at_ms': detail.createdAt?.millisecondsSinceEpoch ?? 0,
+    'updated_at_ms': detail.updatedAt?.millisecondsSinceEpoch ?? 0,
+  }, conflictAlgorithm: ConflictAlgorithm.replace);
+  for (final table in <String>[
+    'audio_detail_voice_actors',
+    'audio_detail_tags',
+  ]) {
+    await db.delete(
+      table,
+      where: 'target_type = ? AND target_path = ?',
+      whereArgs: <Object?>[detail.targetType, targetPath],
+    );
+  }
+  for (var index = 0; index < detail.voiceActors.length; index++) {
+    await db.insert('audio_detail_voice_actors', <String, Object?>{
+      'target_type': detail.targetType,
+      'target_path': targetPath,
+      'voice_actor': detail.voiceActors[index],
+      'sort_order': index,
+    });
+  }
+  for (var index = 0; index < detail.tags.length; index++) {
+    await db.insert('audio_detail_tags', <String, Object?>{
+      'target_type': detail.targetType,
+      'target_path': targetPath,
+      'tag': detail.tags[index],
+      'sort_order': index,
+    });
+  }
+}
+
+Future<void> _deleteAudioDetailRows(
+  DatabaseExecutor db,
+  String targetType,
+  String targetPath,
+) async {
+  for (final table in <String>[
+    'audio_detail_voice_actors',
+    'audio_detail_tags',
+    'audio_details',
+  ]) {
+    await db.delete(
+      table,
+      where: 'target_type = ? AND target_path = ?',
+      whereArgs: <Object?>[targetType, targetPath],
+    );
   }
 }

@@ -152,19 +152,6 @@ class AudioDetailCacheService {
     });
   }
 
-  Future<AudioDetailBackupSyncFlushResult> flushPendingBackupSync() {
-    if (_suspended) {
-      return Future<AudioDetailBackupSyncFlushResult>.error(
-        const AudioDetailOperationCancelled(),
-      );
-    }
-    final epoch = _cacheEpoch;
-    return AudioDetailRepository.runWithCommitGuard(
-      () => epoch == _cacheEpoch && !_suspended,
-      _repository.flushPendingBackupSync,
-    );
-  }
-
   Future<AudioDetailLoadResult> _resultForRequest(
     AudioDetailTarget target, {
     required Map<String, AudioDetailLoadResult> resolvedForRequest,
@@ -178,19 +165,52 @@ class AudioDetailCacheService {
     return load(target);
   }
 
-  Future<AudioDetailSaveResult> save(
-    AudioDetail detail, {
-    AudioDetailSaveOrigin origin = AudioDetailSaveOrigin.user,
-  }) {
+  Future<AudioDetailSaveResult> save(AudioDetail detail) {
     final epoch = _cacheEpoch;
     return _runSerialized<AudioDetailSaveResult>(
       <AudioDetailTarget>[detail.target],
       () async {
-        final result = await _repository.save(detail, origin: origin);
+        final result = await _repository.save(detail);
         if (epoch != _cacheEpoch) {
           throw const AudioDetailOperationCancelled();
         }
         _store(result.detail);
+        _bumpRevision();
+        return result;
+      },
+    );
+  }
+
+  Future<AudioDetailSaveResult> retarget(
+    AudioDetailTarget previousTarget,
+    AudioDetail detail,
+  ) {
+    final epoch = _cacheEpoch;
+    return _runSerialized<AudioDetailSaveResult>(
+      <AudioDetailTarget>[previousTarget, detail.target],
+      () async {
+        final result = await _repository.retarget(previousTarget, detail);
+        if (epoch != _cacheEpoch) {
+          throw const AudioDetailOperationCancelled();
+        }
+        _remove(previousTarget);
+        _store(result.detail);
+        _bumpRevision();
+        return result;
+      },
+    );
+  }
+
+  Future<AudioDetail> updateDerivedFields(AudioDetail detail) {
+    final epoch = _cacheEpoch;
+    return _runSerialized<AudioDetail>(
+      <AudioDetailTarget>[detail.target],
+      () async {
+        final result = await _repository.updateDerivedFields(detail);
+        if (epoch != _cacheEpoch) {
+          throw const AudioDetailOperationCancelled();
+        }
+        _store(result);
         _bumpRevision();
         return result;
       },
@@ -212,6 +232,7 @@ class AudioDetailCacheService {
     AudioDetailTarget target,
     String? coverPath, {
     bool? selected,
+    bool writeDocument = false,
   }) async {
     final current = (await load(target)).detail;
     final normalizedPath = coverPath?.trim();
@@ -226,13 +247,14 @@ class AudioDetailCacheService {
         current.cardCoverSelected == nextSelected) {
       return current.cardCoverPath;
     }
-    final result = await save(
-      current.copyWith(
-        cardCoverPath: nextPath,
-        cardCoverSelected: nextSelected,
-      ),
+    final next = current.copyWith(
+      cardCoverPath: nextPath,
+      cardCoverSelected: nextSelected,
     );
-    return result.detail.cardCoverPath;
+    if (writeDocument) {
+      return (await save(next)).detail.cardCoverPath;
+    }
+    return (await updateDerivedFields(next)).cardCoverPath;
   }
 
   Future<void> delete(AudioDetailTarget target) async {
@@ -245,12 +267,6 @@ class AudioDetailCacheService {
       _remove(target);
       _bumpRevision();
     });
-  }
-
-  Future<void> removeBackupMirror(AudioDetailTarget target) {
-    return _runSerialized<void>(<AudioDetailTarget>[
-      target,
-    ], () => _repository.removeBackupMirror(target));
   }
 
   Future<void> deleteMany(Iterable<AudioDetailTarget> targets) async {

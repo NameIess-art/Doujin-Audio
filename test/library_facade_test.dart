@@ -1266,6 +1266,7 @@ void main() {
       runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
         persistenceRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
         skipPersistence: false,
       );
 

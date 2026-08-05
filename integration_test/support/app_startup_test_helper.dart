@@ -7,15 +7,18 @@ import 'package:nameless_audio/app/presentation/onboarding_page.dart';
 ///
 /// The production entry point installs its crash-safe [ErrorWidget.builder].
 /// Flutter's test binding correctly treats that process-wide change as test
-/// pollution unless the integration test restores its own builder at teardown.
+/// pollution, so restore the test builder after the app's first render.
 Future<void> startAppForTest(
+  WidgetTester tester,
   Future<void> Function() start,
 ) async {
   final errorWidgetBuilder = ErrorWidget.builder;
-  addTearDown(() {
+  try {
+    await start();
+    await tester.pump();
+  } finally {
     ErrorWidget.builder = errorWidgetBuilder;
-  });
-  await start();
+  }
 }
 
 Future<void> enterMainScreen(WidgetTester tester) async {

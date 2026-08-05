@@ -11,7 +11,7 @@ void main() {
   testWidgets('app starts and navigates across top-level pages', (
     tester,
   ) async {
-    await startAppForTest(app.main);
+    await startAppForTest(tester, app.main);
     await enterMainScreen(tester);
 
     for (final icons in <(IconData, IconData)>[

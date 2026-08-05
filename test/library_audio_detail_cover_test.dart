@@ -996,8 +996,15 @@ void main() {
           isSingle: true,
         );
 
-        const firstPath = '/library/first.mp3';
-        const secondPath = '/library/second.mp3';
+        final directory = await Directory.systemTemp.createTemp(
+          'library_category_detail_',
+        );
+        addTearDown(() async {
+          if (await directory.exists()) await directory.delete(recursive: true);
+        });
+        final firstPath = '${directory.path}${Platform.pathSeparator}first.mp3';
+        final secondPath =
+            '${directory.path}${Platform.pathSeparator}second.mp3';
         runtimeGraph.library.addTracks(
           <MusicTrack>[track(firstPath, 'first')],
           notify: false,
@@ -1160,7 +1167,13 @@ void main() {
     test(
       'missingOnly fills empty fields without overwriting existing data',
       () async {
-        final target = AudioDetailTarget.libraryRootFolder('/library/work');
+        final directory = await Directory.systemTemp.createTemp(
+          'library_metadata_apply_',
+        );
+        addTearDown(() async {
+          if (await directory.exists()) await directory.delete(recursive: true);
+        });
+        final target = AudioDetailTarget.libraryRootFolder(directory.path);
         final detail = AudioDetail.empty(target).copyWith(
           rjCode: 'RJ111111',
           workTitle: 'Existing title',

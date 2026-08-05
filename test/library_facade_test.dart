@@ -1155,6 +1155,7 @@ void main() {
       runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
         persistenceRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
         skipPersistence: false,
       );
 
@@ -1205,6 +1206,7 @@ void main() {
       runtimeGraph = createTestRuntimeGraph(
         notificationService: notificationService,
         persistenceRepository: repository,
+        jsonDocumentStore: TestJsonDocumentStore(),
         skipPersistence: false,
       );
 

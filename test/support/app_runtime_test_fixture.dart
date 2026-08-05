@@ -11,6 +11,7 @@ import 'package:nameless_audio/app/localization/app_language_provider.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:nameless_audio/core/persistence/json_document_store.dart';
 import 'test_persistence_repository.dart';
 import 'package:nameless_audio/core/platform/power_platform_service.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
@@ -18,6 +19,7 @@ import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:nameless_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:nameless_audio/features/library/application/audio_detail_document_repository.dart';
 import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/dlsite_metadata_service.dart';
@@ -50,6 +52,7 @@ AppRuntimeGraph createTestRuntimeGraph({
   PlaybackNotificationService? notificationService,
   TestPersistenceRepository? persistenceRepository,
   AudioDetailRepository? audioDetailRepository,
+  JsonDocumentStore? jsonDocumentStore,
   AudioDetailCacheService? audioDetailCacheService,
   CoverArtworkCacheService? coverArtworkCacheService,
   DlsiteMetadataService? dlsiteMetadataService,
@@ -73,7 +76,12 @@ AppRuntimeGraph createTestRuntimeGraph({
       AudioDetailCacheService(
         repository:
             audioDetailRepository ??
-            AudioDetailRepository(databaseRepository: database),
+            AudioDetailRepository(
+              databaseRepository: database,
+              documentRepository: jsonDocumentStore == null
+                  ? null
+                  : AudioDetailDocumentRepository(store: jsonDocumentStore),
+            ),
       );
   final resolvedLibraryService = libraryService ?? LibraryService();
   final resolvedLibrary =
@@ -266,6 +274,14 @@ final class AppRuntimeWidgetTestFixture {
     configureSettingsRepository?.call(settingsRepository);
     library = LibraryFacade.create(
       databaseRepository: persistenceRepository,
+      detailCacheService: AudioDetailCacheService(
+        repository: AudioDetailRepository(
+          databaseRepository: persistenceRepository,
+          documentRepository: AudioDetailDocumentRepository(
+            store: TestJsonDocumentStore(),
+          ),
+        ),
+      ),
       service: libraryService,
       coverArtworkCacheService: coverArtworkCacheService,
       metadataService: dlsiteMetadataService,
@@ -340,6 +356,82 @@ final class AppRuntimeWidgetTestFixture {
   }
 
   void disposeAfterWarmups() => dispose();
+}
+
+final class TestJsonDocumentStore implements JsonDocumentStore {
+  final Map<String, Uint8List> _documents = <String, Uint8List>{};
+  final Map<String, int> _generations = <String, int>{};
+
+  @override
+  Future<JsonDocumentReadResult> read(JsonDocumentLocation location) async {
+    final bytes = _documents[location.lockKey];
+    if (bytes == null) return const JsonDocumentReadResult.missing();
+    return JsonDocumentReadResult.found(
+      JsonDocumentSnapshot(
+        bytes: Uint8List.fromList(bytes),
+        revision: _revision(location.lockKey),
+      ),
+    );
+  }
+
+  @override
+  Future<JsonDocumentWriteResult> write({
+    required JsonDocumentLocation location,
+    required Uint8List bytes,
+    required JsonDocumentWriteMode mode,
+    String? expectedRevision,
+  }) async {
+    final key = location.lockKey;
+    final existing = _documents[key];
+    if (mode == JsonDocumentWriteMode.createIfAbsent && existing != null) {
+      return JsonDocumentWriteResult(
+        status: JsonDocumentWriteStatus.preserved,
+        revision: _revision(key),
+      );
+    }
+    if (mode == JsonDocumentWriteMode.replaceIfRevision &&
+        (existing == null || expectedRevision != _revision(key))) {
+      return const JsonDocumentWriteResult(
+        status: JsonDocumentWriteStatus.conflict,
+        error: 'revision_mismatch',
+      );
+    }
+    _documents[key] = Uint8List.fromList(bytes);
+    _generations[key] = (_generations[key] ?? 0) + 1;
+    return JsonDocumentWriteResult(
+      status: existing == null
+          ? JsonDocumentWriteStatus.created
+          : JsonDocumentWriteStatus.replaced,
+      revision: _revision(key),
+      bytesWritten: bytes.length,
+    );
+  }
+
+  @override
+  Future<JsonDocumentDeleteResult> delete({
+    required JsonDocumentLocation location,
+    required String expectedRevision,
+  }) async {
+    final key = location.lockKey;
+    if (!_documents.containsKey(key)) {
+      return const JsonDocumentDeleteResult(
+        status: JsonDocumentDeleteStatus.missing,
+      );
+    }
+    if (expectedRevision != _revision(key)) {
+      return const JsonDocumentDeleteResult(
+        status: JsonDocumentDeleteStatus.conflict,
+        error: 'revision_mismatch',
+      );
+    }
+    _documents.remove(key);
+    _generations.remove(key);
+    return const JsonDocumentDeleteResult(
+      status: JsonDocumentDeleteStatus.deleted,
+    );
+  }
+
+  String _revision(String key) => 'memory:${_generations[key] ?? 0}';
 }
 
 final class AppRuntimeTestFixture {

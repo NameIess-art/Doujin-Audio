@@ -178,7 +178,8 @@ bool _sameSessionSwitcherTrack(MusicTrack left, MusicTrack right) {
       leftRelative.isEmpty ||
       rightRelative == null ||
       rightRelative.isEmpty ||
-      !PathMatcher.equalsNormalized(leftRelative, rightRelative)) {
+      _normalizedRemoteRelativePath(leftRelative) !=
+          _normalizedRemoteRelativePath(rightRelative)) {
     return false;
   }
   final leftWorkId = left.remoteMetadata?['id']?.toString().trim();
@@ -188,6 +189,9 @@ bool _sameSessionSwitcherTrack(MusicTrack left, MusicTrack right) {
   }
   return left.groupKey.isNotEmpty && left.groupKey == right.groupKey;
 }
+
+String _normalizedRemoteRelativePath(String value) =>
+    path.posix.normalize(value.replaceAll('\\', '/'));
 
 List<IconData> sessionFeatureBadgeIcons({
   required bool showSubtitles,

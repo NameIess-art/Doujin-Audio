@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:nameless_audio/main.dart' as app;
-import 'package:nameless_audio/app/presentation/main_screen.dart';
-import 'package:nameless_audio/app/presentation/onboarding_page.dart';
+
+import 'support/app_startup_test_helper.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -12,13 +12,7 @@ void main() {
     tester,
   ) async {
     await app.main();
-    await tester.pumpAndSettle(const Duration(seconds: 3));
-
-    if (find.byType(OnboardingPage).evaluate().isNotEmpty) {
-      await tester.tap(find.byType(FilledButton).first);
-      await tester.pumpAndSettle();
-    }
-    expect(find.byType(MainScreen), findsOneWidget);
+    await enterMainScreen(tester);
 
     for (final icons in <(IconData, IconData)>[
       (Icons.library_music_outlined, Icons.library_music_rounded),

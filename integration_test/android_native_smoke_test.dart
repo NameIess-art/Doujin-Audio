@@ -6,13 +6,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:nameless_audio/app/presentation/main_screen.dart';
-import 'package:nameless_audio/app/presentation/onboarding_page.dart';
 import 'package:nameless_audio/app/state/app_runtime_providers.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/main.dart' as app;
+
+import 'support/app_startup_test_helper.dart';
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -21,13 +22,7 @@ void main() {
     'Android version channel and native playback critical path',
     (tester) async {
       await app.main();
-      await tester.pumpAndSettle(const Duration(seconds: 3));
-
-      if (find.byType(OnboardingPage).evaluate().isNotEmpty) {
-        await tester.tap(find.byType(FilledButton).first);
-        await tester.pumpAndSettle();
-      }
-      expect(find.byType(MainScreen), findsOneWidget);
+      await enterMainScreen(tester);
 
       final container = ProviderScope.containerOf(
         tester.element(find.byType(MainScreen)),

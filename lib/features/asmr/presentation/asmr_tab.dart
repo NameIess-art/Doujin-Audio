@@ -394,7 +394,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final effectiveHeaderHeight = _headerHeight > 0
         ? _headerHeight
         : _minimumExpandedHeaderHeight(context);
-    final headerContentHeight = effectiveHeaderHeight;
+    final headerContentHeight = effectiveHeaderHeight + 4.0;
 
     if (globalState == null) {
       return Stack(

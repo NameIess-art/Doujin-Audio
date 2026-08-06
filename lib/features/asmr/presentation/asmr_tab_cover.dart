@@ -24,53 +24,57 @@ class _AsmrWorkCover extends ConsumerWidget {
     final coverCacheWidth = coverCacheWidthForResolution(coverResolution);
     final library = ref.read(libraryFacadeProvider);
     final coverUi = ref.read(libraryCoverUiControllerProvider);
-    return ClipRRect(
-      clipBehavior: Clip.hardEdge,
-      borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
-      child: Stack(
-        children: [
-          SizedBox(
-            width: width,
-            height: height,
-            child: url.isEmpty
-                ? CoverFallbackArtwork(
-                    seed: url,
-                    compact: true,
-                    icon: Icons.graphic_eq_rounded,
-                    iconSize: 28,
-                  )
-                : AsyncRemoteCoverImage(
-                    url: url,
-                    future: coverUi.deferredRemoteCover(url),
-                    initialPath: library.resolvedCoverPathForRemoteCover(url),
-                    retryFutureBuilder: () => coverUi.deferredRemoteCover(url),
-                    retryDelay: const Duration(seconds: 5),
-                    maxRetryAttempts: 2,
-                    fit: BoxFit.cover,
-                    cacheWidth: coverCacheWidth,
-                    useDefaultCacheWidth: coverCacheWidth != null,
-                    loadingBuilder: (_) => CoverLoadingArtwork(
-                      placeholder: CoverFallbackArtwork(
-                        seed: url,
-                        showIcon: false,
-                        compact: true,
-                      ),
-                    ),
-                    fallbackBuilder: (_) => CoverFallbackArtwork(
+    return SizedBox(
+      width: width,
+      height: height,
+      child: ClipRRect(
+        clipBehavior: Clip.hardEdge,
+        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
+        child: Stack(
+          children: [
+            SizedBox(
+              width: width,
+              height: height,
+              child: url.isEmpty
+                  ? CoverFallbackArtwork(
                       seed: url,
                       compact: true,
                       icon: Icons.graphic_eq_rounded,
                       iconSize: 28,
+                    )
+                  : AsyncRemoteCoverImage(
+                      url: url,
+                      future: coverUi.deferredRemoteCover(url),
+                      initialPath: library.resolvedCoverPathForRemoteCover(url),
+                      retryFutureBuilder: () => coverUi.deferredRemoteCover(url),
+                      retryDelay: const Duration(seconds: 5),
+                      maxRetryAttempts: 2,
+                      fit: BoxFit.cover,
+                      cacheWidth: coverCacheWidth,
+                      useDefaultCacheWidth: coverCacheWidth != null,
+                      loadingBuilder: (_) => CoverLoadingArtwork(
+                        placeholder: CoverFallbackArtwork(
+                          seed: url,
+                          showIcon: false,
+                          compact: true,
+                        ),
+                      ),
+                      fallbackBuilder: (_) => CoverFallbackArtwork(
+                        seed: url,
+                        compact: true,
+                        icon: Icons.graphic_eq_rounded,
+                        iconSize: 28,
+                      ),
                     ),
-                  ),
-          ),
-          if (duration != null && duration! > Duration.zero)
-            Positioned(
-              right: 4,
-              bottom: 4,
-              child: DurationOverlay(duration: duration!),
             ),
-        ],
+            if (duration != null && duration! > Duration.zero)
+              Positioned(
+                right: 4,
+                bottom: 4,
+                child: DurationOverlay(duration: duration!),
+              ),
+          ],
+        ),
       ),
     );
   }

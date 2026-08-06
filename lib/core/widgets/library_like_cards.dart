@@ -428,11 +428,11 @@ class LibraryLikeWorkCardContent extends StatelessWidget {
                         foregroundColor: accentColor ?? cs.primary,
                         minimumSize: const Size(
                           LibraryLikeCardMetrics.actionButtonSize,
-                          44,
+                          LibraryLikeCardMetrics.titleBlockHeight,
                         ),
                         maximumSize: const Size(
                           LibraryLikeCardMetrics.actionButtonSize,
-                          44,
+                          LibraryLikeCardMetrics.titleBlockHeight,
                         ),
                         padding: EdgeInsets.zero,
                         tapTargetSize: MaterialTapTargetSize.shrinkWrap,

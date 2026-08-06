@@ -713,7 +713,7 @@ class _SessionVideoFullscreenPageState
                   minimum: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   bottom: false,
                   child: Align(
-                    alignment: Alignment.topRight,
+                    alignment: Alignment.topLeft,
                     child: IconButton(
                       key: const ValueKey<String>('fullscreen_video_exit'),
                       tooltip: i18n.tr('exit_fullscreen'),
@@ -723,7 +723,7 @@ class _SessionVideoFullscreenPageState
                         width: 48,
                         height: 48,
                       ),
-                      icon: const Icon(Icons.fullscreen_exit_rounded),
+                      icon: const Icon(Icons.arrow_back_rounded),
                     ),
                   ),
                 ),
@@ -768,8 +768,50 @@ class _SessionVideoFullscreenPageState
                                   session.volume)
                               .clamp(0.0, PlaybackFacade.maxSessionVolume)
                               .toDouble();
+                      final hasPrevious = _playback.hasSessionAdjacentTrack(
+                        widget.sessionId,
+                        forward: false,
+                      );
+                      final hasNext = _playback.hasSessionAdjacentTrack(
+                        widget.sessionId,
+                        forward: true,
+                      );
+                      final canPrevious =
+                          (snapshot != null && snapshot.position.inSeconds > 3) ||
+                          hasPrevious;
+                      final canNext = hasNext;
+
                       return Row(
                         children: [
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'fullscreen_video_previous',
+                            ),
+                            tooltip: i18n.tr('previous_track'),
+                            onPressed: canPrevious
+                                ? () {
+                                    _showControls();
+                                    unawaited(
+                                      AppInteractionFeedback.trigger(
+                                        AppInteractionFeedbackType.selection,
+                                      ),
+                                    );
+                                    unawaited(
+                                      _playback.seekSessionToPrev(
+                                        widget.sessionId,
+                                      ),
+                                    );
+                                  }
+                                : null,
+                            color: Colors.white,
+                            disabledColor: Colors.white38,
+                            iconSize: 26,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 40,
+                              height: 44,
+                            ),
+                            icon: const Icon(Icons.skip_previous_rounded),
+                          ),
                           IconButton(
                             key: const ValueKey<String>(
                               'fullscreen_video_play_pause',
@@ -788,8 +830,8 @@ class _SessionVideoFullscreenPageState
                             color: Colors.white,
                             iconSize: 30,
                             constraints: const BoxConstraints.tightFor(
-                              width: 48,
-                              height: 48,
+                              width: 44,
+                              height: 44,
                             ),
                             icon: Icon(
                               playing
@@ -797,7 +839,36 @@ class _SessionVideoFullscreenPageState
                                   : Icons.play_arrow_rounded,
                             ),
                           ),
-                          const SizedBox(width: 6),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'fullscreen_video_next',
+                            ),
+                            tooltip: i18n.tr('next_track'),
+                            onPressed: canNext
+                                ? () {
+                                    _showControls();
+                                    unawaited(
+                                      AppInteractionFeedback.trigger(
+                                        AppInteractionFeedbackType.selection,
+                                      ),
+                                    );
+                                    unawaited(
+                                      _playback.seekSessionToNext(
+                                        widget.sessionId,
+                                      ),
+                                    );
+                                  }
+                                : null,
+                            color: Colors.white,
+                            disabledColor: Colors.white38,
+                            iconSize: 26,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 40,
+                              height: 44,
+                            ),
+                            icon: const Icon(Icons.skip_next_rounded),
+                          ),
+                          const SizedBox(width: 4),
                           Text(
                             formatDurationCompact(
                               Duration(milliseconds: positionMs.round()),
@@ -828,14 +899,14 @@ class _SessionVideoFullscreenPageState
                             formatDurationCompact(duration),
                             style: const TextStyle(color: Colors.white),
                           ),
-                          const SizedBox(width: 10),
+                          const SizedBox(width: 8),
                           Icon(
                             _volumeIcon(volume),
                             color: Colors.white,
                             semanticLabel: i18n.tr('volume'),
                           ),
                           SizedBox(
-                            width: 116,
+                            width: 104,
                             child: Slider(
                               key: const ValueKey<String>(
                                 'fullscreen_video_volume',

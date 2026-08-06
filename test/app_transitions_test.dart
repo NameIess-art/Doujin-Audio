@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
+import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 
 class _StateProbe extends StatefulWidget {
   const _StateProbe({super.key, required this.label});
@@ -90,6 +91,55 @@ void main() {
       expect(completedIndex, 2);
       expect(firstKey.currentState, same(originalState));
       expect(find.text('third'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'lazy stack builds the active item once and preserves cached pages',
+    (tester) async {
+      final index = ValueNotifier<int>(0);
+      addTearDown(index.dispose);
+      final coordinator = UiInteractionCoordinator.instance;
+      coordinator.resetForTest();
+      coordinator.beginGeneration();
+      final interaction = Object();
+      coordinator.beginInteraction(interaction);
+      addTearDown(() {
+        coordinator.cancelInteraction(interaction);
+        coordinator.resetForTest();
+      });
+      final buildCounts = <int>[0, 0, 0];
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: AppFadeThroughIndexedStack.lazy(
+              indexListenable: index,
+              itemCount: 3,
+              preloadUnvisited: false,
+              itemBuilder: (context, itemIndex) {
+                buildCounts[itemIndex]++;
+                return Text('lazy-$itemIndex');
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      expect(buildCounts, <int>[1, 0, 0]);
+      index.value = 1;
+      await tester.pump();
+      expect(buildCounts, <int>[1, 1, 0]);
+
+      coordinator.beginGeneration();
+      coordinator.finishInteractionsForTest();
+      await tester.pumpAndSettle();
+      expect(buildCounts[2], 0);
+
+      index.value = 0;
+      await tester.pumpAndSettle();
+      expect(buildCounts, <int>[1, 1, 0]);
     },
   );
 

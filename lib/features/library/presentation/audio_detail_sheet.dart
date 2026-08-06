@@ -75,7 +75,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_load());
+    });
   }
 
   Future<Duration?> _calculateAutomaticDuration(

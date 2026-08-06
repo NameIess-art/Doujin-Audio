@@ -569,7 +569,8 @@ void main() {
 
     sectionIndex.value = AudioLibraryPage.asmrSection;
     await tester.pump();
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 520));
+    await tester.pump(const Duration(milliseconds: 220));
     expect(controller.initializeCount, 1);
 
     sectionIndex.value = AudioLibraryPage.localSection;

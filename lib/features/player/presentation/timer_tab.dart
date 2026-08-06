@@ -60,7 +60,7 @@ class _TimerTabState extends ConsumerState<TimerTab>
   bool _draftInitialized = false;
   String? _lastSyncedDraftKey;
   int _lastTimerHash = 0;
-  late Future<_TimerReliabilityStatus> _reliabilityStatusFuture;
+  Future<_TimerReliabilityStatus>? _reliabilityStatusFuture;
 
   void _setLocalState(VoidCallback fn) => setState(fn);
 
@@ -69,7 +69,10 @@ class _TimerTabState extends ConsumerState<TimerTab>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _showCompactDetail = widget.initialCompactDetail;
-    _reliabilityStatusFuture = _loadReliabilityStatus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _reliabilityStatusFuture != null) return;
+      setState(() => _reliabilityStatusFuture = _loadReliabilityStatus());
+    });
   }
 
   @override

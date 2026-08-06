@@ -32,19 +32,20 @@ class AudioLibraryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return AppFadeThroughIndexedStack(
+    return AppFadeThroughIndexedStack.lazy(
       key: const ValueKey<String>('audio_library_section_stack'),
       indexListenable: sectionIndex,
       style: AppIndexedStackTransitionStyle.crossFade,
-      children: [
-        LibraryTab(
+      itemCount: 2,
+      itemBuilder: (context, index) => switch (index) {
+        localSection => LibraryTab(
           key: const ValueKey<String>('audio_library_local_page'),
           activeTabIndexListenable: activePageIndex,
           activeSectionListenable: sectionIndex,
           onTitleSwipeLeft: () => _switchSection(asmrSection),
           onTitleSwipeRight: () => _switchSection(asmrSection),
         ),
-        AsmrTab(
+        asmrSection => AsmrTab(
           key: const ValueKey<String>('audio_library_asmr_page'),
           activeTabIndexListenable: activePageIndex,
           activeSectionListenable: sectionIndex,
@@ -52,7 +53,8 @@ class AudioLibraryPage extends StatelessWidget {
           onTitleSwipeLeft: () => _switchSection(localSection),
           onTitleSwipeRight: () => _switchSection(localSection),
         ),
-      ],
+        _ => const SizedBox.shrink(),
+      },
     );
   }
 }

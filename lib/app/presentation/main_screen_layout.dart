@@ -23,8 +23,8 @@ extension _MainScreenLayout on _MainScreenState {
         : EdgeInsets.zero;
     final isLandscapeLayout =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    Widget pageShell(int actualIndex) {
-      final page = _pages[actualIndex];
+    Widget pageShell(BuildContext context, int actualIndex) {
+      final page = _buildMainPage(context, actualIndex);
 
       return KeyedSubtree(
         key: ValueKey<String>('main_page_fade_$actualIndex'),
@@ -99,11 +99,12 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }
 
-    return AppFadeThroughIndexedStack(
+    return AppFadeThroughIndexedStack.lazy(
       key: const ValueKey<String>('main_page_stack'),
       indexListenable: _activePageIndex,
+      itemCount: _MainScreenState._destinations.length,
+      itemBuilder: pageShell,
       onTransitionCompleted: _handlePageTransitionCompleted,
-      children: List<Widget>.generate(_pages.length, pageShell),
     );
   }
 

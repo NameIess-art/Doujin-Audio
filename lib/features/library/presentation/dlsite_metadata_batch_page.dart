@@ -66,7 +66,9 @@ class _DlsiteMetadataBatchPageState
       _entries = entries;
       _loading = false;
     } else {
-      unawaited(_load());
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_load());
+      });
     }
   }
 

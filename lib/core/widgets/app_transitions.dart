@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../ui/ui_interaction_coordinator.dart';
+
 const kPlaceholderContentTransitionDuration = Duration(milliseconds: 750);
 const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
@@ -237,11 +239,28 @@ class AppFadeThroughIndexedStack extends StatefulWidget {
     this.style = AppIndexedStackTransitionStyle.directional,
     this.duration = const Duration(milliseconds: 350),
     this.onTransitionCompleted,
-  });
+  }) : itemCount = children.length,
+       itemBuilder = null,
+       preloadUnvisited = false;
+
+  AppFadeThroughIndexedStack.lazy({
+    super.key,
+    required this.indexListenable,
+    required this.itemCount,
+    required IndexedWidgetBuilder this.itemBuilder,
+    this.style = AppIndexedStackTransitionStyle.directional,
+    this.duration = const Duration(milliseconds: 350),
+    this.onTransitionCompleted,
+    bool? preloadUnvisited,
+  }) : children = List<Widget>.filled(itemCount, const SizedBox.shrink()),
+       preloadUnvisited = preloadUnvisited ?? true;
 
   final ValueListenable<int> indexListenable;
   int get index => indexListenable.value;
   final List<Widget> children;
+  final int itemCount;
+  final IndexedWidgetBuilder? itemBuilder;
+  final bool preloadUnvisited;
   final AppIndexedStackTransitionStyle style;
   final Duration duration;
   final ValueChanged<int>? onTransitionCompleted;
@@ -262,12 +281,21 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   late int _targetIndex;
   int _transitionDirection = 1;
   bool _isAnimating = false;
+  late List<Widget?> _lazyChildren;
+  late Set<int> _requestedLazyChildren;
+  final Object _lazyTransitionInteraction = Object();
+  int _preloadEpoch = 0;
+
+  bool get _isLazy => widget.itemBuilder != null;
+  int get _itemCount => widget.itemCount;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = _safeIndex(widget.indexListenable.value);
     _targetIndex = _currentIndex;
+    _lazyChildren = List<Widget?>.filled(_itemCount, null);
+    _requestedLazyChildren = <int>{if (_itemCount > 0) _currentIndex};
     _controller = AnimationController(
       vsync: this,
       duration: widget.duration,
@@ -275,6 +303,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     )..addStatusListener(_handleStatusChanged);
     _controller.value = 1;
     widget.indexListenable.addListener(_handleIndexChanged);
+    _scheduleIdlePreload();
   }
 
   @override
@@ -288,20 +317,37 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       oldWidget.indexListenable.removeListener(_handleIndexChanged);
       widget.indexListenable.addListener(_handleIndexChanged);
       _handleIndexChanged();
-    } else if (widget.children.length != oldWidget.children.length) {
+    }
+    if (_isLazy != (oldWidget.itemBuilder != null) ||
+        _itemCount != oldWidget.itemCount) {
+      _resetLazyChildren();
       _handleIndexChanged();
     }
   }
 
+  void _resetLazyChildren() {
+    _preloadEpoch++;
+    _lazyChildren = List<Widget?>.filled(_itemCount, null);
+    _requestedLazyChildren = <int>{
+      if (_itemCount > 0) _safeIndex(widget.indexListenable.value),
+    };
+    _scheduleIdlePreload();
+  }
+
   int _safeIndex(int index) {
-    if (widget.children.isEmpty) return 0;
-    return index.clamp(0, widget.children.length - 1);
+    if (_itemCount == 0) return 0;
+    return index.clamp(0, _itemCount - 1);
   }
 
   void _handleIndexChanged() {
-    if (!mounted || widget.children.isEmpty) return;
+    if (!mounted || _itemCount == 0) return;
     final nextIndex = _safeIndex(widget.indexListenable.value);
     if (nextIndex == _targetIndex) return;
+    _preloadEpoch++;
+    _requestedLazyChildren.add(nextIndex);
+    UiInteractionCoordinator.instance.beginInteraction(
+      _lazyTransitionInteraction,
+    );
     if (MediaQuery.disableAnimationsOf(context)) {
       setState(() {
         _currentIndex = nextIndex;
@@ -310,6 +356,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _controller.value = 1;
       });
       widget.onTransitionCompleted?.call(_currentIndex);
+      UiInteractionCoordinator.instance.endInteraction(
+        _lazyTransitionInteraction,
+      );
+      _scheduleIdlePreload();
       return;
     }
 
@@ -324,6 +374,10 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
         _controller.value = 1;
       });
       widget.onTransitionCompleted?.call(_currentIndex);
+      UiInteractionCoordinator.instance.endInteraction(
+        _lazyTransitionInteraction,
+      );
+      _scheduleIdlePreload();
       return;
     }
 
@@ -345,16 +399,59 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
       _isAnimating = false;
     });
     widget.onTransitionCompleted?.call(_currentIndex);
+    UiInteractionCoordinator.instance.endInteraction(
+      _lazyTransitionInteraction,
+    );
+    _scheduleIdlePreload();
+  }
+
+  void _scheduleIdlePreload() {
+    if (!_isLazy || !widget.preloadUnvisited || _itemCount < 2) return;
+    final epoch = _preloadEpoch;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || epoch != _preloadEpoch) return;
+      final coordinator = UiInteractionCoordinator.instance;
+      final generation = coordinator.generation;
+      for (var index = 0; index < _itemCount; index++) {
+        if (_requestedLazyChildren.contains(index)) continue;
+        coordinator.scheduleAfterIdle(
+          key: 'lazy_indexed_stack_${identityHashCode(this)}_$index',
+          generation: generation,
+          priority: 50 + index,
+          group: 'lazy_indexed_stack_${identityHashCode(this)}',
+          task: () async {
+            if (!mounted ||
+                epoch != _preloadEpoch ||
+                generation != coordinator.generation ||
+                _requestedLazyChildren.contains(index)) {
+              return;
+            }
+            setState(() => _requestedLazyChildren.add(index));
+          },
+        );
+      }
+    });
+  }
+
+  Widget _childAt(int index) {
+    if (!_isLazy) return widget.children[index];
+    if (!_requestedLazyChildren.contains(index)) {
+      return const SizedBox.shrink();
+    }
+    return _lazyChildren[index] ??= widget.itemBuilder!(context, index);
   }
 
   @override
   void dispose() {
     widget.indexListenable.removeListener(_handleIndexChanged);
+    UiInteractionCoordinator.instance.cancelInteraction(
+      _lazyTransitionInteraction,
+    );
     _controller.dispose();
     super.dispose();
   }
 
-  Widget _pageHost({required int index, required bool visible}) {
+  Widget _pageHost({required Widget child, required bool visible}) {
     return Offstage(
       offstage: !visible,
       child: TickerMode(
@@ -363,10 +460,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
           excluding: !visible,
           child: ExcludeSemantics(
             excluding: !visible,
-            child: IgnorePointer(
-              ignoring: !visible,
-              child: widget.children[index],
-            ),
+            child: IgnorePointer(ignoring: !visible, child: child),
           ),
         ),
       ),
@@ -380,7 +474,7 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
   }) {
     final visible =
         outgoing || incoming || (!_isAnimating && index == _currentIndex);
-    final page = _pageHost(index: index, visible: visible);
+    final page = _pageHost(child: _childAt(index), visible: visible);
     return AnimatedBuilder(
       key: ValueKey<String>('app_indexed_page_$index'),
       animation: outgoing || incoming
@@ -419,9 +513,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
 
   @override
   Widget build(BuildContext context) {
-    if (widget.children.isEmpty) return const SizedBox.shrink();
+    if (_itemCount == 0) return const SizedBox.shrink();
     final paintOrder = <int>[
-      for (var index = 0; index < widget.children.length; index++)
+      for (var index = 0; index < _itemCount; index++)
         if (index != _currentIndex && index != _targetIndex) index,
       _currentIndex,
       if (_isAnimating && _targetIndex != _currentIndex) _targetIndex,

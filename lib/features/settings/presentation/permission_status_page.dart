@@ -31,7 +31,7 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
   UiOperationService get _operationService =>
       ref.read(uiOperationServiceProvider);
   late final PermissionStatusService _statusService;
-  late Future<PermissionStatusSnapshot> _snapshot;
+  Future<PermissionStatusSnapshot>? _snapshot;
   PermissionStatusSnapshot? _lastSnapshot;
   bool _recentlyOpenedSettings = false;
 
@@ -47,7 +47,10 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
             subtitleOverlayControllerProvider,
           ),
         );
-    _snapshot = _loadSnapshot();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _snapshot != null) return;
+      setState(() => _snapshot = _loadSnapshot());
+    });
     WidgetsBinding.instance.addObserver(this);
   }
 

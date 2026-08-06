@@ -60,7 +60,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         MainTabStateMixin<SettingsTab> {
   final ValueNotifier<AppUpdateInfo?> _updateInfoNotifier =
       ValueNotifier<AppUpdateInfo?>(null);
-  late Future<AppVersionInfo> _appVersionFuture;
+  Future<AppVersionInfo>? _appVersionFuture;
   final PermissionActionController _permissionActionController =
       PermissionActionController();
   late final AppUpdateFlow _updateFlow = AppUpdateFlow(
@@ -97,8 +97,13 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _appVersionFuture = ref.read(appUpdateServiceProvider).currentAppVersion();
     initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
+  }
+
+  Future<AppVersionInfo> _ensureAppVersionFuture() {
+    return _appVersionFuture ??= ref
+        .read(appUpdateServiceProvider)
+        .currentAppVersion();
   }
 
   @override
@@ -133,10 +138,11 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   }
 
   void _openAboutPage() {
+    final versionFuture = _ensureAppVersionFuture();
     Navigator.of(context).push(
       buildAppPageRoute<void>(
         context: context,
-        child: AboutPage(versionFuture: _appVersionFuture),
+        child: AboutPage(versionFuture: versionFuture),
       ),
     );
   }
@@ -260,7 +266,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
         child: _SettingsCategoryPage(
           category: category,
           updateInfoListenable: _updateInfoNotifier,
-          currentVersion: _appVersionFuture,
+          currentVersion: _ensureAppVersionFuture(),
           onShowSubtitleWindowSettings: () =>
               _showSubtitleWindowSettings(context),
           onShowCardInfoFieldsSettings: () =>

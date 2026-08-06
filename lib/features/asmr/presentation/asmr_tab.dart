@@ -15,6 +15,7 @@ import '../../../core/media/search_query_utils.dart';
 import '../../../core/media/card_info_field.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_states.dart';
@@ -79,6 +80,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   AppLanguage? _pendingPageLanguageSync;
   Future<void>? _activationTask;
   bool _activationCompleted = false;
+  bool _activationScheduled = false;
+  bool _accountHydrationScheduled = false;
+  bool _accountHydrationCompleted = false;
   late final AppLanguageProvider _languageProvider;
 
   @override
@@ -143,39 +147,120 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   void _handleActiveStateChanged() {
     if (!mounted) return;
     setState(() {});
-    if (!_isActive) return;
+    if (!_isActive) {
+      _activationScheduled = false;
+      _accountHydrationScheduled = false;
+      return;
+    }
     _scheduleHeaderMeasurement();
     _ensureActivated();
   }
 
   void _ensureActivated() {
-    if (!_isActive || _activationCompleted || _activationTask != null) return;
+    if (!_isActive) return;
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
+    final coordinator = UiInteractionCoordinator.instance;
+    if (_activationCompleted) {
+      _scheduleAccountHydration(controller, coordinator.generation);
+      return;
+    }
+    if (_activationTask != null || _activationScheduled) {
+      return;
+    }
     final defaultLanguage = AsmrContentLanguage.fromAppLanguageName(
       ref.read(appLanguageProviderInstanceProvider).language.name,
     );
-    late final Future<void> task;
-    task = () async {
-      try {
-        await controller.initialize(defaultLanguage: defaultLanguage);
-        await _ensureCollectedLoaded();
-        await controller.restoreAsmrAccountSession();
-        if (controller.isAsmrAccountLoggedIn) {
-          await controller.syncAsmrAccount();
+    final generation = coordinator.generation;
+    _activationScheduled = true;
+    final accepted = coordinator.scheduleAfterIdle(
+      key: 'asmr_tab_activation_${identityHashCode(this)}',
+      generation: generation,
+      priority: 0,
+      group: 'asmr_page_activation',
+      task: () async {
+        _activationScheduled = false;
+        if (!mounted || !_isActive || generation != coordinator.generation) {
+          return;
         }
-        _activationCompleted = true;
-      } catch (error, stackTrace) {
-        AppLogService.warning(
-          'asmr_visible_activation_failed',
-          error: error,
-          stackTrace: stackTrace,
+        late final Future<void> task;
+        task = _runActivation(
+          controller: controller,
+          defaultLanguage: defaultLanguage,
+          generation: generation,
         );
-      } finally {
+        _activationTask = task;
+        await task;
         if (identical(_activationTask, task)) _activationTask = null;
-      }
-    }();
-    _activationTask = task;
+        if (mounted && _isActive && !_activationCompleted) {
+          _ensureActivated();
+        }
+      },
+    );
+    if (!accepted) _activationScheduled = false;
+  }
+
+  Future<void> _runActivation({
+    required AsmrLibraryController controller,
+    required AsmrContentLanguage defaultLanguage,
+    required int generation,
+  }) async {
+    try {
+      await controller.initializeForVisiblePage(
+        defaultLanguage: defaultLanguage,
+      );
+      if (!mounted || !_isActive) return;
+      await _ensureCollectedLoaded();
+      if (!mounted || !_isActive) return;
+      _activationCompleted = true;
+      _scheduleAccountHydration(controller, generation);
+    } catch (error, stackTrace) {
+      AppLogService.warning(
+        'asmr_visible_activation_failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+  }
+
+  void _scheduleAccountHydration(
+    AsmrLibraryController controller,
+    int generation,
+  ) {
+    if (_accountHydrationCompleted ||
+        _accountHydrationScheduled ||
+        !mounted ||
+        !_isActive) {
+      return;
+    }
+    final coordinator = UiInteractionCoordinator.instance;
+    _accountHydrationScheduled = true;
+    final accepted = coordinator.scheduleAfterIdle(
+      key: 'asmr_account_hydration_${identityHashCode(this)}',
+      generation: generation,
+      priority: 90,
+      group: 'asmr_account_hydration',
+      task: () async {
+        _accountHydrationScheduled = false;
+        if (!mounted || !_isActive || generation != coordinator.generation) {
+          return;
+        }
+        try {
+          await controller.restoreAsmrAccountSession();
+          if (controller.isAsmrAccountLoggedIn) {
+            await controller.syncAsmrAccount();
+          }
+          _accountHydrationCompleted = true;
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'asmr_account_hydration_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
+      },
+    );
+    if (!accepted) _accountHydrationScheduled = false;
   }
 
   @override

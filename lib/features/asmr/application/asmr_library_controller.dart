@@ -378,6 +378,7 @@ class AsmrLibraryController extends ChangeNotifier
   DateTime? _lastSyncAt;
   Object? _lastSyncError;
   Future<void>? _initializeTask;
+  bool _skipRestoreForNextInitialize = false;
   Future<void>? _authRestoreTask;
   final Map<_AsmrSyncRequestKey, Future<void>> _syncTasks =
       <_AsmrSyncRequestKey, Future<void>>{};
@@ -646,25 +647,50 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   Future<void> initialize({AsmrContentLanguage? defaultLanguage}) {
+    final restoreAccountSession = !_skipRestoreForNextInitialize;
+    _skipRestoreForNextInitialize = false;
+    return _initialize(
+      defaultLanguage: defaultLanguage,
+      restoreAccountSession: restoreAccountSession,
+    );
+  }
+
+  Future<void> initializeForVisiblePage({
+    AsmrContentLanguage? defaultLanguage,
+  }) {
+    _skipRestoreForNextInitialize = true;
+    final task = initialize(defaultLanguage: defaultLanguage);
+    return task.whenComplete(() {
+      _skipRestoreForNextInitialize = false;
+    });
+  }
+
+  Future<void> _initialize({
+    AsmrContentLanguage? defaultLanguage,
+    required bool restoreAccountSession,
+  }) {
     if (_initialized) return Future<void>.value();
     final existing = _initializeTask;
     if (existing != null) {
       return existing;
     }
     late final Future<void> task;
-    task = _initializeLocalState(defaultLanguage: defaultLanguage).whenComplete(
-      () {
-        if (identical(_initializeTask, task)) {
-          _initializeTask = null;
-        }
-      },
-    );
+    task =
+        _initializeLocalState(
+          defaultLanguage: defaultLanguage,
+          restoreAccountSession: restoreAccountSession,
+        ).whenComplete(() {
+          if (identical(_initializeTask, task)) {
+            _initializeTask = null;
+          }
+        });
     _initializeTask = task;
     return task;
   }
 
   Future<void> _initializeLocalState({
     AsmrContentLanguage? defaultLanguage,
+    required bool restoreAccountSession,
   }) async {
     _visibleCategories = await _preferencesStore.loadVisibleCategories();
     if (defaultLanguage != null) {
@@ -678,7 +704,9 @@ class AsmrLibraryController extends ChangeNotifier
     _initialized = true;
     _bumpGlobalRevision();
     _commitPresentation('asmr_initialize', notifyListeners);
-    unawaited(restoreAsmrAccountSession());
+    if (restoreAccountSession) {
+      unawaited(restoreAsmrAccountSession());
+    }
   }
 
   Future<void> restoreAsmrAccountSession({bool force = false}) {

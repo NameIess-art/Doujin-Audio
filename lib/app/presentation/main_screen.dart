@@ -63,7 +63,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       NotificationsPlatformService();
 
   bool _isMenuCollapsed = false;
-  late final List<Widget> _pages;
   late final ValueNotifier<int> _activePageIndex;
   late final ValueNotifier<int> _audioLibrarySectionIndex;
   final Object _pageSwitchInteraction = Object();
@@ -136,19 +135,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _audioLibrarySectionIndex = ValueNotifier<int>(
       AudioLibraryPage.localSection,
     );
-    _pages = [
-      AudioLibraryPage(
-        sectionIndex: _audioLibrarySectionIndex,
-        activePageIndex: _activePageIndex,
-        onSectionChanged: _switchAudioLibrarySection,
-      ),
-      PlaylistTab(
-        onTimerTap: _openTimerFromPlaylist,
-        onOpenLibrary: _openLocalLibrary,
-        activeTabIndexListenable: _activePageIndex,
-      ),
-      const SettingsTab(),
-    ];
     ref.listenManual<bool>(
       mainOverlayUiProvider.select((state) => state.startupReady),
       (_, startupReady) => _handleStartupReadyChanged(startupReady),
@@ -209,8 +195,8 @@ class _MainScreenState extends ConsumerState<MainScreen>
           ? AudioLibraryPage.asmrSection
           : AudioLibraryPage.localSection;
       final startupIndex = startupPage == StartupPage.playlist ? 1 : 0;
-      setState(() => _isDataReady = true);
       _activePageIndex.value = startupIndex;
+      setState(() => _isDataReady = true);
     }
     _queueAutoUpdateCheckIfReady();
   }
@@ -656,10 +642,29 @@ class _MainScreenState extends ConsumerState<MainScreen>
 
   void _switchAudioLibrarySection(int index) {
     if (_audioLibrarySectionIndex.value == index) return;
+    _pageSwitchCoordinatorGeneration = UiInteractionCoordinator.instance
+        .beginGeneration();
     _audioLibrarySectionIndex.value = index;
     if (index == AudioLibraryPage.asmrSection) {
       unawaited(_showAsmrOnlineNoticeOnce());
     }
+  }
+
+  Widget _buildMainPage(BuildContext context, int index) {
+    return switch (index) {
+      0 => AudioLibraryPage(
+        sectionIndex: _audioLibrarySectionIndex,
+        activePageIndex: _activePageIndex,
+        onSectionChanged: _switchAudioLibrarySection,
+      ),
+      1 => PlaylistTab(
+        onTimerTap: _openTimerFromPlaylist,
+        onOpenLibrary: _openLocalLibrary,
+        activeTabIndexListenable: _activePageIndex,
+      ),
+      2 => const SettingsTab(),
+      _ => const SizedBox.shrink(),
+    };
   }
 
   void _toggleAudioLibrarySectionFromNavigation() {

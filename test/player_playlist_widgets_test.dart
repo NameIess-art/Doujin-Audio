@@ -207,6 +207,30 @@ void main() {
     expect(enabledIcons, contains(Icons.tune_rounded));
   });
 
+  test('fullscreen video follows adjacent video tracks', () {
+    expect(
+      shouldKeepSessionVideoFullscreen(
+        sessionExists: true,
+        currentTrackIsVideo: true,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldKeepSessionVideoFullscreen(
+        sessionExists: true,
+        currentTrackIsVideo: false,
+      ),
+      isFalse,
+    );
+    expect(
+      shouldKeepSessionVideoFullscreen(
+        sessionExists: false,
+        currentTrackIsVideo: true,
+      ),
+      isFalse,
+    );
+  });
+
   test('ASMR session switcher displays tracks in natural path order', () {
     MusicTrack asmrTrack(String title) {
       final relativePath = '01/$title.mp3';

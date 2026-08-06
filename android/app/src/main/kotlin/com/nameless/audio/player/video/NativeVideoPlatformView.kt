@@ -16,6 +16,7 @@ import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
 
 private const val PAUSED_FIRST_FRAME_RECOVERY_DELAY_MS = 450L
+private const val SURFACE_REFRESH_DEBOUNCE_MS = 120L
 
 internal fun shouldRecoverPausedVideoFrame(
     isAttachedToWindow: Boolean,
@@ -70,6 +71,7 @@ private class NativeVideoPlatformView(
     private val attachStateListener = object : View.OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(view: View) {
             scheduleVideoSurfaceRefresh()
+            schedulePausedFrameRecovery()
         }
 
         override fun onViewDetachedFromWindow(view: View) {
@@ -167,7 +169,7 @@ private class NativeVideoPlatformView(
     private fun scheduleVideoSurfaceRefresh() {
         if (disposed || boundService == null) return
         playerView.removeCallbacks(surfaceRefreshRunnable)
-        playerView.post(surfaceRefreshRunnable)
+        playerView.postDelayed(surfaceRefreshRunnable, SURFACE_REFRESH_DEBOUNCE_MS)
     }
 
     private fun refreshVideoSurface() {

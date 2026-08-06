@@ -8,6 +8,11 @@ bool _isSessionVideoReady(PlaybackSession session, MusicTrack? track) {
       PathMatcher.equalsNormalized(loadedPath, track!.path);
 }
 
+bool shouldKeepSessionVideoFullscreen({
+  required bool sessionExists,
+  required bool currentTrackIsVideo,
+}) => sessionExists && currentTrackIsVideo;
+
 Future<void> _showSessionVideoFullscreen(
   BuildContext context,
   WidgetRef ref, {
@@ -67,6 +72,7 @@ class _SessionVideoFullscreenPageState
   PlaybackSession? _initialSession;
   PlaybackPositionUiGate? _positionGate;
   Future<String?>? _coverFuture;
+  late String _activeTrackPath;
   Timer? _controlsTimer;
   Timer? _feedbackTimer;
   bool _controlsVisible = true;
@@ -111,6 +117,7 @@ class _SessionVideoFullscreenPageState
     _controlValues = Listenable.merge([?_positionGate, _dragVolume]);
     final paths = ref.read(audioPathCoordinatorProvider);
     final track = paths.trackByPath(widget.trackPath);
+    _activeTrackPath = widget.trackPath;
     _coverFuture = ref
         .read(libraryFacadeProvider)
         .playbackCoverPathFutureForTrack(track);
@@ -531,19 +538,26 @@ class _SessionVideoFullscreenPageState
     final detail = ref.watch(sessionDetailTransportProvider(widget.sessionId));
     final paths = ref.read(audioPathCoordinatorProvider);
     final session = _playback.sessionById(widget.sessionId);
-    final track = session == null
+    final activeSession = session;
+    final track = activeSession == null
         ? null
-        : paths.trackByPath(session.currentTrackPath);
-    final stillCurrentVideo =
-        session != null &&
-        track?.isVideo == true &&
-        PathMatcher.equalsNormalized(
-          session.currentTrackPath,
-          widget.trackPath,
-        );
-    if (!stillCurrentVideo) {
+        : paths.trackByPath(activeSession.currentTrackPath);
+    if (activeSession == null ||
+        !shouldKeepSessionVideoFullscreen(
+          sessionExists: true,
+          currentTrackIsVideo: track?.isVideo == true,
+        )) {
       _exitAfterBuild();
       return const ColoredBox(color: Colors.black);
+    }
+    if (!PathMatcher.equalsNormalized(
+      activeSession.currentTrackPath,
+      _activeTrackPath,
+    )) {
+      _activeTrackPath = activeSession.currentTrackPath;
+      _coverFuture = ref
+          .read(libraryFacadeProvider)
+          .playbackCoverPathFutureForTrack(track);
     }
     final playing = detail?.isPlaying == true;
     _syncPlaying(playing);
@@ -593,7 +607,7 @@ class _SessionVideoFullscreenPageState
                     ),
                   ),
                 ),
-                if (_isSessionVideoReady(session, track))
+                if (_isSessionVideoReady(activeSession, track))
                   NativeSessionVideoSurface(sessionId: widget.sessionId),
                 Positioned.fromRect(
                   rect: gestureRect,
@@ -623,7 +637,7 @@ class _SessionVideoFullscreenPageState
                   ),
                 ),
                 _buildFeedback(),
-                _buildControls(context, session, detail, playing),
+                _buildControls(context, activeSession, detail, playing),
               ],
             );
           },
@@ -777,7 +791,8 @@ class _SessionVideoFullscreenPageState
                         forward: true,
                       );
                       final canPrevious =
-                          (snapshot != null && snapshot.position.inSeconds > 3) ||
+                          (snapshot != null &&
+                              snapshot.position.inSeconds > 3) ||
                           hasPrevious;
                       final canNext = hasNext;
 

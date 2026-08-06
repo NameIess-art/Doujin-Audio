@@ -873,6 +873,74 @@ void main() {
   });
 
   test(
+    'PlaybackFacade reloads native source after a loaded path retarget',
+    () async {
+      final database = _RecordingTestPersistenceRepository();
+      final library = LibraryFacade.create(databaseRepository: database);
+      final playback = PlaybackFacade.create(databaseRepository: database);
+      playback.configurePersistence(enabled: false);
+      final session = _session('retargeted-loaded')
+        ..currentTrackPath = '/old/work/track.mp3'
+        ..loadedPath = '/old/work/track.mp3'
+        ..lastKnownPosition = const Duration(seconds: 12)
+        ..setOptimisticState(playing: true);
+      addTearDown(() async {
+        session.dispose();
+        await playback.dispose();
+        await library.dispose();
+      });
+
+      String? preparedPath;
+      bool? preparedAutoPlay;
+      playback
+        ..registerSession(session)
+        ..attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async {
+                preparedPath = nextPath;
+                preparedAutoPlay = autoPlay;
+                session.loadedPath = nextPath;
+                return true;
+              },
+          pauseSession: (_) async {},
+          startSession: (_, {required shouldStartTriggerCountdown}) async =>
+              true,
+          resolveAdvance: (_, {required forward}) => null,
+          hasAdjacent: (_, {required forward}) => false,
+        );
+
+      await playback.retargetPath('/old/work', '/new/work');
+
+      expect(
+        PathMatcher.equalsNormalized(preparedPath!, '/new/work/track.mp3'),
+        isTrue,
+      );
+      expect(preparedAutoPlay, isTrue);
+      expect(
+        PathMatcher.equalsNormalized(
+          session.currentTrackPath,
+          '/new/work/track.mp3',
+        ),
+        isTrue,
+      );
+      expect(
+        PathMatcher.equalsNormalized(
+          session.loadedPath!,
+          '/new/work/track.mp3',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'PlaybackFacade owns debounced session persistence scheduling',
     () async {
       final database = _RecordingTestPersistenceRepository();

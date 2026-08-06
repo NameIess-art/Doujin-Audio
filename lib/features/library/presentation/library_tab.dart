@@ -164,6 +164,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   bool _initialLibraryContentReady = false;
   bool _refreshTriggeredInCurrentScroll = false;
   bool _isReordering = false;
+  final Set<String> _expandedCardPaths = <String>{};
 
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
@@ -189,6 +190,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         child: const _LibrarySearchPage(),
       ),
     );
+  }
+
+  void _handleCardExpansionChanged(String folderPath, bool expanded) {
+    final normalizedPath = PathMatcher.normalize(folderPath);
+    final changed = expanded
+        ? _expandedCardPaths.add(normalizedPath)
+        : _expandedCardPaths.remove(normalizedPath);
+    if (changed && mounted) setState(() {});
   }
 
   Future<void> _openVideoConverterPage() async {
@@ -623,6 +632,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         child: RepaintBoundary(
           child: _LibraryTreeItem(
             node: node,
+            initiallyExpanded:
+                node is FolderNode &&
+                _expandedCardPaths.contains(PathMatcher.normalize(node.path)),
+            onFolderExpansionChanged: _handleCardExpansionChanged,
             index: index,
             cardPositionsLocked: cardPositionsLocked,
           ),

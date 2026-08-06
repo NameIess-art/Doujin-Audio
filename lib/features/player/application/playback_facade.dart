@@ -1866,6 +1866,7 @@ final class PlaybackFacade {
   Future<void> retargetPath(String oldPath, String newPath) async {
     rememberRetargetedPath(oldPath, newPath);
     var changed = false;
+    final sessionsToReload = <PlaybackSession>[];
     for (final session in _service.sessions.values) {
       if (PathMatcher.isWithinOrEqual(session.currentTrackPath, oldPath)) {
         session.currentTrackPath = PathMatcher.replaceWithinOrEqual(
@@ -1878,11 +1879,10 @@ final class PlaybackFacade {
       final loadedPath = session.loadedPath;
       if (loadedPath != null &&
           PathMatcher.isWithinOrEqual(loadedPath, oldPath)) {
-        session.loadedPath = PathMatcher.replaceWithinOrEqual(
-          loadedPath,
-          oldPath,
-          newPath,
-        );
+        // Keep the old loaded path until the native player is prepared with
+        // the new file. This makes the preparation path detect a real source
+        // change instead of treating the stale ExoPlayer item as current.
+        sessionsToReload.add(session);
         changed = true;
       }
     }
@@ -1897,6 +1897,23 @@ final class PlaybackFacade {
       coverGeneration: current.coverGeneration,
       isInitialized: current.isInitialized,
     );
+    final prepare = _prepareSession;
+    if (prepare != null) {
+      for (final session in sessionsToReload) {
+        _service.enqueueSessionPreparation(() async {
+          if (!isRegisteredSession(session)) return;
+          await prepare(
+            session,
+            nextPath: session.currentTrackPath,
+            autoPlay: session.effectivePlaying,
+            forceStartAtZero: false,
+            showLoading: false,
+            targetQueueIndex: session.currentQueueIndex,
+          );
+        });
+      }
+      await _service.sessionPreparationQueue;
+    }
     await savePersistedState();
   }
 

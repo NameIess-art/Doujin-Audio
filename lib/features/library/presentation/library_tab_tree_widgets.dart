@@ -8,6 +8,7 @@ class _LibraryTreeItem extends StatelessWidget {
     this.searchQuery = '',
     this.index,
     this.cardPositionsLocked = true,
+    this.onFolderExpansionChanged,
   });
 
   final LibraryNode node;
@@ -15,6 +16,8 @@ class _LibraryTreeItem extends StatelessWidget {
   final String searchQuery;
   final int? index;
   final bool cardPositionsLocked;
+  final void Function(String folderPath, bool expanded)?
+  onFolderExpansionChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -22,6 +25,7 @@ class _LibraryTreeItem extends StatelessWidget {
       return _FolderNodeWidget(
         folder: node as FolderNode,
         initiallyExpanded: initiallyExpanded,
+        onFolderExpansionChanged: onFolderExpansionChanged,
         searchQuery: searchQuery,
         index: index,
         cardPositionsLocked: cardPositionsLocked,
@@ -45,6 +49,7 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
     required this.searchQuery,
     this.index,
     this.cardPositionsLocked = true,
+    this.onFolderExpansionChanged,
   });
 
   final FolderNode folder;
@@ -52,6 +57,8 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
   final String searchQuery;
   final int? index;
   final bool cardPositionsLocked;
+  final void Function(String folderPath, bool expanded)?
+  onFolderExpansionChanged;
 
   @override
   ConsumerState<_FolderNodeWidget> createState() => _FolderNodeWidgetState();
@@ -218,6 +225,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
           setState(() {
             _expanded = expanded;
           });
+          widget.onFolderExpansionChanged?.call(widget.folder.path, expanded);
           if (expanded) unawaited(_loadChildren());
         },
         shape: isRootFolder
@@ -345,7 +353,12 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                         child: _LibraryTreeItem(
                           key: ValueKey(childNode.path),
                           node: childNode,
-                          initiallyExpanded: widget.initiallyExpanded,
+                          initiallyExpanded:
+                              widget.onFolderExpansionChanged == null
+                              ? widget.initiallyExpanded
+                              : false,
+                          onFolderExpansionChanged:
+                              widget.onFolderExpansionChanged,
                           searchQuery: widget.searchQuery,
                         ),
                       ),

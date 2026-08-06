@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../theme/app_styles.dart';
+
 mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   final GlobalKey headerKey = GlobalKey();
   late double headerHeight = defaultHeaderHeight;
@@ -14,7 +16,7 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   double get headerControlsFullHeight => 0.0;
 
   /// Override to provide the default header height before measurement.
-  double get defaultHeaderHeight => 90.0;
+  double get defaultHeaderHeight => AppPageHeaderMetrics.toolbarHeight;
 
   /// The primary scroll controller for this tab, used for scroll-to-top.
   ScrollController get mainScrollController;

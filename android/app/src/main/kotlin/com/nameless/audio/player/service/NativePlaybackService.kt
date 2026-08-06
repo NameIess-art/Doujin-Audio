@@ -713,17 +713,18 @@ class NativePlaybackService : MediaSessionService() {
             return rejectedStartResult(startId)
         }
         super.onStartCommand(intent, flags, startId)
+        // A startForegroundService call has a short deadline. Publish the
+        // minimal media notification before doing restore I/O or creating
+        // players so a cold process is foreground before any heavy work.
+        if (startDecision.requireForegroundBootstrap) {
+            logInfo("on_start_command foreground_bootstrap_requested")
+            foregroundCoordinator.startBootstrap()
+        }
         if (startDecision.shouldAttemptRestore &&
             shouldAttemptStickyPlaybackRestore(sessions.isNotEmpty(), attemptedStickyPlaybackRestore)
         ) {
             attemptedStickyPlaybackRestore = true
             restorePersistedPlaybackAfterServiceRestart()
-        }
-        if (startDecision.requireForegroundBootstrap &&
-            !hasPlaybackToKeepAlive()
-        ) {
-            logInfo("on_start_command foreground_bootstrap_requested")
-            foregroundCoordinator.startBootstrap()
         }
         return START_STICKY
     }
@@ -966,10 +967,17 @@ class NativePlaybackService : MediaSessionService() {
         pendingAudioFocusResumeSessionIds.remove(sessionId)
         notificationsDismissed = false
         playbackSuspended = false
+        val playerBeforePlay = session.playerOrNull()
+        val needsImmediateRecovery = playerBeforePlay != null &&
+            (playerBeforePlay.playerError != null ||
+                playerBeforePlay.playbackState == Player.STATE_IDLE)
         markPlaybackIntended(sessionId)
         session.applyFadeMultiplier(1f)
         session.applyFocusDuckMultiplier(1f)
         focusSession(sessionId)
+        if (needsImmediateRecovery) {
+            playbackRecovery.retryNow(sessionId, "user_retry")
+        }
         ensureFocusedPlayer(session).play()
         evictPlayersIfNeeded()
         pausedSessionIds.forEach(::publishSessionState)
@@ -2020,6 +2028,10 @@ class NativePlaybackService : MediaSessionService() {
             "isPlaying=${player?.isPlaying ?: target?.lastIsPlaying} " +
             "playbackState=${player?.playbackStateName() ?: target?.lastPlaybackState} " +
             "foregroundStarted=${foregroundCoordinator.isStarted} " +
+            "notificationPosted=${isPlaybackNotificationPosted()} " +
+            "wakeLockHeld=${playbackWakeLock.isHeld()} " +
+            "audioFocusHeld=${audioFocusController.isHeld} " +
+            "screenInteractive=${isScreenInteractive()} " +
             "activePlayback=${hasActivePlayback()} " +
             "keepAlivePlayback=${hasPlaybackToKeepAlive()}"
     }

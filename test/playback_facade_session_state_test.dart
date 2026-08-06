@@ -431,6 +431,52 @@ void main() {
     expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
   });
 
+  test('playback error retries an existing native source through transport', () async {
+    final library = _createLibraryFacade();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+    )..configurePersistence(enabled: false);
+    final session = _session('failed-native-source')
+      ..loadedPath = '/tracks/failed.mp3'
+      ..playbackError = 'network failed'
+      ..state = PlayerState(false, ProcessingState.idle);
+    var prepareCount = 0;
+    var startCount = 0;
+    addTearDown(() async {
+      await playback.dispose();
+      await library.dispose();
+    });
+    playback
+      ..attachPlaybackCommands(
+        prepareSession:
+            (
+              session, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              prepareCount++;
+              return true;
+            },
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async {
+          startCount++;
+          return true;
+        },
+        resolveAdvance: (_, {required forward}) => null,
+        hasAdjacent: (_, {required forward}) => false,
+      )
+      ..registerSession(session);
+
+    await playback.toggleSessionPlayPause(session.id);
+
+    expect(prepareCount, 0);
+    expect(startCount, 1);
+  });
+
   test('track changes preserve the session playback intent', () async {
     final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(

@@ -59,6 +59,6 @@ abstract final class AppPageHeaderMetrics {
     0,
   );
   static const double firstContentSpacing = AppSpacing.xxs;
-  static const double bottomSpacing = AppSpacing.md;
-  static const double toolbarHeight = 66;
+  static const double bottomSpacing = AppSpacing.xxs;
+  static const double toolbarHeight = 62;
 }

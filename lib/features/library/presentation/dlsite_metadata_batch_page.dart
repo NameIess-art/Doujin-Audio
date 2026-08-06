@@ -491,7 +491,7 @@ class _DlsiteMetadataWorkPickerPageState
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(
+      appBar: AppPageAppBar(
         titleSpacing: 0,
         title: Container(
           height: 42,

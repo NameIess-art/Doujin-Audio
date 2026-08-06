@@ -913,6 +913,10 @@ class AsmrLibraryController extends ChangeNotifier
     if (_contentLanguagePreference == preference) {
       return;
     }
+    final refreshQueries = <AsmrCategoryType, String>{
+      for (final entry in _queryByCategory.entries)
+        if (_isRemoteCategory(entry.key)) entry.key: entry.value,
+    };
     _contentLanguagePreference = preference;
     await _preferencesStore.saveContentLanguagePreference(preference);
     final nextLanguage = _resolveContentLanguage();
@@ -922,6 +926,11 @@ class AsmrLibraryController extends ChangeNotifier
       return;
     }
     _applyContentLanguage(nextLanguage);
+    await Future.wait(
+      refreshQueries.entries.map(
+        (entry) => refreshCategory(entry.key, searchQuery: entry.value),
+      ),
+    );
   }
 
   AsmrContentLanguage _resolveContentLanguage() {
@@ -1065,7 +1074,7 @@ class AsmrLibraryController extends ChangeNotifier
             pageResult: pageResult,
           );
           _loadMoreRetryByCategory[category] =
-              additions.isEmpty && pageResult.hasMore;
+              additions.isEmpty && hasMoreCategory(category);
           notifyListeners();
         },
         isCurrent: () => _isCategoryRequestCurrent(category, requestKey),
@@ -1285,7 +1294,9 @@ class AsmrLibraryController extends ChangeNotifier
     _queryByCategory[category] = query;
     _currentPageByCategory[category] = pageResult.currentPage;
     _totalCountByCategory[category] = pageResult.totalCount;
-    _hasMoreByCategory[category] = pageResult.hasMore;
+    final loadedCount = _worksByCategory[category]?.length ?? 0;
+    _hasMoreByCategory[category] =
+        pageResult.hasMore && loadedCount < pageResult.totalCount;
   }
 
   AsmrWork _decorateWork(AsmrWork work) {

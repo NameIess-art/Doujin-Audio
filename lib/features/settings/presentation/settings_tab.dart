@@ -75,7 +75,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   int get tabIndex => 2;
 
   @override
-  double get defaultHeaderHeight => 62.0;
+  double get defaultHeaderHeight => AppPageHeaderMetrics.toolbarHeight;
 
   @override
   ScrollController get mainScrollController => _scrollController;
@@ -207,7 +207,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
                 16,
                 80 + AppPageHeaderMetrics.firstContentSpacing,
                 16,
-                bottomInset,
+                bottomInset + AppSpacing.sm,
               ),
               clipBehavior: Clip.none,
               children: [
@@ -242,7 +242,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               key: headerKey,
               icon: Icons.tune_rounded,
               title: i18n.tr('settings'),
-              collapseController: _scrollController,
             ),
           ),
         ],
@@ -405,14 +404,11 @@ class _SettingsCategoryPage extends ConsumerWidget {
     final settingsController = ref.read(settingsCommandControllerProvider);
     final cs = Theme.of(context).colorScheme;
 
-    Widget content() {
+    Widget content({
+      double topPadding = AppPageHeaderMetrics.firstContentSpacing,
+    }) {
       return ListView(
-        padding: const EdgeInsets.fromLTRB(
-          16,
-          AppPageHeaderMetrics.firstContentSpacing,
-          16,
-          24,
-        ),
+        padding: EdgeInsets.fromLTRB(16, topPadding, 16, 24),
         children: [
           _SettingsTileTheme(
             child: Column(
@@ -483,20 +479,36 @@ class _SettingsCategoryPage extends ConsumerWidget {
       );
     }
 
+    final headerHeight =
+        MediaQuery.paddingOf(context).top +
+        AppPageHeaderMetrics.padding.vertical +
+        AppPageHeaderMetrics.contentHeight +
+        AppPageHeaderMetrics.bottomSpacing;
+
     return Scaffold(
       backgroundColor: cs.surface,
-      body: Column(
+      body: Stack(
         children: [
-          TopPageHeader(
-            icon: category.icon,
-            title: i18n.tr(category.labelKey),
-            leading: IconButton(
-              onPressed: () => Navigator.of(context).maybePop(),
-              icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
-              tooltip: i18n.tr('back'),
+          Positioned.fill(
+            child: content(
+              topPadding:
+                  headerHeight + AppPageHeaderMetrics.firstContentSpacing,
             ),
           ),
-          Expanded(child: content()),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              icon: category.icon,
+              title: i18n.tr(category.labelKey),
+              leading: IconButton(
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
+                tooltip: i18n.tr('back'),
+              ),
+            ),
+          ),
         ],
       ),
     );

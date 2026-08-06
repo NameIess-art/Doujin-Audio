@@ -295,6 +295,7 @@ internal class NativePlaybackRecoveryController(
     private val recoveryBaselines = mutableMapOf<String, NativePlaybackHealthSample>()
     private val recovering = linkedSetOf<String>()
     private val candidateFallbackPending = linkedSetOf<String>()
+    private val recoveryGenerations = mutableMapOf<String, Long>()
     private var triggerInProgress = false
     private val startedAt = mutableMapOf<String, Long>()
     private var listening = false
@@ -418,6 +419,29 @@ internal class NativePlaybackRecoveryController(
         }
     }
 
+    /**
+     * Retry one session immediately after an explicit user play request.
+     *
+     * The normal trigger also evaluates every intended session. A user retry
+     * must only touch the failed session, while still using the same candidate
+     * fallback and in-flight guards as the scheduled recovery path.
+     */
+    fun retryNow(sessionId: String, reason: String) {
+        if (triggerInProgress) {
+            host.logInfo(
+                "playback_recovery_retry_skipped_reentrant " +
+                    "sessionId=$sessionId trigger=$reason"
+            )
+            return
+        }
+        triggerInProgress = true
+        try {
+            retry(sessionId, reason)
+        } finally {
+            triggerInProgress = false
+        }
+    }
+
     fun shouldKeepAlive(): Boolean = intended.any { sessionId ->
         val session = host.session(sessionId) ?: return@any false
         val player = session.playerOrNull() ?: return@any true
@@ -446,18 +470,34 @@ internal class NativePlaybackRecoveryController(
             playbackRecoveryDelayMs(attempt, recoveryStarted, environment.elapsedRealtimeMs())
         }
         attempts[sessionId] = attempt + 1
+        val generation = recoveryGenerations[sessionId] ?: 0L
         val task = Runnable {
             retryTasks.remove(sessionId)
-            retry(sessionId, "scheduled_retry")
+            retry(
+                sessionId = sessionId,
+                reason = "scheduled_retry",
+                generation = generation
+            )
         }
         retryTasks[sessionId] = task
         host.logInfo("player_error_retry_scheduled sessionId=$sessionId delay=${delayMs}ms attempt=${attempt + 1}")
         environment.postDelayed(task, delayMs)
     }
 
-    private fun retry(sessionId: String, reason: String) {
+    private fun retry(
+        sessionId: String,
+        reason: String,
+        generation: Long? = null
+    ) {
         val session = host.session(sessionId) ?: return clear(sessionId)
         if (sessionId !in intended) return clearRecovery(sessionId)
+        if (generation != null && generation != (recoveryGenerations[sessionId] ?: 0L)) {
+            host.logInfo(
+                "playback_recovery_skip_stale sessionId=$sessionId trigger=$reason " +
+                    "generation=$generation current=${recoveryGenerations[sessionId] ?: 0L}"
+            )
+            return
+        }
         if (sessionId in recovering) {
             host.logInfo("playback_recovery_skip_in_flight sessionId=$sessionId trigger=$reason")
             return
@@ -521,6 +561,8 @@ internal class NativePlaybackRecoveryController(
     }
 
     private fun clearRecovery(sessionId: String) {
+        recoveryGenerations[sessionId] =
+            (recoveryGenerations[sessionId] ?: 0L) + 1L
         pending -= sessionId
         attempts -= sessionId
         startedAt -= sessionId

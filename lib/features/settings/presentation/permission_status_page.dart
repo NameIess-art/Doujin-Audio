@@ -12,6 +12,7 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/top_page_header.dart';
 
 class PermissionStatusPage extends ConsumerStatefulWidget {
   const PermissionStatusPage({super.key, this.statusService});
@@ -128,10 +129,8 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
       height: MediaQuery.sizeOf(context).height * 0.75,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(
+        appBar: AppPageAppBar(
           title: Text(i18n.tr('permission_center')),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
           automaticallyImplyLeading: false,
         ),
         body: FutureBuilder<PermissionStatusSnapshot>(

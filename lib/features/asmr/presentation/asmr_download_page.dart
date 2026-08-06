@@ -250,7 +250,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(
+      appBar: AppPageAppBar(
         title: Text(i18n.tr('asmr_download_title')),
         actions: [
           TextButton(

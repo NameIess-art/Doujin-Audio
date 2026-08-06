@@ -165,7 +165,7 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
-    fun `network recovery advances playback candidate before repreparing`() {
+    fun `user retry advances playback candidate before repreparing`() {
         val environment = FakeRecoveryEnvironment()
         val session = NativePlaybackSession(
             sessionId = "player",
@@ -214,7 +214,7 @@ class NativePlaybackRecoveryControllerTest {
         )
 
         assertTrue(environment.delays.contains(0L))
-        environment.runFirst(0L)
+        controller.retryNow("player", "user_retry")
         assertEquals("https://api.asmr-100.com/audio.mp3", session.uri)
         assertEquals("asmr://work/track", session.path)
         assertEquals(8_000L, session.lastPositionMs)
@@ -237,6 +237,29 @@ class NativePlaybackRecoveryControllerTest {
 
         assertFalse(controller.isIntended("prepare-failed"))
         assertTrue(environment.tasks.isEmpty())
+    }
+
+    @Test
+    fun `stale retry from a cleared generation cannot recover a re-created session`() {
+        val environment = FakeRecoveryEnvironment()
+        val host = FakeRecoveryHost(recoverySession(environment))
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("player")
+        controller.onPlayerError(
+            sessionId = "player",
+            recoverable = true,
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
+            errorMessage = "network",
+            causeDescription = null
+        )
+
+        val staleRetry = environment.tasks.entries.first { it.value == 2_000L }.key
+        controller.clear("player")
+        controller.markIntended("player")
+        staleRetry.run()
+
+        assertEquals(0, host.requestAudioFocusCalls)
+        assertFalse(controller.isPending("player"))
     }
 }
 

@@ -16,6 +16,7 @@ import '../../../core/media/card_info_field.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -78,6 +79,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   AppLanguage? _pendingPageLanguageSync;
   Future<void>? _activationTask;
   bool _activationCompleted = false;
+  late final AppLanguageProvider _languageProvider;
 
   @override
   bool get wantKeepAlive => true;
@@ -107,7 +109,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   double _minimumExpandedHeaderHeight(BuildContext context) {
-    return 72 + MediaQuery.paddingOf(context).top;
+    return AppPageHeaderMetrics.toolbarHeight +
+        MediaQuery.paddingOf(context).top;
   }
 
   Future<T> _runAsmrOperation<T>({
@@ -125,6 +128,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   @override
   void initState() {
     super.initState();
+    _languageProvider = ref.read(appLanguageProviderInstanceProvider);
+    _languageProvider.addListener(_handleAppLanguageChanged);
     widget.activeTabIndexListenable?.addListener(_handleActiveStateChanged);
     widget.activeSectionListenable?.addListener(_handleActiveStateChanged);
     initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
@@ -232,8 +237,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
       final measuredHeight = box.size.height;
-      final minimumHeight = _minimumExpandedHeaderHeight(context);
-      final h = measuredHeight < minimumHeight ? minimumHeight : measuredHeight;
+      final h = measuredHeight;
       if (h > 0 &&
           (force || _headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
         setState(() => _headerHeight = h);
@@ -353,6 +357,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   @override
   void dispose() {
+    _languageProvider.removeListener(_handleAppLanguageChanged);
     widget.activeTabIndexListenable?.removeListener(_handleActiveStateChanged);
     widget.activeSectionListenable?.removeListener(_handleActiveStateChanged);
     disposeTabState();
@@ -366,14 +371,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final globalState = _readOrWatch(asmrLibraryGlobalStateProvider).value;
     final hasDownloadManager =
         _readOrWatch(asmrDownloadManagerProvider) != null;
-    final collectedState = _readOrWatch(
-      asmrCategoryStateProvider((category: _mainCategory, searchQuery: '')),
-    ).value;
-    final collectedCount =
-        ref
-            .read(asmrLibraryControllerProvider)
-            ?.totalCountFor(AsmrCategoryType.collected) ??
-        0;
     _readOrWatch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     if (_lastHeaderMeasureLanguage != i18n.language) {
@@ -381,13 +378,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       _scheduleHeaderMeasurement(force: true);
     }
     _schedulePageLanguageSync(i18n.language);
-    final collectedSubtitle =
-        collectedState == null ||
-            (collectedState.works.isEmpty &&
-                !collectedState.hasAttemptedLoad) ||
-            collectedState.isLoading
-        ? i18n.tr('loading_dot')
-        : i18n.tr('asmr_collected_count', {'count': collectedCount});
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
     final bottomInset = MobileOverlayInset.of(context);
@@ -424,19 +414,15 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               title: 'ASMR.ONE',
               onTitleSwipeLeft: widget.onTitleSwipeLeft,
               onTitleSwipeRight: widget.onTitleSwipeRight,
-              subtitle: collectedSubtitle,
-              subtitleFontSize: 11,
-              fitSubtitleToWidth: true,
-              trailing: IconButton(
-                key: const ValueKey<String>('asmr_search_button'),
-                onPressed: _openSearchPage,
-                icon: const Icon(Icons.search_rounded),
-                tooltip: i18n.tr('search'),
+              trailing: SizedBox(
+                height: 44,
+                child: IconButton(
+                  key: const ValueKey<String>('asmr_search_button'),
+                  onPressed: _openSearchPage,
+                  icon: const Icon(Icons.search_rounded),
+                  tooltip: i18n.tr('search'),
+                ),
               ),
-              collapseController: _scrollController,
-              floatingReveal: true,
-              floatingRevealDistance: 56,
-              bottomSpacing: 4,
             ),
           ),
         ],
@@ -485,9 +471,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
             title: 'ASMR.ONE',
             onTitleSwipeLeft: widget.onTitleSwipeLeft,
             onTitleSwipeRight: widget.onTitleSwipeRight,
-            subtitle: collectedSubtitle,
-            subtitleFontSize: 11,
-            fitSubtitleToWidth: true,
             trailing: SizedBox(
               height: 44,
               child: Row(
@@ -516,10 +499,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 ],
               ),
             ),
-            collapseController: _scrollController,
-            floatingReveal: true,
-            floatingRevealDistance: 56,
-            bottomSpacing: 4,
           ),
         ),
       ],
@@ -543,5 +522,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         await _runCollectedRefresh();
       }
     });
+  }
+
+  void _handleAppLanguageChanged() {
+    if (!mounted) return;
+    _schedulePageLanguageSync(_languageProvider.language);
   }
 }

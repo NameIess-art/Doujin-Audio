@@ -208,7 +208,7 @@ class _FloatingGlassPanel extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final bgColor = isDark ? cs.surfaceContainer : cs.surfaceContainerHigh;
     final blurEnabled = ref.watch(
       settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
@@ -217,7 +217,7 @@ class _FloatingGlassPanel extends ConsumerWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
         color: bgColor.withValues(
-          alpha: useBlur ? (isDark ? 0.80 : 0.86) : 1.0,
+          alpha: useBlur ? (isDark ? 0.90 : 0.86) : 1.0,
         ),
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),

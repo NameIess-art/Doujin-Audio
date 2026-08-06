@@ -108,7 +108,6 @@ const Map<String, String> appLanguageEn = {
   'scan_duplicate': 'Duplicate',
   'scan_failure': 'Failed',
   'audio_count': '{count} tracks',
-  'work_count': '{count} works',
   'folder_count': '{count} folders',
   'no_audio_files': 'No audio files yet',
   'no_audio_found': 'No audio files found.',
@@ -134,7 +133,6 @@ const Map<String, String> appLanguageEn = {
   'asmr_online_playback': 'ASMR.ONE Online Playback',
   'asmr_online_optional_notice':
       'ASMR.ONE is optional and connects to the network only while you use it.',
-  'asmr_collected_count': 'Currently includes {count} works',
   'asmr_refresh_no_updates': 'No new updates found.',
   'asmr_refresh_failed': 'Sync failed. Pull down to try again.',
   'asmr_favorite_added': 'Added to favorites.',
@@ -364,8 +362,6 @@ const Map<String, String> appLanguageEn = {
   'folder_excluded': 'Folder excluded from library.',
   'pause_all_sessions': 'Pause all sessions',
   'all_paused': 'All sessions were paused.',
-  'sessions_count': '{count} sessions',
-  'playing_count': '{count} playing',
   'no_active_sessions': 'No active sessions',
   'go_library_hint':
       'Play audio in Library first, then create concurrent sessions.',

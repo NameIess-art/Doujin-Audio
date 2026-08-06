@@ -8,6 +8,47 @@ import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'marquee_text.dart';
 
+class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
+  const AppPageAppBar({
+    super.key,
+    required this.title,
+    this.leading,
+    this.actions,
+    this.automaticallyImplyLeading = true,
+    this.titleSpacing,
+  });
+
+  final Widget title;
+  final Widget? leading;
+  final List<Widget>? actions;
+  final bool automaticallyImplyLeading;
+  final double? titleSpacing;
+
+  @override
+  Size get preferredSize =>
+      const Size.fromHeight(AppPageHeaderMetrics.toolbarHeight);
+
+  @override
+  Widget build(BuildContext context) {
+    return _AppHeaderGlassSurface(
+      child: AppBar(
+        title: title,
+        leading: leading,
+        actions: actions,
+        automaticallyImplyLeading: automaticallyImplyLeading,
+        titleSpacing: titleSpacing,
+        toolbarHeight: AppPageHeaderMetrics.toolbarHeight,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        backgroundColor: Colors.transparent,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        forceMaterialTransparency: true,
+      ),
+    );
+  }
+}
+
 class TopPageHeader extends ConsumerStatefulWidget {
   const TopPageHeader({
     super.key,
@@ -193,13 +234,6 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final blurEnabled = ref.watch(
-      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
-    );
-    final useBlur = blurEnabled;
-    final currentAlpha = useBlur ? (isDark ? 0.82 : 0.88) : 1.0;
     final topPadding = widget.useSafeAreaTop
         ? MediaQuery.paddingOf(context).top
         : 0.0;
@@ -392,19 +426,8 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
       return absoluteProgress * (1 - _floatingReveal.value);
     }
 
-    Widget headerContainer = Container(
+    final headerContent = Padding(
       padding: EdgeInsets.only(top: topPadding),
-      decoration: BoxDecoration(
-        color: cs.surface.withValues(alpha: currentAlpha),
-        border: Border(
-          bottom: BorderSide(
-            color: cs.outlineVariant.withValues(
-              alpha: tokens.subtleBorderAlpha,
-            ),
-            width: 0.5,
-          ),
-        ),
-      ),
       child: AnimatedBuilder(
         animation: Listenable.merge(<Listenable>[
           widget.collapseController ?? kAlwaysDismissedAnimation,
@@ -421,17 +444,48 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         },
       ),
     );
+    return _AppHeaderGlassSurface(child: headerContent);
+  }
+}
 
-    if (useBlur) {
-      return RepaintBoundary(
-        child: ClipRect(
-          child: BackdropFilter(
-            filter: dart_ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-            child: headerContainer,
+class _AppHeaderGlassSurface extends ConsumerWidget {
+  const _AppHeaderGlassSurface({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final tokens = AppDesignTokens.of(context);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
+    );
+    final surface = DecoratedBox(
+      decoration: BoxDecoration(
+        color: cs.surface.withValues(
+          alpha: blurEnabled ? (isDark ? 0.82 : 0.88) : 1.0,
+        ),
+        border: Border(
+          bottom: BorderSide(
+            color: cs.outlineVariant.withValues(
+              alpha: tokens.subtleBorderAlpha,
+            ),
+            width: 0.5,
           ),
         ),
-      );
-    }
-    return headerContainer;
+      ),
+      child: child,
+    );
+    if (!blurEnabled) return surface;
+    return RepaintBoundary(
+      child: ClipRect(
+        child: BackdropFilter(
+          key: const ValueKey<String>('app_page_header_blur'),
+          filter: dart_ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+          child: surface,
+        ),
+      ),
+    );
   }
 }

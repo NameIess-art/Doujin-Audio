@@ -787,20 +787,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 final headerState = _isActive
                     ? ref.watch(playlistHeaderUiProvider)
                     : ref.read(playlistHeaderUiProvider);
-                final sessionSummary =
-                    '${i18n.tr('sessions_count', {'count': headerState.sessionCount})} · '
-                    '${i18n.tr('playing_count', {'count': headerState.playingCount})}';
                 return TopPageHeader(
                   key: headerKey,
                   icon: Icons.graphic_eq_rounded,
                   title: i18n.tr('playback_sessions'),
-                  subtitle: sessionSummary,
-                  subtitleFontSize: 11,
-                  fitSubtitleToWidth: true,
-                  collapseController: _scrollController,
-                  floatingReveal: true,
-                  floatingRevealDistance: 56,
-                  bottomSpacing: 4,
                   trailing: SizedBox(
                     height: 44,
                     child: Row(

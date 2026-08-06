@@ -313,12 +313,18 @@ void main() {
       find.text(harness.language.tr('asmr_category_collected')),
       findsNothing,
     );
-    expect(find.text(harness.language.tr('loading_dot')), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('asmr_search_button')),
       findsOneWidget,
     );
+    final asmrHeader = tester.widget<TopPageHeader>(
+      find.byWidgetPredicate(
+        (widget) => widget is TopPageHeader && widget.title == 'ASMR.ONE',
+      ),
+    );
+    expect(asmrHeader.subtitle, isNull);
+    expect(asmrHeader.collapseController, isNull);
     expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
     expect(find.text(harness.language.tr('asmr_empty_category')), findsNothing);
 
@@ -706,6 +712,16 @@ void main() {
       tester.getTopLeft(asmrCard).dy,
       closeTo(tester.getTopLeft(localCard).dy, 0.01),
     );
+    final localHeader = tester.widget<TopPageHeader>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TopPageHeader &&
+            widget.title == fixture.languageProvider.tr('music_library'),
+        skipOffstage: false,
+      ),
+    );
+    expect(localHeader.subtitle, isNull);
+    expect(localHeader.collapseController, isNull);
   });
 
   testWidgets(
@@ -1488,6 +1504,8 @@ void main() {
   ) async {
     tester.view.physicalSize = const Size(1080, 2400);
     addTearDown(tester.view.resetPhysicalSize);
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
     await _pumpAppShell(tester);
     final interactionSource = Object();
     addTearDown(
@@ -1504,6 +1522,23 @@ void main() {
       find.byKey(const ValueKey('active_session_blur_orientation_session')),
       findsOne,
     );
+
+    final menuPanel = find.byKey(
+      const ValueKey<String>('mobile_bottom_capsule_panel'),
+    );
+    final menuDecoration = tester
+        .widgetList<DecoratedBox>(
+          find.descendant(of: menuPanel, matching: find.byType(DecoratedBox)),
+        )
+        .firstWhere((box) => (box.decoration as BoxDecoration).color != null);
+    final menuColor = (menuDecoration.decoration as BoxDecoration).color;
+    final playbackCard = find.byKey(
+      const ValueKey<String>('active_session_card_orientation_session'),
+    );
+    final playbackInk = tester.widget<Ink>(
+      find.descendant(of: playbackCard, matching: find.byType(Ink)),
+    );
+    expect((playbackInk.decoration as BoxDecoration).color, menuColor);
 
     UiInteractionCoordinator.instance.beginInteraction(interactionSource);
     await tester.pump();

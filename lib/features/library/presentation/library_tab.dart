@@ -536,7 +536,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listStateRawTree = _readOrWatch(
       libraryListUiProvider.select((s) => s.rawTree),
     );
-    final libraryHeaderWorkCount = listStateRawTree.length;
     final listStateStructureRevision = _readOrWatch(
       libraryListUiProvider.select((s) => s.structureRevision),
     );
@@ -870,14 +869,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 title: i18n.tr('music_library'),
                 onTitleSwipeLeft: widget.onTitleSwipeLeft,
                 onTitleSwipeRight: widget.onTitleSwipeRight,
-                subtitle:
-                    '${i18n.tr('work_count', {'count': libraryHeaderWorkCount})} · '
-                    '${i18n.tr('audio_count', {'count': libraryHeaderAudioCount})}',
-                subtitleFontSize: 11,
-                fitSubtitleToWidth: true,
-                collapseController: _scrollController,
-                floatingReveal: true,
-                floatingRevealDistance: 56,
                 trailing: SizedBox(
                   width: 96 + (isLandscape ? 52 : 0),
                   height: 44,
@@ -988,7 +979,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                     ],
                   ),
                 ),
-                bottomSpacing: 4,
               ),
             ),
           ],

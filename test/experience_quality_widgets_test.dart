@@ -56,6 +56,25 @@ Widget _buildScrollableHeader({required bool blurEnabled}) {
   );
 }
 
+Widget _buildPageAppBar({required bool blurEnabled}) {
+  return ProviderScope(
+    key: ValueKey<String>('page_app_bar_blur_$blurEnabled'),
+    overrides: [
+      settingsStateProvider.overrideWith(
+        (ref) => Stream<SettingsState>.value(
+          SettingsState(uiBlurEffectEnabled: blurEnabled),
+        ),
+      ),
+    ],
+    child: const MaterialApp(
+      home: Scaffold(
+        appBar: AppPageAppBar(title: Text('Secondary page')),
+        body: SizedBox.expand(),
+      ),
+    ),
+  );
+}
+
 LibraryLikeWorkCardContent _buildFeaturedCard({
   required String title,
   required List<LibraryLikeInfoLineData> lines,
@@ -116,6 +135,26 @@ void main() {
     await tester.pump(const Duration(milliseconds: 170));
 
     expect(find.byType(BackdropFilter), findsNothing);
+  });
+
+  testWidgets('secondary page app bar follows the glass effect setting', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_buildPageAppBar(blurEnabled: true));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('app_page_header_blur')),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(_buildPageAppBar(blurEnabled: false));
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('app_page_header_blur')),
+      findsNothing,
+    );
   });
 
   testWidgets('placeholder content fades over the shared 750ms duration', (

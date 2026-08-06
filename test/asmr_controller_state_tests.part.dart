@@ -81,6 +81,25 @@ void registerAsmrControllerStateTests({
     },
   );
 
+  test('content language changes refresh loaded remote categories', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = AsmrLibraryController(
+      preferencesStore: preferences,
+      apiService: api,
+      persistenceRepository: _FakeTestPersistenceRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.refreshCategory(AsmrCategoryType.release);
+    expect(api.fetchWorkRequests, <String>['release:desc:1']);
+
+    await controller.setContentLanguage(AsmrContentLanguage.ja);
+
+    expect(api.fetchWorkRequests, <String>['release:desc:1', 'release:desc:1']);
+  });
+
   test('ASMR work parser uses selected locale for localizable tag names', () {
     final work = AsmrWork.fromJson(const <String, dynamic>{
       'id': 1,
@@ -664,6 +683,39 @@ void registerAsmrControllerStateTests({
 
     expect(controller.worksFor(AsmrCategoryType.release), hasLength(80));
     expect(controller.isLoadingMoreCategory(AsmrCategoryType.release), isFalse);
+  });
+
+  test('pagination stops when loaded works reach the reported total', () async {
+    await resetPrefs();
+    final controller = AsmrLibraryController(
+      preferencesStore: preferences,
+      apiService: _FakeAsmrApiService(
+        recommendationWorks: <AsmrWork>[
+          for (var index = 1; index <= 41; index++)
+            _work(id: index, title: 'Result $index'),
+        ],
+      ),
+      persistenceRepository: _FakeTestPersistenceRepository(
+        const <MusicTrack>[],
+      ),
+    );
+
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.refreshCategory(AsmrCategoryType.release);
+
+    expect(controller.worksFor(AsmrCategoryType.release), hasLength(41));
+    expect(controller.hasMoreCategory(AsmrCategoryType.release), isFalse);
+  });
+
+  test('short pagination pages are treated as the end of the catalog', () {
+    final page = AsmrWorkPage(
+      works: <AsmrWork>[_work(id: 1, title: 'Only result')],
+      currentPage: 1,
+      pageSize: 40,
+      totalCount: 200,
+    );
+
+    expect(page.hasMore, isFalse);
   });
 
   test('pagination failure waits for manual retry and recovers', () async {

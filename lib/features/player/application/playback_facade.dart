@@ -1026,7 +1026,19 @@ final class PlaybackFacade {
     final session = _service.sessions[sessionId];
     if (session == null || session.currentTrackPath.isEmpty) return;
     if (session.playbackError != null) {
-      await _prepareSession?.call(session, nextPath: session.currentTrackPath);
+      // A native player can keep the failed media item while ExoPlayer is in
+      // an error/idle state. Re-preparing the unchanged path is a no-op in the
+      // preparation coordinator, so route retries through native recovery when
+      // the session still has a loaded source. Preparation is only needed when
+      // the original native session was never created.
+      if (session.loadedPath != null) {
+        await _startSession?.call(session, shouldStartTriggerCountdown: true);
+      } else {
+        await _prepareSession?.call(
+          session,
+          nextPath: session.currentTrackPath,
+        );
+      }
       return;
     }
     if (session.effectivePlaying) {

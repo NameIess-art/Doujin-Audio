@@ -192,7 +192,11 @@ class AsmrWorkPage {
   final int pageSize;
   final int totalCount;
 
-  bool get hasMore => currentPage * pageSize < totalCount;
+  bool get hasMore =>
+      works.isNotEmpty &&
+      pageSize > 0 &&
+      works.length >= pageSize &&
+      currentPage * pageSize < totalCount;
 
   factory AsmrWorkPage.fromJson(
     Map<String, dynamic> json, {

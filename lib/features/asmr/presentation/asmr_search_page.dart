@@ -19,13 +19,24 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   String _query = '';
   bool _loadPending = false;
   int _requestSerial = 0;
+  late final AppLanguageProvider _languageProvider;
 
   @override
   void initState() {
     super.initState();
+    _languageProvider = ref.read(appLanguageProviderInstanceProvider);
+    _languageProvider.addListener(_handleLanguageChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_refresh());
     });
+  }
+
+  void _handleLanguageChanged() {
+    if (!mounted) return;
+    ref
+        .read(asmrLibraryControllerProvider)
+        ?.setPageLanguage(_languageProvider.language);
+    unawaited(_refresh());
   }
 
   void _onChanged(String value) {
@@ -100,6 +111,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   @override
   void dispose() {
     _debounceTimer?.cancel();
+    _languageProvider.removeListener(_handleLanguageChanged);
     _controller.dispose();
     _focusNode.dispose();
     for (final controller in _scrollControllers.values) {

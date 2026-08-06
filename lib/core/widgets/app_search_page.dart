@@ -112,6 +112,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                         autofocus: true,
                         cursorColor: accent,
                         textInputAction: TextInputAction.search,
+                        textAlignVertical: TextAlignVertical.center,
                         onChanged: onChanged,
                         onSubmitted: onSubmitted,
                         style: theme.textTheme.bodyMedium?.copyWith(
@@ -150,9 +151,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
                           isDense: true,
-                          contentPadding: const EdgeInsets.symmetric(
-                            vertical: 12,
-                          ),
+                          contentPadding: EdgeInsets.zero,
                         ),
                       ),
                     ),

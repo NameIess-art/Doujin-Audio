@@ -64,6 +64,17 @@ void main() {
       ListTile,
       i18n.tr('section_language'),
     );
+    expect(
+      tester
+          .widget<TopPageHeader>(find.byType(TopPageHeader))
+          .collapseController,
+      isNull,
+    );
+    final rootList = tester.widget<ListView>(find.byType(ListView).first);
+    expect(
+      (rootList.padding! as EdgeInsets).bottom,
+      greaterThanOrEqualTo(AppSpacing.sm),
+    );
     final rootHeaderRect = tester.getRect(find.byType(TopPageHeader));
     final rootFirstItemSpacing =
         tester.getTopLeft(rootLanguageTile).dy - rootHeaderRect.bottom;
@@ -118,6 +129,10 @@ void main() {
     );
     final categoryHeader = find.byType(TopPageHeader);
     final categoryHeaderWidget = tester.widget<TopPageHeader>(categoryHeader);
+    expect(
+      find.byKey(const ValueKey<String>('app_page_header_blur')),
+      findsOneWidget,
+    );
     expect(categoryHeaderWidget.padding, AppPageHeaderMetrics.padding);
     expect(
       categoryHeaderWidget.bottomSpacing,

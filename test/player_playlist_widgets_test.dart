@@ -412,6 +412,12 @@ void main() {
       tester.widget<TopPageHeader>(find.byType(TopPageHeader)).bottomSpacing,
       4,
     );
+    expect(
+      tester
+          .widget<TopPageHeader>(find.byType(TopPageHeader))
+          .collapseController,
+      isNull,
+    );
     expect(find.byKey(placeholderKey), findsOneWidget);
     expect(find.byKey(contentKey), findsNothing);
 

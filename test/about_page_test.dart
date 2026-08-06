@@ -125,6 +125,36 @@ void main() {
     );
   });
 
+  testWidgets('wiki opens the repository README page', (tester) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    final updateService = _FakeAppUpdateService(openResult: true);
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        ProviderScope(
+          overrides: [
+            appUpdateServiceProvider.overrideWithValue(updateService),
+          ],
+          child: AboutPage(
+            versionFuture: Future.value(
+              const AppVersionInfo(versionName: '1.2.3', buildNumber: 123),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(harness.languageProvider.tr('about_wiki')));
+    await tester.pump();
+
+    expect(
+      updateService.openedUrl,
+      'https://github.com/NameIess-art/nameless-audio/blob/main/README.md',
+    );
+  });
+
   testWidgets('reward shows a warning when the sponsorship page cannot open', (
     tester,
   ) async {

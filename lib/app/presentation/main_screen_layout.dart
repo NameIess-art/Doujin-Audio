@@ -432,14 +432,14 @@ extension _MainScreenLayout on _MainScreenState {
     final blurEnabled = ref.watch(
       settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
     );
-    final bgColor = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final bgColor = isDark ? cs.surfaceContainer : cs.surfaceContainerHigh;
     final textScale = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 1.5);
     final barHeight = (58 * textScale).toDouble();
 
     Widget buildBar(bool useBlur) => DecoratedBox(
       decoration: BoxDecoration(
         color: bgColor.withValues(
-          alpha: useBlur ? (isDark ? 0.80 : 0.86) : 1.0,
+          alpha: useBlur ? (isDark ? 0.90 : 0.86) : 1.0,
         ),
         border: Border(
           top: BorderSide(

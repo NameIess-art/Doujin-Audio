@@ -11,6 +11,7 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/operation_feedback.dart';
+import '../../../core/widgets/top_page_header.dart';
 
 enum DlsiteMetadataReviewOutcome { applied, skipped }
 
@@ -276,7 +277,7 @@ class _DlsiteMetadataReviewPageState
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppBar(
+      appBar: AppPageAppBar(
         title: Text(
           widget.batchIndex == null || widget.batchTotal == null
               ? i18n.tr('dlsite_review_title')

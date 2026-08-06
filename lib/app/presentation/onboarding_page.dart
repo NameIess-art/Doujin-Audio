@@ -7,6 +7,7 @@ import '../application/app_bootstrap_controller.dart';
 import '../state/app_runtime_providers.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
+import '../../core/widgets/top_page_header.dart';
 
 class OnboardingGate extends StatefulWidget {
   const OnboardingGate({super.key, required this.child, this.initiallyVisible});
@@ -207,7 +208,7 @@ class PrivacySummaryPage extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     return Scaffold(
-      appBar: AppBar(title: Text(i18n.tr('privacy_summary_title'))),
+      appBar: AppPageAppBar(title: Text(i18n.tr('privacy_summary_title'))),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [

@@ -190,6 +190,11 @@ void main() {
         ),
       );
       expect(inputDecorator.decoration.filled, isFalse);
+      final searchField = tester.widget<TextField>(
+        find.byKey(const ValueKey<String>('app_search_field')),
+      );
+      expect(searchField.textAlignVertical, TextAlignVertical.center);
+      expect(searchField.decoration?.contentPadding, EdgeInsets.zero);
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));

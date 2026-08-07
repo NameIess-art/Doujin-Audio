@@ -207,22 +207,6 @@ List<Widget> _buildSettingsAppearanceSection({
             );
           },
         ),
-        Consumer(
-          builder: (context, ref, _) {
-            final enabled = ref.watch(
-              settingsStateProvider.select(
-                (state) => state.value?.blurPlayerBackgroundEnabled ?? true,
-              ),
-            );
-            return SwitchListTile(
-              value: enabled,
-              onChanged: settings.setBlurPlayerBackgroundEnabled,
-              title: _settingsTitle(i18n.tr('blur_player_background')),
-              secondary: _settingsIcon(Icons.blur_on_rounded, cs.onSurface),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-            );
-          },
-        ),
       ],
     ),
     _SettingsSectionCard(

@@ -8,7 +8,6 @@ import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
-import '../../../core/widgets/top_page_header.dart';
 import '../../../app/presentation/onboarding_page.dart';
 
 class DataSupportPage extends ConsumerStatefulWidget {
@@ -124,9 +123,15 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
       height: MediaQuery.sizeOf(context).height * 0.75,
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppPageAppBar(
+        appBar: AppBar(
           title: Text(i18n.tr('data_and_support')),
           automaticallyImplyLeading: false,
+          backgroundColor: Colors.transparent,
+          surfaceTintColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          forceMaterialTransparency: true,
         ),
         body: ListView(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),

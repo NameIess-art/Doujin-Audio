@@ -75,7 +75,6 @@ void main() {
           'autoCheckUpdates': true,
           'recordPlaybackProgress': false,
           'asmrPlaybackCacheEnabled': true,
-          'blurPlayerBackgroundEnabled': false,
           'uiBlurEffectEnabled': false,
           'hapticFeedbackEnabled': false,
           'coverImageResolution': CoverImageResolution.ultraHigh.name,
@@ -93,7 +92,12 @@ void main() {
           'allowDuplicateWorks': true,
           'reduceAnimations': true,
           'dlsiteMetadataLanguage': ContentLanguagePreference.en.name,
-          'cardPositionsLocked': false,
+          'librarySortCriterion': LibrarySortCriterion.duration.name,
+          'librarySortAscending': false,
+          'libraryGroupByLibrary': true,
+          'playlistSortCriterion': PlaylistSortCriterion.voiceActor.name,
+          'playlistSortAscending': false,
+          'playlistGroupByLibrary': true,
           'maxCacheBytes': 256 * 1024 * 1024,
         }),
       );
@@ -136,6 +140,12 @@ void main() {
       );
       expect(repository.allowDuplicateWorks, isTrue);
       expect(repository.reduceAnimations, isTrue);
+      expect(repository.librarySortCriterion, LibrarySortCriterion.duration);
+      expect(repository.librarySortAscending, isFalse);
+      expect(repository.libraryGroupByLibrary, isTrue);
+      expect(repository.playlistSortCriterion, PlaylistSortCriterion.voiceActor);
+      expect(repository.playlistSortAscending, isFalse);
+      expect(repository.playlistGroupByLibrary, isTrue);
       expect(repository.converterFormat, 'flac');
       expect(repository.converterBitrate, '192k');
     });
@@ -155,7 +165,6 @@ void main() {
         ..autoPlayAddedSessions = false
         ..autoCheckUpdates = true
         ..dlsiteMetadataLanguage = ContentLanguagePreference.en
-        ..cardPositionsLocked = true
         ..asmrPlaybackCacheEnabled = true
         ..coverImageDisplayMode = CoverImageDisplayMode.stretch
         ..asmrDownloadDestinationRoot = '/downloads/asmr'
@@ -212,7 +221,6 @@ void main() {
               'dlsite language',
               ContentLanguagePreference.en,
             )
-            .having((state) => state.cardPositionsLocked, 'fixed cards', isTrue)
             .having(
               (state) => state.asmrPlaybackCacheEnabled,
               'asmr playback cache',
@@ -778,29 +786,7 @@ void main() {
       );
     }
 
-    test('syncLibraryNodeOrder places newly discovered roots first', () {
-      final service = LibraryService();
-      addTearDown(service.dispose);
-
-      service.library.add(track('/music/old/01.mp3', groupKey: '/music/old'));
-      service.syncLibraryNodeOrder();
-
-      expect(service.libraryNodeOrder, <String>['/music/old']);
-
-      service.library.addAll(<MusicTrack>[
-        track('/music/new-a/01.mp3', groupKey: '/music/new-a'),
-        track('/music/new-b/01.mp3', groupKey: '/music/new-b'),
-      ]);
-      service.syncLibraryNodeOrder();
-
-      expect(service.libraryNodeOrder, <String>[
-        '/music/new-a',
-        '/music/new-b',
-        '/music/old',
-      ]);
-    });
-
-    test('addWatchedFolder persists once when node order changes', () {
+    test('addWatchedFolder persists once', () {
       final service = LibraryService();
       addTearDown(service.dispose);
       var persistCount = 0;
@@ -814,7 +800,6 @@ void main() {
       );
 
       expect(service.watchedFolders, <String>['/music']);
-      expect(service.libraryNodeOrder, <String>['/music']);
       expect(persistCount, 1);
 
       expect(

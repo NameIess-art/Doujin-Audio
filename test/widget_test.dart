@@ -313,18 +313,12 @@ void main() {
       find.text(harness.language.tr('asmr_category_collected')),
       findsNothing,
     );
+    expect(find.text(harness.language.tr('loading_dot')), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('asmr_search_button')),
       findsOneWidget,
     );
-    final asmrHeader = tester.widget<TopPageHeader>(
-      find.byWidgetPredicate(
-        (widget) => widget is TopPageHeader && widget.title == 'ASMR.ONE',
-      ),
-    );
-    expect(asmrHeader.subtitle, isNull);
-    expect(asmrHeader.collapseController, isNull);
     expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
     expect(find.text(harness.language.tr('asmr_empty_category')), findsNothing);
 
@@ -569,8 +563,7 @@ void main() {
 
     sectionIndex.value = AudioLibraryPage.asmrSection;
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 520));
-    await tester.pump(const Duration(milliseconds: 220));
+    await tester.pump();
     expect(controller.initializeCount, 1);
 
     sectionIndex.value = AudioLibraryPage.localSection;
@@ -713,16 +706,6 @@ void main() {
       tester.getTopLeft(asmrCard).dy,
       closeTo(tester.getTopLeft(localCard).dy, 0.01),
     );
-    final localHeader = tester.widget<TopPageHeader>(
-      find.byWidgetPredicate(
-        (widget) =>
-            widget is TopPageHeader &&
-            widget.title == fixture.languageProvider.tr('music_library'),
-        skipOffstage: false,
-      ),
-    );
-    expect(localHeader.subtitle, isNull);
-    expect(localHeader.collapseController, isNull);
   });
 
   testWidgets(
@@ -1505,8 +1488,6 @@ void main() {
   ) async {
     tester.view.physicalSize = const Size(1080, 2400);
     addTearDown(tester.view.resetPhysicalSize);
-    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;
-    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
     await _pumpAppShell(tester);
     final interactionSource = Object();
     addTearDown(
@@ -1523,23 +1504,6 @@ void main() {
       find.byKey(const ValueKey('active_session_blur_orientation_session')),
       findsOne,
     );
-
-    final menuPanel = find.byKey(
-      const ValueKey<String>('mobile_bottom_capsule_panel'),
-    );
-    final menuDecoration = tester
-        .widgetList<DecoratedBox>(
-          find.descendant(of: menuPanel, matching: find.byType(DecoratedBox)),
-        )
-        .firstWhere((box) => (box.decoration as BoxDecoration).color != null);
-    final menuColor = (menuDecoration.decoration as BoxDecoration).color;
-    final playbackCard = find.byKey(
-      const ValueKey<String>('active_session_card_orientation_session'),
-    );
-    final playbackInk = tester.widget<Ink>(
-      find.descendant(of: playbackCard, matching: find.byType(Ink)),
-    );
-    expect((playbackInk.decoration as BoxDecoration).color, menuColor);
 
     UiInteractionCoordinator.instance.beginInteraction(interactionSource);
     await tester.pump();
@@ -1650,9 +1614,7 @@ void main() {
       findsOneWidget,
     );
     expect(find.byKey(const ValueKey('segments_pinned_artwork')), findsNothing);
-    final detailThemeContext = tester.element(
-      find.byKey(const ValueKey('session_detail_background_blur')),
-    );
+    final detailThemeContext = tester.element(detail);
     expect(Theme.of(detailThemeContext).colorScheme.primary, expectedAccent);
 
     await _settleSessionDetailAsyncWork(tester);
@@ -1685,13 +1647,12 @@ void main() {
     await tester.pumpAndSettle();
 
     final detailThemeContext = tester.element(
-      find.byKey(const ValueKey('session_detail_background_blur')),
-    );
-    final backgroundCover = tester.widget<AsyncCoverImage>(
-      find.descendant(
-        of: find.byKey(const ValueKey('session_detail_background_blur')),
-        matching: find.byType(AsyncCoverImage),
-      ),
+      find
+          .descendant(
+            of: find.byType(SessionDetailPage),
+            matching: find.byType(MarqueeText),
+          )
+          .first,
     );
     final artworkCover = tester.widget<AsyncLocalCoverImage>(
       find.descendant(
@@ -1701,8 +1662,6 @@ void main() {
     );
     final expectedAccent = AppDesignTokens.of(detailThemeContext).asmrAccent;
     expect(Theme.of(detailThemeContext).colorScheme.primary, expectedAccent);
-    expect(backgroundCover.duration, kCoverImageFadeDuration);
-    expect(backgroundCover.deferCommitDuringInteraction, isTrue);
     expect(artworkCover.duration, kCoverImageFadeDuration);
     expect(artworkCover.deferCommitDuringInteraction, isTrue);
     await _settleSessionDetailAsyncWork(tester);
@@ -1737,9 +1696,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final detail = find.byType(SessionDetailPage);
-    final detailContext = tester.element(
-      find.byKey(const ValueKey('session_detail_background_blur')),
-    );
+    final detailContext = tester.element(detail);
     final scheme = Theme.of(detailContext).colorScheme;
     expect(scheme.brightness, Brightness.light);
 
@@ -1834,10 +1791,6 @@ void main() {
       final detailContext = tester.element(detailFinder);
       final detailRoute = ModalRoute.of(detailContext)!;
       expect(detailRoute.opaque, isTrue);
-      expect(
-        find.byKey(const ValueKey('session_detail_background_blur')),
-        findsOne,
-      );
 
       final dismissGestureFinder = find.byWidgetPredicate(
         (widget) =>
@@ -1859,25 +1812,10 @@ void main() {
 
       expect(detailRoute.opaque, isFalse);
       expect(
-        find.byKey(const ValueKey('session_detail_background_blur')),
-        findsOne,
-      );
-      final backgroundFade = tester.widget<FadeTransition>(
-        find
-            .ancestor(
-              of: find.byKey(const ValueKey('session_detail_background_blur')),
-              matching: find.byType(FadeTransition),
-            )
-            .first,
-      );
-      expect(backgroundFade.opacity.value, lessThan(1));
-      expect(
         tester
             .widgetList<TickerMode>(
               find.descendant(
-                of: find.byKey(
-                  const ValueKey('session_detail_background_blur'),
-                ),
+                of: detailFinder,
                 matching: find.byType(TickerMode),
               ),
             )
@@ -1895,10 +1833,6 @@ void main() {
       await tester.pump();
 
       expect(detailRoute.opaque, isFalse);
-      expect(
-        find.byKey(const ValueKey('session_detail_background_blur')),
-        findsOne,
-      );
 
       dismissGesture.onVerticalDragEnd!(DragEndDetails(primaryVelocity: 0));
       await tester.pumpAndSettle();

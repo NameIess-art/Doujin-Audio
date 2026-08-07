@@ -23,6 +23,10 @@ enum InterruptionResumeBehavior { stayPaused, resume }
 
 enum StartupPlaybackRestoreBehavior { resume, pause }
 
+enum LibrarySortCriterion { name, voiceActor, duration, releaseDate, addedAt }
+
+enum PlaylistSortCriterion { name, voiceActor, releaseDate, addedAt }
+
 @immutable
 class SettingsState {
   SettingsState({
@@ -35,12 +39,16 @@ class SettingsState {
     this.autoCheckUpdates = false,
     this.dlsiteMetadataLanguage = ContentLanguagePreference.followPage,
     List<CardInfoField> cardInfoFields = CardInfoField.defaults,
-    this.cardPositionsLocked = true,
+    this.librarySortCriterion = LibrarySortCriterion.name,
+    this.librarySortAscending = true,
+    this.libraryGroupByLibrary = false,
+    this.playlistSortCriterion = PlaylistSortCriterion.name,
+    this.playlistSortAscending = true,
+    this.playlistGroupByLibrary = false,
     List<EqPreset> customEqPresets = const <EqPreset>[],
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.asmrPlaybackCacheEnabled = false,
     this.recordPlaybackProgress = true,
-    this.blurPlayerBackgroundEnabled = true,
     this.uiBlurEffectEnabled = true,
     this.hapticFeedbackEnabled = true,
     this.startupPage = StartupPage.library,
@@ -76,12 +84,16 @@ class SettingsState {
   final bool autoCheckUpdates;
   final ContentLanguagePreference dlsiteMetadataLanguage;
   final List<CardInfoField> cardInfoFields;
-  final bool cardPositionsLocked;
+  final LibrarySortCriterion librarySortCriterion;
+  final bool librarySortAscending;
+  final bool libraryGroupByLibrary;
+  final PlaylistSortCriterion playlistSortCriterion;
+  final bool playlistSortAscending;
+  final bool playlistGroupByLibrary;
   final List<EqPreset> customEqPresets;
   final int maxCacheBytes;
   final bool asmrPlaybackCacheEnabled;
   final bool recordPlaybackProgress;
-  final bool blurPlayerBackgroundEnabled;
   final bool uiBlurEffectEnabled;
   final bool hapticFeedbackEnabled;
   final StartupPage startupPage;
@@ -114,12 +126,16 @@ class SettingsState {
         other.autoCheckUpdates == autoCheckUpdates &&
         other.dlsiteMetadataLanguage == dlsiteMetadataLanguage &&
         listEquals(other.cardInfoFields, cardInfoFields) &&
-        other.cardPositionsLocked == cardPositionsLocked &&
+        other.librarySortCriterion == librarySortCriterion &&
+        other.librarySortAscending == librarySortAscending &&
+        other.libraryGroupByLibrary == libraryGroupByLibrary &&
+        other.playlistSortCriterion == playlistSortCriterion &&
+        other.playlistSortAscending == playlistSortAscending &&
+        other.playlistGroupByLibrary == playlistGroupByLibrary &&
         listEquals(other.customEqPresets, customEqPresets) &&
         other.maxCacheBytes == maxCacheBytes &&
         other.asmrPlaybackCacheEnabled == asmrPlaybackCacheEnabled &&
         other.recordPlaybackProgress == recordPlaybackProgress &&
-        other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
         other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
         other.hapticFeedbackEnabled == hapticFeedbackEnabled &&
         other.startupPage == startupPage &&
@@ -157,12 +173,16 @@ class SettingsState {
     autoCheckUpdates,
     dlsiteMetadataLanguage,
     Object.hashAll(cardInfoFields),
-    cardPositionsLocked,
+    librarySortCriterion,
+    librarySortAscending,
+    libraryGroupByLibrary,
+    playlistSortCriterion,
+    playlistSortAscending,
+    playlistGroupByLibrary,
     Object.hashAll(customEqPresets),
     maxCacheBytes,
     asmrPlaybackCacheEnabled,
     recordPlaybackProgress,
-    blurPlayerBackgroundEnabled,
     uiBlurEffectEnabled,
     hapticFeedbackEnabled,
     startupPage,

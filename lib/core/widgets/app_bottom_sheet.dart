@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'app_transitions.dart';
-
 class AppBottomSheet {
   /// Shows a standardized bottom sheet with a drag handle and rounded top corners.
   static Future<T?> show<T>({
@@ -15,7 +13,19 @@ class AppBottomSheet {
     Color? backgroundColor,
     double? elevation,
     Clip? clipBehavior,
+    AnimationStyle? sheetAnimationStyle,
   }) {
+    final effectiveAnimationStyle =
+        sheetAnimationStyle ??
+        (MediaQuery.disableAnimationsOf(context)
+            ? AnimationStyle.noAnimation
+            : const AnimationStyle(
+                duration: Duration(milliseconds: 320),
+                reverseDuration: Duration(milliseconds: 250),
+                curve: Curves.fastOutSlowIn,
+                reverseCurve: Curves.fastOutSlowIn,
+              ));
+
     return showModalBottomSheet<T>(
       context: context,
       isScrollControlled: isScrollControlled,
@@ -23,21 +33,14 @@ class AppBottomSheet {
       showDragHandle: showDragHandle,
       enableDrag: enableDrag,
       isDismissible: isDismissible,
-      sheetAnimationStyle: MediaQuery.disableAnimationsOf(context)
-          ? AnimationStyle.noAnimation
-          : const AnimationStyle(
-              duration: kAppMotionSlow,
-              reverseDuration: kAppMotionStandard,
-              curve: Curves.easeOutCubic,
-              reverseCurve: Curves.easeInCubic,
-            ),
+      sheetAnimationStyle: effectiveAnimationStyle,
       backgroundColor: backgroundColor,
       elevation: elevation,
       clipBehavior: clipBehavior,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (sheetContext) => RepaintBoundary(child: builder(sheetContext)),
+      builder: (ctx) => RepaintBoundary(child: builder(ctx)),
     );
   }
 }

@@ -8,7 +8,6 @@ import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';
 import '../domain/library_entry.dart';
-import '../domain/library_node.dart';
 import 'library_organizer.dart';
 import 'library_scan_models.dart';
 import 'library_state_models.dart';
@@ -28,7 +27,6 @@ class LibraryService {
   List<String> sortedLibraryTrackPaths = const <String>[];
   final List<String> groupOrder = <String>[];
   final Set<String> groupOrderSet = <String>{};
-  final List<String> libraryNodeOrder = <String>[];
   final List<String> watchedFolders = <String>[];
   final List<String> watchedLibraries = <String>[];
   final Map<String, Set<String>> excludedLibraryFolders =
@@ -71,57 +69,6 @@ class LibraryService {
     contentRevision++;
   }
 
-  List<String> currentTopLevelNodeIds() {
-    return organizer.topLevelNodeIds(
-      library,
-      watchedFolders,
-      watchedLibraries: watchedLibraries,
-    );
-  }
-
-  void syncLibraryNodeOrder({bool persist = true, VoidCallback? onPersist}) {
-    final validNodeIds = currentTopLevelNodeIds();
-    final validNodeIdSet = validNodeIds.toSet();
-    var changed = false;
-    final previousLength = libraryNodeOrder.length;
-    libraryNodeOrder.removeWhere((id) => !validNodeIdSet.contains(id));
-    if (libraryNodeOrder.length != previousLength) {
-      changed = true;
-    }
-
-    final orderedNodeIdSet = libraryNodeOrder.toSet();
-    final missingNodeIds = validNodeIds
-        .where((nodeId) => !orderedNodeIdSet.contains(nodeId))
-        .toList(growable: false);
-    if (missingNodeIds.isNotEmpty) {
-      libraryNodeOrder.insertAll(0, missingNodeIds);
-      changed = true;
-    }
-
-    if (changed && persist) {
-      onPersist?.call();
-    }
-  }
-
-  void reorderLibraryNodes(
-    int oldIndex,
-    int newIndex, {
-    required List<LibraryNode> currentTree,
-    VoidCallback? onPersist,
-  }) {
-    final currentIds = currentTree.map((node) => node.path).toList();
-    if (oldIndex < 0 || oldIndex >= currentIds.length) return;
-    if (newIndex < 0 || newIndex > currentIds.length) return;
-    if (newIndex > oldIndex) newIndex -= 1;
-    final movedId = currentIds.removeAt(oldIndex);
-    currentIds.insert(newIndex, movedId);
-    libraryNodeOrder
-      ..clear()
-      ..addAll(currentIds);
-    markStructureChanged();
-    onPersist?.call();
-  }
-
   bool addWatchedFolder(String folderPath, {VoidCallback? onPersist}) {
     if (watchedFolders.any(
       (watchedFolder) =>
@@ -130,7 +77,6 @@ class LibraryService {
       return false;
     }
     watchedFolders.add(folderPath);
-    syncLibraryNodeOrder(persist: false);
     markStructureChanged();
     onPersist?.call();
     return true;
@@ -155,7 +101,6 @@ class LibraryService {
           PathMatcher.equalsNormalized(watchedFolder, folderPath),
     );
     if (watchedFolders.length == previousLength) return false;
-    syncLibraryNodeOrder(persist: false);
     markStructureChanged();
     onPersist?.call();
     return true;
@@ -445,11 +390,6 @@ class LibraryService {
         watchedLibraries[i] = newRoot;
       }
     }
-    for (var i = 0; i < libraryNodeOrder.length; i++) {
-      if (PathMatcher.equalsNormalized(libraryNodeOrder[i], oldRoot)) {
-        libraryNodeOrder[i] = newRoot;
-      }
-    }
     for (var i = 0; i < groupOrder.length; i++) {
       if (PathMatcher.isWithinOrEqual(groupOrder[i], oldRoot)) {
         groupOrder[i] = _replacePathPrefix(groupOrder[i], oldRoot, newRoot);
@@ -489,11 +429,6 @@ class LibraryService {
       (item) => PathMatcher.equalsNormalized(item.path, oldPath),
     );
     if (index >= 0) library[index] = updatedTrack;
-    for (var i = 0; i < libraryNodeOrder.length; i++) {
-      if (PathMatcher.equalsNormalized(libraryNodeOrder[i], oldPath)) {
-        libraryNodeOrder[i] = newPath;
-      }
-    }
     rebuildLibraryIndexes();
     markStructureChanged();
     return updatedTrack;
@@ -891,7 +826,6 @@ class LibraryService {
       );
     }
     rebuildLibraryIndexes();
-    syncLibraryNodeOrder(persist: false);
     return (
       tracks: addedTracks,
       didChangeGroupOrder: didChangeGroupOrder,
@@ -971,7 +905,6 @@ class LibraryService {
     }
     rebuildLibraryIndexes();
     syncGroupOrderFromLibrary();
-    syncLibraryNodeOrder(persist: false);
     return (
       tracks: changedTracks,
       didChangeGroupOrder: didChangeGroupOrder,
@@ -998,7 +931,6 @@ class LibraryService {
       return (tracks: removedTracks, batched: true);
     }
     rebuildLibraryIndexes();
-    syncLibraryNodeOrder(persist: false);
     return (tracks: removedTracks, batched: false);
   }
 
@@ -1264,7 +1196,6 @@ class LibraryService {
     if (!changed) {
       return (changed: false, removedFolderPaths: const <String>[]);
     }
-    syncLibraryNodeOrder(persist: false);
     markStructureChanged();
     onSaveWatchedFolders?.call();
     onSaveWatchedLibraries?.call();

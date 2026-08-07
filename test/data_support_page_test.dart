@@ -46,6 +46,14 @@ void main() {
       );
       await tester.pump();
 
+      final appBar = tester.widget<AppBar>(find.byType(AppBar));
+      expect(appBar.backgroundColor, Colors.transparent);
+      expect(appBar.forceMaterialTransparency, isTrue);
+      expect(
+        find.byKey(const ValueKey<String>('app_page_header_blur')),
+        findsNothing,
+      );
+
       expect(
         find.byKey(const ValueKey('data-support-export-backup')),
         findsNothing,

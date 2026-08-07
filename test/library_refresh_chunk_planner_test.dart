@@ -20,7 +20,6 @@ void main() {
         LibraryDerivedSnapshotPayload(
           tracks: <MusicTrack>[track(10), track(2), track(1)],
           watchedFolders: const <String>['/music'],
-          nodeOrder: const <String>['/music'],
         ),
       );
 
@@ -60,7 +59,6 @@ void main() {
       LibraryDerivedSnapshotPayload(
         tracks: tracks,
         watchedFolders: const <String>['/music'],
-        nodeOrder: const <String>['/music'],
       ),
     );
     final folder = snapshot.cardSnapshot.tree.single as FolderNode;
@@ -95,7 +93,6 @@ void main() {
         ],
         watchedFolders: const <String>[],
         watchedLibraries: const <String>[libraryRoot],
-        nodeOrder: const <String>[],
       ),
     );
 

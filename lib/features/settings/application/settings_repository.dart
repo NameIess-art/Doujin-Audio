@@ -24,12 +24,16 @@ class SettingsRepository {
   ContentLanguagePreference dlsiteMetadataLanguage =
       ContentLanguagePreference.followPage;
   List<CardInfoField> cardInfoFields = CardInfoField.defaults;
-  bool cardPositionsLocked = true;
+  LibrarySortCriterion librarySortCriterion = LibrarySortCriterion.name;
+  bool librarySortAscending = true;
+  bool libraryGroupByLibrary = false;
+  PlaylistSortCriterion playlistSortCriterion = PlaylistSortCriterion.name;
+  bool playlistSortAscending = true;
+  bool playlistGroupByLibrary = false;
   List<EqPreset> customEqPresets = const <EqPreset>[];
   int maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
   bool asmrPlaybackCacheEnabled = false;
   bool recordPlaybackProgress = true;
-  bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;
   bool hapticFeedbackEnabled = true;
   StartupPage startupPage = StartupPage.library;
@@ -93,8 +97,6 @@ class SettingsRepository {
           playback['recordPlaybackProgress'] as bool? ?? true;
       asmrPlaybackCacheEnabled =
           playback['asmrPlaybackCacheEnabled'] as bool? ?? false;
-      blurPlayerBackgroundEnabled =
-          playback['blurPlayerBackgroundEnabled'] as bool? ?? true;
       uiBlurEffectEnabled = playback['uiBlurEffectEnabled'] as bool? ?? true;
       hapticFeedbackEnabled =
           playback['hapticFeedbackEnabled'] as bool? ?? true;
@@ -144,7 +146,21 @@ class SettingsRepository {
         playback['dlsiteMetadataLanguage'],
       );
       cardInfoFields = CardInfoField.decode(playback['cardInfoFields']);
-      cardPositionsLocked = playback['cardPositionsLocked'] as bool? ?? true;
+      librarySortCriterion = LibrarySortCriterion.values.firstWhere(
+        (value) => value.name == playback['librarySortCriterion'],
+        orElse: () => LibrarySortCriterion.name,
+      );
+      librarySortAscending = playback['librarySortAscending'] as bool? ?? true;
+      libraryGroupByLibrary =
+          playback['libraryGroupByLibrary'] as bool? ?? false;
+      playlistSortCriterion = PlaylistSortCriterion.values.firstWhere(
+        (value) => value.name == playback['playlistSortCriterion'],
+        orElse: () => PlaylistSortCriterion.name,
+      );
+      playlistSortAscending =
+          playback['playlistSortAscending'] as bool? ?? true;
+      playlistGroupByLibrary =
+          playback['playlistGroupByLibrary'] as bool? ?? false;
       customEqPresets = _decodeEqPresets(playback['customEqPresets']);
       maxCacheBytes =
           (playback['maxCacheBytes'] as num?)?.toInt() ??
@@ -187,7 +203,6 @@ class SettingsRepository {
       'autoCheckUpdates': autoCheckUpdates,
       'recordPlaybackProgress': recordPlaybackProgress,
       'asmrPlaybackCacheEnabled': asmrPlaybackCacheEnabled,
-      'blurPlayerBackgroundEnabled': blurPlayerBackgroundEnabled,
       'uiBlurEffectEnabled': uiBlurEffectEnabled,
       'hapticFeedbackEnabled': hapticFeedbackEnabled,
       'coverImageResolution': coverImageResolution.name,
@@ -202,7 +217,12 @@ class SettingsRepository {
       'cardInfoFields': cardInfoFields
           .map((field) => field.name)
           .toList(growable: false),
-      'cardPositionsLocked': cardPositionsLocked,
+      'librarySortCriterion': librarySortCriterion.name,
+      'librarySortAscending': librarySortAscending,
+      'libraryGroupByLibrary': libraryGroupByLibrary,
+      'playlistSortCriterion': playlistSortCriterion.name,
+      'playlistSortAscending': playlistSortAscending,
+      'playlistGroupByLibrary': playlistGroupByLibrary,
       'customEqPresets': customEqPresets
           .map((preset) => preset.toJson())
           .toList(growable: false),
@@ -259,12 +279,69 @@ class SettingsRepository {
     await persist();
   }
 
-  Future<void> setCardPositionsLocked(bool locked) async {
-    if (cardPositionsLocked == locked) return;
-    cardPositionsLocked = locked;
-    syncSlice(isInitialized: slice.state.isInitialized);
-    await persist();
-  }
+  Future<void> setLibrarySortCriterion(LibrarySortCriterion criterion) =>
+      _setValue(
+        unchanged: librarySortCriterion == criterion,
+        update: () => librarySortCriterion = criterion,
+      );
+
+  Future<void> setLibrarySortAscending(bool ascending) => _setValue(
+    unchanged: librarySortAscending == ascending,
+    update: () => librarySortAscending = ascending,
+  );
+
+  Future<void> setLibraryGroupByLibrary(bool enabled) => _setValue(
+    unchanged: libraryGroupByLibrary == enabled,
+    update: () => libraryGroupByLibrary = enabled,
+  );
+
+  Future<void> setLibrarySortOptions({
+    required LibrarySortCriterion criterion,
+    required bool ascending,
+    required bool groupByLibrary,
+  }) => _setValue(
+    unchanged:
+        librarySortCriterion == criterion &&
+        librarySortAscending == ascending &&
+        libraryGroupByLibrary == groupByLibrary,
+    update: () {
+      librarySortCriterion = criterion;
+      librarySortAscending = ascending;
+      libraryGroupByLibrary = groupByLibrary;
+    },
+  );
+
+  Future<void> setPlaylistSortCriterion(PlaylistSortCriterion criterion) =>
+      _setValue(
+        unchanged: playlistSortCriterion == criterion,
+        update: () => playlistSortCriterion = criterion,
+      );
+
+  Future<void> setPlaylistSortAscending(bool ascending) => _setValue(
+    unchanged: playlistSortAscending == ascending,
+    update: () => playlistSortAscending = ascending,
+  );
+
+  Future<void> setPlaylistGroupByLibrary(bool enabled) => _setValue(
+    unchanged: playlistGroupByLibrary == enabled,
+    update: () => playlistGroupByLibrary = enabled,
+  );
+
+  Future<void> setPlaylistSortOptions({
+    required PlaylistSortCriterion criterion,
+    required bool ascending,
+    required bool groupByLibrary,
+  }) => _setValue(
+    unchanged:
+        playlistSortCriterion == criterion &&
+        playlistSortAscending == ascending &&
+        playlistGroupByLibrary == groupByLibrary,
+    update: () {
+      playlistSortCriterion = criterion;
+      playlistSortAscending = ascending;
+      playlistGroupByLibrary = groupByLibrary;
+    },
+  );
 
   Future<void> setMultiThreadPlaybackEnabled(bool enabled) => _setValue(
     unchanged: multiThreadPlaybackEnabled == enabled,
@@ -305,11 +382,6 @@ class SettingsRepository {
   Future<void> setRecordPlaybackProgress(bool enabled) => _setValue(
     unchanged: recordPlaybackProgress == enabled,
     update: () => recordPlaybackProgress = enabled,
-  );
-
-  Future<void> setBlurPlayerBackgroundEnabled(bool enabled) => _setValue(
-    unchanged: blurPlayerBackgroundEnabled == enabled,
-    update: () => blurPlayerBackgroundEnabled = enabled,
   );
 
   Future<void> setUiBlurEffectEnabled(bool enabled) => _setValue(
@@ -437,12 +509,16 @@ class SettingsRepository {
     autoCheckUpdates = false;
     dlsiteMetadataLanguage = ContentLanguagePreference.followPage;
     cardInfoFields = CardInfoField.defaults;
-    cardPositionsLocked = true;
+    librarySortCriterion = LibrarySortCriterion.name;
+    librarySortAscending = true;
+    libraryGroupByLibrary = false;
+    playlistSortCriterion = PlaylistSortCriterion.name;
+    playlistSortAscending = true;
+    playlistGroupByLibrary = false;
     customEqPresets = const <EqPreset>[];
     maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
     asmrPlaybackCacheEnabled = false;
     recordPlaybackProgress = true;
-    blurPlayerBackgroundEnabled = true;
     uiBlurEffectEnabled = true;
     hapticFeedbackEnabled = true;
     startupPage = StartupPage.library;
@@ -489,12 +565,16 @@ class SettingsRepository {
         autoCheckUpdates: autoCheckUpdates,
         dlsiteMetadataLanguage: dlsiteMetadataLanguage,
         cardInfoFields: List<CardInfoField>.unmodifiable(cardInfoFields),
-        cardPositionsLocked: cardPositionsLocked,
+        librarySortCriterion: librarySortCriterion,
+        librarySortAscending: librarySortAscending,
+        libraryGroupByLibrary: libraryGroupByLibrary,
+        playlistSortCriterion: playlistSortCriterion,
+        playlistSortAscending: playlistSortAscending,
+        playlistGroupByLibrary: playlistGroupByLibrary,
         customEqPresets: List<EqPreset>.unmodifiable(customEqPresets),
         maxCacheBytes: maxCacheBytes,
         asmrPlaybackCacheEnabled: asmrPlaybackCacheEnabled,
         recordPlaybackProgress: recordPlaybackProgress,
-        blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
         uiBlurEffectEnabled: uiBlurEffectEnabled,
         hapticFeedbackEnabled: hapticFeedbackEnabled,
         startupPage: startupPage,

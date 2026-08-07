@@ -4,6 +4,7 @@ import '../../core/ui/warmup_scheduler.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/playback_session.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 
 final class AudioUiWarmupCoordinator {
@@ -72,6 +73,23 @@ final class AudioUiWarmupCoordinator {
   }
 
   void scheduleSessionDetailNeighbors({required String currentSessionId}) {
+    _scheduleSessionDetailCovers(
+      currentSessionId: currentSessionId,
+      includeCurrent: false,
+    );
+  }
+
+  void scheduleSessionDetailCovers({required String currentSessionId}) {
+    _scheduleSessionDetailCovers(
+      currentSessionId: currentSessionId,
+      includeCurrent: true,
+    );
+  }
+
+  void _scheduleSessionDetailCovers({
+    required String currentSessionId,
+    required bool includeCurrent,
+  }) {
     if (_disposed) return;
     final generation = ++_generation;
     _deferredTimer?.cancel();
@@ -82,7 +100,25 @@ final class AudioUiWarmupCoordinator {
         generation,
         cooldown: const Duration(milliseconds: 120),
       );
-      _scheduleNeighborSessionCovers(currentSessionId, generation);
+      final sessions = _playback.state.activeSessions;
+      if (includeCurrent) {
+        final currentIndex = sessions.indexWhere(
+          (session) => session.id == currentSessionId,
+        );
+        if (currentIndex >= 0) {
+          _scheduleCover(
+            trackPath: sessions[currentIndex].currentTrackPath,
+            generation: generation,
+            priority: 0,
+          );
+        }
+      }
+      _scheduleNeighborSessionCovers(
+        sessions,
+        currentSessionId,
+        generation,
+        priorityOffset: includeCurrent ? 1 : 0,
+      );
     });
   }
 
@@ -146,8 +182,12 @@ final class AudioUiWarmupCoordinator {
     );
   }
 
-  void _scheduleNeighborSessionCovers(String currentSessionId, int generation) {
-    final sessions = _playback.state.activeSessions;
+  void _scheduleNeighborSessionCovers(
+    List<PlaybackSession> sessions,
+    String currentSessionId,
+    int generation, {
+    int priorityOffset = 0,
+  }) {
     if (sessions.length < 2) return;
     final currentIndex = sessions.indexWhere(
       (session) => session.id == currentSessionId,
@@ -158,7 +198,7 @@ final class AudioUiWarmupCoordinator {
       (currentIndex - 1 + sessions.length) % sessions.length,
       (currentIndex + 1) % sessions.length,
     };
-    var priority = 0;
+    var priority = priorityOffset;
     for (final index in neighborIndexes) {
       _scheduleCover(
         trackPath: sessions[index].currentTrackPath,

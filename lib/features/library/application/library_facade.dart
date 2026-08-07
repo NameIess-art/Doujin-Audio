@@ -43,7 +43,6 @@ import 'library_state_models.dart';
 final class LibraryFacade implements LibraryCatalog {
   static const _watchedFoldersPreferenceKey = 'watched_folders_v1';
   static const _watchedLibrariesPreferenceKey = 'watched_libraries_v1';
-  static const _libraryNodeOrderPreferenceKey = 'library_node_order_v1';
   static const _groupOrderPreferenceKey = 'group_order_v1';
   static const _libraryExclusionsPreferenceKey = 'library_exclusions_v1';
   Future<void> _preferenceWriteTail = Future<void>.value();
@@ -192,10 +191,6 @@ final class LibraryFacade implements LibraryCatalog {
         _libraryExclusionsPreferenceKey,
         _decodeStringMap,
       ),
-      AppPreferences.readJson<List<String>>(
-        _libraryNodeOrderPreferenceKey,
-        _decodeStringList,
-      ),
     ]);
     final tracks = await tracksFuture;
     final entries = await entriesFuture;
@@ -211,9 +206,6 @@ final class LibraryFacade implements LibraryCatalog {
       )
       ..watchedLibraries.addAll(
         (preferences[2] as List<String>?) ?? const <String>[],
-      )
-      ..libraryNodeOrder.addAll(
-        (preferences[4] as List<String>?) ?? const <String>[],
       );
     final exclusions = preferences[3] as Map<String, dynamic>?;
     _decodeExclusionMap(
@@ -229,9 +221,7 @@ final class LibraryFacade implements LibraryCatalog {
     beginLibraryBatch();
     _service.libraryBatchChanged = _service.library.isNotEmpty;
     await endLibraryBatch(notify: false, waitForPersistence: false);
-    _service
-      ..syncGroupOrderFromLibrary()
-      ..syncLibraryNodeOrder(persist: false);
+    _service.syncGroupOrderFromLibrary();
     // The startup batch already builds and caches the shallow card tree used
     // by the library page. Build the nested tree lazily when a folder is
     // expanded or a search actually needs it.
@@ -261,7 +251,6 @@ final class LibraryFacade implements LibraryCatalog {
       ..sortedLibraryTrackPaths = const <String>[]
       ..groupOrder.clear()
       ..groupOrderSet.clear()
-      ..libraryNodeOrder.clear()
       ..watchedFolders.clear()
       ..watchedLibraries.clear()
       ..excludedLibraryFolders.clear()
@@ -1091,31 +1080,6 @@ final class LibraryFacade implements LibraryCatalog {
     );
   }
 
-  void reorderLibraryNodes(int oldIndex, int newIndex) {
-    _service.reorderLibraryNodes(
-      oldIndex,
-      newIndex,
-      currentTree: libraryCards,
-      onPersist: () => unawaited(_saveLibraryNodeOrder()),
-    );
-    snapshotCacheService.applyCurrentTopLevelOrder();
-    _syncStateSlice();
-  }
-
-  void syncLibraryNodeOrder({bool persist = true}) {
-    _service.syncLibraryNodeOrder(
-      persist: persist,
-      onPersist: () => unawaited(_saveLibraryNodeOrder()),
-    );
-  }
-
-  Future<void> _saveLibraryNodeOrder() {
-    final value = json.encode(_service.libraryNodeOrder);
-    return _queuePreferenceWrite(
-      () => AppPreferences.setString(_libraryNodeOrderPreferenceKey, value),
-    );
-  }
-
   void configurePersistence({required bool enabled}) {
     _persistenceEnabled = enabled;
   }
@@ -1192,7 +1156,6 @@ final class LibraryFacade implements LibraryCatalog {
     if (persist && _persistenceEnabled) {
       unawaited(databaseRepository.upsertTracks(mutation.tracks));
       if (mutation.didChangeGroupOrder) unawaited(_saveGroupOrder());
-      unawaited(_saveLibraryNodeOrder());
     }
   }
 
@@ -1213,7 +1176,6 @@ final class LibraryFacade implements LibraryCatalog {
       if (mutation.didChangeGroupOrder || mutation.didReplaceGroup) {
         unawaited(_saveGroupOrder());
       }
-      unawaited(_saveLibraryNodeOrder());
     }
   }
 
@@ -1238,9 +1200,7 @@ final class LibraryFacade implements LibraryCatalog {
     }
     if (!mutation.batched) {
       _markLibraryStructureChanged();
-      if (persist && _persistenceEnabled) {
-        unawaited(_saveLibraryNodeOrder());
-      }
+      if (persist && _persistenceEnabled) {}
     }
     return removedPaths;
   }
@@ -1341,7 +1301,6 @@ final class LibraryFacade implements LibraryCatalog {
       await Future.wait(<Future<void>>[
         databaseRepository.deleteTracks(removedPaths),
         _saveGroupOrder(),
-        _saveLibraryNodeOrder(),
       ]);
     }
   }
@@ -1364,8 +1323,7 @@ final class LibraryFacade implements LibraryCatalog {
     );
     _service
       ..libraryEntriesByLibrary.remove(normalizedFolderPath)
-      ..syncGroupOrderFromLibrary()
-      ..syncLibraryNodeOrder(persist: false);
+      ..syncGroupOrderFromLibrary();
     _markLibraryStructureChanged();
     final persistenceTasks = <Future<void>>[
       deleteAudioDetail(
@@ -1382,9 +1340,7 @@ final class LibraryFacade implements LibraryCatalog {
       if (removedWatchedFolder) {
         persistenceTasks.add(_saveWatchedFolders());
       }
-      persistenceTasks
-        ..add(_saveGroupOrder())
-        ..add(_saveLibraryNodeOrder());
+      persistenceTasks.add(_saveGroupOrder());
     }
     await Future.wait(persistenceTasks);
   }
@@ -1787,7 +1743,6 @@ final class LibraryFacade implements LibraryCatalog {
     await _saveWatchedLibraries();
     await _saveLibraryExclusions();
     await _saveGroupOrder();
-    await _saveLibraryNodeOrder();
   }
 
   Future<void> _retargetSingleTrack(
@@ -1973,9 +1928,7 @@ final class LibraryFacade implements LibraryCatalog {
 
     if (didChangeLibrary) {
       _coverArtworkCacheService?.invalidateAll();
-      _service
-        ..syncGroupOrderFromLibrary()
-        ..syncLibraryNodeOrder(persist: false);
+      _service.syncGroupOrderFromLibrary();
       final derivedGeneration = ++_service.libraryDerivedGeneration;
       final derivedSnapshot = await AppLogService.measureAsync(
         'library_derived_snapshot_build',
@@ -1987,7 +1940,6 @@ final class LibraryFacade implements LibraryCatalog {
             watchedLibraries: List<String>.unmodifiable(
               _service.watchedLibraries,
             ),
-            nodeOrder: List<String>.unmodifiable(_service.libraryNodeOrder),
           ),
         ),
         details: <String, Object?>{'tracks': _service.library.length},
@@ -2027,7 +1979,6 @@ final class LibraryFacade implements LibraryCatalog {
       if (didChangeLibrary && didChangeGroupOrder) {
         persistenceTasks.add(_saveGroupOrder());
       }
-      if (didChangeLibrary) persistenceTasks.add(_saveLibraryNodeOrder());
     }
     if (waitForPersistence) {
       await Future.wait(persistenceTasks);

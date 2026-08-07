@@ -1,7 +1,5 @@
 part of 'playlist_tab.dart';
 
-const double _kSessionDetailBackgroundBlurSigma = 32;
-
 ThemeData _createAsmrSessionDetailTheme(
   ThemeData base,
   AppDesignTokens tokens,
@@ -81,19 +79,14 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   late String _currentSessionId;
   double _horizontalDragDelta = 0;
   bool _contentEnterStarted = false;
+  bool _deferSubtitleLoad = false;
+  Timer? _subtitleLoadReleaseTimer;
   final Object _dismissInteractionSource = Object();
   bool _dismissInteractionActive = false;
   final ValueNotifier<bool> _dismissInteractionNotifier = ValueNotifier(false);
   final ValueNotifier<bool> _segmentPanelExpandedNotifier = ValueNotifier(
     false,
   );
-  final Object _sessionSwitchInteractionSource = Object();
-  final Map<String, Future<String?>> _coverPathFutures =
-      <String, Future<String?>>{};
-  Timer? _sessionSwitchTimer;
-  int _sessionSwitchGeneration = 0;
-  bool _deferSessionHeavyContent = false;
-  bool _initialHeavyContentReady = false;
 
   @override
   void initState() {
@@ -108,21 +101,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
       vsync: this,
       duration: const Duration(milliseconds: 220),
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _scheduleNeighborCoverWarmup();
-      unawaited(_releaseInitialHeavyContent());
-    });
-  }
-
-  Future<void> _releaseInitialHeavyContent() async {
-    while (mounted && !_initialHeavyContentReady) {
-      await Future<void>.delayed(const Duration(milliseconds: 240));
-      if (!mounted) return;
-      if (UiInteractionCoordinator.instance.isInteracting) continue;
-      setState(() => _initialHeavyContentReady = true);
-      return;
-    }
   }
 
   @override
@@ -130,13 +108,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     UiInteractionCoordinator.instance.cancelInteraction(
       _dismissInteractionSource,
     );
-    UiInteractionCoordinator.instance.cancelInteraction(
-      _sessionSwitchInteractionSource,
-    );
-    _sessionSwitchTimer?.cancel();
     widget.revealBehindNotifier.value = false;
     _dismissInteractionNotifier.dispose();
     _segmentPanelExpandedNotifier.dispose();
+    _subtitleLoadReleaseTimer?.cancel();
     _dismissController.dispose();
     _contentEnterController.dispose();
     super.dispose();
@@ -151,74 +126,20 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     if (nextIndex >= sessionIds.length) nextIndex = 0;
     if (nextIndex == currentIndex) return;
 
-    final nextSessionId = sessionIds[nextIndex];
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _sessionSwitchGeneration++;
-      _sessionSwitchTimer?.cancel();
-      _sessionSwitchTimer = null;
-      UiInteractionCoordinator.instance.cancelInteraction(
-        _sessionSwitchInteractionSource,
-      );
-      setState(() {
-        _horizontalDragDelta = 0;
-        _currentSessionId = nextSessionId;
-        _deferSessionHeavyContent = false;
-      });
-      _scheduleNeighborCoverWarmup();
-      return;
-    }
-
-    final coordinator = UiInteractionCoordinator.instance;
-    final switchGeneration = ++_sessionSwitchGeneration;
-    coordinator.beginGeneration();
-    coordinator.beginInteraction(_sessionSwitchInteractionSource);
-    _sessionSwitchTimer?.cancel();
+    final deferSubtitleLoad = !MediaQuery.disableAnimationsOf(context);
+    _subtitleLoadReleaseTimer?.cancel();
     setState(() {
       _horizontalDragDelta = 0;
-      _currentSessionId = nextSessionId;
-      _deferSessionHeavyContent = true;
+      _currentSessionId = sessionIds[nextIndex];
+      _deferSubtitleLoad = deferSubtitleLoad;
     });
-    _sessionSwitchTimer = Timer(kAppMotionStandard, () {
-      _sessionSwitchTimer = null;
-      if (!mounted || switchGeneration != _sessionSwitchGeneration) return;
-      coordinator.endInteraction(_sessionSwitchInteractionSource);
-      _finishSessionSwitchWhenIdle(switchGeneration);
-    });
-  }
-
-  void _finishSessionSwitchWhenIdle(int switchGeneration) {
-    if (!mounted || switchGeneration != _sessionSwitchGeneration) return;
-    if (UiInteractionCoordinator.instance.isInteracting) {
-      _sessionSwitchTimer = Timer(
-        const Duration(milliseconds: 40),
-        () => _finishSessionSwitchWhenIdle(switchGeneration),
-      );
-      return;
+    if (deferSubtitleLoad) {
+      _subtitleLoadReleaseTimer = Timer(kAppMotionSlow, () {
+        _subtitleLoadReleaseTimer = null;
+        if (!mounted) return;
+        setState(() => _deferSubtitleLoad = false);
+      });
     }
-    _sessionSwitchTimer = null;
-    setState(() => _deferSessionHeavyContent = false);
-    _scheduleNeighborCoverWarmup();
-  }
-
-  void _scheduleNeighborCoverWarmup() {
-    ref
-        .read(audioUiWarmupCoordinatorProvider)
-        .scheduleSessionDetailNeighbors(currentSessionId: _currentSessionId);
-  }
-
-  Future<String?> _coverFutureForSession({
-    required LibraryFacade library,
-    required MusicTrack? track,
-    required String trackPath,
-    required int coverGeneration,
-  }) {
-    final key = '$trackPath:$coverGeneration';
-    final cached = _coverPathFutures[key];
-    if (cached != null) return cached;
-    if (_coverPathFutures.length >= 12) {
-      _coverPathFutures.remove(_coverPathFutures.keys.first);
-    }
-    return _coverPathFutures[key] = _coverFutureForTrack(library, track);
   }
 
   void _handleHorizontalDragEnd(
@@ -437,14 +358,19 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               child: MarqueePauseScope(isPaused: isDismissing, child: child!),
             );
           },
-          child: AnimatedSwitcher(
-            duration: kAppMotionStandard,
-            reverseDuration: kAppMotionStandard,
-            transitionBuilder: (child, animation) =>
-                FadeTransition(opacity: animation, child: child),
-            child: RepaintBoundary(
-              key: ValueKey(_currentSessionId),
+          child: RepaintBoundary(
+            child: AnimatedSwitcher(
+              duration: kAppMotionSlow,
+              reverseDuration: kAppMotionStandard,
+              transitionBuilder: (child, animation) =>
+                  buildAppScaleFadeTransition(
+                    context: context,
+                    animation: animation,
+                    child: child,
+                    beginScale: 0.96,
+                  ),
               child: Builder(
+                key: ValueKey(_currentSessionId),
                 builder: (context) {
                   final pageSession = playback.sessionById(_currentSessionId);
                   if (pageSession == null) {
@@ -453,21 +379,15 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   final detailTrack = paths.trackByPath(
                     pageSession.currentTrackPath,
                   );
-                  final deferAsmrInitialContent =
-                      detailTrack?.remoteMetadataKind == 'asmr.one' &&
-                      !_initialHeavyContentReady;
-                  final coverPathFuture = _coverFutureForSession(
-                    library: ref.read(libraryFacadeProvider),
-                    track: detailTrack,
-                    trackPath: pageSession.currentTrackPath,
-                    coverGeneration: detailState.coverGeneration,
+                  final coverPathFuture = _coverFutureForTrack(
+                    ref.read(libraryFacadeProvider),
+                    detailTrack,
                   );
 
                   return _SessionDetailScaffold(
                     session: pageSession,
+                    deferSubtitleLoad: _deferSubtitleLoad,
                     coverPathFuture: coverPathFuture,
-                    deferHeavyContent:
-                        _deferSessionHeavyContent || deferAsmrInitialContent,
                     dismissAnimation: _dismissController,
                     segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
                     onClose: () =>
@@ -559,8 +479,8 @@ class _SessionDetailBackdrop extends StatelessWidget {
 
 class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final PlaybackSession session;
+  final bool deferSubtitleLoad;
   final Future<String?> coverPathFuture;
-  final bool deferHeavyContent;
   final Animation<double> dismissAnimation;
   final VoidCallback onClose;
   final void Function(DragUpdateDetails)? onHorizontalDragUpdate;
@@ -573,8 +493,8 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
 
   const _SessionDetailScaffold({
     required this.session,
+    required this.deferSubtitleLoad,
     required this.coverPathFuture,
-    required this.deferHeavyContent,
     required this.onClose,
     this.onHorizontalDragUpdate,
     this.onHorizontalDragEnd,
@@ -592,7 +512,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
 }
 
 class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
-    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+    with WidgetsBindingObserver {
   final _detailContentKey = GlobalKey<_SessionDetailContentState>();
   final PermissionActionController _permissionActionController =
       PermissionActionController();
@@ -601,7 +521,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   ThemeData? _cachedAsmrTheme;
   double _segmentPanelDragDelta = 0;
   bool _isDismissGesture = false;
-  late final AnimationController _backgroundRevealController;
 
   ThemeData _detailThemeForTrack(BuildContext context, MusicTrack? track) {
     final base = Theme.of(context);
@@ -620,40 +539,12 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   @override
   void initState() {
     super.initState();
-    _backgroundRevealController = AnimationController(
-      vsync: this,
-      duration: kAppMotionStandard,
-      value: 0,
-    );
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (MediaQuery.disableAnimationsOf(context)) {
-        _backgroundRevealController.value = 1;
-        return;
-      }
-      if (widget.deferHeavyContent) {
-        return;
-      }
-      unawaited(_backgroundRevealController.forward());
-    });
-  }
-
-  @override
-  void didUpdateWidget(covariant _SessionDetailScaffold oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.deferHeavyContent == widget.deferHeavyContent) return;
-    if (widget.deferHeavyContent) {
-      _backgroundRevealController.reverse();
-    } else {
-      unawaited(_backgroundRevealController.forward());
-    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _backgroundRevealController.dispose();
     _permissionActionController.dispose();
     super.dispose();
   }
@@ -728,7 +619,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   Widget build(BuildContext context) {
     final session = widget.session;
     final paths = ref.read(audioPathCoordinatorProvider);
-    final library = ref.read(libraryFacadeProvider);
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
     final onHorizontalDragUpdate = widget.onHorizontalDragUpdate;
@@ -741,19 +631,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final track = paths.trackByPath(session.currentTrackPath);
     final detailTheme = _detailThemeForTrack(context, track);
     final cs = detailTheme.colorScheme;
-    final coverCacheWidth = coverCacheWidthForResolution(
-      ref.watch(
-        settingsStateProvider.select(
-          (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
-        ),
-      ),
-    );
-    final blurEnabled = ref.watch(
-      settingsStateProvider.select(
-        (s) => s.value?.blurPlayerBackgroundEnabled ?? true,
-      ),
-    );
-
     return Theme(
       data: detailTheme,
       child: Material(
@@ -831,71 +708,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Dynamic Blurred Background
-              if (blurEnabled)
-                Positioned.fill(
-                  child: FadeTransition(
-                    opacity: _backgroundRevealController,
-                    child: FadeTransition(
-                      opacity: ReverseAnimation(widget.dismissAnimation),
-                      child: ClipRect(
-                        child: RepaintBoundary(
-                          child: ImageFiltered(
-                            key: const ValueKey(
-                              'session_detail_background_blur',
-                            ),
-                            imageFilter: ImageFilter.blur(
-                              sigmaX: _kSessionDetailBackgroundBlurSigma,
-                              sigmaY: _kSessionDetailBackgroundBlurSigma,
-                              tileMode: TileMode.decal,
-                            ),
-                            child: TickerMode(
-                              // Keep the cover's frame fade running while the
-                              // surrounding detail content is paused for a drag.
-                              enabled: true,
-                              child: AsyncCoverImage(
-                                future: coverPathFuture,
-                                requestKey: session.id,
-                                deferCommitDuringInteraction: true,
-                                initialPath: library
-                                    .resolvedPlaybackCoverPathForTrack(track),
-                                retryFutureBuilder: () => _coverFutureForTrack(
-                                  ref.read(libraryFacadeProvider),
-                                  track,
-                                ),
-                                fallbackBuilder: (_) => CoverFallbackArtwork(
-                                  seed:
-                                      track?.displayName ??
-                                      session.currentTrackPath,
-                                  showIcon: false,
-                                ),
-                                imageBuilder: (context, coverPath) {
-                                  return RetryingFileImage(
-                                    path: coverPath,
-                                    cacheWidth: coverCacheWidth,
-                                    useDefaultCacheWidth:
-                                        coverCacheWidth != null,
-                                    fit: BoxFit.cover,
-                                    color: cs.surface.withValues(alpha: 0.45),
-                                    colorBlendMode: BlendMode.darken,
-                                    deferRetryDuringInteraction: true,
-                                    fallbackBuilder: (_) =>
-                                        CoverFallbackArtwork(
-                                          seed:
-                                              track?.displayName ??
-                                              session.currentTrackPath,
-                                          showIcon: false,
-                                        ),
-                                  );
-                                },
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
               // Content
               SafeArea(
                 child: LayoutBuilder(
@@ -1009,10 +821,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 height: constraints.maxHeight,
                                 track: track,
                                 coverPathFuture: coverPathFuture,
-                                videoSurfaceEnabled: !widget.deferHeavyContent,
-                                deferCoverLoading:
-                                    widget.deferHeavyContent &&
-                                    track?.remoteMetadataKind == 'asmr.one',
                               );
 
                               if (isLandscape) {
@@ -1052,7 +860,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               return _SessionDetailContent(
                                 key: _detailContentKey,
                                 session: session,
-                                deferHeavyWork: widget.deferHeavyContent,
+                                deferSubtitleLoad: widget.deferSubtitleLoad,
                                 segmentPanelExpandedNotifier:
                                     widget.segmentPanelExpandedNotifier,
                                 isLandscape: isLandscape,

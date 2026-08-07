@@ -440,7 +440,7 @@ extension _MainScreenLayout on _MainScreenState {
     Widget buildBar(bool useBlur) => DecoratedBox(
       decoration: BoxDecoration(
         color: bgColor.withValues(
-          alpha: useBlur ? (isDark ? 0.90 : 0.86) : 1.0,
+          alpha: useBlur ? (isDark ? 0.82 : 0.88) : 1.0,
         ),
         border: Border(
           top: BorderSide(

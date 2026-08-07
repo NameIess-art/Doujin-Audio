@@ -231,7 +231,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     required AppLanguageProvider i18n,
     required int structureRevision,
     required int detailRevision,
-    required bool cardPositionsLocked,
   }) {
     _ensureFilteredSearchSnapshot(
       libraryFacade: libraryFacade,
@@ -277,7 +276,8 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
           itemCount: tree.length,
           itemBuilder: (context, index) {
             final node = tree[index];
-            final shouldExpand = node is FolderNode &&
+            final shouldExpand =
+                node is FolderNode &&
                 _query.isNotEmpty &&
                 _hasTrackMatchesInFolder(
                   node,
@@ -290,7 +290,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
                 node: node,
                 initiallyExpanded: shouldExpand,
                 searchQuery: _query,
-                cardPositionsLocked: cardPositionsLocked,
               ),
             );
           },
@@ -321,13 +320,12 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final settings = ref.watch(settingsStateProvider).value ?? SettingsState();
     final libraryFacade = ref.read(libraryFacadeProvider);
     final structureRevision = ref.watch(
       libraryListUiProvider.select((state) => state.structureRevision),
     );
     final detailRevision = ref.watch(libraryDetailRevisionProvider);
-    final settings = ref.watch(settingsStateProvider).value ?? SettingsState();
-    final cardPositionsLocked = settings.cardPositionsLocked;
     final categories = <AppSearchCategory<AudioLibraryCategoryType>>[
       AppSearchCategory(
         value: AudioLibraryCategoryType.all,
@@ -354,7 +352,6 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         i18n: i18n,
         structureRevision: structureRevision,
         detailRevision: detailRevision,
-        cardPositionsLocked: cardPositionsLocked,
       );
     } else {
       body = _buildCategoryBody(

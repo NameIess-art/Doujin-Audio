@@ -59,7 +59,6 @@ void main() {
         ..library.add(track)
         ..watchedFolders.add(oldRoot)
         ..watchedLibraries.add(oldRoot)
-        ..libraryNodeOrder.add(oldRoot)
         ..groupOrder.add(oldRoot)
         ..replaceLibraryEntries(<LibraryEntry>[
           LibraryEntry.track(
@@ -85,7 +84,6 @@ void main() {
       );
       expect(service.watchedFolders, <String>[newRoot]);
       expect(service.watchedLibraries, <String>[newRoot]);
-      expect(service.libraryNodeOrder, <String>[newRoot]);
       expect(service.groupOrder, <String>[newRoot]);
       expect(service.excludedTracksForLibrary(newRoot), <String>[newTrackPath]);
       expect(service.libraryEntriesForLibrary(oldRoot), isEmpty);

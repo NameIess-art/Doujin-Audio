@@ -4,8 +4,8 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
   const _SessionDetailContent({
     super.key,
     required this.session,
+    this.deferSubtitleLoad = false,
     required this.artworkWidget,
-    this.deferHeavyWork = false,
     this.segmentPanelExpandedNotifier,
     this.isLandscape = false,
     this.detailPadding = EdgeInsets.zero,
@@ -18,8 +18,8 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
   });
 
   final PlaybackSession session;
+  final bool deferSubtitleLoad;
   final Widget artworkWidget;
-  final bool deferHeavyWork;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final bool isLandscape;
   final EdgeInsetsGeometry detailPadding;
@@ -115,15 +115,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     final nextKey = track == null
         ? PathMatcher.normalize(widget.session.currentTrackPath)
         : _timeSegments.trackKeyForTrack(track);
-    if (nextKey == _segmentTrackKey) {
-      if (!widget.deferHeavyWork &&
-          !_segmentLabelsLoaded &&
-          !_segmentLoading &&
-          _segmentLoadTimer == null) {
-        _scheduleSegmentLoad(nextKey);
-      }
-      return;
-    }
+    if (nextKey == _segmentTrackKey) return;
     _segmentTrackKey = nextKey;
     _segmentLabelsLoaded = false;
     _segmentLabels = const <TimeSegmentLabel>[];
@@ -136,15 +128,10 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     _draftColorValue = null;
     _setSegmentNameText('');
     _segmentLoadTimer?.cancel();
-    _segmentLoadTimer = null;
-    if (!widget.deferHeavyWork) _scheduleSegmentLoad(nextKey);
-  }
-
-  void _scheduleSegmentLoad(String trackKey) {
     _segmentLoadTimer = Timer(const Duration(milliseconds: 220), () {
       _segmentLoadTimer = null;
-      if (!mounted || _segmentTrackKey != trackKey) return;
-      unawaited(_loadSegmentLabels(trackKey));
+      if (!mounted || _segmentTrackKey != nextKey) return;
+      unawaited(_loadSegmentLabels(nextKey));
     });
   }
 
@@ -473,10 +460,13 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
             ),
           ),
           const SizedBox(height: 8),
-          if (!widget.deferHeavyWork &&
-              widget.subtitleEnabled &&
-              !_segmentPanelExpanded)
-            RepaintBoundary(child: _SessionSubtitlePanel(session: session)),
+          if (widget.subtitleEnabled && !_segmentPanelExpanded)
+            RepaintBoundary(
+              child: _SessionSubtitlePanel(
+                session: session,
+                deferLoad: widget.deferSubtitleLoad,
+              ),
+            ),
           RepaintBoundary(child: buildProgressBar()),
           buildTransportControls(),
           if (!widget.isLandscape)
@@ -656,7 +646,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     );
   }
 
-  Future<void> _showTrackSwitcher(BuildContext context) async {
+  void _showTrackSwitcher(BuildContext context) {
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -674,8 +664,14 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
       workRoot: workRoot,
       currentPath: widget.session.currentTrackPath,
     );
-    final selectedNode = await AppBottomSheet.show<_QueueTreeNode>(
+    AppBottomSheet.show<void>(
       context: context,
+      sheetAnimationStyle: const AnimationStyle(
+        duration: Duration(milliseconds: 320),
+        reverseDuration: Duration(milliseconds: 250),
+        curve: Curves.fastOutSlowIn,
+        reverseCurve: Curves.fastOutSlowIn,
+      ),
       builder: (ctx) {
         return ConstrainedBox(
           constraints: BoxConstraints(
@@ -683,7 +679,6 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
           ),
           child: ListView.builder(
             padding: const EdgeInsets.fromLTRB(16, 4, 12, 24),
-            cacheExtent: 480,
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             itemCount: tree.length + 1,
             itemBuilder: (context, index) {
@@ -697,36 +692,45 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
               return _QueueTreeNodeTile(
                 key: ValueKey<String>(node.stableKey),
                 node: node,
-                onTrackTap: (node) {
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.tap,
-                    context: ctx,
-                  );
-                  Navigator.of(ctx).pop(node);
+                onTrackTap: (selectedNode) {
+                  unawaited(() async {
+                    unawaited(
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.tap,
+                        context: ctx,
+                      ),
+                    );
+                    Navigator.of(ctx).pop();
+                    await Future<void>.delayed(
+                      const Duration(milliseconds: 200),
+                    );
+                    if (!context.mounted) return;
+                    if (widget.session.isPlaybackQueue) {
+                      await _playback.switchSessionQueueTrack(
+                        widget.session.id,
+                        selectedNode.queueIndex,
+                      );
+                    } else {
+                      await _playback.switchSessionTrack(
+                        widget.session.id,
+                        selectedNode.track!.path,
+                      );
+                    }
+                    if (context.mounted) {
+                      showAppSnackBar(
+                        context,
+                        i18n.tr('switch_audio'),
+                        tone: AppFeedbackTone.success,
+                        icon: Icons.queue_music_rounded,
+                      );
+                    }
+                  }());
                 },
               );
             },
           ),
         );
       },
-    );
-    if (!mounted || selectedNode == null) return;
-    if (widget.session.isPlaybackQueue) {
-      await _playback.switchSessionQueueTrack(
-        widget.session.id,
-        selectedNode.queueIndex,
-      );
-    } else {
-      final track = selectedNode.track;
-      if (track == null) return;
-      await _playback.switchSessionTrack(widget.session.id, track.path);
-    }
-    if (!context.mounted) return;
-    showAppSnackBar(
-      context,
-      i18n.tr('switch_audio'),
-      tone: AppFeedbackTone.success,
-      icon: Icons.queue_music_rounded,
     );
   }
 
@@ -968,16 +972,9 @@ class _QueueTreeNodeTileState extends State<_QueueTreeNodeTile> {
   @override
   void didUpdateWidget(covariant _QueueTreeNodeTile oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.node.stableKey != widget.node.stableKey) {
+    if (oldWidget.node.stableKey != widget.node.stableKey ||
+        widget.node.containsSelected) {
       _expanded = widget.node.containsSelected;
-    } else if (widget.node.containsSelected) {
-      final shouldExpand = !_expanded;
-      _expanded = true;
-      if (shouldExpand) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _controller.expand();
-        });
-      }
     }
   }
 

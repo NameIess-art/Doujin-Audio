@@ -115,7 +115,6 @@ class LibraryOrganizer {
     required List<MusicTrack> tracks,
     required List<String> watchedFolders,
     List<String> watchedLibraries = const <String>[],
-    required List<String> nodeOrder,
     bool tracksAlreadySorted = false,
   }) {
     final watchedRoots = watchedFolders.toList(growable: false)
@@ -187,7 +186,7 @@ class LibraryOrganizer {
       topLevel.add(folder);
     }
     topLevel.addAll(singleFiles);
-    _sortTopLevel(topLevel, nodeOrder);
+    _sortTopLevel(topLevel);
     return LibraryTreeSnapshot(
       tree: List<LibraryNode>.unmodifiable(topLevel),
       leafFolderCount: leafFolderCount,
@@ -198,7 +197,6 @@ class LibraryOrganizer {
     required List<MusicTrack> tracks,
     required List<String> watchedFolders,
     List<String> watchedLibraries = const <String>[],
-    required List<String> nodeOrder,
   }) {
     final rootNodes = <String, FolderNode>{};
     final folderIndexByPath = <String, Map<String, FolderNode>>{};
@@ -289,7 +287,7 @@ class LibraryOrganizer {
     }
 
     topLevel.addAll(singleFiles);
-    _sortTopLevel(topLevel, nodeOrder);
+    _sortTopLevel(topLevel);
 
     return LibraryTreeSnapshot(
       tree: List<LibraryNode>.unmodifiable(topLevel),
@@ -297,18 +295,8 @@ class LibraryOrganizer {
     );
   }
 
-  void _sortTopLevel(List<LibraryNode> topLevel, List<String> nodeOrder) {
-    final topLevelOrderIndex = <String, int>{
-      for (var i = 0; i < nodeOrder.length; i++) nodeOrder[i]: i,
-    };
+  void _sortTopLevel(List<LibraryNode> topLevel) {
     topLevel.sort((a, b) {
-      final aIndex = topLevelOrderIndex[a.path];
-      final bIndex = topLevelOrderIndex[b.path];
-      if (aIndex != null && bIndex != null) {
-        return aIndex.compareTo(bIndex);
-      }
-      if (aIndex != null) return -1;
-      if (bIndex != null) return 1;
       return compareNatural(a.name, b.name);
     });
   }

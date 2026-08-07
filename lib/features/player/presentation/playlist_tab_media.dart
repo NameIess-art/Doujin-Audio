@@ -6,75 +6,68 @@ class _SessionHeroArtwork extends ConsumerWidget {
     required this.height,
     required this.track,
     required this.coverPathFuture,
-    this.videoSurfaceEnabled = true,
-    this.deferCoverLoading = false,
   });
 
   final PlaybackSession session;
   final double height;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
-  final bool videoSurfaceEnabled;
-  final bool deferCoverLoading;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final library = ref.read(libraryFacadeProvider);
     final sessionId = session.id;
     final cs = Theme.of(context).colorScheme;
-    final coverCacheWidth = coverCacheWidthForResolution(
-      ref.watch(
-        settingsStateProvider.select(
-          (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
-        ),
+    final coverResolution = ref.watch(
+      settingsStateProvider.select(
+        (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
       ),
     );
     final initialCoverPath = library.resolvedPlaybackCoverPathForTrack(track);
-    final coverPoster = Stack(
-      fit: StackFit.expand,
-      children: [
-        TickerMode(
-          // Do not freeze a cover image's loading fade mid-frame while the
-          // detail route is being dragged.
-          enabled: true,
-          child: AsyncLocalCoverImage(
-            future: deferCoverLoading
-                ? Future<String?>.value(initialCoverPath)
-                : coverPathFuture,
-            requestKey: sessionId,
-            deferCommitDuringInteraction: true,
-            initialPath: initialCoverPath,
-            retryFutureBuilder: () => track == null
-                ? Future<String?>.value()
-                : library.playbackCoverPathFutureForTrack(track),
-            seed: track?.displayName ?? track?.path ?? sessionId,
-            cacheWidth: coverCacheWidth,
-            useDefaultCacheWidth: coverCacheWidth != null,
-            fit: BoxFit.cover,
-            iconSize: 56,
-          ),
-        ),
-        Positioned.fill(
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withValues(alpha: 0.1),
-                  Colors.transparent,
-                  Colors.black.withValues(alpha: 0.2),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final displayWidth = constraints.maxWidth;
+        final coverCacheWidth = coverCacheWidthForLogicalSize(
+          logicalWidth: displayWidth,
+          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+          resolution: coverResolution,
+        );
+        final coverPoster = Stack(
+          fit: StackFit.expand,
+          children: [
+            TickerMode(
+              // Do not freeze a cover image's loading fade mid-frame while the
+              // detail route is being dragged.
+              enabled: true,
+              child: AsyncLocalCoverImage(
+                future: coverPathFuture,
+                requestKey: sessionId,
+                deferCommitDuringInteraction: true,
+                initialPath: initialCoverPath,
+                seed: track?.displayName ?? track?.path ?? sessionId,
+                cacheWidth: coverCacheWidth,
+                fit: BoxFit.cover,
+                iconSize: 56,
+              ),
+            ),
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.1),
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.2),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
 
         return ConstrainedBox(
           constraints: BoxConstraints(maxHeight: height),
@@ -105,23 +98,24 @@ class _SessionHeroArtwork extends ConsumerWidget {
               type: MaterialType.transparency,
               borderRadius: BorderRadius.circular(16),
               clipBehavior: Clip.antiAlias,
-              child: SessionVideoViewport(
-                videoReady:
-                    videoSurfaceEnabled && _isSessionVideoReady(session, track),
-                surfaceBuilder: (_) =>
-                    NativeSessionVideoSurface(sessionId: sessionId),
-                onFullscreen: () => _showSessionVideoFullscreen(
-                  context,
-                  ref,
-                  sessionId: sessionId,
-                  trackPath: track!.path,
+              child: RepaintBoundary(
+                child: SessionVideoViewport(
+                  videoReady: _isSessionVideoReady(session, track),
+                  surfaceBuilder: (_) =>
+                      NativeSessionVideoSurface(sessionId: sessionId),
+                  onFullscreen: () => _showSessionVideoFullscreen(
+                    context,
+                    ref,
+                    sessionId: sessionId,
+                    trackPath: track!.path,
+                  ),
+                  fullscreenTooltip: ref
+                      .read(appLanguageProviderInstanceProvider)
+                      .tr('fullscreen'),
+                  poster: track?.isVideo == true
+                      ? SessionVideoBlurredBackdrop(child: coverPoster)
+                      : coverPoster,
                 ),
-                fullscreenTooltip: ref
-                    .read(appLanguageProviderInstanceProvider)
-                    .tr('fullscreen'),
-                poster: track?.isVideo == true
-                    ? SessionVideoBlurredBackdrop(child: coverPoster)
-                    : coverPoster,
               ),
             ),
           ),
@@ -138,7 +132,6 @@ class _SessionCoverThumbnail extends ConsumerStatefulWidget {
     required this.coverPath,
     required this.coverGeneration,
     required this.coverCacheWidth,
-    this.freezeDynamicContent = false,
     this.duration,
     this.detailDuration,
   });
@@ -148,7 +141,6 @@ class _SessionCoverThumbnail extends ConsumerStatefulWidget {
   final String? coverPath;
   final int coverGeneration;
   final int? coverCacheWidth;
-  final bool freezeDynamicContent;
   final Duration? duration;
   final Duration? detailDuration;
 
@@ -181,30 +173,19 @@ class _SessionCoverThumbnailState
         .read(playbackFacadeProvider)
         .sessionById(widget.sessionId);
     final library = ref.read(libraryFacadeProvider);
-    final cover = widget.freezeDynamicContent
-        ? LocalCoverImage(
-            path: widget.coverPath,
-            seed: widget.track?.displayName ?? widget.sessionId,
-            cacheWidth: widget.coverCacheWidth,
-            useDefaultCacheWidth: widget.coverCacheWidth != null,
-            fit: BoxFit.cover,
-            displayMode: CoverImageDisplayMode.fill,
-            compact: true,
-            iconSize: 26,
-          )
-        : AsyncLocalCoverImage(
-            future: _futureFor(library),
-            initialPath: widget.coverPath,
-            retryFutureBuilder: () =>
-                library.playbackCoverPathFutureForTrack(widget.track),
-            seed: widget.track?.displayName ?? widget.sessionId,
-            cacheWidth: widget.coverCacheWidth,
-            useDefaultCacheWidth: widget.coverCacheWidth != null,
-            fit: BoxFit.cover,
-            displayMode: CoverImageDisplayMode.fill,
-            compact: true,
-            iconSize: 26,
-          );
+    final cover = AsyncLocalCoverImage(
+      future: _futureFor(library),
+      initialPath: widget.coverPath,
+      retryFutureBuilder: () =>
+          library.playbackCoverPathFutureForTrack(widget.track),
+      seed: widget.track?.displayName ?? widget.sessionId,
+      cacheWidth: widget.coverCacheWidth,
+      useDefaultCacheWidth: widget.coverCacheWidth != null,
+      fit: BoxFit.cover,
+      displayMode: CoverImageDisplayMode.fill,
+      compact: true,
+      iconSize: 26,
+    );
     return Stack(
       children: [
         SizedBox(
@@ -224,14 +205,10 @@ class _SessionCoverThumbnailState
           right: 4,
           bottom: 4,
           child: StreamBuilder<Duration?>(
-            stream: widget.freezeDynamicContent
-                ? null
-                : session?.durationStream,
+            stream: session?.durationStream,
             initialData: session?.duration ?? widget.duration,
             builder: (context, snapshot) {
-              final duration = widget.freezeDynamicContent
-                  ? widget.detailDuration ?? widget.duration
-                  : widget.detailDuration ?? snapshot.data;
+              final duration = widget.detailDuration ?? snapshot.data;
               if (duration == null || duration <= Duration.zero) {
                 return const SizedBox.shrink();
               }
@@ -284,45 +261,23 @@ class _SessionMetaChip extends StatelessWidget {
 
 class _SwitcherSlot extends StatelessWidget {
   const _SwitcherSlot({
-    required this.child,
     required this.width,
     required this.height,
-    this.duration = const Duration(milliseconds: 150),
+    required this.duration,
+    required this.child,
   });
 
-  final Widget child;
   final double width;
   final double height;
   final Duration duration;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedSwitcher(
-      duration: duration,
-      switchInCurve: Curves.easeOutCubic,
-      switchOutCurve: Curves.easeInCubic,
-      layoutBuilder: (currentChild, previousChildren) {
-        return SizedBox(
-          width: width,
-          height: height,
-          child: Center(
-            child:
-                currentChild ??
-                (previousChildren.isNotEmpty
-                    ? previousChildren.last
-                    : const SizedBox.shrink()),
-          ),
-        );
-      },
-      transitionBuilder: (child, animation) {
-        return ScaleTransition(
-          scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-            CurvedAnimation(parent: animation, curve: Curves.easeOutBack),
-          ),
-          child: FadeTransition(opacity: animation, child: child),
-        );
-      },
-      child: child,
+    return SizedBox(
+      width: width,
+      height: height,
+      child: AnimatedSwitcher(duration: duration, child: child),
     );
   }
 }

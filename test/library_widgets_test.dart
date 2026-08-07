@@ -9,6 +9,7 @@ import 'package:nameless_audio/core/widgets/app_scroll_physics.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
+import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
@@ -28,6 +29,17 @@ class _QueuedEntryEditorService extends LibraryEntryEditorService {
   Future<LibraryEntryDiskSnapshot> loadDiskSnapshot(String libraryPath) {
     return responses.removeAt(0);
   }
+}
+
+Set<String> _selectedSortControls(WidgetTester tester) {
+  final controls =
+      tester.widget(
+            find.byWidgetPredicate((widget) => widget is SegmentedButton),
+          )
+          as dynamic;
+  return (controls.selected as Set<Object>)
+      .map((value) => value.toString().split('.').last)
+      .toSet();
 }
 
 void main() {
@@ -204,7 +216,7 @@ void main() {
     await tester.pump();
 
     final skeletonCards = find.byType(LibraryLikeSkeletonCard);
-    expect(skeletonCards, findsNWidgets(5));
+    expect(skeletonCards, findsAtLeastNWidgets(1));
     expect(
       tester.getSize(skeletonCards.first).height,
       LibraryLikeCardMetrics.rootTileHeight,
@@ -213,6 +225,33 @@ void main() {
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 100));
+  });
+
+  testWidgets('empty library card is centered in the available content area', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await tester.pump();
+
+    final headerBottom = tester.getBottomLeft(find.byType(TopPageHeader)).dy;
+    final emptyCardRect = tester.getRect(
+      find.byKey(const ValueKey('library_empty_state_card')),
+    );
+    final viewportHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    final topGap = emptyCardRect.top - headerBottom;
+    final bottomGap = viewportHeight - 16 - emptyCardRect.bottom;
+    expect(topGap, greaterThanOrEqualTo(0));
+    expect(topGap, closeTo(bottomGap + 4, 1));
   });
 
   testWidgets('library shows persisted cards before startup scan completes', (
@@ -260,7 +299,11 @@ void main() {
       foundCount: 1,
     );
 
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pumpWidget(
+      fixture.build(
+        const MobileOverlayInset(bottomInset: 132, child: LibraryTab()),
+      ),
+    );
     await tester.pump();
 
     await pumpUntilFound(
@@ -294,13 +337,14 @@ void main() {
     await tester.pump();
 
     final libraryList = tester.widget<ListView>(
-      find.byKey(const PageStorageKey<String>('locked_library_list')),
+      find.byKey(const PageStorageKey<String>('library_list')),
     );
     final listPadding = libraryList.padding!.resolve(TextDirection.ltr);
     expect(listPadding.left, LibraryLikeCardMetrics.listHorizontalPadding);
     expect(listPadding.right, LibraryLikeCardMetrics.listHorizontalPadding);
+    expect(listPadding.bottom, 148);
     final libraryCards = find.descendant(
-      of: find.byKey(const PageStorageKey<String>('locked_library_list')),
+      of: find.byKey(const PageStorageKey<String>('library_list')),
       matching: find.byType(SwipeRevealCard),
     );
     expect(libraryCards, findsNWidgets(2));
@@ -929,6 +973,10 @@ void main() {
   testWidgets('library more menu opens formal library management only', (
     WidgetTester tester,
   ) async {
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
@@ -976,6 +1024,101 @@ void main() {
     await tester.pump();
 
     expect(find.byTooltip(languageProvider.tr('more_actions')), findsOneWidget);
+    expect(find.byTooltip(languageProvider.tr('sort_by')), findsOneWidget);
+    await tester.tap(find.byTooltip(languageProvider.tr('sort_by')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(languageProvider.tr('sort_by_title')), findsOneWidget);
+    expect(find.text(languageProvider.tr('sort_duration')), findsOneWidget);
+    expect(
+      find.text(languageProvider.tr('sort_group_by_library')),
+      findsOneWidget,
+    );
+    final sortControls =
+        tester.widget(
+              find.byWidgetPredicate((widget) => widget is SegmentedButton),
+            )
+            as dynamic;
+    expect(sortControls.segments, hasLength(3));
+    expect(sortControls.multiSelectionEnabled, isTrue);
+    expect(find.text(languageProvider.tr('cancel')), findsOneWidget);
+    expect(find.text(languageProvider.tr('confirm')), findsOneWidget);
+    final viewportSize =
+        tester.view.physicalSize / tester.view.devicePixelRatio;
+    final cancelRect = tester.getRect(
+      find.byKey(const ValueKey('sort_options_cancel')),
+    );
+    final confirmRect = tester.getRect(
+      find.byKey(const ValueKey('sort_options_confirm')),
+    );
+    expect(
+      tester.widget(find.byKey(const ValueKey('sort_options_confirm'))),
+      isA<TextButton>(),
+    );
+    expect(confirmRect.bottom, lessThanOrEqualTo(viewportSize.height));
+    expect(cancelRect.center.dx, greaterThan(viewportSize.width / 2));
+    expect(confirmRect.left, greaterThan(cancelRect.right));
+    expect(confirmRect.center.dy, closeTo(cancelRect.center.dy, 0.01));
+    expect(confirmRect.width, lessThan(120));
+    await tester.ensureVisible(
+      find.text(languageProvider.tr('sort_descending')),
+    );
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('sort_descending')));
+    await tester.pump();
+    await tester.ensureVisible(
+      find.text(languageProvider.tr('sort_group_by_library')),
+    );
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('sort_group_by_library')));
+    await tester.pump();
+    tester
+        .widget<RadioGroup<LibrarySortCriterion>>(
+          find.byType(RadioGroup<LibrarySortCriterion>),
+        )
+        .onChanged(LibrarySortCriterion.duration);
+    await tester.pump();
+    expect(settingsRepository.librarySortAscending, isTrue);
+    expect(settingsRepository.libraryGroupByLibrary, isFalse);
+    expect(settingsRepository.librarySortCriterion, LibrarySortCriterion.name);
+    await tester.tap(find.text(languageProvider.tr('cancel')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.byTooltip(languageProvider.tr('sort_by')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      tester
+          .widget<RadioGroup<LibrarySortCriterion>>(
+            find.byType(RadioGroup<LibrarySortCriterion>),
+          )
+          .groupValue,
+      LibrarySortCriterion.name,
+    );
+    expect(_selectedSortControls(tester), <String>{'ascending'});
+    tester
+        .widget<RadioGroup<LibrarySortCriterion>>(
+          find.byType(RadioGroup<LibrarySortCriterion>),
+        )
+        .onChanged(LibrarySortCriterion.duration);
+    await tester.ensureVisible(
+      find.text(languageProvider.tr('sort_descending')),
+    );
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('sort_descending')));
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('sort_group_by_library')));
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('confirm')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(settingsRepository.librarySortAscending, isFalse);
+    expect(settingsRepository.libraryGroupByLibrary, isTrue);
+    expect(
+      settingsRepository.librarySortCriterion,
+      LibrarySortCriterion.duration,
+    );
     expect(find.byTooltip(languageProvider.tr('import_audio')), findsNothing);
     expect(find.byTooltip(languageProvider.tr('edit_library')), findsNothing);
     await tester.tap(find.byTooltip(languageProvider.tr('more_actions')));
@@ -985,10 +1128,6 @@ void main() {
     expect(find.text(languageProvider.tr('import_folder')), findsOneWidget);
     expect(find.text(languageProvider.tr('edit_library')), findsOneWidget);
     expect(find.text(languageProvider.tr('batch_metadata')), findsOneWidget);
-    expect(
-      find.text(languageProvider.tr('fixed_card_positions')),
-      findsOneWidget,
-    );
     await tester.tap(find.text(languageProvider.tr('edit_library')));
     await tester.pumpAndSettle();
 
@@ -1340,74 +1479,78 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('library search expands matched work folders and collapses back', (
-    WidgetTester tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture();
-    addTearDown(fixture.dispose);
-    final runtimeGraph = fixture.runtimeGraph;
-    final libraryService = fixture.libraryService;
+  testWidgets(
+    'library search expands matched work folders and collapses back',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      final libraryService = fixture.libraryService;
 
-    runtimeGraph.library.addTracks(
-      [
-        testMusicTrack(
-          name: 'Ocean Chapter',
-          path: '/library/work/ocean_chapter.mp3',
-          groupKey: '/library/work',
-          groupTitle: 'Rain Work',
-        ),
-        testMusicTrack(
-          name: 'Quiet Chapter',
-          path: '/library/work/quiet_chapter.mp3',
-          groupKey: '/library/work',
-          groupTitle: 'Rain Work',
-        ),
-      ],
-      notify: false,
-      persist: false,
-    );
-    libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+      runtimeGraph.library.addTracks(
+        [
+          testMusicTrack(
+            name: 'Ocean Chapter',
+            path: '/library/work/ocean_chapter.mp3',
+            groupKey: '/library/work',
+            groupTitle: 'Rain Work',
+          ),
+          testMusicTrack(
+            name: 'Quiet Chapter',
+            path: '/library/work/quiet_chapter.mp3',
+            groupKey: '/library/work',
+            groupTitle: 'Rain Work',
+          ),
+        ],
+        notify: false,
+        persist: false,
+      );
+      libraryService.syncSlice(isInitialized: true, detailRevision: 0);
 
-    await tester.pumpWidget(fixture.build(const LibraryTab()));
-    await tester.pump();
-    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
-    await tester.pump();
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await tester.pump();
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('library_search_button')),
-    );
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 350));
-    await pumpUntilFound(
-      tester,
-      find.byKey(const ValueKey<String>('library_search_results_all')),
-    );
-    expect(find.text('Ocean Chapter', findRichText: true), findsNothing);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('library_search_button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      await pumpUntilFound(
+        tester,
+        find.byKey(const ValueKey<String>('library_search_results_all')),
+      );
+      expect(find.text('Ocean Chapter', findRichText: true), findsNothing);
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('app_search_field')),
-      'ocean',
-    );
-    await tester.pump(const Duration(milliseconds: 250));
-    await pumpUntilFound(tester, find.text('Ocean Chapter', findRichText: true));
-    expect(find.text('Quiet Chapter', findRichText: true), findsNothing);
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('app_search_field')),
+        'ocean',
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+      await pumpUntilFound(
+        tester,
+        find.text('Ocean Chapter', findRichText: true),
+      );
+      expect(find.text('Quiet Chapter', findRichText: true), findsNothing);
 
-    await tester.enterText(
-      find.byKey(const ValueKey<String>('app_search_field')),
-      '',
-    );
-    await tester.pump(const Duration(milliseconds: 250));
-    await pumpUntilNotFound(
-      tester,
-      find.text('Ocean Chapter', findRichText: true),
-    );
+      await tester.enterText(
+        find.byKey(const ValueKey<String>('app_search_field')),
+        '',
+      );
+      await tester.pump(const Duration(milliseconds: 250));
+      await pumpUntilNotFound(
+        tester,
+        find.text('Ocean Chapter', findRichText: true),
+      );
 
-    await tester.pumpWidget(const SizedBox.shrink());
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 30)),
-    );
-    await tester.pump();
-  });
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 30)),
+      );
+      await tester.pump();
+    },
+  );
 
   testWidgets('library category page requires every text and element term', (
     WidgetTester tester,

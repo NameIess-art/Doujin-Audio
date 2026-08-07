@@ -36,7 +36,6 @@ import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
-import '../../../core/widgets/content_bound_reorder_area.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/marquee_text.dart';
@@ -45,8 +44,8 @@ import 'playback_position_ui_gate.dart';
 import 'playback_error_text.dart';
 import 'session_video_surface.dart';
 import 'session_video_viewport.dart';
-import '../../../core/widgets/reorder_auto_scroller.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
+import '../../../core/widgets/sort_options_bottom_sheet.dart';
 import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/target_countdown_builder.dart';
@@ -57,6 +56,7 @@ import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../asmr/domain/asmr_models.dart';
 import '../../library/presentation/audio_detail_sheet.dart';
 import '../../library/application/library_facade.dart';
+import 'playlist_sorting.dart';
 import '../../settings/application/settings_command_controller.dart';
 import '../../asmr/presentation/asmr_work_detail_sheet.dart';
 import '../../../app/presentation/screen_view_models.dart';
@@ -427,10 +427,8 @@ class PlaylistTab extends ConsumerStatefulWidget {
 class _PlaylistTabState extends ConsumerState<PlaylistTab>
     with AutomaticKeepAliveClientMixin, MainTabStateMixin<PlaylistTab> {
   final ScrollController _scrollController = ScrollController();
-  bool _isReordering = false;
   bool _initialPlaceholderDismissed = false;
   bool _initialPlaceholderDismissScheduled = false;
-  PlaylistListState? _reorderSnapshot;
 
   @override
   int get tabIndex => 1;
@@ -446,9 +444,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       widget.activeTabIndexListenable!.value == tabIndex;
 
   T _readOrWatch<T>(ProviderListenable<T> provider) {
-    return _isActive && !_isReordering
-        ? ref.watch(provider)
-        : ref.read(provider);
+    return _isActive ? ref.watch(provider) : ref.read(provider);
   }
 
   void _handleActiveTabChanged() {
@@ -529,6 +525,53 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     showPlaybackQueueEditPanel(context, sessionId);
   }
 
+  Future<void> _openSortOptions() async {
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    final settingsState = ref.read(settingsStateProvider).value;
+    final result = await showSortOptionsBottomSheet<PlaylistSortCriterion>(
+      context: context,
+      options: [
+        SortOption(
+          value: PlaylistSortCriterion.name,
+          label: i18n.tr('sort_name'),
+        ),
+        SortOption(
+          value: PlaylistSortCriterion.voiceActor,
+          label: i18n.tr('sort_voice_actor'),
+        ),
+        SortOption(
+          value: PlaylistSortCriterion.releaseDate,
+          label: i18n.tr('sort_release_date'),
+        ),
+        SortOption(
+          value: PlaylistSortCriterion.addedAt,
+          label: i18n.tr('sort_added_date'),
+        ),
+      ],
+      selectedCriterion:
+          settingsState?.playlistSortCriterion ?? PlaylistSortCriterion.name,
+      ascending: settingsState?.playlistSortAscending ?? true,
+      groupByLibrary: settingsState?.playlistGroupByLibrary ?? false,
+      title: i18n.tr('sort_by_title'),
+      descriptionLabel: i18n.tr('sort_description'),
+      ascendingLabel: i18n.tr('sort_ascending'),
+      descendingLabel: i18n.tr('sort_descending'),
+      groupByLibraryLabel: i18n.tr('sort_group_by_library'),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('confirm'),
+    );
+    if (!mounted || result == null) return;
+    final settings = ref.read(settingsRepositoryProvider);
+    await settings.setPlaylistSortOptions(
+      criterion: result.criterion,
+      ascending: result.ascending,
+      groupByLibrary: result.groupByLibrary,
+    );
+  }
+
   @override
   void dispose() {
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
@@ -547,23 +590,24 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final library = ref.read(libraryFacadeProvider);
     final paths = ref.read(audioPathCoordinatorProvider);
     final playback = ref.read(playbackFacadeProvider);
-    final settings = ref.read(settingsRepositoryProvider);
-    final PlaylistListState? reorderSnapshot;
-    final PlaylistStructureState structureState;
-    if (_isReordering) {
-      final PlaylistListState snapshot =
-          _reorderSnapshot ?? ref.read(playlistListUiProvider);
-      reorderSnapshot = snapshot;
-      structureState = playlistStructureStateFromListState(snapshot);
-    } else {
-      reorderSnapshot = null;
-      structureState = _isActive
-          ? ref.watch(playlistStructureUiProvider)
-          : ref.read(playlistStructureUiProvider);
-    }
-    final cardPositionsLocked = _readOrWatch(
+    final structureState = _isActive
+        ? ref.watch(playlistStructureUiProvider)
+        : ref.read(playlistStructureUiProvider);
+    _readOrWatch(libraryDetailRevisionProvider);
+    final playlistSortCriterion = _readOrWatch(
       settingsStateProvider.select(
-        (state) => state.value?.cardPositionsLocked ?? true,
+        (state) =>
+            state.value?.playlistSortCriterion ?? PlaylistSortCriterion.name,
+      ),
+    );
+    final playlistSortAscending = _readOrWatch(
+      settingsStateProvider.select(
+        (state) => state.value?.playlistSortAscending ?? true,
+      ),
+    );
+    final playlistGroupByLibrary = _readOrWatch(
+      settingsStateProvider.select(
+        (state) => state.value?.playlistGroupByLibrary ?? false,
       ),
     );
     final coverImageResolution = _readOrWatch(
@@ -572,11 +616,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
             state.value?.coverImageResolution ?? CoverImageResolution.balanced,
       ),
     );
-    final subtitleSettings = _isReordering
-        ? ref.read(subtitleSettingsProvider)
-        : (_isActive
-              ? ref.watch(subtitleSettingsProvider)
-              : ref.read(subtitleSettingsProvider));
+    final subtitleSettings = _isActive
+        ? ref.watch(subtitleSettingsProvider)
+        : ref.read(subtitleSettingsProvider);
     _scheduleInitialPlaceholderDismissal(
       isInitialized: structureState.isInitialized,
     );
@@ -589,31 +631,41 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
       viewportWidth: MediaQuery.sizeOf(context).width,
       isLandscape: isLandscape,
     );
-    const double expansion = 320.0;
-    const topPadding = 4.0 + expansion;
-    const bottomPadding = 16.0 + expansion;
+    final topPadding = headerHeight + 4.0;
+    final bottomPadding = listBottomInset + 16.0;
+    final sortedSessions = sortPlaylistSessions(
+      sessions: structureState.entries
+          .map((entry) => entry.session)
+          .toList(growable: false),
+      criterion: playlistSortCriterion,
+      ascending: playlistSortAscending,
+      groupByLibrary: playlistGroupByLibrary,
+      library: library,
+      trackForSession: (session) =>
+          paths.sessionTrackForPath(session.id, session.currentTrackPath),
+    );
+    final entriesBySessionId = <String, PlaylistStructureEntry>{
+      for (final entry in structureState.entries) entry.sessionId: entry,
+    };
+    final visibleEntries = sortedSessions
+        .map((session) => entriesBySessionId[session.id])
+        .whereType<PlaylistStructureEntry>()
+        .toList(growable: false);
 
     Widget buildSessionItem(BuildContext context, int index) {
-      if (index == structureState.entries.length) {
+      if (index == visibleEntries.length) {
         return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
       }
-      final structure = structureState.entries[index];
+      final structure = visibleEntries[index];
       final session = structure.session;
-      final cardStateOverride = reorderSnapshot?.cardStateFor(session.id);
-      if (reorderSnapshot != null && cardStateOverride == null) {
-        return SizedBox.shrink(key: ValueKey(session.id));
-      }
       final track = paths.sessionTrackForPath(session.id, structure.trackPath);
       final coverPath = library.resolvedPlaybackCoverPathForTrack(track);
       final child = RepaintBoundary(
         child: structure.isPlaybackQueue
             ? _PlaybackQueueCard(
                 session: session,
-                cardStateOverride: cardStateOverride,
                 library: library,
                 playback: playback,
-                index: index,
-                cardPositionsLocked: cardPositionsLocked,
                 coverCacheWidth: coverCacheWidth,
                 onOpen: () => session.currentTrackPath.isEmpty
                     ? showAppSnackBar(
@@ -627,7 +679,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
               )
             : _SessionListCard(
                 sessionId: session.id,
-                cardStateOverride: cardStateOverride,
                 track: track,
                 coverPath: coverPath,
                 coverGeneration: structureState.coverGeneration,
@@ -635,9 +686,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 library: library,
                 playback: playback,
-                index: index,
-                cardPositionsLocked: cardPositionsLocked,
-                freezeDynamicContent: reorderSnapshot != null,
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
@@ -656,126 +704,45 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 right: 4,
               ),
             ),
-            child: ContentBoundReorderArea(
-              headerHeight: headerHeight,
-              bottomInset: listBottomInset,
-              topExpansion: expansion,
-              bottomExpansion: expansion,
-              scrollController: _scrollController,
-              showScrollbar: isLandscape,
-              scrollbarMainAxisMargin: isLandscape ? 12 : 0,
-              child: PlaceholderContentTransition(
-                showPlaceholder:
-                    !_initialPlaceholderDismissed ||
-                    !structureState.isInitialized,
-                placeholder: const _PlaylistLoadingSkeleton(
-                  key: ValueKey('playlist_initial_placeholder'),
-                  topPadding: topPadding,
-                  bottomPadding: bottomPadding,
-                ),
-                content: Stack(
-                  key: const ValueKey('playlist_loaded_content'),
-                  clipBehavior: Clip.none,
-                  children: [
-                    if (!structureState.hasSessions)
-                      _SessionsEmptyState(
-                        key: const ValueKey('empty_state'),
-                        bottomInset: 100,
-                        topInset: expansion + 64,
-                        onOpenLibrary: widget.onOpenLibrary,
+            child: PlaceholderContentTransition(
+              showPlaceholder:
+                  !_initialPlaceholderDismissed ||
+                  !structureState.isInitialized,
+              placeholder: _PlaylistLoadingSkeleton(
+                key: const ValueKey('playlist_initial_placeholder'),
+                topPadding: topPadding,
+                bottomPadding: bottomPadding,
+              ),
+              content: Stack(
+                key: const ValueKey('playlist_loaded_content'),
+                clipBehavior: Clip.none,
+                children: [
+                  if (!structureState.hasSessions)
+                    _SessionsEmptyState(
+                      key: const ValueKey('empty_state'),
+                      bottomInset: bottomPadding,
+                      topInset: topPadding,
+                      onOpenLibrary: widget.onOpenLibrary,
+                    ),
+                  if (structureState.hasSessions)
+                    ListView.builder(
+                      key: const PageStorageKey<String>('playlist_list'),
+                      controller: _scrollController,
+                      physics: const ClampingScrollPhysics(),
+                      padding: EdgeInsets.fromLTRB(
+                        _playlistListHorizontalPadding,
+                        topPadding,
+                        _playlistListHorizontalPadding,
+                        bottomPadding,
                       ),
-                    if (structureState.hasSessions)
-                      Theme(
-                        data: Theme.of(
-                          context,
-                        ).copyWith(canvasColor: Colors.transparent),
-                        child: ReorderAutoScroller(
-                          key: const ValueKey('session_list'),
-                          scrollController: _scrollController,
-                          isDragging: !cardPositionsLocked && _isReordering,
-                          contentMarginTop: topPadding,
-                          contentMarginBottom: bottomPadding,
-                          child: cardPositionsLocked
-                              ? ListView.builder(
-                                  key: const PageStorageKey<String>(
-                                    'playlist_card_positions_list',
-                                  ),
-                                  controller: _scrollController,
-                                  physics: const ClampingScrollPhysics(),
-                                  padding: const EdgeInsets.fromLTRB(
-                                    _playlistListHorizontalPadding,
-                                    topPadding,
-                                    _playlistListHorizontalPadding,
-                                    bottomPadding,
-                                  ),
-                                  cacheExtent: listCacheExtent,
-                                  clipBehavior: Clip.none,
-                                  keyboardDismissBehavior:
-                                      ScrollViewKeyboardDismissBehavior.onDrag,
-                                  itemCount: structureState.entries.length + 1,
-                                  itemBuilder: buildSessionItem,
-                                )
-                              : ReorderableListView.builder(
-                                  key: const PageStorageKey<String>(
-                                    'playlist_card_positions_list',
-                                  ),
-                                  scrollController: _scrollController,
-                                  physics: const ClampingScrollPhysics(),
-                                  padding: const EdgeInsets.fromLTRB(
-                                    _playlistListHorizontalPadding,
-                                    topPadding,
-                                    _playlistListHorizontalPadding,
-                                    bottomPadding,
-                                  ),
-                                  cacheExtent: listCacheExtent,
-                                  clipBehavior: Clip.none,
-                                  autoScrollerVelocityScalar: 0,
-                                  buildDefaultDragHandles: false,
-                                  keyboardDismissBehavior:
-                                      ScrollViewKeyboardDismissBehavior.onDrag,
-                                  onReorder: (oldIndex, newIndex) {
-                                    ref
-                                        .read(playbackFacadeProvider)
-                                        .reorderSessions(oldIndex, newIndex);
-                                    setState(() {
-                                      _isReordering = false;
-                                      _reorderSnapshot = null;
-                                    });
-                                  },
-                                  onReorderStart: (_) {
-                                    setState(() {
-                                      _reorderSnapshot = ref.read(
-                                        playlistListUiProvider,
-                                      );
-                                      _isReordering = true;
-                                    });
-                                    unawaited(
-                                      AppInteractionFeedback.trigger(
-                                        AppInteractionFeedbackType.destructive,
-                                      ),
-                                    );
-                                  },
-                                  onReorderEnd: (_) {
-                                    if (_isReordering) {
-                                      setState(() {
-                                        _isReordering = false;
-                                        _reorderSnapshot = null;
-                                      });
-                                    }
-                                  },
-                                  proxyDecorator: (child, index, animation) =>
-                                      _buildReorderProxy(
-                                        context,
-                                        child,
-                                        animation,
-                                      ),
-                                  itemCount: structureState.entries.length + 1,
-                                  itemBuilder: buildSessionItem,
-                                ),
-                        ),
-                      ),
-                  ],
-                ),
+                      cacheExtent: listCacheExtent,
+                      clipBehavior: Clip.none,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      itemCount: visibleEntries.length + 1,
+                      itemBuilder: buildSessionItem,
+                    ),
+                ],
               ),
             ),
           ),
@@ -814,6 +781,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             icon: const Icon(Icons.alarm_rounded),
                             tooltip: i18n.tr('timer'),
                           ),
+                        IconButton(
+                          key: const ValueKey<String>('playlist_sort_button'),
+                          onPressed: _openSortOptions,
+                          icon: const Icon(Icons.sort_rounded),
+                          tooltip: i18n.tr('sort_by'),
+                        ),
                         UnifiedPopupMenuButton<String>(
                           icon: Icons.more_horiz_rounded,
                           tooltip: i18n.tr('more_actions'),
@@ -836,15 +809,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                               label: i18n.tr('clear_all_sessions'),
                               destructive: true,
                               enabled: structureState.hasSessions,
-                            ),
-                            const UnifiedMenuEntry<String>.divider(),
-                            UnifiedMenuEntry<String>.action(
-                              value: 'toggle_card_positions_locked',
-                              icon: Icons.push_pin_rounded,
-                              label: i18n.tr('fixed_card_positions'),
-                              trailing: cardPositionsLocked
-                                  ? const Icon(Icons.check_rounded, size: 18)
-                                  : null,
                             ),
                           ],
                           onSelected: (value) async {
@@ -883,13 +847,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 context,
                                 ref.read(playbackFacadeProvider),
                               );
-                            } else if (value ==
-                                'toggle_card_positions_locked') {
-                              unawaited(
-                                settings.setCardPositionsLocked(
-                                  !cardPositionsLocked,
-                                ),
-                              );
                             }
                           },
                         ),
@@ -902,23 +859,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildReorderProxy(
-    BuildContext context,
-    Widget child,
-    Animation<double> animation,
-  ) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) {
-        final animValue = Curves.easeInOut.transform(animation.value);
-        final scale = 1.0 + (0.012 * animValue);
-
-        return Transform.scale(scale: scale, child: child);
-      },
-      child: child,
     );
   }
 }

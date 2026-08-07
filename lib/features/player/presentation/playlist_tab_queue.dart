@@ -3,31 +3,23 @@ part of 'playlist_tab.dart';
 class _PlaybackQueueCard extends ConsumerWidget {
   const _PlaybackQueueCard({
     required this.session,
-    this.cardStateOverride,
     required this.library,
     required this.playback,
-    required this.index,
-    required this.cardPositionsLocked,
     required this.coverCacheWidth,
     required this.onOpen,
     required this.onEdit,
   });
 
   final PlaybackSession session;
-  final PlaylistSessionCardState? cardStateOverride;
   final LibraryFacade library;
   final PlaybackFacade playback;
-  final int index;
-  final bool cardPositionsLocked;
   final int? coverCacheWidth;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cardState =
-        cardStateOverride ??
-        ref.watch(playlistSessionCardStateProvider(session.id));
+    final cardState = ref.watch(playlistSessionCardStateProvider(session.id));
     if (cardState == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
       context,
@@ -190,23 +182,6 @@ class _PlaybackQueueCard extends ConsumerWidget {
                                   ),
                           ),
                         ),
-                        if (!cardPositionsLocked) ...[
-                          const SizedBox(width: 4),
-                          ReorderableDragStartListener(
-                            index: index,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 8,
-                                horizontal: 4,
-                              ),
-                              color: Colors.transparent,
-                              child: const Icon(
-                                Icons.drag_handle_rounded,
-                                size: 24,
-                              ),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ],

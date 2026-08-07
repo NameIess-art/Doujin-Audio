@@ -3,6 +3,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/widgets/app_transitions.dart';
+
 typedef SessionVideoSurfaceBuilder = Widget Function(BuildContext context);
 
 enum SessionVideoGestureZone { left, center, right }
@@ -249,7 +251,7 @@ class _SessionVideoViewportState extends State<SessionVideoViewport> {
             child: AnimatedOpacity(
               key: const ValueKey<String>('session_video_fullscreen_control'),
               opacity: _controlsVisible ? 1 : 0,
-              duration: const Duration(milliseconds: 160),
+              duration: kAppMotionFast,
               child: IgnorePointer(
                 ignoring: !_controlsVisible,
                 child: Material(

@@ -752,9 +752,10 @@ class _TimeSegmentDragTooltip extends StatelessWidget {
 }
 
 class _SessionSubtitlePanel extends ConsumerStatefulWidget {
-  const _SessionSubtitlePanel({required this.session});
+  const _SessionSubtitlePanel({required this.session, this.deferLoad = false});
 
   final PlaybackSession session;
+  final bool deferLoad;
 
   @override
   ConsumerState<_SessionSubtitlePanel> createState() =>
@@ -778,7 +779,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
       session: widget.session,
       includeBufferedPosition: false,
     )..addListener(_handlePositionTick);
-    _scheduleSubtitleTrackLoad();
+    if (!widget.deferLoad) _scheduleSubtitleTrackLoad();
   }
 
   @override
@@ -787,7 +788,8 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
     if (oldWidget.session != widget.session) {
       _positionGate.updateSession(widget.session);
     }
-    if (_loadedPath != widget.session.currentTrackPath) {
+    if (_loadedPath != widget.session.currentTrackPath ||
+        (oldWidget.deferLoad && !widget.deferLoad)) {
       _scheduleSubtitleTrackLoad();
     }
   }
@@ -824,6 +826,7 @@ class _SessionSubtitlePanelState extends ConsumerState<_SessionSubtitlePanel> {
       _subtitleText = null;
       _playbackSubtitleIndex = null;
     });
+    if (widget.deferLoad) return;
     final subtitles = ref.read(playbackSubtitleServiceProvider);
     if (subtitles.hasResult(trackPath)) {
       _applySubtitleTrack(trackPath, subtitles.trackSync(trackPath));

@@ -19,16 +19,13 @@ class LibraryDerivedSnapshotPayload {
     required List<MusicTrack> tracks,
     required List<String> watchedFolders,
     List<String> watchedLibraries = const <String>[],
-    required List<String> nodeOrder,
   }) : tracks = immutableList(tracks),
        watchedFolders = immutableList(watchedFolders),
-       watchedLibraries = immutableList(watchedLibraries),
-       nodeOrder = immutableList(nodeOrder);
+       watchedLibraries = immutableList(watchedLibraries);
 
   final List<MusicTrack> tracks;
   final List<String> watchedFolders;
   final List<String> watchedLibraries;
-  final List<String> nodeOrder;
 }
 
 @immutable
@@ -85,7 +82,6 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
     tracks: sortedTracks,
     watchedFolders: payload.watchedFolders,
     watchedLibraries: payload.watchedLibraries,
-    nodeOrder: payload.nodeOrder,
     tracksAlreadySorted: true,
   );
   return LibraryDerivedSnapshot(
@@ -183,7 +179,6 @@ class LibrarySnapshotCacheService {
       watchedLibraries: List<String>.unmodifiable(
         _libraryService.watchedLibraries,
       ),
-      nodeOrder: List<String>.unmodifiable(_libraryService.libraryNodeOrder),
     );
     final future = AppLogService.measureAsync(
       'library_card_snapshot_build',
@@ -245,7 +240,6 @@ class LibrarySnapshotCacheService {
       watchedLibraries: List<String>.unmodifiable(
         _libraryService.watchedLibraries,
       ),
-      nodeOrder: List<String>.unmodifiable(_libraryService.libraryNodeOrder),
     );
     final future = AppLogService.measureAsync(
       'library_tree_snapshot_build',
@@ -351,37 +345,6 @@ class LibrarySnapshotCacheService {
     _treeFuture = null;
     _treeCommitCallbacks.clear();
     _categoryFuture = null;
-  }
-
-  bool applyCurrentTopLevelOrder() {
-    if (_cachedCards.isEmpty) return false;
-    final nodesByPath = <String, LibraryNode>{
-      for (final node in _cachedCards) node.path: node,
-    };
-    final nodeOrder = _libraryService.libraryNodeOrder;
-    if (nodesByPath.length != _cachedCards.length ||
-        nodeOrder.length != _cachedCards.length ||
-        nodeOrder.any((path) => !nodesByPath.containsKey(path))) {
-      return false;
-    }
-
-    _cachedCards = List<LibraryNode>.unmodifiable(
-      nodeOrder.map((path) => nodesByPath[path]!),
-    );
-    _cachedCardRevision = _libraryService.structureRevision;
-    _cardFuture = null;
-    _cardFutureRevision = -1;
-    _cardCommitCallbacks.clear();
-    if (_cachedTreeRevision == _libraryService.structureRevision) {
-      final treeByPath = <String, LibraryNode>{
-        for (final node in _cachedTree) node.path: node,
-      };
-      _cachedTree = List<LibraryNode>.unmodifiable(
-        nodeOrder.map((path) => treeByPath[path]!).whereType<LibraryNode>(),
-      );
-    }
-    _categoryFuture = null;
-    return true;
   }
 
   void markDetailChanged([AudioDetail? detail]) {
@@ -599,16 +562,13 @@ class _LibraryTreeBuildPayload {
     required List<MusicTrack> tracks,
     required List<String> watchedFolders,
     required List<String> watchedLibraries,
-    required List<String> nodeOrder,
   }) : tracks = immutableList(tracks),
        watchedFolders = immutableList(watchedFolders),
-       watchedLibraries = immutableList(watchedLibraries),
-       nodeOrder = immutableList(nodeOrder);
+       watchedLibraries = immutableList(watchedLibraries);
 
   final List<MusicTrack> tracks;
   final List<String> watchedFolders;
   final List<String> watchedLibraries;
-  final List<String> nodeOrder;
 }
 
 class _CategoryDetailRequest {
@@ -634,7 +594,6 @@ LibraryTreeSnapshot _buildLibraryTreeFromPayload(
     tracks: payload.tracks,
     watchedFolders: payload.watchedFolders,
     watchedLibraries: payload.watchedLibraries,
-    nodeOrder: payload.nodeOrder,
   );
 }
 
@@ -645,6 +604,5 @@ LibraryTreeSnapshot _buildLibraryCardsFromPayload(
     tracks: payload.tracks,
     watchedFolders: payload.watchedFolders,
     watchedLibraries: payload.watchedLibraries,
-    nodeOrder: payload.nodeOrder,
   );
 }

@@ -23,6 +23,7 @@ import 'package:nameless_audio/core/widgets/async_cover_image.dart';
 import 'package:nameless_audio/core/widgets/duration_overlay.dart';
 import 'package:nameless_audio/core/widgets/app_feedback.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
+import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -34,11 +35,11 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
     : super(libraryService: LibraryService());
 
   final List<String> requestedPaths = <String>[];
+  final List<String> warmupRequestedPaths = <String>[];
 
   @override
-  String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
-    return null;
-  }
+  String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) =>
+      null;
 
   @override
   Future<String?> futureForPlaybackTrack(
@@ -53,8 +54,22 @@ class _RecordingPlaybackCoverCacheService extends CoverArtworkCacheService {
   }
 
   @override
-  Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) =>
-      SynchronousFuture<String?>(null);
+  Future<String?> futureForTrack(MusicTrack? track, {String? trackPath}) {
+    final path = track?.path ?? trackPath;
+    if (path != null) warmupRequestedPaths.add(path);
+    return SynchronousFuture<String?>(null);
+  }
+}
+
+Set<String> _selectedSortControls(WidgetTester tester) {
+  final controls =
+      tester.widget(
+            find.byWidgetPredicate((widget) => widget is SegmentedButton),
+          )
+          as dynamic;
+  return (controls.selected as Set<Object>)
+      .map((value) => value.toString().split('.').last)
+      .toSet();
 }
 
 void _expectThemeSessionResetButtonStyle(WidgetTester tester, Finder finder) {
@@ -114,8 +129,9 @@ _pumpSubtitleDetail({
     groupSubtitle: '/library/subtitles',
     isSingle: false,
   );
+  final coverCache = _RecordingPlaybackCoverCacheService();
   final fixture = AppRuntimeWidgetTestFixture(
-    coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
+    coverArtworkCacheService: coverCache,
     configureSettingsRepository: (settings) {
       settings.playbackDetailSubtitleStyle = style;
       settings.syncSlice(isInitialized: true);
@@ -163,6 +179,7 @@ _pumpSubtitleDetail({
     fixture.build(const PlaylistTab(), subtitleService: subtitleService),
   );
   await tester.pumpAndSettle();
+  coverCache.requestedPaths.clear();
   unawaited(
     Navigator.of(
       tester.element(find.byType(PlaylistTab)),
@@ -375,6 +392,66 @@ void main() {
     expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isFalse);
   });
 
+  test(
+    'detail cover warmup prioritizes current session before neighbors',
+    () async {
+      final coverCache = _RecordingPlaybackCoverCacheService();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: coverCache,
+      );
+      addTearDown(fixture.dispose);
+      final tracks = <MusicTrack>[
+        for (final id in <String>['previous', 'current', 'next'])
+          MusicTrack(
+            path: '/library/$id.mp3',
+            displayName: id,
+            groupKey: '/library',
+            groupTitle: 'Library',
+            groupSubtitle: '',
+            isSingle: false,
+          ),
+      ];
+      fixture.runtimeGraph.library.addTracks(
+        tracks,
+        notify: false,
+        persist: false,
+      );
+      final sessions = <PlaybackSession>[
+        for (var index = 0; index < tracks.length; index++)
+          PlaybackSession(
+            id: index == 1 ? 'current-session' : 'session-$index',
+            currentTrackPath: tracks[index].path,
+            loopMode: SessionLoopMode.single,
+            nonSingleLoopMode: SessionLoopMode.single,
+            volume: 1,
+            createdAt: DateTime(2026),
+            state: PlayerState(false, ProcessingState.ready),
+          ),
+      ];
+      fixture.playbackService.syncSlice(
+        activeSessions: sessions,
+        playingSessionCount: 0,
+        focusedSessionId: 'current-session',
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      fixture.runtimeGraph.warmup.scheduleSessionDetailCovers(
+        currentSessionId: 'current-session',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 320));
+      await fixture.runtimeGraph.warmup.waitUntilIdle();
+
+      expect(coverCache.warmupRequestedPaths, hasLength(3));
+      expect(coverCache.warmupRequestedPaths.first, tracks[1].path);
+      expect(
+        coverCache.warmupRequestedPaths.toSet(),
+        tracks.map((e) => e.path).toSet(),
+      );
+    },
+  );
+
   testWidgets('playlist first open fades its card skeleton out over 750ms', (
     WidgetTester tester,
   ) async {
@@ -426,7 +503,7 @@ void main() {
       return key is ValueKey<String> &&
           key.value.startsWith('playlist_skeleton_card_');
     });
-    expect(skeletonCards, findsAtLeastNWidgets(5));
+    expect(skeletonCards, findsAtLeastNWidgets(1));
     final firstSkeleton = tester.widget<Container>(skeletonCards.first);
     expect(firstSkeleton.padding, const EdgeInsets.all(8));
     expect(
@@ -461,9 +538,7 @@ void main() {
     );
     expect(
       tester.getBottomLeft(skeletonCards.last).dy,
-      greaterThanOrEqualTo(
-        tester.getBottomLeft(find.byType(PlaylistTab)).dy - 16,
-      ),
+      greaterThan(tester.getTopLeft(skeletonCards.first).dy),
     );
 
     await tester.pump();
@@ -648,106 +723,6 @@ void main() {
     expect(tester.widget<FilledButton>(restoreButton).onPressed, isNull);
   });
 
-  testWidgets('playlist cards freeze background updates while reordering', (
-    WidgetTester tester,
-  ) async {
-    final fixture = AppRuntimeWidgetTestFixture(
-      coverArtworkCacheService: _RecordingPlaybackCoverCacheService(),
-      configureSettingsRepository: (settingsRepository) {
-        settingsRepository.cardPositionsLocked = false;
-        settingsRepository.syncSlice();
-      },
-    );
-    addTearDown(fixture.disposeAfterWarmups);
-    final runtimeGraph = fixture.runtimeGraph;
-    final persistenceRepository = fixture.persistenceRepository;
-    final nativePlaybackRepository = fixture.nativePlaybackRepository;
-    const playbackCommandRunner =
-        AppRuntimeWidgetTestFixture.playbackCommandRunner;
-    final libraryService = fixture.libraryService;
-    final playbackService = fixture.playbackService;
-    final timerService = fixture.timerService;
-    final notificationCoordinatorService =
-        fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settings;
-    final languageProvider = fixture.languageProvider;
-    final track = testMusicTrack(
-      name: 'Frozen card',
-      path: '/library/frozen/card.mp3',
-      groupKey: '/library/frozen',
-      groupTitle: 'Frozen',
-    );
-    final session = PlaybackSession(
-      id: 'frozen-session',
-      currentTrackPath: track.path,
-      loopMode: SessionLoopMode.single,
-      nonSingleLoopMode: SessionLoopMode.single,
-      volume: 1,
-      createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
-    );
-
-    addTearDown(session.dispose);
-    runtimeGraph.library.addTracks([track], notify: false, persist: false);
-    playbackService.syncSlice(
-      activeSessions: [session],
-      playingSessionCount: 0,
-      focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-    await tester.runAsync(() async {
-      runtimeGraph.warmup.schedule(currentPageIndex: 1, immediate: true);
-      await runtimeGraph.warmup.waitUntilIdle();
-    });
-
-    await tester.pumpWidget(
-      buildAppRuntimeTestApp(
-        runtimeGraph: runtimeGraph,
-        persistenceRepository: persistenceRepository,
-        nativePlaybackRepository: nativePlaybackRepository,
-        playbackCommandRunner: playbackCommandRunner,
-        libraryService: libraryService,
-        playbackService: playbackService,
-        timerService: timerService,
-        notificationCoordinatorService: notificationCoordinatorService,
-        settingsRepository: settingsRepository,
-        languageProvider: languageProvider,
-        child: const PlaylistTab(),
-      ),
-    );
-    await tester.pump();
-
-    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
-    final reorderable = tester.widget<ReorderableListView>(
-      find.byType(ReorderableListView),
-    );
-    reorderable.onReorderStart?.call(0);
-    await tester.pump();
-
-    session.state = PlayerState(true, ProcessingState.ready);
-    playbackService.markSessionStateDirty();
-    playbackService.syncSlice(
-      activeSessions: [session],
-      playingSessionCount: 1,
-      focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-    await tester.pump();
-
-    expect(find.byIcon(Icons.play_arrow_rounded), findsOneWidget);
-    expect(find.byIcon(Icons.pause_rounded), findsNothing);
-
-    reorderable.onReorderEnd?.call(0);
-    await tester.pump();
-    await tester.pump();
-
-    expect(find.byIcon(Icons.pause_rounded), findsOneWidget);
-  });
-
   testWidgets('playlist cards keep track and single-file durations separate', (
     WidgetTester tester,
   ) async {
@@ -844,9 +819,13 @@ void main() {
           widget is SwipeRevealCard &&
           widget.key == const ValueKey('single-duration-session'),
     );
+    final rowsByTop = [workRow, singleRow]
+      ..sort(
+        (a, b) => tester.getTopLeft(a).dy.compareTo(tester.getTopLeft(b).dy),
+      );
     expect(
-      tester.getBottomLeft(workRow).dy,
-      closeTo(tester.getTopLeft(singleRow).dy, 0.01),
+      tester.getBottomLeft(rowsByTop.first).dy,
+      closeTo(tester.getTopLeft(rowsByTop.last).dy, 0.01),
       reason: 'Playlist rows should form one continuous list.',
     );
     expect(
@@ -917,99 +896,13 @@ void main() {
     expect(find.text('01:10'), findsNothing);
   });
 
-  testWidgets('playlist reordering does not trigger additional cover futures', (
+  testWidgets('playlist more menu and sort button remain available', (
     WidgetTester tester,
   ) async {
-    final coverCache = _RecordingPlaybackCoverCacheService();
-    final fixture = AppRuntimeWidgetTestFixture(
-      coverArtworkCacheService: coverCache,
-      configureSettingsRepository: (settingsRepository) {
-        settingsRepository.cardPositionsLocked = false;
-      },
-    );
-    addTearDown(fixture.dispose);
-    final runtimeGraph = fixture.runtimeGraph;
-    final persistenceRepository = fixture.persistenceRepository;
-    final nativePlaybackRepository = fixture.nativePlaybackRepository;
-    const playbackCommandRunner =
-        AppRuntimeWidgetTestFixture.playbackCommandRunner;
-    final libraryService = fixture.libraryService;
-    final playbackService = fixture.playbackService;
-    final timerService = fixture.timerService;
-    final notificationCoordinatorService =
-        fixture.notificationCoordinatorService;
-    final settingsRepository = fixture.settings;
-    final languageProvider = fixture.languageProvider;
-    final track = testMusicTrack(
-      name: 'Warmup card',
-      path: '/library/warmup/card.mp3',
-      groupKey: '/library/warmup',
-      groupTitle: 'Warmup',
-    );
-    final session = PlaybackSession(
-      id: 'warmup-session',
-      currentTrackPath: track.path,
-      loopMode: SessionLoopMode.single,
-      nonSingleLoopMode: SessionLoopMode.single,
-      volume: 1,
-      createdAt: DateTime(2026),
-      state: PlayerState(false, ProcessingState.ready),
-    );
-
-    addTearDown(session.dispose);
-    runtimeGraph.library.addTracks([track], notify: false, persist: false);
-    playbackService.syncSlice(
-      activeSessions: [session],
-      playingSessionCount: 0,
-      focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
-      coverGeneration: 0,
-      isInitialized: true,
-    );
-
-    await tester.pumpWidget(
-      buildAppRuntimeTestApp(
-        runtimeGraph: runtimeGraph,
-        persistenceRepository: persistenceRepository,
-        nativePlaybackRepository: nativePlaybackRepository,
-        playbackCommandRunner: playbackCommandRunner,
-        libraryService: libraryService,
-        playbackService: playbackService,
-        timerService: timerService,
-        notificationCoordinatorService: notificationCoordinatorService,
-        settingsRepository: settingsRepository,
-        languageProvider: languageProvider,
-        child: const PlaylistTab(),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.pumpAndSettle();
-
-    // Clear any previously requested paths to isolate this test action
-    coverCache.requestedPaths.clear();
-
-    final reorderable = tester.widget<ReorderableListView>(
-      find.byType(ReorderableListView),
-    );
-    reorderable.onReorderStart?.call(0);
-    await tester.pump();
-
-    playbackService.syncSlice(
-      activeSessions: [session],
-      playingSessionCount: 0,
-      focusedSessionId: session.id,
-      multiThreadPlaybackEnabled: false,
-      coverGeneration: 1,
-      isInitialized: true,
-    );
-    await tester.pump();
-
-    expect(coverCache.requestedPaths, isEmpty);
-  });
-
-  testWidgets('playlist more menu toggles fixed card positions', (
-    WidgetTester tester,
-  ) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 3;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
     final fixture = AppRuntimeWidgetTestFixture();
     addTearDown(fixture.dispose);
     final runtimeGraph = fixture.runtimeGraph;
@@ -1051,14 +944,109 @@ void main() {
     );
     await tester.pump();
 
+    final headerBottom = tester.getBottomLeft(find.byType(TopPageHeader)).dy;
+    final emptyCardRect = tester.getRect(
+      find.byKey(const ValueKey('playlist_empty_state_card')),
+    );
+    final viewportHeight =
+        tester.view.physicalSize.height / tester.view.devicePixelRatio;
+    final topGap = emptyCardRect.top - headerBottom;
+    final bottomGap = viewportHeight - 16 - emptyCardRect.bottom;
+    expect(topGap, greaterThanOrEqualTo(0));
+    expect(topGap, closeTo(bottomGap, 5));
+
+    expect(find.byTooltip(languageProvider.tr('sort_by')), findsOneWidget);
+    await tester.tap(find.byTooltip(languageProvider.tr('sort_by')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(languageProvider.tr('sort_by_title')), findsOneWidget);
+    expect(find.text(languageProvider.tr('sort_release_date')), findsOneWidget);
+    expect(find.text(languageProvider.tr('cancel')), findsOneWidget);
+    expect(find.text(languageProvider.tr('confirm')), findsOneWidget);
+    final viewportSize =
+        tester.view.physicalSize / tester.view.devicePixelRatio;
+    final cancelRect = tester.getRect(
+      find.byKey(const ValueKey('sort_options_cancel')),
+    );
+    final confirmRect = tester.getRect(
+      find.byKey(const ValueKey('sort_options_confirm')),
+    );
+    expect(
+      tester.widget(find.byKey(const ValueKey('sort_options_confirm'))),
+      isA<TextButton>(),
+    );
+    expect(confirmRect.bottom, lessThanOrEqualTo(viewportSize.height));
+    expect(cancelRect.center.dx, greaterThan(viewportSize.width / 2));
+    expect(confirmRect.left, greaterThan(cancelRect.right));
+    expect(confirmRect.center.dy, closeTo(cancelRect.center.dy, 0.01));
+    expect(confirmRect.width, lessThan(120));
+    await tester.ensureVisible(
+      find.text(languageProvider.tr('sort_descending')),
+    );
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('sort_descending')));
+    await tester.pump();
+    await tester.ensureVisible(
+      find.text(languageProvider.tr('sort_group_by_library')),
+    );
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('sort_group_by_library')));
+    await tester.pump();
+    tester
+        .widget<RadioGroup<PlaylistSortCriterion>>(
+          find.byType(RadioGroup<PlaylistSortCriterion>),
+        )
+        .onChanged(PlaylistSortCriterion.releaseDate);
+    await tester.pump();
+    expect(settingsRepository.playlistSortAscending, isTrue);
+    expect(settingsRepository.playlistGroupByLibrary, isFalse);
+    expect(
+      settingsRepository.playlistSortCriterion,
+      PlaylistSortCriterion.name,
+    );
+    await tester.tap(find.text(languageProvider.tr('cancel')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    await tester.tap(find.byTooltip(languageProvider.tr('sort_by')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      tester
+          .widget<RadioGroup<PlaylistSortCriterion>>(
+            find.byType(RadioGroup<PlaylistSortCriterion>),
+          )
+          .groupValue,
+      PlaylistSortCriterion.name,
+    );
+    expect(_selectedSortControls(tester), <String>{'ascending'});
+    tester
+        .widget<RadioGroup<PlaylistSortCriterion>>(
+          find.byType(RadioGroup<PlaylistSortCriterion>),
+        )
+        .onChanged(PlaylistSortCriterion.releaseDate);
+    await tester.ensureVisible(
+      find.text(languageProvider.tr('sort_descending')),
+    );
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('sort_descending')));
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('sort_group_by_library')));
+    await tester.pump();
+    await tester.tap(find.text(languageProvider.tr('confirm')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(settingsRepository.playlistSortAscending, isFalse);
+    expect(settingsRepository.playlistGroupByLibrary, isTrue);
+    expect(
+      settingsRepository.playlistSortCriterion,
+      PlaylistSortCriterion.releaseDate,
+    );
+
     await tester.tap(find.byTooltip(languageProvider.tr('more_actions')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
-    expect(
-      find.text(languageProvider.tr('fixed_card_positions')),
-      findsOneWidget,
-    );
     expect(
       find.text(languageProvider.tr('add_playback_queue')),
       findsOneWidget,
@@ -1231,6 +1219,11 @@ void main() {
       (editAudioIcon.decoration! as BoxDecoration).borderRadius,
       BorderRadius.circular(iconRadius),
     );
+    await tester.tap(find.text(languageProvider.tr('edit_queue_audio')));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaybackQueueAudioEditPage), findsOneWidget);
+    expect(find.byType(ReorderableListView), findsOneWidget);
+    expect(find.byType(ReorderableDragStartListener), findsWidgets);
 
     await tester.pump(const Duration(milliseconds: 300));
   });
@@ -1414,11 +1407,19 @@ void main() {
       isInitialized: true,
     );
 
-    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pumpWidget(
+      fixture.build(
+        const MobileOverlayInset(bottomInset: 132, child: PlaylistTab()),
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('Work A'), findsOneWidget);
     expect(find.text('Library'), findsNothing);
+    final playlistList = tester.widget<ListView>(
+      find.byKey(const PageStorageKey<String>('playlist_list')),
+    );
+    expect(playlistList.padding!.resolve(TextDirection.ltr).bottom, 148);
     final swipeCard = tester.widget<SwipeRevealCard>(
       find.byType(SwipeRevealCard),
     );

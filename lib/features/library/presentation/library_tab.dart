@@ -38,14 +38,13 @@ import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_scroll_physics.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
-import '../../../core/widgets/content_bound_reorder_area.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
 import '../../../core/widgets/operation_feedback.dart';
-import '../../../core/widgets/reorder_auto_scroller.dart';
 import '../../../core/widgets/scroll_activity_gate.dart';
 import '../../../core/widgets/search_highlight.dart';
+import '../../../core/widgets/sort_options_bottom_sheet.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/top_page_header.dart';
 import '../../../core/widgets/unified_popup_menu.dart';
@@ -53,6 +52,7 @@ import '../../../core/widgets/glass_refresh_indicator.dart';
 import 'audio_detail_sheet.dart';
 import 'dlsite_metadata_batch_page.dart';
 import 'library_scan_feedback.dart';
+import 'library_sorting.dart';
 import '../../../app/presentation/screen_view_models.dart';
 import '../../video_converter/presentation/video_converter_tab.dart';
 import '../../../app/theme/app_styles.dart';
@@ -99,7 +99,6 @@ enum _LibraryMoreAction {
   videoToAudio,
   manageLibraries,
   batchMetadata,
-  toggleCardPositionsLocked,
 }
 
 class LibraryTab extends ConsumerStatefulWidget {
@@ -163,7 +162,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   bool _startupLibraryRefreshCompleted = false;
   bool _initialLibraryContentReady = false;
   bool _refreshTriggeredInCurrentScroll = false;
-  bool _isReordering = false;
   final Set<String> _expandedCardPaths = <String>{};
 
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
@@ -189,6 +187,57 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         context: context,
         child: const _LibrarySearchPage(),
       ),
+    );
+  }
+
+  Future<void> _openSortOptions() async {
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    final settingsState = ref.read(settingsStateProvider).value;
+    final result = await showSortOptionsBottomSheet<LibrarySortCriterion>(
+      context: context,
+      options: [
+        SortOption(
+          value: LibrarySortCriterion.name,
+          label: i18n.tr('sort_name'),
+        ),
+        SortOption(
+          value: LibrarySortCriterion.voiceActor,
+          label: i18n.tr('sort_voice_actor'),
+        ),
+        SortOption(
+          value: LibrarySortCriterion.duration,
+          label: i18n.tr('sort_duration'),
+        ),
+        SortOption(
+          value: LibrarySortCriterion.releaseDate,
+          label: i18n.tr('sort_release_date'),
+        ),
+        SortOption(
+          value: LibrarySortCriterion.addedAt,
+          label: i18n.tr('sort_added_date'),
+        ),
+      ],
+      selectedCriterion:
+          settingsState?.librarySortCriterion ?? LibrarySortCriterion.name,
+      ascending: settingsState?.librarySortAscending ?? true,
+      groupByLibrary: settingsState?.libraryGroupByLibrary ?? false,
+      title: i18n.tr('sort_by_title'),
+      descriptionLabel: i18n.tr('sort_description'),
+      ascendingLabel: i18n.tr('sort_ascending'),
+      descendingLabel: i18n.tr('sort_descending'),
+      groupByLibraryLabel: i18n.tr('sort_group_by_library'),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('confirm'),
+    );
+    if (!mounted || result == null) return;
+    final settings = ref.read(settingsRepositoryProvider);
+    await settings.setLibrarySortOptions(
+      criterion: result.criterion,
+      ascending: result.ascending,
+      groupByLibrary: result.groupByLibrary,
     );
   }
 
@@ -554,9 +603,21 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listStateCanPullRefresh = _readOrWatch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
     );
-    final cardPositionsLocked = _readOrWatch(
+    _readOrWatch(libraryDetailRevisionProvider);
+    final librarySortCriterion = _readOrWatch(
       settingsStateProvider.select(
-        (state) => state.value?.cardPositionsLocked ?? true,
+        (state) =>
+            state.value?.librarySortCriterion ?? LibrarySortCriterion.name,
+      ),
+    );
+    final librarySortAscending = _readOrWatch(
+      settingsStateProvider.select(
+        (state) => state.value?.librarySortAscending ?? true,
+      ),
+    );
+    final libraryGroupByLibrary = _readOrWatch(
+      settingsStateProvider.select(
+        (state) => state.value?.libraryGroupByLibrary ?? false,
       ),
     );
     final libraryRefreshOperationBusy = _readOrWatch(
@@ -592,7 +653,13 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           !listStateIsScanning &&
           !listStateIsBackgroundScanning,
     );
-    final tree = listStateRawTree;
+    final tree = sortLibraryNodes(
+      nodes: listStateRawTree,
+      criterion: librarySortCriterion,
+      ascending: librarySortAscending,
+      groupByLibrary: libraryGroupByLibrary,
+      library: libraryFacade,
+    );
     final bottomInset = MobileOverlayInset.of(context);
 
     final headerControlsFullHeight = this.headerControlsFullHeight;
@@ -602,9 +669,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listBottomInset = bottomInset;
     final isLandscape =
         MediaQuery.orientationOf(context) == Orientation.landscape;
-    const double expansion = 320.0;
-    final listTopPadding = headerControlsFullHeight + 4.0 + expansion;
-    const listBottomPadding = 16.0 + expansion;
+    final listTopPadding = headerContentHeight;
+    final listBottomPadding = listBottomInset + 16.0;
     final listViewportBottomInset =
         listBottomInset + (isLandscape ? 16.0 : 0.0);
     // Reduced cacheExtent to significantly lower memory footprint and improve
@@ -636,7 +702,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 _expandedCardPaths.contains(PathMatcher.normalize(node.path)),
             onFolderExpansionChanged: _handleCardExpansionChanged,
             index: index,
-            cardPositionsLocked: cardPositionsLocked,
           ),
         ),
       );
@@ -644,7 +709,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
     Widget emptyListBody() {
       final relativeTop = listTopPadding;
-      const relativeBottom = listBottomPadding;
+      final relativeBottom = listBottomPadding;
 
       if (showLibrarySkeleton) {
         return _LibraryLoadingSkeleton(
@@ -709,8 +774,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Viewport restricted to content area so drag-to-reorder auto-scroll
-            // triggers at content edges rather than screen edges.
             MediaQuery(
               data: MediaQuery.of(context).copyWith(
                 padding: EdgeInsets.only(
@@ -719,126 +782,47 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                   right: 4,
                 ),
               ),
-              child: ContentBoundReorderArea(
-                headerHeight: headerHeight,
-                bottomInset: listViewportBottomInset,
-                topExpansion: expansion,
-                bottomExpansion: expansion,
-                scrollController: _scrollController,
-                showScrollbar: isLandscape,
-                scrollbarMainAxisMargin: isLandscape ? 8 : 0,
-                child: PlaceholderContentTransition(
-                  showPlaceholder:
-                      !listStateIsInitialized || showLibrarySkeleton,
-                  placeholder: _LibraryLoadingSkeleton(
-                    bottomInset: listBottomPadding,
-                    topInset: listTopPadding,
-                  ),
-                  content: tree.isEmpty
-                      ? refreshableEmptyBody()
-                      : GlassRefreshIndicator(
-                          key: _refreshIndicatorKey,
-                          color: Theme.of(context).colorScheme.primary,
-                          backgroundColor: Theme.of(context)
-                              .colorScheme
-                              .surfaceContainerHighest
-                              .withValues(alpha: 0.6),
-                          onRefresh: _runLibraryPullRefresh,
-                          edgeOffset: listTopPadding,
-                          displacement: 32,
-                          triggerMode:
-                              GlassRefreshIndicatorTriggerMode.anywhere,
-                          child: cardPositionsLocked
-                              ? ListView.builder(
-                                  key: const PageStorageKey<String>(
-                                    'locked_library_list',
-                                  ),
-                                  controller: _scrollController,
-                                  clipBehavior: Clip.none,
-                                  padding: EdgeInsets.fromLTRB(
-                                    LibraryLikeCardMetrics
-                                        .listHorizontalPadding,
-                                    listTopPadding,
-                                    LibraryLikeCardMetrics
-                                        .listHorizontalPadding,
-                                    listBottomPadding,
-                                  ),
-                                  cacheExtent: listCacheExtent,
-                                  physics: canPullRefresh
-                                      ? const AlwaysScrollableScrollPhysics(
-                                          parent: RefreshTopScrollPhysics(),
-                                        )
-                                      : null,
-                                  keyboardDismissBehavior:
-                                      ScrollViewKeyboardDismissBehavior.onDrag,
-                                  itemCount: tree.length + 1,
-                                  itemBuilder: buildTopLevelLibraryItem,
-                                )
-                              : ReorderAutoScroller(
-                                  scrollController: _scrollController,
-                                  isDragging: _isReordering,
-                                  contentMarginTop: listTopPadding,
-                                  contentMarginBottom: listBottomPadding,
-                                  child: ReorderableListView.builder(
-                                    key: const PageStorageKey<String>(
-                                      'locked_library_list',
-                                    ),
-                                    scrollController: _scrollController,
-                                    // Clip.none allows items to be visible when scrolled into the
-                                    // "empty" space above/below the restricted Positioned area.
-                                    clipBehavior: Clip.none,
-                                    padding: EdgeInsets.fromLTRB(
-                                      LibraryLikeCardMetrics
-                                          .listHorizontalPadding,
-                                      listTopPadding,
-                                      LibraryLikeCardMetrics
-                                          .listHorizontalPadding,
-                                      listBottomPadding,
-                                    ),
-                                    cacheExtent: listCacheExtent,
-                                    physics: canPullRefresh
-                                        ? const AlwaysScrollableScrollPhysics(
-                                            parent: RefreshTopScrollPhysics(),
-                                          )
-                                        : null,
-                                    autoScrollerVelocityScalar: 0,
-                                    buildDefaultDragHandles: false,
-                                    keyboardDismissBehavior:
-                                        ScrollViewKeyboardDismissBehavior
-                                            .onDrag,
-                                    onReorder: (oldIndex, newIndex) {
-                                      libraryFacade.reorderLibraryNodes(
-                                        oldIndex,
-                                        newIndex,
-                                      );
-                                      setState(() => _isReordering = false);
-                                    },
-                                    onReorderStart: (index) {
-                                      setState(() => _isReordering = true);
-                                      unawaited(
-                                        AppInteractionFeedback.trigger(
-                                          AppInteractionFeedbackType
-                                              .destructive,
-                                        ),
-                                      );
-                                    },
-                                    onReorderEnd: (_) {
-                                      if (_isReordering) {
-                                        setState(() => _isReordering = false);
-                                      }
-                                    },
-                                    proxyDecorator: (child, index, animation) =>
-                                        _buildReorderProxy(
-                                          context,
-                                          child,
-                                          animation,
-                                        ),
-                                    itemCount: tree.length + 1,
-                                    itemBuilder: buildTopLevelLibraryItem,
-                                  ),
-                                ),
-                        ),
+              child: PlaceholderContentTransition(
+                showPlaceholder: !listStateIsInitialized || showLibrarySkeleton,
+                placeholder: _LibraryLoadingSkeleton(
+                  bottomInset: listBottomPadding,
+                  topInset: listTopPadding,
                 ),
+                content: tree.isEmpty
+                    ? refreshableEmptyBody()
+                    : GlassRefreshIndicator(
+                        key: _refreshIndicatorKey,
+                        color: Theme.of(context).colorScheme.primary,
+                        backgroundColor: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest
+                            .withValues(alpha: 0.6),
+                        onRefresh: _runLibraryPullRefresh,
+                        edgeOffset: listTopPadding,
+                        displacement: 32,
+                        triggerMode: GlassRefreshIndicatorTriggerMode.anywhere,
+                        child: ListView.builder(
+                          key: const PageStorageKey<String>('library_list'),
+                          controller: _scrollController,
+                          clipBehavior: Clip.none,
+                          padding: EdgeInsets.fromLTRB(
+                            LibraryLikeCardMetrics.listHorizontalPadding,
+                            listTopPadding,
+                            LibraryLikeCardMetrics.listHorizontalPadding,
+                            listBottomPadding,
+                          ),
+                          cacheExtent: listCacheExtent,
+                          physics: canPullRefresh
+                              ? const AlwaysScrollableScrollPhysics(
+                                  parent: RefreshTopScrollPhysics(),
+                                )
+                              : null,
+                          keyboardDismissBehavior:
+                              ScrollViewKeyboardDismissBehavior.onDrag,
+                          itemCount: tree.length + 1,
+                          itemBuilder: buildTopLevelLibraryItem,
+                        ),
+                      ),
               ),
             ),
 
@@ -870,7 +854,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 onTitleSwipeLeft: widget.onTitleSwipeLeft,
                 onTitleSwipeRight: widget.onTitleSwipeRight,
                 trailing: SizedBox(
-                  width: 96 + (isLandscape ? 52 : 0),
+                  width: 144 + (isLandscape ? 52 : 0),
                   height: 44,
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.end,
@@ -898,6 +882,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               : const Icon(Icons.refresh_rounded),
                           tooltip: i18n.tr('refresh_watched_folder'),
                         ),
+                      IconButton(
+                        key: const ValueKey<String>('library_sort_button'),
+                        onPressed: libraryRefreshBusy ? null : _openSortOptions,
+                        icon: const Icon(Icons.sort_rounded),
+                        tooltip: i18n.tr('sort_by'),
+                      ),
                       UnifiedPopupMenuButton<_LibraryMoreAction>(
                         enabled: !libraryRefreshBusy,
                         icon: Icons.more_horiz_rounded,
@@ -935,14 +925,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             label: i18n.tr('batch_metadata'),
                           ),
                           const UnifiedMenuEntry<_LibraryMoreAction>.divider(),
-                          UnifiedMenuEntry<_LibraryMoreAction>.action(
-                            value: _LibraryMoreAction.toggleCardPositionsLocked,
-                            icon: Icons.push_pin_rounded,
-                            label: i18n.tr('fixed_card_positions'),
-                            trailing: cardPositionsLocked
-                                ? const Icon(Icons.check_rounded, size: 18)
-                                : null,
-                          ),
                         ],
                         onSelected: (value) {
                           switch (value) {
@@ -963,15 +945,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               break;
                             case _LibraryMoreAction.batchMetadata:
                               _openBatchMetadataPage();
-                              break;
-                            case _LibraryMoreAction.toggleCardPositionsLocked:
-                              unawaited(
-                                ref
-                                    .read(settingsRepositoryProvider)
-                                    .setCardPositionsLocked(
-                                      !cardPositionsLocked,
-                                    ),
-                              );
                               break;
                           }
                         },

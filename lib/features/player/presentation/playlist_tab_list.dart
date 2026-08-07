@@ -139,101 +139,109 @@ class _SessionsEmptyState extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        AppSpacing.xl,
-        topInset,
-        AppSpacing.xl,
-        bottomInset,
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: AppSpacing.lg),
-          Container(
-            width: double.infinity,
-            decoration: BoxDecoration(
-              borderRadius: AppRadius.borderDialog,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  cs.surfaceContainerHigh.withValues(alpha: 0.6),
-                  cs.surfaceContainerLow.withValues(alpha: 0.4),
-                ],
-              ),
-              border: Border.all(
-                color: cs.outlineVariant.withValues(alpha: 0.1),
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableHeight = constraints.maxHeight - topInset - bottomInset;
+        return SingleChildScrollView(
+          padding: EdgeInsets.fromLTRB(
+            AppSpacing.xl,
+            topInset,
+            AppSpacing.xl,
+            bottomInset,
+          ),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: availableHeight > 0 ? availableHeight : 0,
             ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.xl,
-                42,
-                AppSpacing.xl,
-                42,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 72,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          cs.primaryContainer,
-                          cs.primaryContainer.withValues(alpha: 0.8),
-                        ],
+            child: Center(
+              child: Container(
+                key: const ValueKey('playlist_empty_state_card'),
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  borderRadius: AppRadius.borderDialog,
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      cs.surfaceContainerHigh.withValues(alpha: 0.6),
+                      cs.surfaceContainerLow.withValues(alpha: 0.4),
+                    ],
+                  ),
+                  border: Border.all(
+                    color: cs.outlineVariant.withValues(alpha: 0.1),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(
+                    AppSpacing.xl,
+                    42,
+                    AppSpacing.xl,
+                    42,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 72,
+                        height: 72,
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              cs.primaryContainer,
+                              cs.primaryContainer.withValues(alpha: 0.8),
+                            ],
+                          ),
+                          borderRadius: AppRadius.borderDialog,
+                          boxShadow: [
+                            BoxShadow(
+                              color: cs.primary.withValues(alpha: 0.12),
+                              blurRadius: 20,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          Icons.queue_music_rounded,
+                          size: 36,
+                          color: cs.onPrimaryContainer,
+                        ),
                       ),
-                      borderRadius: AppRadius.borderDialog,
-                      boxShadow: [
-                        BoxShadow(
-                          color: cs.primary.withValues(alpha: 0.12),
-                          blurRadius: 20,
-                          offset: const Offset(0, 8),
+                      const SizedBox(height: AppSpacing.xl),
+                      Text(
+                        i18n.tr('no_active_sessions'),
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: AppSpacing.sm),
+                      Text(
+                        i18n.tr('go_library_hint'),
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurfaceVariant,
+                          height: 1.4,
+                        ),
+                      ),
+                      if (onOpenLibrary != null) ...[
+                        const SizedBox(height: AppSpacing.lg),
+                        FilledButton.icon(
+                          onPressed: onOpenLibrary,
+                          icon: const Icon(Icons.library_music_rounded),
+                          label: Text(i18n.tr('open_library')),
                         ),
                       ],
-                    ),
-                    child: Icon(
-                      Icons.queue_music_rounded,
-                      size: 36,
-                      color: cs.onPrimaryContainer,
-                    ),
+                    ],
                   ),
-                  const SizedBox(height: AppSpacing.xl),
-                  Text(
-                    i18n.tr('no_active_sessions'),
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                  const SizedBox(height: AppSpacing.sm),
-                  Text(
-                    i18n.tr('go_library_hint'),
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: cs.onSurfaceVariant,
-                      height: 1.4,
-                    ),
-                  ),
-                  if (onOpenLibrary != null) ...[
-                    const SizedBox(height: AppSpacing.lg),
-                    FilledButton.icon(
-                      onPressed: onOpenLibrary,
-                      icon: const Icon(Icons.library_music_rounded),
-                      label: Text(i18n.tr('open_library')),
-                    ),
-                  ],
-                ],
+                ),
               ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -241,7 +249,6 @@ class _SessionsEmptyState extends StatelessWidget {
 class _SessionListCard extends ConsumerWidget {
   const _SessionListCard({
     required this.sessionId,
-    this.cardStateOverride,
     required this.track,
     required this.coverPath,
     required this.coverGeneration,
@@ -249,14 +256,10 @@ class _SessionListCard extends ConsumerWidget {
     required this.showSubtitles,
     required this.library,
     required this.playback,
-    required this.index,
-    required this.cardPositionsLocked,
-    this.freezeDynamicContent = false,
     required this.onOpen,
   });
 
   final String sessionId;
-  final PlaylistSessionCardState? cardStateOverride;
   final MusicTrack? track;
   final String? coverPath;
   final int coverGeneration;
@@ -264,9 +267,6 @@ class _SessionListCard extends ConsumerWidget {
   final bool showSubtitles;
   final LibraryFacade library;
   final PlaybackFacade playback;
-  final int index;
-  final bool cardPositionsLocked;
-  final bool freezeDynamicContent;
   final VoidCallback onOpen;
 
   Future<void> _confirmRemoveSession(BuildContext context) async {
@@ -316,9 +316,7 @@ class _SessionListCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final cardState =
-        cardStateOverride ??
-        ref.watch(playlistSessionCardStateProvider(sessionId));
+    final cardState = ref.watch(playlistSessionCardStateProvider(sessionId));
     if (cardState == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
       context,
@@ -341,9 +339,8 @@ class _SessionListCard extends ConsumerWidget {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = currentTrack?.remoteMetadataKind == 'asmr.one';
-    final detailDuration = freezeDynamicContent
-        ? null
-        : currentTrack == null || isAsmrOne || !currentTrack.isSingle
+    final detailDuration =
+        currentTrack == null || isAsmrOne || !currentTrack.isSingle
         ? null
         : ref.watch(
             libraryDetailForTargetProvider(
@@ -409,7 +406,6 @@ class _SessionListCard extends ConsumerWidget {
                           coverCacheWidth: coverCacheWidth,
                           duration: track?.duration,
                           detailDuration: detailDuration,
-                          freezeDynamicContent: freezeDynamicContent,
                         ),
                         const SizedBox(width: AppSpacing.xs),
                       ],
@@ -543,23 +539,6 @@ class _SessionListCard extends ConsumerWidget {
                                 ),
                             ],
                           ),
-                          if (!cardPositionsLocked) ...[
-                            const SizedBox(width: 6),
-                            ReorderableDragStartListener(
-                              index: index,
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 8,
-                                  horizontal: 4,
-                                ),
-                                color: Colors.transparent,
-                                child: const Icon(
-                                  Icons.drag_handle_rounded,
-                                  size: 24,
-                                ),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ],

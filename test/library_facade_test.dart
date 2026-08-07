@@ -1191,10 +1191,6 @@ void main() {
         json.decode((await AppPreferences.getString('group_order_v1'))!),
         <Object?>[],
       );
-      expect(
-        json.decode((await AppPreferences.getString('library_node_order_v1'))!),
-        <Object?>[],
-      );
     });
 
     test('folder removal waits for all persistent cleanup', () async {

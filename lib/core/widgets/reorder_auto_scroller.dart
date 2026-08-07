@@ -40,20 +40,33 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller>
   Ticker? _ticker;
   Duration? _lastTickElapsed;
   double _velocity = 0;
+  RenderBox? _dragBox;
+  Offset? _pendingPointerPosition;
+  bool _pointerSampleScheduled = false;
 
   void _onPointerMove(PointerMoveEvent event) {
     if (!widget.isDragging) {
-      if (_velocity != 0) {
-        _velocity = 0;
-        _stopTicker();
-      }
+      _stopDragActivity();
       return;
     }
+    _pendingPointerPosition = event.position;
+    if (_pointerSampleScheduled) return;
+    _pointerSampleScheduled = true;
+    SchedulerBinding.instance.scheduleFrameCallback((_) {
+      _pointerSampleScheduled = false;
+      if (!mounted || !widget.isDragging) return;
+      final position = _pendingPointerPosition;
+      if (position == null) return;
+      _updateVelocity(position);
+    });
+    SchedulerBinding.instance.scheduleFrame();
+  }
 
-    final box = context.findRenderObject() as RenderBox?;
+  void _updateVelocity(Offset globalPosition) {
+    final box = _dragBox ??= context.findRenderObject() as RenderBox?;
     if (box == null) return;
 
-    final localPos = box.globalToLocal(event.position);
+    final localPos = box.globalToLocal(globalPosition);
     final height = box.size.height;
 
     // Define the usable content area height
@@ -61,6 +74,7 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller>
         height - widget.contentMarginTop - widget.contentMarginBottom;
     if (contentHeight <= 0) {
       _velocity = 0;
+      _stopTicker();
       return;
     }
 
@@ -91,6 +105,7 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller>
       _velocity = widget.maxVelocity * curve;
     } else {
       _velocity = 0;
+      _stopTicker();
     }
 
     if (_velocity != 0 && _ticker?.isActive != true) {
@@ -99,8 +114,7 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller>
   }
 
   void _onPointerUp(PointerEvent event) {
-    _velocity = 0;
-    _stopTicker();
+    _stopDragActivity();
   }
 
   void _startTicker() {
@@ -116,7 +130,6 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller>
     }
 
     if (!widget.scrollController.hasClients) return;
-
     final previousElapsed = _lastTickElapsed;
     _lastTickElapsed = elapsed;
     final deltaSeconds = previousElapsed == null
@@ -137,6 +150,13 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller>
     }
   }
 
+  void _stopDragActivity() {
+    _pendingPointerPosition = null;
+    _dragBox = null;
+    _velocity = 0;
+    _stopTicker();
+  }
+
   void _stopTicker() {
     _ticker?.stop();
     _lastTickElapsed = null;
@@ -146,13 +166,15 @@ class _ReorderAutoScrollerState extends State<ReorderAutoScroller>
   void didUpdateWidget(ReorderAutoScroller oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!widget.isDragging && oldWidget.isDragging) {
-      _velocity = 0;
-      _stopTicker();
+      _stopDragActivity();
+    } else if (widget.isDragging && !oldWidget.isDragging) {
+      _dragBox = null;
     }
   }
 
   @override
   void dispose() {
+    _stopDragActivity();
     _ticker?.dispose();
     super.dispose();
   }

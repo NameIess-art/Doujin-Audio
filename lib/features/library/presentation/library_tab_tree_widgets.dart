@@ -7,7 +7,6 @@ class _LibraryTreeItem extends StatelessWidget {
     this.initiallyExpanded = false,
     this.searchQuery = '',
     this.index,
-    this.cardPositionsLocked = true,
     this.onFolderExpansionChanged,
   });
 
@@ -15,7 +14,6 @@ class _LibraryTreeItem extends StatelessWidget {
   final bool initiallyExpanded;
   final String searchQuery;
   final int? index;
-  final bool cardPositionsLocked;
   final void Function(String folderPath, bool expanded)?
   onFolderExpansionChanged;
 
@@ -28,14 +26,12 @@ class _LibraryTreeItem extends StatelessWidget {
         onFolderExpansionChanged: onFolderExpansionChanged,
         searchQuery: searchQuery,
         index: index,
-        cardPositionsLocked: cardPositionsLocked,
       );
     } else if (node is TrackNode) {
       return _TrackNodeWidget(
         trackNode: node as TrackNode,
         searchQuery: searchQuery,
         index: index,
-        cardPositionsLocked: cardPositionsLocked,
       );
     }
     return const SizedBox.shrink();
@@ -48,7 +44,6 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
     required this.initiallyExpanded,
     required this.searchQuery,
     this.index,
-    this.cardPositionsLocked = true,
     this.onFolderExpansionChanged,
   });
 
@@ -56,7 +51,6 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
   final bool initiallyExpanded;
   final String searchQuery;
   final int? index;
-  final bool cardPositionsLocked;
   final void Function(String folderPath, bool expanded)?
   onFolderExpansionChanged;
 
@@ -258,7 +252,6 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 hasChildren: hasChildren,
                 onPlay: () => _playFolder(context, playback),
                 index: widget.index,
-                cardPositionsLocked: widget.cardPositionsLocked,
               )
             : Row(
                 children: [
@@ -407,13 +400,11 @@ class _TrackNodeWidget extends ConsumerWidget {
     required this.trackNode,
     this.searchQuery = '',
     this.index,
-    this.cardPositionsLocked = true,
   });
 
   final TrackNode trackNode;
   final String searchQuery;
   final int? index;
-  final bool cardPositionsLocked;
 
   Future<void> _removeTrack(
     BuildContext context,
@@ -530,7 +521,6 @@ class _TrackNodeWidget extends ConsumerWidget {
                     detail: singleDetail,
                     detailLoading: isSingleDetailLoading,
                     index: index,
-                    cardPositionsLocked: cardPositionsLocked,
                     onPlay: playSingleTrack,
                   ),
                 )
@@ -556,23 +546,6 @@ class _TrackNodeWidget extends ConsumerWidget {
                         ),
                         icon: const Icon(Icons.add_circle_rounded, size: 25),
                       ),
-                      if (index != null && !cardPositionsLocked) ...[
-                        const SizedBox(width: 4),
-                        ReorderableDragStartListener(
-                          index: index!,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              vertical: 8,
-                              horizontal: 4,
-                            ),
-                            color: Colors.transparent,
-                            child: const Icon(
-                              Icons.drag_handle_rounded,
-                              size: 24,
-                            ),
-                          ),
-                        ),
-                      ],
                     ],
                   ),
                 ),
@@ -638,20 +611,6 @@ class _TrackNodeWidget extends ConsumerWidget {
                   ),
                   icon: const Icon(Icons.add_circle_rounded, size: 22),
                 ),
-                if (index != null && !cardPositionsLocked) ...[
-                  const SizedBox(width: 4),
-                  ReorderableDragStartListener(
-                    index: index!,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        vertical: 8,
-                        horizontal: 4,
-                      ),
-                      color: Colors.transparent,
-                      child: const Icon(Icons.drag_handle_rounded, size: 24),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -871,7 +830,6 @@ class _RootFolderCardContent extends StatelessWidget {
     required this.hasChildren,
     required this.onPlay,
     this.index,
-    this.cardPositionsLocked = true,
   });
 
   final String folderPath;
@@ -883,7 +841,6 @@ class _RootFolderCardContent extends StatelessWidget {
   final bool hasChildren;
   final VoidCallback onPlay;
   final int? index;
-  final bool cardPositionsLocked;
 
   @override
   Widget build(BuildContext context) {
@@ -895,7 +852,6 @@ class _RootFolderCardContent extends StatelessWidget {
       showExpandIndicator: hasChildren,
       onPlay: onPlay,
       index: index,
-      cardPositionsLocked: cardPositionsLocked,
       coverBuilder: (coverWidth) => _LibraryCoverThumbnail(
         folderPath: folderPath,
         width: coverWidth,
@@ -915,7 +871,6 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
     this.expanded = false,
     this.showExpandIndicator = false,
     this.index,
-    this.cardPositionsLocked = true,
   });
 
   final String title;
@@ -926,7 +881,6 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
   final bool expanded;
   final bool showExpandIndicator;
   final int? index;
-  final bool cardPositionsLocked;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -956,16 +910,6 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
       playTooltip: i18n.tr('play'),
       enableMarquee: false,
       enableTitleMarquee: false,
-      extraTrailing: index != null && !cardPositionsLocked
-          ? ReorderableDragStartListener(
-              index: index!,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-                color: Colors.transparent,
-                child: const Icon(Icons.drag_handle_rounded, size: 24),
-              ),
-            )
-          : null,
     );
   }
 }
@@ -1009,7 +953,6 @@ class _SingleMediaFileCardContent extends StatelessWidget {
     required this.detailLoading,
     required this.onPlay,
     this.index,
-    this.cardPositionsLocked = true,
   });
 
   final MusicTrack track;
@@ -1018,7 +961,6 @@ class _SingleMediaFileCardContent extends StatelessWidget {
   final bool detailLoading;
   final VoidCallback onPlay;
   final int? index;
-  final bool cardPositionsLocked;
 
   @override
   Widget build(BuildContext context) {
@@ -1028,7 +970,6 @@ class _SingleMediaFileCardContent extends StatelessWidget {
       detailLoading: detailLoading,
       onPlay: onPlay,
       index: index,
-      cardPositionsLocked: cardPositionsLocked,
       coverBuilder: (coverWidth) => _LibraryTrackCoverThumbnail(
         track: track,
         width: coverWidth,

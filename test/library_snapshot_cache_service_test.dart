@@ -194,7 +194,6 @@ void main() {
         LibraryDerivedSnapshotPayload(
           tracks: List<MusicTrack>.of(library.library),
           watchedFolders: List<String>.of(library.watchedFolders),
-          nodeOrder: const <String>[],
         ),
       );
       final service = LibrarySnapshotCacheService(
@@ -325,40 +324,6 @@ void main() {
     expect(service.treeSnapshotRevision, library.structureRevision);
     expect(committed, isTrue);
   });
-
-  test(
-    'top-level reorder updates the current tree cache synchronously',
-    () async {
-      final library = LibraryService();
-      library.library.addAll(<MusicTrack>[
-        _track(path: '/library/first/01.mp3', groupKey: '/library/first'),
-        _track(path: '/library/second/01.mp3', groupKey: '/library/second'),
-      ]);
-      library.syncLibraryNodeOrder();
-      library.markStructureChanged();
-      final service = LibrarySnapshotCacheService(
-        libraryService: library,
-        detailCacheService: AudioDetailCacheService(
-          repository: _FakeAudioDetailRepository(),
-        ),
-      );
-      await service.cardSnapshot(onCommitted: () {});
-      final initialOrder = service.cards.map((node) => node.path).toList();
-
-      library.reorderLibraryNodes(
-        0,
-        initialOrder.length,
-        currentTree: service.cards,
-      );
-
-      expect(service.applyCurrentTopLevelOrder(), isTrue);
-      expect(service.cards.map((node) => node.path), <String>[
-        initialOrder.last,
-        initialOrder.first,
-      ]);
-      expect(service.cardSnapshotRevision, library.structureRevision);
-    },
-  );
 
   test(
     'card snapshot keeps folder tracks without building child nodes',

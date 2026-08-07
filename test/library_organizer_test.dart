@@ -56,7 +56,6 @@ void main() {
         ),
       ],
       watchedFolders: const <String>['/library/root'],
-      nodeOrder: const <String>[],
     );
 
     expect(snapshot.leafFolderCount, 3);
@@ -83,7 +82,6 @@ void main() {
         ),
       ],
       watchedFolders: <String>[uri],
-      nodeOrder: const <String>[],
     );
 
     expect(snapshot.tree.single.name, 'Music');
@@ -99,7 +97,6 @@ void main() {
         track(trackPath, groupKey: '$root::Album', groupSubtitle: 'Old/Album'),
       ],
       watchedFolders: const <String>[root],
-      nodeOrder: const <String>[],
     );
 
     expect(snapshot.tree.single.path, root);
@@ -121,7 +118,6 @@ void main() {
         ),
       ],
       watchedFolders: const <String>[childRoot],
-      nodeOrder: const <String>[],
     );
 
     final album = snapshot.tree.single as FolderNode;
@@ -144,13 +140,11 @@ void main() {
       tracks: <MusicTrack>[workTrack],
       watchedFolders: const <String>[],
       watchedLibraries: const <String>[libraryRoot],
-      nodeOrder: const <String>[],
     );
     final tree = organizer.buildTree(
       tracks: <MusicTrack>[workTrack],
       watchedFolders: const <String>[],
       watchedLibraries: const <String>[libraryRoot],
-      nodeOrder: const <String>[],
     );
 
     expect(cards.tree.single.path, workRoot);
@@ -165,19 +159,18 @@ void main() {
     );
   });
 
-  test('node order wins over alphabetical order', () {
+  test('top-level nodes use stable alphabetical order', () {
     final snapshot = organizer.buildTree(
       tracks: <MusicTrack>[
         track('/music/a/01.mp3', groupKey: '/music/a', groupTitle: 'A'),
         track('/music/b/01.mp3', groupKey: '/music/b', groupTitle: 'B'),
       ],
       watchedFolders: const <String>[],
-      nodeOrder: const <String>['/music/b', '/music/a'],
     );
 
     expect(snapshot.tree.map((node) => node.path), <String>[
-      '/music/b',
       '/music/a',
+      '/music/b',
     ]);
   });
 
@@ -200,7 +193,6 @@ void main() {
         track('/library/b/Album/03.mp3'),
       ],
       watchedFolders: const <String>['/library/a', '/library/b'],
-      nodeOrder: const <String>[],
     );
 
     expect(snapshot.leafFolderCount, 3);
@@ -227,7 +219,6 @@ void main() {
     final snapshot = organizer.buildTree(
       tracks: tracks,
       watchedFolders: const <String>['/benchmark'],
-      nodeOrder: const <String>[],
     );
     stopwatch.stop();
 

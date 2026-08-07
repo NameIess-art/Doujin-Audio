@@ -1862,6 +1862,15 @@ void main() {
         find.byKey(const ValueKey('session_detail_background_blur')),
         findsOne,
       );
+      final backgroundFade = tester.widget<FadeTransition>(
+        find
+            .ancestor(
+              of: find.byKey(const ValueKey('session_detail_background_blur')),
+              matching: find.byType(FadeTransition),
+            )
+            .first,
+      );
+      expect(backgroundFade.opacity.value, lessThan(1));
       expect(
         tester
             .widgetList<TickerMode>(

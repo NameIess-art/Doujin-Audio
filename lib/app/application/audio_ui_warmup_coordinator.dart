@@ -71,6 +71,21 @@ final class AudioUiWarmupCoordinator {
     });
   }
 
+  void scheduleSessionDetailNeighbors({required String currentSessionId}) {
+    if (_disposed) return;
+    final generation = ++_generation;
+    _deferredTimer?.cancel();
+    _deferredTimer = Timer(const Duration(milliseconds: 140), () {
+      _deferredTimer = null;
+      if (_disposed || generation != _generation) return;
+      _scheduler.beginGeneration(
+        generation,
+        cooldown: const Duration(milliseconds: 120),
+      );
+      _scheduleNeighborSessionCovers(currentSessionId, generation);
+    });
+  }
+
   void enterBackground() {
     _pausedForLifecycle = true;
     _deferredTimer?.cancel();
@@ -131,20 +146,54 @@ final class AudioUiWarmupCoordinator {
     );
   }
 
+  void _scheduleNeighborSessionCovers(String currentSessionId, int generation) {
+    final sessions = _playback.state.activeSessions;
+    if (sessions.length < 2) return;
+    final currentIndex = sessions.indexWhere(
+      (session) => session.id == currentSessionId,
+    );
+    if (currentIndex < 0) return;
+
+    final neighborIndexes = <int>{
+      (currentIndex - 1 + sessions.length) % sessions.length,
+      (currentIndex + 1) % sessions.length,
+    };
+    var priority = 0;
+    for (final index in neighborIndexes) {
+      _scheduleCover(
+        trackPath: sessions[index].currentTrackPath,
+        generation: generation,
+        priority: priority++,
+      );
+    }
+  }
+
+  void _scheduleCover({
+    required String trackPath,
+    required int generation,
+    required int priority,
+  }) {
+    final track = _library.trackByPath(trackPath);
+    _scheduler.schedule(
+      key:
+          'track_cover:$trackPath:${_library.coverArtworkCacheService.generation}',
+      priority: priority,
+      generation: generation,
+      group: 'session_cover',
+      task: () => _library.coverPathFutureForTrack(track),
+    );
+  }
+
   void _scheduleTrack({
     required String trackPath,
     required int generation,
     required int coverPriority,
     required int subtitlePriority,
   }) {
-    final track = _library.trackByPath(trackPath);
-    _scheduler.schedule(
-      key:
-          'track_cover:$trackPath:${_library.coverArtworkCacheService.generation}',
-      priority: coverPriority,
+    _scheduleCover(
+      trackPath: trackPath,
       generation: generation,
-      group: 'session_cover',
-      task: () => _library.coverPathFutureForTrack(track),
+      priority: coverPriority,
     );
     _scheduler.schedule(
       key: 'subtitle:$trackPath',

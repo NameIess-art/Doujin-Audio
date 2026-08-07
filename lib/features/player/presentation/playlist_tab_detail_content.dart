@@ -5,6 +5,7 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
     super.key,
     required this.session,
     required this.artworkWidget,
+    this.deferHeavyWork = false,
     this.segmentPanelExpandedNotifier,
     this.isLandscape = false,
     this.detailPadding = EdgeInsets.zero,
@@ -18,6 +19,7 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
 
   final PlaybackSession session;
   final Widget artworkWidget;
+  final bool deferHeavyWork;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final bool isLandscape;
   final EdgeInsetsGeometry detailPadding;
@@ -113,7 +115,15 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     final nextKey = track == null
         ? PathMatcher.normalize(widget.session.currentTrackPath)
         : _timeSegments.trackKeyForTrack(track);
-    if (nextKey == _segmentTrackKey) return;
+    if (nextKey == _segmentTrackKey) {
+      if (!widget.deferHeavyWork &&
+          !_segmentLabelsLoaded &&
+          !_segmentLoading &&
+          _segmentLoadTimer == null) {
+        _scheduleSegmentLoad(nextKey);
+      }
+      return;
+    }
     _segmentTrackKey = nextKey;
     _segmentLabelsLoaded = false;
     _segmentLabels = const <TimeSegmentLabel>[];
@@ -126,10 +136,15 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     _draftColorValue = null;
     _setSegmentNameText('');
     _segmentLoadTimer?.cancel();
+    _segmentLoadTimer = null;
+    if (!widget.deferHeavyWork) _scheduleSegmentLoad(nextKey);
+  }
+
+  void _scheduleSegmentLoad(String trackKey) {
     _segmentLoadTimer = Timer(const Duration(milliseconds: 220), () {
       _segmentLoadTimer = null;
-      if (!mounted || _segmentTrackKey != nextKey) return;
-      unawaited(_loadSegmentLabels(nextKey));
+      if (!mounted || _segmentTrackKey != trackKey) return;
+      unawaited(_loadSegmentLabels(trackKey));
     });
   }
 
@@ -458,7 +473,9 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
             ),
           ),
           const SizedBox(height: 8),
-          if (widget.subtitleEnabled && !_segmentPanelExpanded)
+          if (!widget.deferHeavyWork &&
+              widget.subtitleEnabled &&
+              !_segmentPanelExpanded)
             RepaintBoundary(child: _SessionSubtitlePanel(session: session)),
           RepaintBoundary(child: buildProgressBar()),
           buildTransportControls(),

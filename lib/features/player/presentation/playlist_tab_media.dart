@@ -6,12 +6,14 @@ class _SessionHeroArtwork extends ConsumerWidget {
     required this.height,
     required this.track,
     required this.coverPathFuture,
+    this.videoSurfaceEnabled = true,
   });
 
   final PlaybackSession session;
   final double height;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
+  final bool videoSurfaceEnabled;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -99,7 +101,8 @@ class _SessionHeroArtwork extends ConsumerWidget {
               borderRadius: BorderRadius.circular(16),
               clipBehavior: Clip.antiAlias,
               child: SessionVideoViewport(
-                videoReady: _isSessionVideoReady(session, track),
+                videoReady:
+                    videoSurfaceEnabled && _isSessionVideoReady(session, track),
                 surfaceBuilder: (_) =>
                     NativeSessionVideoSurface(sessionId: sessionId),
                 onFullscreen: () => _showSessionVideoFullscreen(

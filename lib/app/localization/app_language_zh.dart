@@ -586,7 +586,7 @@ const Map<String, String> appLanguageZh = {
   'startup_playback_restore_behavior': '启动后播放状态',
   'startup_playback_restore_resume': '继续播放',
   'startup_playback_restore_pause': '暂停',
-  'allow_duplicate_works': '允许添加相同作品会话',
+  'allow_duplicate_works': '允许添加相同作品',
   'reduce_animations': '减少动画',
   'haptic_feedback_enabled': '操作震动',
   'dlsite_metadata_language': 'DLsite 信息语言',

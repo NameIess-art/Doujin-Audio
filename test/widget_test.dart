@@ -309,6 +309,7 @@ void main() {
 
     await _swipeToAsmrPage(tester);
     await _pumpMainScreenAnimations(tester);
+    await tester.pump(const Duration(milliseconds: 100));
 
     expect(
       find.text(harness.language.tr('asmr_category_collected')),
@@ -589,6 +590,7 @@ void main() {
 
     sectionIndex.value = AudioLibraryPage.asmrSection;
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
     await tester.pump();
     expect(controller.initializeCount, 1);
 

@@ -453,6 +453,170 @@ void main() {
     },
   );
 
+  testWidgets(
+    'detail session swipe cross-fades content without fading primary controls',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 1000);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final tracks = <MusicTrack>[
+        testMusicTrack(
+          name: 'First session track',
+          path: '/library/first.mp3',
+          groupKey: '/library/first',
+          groupTitle: 'First work',
+        ),
+        testMusicTrack(
+          name: 'Second session track',
+          path: '/library/second.mp3',
+          groupKey: '/library/second',
+          groupTitle: 'Second work',
+        ),
+      ];
+      fixture.runtimeGraph.library.addTracks(
+        tracks,
+        notify: false,
+        persist: false,
+      );
+      final sessions = <PlaybackSession>[
+        for (final track in tracks)
+          fixture.runtimeGraph.playback.createTrackSession(track),
+      ];
+      fixture.playbackService.syncSlice(
+        activeSessions: sessions,
+        playingSessionCount: 0,
+        focusedSessionId: sessions.first.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+      unawaited(
+        Navigator.of(
+          tester.element(find.byType(PlaylistTab)),
+        ).push(buildSessionDetailRoute(sessionId: sessions.first.id)),
+      );
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pump();
+
+      void expectPrimaryControlsHaveNoFadeAncestor() {
+        final primaryIcons = find.byWidgetPredicate(
+          (widget) =>
+              widget is Icon &&
+              <IconData>{
+                Icons.skip_previous_rounded,
+                Icons.replay_5_rounded,
+                Icons.play_arrow_rounded,
+                Icons.pause_rounded,
+                Icons.forward_5_rounded,
+                Icons.skip_next_rounded,
+              }.contains(widget.icon),
+        );
+        expect(primaryIcons, findsWidgets);
+        for (final element in primaryIcons.evaluate()) {
+          var hasFadeAncestor = false;
+          element.visitAncestorElements((ancestor) {
+            if (ancestor.widget is FadeTransition) {
+              hasFadeAncestor = true;
+              return false;
+            }
+            return true;
+          });
+          expect(hasFadeAncestor, isFalse);
+        }
+      }
+
+      final playButton = find.ancestor(
+        of: find.byIcon(Icons.play_arrow_rounded),
+        matching: find.byType(IconButton),
+      );
+      expect(
+        find.descendant(
+          of: playButton,
+          matching: find.byType(AnimatedSwitcher),
+        ),
+        findsNothing,
+      );
+
+      await tester.drag(find.byType(SessionDetailPage), const Offset(-120, 0));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      final outgoingForward = tester.widget<FadeTransition>(
+        find
+            .ancestor(
+              of: find.text(tracks.first.displayName),
+              matching: find.byType(FadeTransition),
+            )
+            .first,
+      );
+      final incomingForward = tester.widget<FadeTransition>(
+        find
+            .ancestor(
+              of: find.text(tracks.last.displayName),
+              matching: find.byType(FadeTransition),
+            )
+            .first,
+      );
+      expect(outgoingForward.opacity.value, inExclusiveRange(0, 1));
+      expect(incomingForward.opacity.value, inExclusiveRange(0, 1));
+      for (final track in tracks) {
+        final trackTitle = find.text(track.displayName);
+        expect(
+          find.ancestor(of: trackTitle, matching: find.byType(SlideTransition)),
+          findsNothing,
+        );
+        expect(
+          find.ancestor(of: trackTitle, matching: find.byType(ScaleTransition)),
+          findsNothing,
+        );
+      }
+      expectPrimaryControlsHaveNoFadeAncestor();
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pump();
+
+      await tester.drag(find.byType(SessionDetailPage), const Offset(120, 0));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      final outgoingBackward = tester.widget<FadeTransition>(
+        find
+            .ancestor(
+              of: find.text(tracks.last.displayName),
+              matching: find.byType(FadeTransition),
+            )
+            .first,
+      );
+      final incomingBackward = tester.widget<FadeTransition>(
+        find
+            .ancestor(
+              of: find.text(tracks.first.displayName),
+              matching: find.byType(FadeTransition),
+            )
+            .first,
+      );
+      expect(outgoingBackward.opacity.value, inExclusiveRange(0, 1));
+      expect(incomingBackward.opacity.value, inExclusiveRange(0, 1));
+      expectPrimaryControlsHaveNoFadeAncestor();
+      await tester.pumpAndSettle();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 200)),
+      );
+      await tester.pump();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(milliseconds: 120));
+    },
+  );
+
   testWidgets('playlist first open fades its card skeleton out over 750ms', (
     WidgetTester tester,
   ) async {

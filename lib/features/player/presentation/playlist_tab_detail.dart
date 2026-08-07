@@ -363,77 +363,66 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
             );
           },
           child: RepaintBoundary(
-            child: AnimatedSwitcher(
-              duration: kAppMotionSlow,
-              reverseDuration: kAppMotionStandard,
-              transitionBuilder: (child, animation) =>
-                  buildAppFadeTransition(
-                    context: context,
-                    animation: animation,
-                    child: child,
-                  ),
-              child: Builder(
-                key: ValueKey(_currentSessionId),
-                builder: (context) {
-                  final pageSession = playback.sessionById(_currentSessionId);
-                  if (pageSession == null) {
-                    return const SizedBox.shrink();
-                  }
-                  final detailTrack = paths.trackByPath(
-                    pageSession.currentTrackPath,
-                  );
-                  final coverPathFuture = _coverFutureForTrack(
-                    ref.read(libraryFacadeProvider),
-                    detailTrack,
-                  );
+            child: Builder(
+              builder: (context) {
+                final pageSession = playback.sessionById(_currentSessionId);
+                if (pageSession == null) {
+                  return const SizedBox.shrink();
+                }
+                final detailTrack = paths.trackByPath(
+                  pageSession.currentTrackPath,
+                );
+                final coverPathFuture = _coverFutureForTrack(
+                  ref.read(libraryFacadeProvider),
+                  detailTrack,
+                );
 
-                  return _SessionDetailScaffold(
-                    session: pageSession,
-                    deferSubtitleLoad: _deferSubtitleLoad,
-                    coverPathFuture: coverPathFuture,
-                    dismissAnimation: _dismissController,
-                    segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
-                    onClose: () =>
-                        _dismissAndPop(navigator: Navigator.of(context)),
-                    onHorizontalDragUpdate: (details) {
-                      if (_segmentPanelExpandedNotifier.value) return;
-                      _horizontalDragDelta += details.primaryDelta ?? 0;
-                    },
-                    onHorizontalDragEnd: (details) {
-                      if (_segmentPanelExpandedNotifier.value) return;
-                      _handleHorizontalDragEnd(details, sessionIds);
-                    },
-                    onHorizontalDragCancel: () {
-                      if (_segmentPanelExpandedNotifier.value) return;
-                      _horizontalDragDelta = 0;
-                    },
-                    onVerticalDragUpdate: (delta) {
-                      final screenHeight = MediaQuery.sizeOf(context).height;
-                      if (screenHeight <= 0) return;
-                      final nextValue =
-                          _dismissController.value + (delta / screenHeight);
-                      if (nextValue > 0.001) {
-                        _beginDismissInteraction();
-                      }
-                      _dismissController.value = nextValue.clamp(0.0, 1.0);
-                    },
-                    onVerticalDragEnd: (details) =>
-                        _handleVerticalDragEnd(details, context),
-                    onVerticalDragCancel: () {
-                      if (_dismissController.value <= 0.001) {
-                        _endDismissInteraction();
-                        return;
-                      }
+                return _SessionDetailScaffold(
+                  session: pageSession,
+                  deferSubtitleLoad: _deferSubtitleLoad,
+                  coverPathFuture: coverPathFuture,
+                  dismissAnimation: _dismissController,
+                  segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
+                  onClose: () =>
+                      _dismissAndPop(navigator: Navigator.of(context)),
+                  onHorizontalDragUpdate: (details) {
+                    if (_segmentPanelExpandedNotifier.value) return;
+                    _horizontalDragDelta += details.primaryDelta ?? 0;
+                  },
+                  onHorizontalDragEnd: (details) {
+                    if (_segmentPanelExpandedNotifier.value) return;
+                    _handleHorizontalDragEnd(details, sessionIds);
+                  },
+                  onHorizontalDragCancel: () {
+                    if (_segmentPanelExpandedNotifier.value) return;
+                    _horizontalDragDelta = 0;
+                  },
+                  onVerticalDragUpdate: (delta) {
+                    final screenHeight = MediaQuery.sizeOf(context).height;
+                    if (screenHeight <= 0) return;
+                    final nextValue =
+                        _dismissController.value + (delta / screenHeight);
+                    if (nextValue > 0.001) {
                       _beginDismissInteraction();
-                      unawaited(
-                        _animateDismissBack().whenComplete(
-                          _endDismissInteraction,
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
+                    }
+                    _dismissController.value = nextValue.clamp(0.0, 1.0);
+                  },
+                  onVerticalDragEnd: (details) =>
+                      _handleVerticalDragEnd(details, context),
+                  onVerticalDragCancel: () {
+                    if (_dismissController.value <= 0.001) {
+                      _endDismissInteraction();
+                      return;
+                    }
+                    _beginDismissInteraction();
+                    unawaited(
+                      _animateDismissBack().whenComplete(
+                        _endDismissInteraction,
+                      ),
+                    );
+                  },
+                );
+              },
             ),
           ),
         ),

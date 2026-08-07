@@ -58,6 +58,12 @@ abstract final class AppPageHeaderMetrics {
     AppSpacing.md,
     0,
   );
+  static const EdgeInsets mainTabPadding = EdgeInsets.fromLTRB(
+    AppSpacing.md,
+    6,
+    AppSpacing.xs,
+    0,
+  );
   static const double firstContentSpacing = AppSpacing.xxs;
   static const double bottomSpacing = AppSpacing.xxs;
   static const double toolbarHeight = 62;

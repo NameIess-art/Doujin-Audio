@@ -41,6 +41,7 @@ import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/core/widgets/app_transitions.dart';
 import 'package:nameless_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:nameless_audio/app/theme/app_design_tokens.dart';
+import 'package:nameless_audio/app/theme/app_styles.dart';
 import 'package:nameless_audio/app/theme/theme_provider.dart';
 import 'package:nameless_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -356,6 +357,31 @@ void main() {
       findsOneWidget,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('main page header actions use the compact trailing inset', (
+    tester,
+  ) async {
+    final harness = await _pumpAppShell(tester);
+    await _pumpMainScreenAnimations(tester);
+
+    final mainHeaderTitles = <String>{
+      'ASMR.ONE',
+      harness.language.tr('music_library'),
+      harness.language.tr('playback_sessions'),
+    };
+    final mainHeaders = tester
+        .widgetList<TopPageHeader>(
+          find.byType(TopPageHeader, skipOffstage: false),
+        )
+        .where((header) => mainHeaderTitles.contains(header.title))
+        .toList();
+
+    expect(mainHeaders, hasLength(3));
+    for (final header in mainHeaders) {
+      expect(header.padding, AppPageHeaderMetrics.mainTabPadding);
+      expect((header.padding as EdgeInsets).right, 8);
+    }
   });
 
   testWidgets('audio library title swipe transitions between mounted pages', (

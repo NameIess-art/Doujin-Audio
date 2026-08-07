@@ -244,42 +244,28 @@ class _PlaybackPrimaryControls extends StatelessWidget {
                         }
                       : null,
                   iconSize: playIconSize,
-                  icon: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 120),
-                    transitionBuilder: (child, animation) {
-                      return ScaleTransition(
-                        scale: Tween<double>(begin: 0.4, end: 1.0).animate(
-                          CurvedAnimation(
-                            parent: animation,
-                            curve: Curves.easeOutBack,
-                          ),
-                        ),
-                        child: FadeTransition(opacity: animation, child: child),
-                      );
-                    },
-                    child: isLoading
-                        ? SizedBox(
-                            key: const ValueKey('loading'),
-                            width: playIconSize * 0.48,
-                            height: playIconSize * 0.48,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 3.0,
-                              color: enabled
-                                  ? onPrimaryColor
-                                  : cs.onSurface.withValues(alpha: 0.35),
-                            ),
-                          )
-                        : Icon(
-                            showPauseIcon
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            key: ValueKey(showPauseIcon),
-                            size: playIconSize * 0.75,
+                  icon: isLoading
+                      ? SizedBox(
+                          key: const ValueKey('loading'),
+                          width: playIconSize * 0.48,
+                          height: playIconSize * 0.48,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 3.0,
                             color: enabled
                                 ? onPrimaryColor
                                 : cs.onSurface.withValues(alpha: 0.35),
                           ),
-                  ),
+                        )
+                      : Icon(
+                          showPauseIcon
+                              ? Icons.pause_rounded
+                              : Icons.play_arrow_rounded,
+                          key: ValueKey(showPauseIcon),
+                          size: playIconSize * 0.75,
+                          color: enabled
+                              ? onPrimaryColor
+                              : cs.onSurface.withValues(alpha: 0.35),
+                        ),
                 ),
               ),
               _PrimaryTransportButton(

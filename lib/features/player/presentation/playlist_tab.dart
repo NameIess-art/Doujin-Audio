@@ -759,6 +759,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   key: headerKey,
                   icon: Icons.graphic_eq_rounded,
                   title: i18n.tr('playback_sessions'),
+                  padding: AppPageHeaderMetrics.mainTabPadding,
                   trailing: SizedBox(
                     height: 44,
                     child: Row(

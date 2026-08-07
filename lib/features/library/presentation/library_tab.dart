@@ -851,6 +851,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 key: headerKey,
                 icon: Icons.library_music_rounded,
                 title: i18n.tr('music_library'),
+                padding: AppPageHeaderMetrics.mainTabPadding,
                 onTitleSwipeLeft: widget.onTitleSwipeLeft,
                 onTitleSwipeRight: widget.onTitleSwipeRight,
                 trailing: SizedBox(

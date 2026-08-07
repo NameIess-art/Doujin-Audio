@@ -499,6 +499,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
             child: TopPageHeader(
               key: _headerKey,
               title: 'ASMR.ONE',
+              padding: AppPageHeaderMetrics.mainTabPadding,
               onTitleSwipeLeft: widget.onTitleSwipeLeft,
               onTitleSwipeRight: widget.onTitleSwipeRight,
               trailing: SizedBox(
@@ -558,6 +559,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           child: TopPageHeader(
             key: _headerKey,
             title: 'ASMR.ONE',
+            padding: AppPageHeaderMetrics.mainTabPadding,
             onTitleSwipeLeft: widget.onTitleSwipeLeft,
             onTitleSwipeRight: widget.onTitleSwipeRight,
             trailing: SizedBox(

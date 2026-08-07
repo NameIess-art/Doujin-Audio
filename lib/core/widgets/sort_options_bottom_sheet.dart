@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import 'app_bottom_sheet.dart';
@@ -125,14 +123,11 @@ class _SortOptionsSheetState<T> extends State<_SortOptionsSheet<T>> {
     final cs = theme.colorScheme;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final view = View.of(context);
-        final viewportHeight = view.physicalSize.height / view.devicePixelRatio;
-        final maxHeight = math.min(constraints.maxHeight, viewportHeight);
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxHeight: maxHeight * 0.9),
+            child: SizedBox(
+              width: constraints.maxWidth,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,

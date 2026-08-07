@@ -15,6 +15,7 @@ class AppBottomSheet {
     Clip? clipBehavior,
     AnimationStyle? sheetAnimationStyle,
   }) {
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.75;
     final effectiveAnimationStyle =
         sheetAnimationStyle ??
         (MediaQuery.disableAnimationsOf(context)
@@ -37,6 +38,7 @@ class AppBottomSheet {
       backgroundColor: backgroundColor,
       elevation: elevation,
       clipBehavior: clipBehavior,
+      constraints: BoxConstraints(maxHeight: maxHeight),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),

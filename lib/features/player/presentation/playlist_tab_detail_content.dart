@@ -673,11 +673,10 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
         reverseCurve: Curves.fastOutSlowIn,
       ),
       builder: (ctx) {
-        return ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(ctx).height * 0.58,
-          ),
+        return SizedBox(
+          width: double.infinity,
           child: ListView.builder(
+            shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(16, 4, 12, 24),
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
             itemCount: tree.length + 1,

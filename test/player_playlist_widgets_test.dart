@@ -115,9 +115,10 @@ _pumpSubtitleDetail({
   required PlaybackDetailSubtitleStyle style,
   required SubtitleTrack subtitleTrack,
   required Duration initialPosition,
+  Size physicalSize = const Size(1080, 2400),
 }) async {
   tester.view.devicePixelRatio = 3;
-  tester.view.physicalSize = const Size(1080, 2400);
+  tester.view.physicalSize = physicalSize;
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(tester.view.resetPhysicalSize);
 
@@ -1548,6 +1549,10 @@ void main() {
   testWidgets(
     'single-file queue cover fills the card and switcher shows an audio entry',
     (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 1000);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
       final fixture = AppRuntimeWidgetTestFixture();
       addTearDown(fixture.dispose);
       final runtimeGraph = fixture.runtimeGraph;
@@ -1630,6 +1635,24 @@ void main() {
         ).push(buildSessionDetailRoute(sessionId: queueSession.id)),
       );
       await tester.pumpAndSettle();
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey('playback_secondary_controls')))
+            .width,
+        366,
+      );
+      expect(
+        find.byKey(const ValueKey('session_detail_background_blur')),
+        findsOneWidget,
+      );
+
+      await settingsRepository.setBlurPlayerBackgroundEnabled(false);
+      await tester.pump();
+      expect(
+        find.byKey(const ValueKey('session_detail_background_blur')),
+        findsNothing,
+      );
+
       await tester.tap(find.byTooltip(languageProvider.tr('switch_audio')));
       await tester.pumpAndSettle();
 
@@ -1674,8 +1697,16 @@ void main() {
       style: PlaybackDetailSubtitleStyle.compact,
       subtitleTrack: subtitleTrack,
       initialPosition: const Duration(seconds: 1),
+      physicalSize: const Size(1500, 2400),
     );
     await pumpUntilFound(tester, find.text(subtitleText));
+
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('playback_secondary_controls')))
+          .width,
+      366,
+    );
 
     final text = tester.widget<Text>(find.text(subtitleText));
     expect(text.textAlign, TextAlign.center);

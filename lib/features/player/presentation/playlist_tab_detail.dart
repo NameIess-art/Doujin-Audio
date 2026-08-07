@@ -1,5 +1,9 @@
 part of 'playlist_tab.dart';
 
+const double _kSessionDetailBackgroundBlurSigma = 32;
+const double _kAsmrSessionDetailBackgroundBlurSigma = 12;
+const int _kAsmrSessionDetailBackgroundCacheWidth = 300;
+
 ThemeData _createAsmrSessionDetailTheme(
   ThemeData base,
   AppDesignTokens tokens,
@@ -619,6 +623,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   Widget build(BuildContext context) {
     final session = widget.session;
     final paths = ref.read(audioPathCoordinatorProvider);
+    final library = ref.read(libraryFacadeProvider);
     final coverPathFuture = widget.coverPathFuture;
     final onClose = widget.onClose;
     final onHorizontalDragUpdate = widget.onHorizontalDragUpdate;
@@ -629,8 +634,33 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
     final onVerticalDragCancel = widget.onVerticalDragCancel;
 
     final track = paths.trackByPath(session.currentTrackPath);
+    final isAsmrTrack = track?.remoteMetadataKind == 'asmr.one';
     final detailTheme = _detailThemeForTrack(context, track);
     final cs = detailTheme.colorScheme;
+    final requestedBackgroundCacheWidth = coverCacheWidthForResolution(
+      ref.watch(
+        settingsStateProvider.select(
+          (state) =>
+              state.value?.coverImageResolution ??
+              CoverImageResolution.balanced,
+        ),
+      ),
+    );
+    final backgroundCacheWidth = isAsmrTrack
+        ? min(
+            requestedBackgroundCacheWidth ??
+                _kAsmrSessionDetailBackgroundCacheWidth,
+            _kAsmrSessionDetailBackgroundCacheWidth,
+          )
+        : requestedBackgroundCacheWidth;
+    final backgroundBlurSigma = isAsmrTrack
+        ? _kAsmrSessionDetailBackgroundBlurSigma
+        : _kSessionDetailBackgroundBlurSigma;
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.blurPlayerBackgroundEnabled ?? true,
+      ),
+    );
     return Theme(
       data: detailTheme,
       child: Material(
@@ -708,6 +738,63 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           child: Stack(
             fit: StackFit.expand,
             children: [
+              if (blurEnabled)
+                Positioned.fill(
+                  child: FadeTransition(
+                    opacity: ReverseAnimation(widget.dismissAnimation),
+                    child: ClipRect(
+                      child: RepaintBoundary(
+                        child: ImageFiltered(
+                          key: const ValueKey('session_detail_background_blur'),
+                          imageFilter: ImageFilter.blur(
+                            sigmaX: backgroundBlurSigma,
+                            sigmaY: backgroundBlurSigma,
+                            tileMode: TileMode.decal,
+                          ),
+                          child: AsyncCoverImage(
+                            future: coverPathFuture,
+                            requestKey: session.id,
+                            duration: Duration.zero,
+                            deferCommitDuringInteraction: true,
+                            initialPath: library
+                                .resolvedPlaybackCoverPathForTrack(track),
+                            retryFutureBuilder: () => _coverFutureForTrack(
+                              ref.read(libraryFacadeProvider),
+                              track,
+                            ),
+                            fallbackBuilder: (_) => CoverFallbackArtwork(
+                              seed:
+                                  track?.displayName ??
+                                  session.currentTrackPath,
+                              showIcon: false,
+                            ),
+                            imageBuilder: (context, coverPath) {
+                              return RetryingFileImage(
+                                path: coverPath,
+                                cacheWidth: backgroundCacheWidth,
+                                useDefaultCacheWidth:
+                                    backgroundCacheWidth != null,
+                                fit: BoxFit.cover,
+                                filterQuality: isAsmrTrack
+                                    ? FilterQuality.low
+                                    : FilterQuality.medium,
+                                color: cs.surface.withValues(alpha: 0.45),
+                                colorBlendMode: BlendMode.darken,
+                                deferRetryDuringInteraction: true,
+                                fallbackBuilder: (_) => CoverFallbackArtwork(
+                                  seed:
+                                      track?.displayName ??
+                                      session.currentTrackPath,
+                                  showIcon: false,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               // Content
               SafeArea(
                 child: LayoutBuilder(

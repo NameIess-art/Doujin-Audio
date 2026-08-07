@@ -1,9 +1,11 @@
+import 'dart:collection';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/application/app_runtime_graph.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/library/application/library_facade.dart';
+import 'package:nameless_audio/features/library/application/library_service.dart';
 import 'package:nameless_audio/features/player/application/notification_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
@@ -102,8 +104,128 @@ void main() {
       expect(subtitle!.cues.single.text, 'ASMR subtitle');
     },
   );
+
+  test('ASMR session lookup skips the normalized local library fallback', () {
+    final libraryService = LibraryService();
+    final library = _createLibraryFacade(service: libraryService);
+    library.addTracks(
+      List<MusicTrack>.generate(
+        512,
+        (index) => MusicTrack(
+          path: 'C:\\Audio\\Library\\track_$index.mp3',
+          displayName: 'track_$index',
+          groupKey: r'C:\Audio\Library',
+          groupTitle: 'Local Library',
+          groupSubtitle: r'C:\Audio\Library',
+          isSingle: false,
+        ),
+      ),
+      notify: false,
+      persist: false,
+    );
+    final countedLibrary = _ElementReadCountingList<MusicTrack>(
+      libraryService.library,
+    );
+    libraryService.library = countedLibrary;
+
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+    );
+    final runtimeGraph = createAppRuntimeGraph(
+      library: library,
+      playback: playback,
+      timer: TimerFacade.create(),
+      notifications: NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      ),
+      settings: SettingsRepository(),
+      persistenceEnabled: false,
+    );
+    addTearDown(runtimeGraph.runtime.dispose);
+    final asmrTrack = MusicTrack(
+      path: 'https://example.com/asmr/track.mp3',
+      displayName: 'ASMR track',
+      groupKey: 'asmr-work-1',
+      groupTitle: 'ASMR Work',
+      groupSubtitle: 'RJ000001',
+      isSingle: false,
+      remoteMetadataKind: 'asmr.one',
+    );
+    playback.createTrackSession(
+      asmrTrack,
+      customQueueTracks: <MusicTrack>[asmrTrack],
+    );
+    countedLibrary.resetReadCount();
+
+    expect(
+      runtimeGraph.audioPaths.trackByPath(asmrTrack.path),
+      same(asmrTrack),
+    );
+    expect(countedLibrary.elementReadCount, 0);
+  });
+
+  test('normalized local path fallback remains available', () {
+    final library = _createLibraryFacade();
+    final localTrack = MusicTrack(
+      path: r'C:\Audio\Library\Track.mp3',
+      displayName: 'Track',
+      groupKey: r'C:\Audio\Library',
+      groupTitle: 'Local Library',
+      groupSubtitle: r'C:\Audio\Library',
+      isSingle: false,
+    );
+    library.addTracks(<MusicTrack>[localTrack], notify: false, persist: false);
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+    );
+    final runtimeGraph = createAppRuntimeGraph(
+      library: library,
+      playback: playback,
+      timer: TimerFacade.create(),
+      notifications: NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      ),
+      settings: SettingsRepository(),
+      persistenceEnabled: false,
+    );
+    addTearDown(runtimeGraph.runtime.dispose);
+
+    expect(
+      runtimeGraph.audioPaths.trackByPath(r'c:\audio\library\track.mp3'),
+      same(localTrack),
+    );
+  });
 }
 
-LibraryFacade _createLibraryFacade() {
-  return LibraryFacade.create(databaseRepository: TestPersistenceRepository());
+LibraryFacade _createLibraryFacade({LibraryService? service}) {
+  return LibraryFacade.create(
+    databaseRepository: TestPersistenceRepository(),
+    service: service,
+  );
+}
+
+final class _ElementReadCountingList<E> extends ListBase<E> {
+  _ElementReadCountingList(Iterable<E> values) : _values = List<E>.of(values);
+
+  final List<E> _values;
+  int elementReadCount = 0;
+
+  void resetReadCount() => elementReadCount = 0;
+
+  @override
+  int get length => _values.length;
+
+  @override
+  set length(int value) => _values.length = value;
+
+  @override
+  E operator [](int index) {
+    elementReadCount++;
+    return _values[index];
+  }
+
+  @override
+  void operator []=(int index, E value) => _values[index] = value;
 }

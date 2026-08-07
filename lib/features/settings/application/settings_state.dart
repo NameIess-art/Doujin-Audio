@@ -49,6 +49,7 @@ class SettingsState {
     this.maxCacheBytes = 300 * 1024 * 1024,
     this.asmrPlaybackCacheEnabled = false,
     this.recordPlaybackProgress = true,
+    this.blurPlayerBackgroundEnabled = true,
     this.uiBlurEffectEnabled = true,
     this.hapticFeedbackEnabled = true,
     this.startupPage = StartupPage.library,
@@ -94,6 +95,7 @@ class SettingsState {
   final int maxCacheBytes;
   final bool asmrPlaybackCacheEnabled;
   final bool recordPlaybackProgress;
+  final bool blurPlayerBackgroundEnabled;
   final bool uiBlurEffectEnabled;
   final bool hapticFeedbackEnabled;
   final StartupPage startupPage;
@@ -136,6 +138,7 @@ class SettingsState {
         other.maxCacheBytes == maxCacheBytes &&
         other.asmrPlaybackCacheEnabled == asmrPlaybackCacheEnabled &&
         other.recordPlaybackProgress == recordPlaybackProgress &&
+        other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
         other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
         other.hapticFeedbackEnabled == hapticFeedbackEnabled &&
         other.startupPage == startupPage &&
@@ -183,6 +186,7 @@ class SettingsState {
     maxCacheBytes,
     asmrPlaybackCacheEnabled,
     recordPlaybackProgress,
+    blurPlayerBackgroundEnabled,
     uiBlurEffectEnabled,
     hapticFeedbackEnabled,
     startupPage,

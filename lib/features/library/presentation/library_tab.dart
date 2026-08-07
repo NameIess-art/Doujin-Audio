@@ -924,7 +924,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                             icon: Icons.library_add_check_rounded,
                             label: i18n.tr('batch_metadata'),
                           ),
-                          const UnifiedMenuEntry<_LibraryMoreAction>.divider(),
                         ],
                         onSelected: (value) {
                           switch (value) {

@@ -952,6 +952,32 @@ void main() {
     );
   });
 
+  testWidgets('appearance toggles the blurred playback detail background', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+
+    final toggle = find.widgetWithText(
+      SwitchListTile,
+      i18n.tr('blur_player_background'),
+    );
+    await Scrollable.ensureVisible(tester.element(toggle), alignment: 0.5);
+    await tester.pumpAndSettle();
+    expect(harness.settingsRepository.blurPlayerBackgroundEnabled, isTrue);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(harness.settingsRepository.blurPlayerBackgroundEnabled, isFalse);
+  });
+
   testWidgets('appearance offers the 1200px cover resolution', (tester) async {
     final harness = AppRuntimeWidgetTestFixture();
     addTearDown(harness.dispose);

@@ -1121,6 +1121,10 @@ void main() {
     );
     expect(find.byTooltip(languageProvider.tr('import_audio')), findsNothing);
     expect(find.byTooltip(languageProvider.tr('edit_library')), findsNothing);
+    final dividerCountBeforeOpeningMenu = find
+        .byType(Divider)
+        .evaluate()
+        .length;
     await tester.tap(find.byTooltip(languageProvider.tr('more_actions')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
@@ -1128,6 +1132,10 @@ void main() {
     expect(find.text(languageProvider.tr('import_folder')), findsOneWidget);
     expect(find.text(languageProvider.tr('edit_library')), findsOneWidget);
     expect(find.text(languageProvider.tr('batch_metadata')), findsOneWidget);
+    expect(
+      find.byType(Divider).evaluate().length,
+      dividerCountBeforeOpeningMenu + 1,
+    );
     await tester.tap(find.text(languageProvider.tr('edit_library')));
     await tester.pumpAndSettle();
 

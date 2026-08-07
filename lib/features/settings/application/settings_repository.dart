@@ -34,6 +34,7 @@ class SettingsRepository {
   int maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
   bool asmrPlaybackCacheEnabled = false;
   bool recordPlaybackProgress = true;
+  bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;
   bool hapticFeedbackEnabled = true;
   StartupPage startupPage = StartupPage.library;
@@ -97,6 +98,8 @@ class SettingsRepository {
           playback['recordPlaybackProgress'] as bool? ?? true;
       asmrPlaybackCacheEnabled =
           playback['asmrPlaybackCacheEnabled'] as bool? ?? false;
+      blurPlayerBackgroundEnabled =
+          playback['blurPlayerBackgroundEnabled'] as bool? ?? true;
       uiBlurEffectEnabled = playback['uiBlurEffectEnabled'] as bool? ?? true;
       hapticFeedbackEnabled =
           playback['hapticFeedbackEnabled'] as bool? ?? true;
@@ -203,6 +206,7 @@ class SettingsRepository {
       'autoCheckUpdates': autoCheckUpdates,
       'recordPlaybackProgress': recordPlaybackProgress,
       'asmrPlaybackCacheEnabled': asmrPlaybackCacheEnabled,
+      'blurPlayerBackgroundEnabled': blurPlayerBackgroundEnabled,
       'uiBlurEffectEnabled': uiBlurEffectEnabled,
       'hapticFeedbackEnabled': hapticFeedbackEnabled,
       'coverImageResolution': coverImageResolution.name,
@@ -384,6 +388,11 @@ class SettingsRepository {
     update: () => recordPlaybackProgress = enabled,
   );
 
+  Future<void> setBlurPlayerBackgroundEnabled(bool enabled) => _setValue(
+    unchanged: blurPlayerBackgroundEnabled == enabled,
+    update: () => blurPlayerBackgroundEnabled = enabled,
+  );
+
   Future<void> setUiBlurEffectEnabled(bool enabled) => _setValue(
     unchanged: uiBlurEffectEnabled == enabled,
     update: () => uiBlurEffectEnabled = enabled,
@@ -519,6 +528,7 @@ class SettingsRepository {
     maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
     asmrPlaybackCacheEnabled = false;
     recordPlaybackProgress = true;
+    blurPlayerBackgroundEnabled = true;
     uiBlurEffectEnabled = true;
     hapticFeedbackEnabled = true;
     startupPage = StartupPage.library;
@@ -575,6 +585,7 @@ class SettingsRepository {
         maxCacheBytes: maxCacheBytes,
         asmrPlaybackCacheEnabled: asmrPlaybackCacheEnabled,
         recordPlaybackProgress: recordPlaybackProgress,
+        blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
         uiBlurEffectEnabled: uiBlurEffectEnabled,
         hapticFeedbackEnabled: hapticFeedbackEnabled,
         startupPage: startupPage,

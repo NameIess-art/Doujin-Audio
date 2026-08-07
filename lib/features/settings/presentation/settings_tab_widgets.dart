@@ -444,13 +444,11 @@ class _SubtitleWindowSettingsSheet extends StatelessWidget {
 
         final currentFontColor = settings.fontColor;
         final currentBgColor = settings.backgroundColor;
-        final mediaHeight = MediaQuery.sizeOf(context).height;
-        final sheetHeight = mediaHeight * 0.76;
         const contentTopPadding =
             _previewTopInset + _previewHeight + _previewBottomGap;
 
         return SizedBox(
-          height: sheetHeight,
+          width: double.infinity,
           child: Stack(
             children: [
               Positioned.fill(
@@ -975,10 +973,8 @@ class _CardInfoFieldsSettingsSheetState
         .toList(growable: false);
 
     return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-        ),
+      child: SizedBox(
+        width: double.infinity,
         child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
@@ -1114,10 +1110,8 @@ class _AsmrDownloadFolderNameSettingsSheetState
         .toList(growable: false);
 
     return SafeArea(
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.85,
-        ),
+      child: SizedBox(
+        width: double.infinity,
         child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),

@@ -20,15 +20,17 @@ final class AudioPathCoordinator {
     final resolvedPath = _playback.resolveRetargetedPath(trackPath);
     final libraryTrack = _library.trackByPath(resolvedPath);
     if (libraryTrack != null) return libraryTrack;
+    // Active sessions own remote and cached queue metadata, so consult them
+    // before the normalized full-library compatibility fallback.
+    for (final session in _playback.sessions.values) {
+      final track = sessionTrackForPath(session.id, resolvedPath);
+      if (track != null) return track;
+    }
     for (final track in _library.library) {
       if (PathMatcher.equalsNormalized(track.path, trackPath) ||
           PathMatcher.equalsNormalized(track.path, resolvedPath)) {
         return track;
       }
-    }
-    for (final session in _playback.sessions.values) {
-      final track = sessionTrackForPath(session.id, resolvedPath);
-      if (track != null) return track;
     }
     return null;
   }

@@ -71,10 +71,8 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
         final library = ref.read(libraryFacadeProvider);
         final coverUrl = effectiveWork.preferredCoverUrl;
 
-        return ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.68,
-          ),
+        return SizedBox(
+          width: double.infinity,
           child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
             child: Column(

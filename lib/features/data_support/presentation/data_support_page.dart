@@ -120,56 +120,63 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
         .isBusy;
     final dataOperationBusy = diagnosticsBusy;
     return SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.75,
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          title: Text(i18n.tr('data_and_support')),
-          automaticallyImplyLeading: false,
-          backgroundColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          shadowColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          forceMaterialTransparency: true,
-        ),
-        body: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-          children: [
-            Text(
-              i18n.tr('data_and_support_subtitle'),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              height: 4,
-              child: dataOperationBusy ? const LinearProgressIndicator() : null,
-            ),
-            const SizedBox(height: 8),
-            _ActionCard(
-              key: const ValueKey('data-support-export-diagnostics'),
-              title: i18n.tr('export_diagnostics'),
-              subtitle: i18n.tr('export_diagnostics_subtitle'),
-              icon: Icons.support_agent_rounded,
-              busy: diagnosticsBusy,
-              onTap: dataOperationBusy ? null : _exportDiagnostics,
-            ),
-            _ActionCard(
-              key: const ValueKey('data-support-privacy-summary'),
-              title: i18n.tr('privacy_summary_title'),
-              subtitle: i18n.tr('privacy_summary_local_body'),
-              icon: Icons.privacy_tip_outlined,
-              onTap: () => Navigator.of(context).push(
-                buildAppPageRoute<void>(
-                  context: context,
-                  child: const PrivacySummaryPage(),
+      width: double.infinity,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AppBar(
+            title: Text(i18n.tr('data_and_support')),
+            automaticallyImplyLeading: false,
+            backgroundColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            shadowColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            forceMaterialTransparency: true,
+          ),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+              children: [
+                Text(
+                  i18n.tr('data_and_support_subtitle'),
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 4,
+                  child: dataOperationBusy
+                      ? const LinearProgressIndicator()
+                      : null,
+                ),
+                const SizedBox(height: 8),
+                _ActionCard(
+                  key: const ValueKey('data-support-export-diagnostics'),
+                  title: i18n.tr('export_diagnostics'),
+                  subtitle: i18n.tr('export_diagnostics_subtitle'),
+                  icon: Icons.support_agent_rounded,
+                  busy: diagnosticsBusy,
+                  onTap: dataOperationBusy ? null : _exportDiagnostics,
+                ),
+                _ActionCard(
+                  key: const ValueKey('data-support-privacy-summary'),
+                  title: i18n.tr('privacy_summary_title'),
+                  subtitle: i18n.tr('privacy_summary_local_body'),
+                  icon: Icons.privacy_tip_outlined,
+                  onTap: () => Navigator.of(context).push(
+                    buildAppPageRoute<void>(
+                      context: context,
+                      child: const PrivacySummaryPage(),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

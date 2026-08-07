@@ -129,7 +129,7 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     return SizedBox(
-      height: MediaQuery.sizeOf(context).height * 0.75,
+      width: double.infinity,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppPageAppBar(

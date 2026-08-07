@@ -416,6 +416,7 @@ const Map<String, String> appLanguageZh = {
   'playback_detail_subtitle_style_compact': '简洁字幕',
   'playback_detail_subtitle_style_timeline': '时间轴字幕',
   'seek_to_subtitle': '跳转到此字幕',
+  'blur_player_background': '播放页模糊背景',
   'ui_blur_effect': '界面毛玻璃',
   'multi_thread_playback': '同时播放多首音频',
   'notification_bar': '播放通知控制',

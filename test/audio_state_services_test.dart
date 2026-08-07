@@ -75,6 +75,7 @@ void main() {
           'autoCheckUpdates': true,
           'recordPlaybackProgress': false,
           'asmrPlaybackCacheEnabled': true,
+          'blurPlayerBackgroundEnabled': false,
           'uiBlurEffectEnabled': false,
           'hapticFeedbackEnabled': false,
           'coverImageResolution': CoverImageResolution.ultraHigh.name,
@@ -115,6 +116,7 @@ void main() {
       expect(repository.notificationsEnabled, isFalse);
       expect(repository.coverImageResolution, CoverImageResolution.ultraHigh);
       expect(repository.coverImageDisplayMode, CoverImageDisplayMode.tile);
+      expect(repository.blurPlayerBackgroundEnabled, isFalse);
       expect(repository.startupPage, StartupPage.asmrOne);
       expect(repository.bottomNavigationStyle, BottomNavigationStyle.bar);
       expect(repository.asmrDownloadDestinationRoot, '/backup/asmr');
@@ -143,7 +145,10 @@ void main() {
       expect(repository.librarySortCriterion, LibrarySortCriterion.duration);
       expect(repository.librarySortAscending, isFalse);
       expect(repository.libraryGroupByLibrary, isTrue);
-      expect(repository.playlistSortCriterion, PlaylistSortCriterion.voiceActor);
+      expect(
+        repository.playlistSortCriterion,
+        PlaylistSortCriterion.voiceActor,
+      );
       expect(repository.playlistSortAscending, isFalse);
       expect(repository.playlistGroupByLibrary, isTrue);
       expect(repository.converterFormat, 'flac');
@@ -306,6 +311,29 @@ void main() {
         PlaybackDetailSubtitleStyle.compact,
       );
       expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
+      expect(state.blurPlayerBackgroundEnabled, isTrue);
+    });
+
+    test('blurred player background setting publishes and persists', () async {
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      await repository.setBlurPlayerBackgroundEnabled(false);
+
+      expect(repository.slice.state.blurPlayerBackgroundEnabled, isFalse);
+      final saved =
+          json.decode(
+                (await SharedPreferences.getInstance()).getString(
+                  'playback_settings_v1',
+                )!,
+              )
+              as Map<String, dynamic>;
+      expect(saved['blurPlayerBackgroundEnabled'], isFalse);
+
+      final restored = SettingsRepository();
+      addTearDown(restored.dispose);
+      await restored.loadPersistedState();
+      expect(restored.blurPlayerBackgroundEnabled, isFalse);
     });
 
     test(

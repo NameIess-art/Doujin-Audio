@@ -362,13 +362,9 @@ class _PlaybackSecondaryControls extends StatelessWidget {
               ),
               scrollDirection: Axis.horizontal,
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minWidth: max(0.0, constraints.maxWidth - 16),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
+              child: Builder(
+                builder: (context) {
+                  final rawChildren = <Widget>[
                     _ExpandableLoopOptions(
                       session: session,
                       playback: playback,
@@ -417,8 +413,26 @@ class _PlaybackSecondaryControls extends StatelessWidget {
                       tooltip: i18n.tr('audio_detail'),
                       onPressed: onShowAudioDetail,
                     ),
-                  ],
-                ),
+                  ];
+
+                  final childrenWithSpacing = <Widget>[];
+                  for (var i = 0; i < rawChildren.length; i++) {
+                    if (i > 0) {
+                      childrenWithSpacing.add(const SizedBox(width: 4));
+                    }
+                    childrenWithSpacing.add(rawChildren[i]);
+                  }
+
+                  return ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minWidth: max(0.0, constraints.maxWidth - 16),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: childrenWithSpacing,
+                    ),
+                  );
+                },
               ),
             ),
           ),

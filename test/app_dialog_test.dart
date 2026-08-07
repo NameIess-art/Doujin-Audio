@@ -54,6 +54,11 @@ void main() {
 
     expect(find.byType(AppDialog), findsOneWidget);
     expect(find.byKey(const ValueKey('app_dialog_surface')), findsOneWidget);
+    final surface = tester.widget<Container>(
+      find.byKey(const ValueKey('app_dialog_surface')),
+    );
+    final surfaceDecoration = surface.decoration! as BoxDecoration;
+    expect(surfaceDecoration.color!.a, 1);
     expect(find.byIcon(Icons.edit_rounded), findsOneWidget);
     expect(find.text('Rename queue'), findsOneWidget);
     expect(find.text('Queue name'), findsOneWidget);

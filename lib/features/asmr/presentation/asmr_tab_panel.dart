@@ -150,9 +150,10 @@ class _AsmrPanelCard extends StatelessWidget {
     return ConstrainedBox(
       constraints: BoxConstraints(maxHeight: maxHeight),
       child: DecoratedBox(
+        key: const ValueKey('asmr_panel_surface'),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          color: cs.surfaceContainerLow.withValues(alpha: 0.96),
+          color: cs.surfaceContainerLow,
           boxShadow: [
             BoxShadow(
               color: cs.shadow.withValues(alpha: 0.22),

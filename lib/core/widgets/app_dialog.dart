@@ -94,7 +94,7 @@ class AppDialog extends StatelessWidget {
       child: Container(
         key: const ValueKey('app_dialog_surface'),
         decoration: BoxDecoration(
-          color: cs.surfaceContainerLow.withValues(alpha: 0.94),
+          color: cs.surfaceContainerLow,
           borderRadius: AppRadius.borderDialog,
           border: Border.all(
             color: cs.outlineVariant.withValues(alpha: 0.22),

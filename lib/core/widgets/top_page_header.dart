@@ -16,6 +16,7 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
     this.actions,
     this.automaticallyImplyLeading = true,
     this.titleSpacing,
+    this.useGlassSurface = true,
   });
 
   final Widget title;
@@ -23,6 +24,7 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
   final List<Widget>? actions;
   final bool automaticallyImplyLeading;
   final double? titleSpacing;
+  final bool useGlassSurface;
 
   @override
   Size get preferredSize =>
@@ -30,22 +32,22 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
-    return _AppHeaderGlassSurface(
-      child: AppBar(
-        title: title,
-        leading: leading,
-        actions: actions,
-        automaticallyImplyLeading: automaticallyImplyLeading,
-        titleSpacing: titleSpacing,
-        toolbarHeight: AppPageHeaderMetrics.toolbarHeight,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        shadowColor: Colors.transparent,
-        forceMaterialTransparency: true,
-      ),
+    final appBar = AppBar(
+      title: title,
+      leading: leading,
+      actions: actions,
+      automaticallyImplyLeading: automaticallyImplyLeading,
+      titleSpacing: titleSpacing,
+      toolbarHeight: AppPageHeaderMetrics.toolbarHeight,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      backgroundColor: Colors.transparent,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
+      forceMaterialTransparency: true,
     );
+    if (!useGlassSurface) return appBar;
+    return _AppHeaderGlassSurface(child: appBar);
   }
 }
 

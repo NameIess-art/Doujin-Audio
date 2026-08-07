@@ -9,6 +9,7 @@ import 'package:nameless_audio/features/settings/presentation/permission_status_
 import 'package:nameless_audio/features/settings/application/permission_status_service.dart';
 import 'package:nameless_audio/features/settings/application/app_update_service.dart';
 import 'package:nameless_audio/core/widgets/operation_feedback.dart';
+import 'package:nameless_audio/core/widgets/top_page_header.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 
 void main() {
@@ -43,6 +44,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    final pageAppBar = find.byType(AppPageAppBar);
+    expect(pageAppBar, findsOneWidget);
+    expect(
+      find.descendant(
+        of: pageAppBar,
+        matching: find.byKey(const ValueKey<String>('app_page_header_blur')),
+      ),
+      findsNothing,
+    );
     expect(find.text(language.tr('permission_group_playback')), findsOneWidget);
     expect(
       find.text(language.tr('permission_group_reliability')),

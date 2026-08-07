@@ -49,7 +49,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
         );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _snapshot != null) return;
-      setState(() => _snapshot = _loadSnapshot());
+      setState(() {
+        _snapshot = _loadSnapshot();
+      });
     });
     WidgetsBinding.instance.addObserver(this);
   }
@@ -74,7 +76,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
 
   void _refresh() {
     if (!mounted) return;
-    setState(() => _snapshot = _loadSnapshot());
+    setState(() {
+      _snapshot = _loadSnapshot();
+    });
   }
 
   Future<PermissionStatusSnapshot> _loadSnapshot() {
@@ -135,6 +139,7 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
         appBar: AppPageAppBar(
           title: Text(i18n.tr('permission_center')),
           automaticallyImplyLeading: false,
+          useGlassSurface: false,
         ),
         body: FutureBuilder<PermissionStatusSnapshot>(
           future: _snapshot,

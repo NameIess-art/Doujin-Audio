@@ -637,6 +637,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 playback: playback,
                 index: index,
                 cardPositionsLocked: cardPositionsLocked,
+                freezeDynamicContent: reorderSnapshot != null,
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );

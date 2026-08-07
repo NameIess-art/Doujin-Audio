@@ -7,6 +7,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
     required this.track,
     required this.coverPathFuture,
     this.videoSurfaceEnabled = true,
+    this.deferCoverLoading = false,
   });
 
   final PlaybackSession session;
@@ -14,6 +15,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
   final bool videoSurfaceEnabled;
+  final bool deferCoverLoading;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -27,6 +29,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
         ),
       ),
     );
+    final initialCoverPath = library.resolvedPlaybackCoverPathForTrack(track);
     final coverPoster = Stack(
       fit: StackFit.expand,
       children: [
@@ -35,10 +38,12 @@ class _SessionHeroArtwork extends ConsumerWidget {
           // detail route is being dragged.
           enabled: true,
           child: AsyncLocalCoverImage(
-            future: coverPathFuture,
+            future: deferCoverLoading
+                ? Future<String?>.value(initialCoverPath)
+                : coverPathFuture,
             requestKey: sessionId,
             deferCommitDuringInteraction: true,
-            initialPath: library.resolvedPlaybackCoverPathForTrack(track),
+            initialPath: initialCoverPath,
             retryFutureBuilder: () => track == null
                 ? Future<String?>.value()
                 : library.playbackCoverPathFutureForTrack(track),
@@ -133,6 +138,7 @@ class _SessionCoverThumbnail extends ConsumerStatefulWidget {
     required this.coverPath,
     required this.coverGeneration,
     required this.coverCacheWidth,
+    this.freezeDynamicContent = false,
     this.duration,
     this.detailDuration,
   });
@@ -142,6 +148,7 @@ class _SessionCoverThumbnail extends ConsumerStatefulWidget {
   final String? coverPath;
   final int coverGeneration;
   final int? coverCacheWidth;
+  final bool freezeDynamicContent;
   final Duration? duration;
   final Duration? detailDuration;
 
@@ -174,6 +181,30 @@ class _SessionCoverThumbnailState
         .read(playbackFacadeProvider)
         .sessionById(widget.sessionId);
     final library = ref.read(libraryFacadeProvider);
+    final cover = widget.freezeDynamicContent
+        ? LocalCoverImage(
+            path: widget.coverPath,
+            seed: widget.track?.displayName ?? widget.sessionId,
+            cacheWidth: widget.coverCacheWidth,
+            useDefaultCacheWidth: widget.coverCacheWidth != null,
+            fit: BoxFit.cover,
+            displayMode: CoverImageDisplayMode.fill,
+            compact: true,
+            iconSize: 26,
+          )
+        : AsyncLocalCoverImage(
+            future: _futureFor(library),
+            initialPath: widget.coverPath,
+            retryFutureBuilder: () =>
+                library.playbackCoverPathFutureForTrack(widget.track),
+            seed: widget.track?.displayName ?? widget.sessionId,
+            cacheWidth: widget.coverCacheWidth,
+            useDefaultCacheWidth: widget.coverCacheWidth != null,
+            fit: BoxFit.cover,
+            displayMode: CoverImageDisplayMode.fill,
+            compact: true,
+            iconSize: 26,
+          );
     return Stack(
       children: [
         SizedBox(
@@ -186,32 +217,21 @@ class _SessionCoverThumbnailState
               LibraryLikeCardMetrics.coverRadius,
             ),
             clipBehavior: Clip.antiAlias,
-            child: AsyncLocalCoverImage(
-              future: _futureFor(library),
-              initialPath: widget.coverPath,
-              retryFutureBuilder: () =>
-                  library.playbackCoverPathFutureForTrack(widget.track),
-              seed:
-                  widget.track?.displayName ??
-                  widget.track?.path ??
-                  widget.sessionId,
-              cacheWidth: widget.coverCacheWidth,
-              useDefaultCacheWidth: widget.coverCacheWidth != null,
-              fit: BoxFit.cover,
-              displayMode: CoverImageDisplayMode.fill,
-              compact: true,
-              iconSize: 26,
-            ),
+            child: cover,
           ),
         ),
         Positioned(
           right: 4,
           bottom: 4,
           child: StreamBuilder<Duration?>(
-            stream: session?.durationStream,
+            stream: widget.freezeDynamicContent
+                ? null
+                : session?.durationStream,
             initialData: session?.duration ?? widget.duration,
             builder: (context, snapshot) {
-              final duration = widget.detailDuration ?? snapshot.data;
+              final duration = widget.freezeDynamicContent
+                  ? widget.detailDuration ?? widget.duration
+                  : widget.detailDuration ?? snapshot.data;
               if (duration == null || duration <= Duration.zero) {
                 return const SizedBox.shrink();
               }

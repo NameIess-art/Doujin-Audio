@@ -478,17 +478,19 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           Positioned.fill(
             child: ColoredBox(color: Theme.of(context).colorScheme.surface),
           ),
-          ListView(
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              LibraryLikeCardMetrics.listHorizontalPadding,
-              headerContentHeight,
-              LibraryLikeCardMetrics.listHorizontalPadding,
-              bottomInset + 24,
+          RepaintBoundary(
+            child: ListView(
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                LibraryLikeCardMetrics.listHorizontalPadding,
+                headerContentHeight,
+                LibraryLikeCardMetrics.listHorizontalPadding,
+                bottomInset + 24,
+              ),
+              children: [
+                for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),
+              ],
             ),
-            children: [
-              for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),
-            ],
           ),
           Positioned(
             top: 0,
@@ -520,31 +522,33 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         Positioned.fill(
           child: ColoredBox(color: Theme.of(context).colorScheme.surface),
         ),
-        PlaceholderContentTransition(
-          showPlaceholder: !globalState.initialized,
-          placeholder: ListView(
-            key: const ValueKey('asmr_initial_placeholder'),
-            physics: const NeverScrollableScrollPhysics(),
-            padding: EdgeInsets.fromLTRB(
-              LibraryLikeCardMetrics.listHorizontalPadding,
-              headerContentHeight,
-              LibraryLikeCardMetrics.listHorizontalPadding,
-              bottomInset + 24,
+        RepaintBoundary(
+          child: PlaceholderContentTransition(
+            showPlaceholder: !globalState.initialized,
+            placeholder: ListView(
+              key: const ValueKey('asmr_initial_placeholder'),
+              physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                LibraryLikeCardMetrics.listHorizontalPadding,
+                headerContentHeight,
+                LibraryLikeCardMetrics.listHorizontalPadding,
+                bottomInset + 24,
+              ),
+              children: [
+                for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),
+              ],
             ),
-            children: [
-              for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),
-            ],
-          ),
-          content: _AsmrCategoryList(
-            key: const ValueKey(_mainCategory),
-            isActive: _isActive,
-            category: _mainCategory,
-            isLoadPending: false,
-            scrollController: _scrollController,
-            searchQuery: '',
-            topInset: headerContentHeight,
-            bottomInset: bottomInset,
-            onRefresh: _refreshCollectedWithFeedback,
+            content: _AsmrCategoryList(
+              key: const ValueKey(_mainCategory),
+              isActive: _isActive,
+              category: _mainCategory,
+              isLoadPending: false,
+              scrollController: _scrollController,
+              searchQuery: '',
+              topInset: headerContentHeight,
+              bottomInset: bottomInset,
+              onRefresh: _refreshCollectedWithFeedback,
+            ),
           ),
         ),
         Positioned(

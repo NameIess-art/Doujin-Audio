@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +9,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -37,6 +40,15 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _detailFuture != null) return;
+      unawaited(_loadAfterSheetTransition());
+    });
+  }
+
+  Future<void> _loadAfterSheetTransition() async {
+    while (mounted && _detailFuture == null) {
+      await Future<void>.delayed(const Duration(milliseconds: 360));
+      if (!mounted) return;
+      if (UiInteractionCoordinator.instance.isInteracting) continue;
       setState(() {
         _detailFuture = ref
             .read(uiOperationServiceProvider)
@@ -55,7 +67,8 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
               },
             );
       });
-    });
+      return;
+    }
   }
 
   @override
@@ -74,7 +87,7 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
         final detail = snapshot.data;
         final effectiveWork = detail?.work ?? widget.work;
         final coverCacheWidth = coverCacheWidthForResolution(
-          ref.watch(coverImageResolutionProvider),
+          ref.read(coverImageResolutionProvider),
         );
         final library = ref.read(libraryFacadeProvider);
         final coverUrl = effectiveWork.preferredCoverUrl;

@@ -251,6 +251,7 @@ class _SessionListCard extends ConsumerWidget {
     required this.playback,
     required this.index,
     required this.cardPositionsLocked,
+    this.freezeDynamicContent = false,
     required this.onOpen,
   });
 
@@ -265,6 +266,7 @@ class _SessionListCard extends ConsumerWidget {
   final PlaybackFacade playback;
   final int index;
   final bool cardPositionsLocked;
+  final bool freezeDynamicContent;
   final VoidCallback onOpen;
 
   Future<void> _confirmRemoveSession(BuildContext context) async {
@@ -339,8 +341,9 @@ class _SessionListCard extends ConsumerWidget {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final isAsmrOne = currentTrack?.remoteMetadataKind == 'asmr.one';
-    final detailDuration =
-        currentTrack == null || isAsmrOne || !currentTrack.isSingle
+    final detailDuration = freezeDynamicContent
+        ? null
+        : currentTrack == null || isAsmrOne || !currentTrack.isSingle
         ? null
         : ref.watch(
             libraryDetailForTargetProvider(
@@ -406,6 +409,7 @@ class _SessionListCard extends ConsumerWidget {
                           coverCacheWidth: coverCacheWidth,
                           duration: track?.duration,
                           detailDuration: detailDuration,
+                          freezeDynamicContent: freezeDynamicContent,
                         ),
                         const SizedBox(width: AppSpacing.xs),
                       ],

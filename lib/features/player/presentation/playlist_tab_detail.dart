@@ -93,6 +93,7 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   Timer? _sessionSwitchTimer;
   int _sessionSwitchGeneration = 0;
   bool _deferSessionHeavyContent = false;
+  bool _initialHeavyContentReady = false;
 
   @override
   void initState() {
@@ -110,7 +111,18 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _scheduleNeighborCoverWarmup();
+      unawaited(_releaseInitialHeavyContent());
     });
+  }
+
+  Future<void> _releaseInitialHeavyContent() async {
+    while (mounted && !_initialHeavyContentReady) {
+      await Future<void>.delayed(const Duration(milliseconds: 240));
+      if (!mounted) return;
+      if (UiInteractionCoordinator.instance.isInteracting) continue;
+      setState(() => _initialHeavyContentReady = true);
+      return;
+    }
   }
 
   @override
@@ -441,6 +453,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   final detailTrack = paths.trackByPath(
                     pageSession.currentTrackPath,
                   );
+                  final deferAsmrInitialContent =
+                      detailTrack?.remoteMetadataKind == 'asmr.one' &&
+                      !_initialHeavyContentReady;
                   final coverPathFuture = _coverFutureForSession(
                     library: ref.read(libraryFacadeProvider),
                     track: detailTrack,
@@ -451,7 +466,8 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
                   return _SessionDetailScaffold(
                     session: pageSession,
                     coverPathFuture: coverPathFuture,
-                    deferHeavyContent: _deferSessionHeavyContent,
+                    deferHeavyContent:
+                        _deferSessionHeavyContent || deferAsmrInitialContent,
                     dismissAnimation: _dismissController,
                     segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
                     onClose: () =>
@@ -576,7 +592,7 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
 }
 
 class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   final _detailContentKey = GlobalKey<_SessionDetailContentState>();
   final PermissionActionController _permissionActionController =
       PermissionActionController();
@@ -585,6 +601,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   ThemeData? _cachedAsmrTheme;
   double _segmentPanelDragDelta = 0;
   bool _isDismissGesture = false;
+  late final AnimationController _backgroundRevealController;
 
   ThemeData _detailThemeForTrack(BuildContext context, MusicTrack? track) {
     final base = Theme.of(context);
@@ -603,12 +620,40 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   @override
   void initState() {
     super.initState();
+    _backgroundRevealController = AnimationController(
+      vsync: this,
+      duration: kAppMotionStandard,
+      value: 0,
+    );
     WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _backgroundRevealController.value = 1;
+        return;
+      }
+      if (widget.deferHeavyContent) {
+        return;
+      }
+      unawaited(_backgroundRevealController.forward());
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _SessionDetailScaffold oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.deferHeavyContent == widget.deferHeavyContent) return;
+    if (widget.deferHeavyContent) {
+      _backgroundRevealController.reverse();
+    } else {
+      unawaited(_backgroundRevealController.forward());
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _backgroundRevealController.dispose();
     _permissionActionController.dispose();
     super.dispose();
   }
@@ -787,56 +832,63 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             fit: StackFit.expand,
             children: [
               // Dynamic Blurred Background
-              if (blurEnabled && !widget.deferHeavyContent)
+              if (blurEnabled)
                 Positioned.fill(
                   child: FadeTransition(
-                    opacity: ReverseAnimation(widget.dismissAnimation),
-                    child: ClipRect(
-                      child: RepaintBoundary(
-                        child: ImageFiltered(
-                          key: const ValueKey('session_detail_background_blur'),
-                          imageFilter: ImageFilter.blur(
-                            sigmaX: _kSessionDetailBackgroundBlurSigma,
-                            sigmaY: _kSessionDetailBackgroundBlurSigma,
-                            tileMode: TileMode.decal,
-                          ),
-                          child: TickerMode(
-                            // Keep the cover's frame fade running while the
-                            // surrounding detail content is paused for a drag.
-                            enabled: true,
-                            child: AsyncCoverImage(
-                              future: coverPathFuture,
-                              requestKey: session.id,
-                              deferCommitDuringInteraction: true,
-                              initialPath: library
-                                  .resolvedPlaybackCoverPathForTrack(track),
-                              retryFutureBuilder: () => _coverFutureForTrack(
-                                ref.read(libraryFacadeProvider),
-                                track,
+                    opacity: _backgroundRevealController,
+                    child: FadeTransition(
+                      opacity: ReverseAnimation(widget.dismissAnimation),
+                      child: ClipRect(
+                        child: RepaintBoundary(
+                          child: ImageFiltered(
+                            key: const ValueKey(
+                              'session_detail_background_blur',
+                            ),
+                            imageFilter: ImageFilter.blur(
+                              sigmaX: _kSessionDetailBackgroundBlurSigma,
+                              sigmaY: _kSessionDetailBackgroundBlurSigma,
+                              tileMode: TileMode.decal,
+                            ),
+                            child: TickerMode(
+                              // Keep the cover's frame fade running while the
+                              // surrounding detail content is paused for a drag.
+                              enabled: true,
+                              child: AsyncCoverImage(
+                                future: coverPathFuture,
+                                requestKey: session.id,
+                                deferCommitDuringInteraction: true,
+                                initialPath: library
+                                    .resolvedPlaybackCoverPathForTrack(track),
+                                retryFutureBuilder: () => _coverFutureForTrack(
+                                  ref.read(libraryFacadeProvider),
+                                  track,
+                                ),
+                                fallbackBuilder: (_) => CoverFallbackArtwork(
+                                  seed:
+                                      track?.displayName ??
+                                      session.currentTrackPath,
+                                  showIcon: false,
+                                ),
+                                imageBuilder: (context, coverPath) {
+                                  return RetryingFileImage(
+                                    path: coverPath,
+                                    cacheWidth: coverCacheWidth,
+                                    useDefaultCacheWidth:
+                                        coverCacheWidth != null,
+                                    fit: BoxFit.cover,
+                                    color: cs.surface.withValues(alpha: 0.45),
+                                    colorBlendMode: BlendMode.darken,
+                                    deferRetryDuringInteraction: true,
+                                    fallbackBuilder: (_) =>
+                                        CoverFallbackArtwork(
+                                          seed:
+                                              track?.displayName ??
+                                              session.currentTrackPath,
+                                          showIcon: false,
+                                        ),
+                                  );
+                                },
                               ),
-                              fallbackBuilder: (_) => CoverFallbackArtwork(
-                                seed:
-                                    track?.displayName ??
-                                    session.currentTrackPath,
-                                showIcon: false,
-                              ),
-                              imageBuilder: (context, coverPath) {
-                                return RetryingFileImage(
-                                  path: coverPath,
-                                  cacheWidth: coverCacheWidth,
-                                  useDefaultCacheWidth: coverCacheWidth != null,
-                                  fit: BoxFit.cover,
-                                  color: cs.surface.withValues(alpha: 0.45),
-                                  colorBlendMode: BlendMode.darken,
-                                  deferRetryDuringInteraction: true,
-                                  fallbackBuilder: (_) => CoverFallbackArtwork(
-                                    seed:
-                                        track?.displayName ??
-                                        session.currentTrackPath,
-                                    showIcon: false,
-                                  ),
-                                );
-                              },
                             ),
                           ),
                         ),
@@ -958,6 +1010,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 track: track,
                                 coverPathFuture: coverPathFuture,
                                 videoSurfaceEnabled: !widget.deferHeavyContent,
+                                deferCoverLoading:
+                                    widget.deferHeavyContent &&
+                                    track?.remoteMetadataKind == 'asmr.one',
                               );
 
                               if (isLandscape) {

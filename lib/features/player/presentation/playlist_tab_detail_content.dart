@@ -656,7 +656,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     );
   }
 
-  void _showTrackSwitcher(BuildContext context) {
+  Future<void> _showTrackSwitcher(BuildContext context) async {
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -669,14 +669,14 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     );
     if (tracks.isEmpty) return;
     final workRoot = _paths.workRootForTrack(widget.session.currentTrackPath);
-    AppBottomSheet.show<void>(
+    final tree = _buildQueueTree(
+      tracks,
+      workRoot: workRoot,
+      currentPath: widget.session.currentTrackPath,
+    );
+    final selectedNode = await AppBottomSheet.show<_QueueTreeNode>(
       context: context,
       builder: (ctx) {
-        final tree = _buildQueueTree(
-          tracks,
-          workRoot: workRoot,
-          currentPath: widget.session.currentTrackPath,
-        );
         return ConstrainedBox(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.sizeOf(ctx).height * 0.58,
@@ -702,30 +702,31 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                     AppInteractionFeedbackType.tap,
                     context: ctx,
                   );
-                  Navigator.of(ctx).pop();
-                  if (widget.session.isPlaybackQueue) {
-                    _playback.switchSessionQueueTrack(
-                      widget.session.id,
-                      node.queueIndex,
-                    );
-                  } else {
-                    _playback.switchSessionTrack(
-                      widget.session.id,
-                      node.track!.path,
-                    );
-                  }
-                  showAppSnackBar(
-                    context,
-                    i18n.tr('switch_audio'),
-                    tone: AppFeedbackTone.success,
-                    icon: Icons.queue_music_rounded,
-                  );
+                  Navigator.of(ctx).pop(node);
                 },
               );
             },
           ),
         );
       },
+    );
+    if (!mounted || selectedNode == null) return;
+    if (widget.session.isPlaybackQueue) {
+      await _playback.switchSessionQueueTrack(
+        widget.session.id,
+        selectedNode.queueIndex,
+      );
+    } else {
+      final track = selectedNode.track;
+      if (track == null) return;
+      await _playback.switchSessionTrack(widget.session.id, track.path);
+    }
+    if (!context.mounted) return;
+    showAppSnackBar(
+      context,
+      i18n.tr('switch_audio'),
+      tone: AppFeedbackTone.success,
+      icon: Icons.queue_music_rounded,
     );
   }
 

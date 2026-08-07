@@ -37,7 +37,7 @@ class AppBottomSheet {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: builder,
+      builder: (sheetContext) => RepaintBoundary(child: builder(sheetContext)),
     );
   }
 }

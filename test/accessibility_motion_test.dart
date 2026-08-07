@@ -52,6 +52,41 @@ void main() {
     expect(find.text('Sheet content'), findsOneWidget);
   });
 
+  testWidgets('bottom sheets keep a visible reverse transition', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => AppBottomSheet.show<void>(
+                context: context,
+                builder: (_) =>
+                    const SizedBox(height: 120, child: Text('Sheet content')),
+              ),
+              child: const Text('Open'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    final sheet = tester.widget<BottomSheet>(find.byType(BottomSheet));
+    final openValue = sheet.animationController!.value;
+    expect(openValue, greaterThan(0));
+    expect(openValue, lessThan(1));
+
+    Navigator.of(tester.element(find.text('Sheet content'))).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    final closingSheet = tester.widget<BottomSheet>(find.byType(BottomSheet));
+    expect(closingSheet.animationController!.value, lessThan(openValue));
+  });
+
   testWidgets('popup menu button exposes a labeled button semantic', (
     tester,
   ) async {

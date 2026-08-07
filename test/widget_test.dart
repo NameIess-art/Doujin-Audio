@@ -73,6 +73,7 @@ void main() {
   });
 
   setUp(() {
+    UiInteractionCoordinator.instance.resetForTest();
     SharedPreferences.setMockInitialValues(const <String, Object>{
       AppPreferences.onboardingCompletedKey: true,
     });
@@ -88,6 +89,8 @@ void main() {
           },
         );
   });
+
+  tearDown(UiInteractionCoordinator.instance.resetForTest);
 
   testWidgets('app shell renders portrait tab navigation', (tester) async {
     final platformCalls = <MethodCall>[];

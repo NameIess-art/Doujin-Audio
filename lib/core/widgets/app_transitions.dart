@@ -161,6 +161,25 @@ Widget buildAppScaleFadeTransition({
   );
 }
 
+Widget buildAppFadeTransition({
+  required BuildContext context,
+  required Animation<double> animation,
+  required Widget child,
+  Curve curve = Curves.easeOutCubic,
+  Curve reverseCurve = Curves.easeInCubic,
+}) {
+  if (MediaQuery.disableAnimationsOf(context)) return child;
+  final curved = CurvedAnimation(
+    parent: animation,
+    curve: curve,
+    reverseCurve: reverseCurve,
+  );
+  return FadeTransition(
+    opacity: curved,
+    child: child,
+  );
+}
+
 Widget buildCenterExpandTransition({
   required BuildContext context,
   required Animation<double> animation,

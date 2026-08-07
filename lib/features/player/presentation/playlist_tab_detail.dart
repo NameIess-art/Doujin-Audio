@@ -367,11 +367,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
               duration: kAppMotionSlow,
               reverseDuration: kAppMotionStandard,
               transitionBuilder: (child, animation) =>
-                  buildAppScaleFadeTransition(
+                  buildAppFadeTransition(
                     context: context,
                     animation: animation,
                     child: child,
-                    beginScale: 0.96,
                   ),
               child: Builder(
                 key: ValueKey(_currentSessionId),

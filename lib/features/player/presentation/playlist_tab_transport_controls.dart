@@ -108,19 +108,31 @@ class _PlaybackControlPanel extends StatelessWidget {
           showPauseIcon: showPauseIcon,
           isLoading: isLoading,
         ),
-        _PlaybackSecondaryControls(
-          session: session,
-          playback: playback,
-          hasSiblings: hasSiblings,
-          segmentPanelExpanded: segmentPanelExpanded,
-          hasSubtitle: hasSubtitle,
-          subtitleEnabled: subtitleEnabled,
-          subtitleGlobalEnabled: subtitleGlobalEnabled,
-          onShowTrackSwitcher: onShowTrackSwitcher,
-          onToggleSegments: onToggleSegments,
-          onToggleSubtitle: onToggleSubtitle,
-          onToggleGlobalSubtitle: onToggleGlobalSubtitle,
-          onShowAudioDetail: onShowAudioDetail,
+        AnimatedSwitcher(
+          duration: kAppMotionSlow,
+          reverseDuration: kAppMotionStandard,
+          transitionBuilder: (child, animation) => buildAppFadeTransition(
+            context: context,
+            animation: animation,
+            child: child,
+          ),
+          child: KeyedSubtree(
+            key: ValueKey('secondary_${session.id}'),
+            child: _PlaybackSecondaryControls(
+              session: session,
+              playback: playback,
+              hasSiblings: hasSiblings,
+              segmentPanelExpanded: segmentPanelExpanded,
+              hasSubtitle: hasSubtitle,
+              subtitleEnabled: subtitleEnabled,
+              subtitleGlobalEnabled: subtitleGlobalEnabled,
+              onShowTrackSwitcher: onShowTrackSwitcher,
+              onToggleSegments: onToggleSegments,
+              onToggleSubtitle: onToggleSubtitle,
+              onToggleGlobalSubtitle: onToggleGlobalSubtitle,
+              onShowAudioDetail: onShowAudioDetail,
+            ),
+          ),
         ),
       ],
     );
@@ -356,78 +368,70 @@ class _PlaybackSecondaryControls extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
           ),
           child: LayoutBuilder(
-            builder: (context, constraints) {
-              final children = <Widget>[
-                _ExpandableLoopOptions(
-                  session: session,
-                  playback: playback,
+            builder: (context, constraints) => SingleChildScrollView(
+              key: const ValueKey(
+                'playback_secondary_controls_horizontal_scroll',
+              ),
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: max(0.0, constraints.maxWidth - 16),
                 ),
-                _SessionVolumeButton(session: session, playback: playback),
-                if (hasSubtitle)
-                  _SecondaryControlButton(
-                    icon: subtitleEnabled
-                        ? Icons.subtitles_rounded
-                        : Icons.subtitles_off_rounded,
-                    tooltip: subtitleEnabled
-                        ? i18n.tr('turn_off_subtitle')
-                        : i18n.tr('turn_on_subtitle'),
-                    active: subtitleEnabled,
-                    onPressed: onToggleSubtitle,
-                  ),
-                if (hasSubtitle && subtitleEnabled)
-                  _SecondaryControlButton(
-                    icon: subtitleGlobalEnabled
-                        ? Icons.check_rounded
-                        : Icons.layers_rounded,
-                    tooltip: i18n.tr('subtitle_global_display'),
-                    active: subtitleGlobalEnabled,
-                    onPressed: onToggleGlobalSubtitle,
-                  ),
-                _SecondaryControlButton(
-                  icon: Icons.tune_rounded,
-                  tooltip: i18n.tr('audio_features'),
-                  active: segmentPanelExpanded,
-                  onPressed: onToggleSegments,
-                ),
-                _SecondaryControlButton(
-                  icon: Icons.queue_music_rounded,
-                  tooltip: i18n.tr('switch_audio'),
-                  onPressed: hasSiblings
-                      ? () {
-                          AppInteractionFeedback.trigger(
-                            AppInteractionFeedbackType.selection,
-                          );
-                          onShowTrackSwitcher();
-                        }
-                      : null,
-                ),
-                _SecondaryControlButton(
-                  icon: Icons.info_outline_rounded,
-                  tooltip: i18n.tr('audio_detail'),
-                  onPressed: onShowAudioDetail,
-                ),
-              ];
-
-              final spacedChildren = <Widget>[];
-              for (var i = 0; i < children.length; i++) {
-                if (i > 0) {
-                  spacedChildren.add(const SizedBox(width: 24));
-                }
-                spacedChildren.add(children[i]);
-              }
-
-              return SingleChildScrollView(
-                key: const ValueKey(
-                  'playback_secondary_controls_horizontal_scroll',
-                ),
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: spacedChildren,
+                  children: [
+                    _ExpandableLoopOptions(
+                      session: session,
+                      playback: playback,
+                    ),
+                    _SessionVolumeButton(session: session, playback: playback),
+                    if (hasSubtitle)
+                      _SecondaryControlButton(
+                        icon: subtitleEnabled
+                            ? Icons.subtitles_rounded
+                            : Icons.subtitles_off_rounded,
+                        tooltip: subtitleEnabled
+                            ? i18n.tr('turn_off_subtitle')
+                            : i18n.tr('turn_on_subtitle'),
+                        active: subtitleEnabled,
+                        onPressed: onToggleSubtitle,
+                      ),
+                    if (hasSubtitle && subtitleEnabled)
+                      _SecondaryControlButton(
+                        icon: subtitleGlobalEnabled
+                            ? Icons.check_rounded
+                            : Icons.layers_rounded,
+                        tooltip: i18n.tr('subtitle_global_display'),
+                        active: subtitleGlobalEnabled,
+                        onPressed: onToggleGlobalSubtitle,
+                      ),
+                    _SecondaryControlButton(
+                      icon: Icons.tune_rounded,
+                      tooltip: i18n.tr('audio_features'),
+                      active: segmentPanelExpanded,
+                      onPressed: onToggleSegments,
+                    ),
+                    _SecondaryControlButton(
+                      icon: Icons.queue_music_rounded,
+                      tooltip: i18n.tr('switch_audio'),
+                      onPressed: hasSiblings
+                          ? () {
+                              AppInteractionFeedback.trigger(
+                                AppInteractionFeedbackType.selection,
+                              );
+                              onShowTrackSwitcher();
+                            }
+                          : null,
+                    ),
+                    _SecondaryControlButton(
+                      icon: Icons.info_outline_rounded,
+                      tooltip: i18n.tr('audio_detail'),
+                      onPressed: onShowAudioDetail,
+                    ),
+                  ],
                 ),
-              );
-            },
+              ),
+            ),
           ),
         ),
       ),

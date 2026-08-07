@@ -1641,6 +1641,30 @@ void main() {
             .width,
         366,
       );
+      final secondaryControls = find.byKey(
+        const ValueKey('playback_secondary_controls'),
+      );
+      final secondaryButtons = find.descendant(
+        of: secondaryControls,
+        matching: find.byType(IconButton),
+      );
+      expect(secondaryButtons, findsNWidgets(5));
+      final buttonCenters = List<double>.generate(
+        5,
+        (index) => tester.getCenter(secondaryButtons.at(index)).dx,
+      );
+      expect(
+        List<double>.generate(
+          buttonCenters.length - 1,
+          (index) => buttonCenters[index + 1] - buttonCenters[index],
+        ),
+        <double>[46, 50, 52, 52],
+      );
+      expect(
+        tester.getTopRight(secondaryControls).dx -
+            tester.getTopRight(secondaryButtons.last).dx,
+        greaterThan(100),
+      );
       expect(
         find.byKey(const ValueKey('session_detail_background_blur')),
         findsOneWidget,

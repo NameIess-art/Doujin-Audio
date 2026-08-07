@@ -743,51 +743,64 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                     opacity: ReverseAnimation(widget.dismissAnimation),
                     child: ClipRect(
                       child: RepaintBoundary(
-                        child: ImageFiltered(
-                          key: const ValueKey('session_detail_background_blur'),
-                          imageFilter: ImageFilter.blur(
-                            sigmaX: backgroundBlurSigma,
-                            sigmaY: backgroundBlurSigma,
-                            tileMode: TileMode.decal,
-                          ),
-                          child: AsyncCoverImage(
-                            future: coverPathFuture,
-                            requestKey: session.id,
-                            duration: Duration.zero,
-                            deferCommitDuringInteraction: true,
-                            initialPath: library
-                                .resolvedPlaybackCoverPathForTrack(track),
-                            retryFutureBuilder: () => _coverFutureForTrack(
-                              ref.read(libraryFacadeProvider),
-                              track,
-                            ),
-                            fallbackBuilder: (_) => CoverFallbackArtwork(
-                              seed:
-                                  track?.displayName ??
-                                  session.currentTrackPath,
-                              showIcon: false,
-                            ),
-                            imageBuilder: (context, coverPath) {
-                              return RetryingFileImage(
-                                path: coverPath,
-                                cacheWidth: backgroundCacheWidth,
-                                useDefaultCacheWidth:
-                                    backgroundCacheWidth != null,
-                                fit: BoxFit.cover,
-                                filterQuality: isAsmrTrack
-                                    ? FilterQuality.low
-                                    : FilterQuality.medium,
-                                color: cs.surface.withValues(alpha: 0.45),
-                                colorBlendMode: BlendMode.darken,
-                                deferRetryDuringInteraction: true,
+                        child: AnimatedSwitcher(
+                          duration: kAppMotionSlow,
+                          reverseDuration: kAppMotionStandard,
+                          transitionBuilder: (child, animation) =>
+                              buildAppFadeTransition(
+                                context: context,
+                                animation: animation,
+                                child: child,
+                              ),
+                          child: KeyedSubtree(
+                            key: ValueKey('session_detail_blur_${session.id}'),
+                            child: ImageFiltered(
+                              key: const ValueKey('session_detail_background_blur'),
+                              imageFilter: ImageFilter.blur(
+                                sigmaX: backgroundBlurSigma,
+                                sigmaY: backgroundBlurSigma,
+                                tileMode: TileMode.decal,
+                              ),
+                              child: AsyncCoverImage(
+                                future: coverPathFuture,
+                                requestKey: session.id,
+                                duration: Duration.zero,
+                                deferCommitDuringInteraction: true,
+                                initialPath: library
+                                    .resolvedPlaybackCoverPathForTrack(track),
+                                retryFutureBuilder: () => _coverFutureForTrack(
+                                  ref.read(libraryFacadeProvider),
+                                  track,
+                                ),
                                 fallbackBuilder: (_) => CoverFallbackArtwork(
                                   seed:
                                       track?.displayName ??
                                       session.currentTrackPath,
                                   showIcon: false,
                                 ),
-                              );
-                            },
+                                imageBuilder: (context, coverPath) {
+                                  return RetryingFileImage(
+                                    path: coverPath,
+                                    cacheWidth: backgroundCacheWidth,
+                                    useDefaultCacheWidth:
+                                        backgroundCacheWidth != null,
+                                    fit: BoxFit.cover,
+                                    filterQuality: isAsmrTrack
+                                        ? FilterQuality.low
+                                        : FilterQuality.medium,
+                                    color: cs.surface.withValues(alpha: 0.45),
+                                    colorBlendMode: BlendMode.darken,
+                                    deferRetryDuringInteraction: true,
+                                    fallbackBuilder: (_) => CoverFallbackArtwork(
+                                      seed:
+                                          track?.displayName ??
+                                          session.currentTrackPath,
+                                      showIcon: false,
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
                           ),
                         ),
                       ),
@@ -902,11 +915,24 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               final isLandscape =
                                   MediaQuery.orientationOf(context) ==
                                   Orientation.landscape;
-                              Widget artworkWidget = _SessionHeroArtwork(
-                                session: session,
-                                height: constraints.maxHeight,
-                                track: track,
-                                coverPathFuture: coverPathFuture,
+                              Widget artworkWidget = AnimatedSwitcher(
+                                duration: kAppMotionSlow,
+                                reverseDuration: kAppMotionStandard,
+                                transitionBuilder: (child, animation) =>
+                                    buildAppFadeTransition(
+                                      context: context,
+                                      animation: animation,
+                                      child: child,
+                                    ),
+                                child: KeyedSubtree(
+                                  key: ValueKey('artwork_${session.id}'),
+                                  child: _SessionHeroArtwork(
+                                    session: session,
+                                    height: constraints.maxHeight,
+                                    track: track,
+                                    coverPathFuture: coverPathFuture,
+                                  ),
+                                ),
                               );
 
                               if (isLandscape) {

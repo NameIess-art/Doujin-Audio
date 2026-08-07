@@ -429,45 +429,62 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          MarqueeText(
-            text: folderName,
-            allowAndroidMarquee: true,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: _sessionDetailForeground(
-                cs,
-                _SessionDetailForegroundLevel.medium,
-                darkFallback: cs.onSurface.withValues(alpha: 0.8),
+          AnimatedSwitcher(
+            duration: kAppMotionSlow,
+            reverseDuration: kAppMotionStandard,
+            transitionBuilder: (child, animation) => buildAppFadeTransition(
+              context: context,
+              animation: animation,
+              child: child,
+            ),
+            child: KeyedSubtree(
+              key: ValueKey('info_${session.id}'),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  MarqueeText(
+                    text: folderName,
+                    allowAndroidMarquee: true,
+                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: _sessionDetailForeground(
+                        cs,
+                        _SessionDetailForegroundLevel.medium,
+                        darkFallback: cs.onSurface.withValues(alpha: 0.8),
+                      ),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    height: 48,
+                    child: MarqueeText(
+                      text: displayName,
+                      pauseDuration: const Duration(seconds: 1),
+                      allowAndroidMarquee: true,
+                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                        color: _sessionDetailForeground(
+                          cs,
+                          _SessionDetailForegroundLevel.strong,
+                        ),
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.5,
+                        height: 1.1,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (widget.subtitleEnabled && !_segmentPanelExpanded)
+                    RepaintBoundary(
+                      child: _SessionSubtitlePanel(
+                        session: session,
+                        deferLoad: widget.deferSubtitleLoad,
+                      ),
+                    ),
+                  RepaintBoundary(child: buildProgressBar()),
+                ],
               ),
-              fontWeight: FontWeight.w700,
             ),
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 48,
-            child: MarqueeText(
-              text: displayName,
-              pauseDuration: const Duration(seconds: 1),
-              allowAndroidMarquee: true,
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                color: _sessionDetailForeground(
-                  cs,
-                  _SessionDetailForegroundLevel.strong,
-                ),
-                fontWeight: FontWeight.w900,
-                letterSpacing: -0.5,
-                height: 1.1,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (widget.subtitleEnabled && !_segmentPanelExpanded)
-            RepaintBoundary(
-              child: _SessionSubtitlePanel(
-                session: session,
-                deferLoad: widget.deferSubtitleLoad,
-              ),
-            ),
-          RepaintBoundary(child: buildProgressBar()),
           buildTransportControls(),
           if (!widget.isLandscape)
             AnimatedSwitcher(

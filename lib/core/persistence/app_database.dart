@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
@@ -9,6 +10,7 @@ import '../media/path_matcher.dart';
 import 'persistence_records.dart';
 
 part 'app_database_tracks.dart';
+part 'app_database_backup.dart';
 part 'app_database_sessions.dart';
 part 'app_database_audio_details.dart';
 part 'app_database_library_entries.dart';

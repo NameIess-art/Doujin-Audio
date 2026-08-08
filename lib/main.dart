@@ -36,12 +36,17 @@ import 'features/player/application/playback_session_launcher.dart';
 import 'features/player/application/timer_facade.dart';
 import 'core/logging/app_log_service.dart';
 import 'core/ui/ui_interaction_coordinator.dart';
+import 'core/widgets/app_feedback.dart';
 import 'app/theme/theme_provider.dart';
 import 'features/settings/application/app_preferences.dart';
+import 'features/settings/application/app_cache_service.dart';
 import 'features/settings/application/app_update_service.dart';
 import 'features/settings/application/settings_repository.dart';
 import 'features/settings/application/settings_state.dart';
 import 'core/persistence/app_database.dart';
+import 'features/data_support/application/data_backup_service.dart';
+
+StartupRestoreOutcome? _startupRestoreOutcome;
 
 Future<void> main() async {
   final binding = WidgetsFlutterBinding.ensureInitialized();
@@ -92,6 +97,7 @@ Future<void> main() async {
           controller: appBootstrapController,
           appBuilder: () => _createAudioPlayerApp(
             shouldShowOnboarding: shouldShowOnboarding!,
+            startupRestoreOutcome: _startupRestoreOutcome,
             onBootstrapSettled: allowFirstFrameOnce,
           ),
           onBootstrapSettled: () {
@@ -154,10 +160,28 @@ Future<void> _initializeAudioPlayerApp() async {
     'app_bootstrap_pre_run_app',
     () => initFutures,
   );
+
+  final restoreOutcome = await DataBackupService().applyAtStartup();
+  _startupRestoreOutcome = restoreOutcome;
+  if (restoreOutcome?.succeeded == true) {
+    final nativePlayback = NativePlaybackRepository();
+    try {
+      await nativePlayback.clearAll();
+    } finally {
+      await nativePlayback.dispose();
+    }
+    await AppCacheService.clearAllCaches();
+    AppLogService.info('backup_restore_applied');
+  } else if (restoreOutcome != null) {
+    AppLogService.warning(
+      'backup_restore_failed code=${restoreOutcome.errorCode}',
+    );
+  }
 }
 
 Widget _createAudioPlayerApp({
   required bool shouldShowOnboarding,
+  StartupRestoreOutcome? startupRestoreOutcome,
   VoidCallback? onBootstrapSettled,
 }) {
   final notificationService = PlaybackNotificationService();
@@ -233,6 +257,7 @@ Widget _createAudioPlayerApp({
     ],
     child: MusicPlayerApp(
       shouldShowOnboarding: shouldShowOnboarding,
+      startupRestoreOutcome: startupRestoreOutcome,
       onBootstrapSettled: onBootstrapSettled,
     ),
   );
@@ -266,11 +291,13 @@ class _StretchOverscrollBehavior extends MaterialScrollBehavior {
 class MusicPlayerApp extends ConsumerStatefulWidget {
   const MusicPlayerApp({
     this.shouldShowOnboarding,
+    this.startupRestoreOutcome,
     this.onBootstrapSettled,
     super.key,
   });
 
   final bool? shouldShowOnboarding;
+  final StartupRestoreOutcome? startupRestoreOutcome;
   final VoidCallback? onBootstrapSettled;
 
   @override
@@ -280,6 +307,8 @@ class MusicPlayerApp extends ConsumerStatefulWidget {
 class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   late final AppBootstrapController _runtimeBootstrapController;
   late final bool _shouldShowOnboarding;
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  var _restoreOutcomeScheduled = false;
 
   @override
   void initState() {
@@ -315,6 +344,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         ref.watch(themeStateProvider).value ??
         ThemeState.from(ref.read(themeProviderInstanceProvider));
     final languageProvider = ref.read(appLanguageProviderInstanceProvider);
+    _scheduleRestoreOutcomeFeedback(languageProvider);
     final languageState =
         ref.watch(appLanguageStateProvider).value ??
         AppLanguageState.from(languageProvider);
@@ -324,6 +354,7 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
       ),
     );
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: languageProvider.tr('app_title'),
       debugShowCheckedModeBanner: false,
       navigatorObservers: [UiInteractionNavigatorObserver.instance],
@@ -370,5 +401,27 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         ),
       ),
     );
+  }
+
+  void _scheduleRestoreOutcomeFeedback(AppLanguageProvider languageProvider) {
+    final outcome = widget.startupRestoreOutcome;
+    if (_restoreOutcomeScheduled || outcome == null) return;
+    _restoreOutcomeScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final navigatorContext = _navigatorKey.currentContext;
+      if (navigatorContext == null) return;
+      showAppSnackBar(
+        navigatorContext,
+        languageProvider.tr(
+          outcome.succeeded
+              ? 'backup_restore_succeeded'
+              : 'backup_restore_failed_rolled_back',
+        ),
+        tone: outcome.succeeded
+            ? AppFeedbackTone.success
+            : AppFeedbackTone.destructive,
+      );
+    });
   }
 }

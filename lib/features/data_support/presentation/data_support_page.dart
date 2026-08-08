@@ -9,6 +9,9 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../app/presentation/onboarding_page.dart';
+import '../../../core/widgets/confirm_action_dialog.dart';
+import '../../../core/widgets/app_dialog.dart';
+import '../../../core/widgets/app_buttons.dart';
 
 class DataSupportPage extends ConsumerStatefulWidget {
   const DataSupportPage({super.key});
@@ -51,10 +54,103 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
     );
   }
 
+  Future<void> _exportBackup() async {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final confirmed = await showConfirmActionDialog(
+      context: context,
+      title: i18n.tr('export_backup'),
+      message: i18n.tr('backup_sensitive_warning'),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('confirm'),
+      icon: Icons.security_rounded,
+    );
+    if (!confirmed || !mounted) return;
+    await _run(
+      scope: UiOperationScope.dataSupportBackupExport,
+      labelKey: 'export_backup',
+      action: () async {
+        final savedPath = await _fileService.exportBackup(
+          dialogTitle: i18n.tr('export_backup'),
+        );
+        if (savedPath != null && mounted) {
+          _showSuccess(
+            'backup_exported',
+            titleKey: 'operation_completed',
+            detail: savedPath,
+            duration: const Duration(seconds: 5),
+          );
+        }
+      },
+      retry: _exportBackup,
+    );
+  }
+
+  Future<void> _restoreBackup() async {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final confirmed = await showConfirmActionDialog(
+      context: context,
+      title: i18n.tr('restore_backup'),
+      message: i18n.tr('restore_backup_warning'),
+      cancelLabel: i18n.tr('cancel'),
+      confirmLabel: i18n.tr('select_backup'),
+      icon: Icons.restore_rounded,
+    );
+    if (!confirmed || !mounted) return;
+    await _run(
+      scope: UiOperationScope.dataSupportBackupRestore,
+      labelKey: 'restore_backup',
+      action: () async {
+        final result = await _fileService.pickAndStageBackup(
+          dialogTitle: i18n.tr('restore_backup'),
+        );
+        if (result == null || !mounted) return;
+        await ref.read(playbackFacadeProvider).nativeRepository.clearAll();
+        if (!mounted) return;
+        await showAppDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) => PopScope(
+            canPop: false,
+            child: AppDialog(
+              title: i18n.tr('backup_ready_to_restore'),
+              icon: Icons.restart_alt_rounded,
+              content: Text(i18n.tr('backup_restart_required')),
+              actions: AppDialogActions(
+                children: [
+                  AppPrimaryButton(
+                    onPressed: _terminateForPendingRestore,
+                    icon: Icons.close_rounded,
+                    label: i18n.tr('close_and_restart'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      retry: _restoreBackup,
+    );
+  }
+
+  Future<void> _terminateForPendingRestore() async {
+    final terminated = await ref
+        .read(appLifecyclePlatformServiceProvider)
+        .terminateForPendingRestore();
+    if (terminated || !mounted) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    showAppSnackBar(
+      context,
+      i18n.tr('operation_failed_retry'),
+      tone: AppFeedbackTone.destructive,
+      icon: Icons.error_outline_rounded,
+    );
+  }
+
   Future<void> _run({
     required UiOperationScope scope,
     required String labelKey,
     required Future<void> Function() action,
+    VoidCallback? retry,
   }) async {
     if (_operationService.operationFor(scope).isBusy) return;
     try {
@@ -81,10 +177,10 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
             .read(appLanguageProviderInstanceProvider)
             .tr('operation_failed'),
         icon: Icons.error_outline_rounded,
-        actionLabel: ref
-            .read(appLanguageProviderInstanceProvider)
-            .tr('export_diagnostics'),
-        onAction: _exportDiagnostics,
+        actionLabel: retry == null
+            ? null
+            : ref.read(appLanguageProviderInstanceProvider).tr('retry'),
+        onAction: retry,
         duration: const Duration(seconds: 6),
       );
     }
@@ -118,7 +214,20 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
           ),
         )
         .isBusy;
-    final dataOperationBusy = diagnosticsBusy;
+    final backupExportBusy = ref
+        .watch(
+          uiOperationForScopeProvider(UiOperationScope.dataSupportBackupExport),
+        )
+        .isBusy;
+    final backupRestoreBusy = ref
+        .watch(
+          uiOperationForScopeProvider(
+            UiOperationScope.dataSupportBackupRestore,
+          ),
+        )
+        .isBusy;
+    final dataOperationBusy =
+        diagnosticsBusy || backupExportBusy || backupRestoreBusy;
     return SizedBox(
       width: double.infinity,
       child: Column(
@@ -153,6 +262,22 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
                       : null,
                 ),
                 const SizedBox(height: 8),
+                _ActionCard(
+                  key: const ValueKey('data-support-export-backup'),
+                  title: i18n.tr('export_backup'),
+                  subtitle: i18n.tr('export_backup_subtitle'),
+                  icon: Icons.archive_outlined,
+                  busy: backupExportBusy,
+                  onTap: dataOperationBusy ? null : _exportBackup,
+                ),
+                _ActionCard(
+                  key: const ValueKey('data-support-restore-backup'),
+                  title: i18n.tr('restore_backup'),
+                  subtitle: i18n.tr('restore_backup_subtitle'),
+                  icon: Icons.settings_backup_restore_rounded,
+                  busy: backupRestoreBusy,
+                  onTap: dataOperationBusy ? null : _restoreBackup,
+                ),
                 _ActionCard(
                   key: const ValueKey('data-support-export-diagnostics'),
                   title: i18n.tr('export_diagnostics'),

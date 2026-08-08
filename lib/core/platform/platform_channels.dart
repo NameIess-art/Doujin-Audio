@@ -16,6 +16,14 @@ abstract final class AppIconChannel {
   static const String name = 'nameless_audio/app_icon';
 }
 
+abstract final class AppLifecycleChannel {
+  static const String name = 'nameless_audio/app_lifecycle';
+}
+
+abstract final class AppLifecycleMethod {
+  static const String terminateForPendingRestore = 'terminateForPendingRestore';
+}
+
 abstract final class AppIconMethod {
   static const String syncThemeMode = 'syncThemeMode';
 }

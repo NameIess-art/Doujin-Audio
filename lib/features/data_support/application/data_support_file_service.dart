@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 import '../../../core/platform/app_platform.dart';
 import '../../../core/logging/app_log_service.dart';
 import 'diagnostic_report_service.dart';
+import 'data_backup_service.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../settings/application/app_update_service.dart';
 
@@ -15,17 +16,22 @@ class DataSupportFileService {
     DiagnosticReportService? diagnosticService,
     FileCachePlatformGateway? fileCacheGateway,
     AppUpdateService? appUpdateService,
+    DataBackupService? backupService,
     bool Function()? isAndroid,
   }) : _diagnosticService =
            diagnosticService ??
            DiagnosticReportService(appUpdateService: appUpdateService),
        _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
+       _backupService =
+           backupService ??
+           DataBackupService(appUpdateService: appUpdateService),
        _isAndroid = isAndroid ?? (() => AppPlatform.isAndroid);
 
   final DiagnosticReportService _diagnosticService;
   final FileCachePlatformGateway _fileCacheGateway;
   final bool Function() _isAndroid;
+  final DataBackupService _backupService;
 
   Future<String?> exportDiagnostics({required String dialogTitle}) async {
     final temporary = await _temporaryFile(
@@ -39,6 +45,50 @@ class DataSupportFileService {
         allowedExtensions: const <String>['zip'],
         mimeType: 'application/zip',
       );
+    } finally {
+      await _deleteTemporaryFile(temporary);
+    }
+  }
+
+  Future<String?> exportBackup({required String dialogTitle}) async {
+    final temporary = await _temporaryFile(
+      'NamelessAudio-backup-${_timestamp()}.nabackup',
+    );
+    try {
+      final backup = await _backupService.exportBackup(temporary.path);
+      return await _saveGeneratedFile(
+        source: backup,
+        dialogTitle: dialogTitle,
+        allowedExtensions: const <String>['nabackup'],
+        mimeType: 'application/zip',
+      );
+    } finally {
+      await _deleteTemporaryFile(temporary);
+    }
+  }
+
+  Future<BackupValidationResult?> pickAndStageBackup({
+    required String dialogTitle,
+  }) async {
+    final result = await FilePicker.pickFiles(
+      dialogTitle: dialogTitle,
+      type: FileType.custom,
+      allowedExtensions: const <String>['nabackup'],
+      withReadStream: true,
+      lockParentWindow: true,
+    );
+    final selected = result?.files.singleOrNull;
+    if (selected == null) return null;
+    final selectedPath = selected.path;
+    if (selectedPath != null && selectedPath.isNotEmpty) {
+      return _backupService.inspectAndStageRestore(selectedPath);
+    }
+    final stream = selected.readStream;
+    if (stream == null) return null;
+    final temporary = await _temporaryFile('selected-backup.nabackup');
+    try {
+      await stream.pipe(temporary.openWrite());
+      return _backupService.inspectAndStageRestore(temporary.path);
     } finally {
       await _deleteTemporaryFile(temporary);
     }

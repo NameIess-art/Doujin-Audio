@@ -512,6 +512,20 @@ const Map<String, String> appLanguageJa = {
   'operation_completed': '完了',
   'operation_failed': '操作に失敗しました',
   'export_diagnostics': '診断レポートを出力',
+  'export_backup': 'バックアップを書き出す',
+  'export_backup_subtitle': 'アプリデータ、再生履歴、ASMR.ONE のログイン情報を保存します。',
+  'restore_backup': 'バックアップを復元',
+  'restore_backup_subtitle': '現在のデータを完全に置き換え、次回起動時に適用します。',
+  'backup_sensitive_warning':
+      '暗号化されないバックアップに ASMR.ONE のアカウント名、パスワード、ログイントークンが含まれます。ファイルを入手した人がログインできる可能性があります。続行しますか？',
+  'restore_backup_warning':
+      '復元すると現在のアプリデータが完全に置き換わり、再生が停止します。音声ファイルとフォルダー権限は復元されません。完了後にアプリを閉じて再起動してください。',
+  'select_backup': 'バックアップを選択',
+  'backup_exported': 'バックアップの出力先：{path}',
+  'backup_ready_to_restore': 'バックアップの準備が完了しました',
+  'backup_restart_required': 'バックアップの検証が完了しました。次回起動時に復元されます。アプリを閉じて再起動してください。',
+  'backup_restore_succeeded': 'バックアップを復元し、アプリデータと ASMR.ONE アカウントを更新しました。',
+  'backup_restore_failed_rolled_back': 'バックアップの復元に失敗したため、以前のデータに安全に戻しました。',
   'unexpected_error_title': 'Nameless Audio で予期しないエラーが発生しました',
   'unexpected_error_message':
       'ローカルデータは保持されています。診断レポートを出力してから、アプリを閉じて再起動してください。',

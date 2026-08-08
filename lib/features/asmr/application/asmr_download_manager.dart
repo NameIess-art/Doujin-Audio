@@ -1829,6 +1829,15 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
   }
 
+  Future<void> flushPersistence() async {
+    if (_disposed) return;
+    _publishLiveProgress();
+    _deferredPersistenceTimer?.cancel();
+    _deferredPersistenceTimer = null;
+    _persistCurrentTasks();
+    await _persistenceTail;
+  }
+
   void _refreshTaskIdsSnapshot() {
     final taskIds = _tasks.entries
         .where(

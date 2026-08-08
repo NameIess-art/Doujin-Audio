@@ -324,6 +324,11 @@ class AudioDetailCacheService {
     if (pending.isNotEmpty) await Future.wait(pending);
   }
 
+  Future<void> waitForPendingOperations() async {
+    final pending = _operationTails.values.toSet().toList(growable: false);
+    if (pending.isNotEmpty) await Future.wait(pending);
+  }
+
   void resume() {
     _suspended = false;
   }

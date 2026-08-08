@@ -1,6 +1,7 @@
 package com.nameless.audio.channel
 
 internal object PlatformChannelNames {
+    const val APP_LIFECYCLE = "nameless_audio/app_lifecycle"
     const val APP_ICON = "nameless_audio/app_icon"
     const val FILE_CACHE = "nameless_audio/file_cache"
     const val FILE_CACHE_SCAN_EVENTS = "nameless_audio/file_cache/scan_events"
@@ -37,6 +38,10 @@ internal object NativePlaybackMethods {
     const val DISMISS_NOTIFICATIONS = "dismissNotifications"
     const val UNDISMISS_NOTIFICATIONS = "undismissNotifications"
     const val SNAPSHOT = "snapshot"
+}
+
+internal object AppLifecycleMethods {
+    const val TERMINATE_FOR_PENDING_RESTORE = "terminateForPendingRestore"
 }
 
 internal object VideoDisplayMethods {

@@ -19,6 +19,8 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const cardKeys = <ValueKey<String>>[
+    ValueKey('data-support-export-backup'),
+    ValueKey('data-support-restore-backup'),
     ValueKey('data-support-export-diagnostics'),
     ValueKey('data-support-privacy-summary'),
   ];
@@ -99,11 +101,11 @@ void main() {
 
       expect(
         find.byKey(const ValueKey('data-support-export-backup')),
-        findsNothing,
+        findsOneWidget,
       );
       expect(
         find.byKey(const ValueKey('data-support-restore-backup')),
-        findsNothing,
+        findsOneWidget,
       );
 
       final firstCard = find.byKey(cardKeys.first);
@@ -129,6 +131,16 @@ void main() {
       }
 
       const operations = <(UiOperationScope, ValueKey<String>, String)>[
+        (
+          UiOperationScope.dataSupportBackupExport,
+          ValueKey('data-support-export-backup'),
+          'export_backup',
+        ),
+        (
+          UiOperationScope.dataSupportBackupRestore,
+          ValueKey('data-support-restore-backup'),
+          'restore_backup',
+        ),
         (
           UiOperationScope.dataSupportDiagnosticsExport,
           ValueKey('data-support-export-diagnostics'),
@@ -174,6 +186,50 @@ void main() {
       }
     },
   );
+
+  testWidgets('backup actions require explicit destructive-data warnings', (
+    tester,
+  ) async {
+    final languageProvider = AppLanguageProvider();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+          appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
+          uiOperationServiceProvider.overrideWithValue(operationService),
+          dataSupportStorageUsageServiceProvider.overrideWithValue(
+            storageService(),
+          ),
+        ],
+        child: const MaterialApp(home: DataSupportPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final exportCard = find.byKey(const ValueKey('data-support-export-backup'));
+    await tester.ensureVisible(exportCard);
+    await tester.tap(exportCard);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(languageProvider.tr('backup_sensitive_warning')),
+      findsOneWidget,
+    );
+    await tester.tap(find.text(languageProvider.tr('cancel')));
+    await tester.pumpAndSettle();
+
+    final restoreCard = find.byKey(
+      const ValueKey('data-support-restore-backup'),
+    );
+    await tester.ensureVisible(restoreCard);
+    await tester.tap(restoreCard);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(languageProvider.tr('restore_backup_warning')),
+      findsOneWidget,
+    );
+  });
 
   testWidgets('storage overview keeps a compact loading state', (tester) async {
     final pending = Completer<Object?>();
@@ -270,18 +326,21 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final segments = find.byKey(
+    final appCacheSegment = find.byKey(
       const ValueKey('data-support-storage-segment-app-cache'),
     );
-    expect(segments, findsOneWidget);
+    expect(appCacheSegment, findsOneWidget);
     final segment = tester.widget<ColoredBox>(
-      find.descendant(of: segments, matching: find.byType(ColoredBox)),
+      find.descendant(of: appCacheSegment, matching: find.byType(ColoredBox)),
     );
     expect(segment.color.a, 1);
     expect(
       tester
           .getSize(
-            find.descendant(of: segments, matching: find.byType(ColoredBox)),
+            find.descendant(
+              of: appCacheSegment,
+              matching: find.byType(ColoredBox),
+            ),
           )
           .height,
       12,
@@ -292,11 +351,23 @@ void main() {
     final audioLibrarySegment = find.byKey(
       const ValueKey('data-support-storage-segment-audio-library'),
     );
+    final availableSegment = find.byKey(
+      const ValueKey('data-support-storage-segment-available'),
+    );
     expect(otherSegment, findsOneWidget);
     expect(audioLibrarySegment, findsOneWidget);
+    expect(availableSegment, findsOneWidget);
     expect(
       tester.getCenter(otherSegment).dx,
       lessThan(tester.getCenter(audioLibrarySegment).dx),
+    );
+    expect(
+      tester.getCenter(audioLibrarySegment).dx,
+      lessThan(tester.getCenter(appCacheSegment).dx),
+    );
+    expect(
+      tester.getCenter(appCacheSegment).dx,
+      lessThan(tester.getCenter(availableSegment).dx),
     );
     expect(
       tester

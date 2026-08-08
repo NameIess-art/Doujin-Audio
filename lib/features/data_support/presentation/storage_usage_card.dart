@@ -145,8 +145,8 @@ class _StorageUsageCard extends StatelessWidget {
     ];
     final barSegments = [
       otherUsedSegment,
-      applicationCacheSegment,
       audioLibrarySegment,
+      applicationCacheSegment,
       availableSegment,
     ];
 

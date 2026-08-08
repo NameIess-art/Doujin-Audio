@@ -19,6 +19,12 @@ class UiOperationScope {
   static const dataSupportDiagnosticsExport = UiOperationScope(
     'data-support:diagnostics-export',
   );
+  static const dataSupportBackupExport = UiOperationScope(
+    'data-support:backup-export',
+  );
+  static const dataSupportBackupRestore = UiOperationScope(
+    'data-support:backup-restore',
+  );
   static const libraryRefresh = UiOperationScope('library:refresh');
   static const libraryImportFolder = UiOperationScope('library:import-folder');
   static const libraryImportFiles = UiOperationScope('library:import-files');

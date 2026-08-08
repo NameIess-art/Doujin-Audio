@@ -558,6 +558,25 @@ const Map<String, String> appLanguageEn = {
   'operation_completed': 'Completed',
   'operation_failed': 'Operation failed',
   'export_diagnostics': 'Export diagnostics',
+  'export_backup': 'Export backup',
+  'export_backup_subtitle':
+      'Back up app data, playback history, and the ASMR.ONE login account.',
+  'restore_backup': 'Restore backup',
+  'restore_backup_subtitle':
+      'Replace current data completely on the next app start.',
+  'backup_sensitive_warning':
+      'This unencrypted backup contains the ASMR.ONE account name, password, and login token. Anyone with the file may be able to sign in. Continue?',
+  'restore_backup_warning':
+      'Restoring replaces all current app data and stops playback. Audio files and folder permissions are not restored. The app must be closed and restarted.',
+  'select_backup': 'Select backup',
+  'backup_exported': 'Backup exported to {path}',
+  'backup_ready_to_restore': 'Backup is ready',
+  'backup_restart_required':
+      'The backup passed validation and will be restored on the next start. Close and restart the app now.',
+  'backup_restore_succeeded':
+      'Backup restored. App data and the ASMR.ONE account were updated.',
+  'backup_restore_failed_rolled_back':
+      'Backup restore failed. The previous app data was restored safely.',
   'unexpected_error_title': 'Nameless Audio encountered an unexpected error',
   'unexpected_error_message':
       'Your local data is safe. Export diagnostics, then close and restart the app.',

@@ -14,6 +14,64 @@ abstract class AsmrTokenStore {
   Future<void> clearCredentials();
 }
 
+class AsmrAccountBackupSnapshot {
+  const AsmrAccountBackupSnapshot({
+    this.token,
+    this.name,
+    this.password,
+    required this.createdAt,
+  });
+
+  final String? token;
+  final String? name;
+  final String? password;
+  final DateTime createdAt;
+
+  bool get hasCredentials =>
+      name != null && name!.isNotEmpty && password != null;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'token': token,
+    'name': name,
+    'password': password,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+  };
+
+  factory AsmrAccountBackupSnapshot.fromJson(Map<String, Object?> json) {
+    if (!json.keys.toSet().containsAll(const <String>{
+      'token',
+      'name',
+      'password',
+      'createdAt',
+    })) {
+      throw const FormatException('invalid_account_backup');
+    }
+    final createdAt = DateTime.tryParse(json['createdAt']?.toString() ?? '');
+    if (createdAt == null) {
+      throw const FormatException('invalid_account_backup');
+    }
+    String? optionalString(String key) {
+      final value = json[key];
+      if (value == null) return null;
+      if (value is! String) {
+        throw const FormatException('invalid_account_backup');
+      }
+      return value;
+    }
+
+    final snapshot = AsmrAccountBackupSnapshot(
+      token: optionalString('token'),
+      name: optionalString('name'),
+      password: optionalString('password'),
+      createdAt: createdAt,
+    );
+    if ((snapshot.name == null) != (snapshot.password == null)) {
+      throw const FormatException('invalid_account_backup');
+    }
+    return snapshot;
+  }
+}
+
 class SecureAsmrTokenStore implements AsmrTokenStore {
   SecureAsmrTokenStore({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
@@ -23,6 +81,29 @@ class SecureAsmrTokenStore implements AsmrTokenStore {
   static const String _passKey = 'asmr_one_pass_v1';
 
   final FlutterSecureStorage _storage;
+
+  Future<AsmrAccountBackupSnapshot> exportBackupSnapshot() async {
+    final credentials = await readCredentials();
+    return AsmrAccountBackupSnapshot(
+      token: await readToken(),
+      name: credentials?['name'],
+      password: credentials?['password'],
+      createdAt: DateTime.now().toUtc(),
+    );
+  }
+
+  Future<void> replaceFromBackup(AsmrAccountBackupSnapshot snapshot) async {
+    await clearToken();
+    await clearCredentials();
+    final token = snapshot.token;
+    if (token != null && token.isNotEmpty) await writeToken(token);
+    if (snapshot.hasCredentials) {
+      await writeCredentials(snapshot.name!, snapshot.password!);
+    }
+  }
+
+  Future<void> restoreSnapshotForRollback(AsmrAccountBackupSnapshot snapshot) =>
+      replaceFromBackup(snapshot);
 
   @override
   Future<String?> readToken() async {

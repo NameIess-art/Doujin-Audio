@@ -100,6 +100,55 @@ class AppPreferences {
     }
   }
 
+  static Future<Map<String, Object>> snapshot({
+    Set<String> excludedKeys = const <String>{},
+  }) async {
+    final preferences = await _prefs;
+    final result = <String, Object>{};
+    for (final key in preferences.getKeys()) {
+      if (excludedKeys.contains(key)) continue;
+      final value = preferences.get(key);
+      if (value is String || value is bool || value is int || value is double) {
+        result[key] = value!;
+      } else if (value is List<String>) {
+        result[key] = List<String>.of(value);
+      }
+    }
+    return result;
+  }
+
+  static Future<void> replaceSnapshot(Map<String, Object?> snapshot) async {
+    final preferences = await _prefs;
+    final normalized = <String, Object>{};
+    for (final entry in snapshot.entries) {
+      final value = entry.value;
+      if (value is String || value is bool || value is int || value is double) {
+        normalized[entry.key] = value!;
+      } else if (value is List && value.every((item) => item is String)) {
+        normalized[entry.key] = value.cast<String>();
+      } else {
+        throw const FormatException('unsupported_preferences_value');
+      }
+    }
+
+    if (!await preferences.clear()) {
+      throw StateError('preferences_clear_failed');
+    }
+    for (final entry in normalized.entries) {
+      final value = entry.value;
+      final saved = switch (value) {
+        String value => preferences.setString(entry.key, value),
+        bool value => preferences.setBool(entry.key, value),
+        int value => preferences.setInt(entry.key, value),
+        double value => preferences.setDouble(entry.key, value),
+        List<String> value => preferences.setStringList(entry.key, value),
+        _ => Future<bool>.value(false),
+      };
+      if (!await saved) throw StateError('preferences_write_failed');
+    }
+    _instance = preferences;
+  }
+
   static Future<T?> readJson<T>(String key, JsonValueReader<T> reader) async {
     final raw = await getString(key);
     if (raw == null || raw.isEmpty) {

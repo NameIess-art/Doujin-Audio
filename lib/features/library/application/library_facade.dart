@@ -135,6 +135,8 @@ final class LibraryFacade implements LibraryCatalog {
 
   static const _audioDetailDocumentImportKey =
       'audio_detail_document_read_only_import_v2';
+  static const _backupRestoreAuthoritativeKey =
+      'backup_restore_authoritative_v1';
 
   LibraryState get state => _service.slice.state;
   Stream<LibraryState> get states => _service.slice.stream;
@@ -236,6 +238,11 @@ final class LibraryFacade implements LibraryCatalog {
     await _startupMaintenanceCoordinator.cancelAndWait();
     await _preferenceWriteTail;
     await detailCacheService.suspendAndWait();
+  }
+
+  Future<void> flushPendingPersistence() async {
+    await _preferenceWriteTail;
+    await detailCacheService.waitForPendingOperations();
   }
 
   Future<void> resetPersistedState() async {
@@ -415,6 +422,10 @@ final class LibraryFacade implements LibraryCatalog {
       ];
     }
     final result = await detailCacheService.importBackupsMany(targets);
+    await databaseRepository.saveAppSetting(
+      _backupRestoreAuthoritativeKey,
+      '0',
+    );
     if (result.changedDetails.isNotEmpty) {
       snapshotCacheService.markDetailChanged();
       _syncStateSlice();
@@ -532,9 +543,16 @@ final class LibraryFacade implements LibraryCatalog {
     if (targetsWithMissingDetails.isNotEmpty) {
       // A rescan can expose a track before the explicit backup import finishes.
       // Restore sparse details before automatic duration updates reach SQLite.
-      final import = await detailCacheService.importBackupsMany(
-        targetsWithMissingDetails,
-      );
+      final restoredDatabaseIsAuthoritative =
+          await databaseRepository.loadAppSetting(
+            _backupRestoreAuthoritativeKey,
+          ) ==
+          '1';
+      final import = restoredDatabaseIsAuthoritative
+          ? const AudioDetailBackupImportResult()
+          : await detailCacheService.importBackupsMany(
+              targetsWithMissingDetails,
+            );
       if (import.changedDetails.isNotEmpty) {
         snapshotCacheService.markDetailChanged();
         _syncStateSlice();

@@ -3,6 +3,7 @@ package com.nameless.audio
 import com.nameless.audio.channel.*
 import com.nameless.audio.player.notification.notificationSessionIdFromIntent
 import com.nameless.audio.player.common.*
+import com.nameless.audio.player.service.NativePlaybackService
 import com.nameless.audio.player.video.NativeVideoPlatformViewFactory
 import com.nameless.audio.scanner.*
 import com.nameless.audio.storage.*
@@ -10,6 +11,9 @@ import com.nameless.audio.subtitle.*
 import com.nameless.audio.update.*
 
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.os.Process
 import io.flutter.embedding.android.FlutterFragmentActivity
 import io.flutter.embedding.android.RenderMode
 import io.flutter.embedding.engine.FlutterEngine
@@ -24,6 +28,7 @@ open class MainActivity : FlutterFragmentActivity() {
     }
 
     private var notificationsMethodChannel: MethodChannel? = null
+    private var appLifecycleMethodChannel: MethodChannel? = null
     private var nativePlaybackMethodChannel: MethodChannel? = null
     private var nativePlaybackEventChannel: EventChannel? = null
     private var nativePlaybackBridge: NativePlaybackBridge? = null
@@ -44,6 +49,15 @@ open class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         val messenger = flutterEngine.dartExecutor.binaryMessenger
+        appLifecycleMethodChannel?.setMethodCallHandler(null)
+        appLifecycleMethodChannel = MethodChannel(
+            messenger,
+            PlatformChannelNames.APP_LIFECYCLE
+        ).also {
+            it.setMethodCallHandler(
+                AppLifecycleMethodHandler(::schedulePendingRestoreTermination)
+            )
+        }
         flutterEngine.platformViewsController.registry.registerViewFactory(
             NativeVideoPlatformViewFactory.viewType,
             NativeVideoPlatformViewFactory()
@@ -157,6 +171,8 @@ open class MainActivity : FlutterFragmentActivity() {
         disposeNativePlaybackBridge()
         disposeVideoDisplayChannel()
         notificationsMethodChannel = null
+        appLifecycleMethodChannel?.setMethodCallHandler(null)
+        appLifecycleMethodChannel = null
         appIconThemeMethodHandler = null
         fileCacheMethodChannel?.setMethodCallHandler(null)
         fileCacheMethodChannel = null
@@ -225,5 +241,21 @@ open class MainActivity : FlutterFragmentActivity() {
         videoDisplayMethodChannel = null
         videoDisplayMethodHandler?.dispose()
         videoDisplayMethodHandler = null
+    }
+
+    private fun schedulePendingRestoreTermination() {
+        Handler(Looper.getMainLooper()).postDelayed(
+            {
+                stopService(
+                    Intent(applicationContext, NativePlaybackService::class.java)
+                )
+                finishAndRemoveTask()
+                Handler(Looper.getMainLooper()).postDelayed(
+                    { Process.killProcess(Process.myPid()) },
+                    150L
+                )
+            },
+            100L
+        )
     }
 }

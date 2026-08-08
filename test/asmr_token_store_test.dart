@@ -39,6 +39,52 @@ void main() {
     });
   });
 
+  test('account backup snapshot round-trips credentials and token', () async {
+    FlutterSecureStorage.setMockInitialValues(<String, String>{
+      _tokenKey: 'backup-token',
+      _nameKey: 'backup-user',
+      _passKey: 'backup-password',
+    });
+    final store = SecureAsmrTokenStore();
+
+    final snapshot = await store.exportBackupSnapshot();
+    await store.clearToken();
+    await store.clearCredentials();
+    await store.replaceFromBackup(snapshot);
+
+    expect(await store.readToken(), 'backup-token');
+    expect(await store.readCredentials(), <String, String>{
+      'name': 'backup-user',
+      'password': 'backup-password',
+    });
+    expect(snapshot.toJson()['password'], 'backup-password');
+  });
+
+  test('account backup snapshot string does not expose credentials', () {
+    final snapshot = AsmrAccountBackupSnapshot(
+      token: 'secret-token',
+      name: 'secret-name',
+      password: 'secret-password',
+      createdAt: DateTime.utc(2026),
+    );
+
+    final description = snapshot.toString();
+    expect(description, isNot(contains('secret-token')));
+    expect(description, isNot(contains('secret-name')));
+    expect(description, isNot(contains('secret-password')));
+  });
+
+  test('account backup snapshot rejects missing credential fields', () {
+    expect(
+      () => AsmrAccountBackupSnapshot.fromJson(<String, Object?>{
+        'name': null,
+        'password': null,
+        'createdAt': DateTime.utc(2026, 8, 8).toIso8601String(),
+      }),
+      throwsFormatException,
+    );
+  });
+
   test('logout cleanup removes secure ASMR values', () async {
     final secureValues = <String, String>{
       _tokenKey: 'secure-token',

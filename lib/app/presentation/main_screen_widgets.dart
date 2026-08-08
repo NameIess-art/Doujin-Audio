@@ -121,10 +121,7 @@ class _GlobalUpdateOperationBanner extends ConsumerWidget {
     final message = hasError
         ? i18n.tr('update_download_failed_next_step')
         : i18n.tr('downloading_update', {'percent': percent});
-    final detail = operation.error?.toString().trim();
-    final label = hasError && detail != null && detail.isNotEmpty
-        ? '$message $detail'
-        : message;
+    final label = message;
 
     return Positioned(
       top: top,

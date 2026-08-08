@@ -76,8 +76,3 @@ work2.json
 
 # Local documentation and planning assets
 /docs/
-!/docs/
-/docs/*
-!/docs/plans/
-/docs/plans/*
-!/docs/plans/2026-08-03-ui-performance-refactor-plan.md

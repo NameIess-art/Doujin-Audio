@@ -72,13 +72,26 @@ class SubtitleSettingsState {
 
 class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
     implements PersistedStateReloader {
-  SubtitleSettingsNotifier() : super(SubtitleSettingsState()) {
+  SubtitleSettingsNotifier({
+    Future<SubtitleSettingsState> Function()? loadState,
+  }) : super(SubtitleSettingsState()) {
+    _loadState = loadState ?? _loadPersistedState;
     _loadFuture = _load();
   }
 
+  late final Future<SubtitleSettingsState> Function() _loadState;
   late Future<void> _loadFuture;
+  int _loadRevision = 0;
+  bool _disposed = false;
 
   Future<void> _load() async {
+    final revision = _loadRevision;
+    final loaded = await _loadState();
+    if (_disposed || revision != _loadRevision) return;
+    state = loaded;
+  }
+
+  Future<SubtitleSettingsState> _loadPersistedState() async {
     final showList =
         await AppPreferences.getStringList('subtitle_show_map') ?? [];
     final Map<String, bool> showMap = {};
@@ -137,7 +150,7 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
     final fontSizeStr = await AppPreferences.getString('subtitle_font_size');
     final fontSize = double.tryParse(fontSizeStr ?? '') ?? 16;
 
-    state = SubtitleSettingsState(
+    return SubtitleSettingsState(
       showSubtitlesMap: showMap,
       globalSubtitlesMap: globalMap,
       positions: positions,
@@ -152,8 +165,13 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
 
   @override
   Future<void> reloadPersistedState() {
+    _loadRevision++;
     _loadFuture = _load();
     return _loadFuture;
+  }
+
+  void _invalidatePendingLoad() {
+    _loadRevision++;
   }
 
   void toggleShowSubtitles(String sessionId) {
@@ -175,6 +193,7 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
       newPositions.remove(sessionId);
     }
 
+    _invalidatePendingLoad();
     state = state.copyWith(
       showSubtitlesMap: newShowMap,
       globalSubtitlesMap: newGlobalMap,
@@ -209,6 +228,7 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
     if (state.isGlobalEnabled(sessionId) == enabled) return;
     final newMap = Map<String, bool>.from(state.globalSubtitlesMap);
     newMap[sessionId] = enabled;
+    _invalidatePendingLoad();
     state = state.copyWith(globalSubtitlesMap: newMap);
 
     final strList = newMap.entries.map((e) => '${e.key}|${e.value}').toList();
@@ -220,6 +240,7 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
     final newGlobalMap = Map<String, bool>.from(state.globalSubtitlesMap);
     newShowMap.remove(sessionId);
     newGlobalMap.remove(sessionId);
+    _invalidatePendingLoad();
     state = state.copyWith(
       showSubtitlesMap: newShowMap,
       globalSubtitlesMap: newGlobalMap,
@@ -237,6 +258,7 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
   }
 
   void turnOffAllSubtitles() {
+    _invalidatePendingLoad();
     state = state.copyWith(showSubtitlesMap: {});
     AppPreferences.setStringList('subtitle_show_map', []);
   }
@@ -244,6 +266,7 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
   void updatePosition(String sessionId, double y) {
     final newPos = Map<String, double>.from(state.positions);
     newPos[sessionId] = y;
+    _invalidatePendingLoad();
     state = state.copyWith(positions: newPos);
 
     final strList = newPos.entries.map((e) => '${e.key}|${e.value}').toList();
@@ -251,11 +274,13 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
   }
 
   void setFontFamily(String fontFamily) {
+    _invalidatePendingLoad();
     state = state.copyWith(fontFamily: fontFamily);
     AppPreferences.setString('subtitle_font_family', fontFamily);
   }
 
   void setFontColor(Color? color) {
+    _invalidatePendingLoad();
     if (color == null) {
       state = state.copyWith(clearFontColor: true);
       AppPreferences.remove('subtitle_font_color');
@@ -269,21 +294,25 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
   }
 
   void setBackgroundOpacity(double opacity) {
+    _invalidatePendingLoad();
     state = state.copyWith(backgroundOpacity: opacity);
     AppPreferences.setString('subtitle_background_opacity', opacity.toString());
   }
 
   void setFontSize(double fontSize) {
+    _invalidatePendingLoad();
     state = state.copyWith(fontSize: fontSize);
     AppPreferences.setString('subtitle_font_size', fontSize.toString());
   }
 
   void setBorderDepth(double depth) {
+    _invalidatePendingLoad();
     state = state.copyWith(borderDepth: depth);
     AppPreferences.setString('subtitle_border_depth', depth.toString());
   }
 
   void setBackgroundColor(Color? color) {
+    _invalidatePendingLoad();
     if (color == null) {
       state = state.copyWith(clearBackgroundColor: true);
       AppPreferences.remove('subtitle_background_color');
@@ -294,5 +323,12 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
         color.toARGB32().toRadixString(16).padLeft(8, '0'),
       );
     }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _loadRevision++;
+    super.dispose();
   }
 }

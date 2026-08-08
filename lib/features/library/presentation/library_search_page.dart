@@ -26,6 +26,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   FilteredLibraryTreeResult? _visibleSearchResult;
   String _visibleSearchQuery = '';
   int? _visibleSearchRevision;
+  int? _visibleSearchDetailRevision;
   String? _pendingSearchKey;
 
   AudioLibraryCategorySnapshot? _lastCategoryFilterSnapshot;
@@ -112,10 +113,14 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     required int structureRevision,
     required int detailRevision,
   }) {
-    final categorySnapshot = libraryFacade.categorySnapshot;
-    final categoryRevision = categorySnapshot?.detailRevision ?? detailRevision;
+    final categorySnapshot = currentLibraryCategorySnapshot(
+      snapshot: libraryFacade.categorySnapshot,
+      detailRevision: detailRevision,
+    );
+    final categoryRevision = detailRevision;
     if (_visibleSearchQuery == query &&
-        _visibleSearchRevision == structureRevision) {
+        _visibleSearchRevision == structureRevision &&
+        _visibleSearchDetailRevision == categoryRevision) {
       return;
     }
 
@@ -133,6 +138,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         );
         _visibleSearchQuery = query;
         _visibleSearchRevision = structureRevision;
+        _visibleSearchDetailRevision = categoryRevision;
       }
     }
 
@@ -165,6 +171,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
               _visibleSearchResult = result;
               _visibleSearchQuery = query;
               _visibleSearchRevision = structureRevision;
+              _visibleSearchDetailRevision = categoryRevision;
               _pendingSearchKey = null;
             });
           },
@@ -240,7 +247,8 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     );
     final result =
         _visibleSearchQuery == _query &&
-            _visibleSearchRevision == structureRevision
+            _visibleSearchRevision == structureRevision &&
+            _visibleSearchDetailRevision == detailRevision
         ? _visibleSearchResult
         : null;
     final tree = result?.tree;

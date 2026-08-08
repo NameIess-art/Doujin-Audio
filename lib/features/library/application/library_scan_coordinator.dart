@@ -30,6 +30,8 @@ class LibraryScanCoordinator extends ChangeNotifier {
 
   final LibraryScannerService _scanner;
   LibraryScanState _state = const LibraryScanState();
+  int _operationGeneration = 0;
+  bool _disposed = false;
 
   LibraryScanState get state => _state;
 
@@ -39,9 +41,10 @@ class LibraryScanCoordinator extends ChangeNotifier {
     bool importAudioDetails = true,
   }) => _run(
     operation: LibraryScanOperation.refresh,
-    task: () => _withBackupImport(
+    task: (generation) => _withBackupImport(
       catalog,
       () => _scanner.refreshWatchedFolders(provider: catalog, labels: labels),
+      generation: generation,
       enabled: importAudioDetails,
       skipWhenUnchanged: true,
       onlyMissing: true,
@@ -53,9 +56,10 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.importFolder,
-    task: () => _withBackupImport(
+    task: (generation) => _withBackupImport(
       catalog,
       () => _scanner.addFolder(provider: catalog, labels: labels),
+      generation: generation,
     ),
   );
 
@@ -64,9 +68,10 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.importLibrary,
-    task: () => _withBackupImport(
+    task: (generation) => _withBackupImport(
       catalog,
       () => _scanner.addLibrary(provider: catalog, labels: labels),
+      generation: generation,
     ),
   );
 
@@ -75,20 +80,23 @@ class LibraryScanCoordinator extends ChangeNotifier {
     required LibraryScanLabels labels,
   }) => _run(
     operation: LibraryScanOperation.importFiles,
-    task: () => _withBackupImport(
+    task: (generation) => _withBackupImport(
       catalog,
       () => _scanner.addFiles(provider: catalog, labels: labels),
+      generation: generation,
     ),
   );
 
   Future<LibraryScanOutcome?> _withBackupImport(
     LibraryCatalog catalog,
     Future<LibraryScanOutcome?> Function() scan, {
+    required int generation,
     bool enabled = true,
     bool skipWhenUnchanged = false,
     bool onlyMissing = false,
   }) async {
     final outcome = await scan();
+    if (!_isCurrent(generation)) return null;
     if (!enabled || outcome == null || !_canImportBackups(outcome.code)) {
       return outcome;
     }
@@ -119,6 +127,8 @@ class LibraryScanCoordinator extends ChangeNotifier {
   }
 
   void cancel(LibraryCatalogWriter catalog) {
+    if (_disposed) return;
+    _operationGeneration++;
     catalog.cancelScan();
     _setState(
       LibraryScanState(
@@ -130,13 +140,15 @@ class LibraryScanCoordinator extends ChangeNotifier {
 
   Future<LibraryScanOutcome?> _run({
     required LibraryScanOperation operation,
-    required Future<LibraryScanOutcome?> Function() task,
+    required Future<LibraryScanOutcome?> Function(int generation) task,
   }) async {
+    final generation = ++_operationGeneration;
     _setState(
       LibraryScanState(phase: LibraryScanPhase.running, operation: operation),
     );
     try {
-      final outcome = await task();
+      final outcome = await task(generation);
+      if (!_isCurrent(generation)) return null;
       if (outcome == null) {
         _setState(const LibraryScanState());
         return null;
@@ -163,6 +175,7 @@ class LibraryScanCoordinator extends ChangeNotifier {
       );
       return outcome;
     } catch (error, stackTrace) {
+      if (!_isCurrent(generation)) return null;
       AppLogService.error(
         'library_scan_operation_failed operation=${operation.name}',
         error: error,
@@ -186,6 +199,10 @@ class LibraryScanCoordinator extends ChangeNotifier {
     }
   }
 
+  bool _isCurrent(int generation) {
+    return !_disposed && generation == _operationGeneration;
+  }
+
   LibraryScanPhase _phaseFor(LibraryScanOutcomeCode code) {
     if (code == LibraryScanOutcomeCode.cancelled) {
       return LibraryScanPhase.cancelled;
@@ -199,7 +216,15 @@ class LibraryScanCoordinator extends ChangeNotifier {
   }
 
   void _setState(LibraryScanState value) {
+    if (_disposed) return;
     _state = value;
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _operationGeneration++;
+    super.dispose();
   }
 }

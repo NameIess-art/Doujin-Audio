@@ -5,6 +5,7 @@ import com.nameless.audio.player.notification.*
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import io.flutter.plugin.common.MethodCall
@@ -99,10 +100,19 @@ internal class NotificationsMethodHandler(
 
     private fun openNotificationSettings(): Boolean {
         return try {
-            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
-                putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
-                putExtra("android.provider.extra.APP_PACKAGE", activity.packageName)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                    putExtra(Settings.EXTRA_APP_PACKAGE, activity.packageName)
+                    putExtra("android.provider.extra.APP_PACKAGE", activity.packageName)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+            } else {
+                Intent(
+                    Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    Uri.fromParts("package", activity.packageName, null)
+                ).apply {
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
             }
             activity.startActivity(intent)
             true

@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:nameless_audio/features/player/domain/audio_effects.dart';
 import 'package:nameless_audio/features/library/domain/library_node.dart';
+import 'package:nameless_audio/features/library/domain/audio_library_category.dart';
 import 'package:nameless_audio/core/media/music_track.dart';
 import 'package:nameless_audio/features/player/domain/playback_mode.dart';
 import 'package:nameless_audio/features/player/domain/playback_queue.dart';
@@ -100,6 +101,26 @@ void main() {
       expect(identical(original, refreshed), isFalse);
     },
   );
+
+  test('library search rejects a stale category detail snapshot', () {
+    final snapshot = AudioLibraryCategorySnapshot(
+      entries: const [],
+      tagTerms: const [],
+      voiceActorTerms: const [],
+      circleTerms: const [],
+      structureRevision: 1,
+      detailRevision: 2,
+    );
+
+    expect(
+      currentLibraryCategorySnapshot(snapshot: snapshot, detailRevision: 2),
+      same(snapshot),
+    );
+    expect(
+      currentLibraryCategorySnapshot(snapshot: snapshot, detailRevision: 3),
+      isNull,
+    );
+  });
 
   test('library search index supports multi-term delimiter queries', () {
     final index = LibrarySearchIndex();

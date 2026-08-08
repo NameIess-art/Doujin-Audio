@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/errors/app_failure.dart';
 import 'package:nameless_audio/features/library/application/library_catalog.dart';
@@ -154,6 +156,47 @@ void main() {
       expect(coordinator.state.failure?.cause, same(cause));
     },
   );
+
+  test('a cancelled scan cannot publish its late success', () async {
+    final pending = Completer<LibraryScanOutcome>();
+    final coordinator = LibraryScanCoordinator(
+      scanner: _FakeScanner((_, _) => pending.future),
+    );
+    final catalog = _FakeCatalog();
+    addTearDown(coordinator.dispose);
+
+    final scan = coordinator.refresh(catalog: catalog, labels: labels);
+    coordinator.cancel(catalog);
+    pending.complete(
+      LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.refreshAdded,
+        source: 'late',
+      ),
+    );
+
+    final outcome = await scan;
+    expect(outcome, isNull);
+    expect(catalog.detailImportCount, 0);
+    expect(coordinator.state.phase, LibraryScanPhase.cancelled);
+  });
+
+  test('a disposed coordinator ignores a late scan completion', () async {
+    final pending = Completer<LibraryScanOutcome>();
+    final coordinator = LibraryScanCoordinator(
+      scanner: _FakeScanner((_, _) => pending.future),
+    );
+
+    final scan = coordinator.refresh(catalog: _FakeCatalog(), labels: labels);
+    coordinator.dispose();
+    pending.complete(
+      LibraryScanOutcome(
+        code: LibraryScanOutcomeCode.refreshAdded,
+        source: 'late',
+      ),
+    );
+
+    await expectLater(scan, completion(isNull));
+  });
 }
 
 typedef _RefreshHandler =
@@ -182,6 +225,9 @@ class _FakeCatalog implements LibraryCatalog {
   final AudioDetailBackupImportResult importResult;
   int detailImportCount = 0;
   bool? lastImportOnlyMissing;
+
+  @override
+  void cancelScan() {}
 
   @override
   Future<AudioDetailBackupImportResult> importAudioDetailBackups({

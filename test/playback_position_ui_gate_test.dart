@@ -32,7 +32,6 @@ void main() {
         interactionCoordinator: coordinator,
         minUpdateInterval: const Duration(hours: 1),
       );
-      addTearDown(gate.dispose);
       addTearDown(coordinator.dispose);
       addTearDown(session.dispose);
 
@@ -48,6 +47,7 @@ void main() {
       await tester.pump();
       expect(notifications, 1);
       expect(gate.value.position, const Duration(seconds: 2));
+      gate.dispose();
     },
   );
 
@@ -91,6 +91,72 @@ void main() {
       expect(notifications, 1);
     },
   );
+
+  testWidgets('flushes the latest throttled position after the interval', (
+    tester,
+  ) async {
+    final session = _session('one');
+    final gate = PlaybackPositionUiGate(
+      session: session,
+      minUpdateInterval: const Duration(milliseconds: 20),
+    );
+    addTearDown(gate.dispose);
+    addTearDown(session.dispose);
+
+    var notifications = 0;
+    gate.addListener(() => notifications++);
+
+    session.setOptimisticPosition(const Duration(seconds: 1));
+    await tester.pump();
+    session.setOptimisticPosition(const Duration(seconds: 2));
+    await tester.pump();
+
+    expect(notifications, 1);
+    expect(gate.value.position, const Duration(seconds: 2));
+
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(notifications, 2);
+    expect(gate.value.position, const Duration(seconds: 2));
+  });
+
+  testWidgets('forced interaction flush resets the throttle interval', (
+    tester,
+  ) async {
+    final session = _session('one');
+    final coordinator = UiInteractionCoordinator();
+    final source = Object();
+    final gate = PlaybackPositionUiGate(
+      session: session,
+      interactionCoordinator: coordinator,
+      minUpdateInterval: const Duration(milliseconds: 100),
+    );
+    addTearDown(gate.dispose);
+    addTearDown(coordinator.dispose);
+    addTearDown(session.dispose);
+
+    var notifications = 0;
+    gate.addListener(() => notifications++);
+
+    session.setOptimisticPosition(const Duration(seconds: 1));
+    await tester.pump();
+    session.setOptimisticPosition(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(notifications, 1);
+
+    coordinator.beginInteraction(source);
+    coordinator.cancelInteraction(source);
+    await tester.pump();
+    expect(notifications, 2);
+
+    session.setOptimisticPosition(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.pump(const Duration(milliseconds: 70));
+    expect(notifications, 2);
+
+    await tester.pump(const Duration(milliseconds: 20));
+    expect(notifications, 3);
+    expect(gate.value.position, const Duration(seconds: 3));
+  });
 
   testWidgets(
     'ticker disabled coalesces updates and flushes latest on resume',

@@ -1,4 +1,5 @@
 import 'dart:ui';
+import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/app/state/subtitle_settings_provider.dart';
@@ -159,5 +160,47 @@ void main() {
     expect(prefs.getString('subtitle_border_depth'), '2.0');
     expect(prefs.containsKey('subtitle_font_color'), isFalse);
     expect(prefs.containsKey('subtitle_background_color'), isFalse);
+  });
+
+  test('a mutation wins over an in-flight persisted load', () async {
+    final pending = Completer<SubtitleSettingsState>();
+    final notifier = SubtitleSettingsNotifier(loadState: () => pending.future);
+    addTearDown(notifier.dispose);
+
+    notifier.setFontSize(24);
+    pending.complete(SubtitleSettingsState(fontSize: 12));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifier.state.fontSize, 24);
+  });
+
+  test('the newest persisted reload wins over an older reload', () async {
+    final pending = <Completer<SubtitleSettingsState>>[];
+    Future<SubtitleSettingsState> loadState() {
+      final completer = Completer<SubtitleSettingsState>();
+      pending.add(completer);
+      return completer.future;
+    }
+
+    final notifier = SubtitleSettingsNotifier(loadState: loadState);
+    addTearDown(notifier.dispose);
+    final reload = notifier.reloadPersistedState();
+    expect(pending, hasLength(2));
+
+    pending[1].complete(SubtitleSettingsState(fontSize: 20));
+    await reload;
+    pending[0].complete(SubtitleSettingsState(fontSize: 10));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(notifier.state.fontSize, 20);
+  });
+
+  test('a disposed notifier ignores a late persisted load', () async {
+    final pending = Completer<SubtitleSettingsState>();
+    final notifier = SubtitleSettingsNotifier(loadState: () => pending.future);
+    notifier.dispose();
+    pending.complete(SubtitleSettingsState(fontSize: 30));
+
+    await Future<void>.delayed(Duration.zero);
   });
 }

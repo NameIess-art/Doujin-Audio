@@ -328,6 +328,28 @@ void main() {
     await tester.pump();
   });
 
+  testWidgets('update download errors use a generic message', (tester) async {
+    final operations = UiOperationService.instance;
+    operations.clear(UiOperationScope.settingsUpdate);
+    addTearDown(() => operations.clear(UiOperationScope.settingsUpdate));
+    final harness = await _pumpAppShell(tester);
+    const privateDetail = 'private path /token=secret';
+
+    final failure = operations.run<void>(
+      scope: UiOperationScope.settingsUpdate,
+      labelKey: 'downloading_update',
+      task: (_) async => throw StateError(privateDetail),
+    );
+    await expectLater(failure, throwsA(isA<StateError>()));
+    await tester.pump();
+
+    expect(
+      find.text(harness.language.tr('update_download_failed_next_step')),
+      findsOneWidget,
+    );
+    expect(find.textContaining(privateDetail), findsNothing);
+  });
+
   testWidgets('ASMR main page moves category and search controls to search', (
     tester,
   ) async {

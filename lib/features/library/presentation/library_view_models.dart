@@ -186,6 +186,13 @@ class FilteredLibraryTreeResult {
   final int matchCount;
 }
 
+AudioLibraryCategorySnapshot? currentLibraryCategorySnapshot({
+  required AudioLibraryCategorySnapshot? snapshot,
+  required int detailRevision,
+}) {
+  return snapshot?.detailRevision == detailRevision ? snapshot : null;
+}
+
 class LibrarySearchIndex {
   int? _cachedRevision;
   final LinkedHashMap<String, FilteredLibraryTreeResult> _cache =
@@ -273,8 +280,8 @@ class LibrarySearchIndex {
     final folderEntries = categorySnapshot == null
         ? const <AudioLibraryCategoryEntry>[]
         : folderTargets
-            .map((t) => categorySnapshot.entryFor(t))
-            .whereType<AudioLibraryCategoryEntry>();
+              .map((t) => categorySnapshot.entryFor(t))
+              .whereType<AudioLibraryCategoryEntry>();
 
     final matchesFolderName = matchesSearchTerms(
       <String>[

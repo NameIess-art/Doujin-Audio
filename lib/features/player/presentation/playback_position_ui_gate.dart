@@ -78,10 +78,12 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
   StreamSubscription<Duration>? _bufferedSub;
+  Timer? _throttleTimer;
   bool _disposed = false;
   bool _dirty = false;
   bool _tickerModeEnabled = true;
   int _lastNotifyMs = 0;
+  int _sessionGeneration = 0;
 
   PlaybackPositionUiSnapshot get value => _value;
 
@@ -97,6 +99,9 @@ class PlaybackPositionUiGate extends ChangeNotifier {
 
   void updateSession(PlaybackSession session) {
     if (identical(_session, session)) return;
+    _sessionGeneration++;
+    _throttleTimer?.cancel();
+    _throttleTimer = null;
     _unbindSession();
     _session = session;
     _value = PlaybackPositionUiSnapshot.fromSession(session);
@@ -106,14 +111,18 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   }
 
   void _bindSession() {
+    final generation = _sessionGeneration;
     _positionSub = _session.positionStream.listen((position) {
+      if (_disposed || generation != _sessionGeneration) return;
       _updateValue(_value.copyWith(position: position));
     });
     _durationSub = _session.durationStream.listen((duration) {
+      if (_disposed || generation != _sessionGeneration) return;
       _updateValue(_value.copyWith(duration: duration));
     });
     if (includeBufferedPosition) {
       _bufferedSub = _session.bufferedPositionStream.listen((buffered) {
+        if (_disposed || generation != _sessionGeneration) return;
         _updateValue(_value.copyWith(bufferedPosition: buffered));
       });
     }
@@ -136,6 +145,10 @@ class PlaybackPositionUiGate extends ChangeNotifier {
 
   void _publish({bool force = false}) {
     if (_disposed) return;
+    if (force) {
+      _throttleTimer?.cancel();
+      _throttleTimer = null;
+    }
     if (!_tickerModeEnabled ||
         (deferDuringInteraction && _interactionCoordinator.isInteracting)) {
       _dirty = true;
@@ -146,11 +159,25 @@ class PlaybackPositionUiGate extends ChangeNotifier {
         minUpdateInterval > Duration.zero &&
         now - _lastNotifyMs < minUpdateInterval.inMilliseconds) {
       _dirty = true;
+      _scheduleThrottleFlush(
+        Duration(
+          milliseconds:
+              minUpdateInterval.inMilliseconds - (now - _lastNotifyMs),
+        ),
+      );
       return;
     }
     _dirty = false;
     _lastNotifyMs = now;
     notifyListeners();
+  }
+
+  void _scheduleThrottleFlush(Duration delay) {
+    if (_throttleTimer != null || _disposed) return;
+    _throttleTimer = Timer(delay, () {
+      _throttleTimer = null;
+      if (_dirty) _publish(force: true);
+    });
   }
 
   void _handleInteractionChanged() {
@@ -162,6 +189,9 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _sessionGeneration++;
+    _throttleTimer?.cancel();
+    _throttleTimer = null;
     _interactionCoordinator.removeListener(_handleInteractionChanged);
     _unbindSession();
     super.dispose();

@@ -7,7 +7,6 @@
     <string name="playback_action_previous">上一首</string>
     <string name="playback_action_play">播放</string>
     <string name="playback_action_pause">暂停</string>
-    <string name="playback_action_play_pause">播放或暂停</string>
     <string name="playback_action_next">下一首</string>
     <plurals name="playback_sessions_count">
         <item quantity="other">%d 个播放会话</item>

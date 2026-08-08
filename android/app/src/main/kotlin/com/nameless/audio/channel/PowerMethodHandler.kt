@@ -124,7 +124,6 @@ internal class PowerMethodHandler(
     }
 
     private fun isIgnoringBatteryOptimizations(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return true
         val manager = activity.getSystemService(Activity.POWER_SERVICE) as? PowerManager
         return manager?.isIgnoringBatteryOptimizations(activity.packageName) == true
     }
@@ -150,7 +149,6 @@ internal class PowerMethodHandler(
     }
 
     private fun openBatteryOptimizationSettings(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return openApplicationDetailsSettings()
         return openSettings(
             Intent(
                 Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
@@ -161,7 +159,6 @@ internal class PowerMethodHandler(
     }
 
     private fun openBackgroundRunSettings(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return openApplicationDetailsSettings()
         if (Build.MANUFACTURER.equals("vivo", ignoreCase = true)) {
             val openedVendorSettings = vivoBackgroundSettingsIntents().any(::openSettings)
             if (openedVendorSettings) return true

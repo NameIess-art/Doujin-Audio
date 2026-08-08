@@ -485,6 +485,24 @@ void main() {
         for (final track in tracks)
           fixture.runtimeGraph.playback.createTrackSession(track),
       ];
+      final subtitleLoads = <String>[];
+      final firstSubtitle = SubtitleTrack(
+        sourcePath: '/library/first.srt',
+        cues: <SubtitleCue>[
+          const SubtitleCue(
+            start: Duration.zero,
+            end: Duration(seconds: 5),
+            text: 'First session subtitle',
+          ),
+        ],
+      );
+      final subtitleService = PlaybackSubtitleService(
+        trackResolver: (path) => fixture.library.trackByPath(path),
+        subtitleLoader: (path, _) async {
+          subtitleLoads.add(path);
+          return path == tracks.first.path ? firstSubtitle : null;
+        },
+      );
       fixture.playbackService.syncSlice(
         activeSessions: sessions,
         playingSessionCount: 0,
@@ -494,7 +512,9 @@ void main() {
         isInitialized: true,
       );
 
-      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpWidget(
+        fixture.build(const PlaylistTab(), subtitleService: subtitleService),
+      );
       await tester.pumpAndSettle();
       unawaited(
         Navigator.of(
@@ -506,6 +526,7 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 200)),
       );
       await tester.pump();
+      subtitleLoads.clear();
 
       void expectPrimaryControlsHaveNoFadeAncestor() {
         final primaryIcons = find.byWidgetPredicate(
@@ -549,6 +570,15 @@ void main() {
       await tester.drag(find.byType(SessionDetailPage), const Offset(-120, 0));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 40));
+      expect(subtitleLoads, contains(tracks.last.path));
+      expect(
+        find.byKey(ValueKey<String>('progress_${sessions.first.id}')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(ValueKey<String>('progress_${sessions.last.id}')),
+        findsOneWidget,
+      );
       final outgoingForward = tester.widget<FadeTransition>(
         find
             .ancestor(

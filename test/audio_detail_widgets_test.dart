@@ -280,21 +280,35 @@ void main() {
       find.text(languageProvider.tr('audio_detail_sales_count')),
       findsOneWidget,
     );
-    expect(
-      find.text(languageProvider.tr('audio_detail_rating')),
-      findsOneWidget,
-    );
-    final textFieldValues = tester
+    final visibleTextFieldValues = tester
         .widgetList<TextField>(find.byType(TextField))
         .map((field) => field.controller?.text)
         .whereType<String>()
         .toSet();
-    expect(textFieldValues, contains('ASMR fetched title'));
-    expect(textFieldValues, contains('Circle'));
-    expect(textFieldValues, contains('2024-05-06'));
-    expect(textFieldValues, contains('01:02:03'));
-    expect(textFieldValues, contains('1234'));
-    expect(textFieldValues, contains('4.5'));
+    expect(visibleTextFieldValues, contains('ASMR fetched title'));
+    expect(visibleTextFieldValues, contains('Circle'));
+    expect(visibleTextFieldValues, contains('2024-05-06'));
+    expect(visibleTextFieldValues, contains('01:02:03'));
+    expect(visibleTextFieldValues, contains('1234'));
+
+    await tester.dragUntilVisible(
+      find.text(languageProvider.tr('audio_detail_rating')),
+      find.byType(ListView),
+      const Offset(0, -200),
+    );
+    expect(
+      find.text(languageProvider.tr('audio_detail_rating')),
+      findsOneWidget,
+    );
+    final ratingField = tester.widget<TextField>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText ==
+                languageProvider.tr('audio_detail_rating'),
+      ),
+    );
+    expect(ratingField.controller?.text, '4.5');
   });
 
   test(

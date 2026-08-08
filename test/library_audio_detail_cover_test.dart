@@ -726,6 +726,7 @@ void main() {
         );
         final trackFile = File('${source.path}${Platform.pathSeparator}01.mp3');
         await source.create();
+        await trackFile.writeAsBytes(const <int>[1, 2, 3]);
 
         final track = MusicTrack(
           path: trackFile.path,
@@ -806,20 +807,20 @@ void main() {
         await prepareStarted.future;
         final session = runtimeGraph.playback.activeSessions.single;
 
-        final result = await pathCoordinator.renameAudioDetailTargetToName(
+        final renameFuture = pathCoordinator.renameAudioDetailTargetToName(
           AudioDetail.empty(AudioDetailTarget.libraryRootFolder(source.path)),
           'New Folder',
         );
-        final newFolderPath = result.detail.target.targetPath;
-        final newTrackPath = '$newFolderPath${Platform.pathSeparator}01.mp3';
-
-        expect(session.currentTrackPath, newTrackPath);
-
         final preparationApplied = session.stateStream.firstWhere(
           (state) => state.processingState == ProcessingState.ready,
         );
         releasePrepare.complete();
+        final result = await renameFuture;
         await preparationApplied;
+        final newFolderPath = result.detail.target.targetPath;
+        final newTrackPath = '$newFolderPath${Platform.pathSeparator}01.mp3';
+
+        expect(session.currentTrackPath, newTrackPath);
 
         await runtimeGraph.playback.setSessionChannelSwap(session.id, true);
 

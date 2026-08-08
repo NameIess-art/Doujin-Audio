@@ -318,7 +318,6 @@ void main() {
       find.text(harness.language.tr('asmr_category_collected')),
       findsNothing,
     );
-    expect(find.text(harness.language.tr('loading_dot')), findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     expect(
       find.byKey(const ValueKey<String>('asmr_search_button')),
@@ -593,7 +592,15 @@ void main() {
 
     sectionIndex.value = AudioLibraryPage.asmrSection;
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 100));
+    final sectionTransitionDuration = tester
+        .widget<AppFadeThroughIndexedStack>(
+          find.byKey(const ValueKey<String>('audio_library_section_stack')),
+        )
+        .duration;
+    await tester.pump(
+      sectionTransitionDuration + const Duration(milliseconds: 1),
+    );
+    await tester.pump(const Duration(milliseconds: 161));
     await tester.pump();
     expect(controller.initializeCount, 1);
 

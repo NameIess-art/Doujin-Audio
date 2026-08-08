@@ -83,8 +83,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
   late String _currentSessionId;
   double _horizontalDragDelta = 0;
   bool _contentEnterStarted = false;
-  bool _deferSubtitleLoad = false;
-  Timer? _subtitleLoadReleaseTimer;
   final Object _dismissInteractionSource = Object();
   bool _dismissInteractionActive = false;
   final ValueNotifier<bool> _dismissInteractionNotifier = ValueNotifier(false);
@@ -115,7 +113,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     widget.revealBehindNotifier.value = false;
     _dismissInteractionNotifier.dispose();
     _segmentPanelExpandedNotifier.dispose();
-    _subtitleLoadReleaseTimer?.cancel();
     _dismissController.dispose();
     _contentEnterController.dispose();
     super.dispose();
@@ -130,20 +127,10 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
     if (nextIndex >= sessionIds.length) nextIndex = 0;
     if (nextIndex == currentIndex) return;
 
-    final deferSubtitleLoad = !MediaQuery.disableAnimationsOf(context);
-    _subtitleLoadReleaseTimer?.cancel();
     setState(() {
       _horizontalDragDelta = 0;
       _currentSessionId = sessionIds[nextIndex];
-      _deferSubtitleLoad = deferSubtitleLoad;
     });
-    if (deferSubtitleLoad) {
-      _subtitleLoadReleaseTimer = Timer(kAppMotionSlow, () {
-        _subtitleLoadReleaseTimer = null;
-        if (!mounted) return;
-        setState(() => _deferSubtitleLoad = false);
-      });
-    }
   }
 
   void _handleHorizontalDragEnd(
@@ -379,7 +366,6 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
 
                 return _SessionDetailScaffold(
                   session: pageSession,
-                  deferSubtitleLoad: _deferSubtitleLoad,
                   coverPathFuture: coverPathFuture,
                   dismissAnimation: _dismissController,
                   segmentPanelExpandedNotifier: _segmentPanelExpandedNotifier,
@@ -471,7 +457,6 @@ class _SessionDetailBackdrop extends StatelessWidget {
 
 class _SessionDetailScaffold extends ConsumerStatefulWidget {
   final PlaybackSession session;
-  final bool deferSubtitleLoad;
   final Future<String?> coverPathFuture;
   final Animation<double> dismissAnimation;
   final VoidCallback onClose;
@@ -485,7 +470,6 @@ class _SessionDetailScaffold extends ConsumerStatefulWidget {
 
   const _SessionDetailScaffold({
     required this.session,
-    required this.deferSubtitleLoad,
     required this.coverPathFuture,
     required this.onClose,
     this.onHorizontalDragUpdate,
@@ -961,7 +945,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               return _SessionDetailContent(
                                 key: _detailContentKey,
                                 session: session,
-                                deferSubtitleLoad: widget.deferSubtitleLoad,
                                 segmentPanelExpandedNotifier:
                                     widget.segmentPanelExpandedNotifier,
                                 isLandscape: isLandscape,

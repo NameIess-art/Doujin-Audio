@@ -71,7 +71,10 @@ class _TimerTabState extends ConsumerState<TimerTab>
     _showCompactDetail = widget.initialCompactDetail;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _reliabilityStatusFuture != null) return;
-      setState(() => _reliabilityStatusFuture = _loadReliabilityStatus());
+      final reliabilityStatus = _loadReliabilityStatus();
+      setState(() {
+        _reliabilityStatusFuture = reliabilityStatus;
+      });
     });
   }
 
@@ -90,8 +93,9 @@ class _TimerTabState extends ConsumerState<TimerTab>
 
   void _refreshReliabilityStatus() {
     if (!mounted) return;
+    final reliabilityStatus = _loadReliabilityStatus();
     setState(() {
-      _reliabilityStatusFuture = _loadReliabilityStatus();
+      _reliabilityStatusFuture = reliabilityStatus;
     });
   }
 

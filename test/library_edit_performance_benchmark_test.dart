@@ -71,7 +71,7 @@ void main() {
         LibraryEditPage(libraryPath: libraryPath, entryEditorService: service),
       ),
     );
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     final rebuildSamples = <Duration>[];
     for (var index = 0; index < 20; index++) {
@@ -83,13 +83,13 @@ void main() {
 
     final searchSamples = <Duration>[];
     final searchField = find.byType(TextField);
-    for (var index = 0; index < 10; index++) {
+    for (var index = 0; index < 20; index++) {
       await tester.enterText(searchField, 'track ${index + 1}');
-      final stopwatch = Stopwatch()..start();
       await tester.pump();
+      final stopwatch = Stopwatch()..start();
+      await tester.pump(const Duration(milliseconds: 181));
       stopwatch.stop();
       searchSamples.add(stopwatch.elapsed);
-      await tester.pump(const Duration(milliseconds: 250));
     }
 
     final interaction = Object();

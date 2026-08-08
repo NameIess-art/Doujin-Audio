@@ -9,7 +9,6 @@ import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
@@ -128,7 +127,7 @@ internal class NativeForegroundNotificationFactory(
                 context,
                 0,
                 launchIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         } else {
             null
@@ -140,20 +139,12 @@ internal class NativeForegroundNotificationFactory(
             action = command.actionName
             putExtra("sessionId", "") // Fallback for focused session
         }
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or immutablePendingIntentFlag()
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         return PendingIntent.getBroadcast(
             context,
             command.actionName.hashCode(),
             intent,
             flags
         )
-    }
-
-    private fun immutablePendingIntentFlag(): Int {
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            PendingIntent.FLAG_IMMUTABLE
-        } else {
-            0
-        }
     }
 }

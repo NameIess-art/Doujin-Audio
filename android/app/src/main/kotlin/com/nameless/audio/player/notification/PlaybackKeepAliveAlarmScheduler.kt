@@ -4,7 +4,6 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.SystemClock
 
 object PlaybackKeepAliveAlarmScheduler {
@@ -38,19 +37,11 @@ object PlaybackKeepAliveAlarmScheduler {
         val triggerAtMs = nowMs + intervalMs
         val operation = pendingIntent(context) ?: return
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    triggerAtMs,
-                    operation
-                )
-            } else {
-                alarmManager.set(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    triggerAtMs,
-                    operation
-                )
-            }
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                triggerAtMs,
+                operation
+            )
             lastArmedElapsedRealtimeMs = nowMs
         } catch (_: Exception) {
         }

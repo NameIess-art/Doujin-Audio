@@ -4,7 +4,6 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
   const _SessionDetailContent({
     super.key,
     required this.session,
-    this.deferSubtitleLoad = false,
     required this.artworkWidget,
     this.segmentPanelExpandedNotifier,
     this.isLandscape = false,
@@ -18,7 +17,6 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
   });
 
   final PlaybackSession session;
-  final bool deferSubtitleLoad;
   final Widget artworkWidget;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final bool isLandscape;
@@ -475,16 +473,13 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                   const SizedBox(height: 8),
                   if (widget.subtitleEnabled && !_segmentPanelExpanded)
                     RepaintBoundary(
-                      child: _SessionSubtitlePanel(
-                        session: session,
-                        deferLoad: widget.deferSubtitleLoad,
-                      ),
+                      child: _SessionSubtitlePanel(session: session),
                     ),
-                  RepaintBoundary(child: buildProgressBar()),
                 ],
               ),
             ),
           ),
+          RepaintBoundary(child: buildProgressBar()),
           buildTransportControls(),
           if (!widget.isLandscape)
             AnimatedSwitcher(

@@ -1549,11 +1549,8 @@ class NativePlaybackService : MediaSessionService() {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             }
         val pendingIntent = if (packageManager.resolveActivity(launchIntent, 0) != null) {
-            val pendingIntentFlags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_IMMUTABLE
-            } else {
-                0
-            }
+            val pendingIntentFlags =
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             PendingIntent.getActivity(this, 0, launchIntent, pendingIntentFlags)
         } else null
         val builder = MediaSession.Builder(this, player)
@@ -1732,12 +1729,7 @@ class NativePlaybackService : MediaSessionService() {
         } else {
             STOP_FOREGROUND_DETACH
         }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            stopForeground(behavior)
-        } else {
-            @Suppress("DEPRECATION")
-            stopForeground(removeNotification)
-        }
+        stopForeground(behavior)
     }
 
     private fun ensureStatePersistenceTicker() {

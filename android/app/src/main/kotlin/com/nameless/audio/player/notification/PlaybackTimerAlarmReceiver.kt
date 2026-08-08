@@ -9,7 +9,6 @@ import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
@@ -523,39 +522,17 @@ object PlaybackTimerAlarmScheduler {
                 "schedule_elapsed_alarm action=$action triggerElapsed=$safeTriggerAtMs " +
                     "triggerRtc=$triggerRtcMs generation=$generation"
             )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                alarmManager.setAlarmClock(
-                    AlarmManager.AlarmClockInfo(triggerRtcMs, pendingIntent),
-                    pendingIntent
-                )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerRtcMs,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerRtcMs,
-                    pendingIntent
-                )
-            }
+            alarmManager.setAlarmClock(
+                AlarmManager.AlarmClockInfo(triggerRtcMs, pendingIntent),
+                pendingIntent
+            )
         } catch (error: SecurityException) {
             logWarn(context, "schedule_elapsed_alarm_exact_denied action=$action", error)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    safeTriggerAtMs,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.set(
-                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
-                    safeTriggerAtMs,
-                    pendingIntent
-                )
-            }
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                safeTriggerAtMs,
+                pendingIntent
+            )
         }
     }
 
@@ -585,39 +562,17 @@ object PlaybackTimerAlarmScheduler {
                 "schedule_rtc_alarm action=$action triggerAt=$safeTriggerAtMs " +
                     "generation=$generation"
             )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                alarmManager.setAlarmClock(
-                    AlarmManager.AlarmClockInfo(safeTriggerAtMs, pendingIntent),
-                    pendingIntent
-                )
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    safeTriggerAtMs,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    safeTriggerAtMs,
-                    pendingIntent
-                )
-            }
+            alarmManager.setAlarmClock(
+                AlarmManager.AlarmClockInfo(safeTriggerAtMs, pendingIntent),
+                pendingIntent
+            )
         } catch (error: SecurityException) {
             logWarn(context, "schedule_rtc_alarm_exact_denied action=$action", error)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    safeTriggerAtMs,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.set(
-                    AlarmManager.RTC_WAKEUP,
-                    safeTriggerAtMs,
-                    pendingIntent
-                )
-            }
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                safeTriggerAtMs,
+                pendingIntent
+            )
         }
     }
 

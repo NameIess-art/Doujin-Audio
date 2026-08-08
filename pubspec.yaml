@@ -33,7 +33,6 @@ dependencies:
   audio_session: ^0.2.4
   ffmpeg_kit_flutter_new_audio: ^2.0.0
   lottie: ^3.3.3
-  flutter_animate: ^4.5.2
   crypto: ^3.0.6
   archive: ^4.0.9
   pub_semver: ^2.2.0

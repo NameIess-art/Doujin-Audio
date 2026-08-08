@@ -255,8 +255,10 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
       <String, _LibraryEditFolderTreeNode>{};
   int _folderStructureSnapshotRevision = 0;
 
-  // Edit-tree cache (memoized per build inputs).
-  Object? _editTreeCacheKey;
+  // Edit-tree caches: structural work is independent from query filtering.
+  Object? _baseEditTreeCacheKey;
+  List<_LibraryEditTreeNode>? _cachedBaseEditTree;
+  Object? _filteredEditTreeCacheKey;
   List<_LibraryEditTreeNode>? _cachedEditTree;
   int _searchMetadataRevision = -1;
   final Map<String, String> _trackSearchTextCache = <String, String>{};
@@ -373,16 +375,15 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
       _searchMetadataRevision = structureRevision;
       _trackSearchTextCache.clear();
     }
-    final cacheKey = Object.hash(
+    final baseCacheKey = Object.hash(
       structureRevision,
       _diskSnapshotRevision,
       _folderStructureSnapshotRevision,
-      _searchQuery,
       localSnapshotPending,
       _diskSnapshotError,
     );
-    if (_editTreeCacheKey != cacheKey) {
-      _editTreeCacheKey = cacheKey;
+    if (_baseEditTreeCacheKey != baseCacheKey) {
+      _baseEditTreeCacheKey = baseCacheKey;
       final excludedTracks = localSnapshotPending
           ? const <String>[]
           : libraryService
@@ -434,14 +435,16 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
                         _folderPathForLibraryChild(entry.path),
                   }.toList(growable: false)
             ..sort(compareNatural);
-      _cachedEditTree = _filterEditTree(
-        _buildEditTree(
-          editTrackPaths,
-          persistentFolderPaths,
-          folderStructureSnapshots,
-        ),
-        _searchQuery,
+      _cachedBaseEditTree = _buildEditTree(
+        editTrackPaths,
+        persistentFolderPaths,
+        folderStructureSnapshots,
       );
+    }
+    final filteredCacheKey = Object.hash(baseCacheKey, _searchQuery);
+    if (_filteredEditTreeCacheKey != filteredCacheKey) {
+      _filteredEditTreeCacheKey = filteredCacheKey;
+      _cachedEditTree = _filterEditTree(_cachedBaseEditTree!, _searchQuery);
     }
     final editTree = _cachedEditTree!;
     final isEmpty = editTree.isEmpty;

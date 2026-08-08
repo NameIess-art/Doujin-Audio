@@ -825,13 +825,7 @@ internal object UnifiedPlaybackNotificationController {
                 }
             }
         if (context.packageManager.resolveActivity(launchIntent, 0) == null) return null
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_IMMUTABLE
-            } else {
-                0
-            }
-        )
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val requestCode = if (sessionId.isNullOrBlank()) {
             0
         } else {
@@ -849,13 +843,7 @@ internal object UnifiedPlaybackNotificationController {
             action = command.actionName
             putExtra("sessionId", sessionId)
         }
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_IMMUTABLE
-            } else {
-                0
-            }
-        )
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val requestCode = notificationIdFor(sessionId) + command.requestCodeOffset
         return PendingIntent.getBroadcast(context, requestCode, intent, flags)
     }
@@ -865,13 +853,7 @@ internal object UnifiedPlaybackNotificationController {
             action = NotificationCommand.dismissAll.actionName
             putExtra(dismissNotificationIdExtra, notificationId)
         }
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or (
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                PendingIntent.FLAG_IMMUTABLE
-            } else {
-                0
-            }
-        )
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         return PendingIntent.getBroadcast(
             context,
             notificationId + NotificationCommand.dismissAll.requestCodeOffset,
@@ -898,9 +880,6 @@ internal object UnifiedPlaybackNotificationController {
     }
 
     private fun postedNotificationIds(context: Context): Set<Int> {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return emptySet()
-        }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             ?: return emptySet()
         val knownIds = buildSet {
@@ -919,9 +898,6 @@ internal object UnifiedPlaybackNotificationController {
     }
 
     private fun postedUnifiedNotificationIds(context: Context): Set<Int> {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
-            return emptySet()
-        }
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
             ?: return emptySet()
         return manager.activeNotifications

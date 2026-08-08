@@ -49,8 +49,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
         );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _snapshot != null) return;
+      final snapshot = _loadSnapshot();
       setState(() {
-        _snapshot = _loadSnapshot();
+        _snapshot = snapshot;
       });
     });
     WidgetsBinding.instance.addObserver(this);
@@ -76,8 +77,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
 
   void _refresh() {
     if (!mounted) return;
+    final snapshot = _loadSnapshot();
     setState(() {
-      _snapshot = _loadSnapshot();
+      _snapshot = snapshot;
     });
   }
 

@@ -8,7 +8,6 @@
     <string name="playback_action_previous">Previous</string>
     <string name="playback_action_play">Play</string>
     <string name="playback_action_pause">Pause</string>
-    <string name="playback_action_play_pause">Play or pause</string>
     <string name="playback_action_next">Next</string>
     <plurals name="playback_sessions_count">
         <item quantity="one">%d session</item>

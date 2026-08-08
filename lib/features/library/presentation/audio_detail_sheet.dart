@@ -37,12 +37,6 @@ Future<void> showAudioDetailSheet(
 ) {
   return AppBottomSheet.show<void>(
     context: context,
-    sheetAnimationStyle: const AnimationStyle(
-      duration: Duration(milliseconds: 320),
-      reverseDuration: Duration(milliseconds: 250),
-      curve: Curves.fastOutSlowIn,
-      reverseCurve: Curves.fastOutSlowIn,
-    ),
     builder: (_) => AudioDetailSheet(target: target),
   );
 }

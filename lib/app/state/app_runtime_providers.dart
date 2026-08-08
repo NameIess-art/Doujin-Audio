@@ -35,12 +35,14 @@ import '../../features/settings/application/settings_command_controller.dart';
 import '../../features/settings/application/settings_repository.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../../features/data_support/application/data_support_file_service.dart';
+import '../../features/data_support/application/storage_usage_service.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/asmr/application/asmr_library_controller.dart';
 import '../../features/asmr/application/asmr_playback_coordinator.dart';
 import '../../features/asmr/domain/asmr_models.dart';
 import 'subtitle_settings_provider.dart';
 import 'interaction_deferred_stream.dart';
+import '../../core/platform/file_cache_platform_gateway.dart';
 
 final themeProviderInstanceProvider = Provider<ThemeProvider>((ref) {
   throw UnimplementedError(
@@ -81,6 +83,16 @@ final appPersistenceCoordinatorProvider = Provider<AppPersistenceCoordinator>((
 final dataSupportFileServiceProvider = Provider<DataSupportFileService>((ref) {
   return DataSupportFileService(
     appUpdateService: ref.watch(appUpdateServiceProvider),
+  );
+});
+
+final dataSupportStorageUsageServiceProvider = Provider<StorageUsageService>((
+  ref,
+) {
+  final library = ref.watch(libraryFacadeProvider);
+  return StorageUsageService(
+    fileCacheGateway: FileCachePlatformGateway.instance,
+    libraryTracks: () => library.library,
   );
 });
 

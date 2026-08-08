@@ -20,9 +20,10 @@ List<PlaybackSession> sortPlaylistSessions({
     final leftValue = _playlistSortValue(left, library, trackForSession);
     final rightValue = _playlistSortValue(right, library, trackForSession);
     if (groupByLibrary) {
-      final groupResult = compareOptionalSortStrings(
+      final groupResult = compareGroupedSortStrings(
         leftValue.libraryKey,
         rightValue.libraryKey,
+        ascending,
       );
       if (groupResult != 0) return groupResult;
     }

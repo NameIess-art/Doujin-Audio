@@ -149,4 +149,158 @@ void main() {
     expect(confirmCenter.dy, greaterThan(cancelCenter.dy));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('shared overlay panel uses scale fade and dismisses by scrim', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppOverlayPanel<void>(
+                context: context,
+                builder: (_) => const SizedBox(
+                  key: ValueKey('overlay_panel_content'),
+                  height: 120,
+                  child: Text('Overlay content'),
+                ),
+              ),
+              child: const Text('Open overlay'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open overlay'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Overlay content'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('overlay_panel_content')),
+        matching: find.byType(FadeTransition),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('overlay_panel_content')),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('app_overlay_panel_scrim')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Overlay content'), findsNothing);
+  });
+
+  testWidgets('shared overlay panel closes with the back route', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppOverlayPanel<void>(
+                context: context,
+                builder: (_) => const Text('Back overlay'),
+              ),
+              child: const Text('Open back overlay'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open back overlay'));
+    await tester.pumpAndSettle();
+    expect(find.text('Back overlay'), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.text('Back overlay'), findsNothing);
+  });
+
+  testWidgets('overlay panel can reuse an already visible scrim', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppOverlayPanel<void>(
+                context: context,
+                showScrim: false,
+                builder: (_) => const Text('Transparent overlay'),
+              ),
+              child: const Text('Open transparent overlay'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open transparent overlay'));
+    await tester.pumpAndSettle();
+
+    final scrim = tester.widget<DecoratedBox>(
+      find.byKey(const ValueKey('app_overlay_panel_scrim')),
+    );
+    final decoration = scrim.decoration as BoxDecoration;
+    expect(decoration.color, Colors.transparent);
+  });
+
+  testWidgets('shared overlay panel honors reduced motion', (tester) async {
+    await tester.pumpWidget(
+      const MediaQuery(
+        data: MediaQueryData(disableAnimations: true),
+        child: MaterialApp(
+          home: Scaffold(body: _ReducedMotionOverlayLauncher()),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open reduced overlay'));
+    await tester.pump();
+
+    expect(find.text('Reduced overlay'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('Reduced overlay'),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('Reduced overlay'),
+        matching: find.byType(FadeTransition),
+      ),
+      findsNothing,
+    );
+  });
+}
+
+class _ReducedMotionOverlayLauncher extends StatelessWidget {
+  const _ReducedMotionOverlayLauncher();
+
+  @override
+  Widget build(BuildContext context) {
+    return TextButton(
+      onPressed: () => showAppOverlayPanel<void>(
+        context: context,
+        builder: (_) => const Text('Reduced overlay'),
+      ),
+      child: const Text('Open reduced overlay'),
+    );
+  }
 }

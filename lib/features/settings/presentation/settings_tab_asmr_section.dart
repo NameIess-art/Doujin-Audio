@@ -24,12 +24,14 @@ List<Widget> _buildSettingsAsmrSection({
             );
             return ListTile(
               onTap: onChooseAsmrDownloadDestination,
-              title: _settingsTitle(i18n.tr('asmr_download_path_setting')),
-              subtitle: Text(
-                destinationRoot == null || destinationRoot.trim().isEmpty
-                    ? i18n.tr('asmr_download_path_not_set')
-                    : PathDisplay.displayPathFor(destinationRoot),
-                softWrap: true,
+              title: _SettingsTitleBlock(
+                title: i18n.tr('asmr_download_path_setting'),
+                subtitle: Text(
+                  destinationRoot == null || destinationRoot.trim().isEmpty
+                      ? i18n.tr('asmr_download_path_not_set')
+                      : PathDisplay.displayPathFor(destinationRoot),
+                  softWrap: true,
+                ),
               ),
               leading: _settingsIcon(Icons.folder_rounded, cs.onSurface),
               trailing: IconButton(
@@ -132,16 +134,17 @@ List<Widget> _buildSettingsAsmrSection({
                 context: context,
                 builder: (_) => const _AsmrDownloadFolderNameSettingsSheet(),
               ),
-              title: _settingsTitle(
-                i18n.tr('asmr_download_folder_name_setting'),
-              ),
-              subtitle: Text(
-                fields
-                    .map(
-                      (field) => _asmrDownloadFolderNameFieldLabel(i18n, field),
-                    )
-                    .join(' - '),
-                softWrap: true,
+              title: _SettingsTitleBlock(
+                title: i18n.tr('asmr_download_folder_name_setting'),
+                subtitle: Text(
+                  fields
+                      .map(
+                        (field) =>
+                            _asmrDownloadFolderNameFieldLabel(i18n, field),
+                      )
+                      .join(' - '),
+                  softWrap: true,
+                ),
               ),
               leading: _settingsIcon(
                 Icons.drive_file_rename_outline,

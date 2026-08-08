@@ -167,7 +167,7 @@ void main() {
   });
 
   testWidgets(
-    'capsule dock widens without changing the playback card viewport',
+    'capsule dock aligns playback card with the menu and exposes full width',
     (tester) async {
       tester.view.devicePixelRatio = 3;
       tester.view.physicalSize = const Size(1080, 2400);
@@ -231,7 +231,30 @@ void main() {
           matching: find.byType(PageView),
         ),
       );
-      expect(playbackCarouselPageView.controller!.viewportFraction, 0.90);
+      final playbackCard = find.byKey(
+        const ValueKey<String>('active_session_card_orientation_session'),
+      );
+      final menuPanel = find.byKey(
+        const ValueKey<String>('mobile_bottom_capsule_panel'),
+      );
+      final pageViewWidth = tester.getSize(find.byType(PageView)).width;
+      final menuWidth = tester.getSize(menuPanel).width;
+      expect(
+        playbackCarouselPageView.controller!.viewportFraction,
+        closeTo((menuWidth + 4) / pageViewWidth, 0.001),
+      );
+      expect(
+        tester.getSize(playbackCard).width,
+        closeTo(tester.getSize(menuPanel).width, 0.1),
+      );
+      expect(tester.getTopLeft(find.byType(PageView)).dx, 0);
+      expect(
+        tester.getTopRight(find.byType(PageView)).dx,
+        closeTo(
+          tester.view.physicalSize.width / tester.view.devicePixelRatio,
+          0.1,
+        ),
+      );
     },
   );
 

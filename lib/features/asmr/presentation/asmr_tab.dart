@@ -20,6 +20,7 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_states.dart';
 import '../../../core/widgets/app_feedback.dart';
+import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_scroll_physics.dart';
@@ -419,18 +420,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
 
   Future<T?> _showAsmrPanel<T>({required WidgetBuilder builder}) {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    return showGeneralDialog<T>(
+    return showAppOverlayPanel<T>(
       context: context,
       barrierLabel: i18n.tr('close'),
-      barrierDismissible: true,
-      barrierColor: Colors.transparent,
-      transitionDuration: kSecondaryOverlayConfig.transitionDuration,
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return _AsmrPanelOverlay(animation: animation, builder: builder);
-      },
-      transitionBuilder: (context, animation, secondaryAnimation, child) {
-        return child;
-      },
+      themeBuilder: _asmrPanelTheme,
+      builder: builder,
     );
   }
 

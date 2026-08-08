@@ -97,8 +97,14 @@ void main() {
     });
   });
 
-  test('library grouping order is independent from direction', () {
-    expect(compareOptionalSortStrings('/library/a', '/library/b'), lessThan(0));
-    expect(compareOptionalSortStrings('/library/a', '/library/b'), lessThan(0));
+  test('library grouping order follows sort direction', () {
+    expect(
+      compareGroupedSortStrings('/library/a', '/library/b', true),
+      lessThan(0),
+    );
+    expect(
+      compareGroupedSortStrings('/library/a', '/library/b', false),
+      greaterThan(0),
+    );
   });
 }

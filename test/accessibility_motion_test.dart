@@ -89,6 +89,35 @@ void main() {
     );
   });
 
+  testWidgets('bottom sheets preserve their default motion timing', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => AppBottomSheet.show<void>(
+                context: context,
+                builder: (_) => const SizedBox(height: 120),
+              ),
+              child: const Text('Open motion sheet'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open motion sheet'));
+    await tester.pump();
+
+    final controller = tester
+        .widget<BottomSheet>(find.byType(BottomSheet))
+        .animationController!;
+    expect(controller.duration, const Duration(milliseconds: 320));
+    expect(controller.reverseDuration, const Duration(milliseconds: 250));
+  });
+
   testWidgets('bottom sheets never exceed three quarters of the screen', (
     tester,
   ) async {

@@ -459,15 +459,16 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                       text: displayName,
                       pauseDuration: const Duration(seconds: 1),
                       allowAndroidMarquee: true,
-                      style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                        color: _sessionDetailForeground(
-                          cs,
-                          _SessionDetailForegroundLevel.strong,
-                        ),
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.5,
-                        height: 1.1,
-                      ),
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(
+                            color: _sessionDetailForeground(
+                              cs,
+                              _SessionDetailForegroundLevel.strong,
+                            ),
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.5,
+                            height: 1.1,
+                          ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -678,12 +679,6 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
     );
     AppBottomSheet.show<void>(
       context: context,
-      sheetAnimationStyle: const AnimationStyle(
-        duration: Duration(milliseconds: 320),
-        reverseDuration: Duration(milliseconds: 250),
-        curve: Curves.fastOutSlowIn,
-        reverseCurve: Curves.fastOutSlowIn,
-      ),
       builder: (ctx) {
         return SizedBox(
           width: double.infinity,

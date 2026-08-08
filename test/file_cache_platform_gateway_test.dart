@@ -59,6 +59,25 @@ void main() {
     });
   });
 
+  test('storage usage decodes the stable platform payload', () async {
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      return success(<String, Object?>{
+        'totalBytes': 1000,
+        'availableBytes': 400,
+        'cacheBytes': 120,
+      });
+    });
+
+    final usage = await gateway.readStorageUsage();
+
+    expect(usage?.totalBytes, 1000);
+    expect(usage?.availableBytes, 400);
+    expect(usage?.cacheBytes, 120);
+    expect(calls.single.method, FileCacheMethod.getStorageUsage);
+    expect(calls.single.arguments, isNull);
+  });
+
   test('JSON delete sends a revision-guarded structured request', () async {
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);

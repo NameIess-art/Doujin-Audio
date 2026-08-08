@@ -10,6 +10,29 @@ Widget _settingsTitle(String text) {
   return Text(text, softWrap: true, overflow: TextOverflow.visible);
 }
 
+class _SettingsTitleBlock extends StatelessWidget {
+  const _SettingsTitleBlock({required this.title, required this.subtitle});
+
+  final String title;
+  final Widget subtitle;
+
+  @override
+  Widget build(BuildContext context) {
+    final subtitleStyle =
+        ListTileTheme.of(context).subtitleTextStyle ??
+        Theme.of(context).textTheme.bodyMedium ??
+        DefaultTextStyle.of(context).style;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _settingsTitle(title),
+        DefaultTextStyle(style: subtitleStyle, child: subtitle),
+      ],
+    );
+  }
+}
+
 Widget _settingsDropdownText(
   String text, {
   TextStyle? style,
@@ -101,6 +124,7 @@ class _SettingsTileTheme extends StatelessWidget {
         minVerticalPadding: 2,
         titleTextStyle: titleTextStyle,
         subtitleTextStyle: subtitleTextStyle,
+        titleAlignment: ListTileTitleAlignment.center,
         child: child,
       ),
     );
@@ -165,10 +189,15 @@ Widget _settingsCard({
 }
 
 class _SettingsSectionCard extends StatelessWidget {
-  const _SettingsSectionCard({required this.title, required this.children});
+  const _SettingsSectionCard({
+    required this.title,
+    required this.children,
+    this.leadingContent,
+  });
 
   final String title;
   final List<Widget> children;
+  final Widget? leadingContent;
 
   @override
   Widget build(BuildContext context) {
@@ -189,6 +218,10 @@ class _SettingsSectionCard extends StatelessWidget {
               ),
             ),
           ),
+          if (leadingContent != null) ...[
+            leadingContent!,
+            const SizedBox(height: 12),
+          ],
           _SettingsGroupCard(children: children),
         ],
       ),
@@ -228,14 +261,16 @@ class _UpdateSettingsTile extends StatelessWidget {
     return ListTile(
       onTap: busy ? null : onCheck,
       leading: _settingsIcon(Icons.system_update_alt_rounded, cs.onSurface),
-      title: _settingsTitle(i18n.tr('check_updates')),
-      subtitle: _UpdateSubtitle(
-        checking: checking,
-        downloading: downloading,
-        progress: progress,
-        updateInfo: updateInfo,
-        currentVersion: currentVersion,
-        textStyle: textStyle,
+      title: _SettingsTitleBlock(
+        title: i18n.tr('check_updates'),
+        subtitle: _UpdateSubtitle(
+          checking: checking,
+          downloading: downloading,
+          progress: progress,
+          updateInfo: updateInfo,
+          currentVersion: currentVersion,
+          textStyle: textStyle,
+        ),
       ),
       trailing: SizedBox(
         width: 48,

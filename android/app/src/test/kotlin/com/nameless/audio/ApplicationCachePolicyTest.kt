@@ -3,10 +3,25 @@ package com.nameless.audio
 import com.nameless.audio.common.*
 
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.nio.file.Files
 
 class ApplicationCachePolicyTest {
+    @Test
+    fun `cache size includes nested files and ignores deleted roots`() {
+        val root = Files.createTempDirectory("application-cache-policy-").toFile()
+        val nested = root.resolve("nested").also { it.mkdirs() }
+        root.resolve("first.bin").writeBytes(ByteArray(5))
+        nested.resolve("second.bin").writeBytes(ByteArray(7))
+
+        assertEquals(12L, applicationCacheSizeBytes(listOf(root)))
+
+        root.deleteRecursively()
+        assertEquals(0L, applicationCacheSizeBytes(listOf(root)))
+    }
+
     @Test
     fun `trim target reserves ten percent for new writes`() {
         assertTrue(applicationCacheTrimTargetBytes(100L) == 90L)

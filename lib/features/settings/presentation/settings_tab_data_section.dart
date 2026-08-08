@@ -18,6 +18,7 @@ List<Widget> _buildSettingsDataSection({
   return <Widget>[
     _SettingsSectionCard(
       title: i18n.tr('settings_group_data'),
+      leadingContent: const StorageUsageCard(),
       children: [
         ListTile(
           onTap: onOpenDataAndSupport,
@@ -47,10 +48,12 @@ List<Widget> _buildSettingsDataSection({
               ),
             );
             return ListTile(
-              title: _settingsTitle(i18n.tr('max_cache_size')),
-              subtitle: Text(
-                AppCacheService.formatBytes(maxCacheBytes),
-                softWrap: true,
+              title: _SettingsTitleBlock(
+                title: i18n.tr('max_cache_size'),
+                subtitle: Text(
+                  AppCacheService.formatBytes(maxCacheBytes),
+                  softWrap: true,
+                ),
               ),
               leading: _settingsIcon(Icons.storage_rounded, cs.onSurface),
               trailing: _settingsDropdown<int>(

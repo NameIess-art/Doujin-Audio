@@ -40,6 +40,13 @@ void main() {
     );
     final panelDecoration = panelSurface.decoration as BoxDecoration;
     expect(panelDecoration.color!.a, 1);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey('asmr_panel_surface')),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text(i18n.tr('asmr_logout_action')));
     await pumpUntilFound(tester, find.text(i18n.tr('operation_failed_retry')));

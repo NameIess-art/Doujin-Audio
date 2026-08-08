@@ -749,7 +749,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                   seed:
                                       track?.displayName ??
                                       session.currentTrackPath,
-                                  showIcon: false,
                                 ),
                                 imageBuilder: (context, coverPath) {
                                   return RetryingFileImage(
@@ -768,7 +767,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                       seed:
                                           track?.displayName ??
                                           session.currentTrackPath,
-                                      showIcon: false,
                                     ),
                                   );
                                 },

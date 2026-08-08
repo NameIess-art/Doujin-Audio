@@ -302,8 +302,10 @@ List<Widget> _buildSettingsAppearanceSection({
                       .map((field) => _cardInfoFieldLabel(i18n, field))
                       .join('\uFF0C');
             return ListTile(
-              title: _settingsTitle(i18n.tr('card_info_display')),
-              subtitle: Text(summary, softWrap: true),
+              title: _SettingsTitleBlock(
+                title: i18n.tr('card_info_display'),
+                subtitle: Text(summary, softWrap: true),
+              ),
               leading: _settingsIcon(Icons.badge_rounded, cs.onSurface),
               trailing: Icon(
                 Icons.chevron_right_rounded,

@@ -7,6 +7,8 @@ import com.nameless.audio.subtitle.*
 
 import android.content.Context
 import android.net.Uri
+import android.os.Environment
+import android.os.StatFs
 
 internal class FileCacheOperations(context: Context) {
     internal val documentStorage = DocumentStorageOperations(context)
@@ -125,4 +127,13 @@ internal class FileCacheOperations(context: Context) {
 
     fun enforceApplicationCacheLimit(maxBytes: Long = maxApplicationCacheBytes()) =
         cachePolicy.enforceLimit(maxBytes)
+
+    fun storageUsage(): HashMap<String, Long> {
+        val stats = StatFs(Environment.getExternalStorageDirectory().absolutePath)
+        return hashMapOf(
+            "totalBytes" to stats.totalBytes,
+            "availableBytes" to stats.availableBytes,
+            "cacheBytes" to cachePolicy.sizeBytes(),
+        )
+    }
 }

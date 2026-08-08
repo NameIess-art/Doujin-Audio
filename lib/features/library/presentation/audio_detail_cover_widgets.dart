@@ -298,11 +298,8 @@ class _FolderCoverSelectorState extends ConsumerState<_FolderCoverSelector> {
                         fit: BoxFit.cover,
                         cacheWidth: coverCacheWidth,
                         useDefaultCacheWidth: coverCacheWidth != null,
-                        fallbackBuilder: (_) => CoverFallbackArtwork(
-                          seed: _images[index],
-                          icon: Icons.image_not_supported_rounded,
-                          iconSize: 42,
-                        ),
+                        fallbackBuilder: (_) =>
+                            CoverFallbackArtwork(seed: _images[index]),
                       );
                     },
                   ),

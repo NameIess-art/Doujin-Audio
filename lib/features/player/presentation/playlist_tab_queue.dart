@@ -329,74 +329,11 @@ Future<void> _showPlaybackQueuePanel(
     context,
     listen: false,
   ).read(appLanguageProviderInstanceProvider);
-  return showGeneralDialog<void>(
+  return showAppOverlayPanel<void>(
     context: context,
     barrierLabel: i18n.tr('close'),
-    barrierDismissible: true,
-    barrierColor: Colors.transparent,
-    transitionDuration: kSecondaryOverlayConfig.transitionDuration,
-    pageBuilder: (dialogContext, animation, secondaryAnimation) {
-      final mediaSize = MediaQuery.sizeOf(dialogContext);
-      final isDesktop = mediaSize.width >= 760;
-      final curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return Material(
-        color: Colors.transparent,
-        child: AnimatedBuilder(
-          animation: curved,
-          builder: (context, _) {
-            final progress = curved.value.clamp(0.0, 1.0);
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                Positioned.fill(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(context).maybePop(),
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: kSecondaryOverlayConfig.scrimColor(
-                          context,
-                          progress,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                SafeArea(
-                  child: FadeTransition(
-                    opacity: curved,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        isDesktop ? 28 : 16,
-                        isDesktop ? 28 : 176,
-                        isDesktop ? 28 : 16,
-                        isDesktop ? 28 : 132,
-                      ),
-                      child: Align(
-                        alignment: isDesktop
-                            ? Alignment.center
-                            : Alignment.topCenter,
-                        child: ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxWidth: isDesktop ? 472 : 404,
-                            maxHeight: 560,
-                          ),
-                          child: panel,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      );
-    },
+    maxHeight: 560,
+    builder: (_) => panel,
   );
 }
 

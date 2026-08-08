@@ -17,6 +17,22 @@ internal fun applicationCacheTrimTargetBytes(maxBytes: Long): Long {
         .coerceIn(1L, normalizedMaxBytes)
 }
 
+internal fun applicationCacheSizeBytes(roots: Iterable<File>): Long {
+    return roots.sumOf(::applicationCacheEntitySize)
+}
+
+private fun applicationCacheEntitySize(entity: File): Long {
+    return try {
+        if (entity.isFile) {
+            entity.length().coerceAtLeast(0L)
+        } else {
+            entity.listFiles()?.sumOf(::applicationCacheEntitySize) ?: 0L
+        }
+    } catch (_: Exception) {
+        0L
+    }
+}
+
 internal class ApplicationCachePolicy(
     private val context: Context
 ) {
@@ -49,6 +65,10 @@ internal class ApplicationCachePolicy(
             }
         }
         return deletedBytes.coerceAtMost(Int.MAX_VALUE.toLong())
+    }
+
+    fun sizeBytes(): Long {
+        return applicationCacheSizeBytes(roots())
     }
 
     fun enforceLimit(maxBytes: Long = maxBytes()) {
@@ -104,7 +124,7 @@ internal class ApplicationCachePolicy(
     }
 
     private fun deleteEntity(entity: File): Long {
-        val size = entitySize(entity)
+        val size = applicationCacheEntitySize(entity)
         try {
             if (entity.isDirectory) {
                 entity.deleteRecursively()
@@ -115,19 +135,6 @@ internal class ApplicationCachePolicy(
             // Clearing cache is best effort and reports only successfully removed bytes.
         }
         return if (entity.exists()) 0L else size
-    }
-
-    private fun entitySize(entity: File): Long {
-        return try {
-            if (entity.isFile) {
-                entity.length().coerceAtLeast(0L)
-            } else {
-                entity.listFiles()?.sumOf(::entitySize) ?: 0L
-            }
-        } catch (_: Exception) {
-            // Unreadable cache entries are ignored during size accounting.
-            0L
-        }
     }
 
     private fun deleteEmptyDirectories(root: File) {

@@ -45,12 +45,14 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
     this.i18n,
     this.onOpenSession,
     this.compactForFab = false,
+    this.viewportFraction,
   });
 
   final List<PlaybackSession>? sessions;
   final AppLanguageProvider? i18n;
   final ValueChanged<String>? onOpenSession;
   final bool compactForFab;
+  final double? viewportFraction;
 
   @override
   ConsumerState<ActiveSessionCarousel> createState() =>
@@ -75,7 +77,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         BottomNavigationStyle.capsule;
     _lastStyle = initialStyle;
     _pageController = PageController(
-      viewportFraction: initialStyle == BottomNavigationStyle.bar ? 1.0 : 0.90,
+      viewportFraction: _viewportFractionForStyle(initialStyle),
     );
     _pageController.addListener(_handlePageTick);
     _carouselSnapListenable = ref
@@ -199,6 +201,11 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     Navigator.of(context).push(buildSessionDetailRoute(sessionId: session.id));
   }
 
+  double _viewportFractionForStyle(BottomNavigationStyle style) {
+    return widget.viewportFraction ??
+        (style == BottomNavigationStyle.bar ? 1.0 : 0.90);
+  }
+
   @override
   Widget build(BuildContext context) {
     final style = ref.watch(
@@ -206,7 +213,9 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
         (s) => s.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,
       ),
     );
-    if (_lastStyle != style) {
+    final viewportFraction = _viewportFractionForStyle(style);
+    if (_lastStyle != style ||
+        _pageController.viewportFraction != viewportFraction) {
       _lastStyle = style;
       final oldPage = _pageController.hasClients
           ? _pageController.page ?? 0.0
@@ -214,7 +223,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       _pageController.dispose();
       _pageController = PageController(
         initialPage: oldPage.round(),
-        viewportFraction: style == BottomNavigationStyle.bar ? 1.0 : 0.90,
+        viewportFraction: viewportFraction,
       );
       _pageController.addListener(_handlePageTick);
     }

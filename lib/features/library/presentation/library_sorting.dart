@@ -19,9 +19,10 @@ List<LibraryNode> sortLibraryNodes({
     final leftValue = _librarySortValue(left, library);
     final rightValue = _librarySortValue(right, library);
     if (groupByLibrary) {
-      final groupResult = compareOptionalSortStrings(
+      final groupResult = compareGroupedSortStrings(
         leftValue.libraryKey,
         rightValue.libraryKey,
+        ascending,
       );
       if (groupResult != 0) return groupResult;
     }

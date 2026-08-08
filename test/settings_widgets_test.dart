@@ -296,6 +296,36 @@ void main() {
   });
 
   testWidgets(
+    'data storage category places storage overview above data and support',
+    (tester) async {
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(harness.dispose);
+      await tester.pumpWidget(harness.build(const SettingsTab()));
+      await tester.pump();
+
+      final i18n = harness.languageProvider;
+      final category = find.text(i18n.tr('section_data_storage'));
+      await tester.ensureVisible(category);
+      await tester.tap(category);
+      await tester.pumpAndSettle();
+
+      final storage = find.byKey(
+        const ValueKey('data-support-storage-unavailable'),
+      );
+      final dataAndSupport = find.widgetWithText(
+        ListTile,
+        i18n.tr('data_and_support'),
+      );
+      expect(storage, findsOneWidget);
+      expect(dataAndSupport, findsOneWidget);
+      expect(
+        tester.getTopLeft(storage).dy,
+        lessThan(tester.getTopLeft(dataAndSupport).dy),
+      );
+    },
+  );
+
+  testWidgets(
     'ASMR download settings expose metadata and folder name choices',
     (tester) async {
       final harness = AppRuntimeWidgetTestFixture();
@@ -322,6 +352,26 @@ void main() {
       expect(
         find.text(i18n.tr('asmr_download_folder_field_work_title')),
         findsOneWidget,
+      );
+      final folderNameTile = find.widgetWithText(
+        ListTile,
+        i18n.tr('asmr_download_folder_name_setting'),
+      );
+      expect(folderNameTile, findsOneWidget);
+      final folderNameTileTheme = ListTileTheme.of(
+        tester.element(folderNameTile),
+      );
+      expect(folderNameTileTheme.titleAlignment, ListTileTitleAlignment.center);
+      expect(tester.widget<ListTile>(folderNameTile).subtitle, isNull);
+      final folderNameTitleRect = tester.getRect(
+        find.text(i18n.tr('asmr_download_folder_name_setting')),
+      );
+      final folderNameSubtitleRect = tester.getRect(
+        find.text(i18n.tr('asmr_download_folder_field_work_title')),
+      );
+      expect(
+        (folderNameTitleRect.top + folderNameSubtitleRect.bottom) / 2,
+        closeTo(tester.getRect(folderNameTile).center.dy, 1),
       );
 
       await tester.tap(find.text(i18n.tr('asmr_download_folder_name_setting')));

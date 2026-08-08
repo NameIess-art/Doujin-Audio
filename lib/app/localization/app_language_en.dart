@@ -546,6 +546,15 @@ const Map<String, String> appLanguageEn = {
   'data_and_support': 'Data & support',
   'data_and_support_subtitle':
       'Export diagnostics and review the privacy summary.',
+  'storage_usage_title': 'Storage space',
+  'storage_usage_total': 'Total device storage',
+  'storage_usage_audio_library': 'Local audio library',
+  'storage_usage_app_cache': 'App cache',
+  'storage_usage_other': 'Other used space',
+  'storage_usage_available': 'Available space',
+  'storage_usage_unavailable':
+      'Storage information is temporarily unavailable.',
+  'storage_usage_retry': 'Reload storage information',
   'operation_completed': 'Completed',
   'operation_failed': 'Operation failed',
   'export_diagnostics': 'Export diagnostics',

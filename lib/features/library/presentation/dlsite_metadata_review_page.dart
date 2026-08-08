@@ -341,13 +341,10 @@ class _DlsiteMetadataReviewPageState
                           loadingBuilder: (_) => CoverLoadingArtwork(
                             placeholder: CoverFallbackArtwork(
                               seed: coverUrl,
-                              showIcon: false,
                             ),
                           ),
                           fallbackBuilder: (_) => CoverFallbackArtwork(
                             seed: coverUrl,
-                            icon: Icons.image_not_supported_rounded,
-                            iconSize: 48,
                           ),
                         ),
                       ),

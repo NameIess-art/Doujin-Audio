@@ -14,12 +14,6 @@ import '../../../core/widgets/async_cover_image.dart';
 Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
   return AppBottomSheet.show<void>(
     context: context,
-    sheetAnimationStyle: const AnimationStyle(
-      duration: Duration(milliseconds: 320),
-      reverseDuration: Duration(milliseconds: 250),
-      curve: Curves.fastOutSlowIn,
-      reverseCurve: Curves.fastOutSlowIn,
-    ),
     builder: (_) => _AsmrWorkDetailSheet(work: work),
   );
 }
@@ -141,14 +135,10 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
                       loadingBuilder: (_) => CoverLoadingArtwork(
                         placeholder: CoverFallbackArtwork(
                           seed: effectiveWork.title,
-                          showIcon: false,
                         ),
                       ),
-                      fallbackBuilder: (_) => CoverFallbackArtwork(
-                        seed: effectiveWork.title,
-                        icon: Icons.graphic_eq_rounded,
-                        iconSize: 36,
-                      ),
+                      fallbackBuilder: (_) =>
+                          CoverFallbackArtwork(seed: effectiveWork.title),
                     ),
                   ),
                 ),

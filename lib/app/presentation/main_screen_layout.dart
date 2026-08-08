@@ -116,30 +116,22 @@ extension _MainScreenLayout on _MainScreenState {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final mediaSize = MediaQuery.sizeOf(context);
-    final isLandscape =
-        MediaQuery.orientationOf(context) == Orientation.landscape;
-    final isDesktop = mediaSize.width >= 760 || isLandscape;
-
     if (!_timerOverlayPrimed) {
       _setLocalState(() {
         _timerOverlayPrimed = true;
       });
     }
 
-    return showGeneralDialog<void>(
+    return showAppOverlayPanel<void>(
       context: context,
       barrierLabel: i18n.tr('close'),
-      barrierDismissible: true,
-      barrierColor: Colors.transparent,
-      transitionDuration: kSecondaryOverlayConfig.transitionDuration,
-      pageBuilder: (dialogContext, animation, secondaryAnimation) {
-        return _TimerOverlaySheet(
-          isDesktop: isDesktop,
-          animation: animation,
-          openDetail: timerState.duration != null,
-        );
-      },
+      showScrim: false,
+      builder: (_) => TimerTab(
+        showHeader: false,
+        useSafeArea: false,
+        compactOnly: true,
+        initialCompactDetail: timerState.duration != null,
+      ),
     ).whenComplete(() {
       if (!mounted) return;
       _setLocalState(() {
@@ -372,43 +364,59 @@ extension _MainScreenLayout on _MainScreenState {
           ),
         SafeArea(
           top: false,
-          minimum: const EdgeInsets.fromLTRB(
-            AppSpacing.sm,
-            0,
-            AppSpacing.sm,
-            6,
-          ),
+          minimum: const EdgeInsets.only(bottom: 6),
           child: Align(
             alignment: Alignment.bottomCenter,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 430),
+            child: SizedBox(
+              width: double.infinity,
               child: Column(
                 key: isCurrent ? _dockContentKey : null,
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   if (overlaySessions.isNotEmpty)
-                    ActiveSessionCarousel(
-                      sessions: overlaySessions,
-                      i18n: i18n,
-                      onOpenSession: (sessionId) {
-                        Navigator.of(
-                          context,
-                        ).push(buildSessionDetailRoute(sessionId: sessionId));
+                    LayoutBuilder(
+                      builder: (context, constraints) {
+                        final viewportWidth = constraints.maxWidth;
+                        final menuWidth = (viewportWidth - AppSpacing.sm * 2)
+                            .clamp(0.0, 430.0)
+                            .toDouble();
+                        final cardWidth = menuWidth * 0.96;
+                        final viewportFraction = viewportWidth <= 0
+                            ? 0.90
+                            : ((cardWidth + 4) / viewportWidth).clamp(0.1, 1.0);
+                        return ActiveSessionCarousel(
+                          sessions: overlaySessions,
+                          i18n: i18n,
+                          viewportFraction: viewportFraction,
+                          onOpenSession: (sessionId) {
+                            Navigator.of(context).push(
+                              buildSessionDetailRoute(sessionId: sessionId),
+                            );
+                          },
+                        );
                       },
                     ),
                   if (overlaySessions.isNotEmpty) const SizedBox(height: 6),
                   if (!tinyMode)
-                    FractionallySizedBox(
-                      key: const ValueKey<String>(
-                        'mobile_bottom_capsule_panel',
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: AppSpacing.sm,
                       ),
-                      widthFactor: 0.96,
-                      child: _FloatingGlassPanel(
-                        padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
-                        shadowOpacity: 0.12,
-                        showTopHighlight: false,
-                        tinyMode: tinyMode,
-                        child: _buildBottomBar(context),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 430),
+                        child: FractionallySizedBox(
+                          key: const ValueKey<String>(
+                            'mobile_bottom_capsule_panel',
+                          ),
+                          widthFactor: 0.96,
+                          child: _FloatingGlassPanel(
+                            padding: const EdgeInsets.fromLTRB(10, 5, 10, 5),
+                            shadowOpacity: 0.12,
+                            showTopHighlight: false,
+                            tinyMode: tinyMode,
+                            child: _buildBottomBar(context),
+                          ),
+                        ),
                       ),
                     ),
                 ],

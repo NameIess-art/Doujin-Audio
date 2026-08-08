@@ -121,6 +121,12 @@ internal class FileCacheMethodHandler(
                     null
                 }
             }
+            FileCacheMethods.GET_STORAGE_USAGE -> runAsync(
+                result,
+                errorCode = { "storage_usage_failed" }
+            ) {
+                operations.storageUsage()
+            }
             FileCacheMethods.SCAN_FOLDER -> {
                 val folder = arguments.requiredString("folder")
                 runScanAsync(

@@ -34,3 +34,8 @@ int compareOptionalSortStrings(String? left, String? right) {
     (a, b) => a.compareTo(b),
   );
 }
+
+int compareGroupedSortStrings(String? left, String? right, bool ascending) {
+  final result = compareOptionalSortStrings(left, right);
+  return ascending ? result : -result;
+}

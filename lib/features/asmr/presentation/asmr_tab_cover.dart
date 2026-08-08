@@ -36,17 +36,13 @@ class _AsmrWorkCover extends ConsumerWidget {
               width: width,
               height: height,
               child: url.isEmpty
-                  ? CoverFallbackArtwork(
-                      seed: url,
-                      compact: true,
-                      icon: Icons.graphic_eq_rounded,
-                      iconSize: 28,
-                    )
+                  ? CoverFallbackArtwork(seed: url, compact: true)
                   : AsyncRemoteCoverImage(
                       url: url,
                       future: coverUi.deferredRemoteCover(url),
                       initialPath: library.resolvedCoverPathForRemoteCover(url),
-                      retryFutureBuilder: () => coverUi.deferredRemoteCover(url),
+                      retryFutureBuilder: () =>
+                          coverUi.deferredRemoteCover(url),
                       retryDelay: const Duration(seconds: 5),
                       maxRetryAttempts: 2,
                       fit: BoxFit.cover,
@@ -55,16 +51,11 @@ class _AsmrWorkCover extends ConsumerWidget {
                       loadingBuilder: (_) => CoverLoadingArtwork(
                         placeholder: CoverFallbackArtwork(
                           seed: url,
-                          showIcon: false,
                           compact: true,
                         ),
                       ),
-                      fallbackBuilder: (_) => CoverFallbackArtwork(
-                        seed: url,
-                        compact: true,
-                        icon: Icons.graphic_eq_rounded,
-                        iconSize: 28,
-                      ),
+                      fallbackBuilder: (_) =>
+                          CoverFallbackArtwork(seed: url, compact: true),
                     ),
             ),
             if (duration != null && duration! > Duration.zero)

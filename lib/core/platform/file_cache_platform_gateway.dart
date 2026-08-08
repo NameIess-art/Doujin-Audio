@@ -50,6 +50,18 @@ class CoverImageReference {
   }
 }
 
+class StorageUsagePlatformSnapshot {
+  const StorageUsagePlatformSnapshot({
+    required this.totalBytes,
+    required this.availableBytes,
+    required this.cacheBytes,
+  });
+
+  final int totalBytes;
+  final int availableBytes;
+  final int cacheBytes;
+}
+
 class FileCachePlatformGateway {
   FileCachePlatformGateway({
     MethodChannel? channel,
@@ -433,6 +445,27 @@ class FileCachePlatformGateway {
       FileCacheMethod.enforceApplicationCacheLimit,
       arguments: <String, Object?>{'maxBytes': maxBytes},
       decode: (value) => value,
+    );
+  }
+
+  Future<StorageUsagePlatformSnapshot?> readStorageUsage() async {
+    if (!_isAndroid()) return null;
+    final result = await _client.invoke<Map<String, Object?>>(
+      FileCacheMethod.getStorageUsage,
+      decode: (value) => Map<String, Object?>.from(value as Map),
+    );
+    final raw = result.valueOrNull;
+    if (raw == null) return null;
+    final totalBytes = (raw['totalBytes'] as num?)?.toInt();
+    final availableBytes = (raw['availableBytes'] as num?)?.toInt();
+    final cacheBytes = (raw['cacheBytes'] as num?)?.toInt();
+    if (totalBytes == null || availableBytes == null || cacheBytes == null) {
+      return null;
+    }
+    return StorageUsagePlatformSnapshot(
+      totalBytes: totalBytes,
+      availableBytes: availableBytes,
+      cacheBytes: cacheBytes,
     );
   }
 

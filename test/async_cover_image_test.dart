@@ -196,10 +196,10 @@ void main() {
 
     expect(find.byType(CoverLoadingArtwork), findsNothing);
     expect(find.byType(CoverFallbackArtwork), findsOneWidget);
-    final visibleIcon = tester.widget<AnimatedOpacity>(
+    final hiddenIcon = tester.widget<AnimatedOpacity>(
       find.byType(AnimatedOpacity),
     );
-    expect(visibleIcon.opacity, 1);
+    expect(hiddenIcon.opacity, 0);
   });
 
   testWidgets('AsyncCoverImage shows fallback artwork while loading', (

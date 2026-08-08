@@ -96,6 +96,7 @@ internal object FileCacheMethods {
     const val DOCUMENT_PATH_EXISTS = "documentPathExists"
     const val RESOLVE_DOCUMENT_FILE_SYSTEM_PATH = "resolveDocumentFileSystemPath"
     const val ENFORCE_APPLICATION_CACHE_LIMIT = "enforceApplicationCacheLimit"
+    const val GET_STORAGE_USAGE = "getStorageUsage"
     const val ENSURE_FOLDER_PATH = "ensureFolderPath"
     const val EXPORT_FILE = "exportFile"
     const val LIST_CHILD_FOLDERS = "listChildFolders"

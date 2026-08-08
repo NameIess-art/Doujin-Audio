@@ -33,6 +33,7 @@ class PlatformChannelsTest {
             FileCacheMethods.DISCOVER_ROOT_IMAGES,
             FileCacheMethods.DOCUMENT_PATH_EXISTS,
             FileCacheMethods.ENFORCE_APPLICATION_CACHE_LIMIT,
+            FileCacheMethods.GET_STORAGE_USAGE,
             FileCacheMethods.ENSURE_FOLDER_PATH,
             FileCacheMethods.EXPORT_FILE,
             FileCacheMethods.LIST_CHILD_FOLDERS,

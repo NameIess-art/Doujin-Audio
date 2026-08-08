@@ -1365,6 +1365,13 @@ void main() {
     expect(find.text(languageProvider.tr('edit_queue_name')), findsOneWidget);
     expect(find.text(languageProvider.tr('edit_card_color')), findsOneWidget);
     expect(find.text(languageProvider.tr('remove_queue')), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byType(PlaybackQueueEditPage),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsOneWidget,
+    );
     final editPanelMaterial = tester.widget<Material>(
       find
           .descendant(

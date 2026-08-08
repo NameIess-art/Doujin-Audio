@@ -116,28 +116,16 @@ extension _MainScreenLayout on _MainScreenState {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    if (!_timerOverlayPrimed) {
-      _setLocalState(() {
-        _timerOverlayPrimed = true;
-      });
-    }
-
     return showAppOverlayPanel<void>(
       context: context,
       barrierLabel: i18n.tr('close'),
-      showScrim: false,
       builder: (_) => TimerTab(
         showHeader: false,
         useSafeArea: false,
         compactOnly: true,
         initialCompactDetail: timerState.duration != null,
       ),
-    ).whenComplete(() {
-      if (!mounted) return;
-      _setLocalState(() {
-        _timerOverlayPrimed = false;
-      });
-    });
+    );
   }
 
   Widget _buildBottomBar(BuildContext context) {

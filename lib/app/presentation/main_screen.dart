@@ -42,7 +42,6 @@ import 'audio_library_page.dart';
 part 'main_screen_notifications.dart';
 part 'main_screen_layout.dart';
 part 'main_screen_widgets.dart';
-part 'main_screen_timer_scrim.dart';
 
 @visibleForTesting
 bool shouldRunGlobalSubtitleOverlay({required bool appInForeground}) {
@@ -81,7 +80,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       PermissionActionController();
   late final AppUpdateFlow _updateFlow;
   late final SubtitleOverlayController _subtitleOverlay;
-  bool _timerOverlayPrimed = false;
 
   bool _isDataReady = false;
   bool? _lastHasNowPlaying;
@@ -102,8 +100,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   String? _globalSubtitleOverlaySessionId;
   String? _globalSubtitleOverlayTrackPath;
   String? _lastGlobalSubtitleOverlayText;
-
-  void _setLocalState(VoidCallback fn) => setState(fn);
 
   static const List<_MainDestination> _destinations = [
     _MainDestination(
@@ -835,8 +831,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
                             );
                           },
                         ),
-
-                      if (_timerOverlayPrimed) const _ImmediateTimerScrim(),
                     ],
                   ),
                 ),

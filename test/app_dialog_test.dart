@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nameless_audio/core/widgets/app_buttons.dart';
 import 'package:nameless_audio/core/widgets/app_dialog.dart';
+import 'package:nameless_audio/core/widgets/app_transitions.dart';
 
 void main() {
   testWidgets('shared app dialog renders content and returns a typed result', (
@@ -50,6 +51,16 @@ void main() {
     );
 
     await tester.tap(find.text('Show dialog'));
+    await tester.pump();
+
+    final dialogScrim = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey('app_dialog_scrim')),
+    );
+    expect(
+      dialogScrim.color.a,
+      closeTo(kSecondaryOverlayConfig.backgroundOpacity, 0.001),
+    );
+
     await tester.pumpAndSettle();
 
     expect(find.byType(AppDialog), findsOneWidget);
@@ -87,6 +98,17 @@ void main() {
     );
 
     await tester.tap(find.widgetWithText(FilledButton, 'Save'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+
+    final fadingDialogScrim = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey('app_dialog_scrim')),
+    );
+    expect(
+      fadingDialogScrim.color.a,
+      inExclusiveRange(0, kSecondaryOverlayConfig.backgroundOpacity),
+    );
+
     await tester.pumpAndSettle();
 
     expect(result, 'Night');
@@ -174,6 +196,16 @@ void main() {
     );
 
     await tester.tap(find.text('Open overlay'));
+    await tester.pump();
+
+    final openingScrim = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey('app_overlay_panel_scrim')),
+    );
+    expect(
+      openingScrim.color.a,
+      closeTo(kSecondaryOverlayConfig.backgroundOpacity, 0.001),
+    );
+
     await tester.pumpAndSettle();
 
     expect(find.text('Overlay content'), findsOneWidget);
@@ -197,6 +229,17 @@ void main() {
     );
 
     await tester.tapAt(const Offset(1, 1));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+
+    final fadingPanelScrim = tester.widget<ColoredBox>(
+      find.byKey(const ValueKey('app_overlay_panel_scrim')),
+    );
+    expect(
+      fadingPanelScrim.color.a,
+      inExclusiveRange(0, kSecondaryOverlayConfig.backgroundOpacity),
+    );
+
     await tester.pumpAndSettle();
     expect(find.text('Overlay content'), findsNothing);
   });
@@ -227,36 +270,6 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.text('Back overlay'), findsNothing);
-  });
-
-  testWidgets('overlay panel can reuse an already visible scrim', (
-    tester,
-  ) async {
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => TextButton(
-              onPressed: () => showAppOverlayPanel<void>(
-                context: context,
-                showScrim: false,
-                builder: (_) => const Text('Transparent overlay'),
-              ),
-              child: const Text('Open transparent overlay'),
-            ),
-          ),
-        ),
-      ),
-    );
-
-    await tester.tap(find.text('Open transparent overlay'));
-    await tester.pumpAndSettle();
-
-    final scrim = tester.widget<DecoratedBox>(
-      find.byKey(const ValueKey('app_overlay_panel_scrim')),
-    );
-    final decoration = scrim.decoration as BoxDecoration;
-    expect(decoration.color, Colors.transparent);
   });
 
   testWidgets('shared overlay panel honors reduced motion', (tester) async {

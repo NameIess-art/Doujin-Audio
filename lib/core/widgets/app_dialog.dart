@@ -3,6 +3,32 @@ import 'package:flutter/material.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_transitions.dart';
 
+double _appScrimProgress(Animation<double> animation) {
+  if (animation.status != AnimationStatus.reverse) return 1;
+  return kSecondaryOverlayConfig.reverseCurve.transform(animation.value);
+}
+
+class _AppAnimatedScrim extends AnimatedWidget {
+  const _AppAnimatedScrim({
+    required Animation<double> animation,
+    required this.scrimKey,
+  }) : super(listenable: animation);
+
+  final Key scrimKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final animation = listenable as Animation<double>;
+    return ColoredBox(
+      key: scrimKey,
+      color: kSecondaryOverlayConfig.scrimColor(
+        context,
+        _appScrimProgress(animation),
+      ),
+    );
+  }
+}
+
 Future<T?> showAppOverlayPanel<T>({
   required BuildContext context,
   required WidgetBuilder builder,
@@ -12,7 +38,6 @@ Future<T?> showAppOverlayPanel<T>({
   double desktopMaxWidth = 472,
   double? maxHeight,
   ThemeData Function(BuildContext context)? themeBuilder,
-  bool showScrim = true,
 }) {
   return showGeneralDialog<T>(
     context: context,
@@ -46,7 +71,6 @@ Future<T?> showAppOverlayPanel<T>({
         maxHeight: maxHeight,
         isDesktop: isDesktop,
         barrierDismissible: barrierDismissible,
-        showScrim: showScrim,
         child: themedPanel,
       );
     },
@@ -62,7 +86,6 @@ class _AppOverlayPanelShell extends StatelessWidget {
     required this.maxHeight,
     required this.isDesktop,
     required this.barrierDismissible,
-    required this.showScrim,
     required this.child,
   });
 
@@ -72,7 +95,6 @@ class _AppOverlayPanelShell extends StatelessWidget {
   final double? maxHeight;
   final bool isDesktop;
   final bool barrierDismissible;
-  final bool showScrim;
   final Widget child;
 
   @override
@@ -83,7 +105,6 @@ class _AppOverlayPanelShell extends StatelessWidget {
         animation: animation,
         child: child,
         builder: (context, child) {
-          final progress = animation.value.clamp(0.0, 1.0);
           final constraints = maxHeight == null
               ? BoxConstraints(maxWidth: maxWidth)
               : BoxConstraints(maxWidth: maxWidth, maxHeight: maxHeight!);
@@ -96,16 +117,9 @@ class _AppOverlayPanelShell extends StatelessWidget {
                   onTap: barrierDismissible
                       ? () => Navigator.of(context).maybePop()
                       : null,
-                  child: DecoratedBox(
-                    key: const ValueKey('app_overlay_panel_scrim'),
-                    decoration: BoxDecoration(
-                      color: showScrim
-                          ? kSecondaryOverlayConfig.scrimColor(
-                              context,
-                              progress,
-                            )
-                          : Colors.transparent,
-                    ),
+                  child: _AppAnimatedScrim(
+                    animation: animation,
+                    scrimKey: const ValueKey('app_overlay_panel_scrim'),
                   ),
                 ),
               ),
@@ -153,16 +167,9 @@ Future<T?> showAppDialog<T>({
       return Stack(
         fit: StackFit.expand,
         children: [
-          AnimatedBuilder(
+          _AppAnimatedScrim(
             animation: animation,
-            builder: (context, child) {
-              return ColoredBox(
-                color: kSecondaryOverlayConfig.scrimColor(
-                  context,
-                  animation.value,
-                ),
-              );
-            },
+            scrimKey: const ValueKey('app_dialog_scrim'),
           ),
           SafeArea(
             child: Center(
@@ -173,9 +180,13 @@ Future<T?> showAppDialog<T>({
                 ),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(maxWidth: maxWidth),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: builder(dialogContext),
+                  child: buildAppScaleFadeTransition(
+                    context: dialogContext,
+                    animation: animation,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: builder(dialogContext),
+                    ),
                   ),
                 ),
               ),
@@ -184,13 +195,7 @@ Future<T?> showAppDialog<T>({
         ],
       );
     },
-    transitionBuilder: (context, animation, secondaryAnimation, child) {
-      return buildAppScaleFadeTransition(
-        context: context,
-        animation: animation,
-        child: child,
-      );
-    },
+    transitionBuilder: (context, animation, secondaryAnimation, child) => child,
   );
 }
 

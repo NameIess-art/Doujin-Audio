@@ -38,7 +38,7 @@ internal class CoverArtworkOperations(
             val candidate = root?.let(::preferredDocument)
             if (candidate != null) return cacheDocument(candidate.file, "$trackPath|${candidate.path}")
         }
-        return metadata.resolveEmbeddedCover(trackPath, trackPath)
+        return metadata.resolveEmbeddedCover(trackPath)
     }
 
     fun discover(

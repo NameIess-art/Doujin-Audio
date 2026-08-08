@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -35,8 +36,9 @@ Future<void> cleanupEmbeddedCoverPartial(
 }
 
 class EmbeddedCoverArtworkService {
-  static const String _flacCacheVersion = 'flac-picture-v1';
   static const int _maxEmbeddedPictureBytes = 20 * 1024 * 1024;
+  static final Map<String, Future<String?>> _cacheWriteFutures =
+      <String, Future<String?>>{};
 
   static Future<String?> resolveForTrack(MusicTrack track) async {
     return resolveForPath(track.path);
@@ -58,13 +60,6 @@ class EmbeddedCoverArtworkService {
     }
     if (stat.type != FileSystemEntityType.file) return null;
 
-    final cacheKey = sha256
-        .convert(
-          utf8.encode(
-            '$trackPath|${stat.modified.millisecondsSinceEpoch}|${stat.size}|$_flacCacheVersion',
-          ),
-        )
-        .toString();
     Uint8List? picture;
     try {
       RandomAccessFile? raf;
@@ -115,7 +110,27 @@ class EmbeddedCoverArtworkService {
       path.join(cacheRoot.path, 'embedded_covers'),
     );
     await cacheDirectory.create(recursive: true);
-    final output = File(path.join(cacheDirectory.path, '$cacheKey.image'));
+    final contentKey = sha256.convert(picture).toString();
+    final output = File(path.join(cacheDirectory.path, '$contentKey.image'));
+    final writeKey = '${cacheDirectory.path}|$contentKey';
+    final existingWrite = _cacheWriteFutures[writeKey];
+    if (existingWrite != null) return await existingWrite;
+
+    final writeFuture = _writeCachedPicture(output, picture);
+    _cacheWriteFutures[writeKey] = writeFuture;
+    try {
+      return await writeFuture;
+    } finally {
+      if (identical(_cacheWriteFutures[writeKey], writeFuture)) {
+        unawaited(_cacheWriteFutures.remove(writeKey));
+      }
+    }
+  }
+
+  static Future<String?> _writeCachedPicture(
+    File output,
+    Uint8List picture,
+  ) async {
     if (await output.exists() && await output.length() > 0) {
       await output.setLastModified(DateTime.now());
       return output.path;

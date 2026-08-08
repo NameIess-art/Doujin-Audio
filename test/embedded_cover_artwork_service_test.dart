@@ -59,6 +59,43 @@ void main() {
     },
   );
 
+  test('different audio files reuse one identical embedded cover', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'embedded_cover_dedup_test_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final imageBytes = Uint8List.fromList(<int>[
+      0x89,
+      0x50,
+      0x4e,
+      0x47,
+      0x0d,
+      0x0a,
+    ]);
+    final firstTrack = File('${directory.path}/first.flac');
+    final secondTrack = File('${directory.path}/second.flac');
+    await firstTrack.writeAsBytes(_flacWithPicture(imageBytes), flush: true);
+    await secondTrack.writeAsBytes(_flacWithPicture(imageBytes), flush: true);
+
+    final firstCover = await EmbeddedCoverArtworkService.resolveForPath(
+      firstTrack.path,
+    );
+    final secondCover = await EmbeddedCoverArtworkService.resolveForPath(
+      secondTrack.path,
+    );
+
+    expect(secondCover, firstCover);
+    expect(
+      await Directory('${tempDir.path}/embedded_covers')
+          .list()
+          .where((entity) => entity is File && !entity.path.endsWith('.part'))
+          .length,
+      1,
+    );
+  });
+
   test('reads FLAC picture after a leading ID3v2 tag', () async {
     final directory = await Directory.systemTemp.createTemp(
       'embedded_cover_test_',

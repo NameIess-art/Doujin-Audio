@@ -140,6 +140,7 @@ class DataBackupService {
     SecureAsmrTokenStore? accountStore,
     AppUpdateService? appUpdateService,
     Future<Directory> Function()? supportDirectoryProvider,
+    Future<String> Function()? databasesPathProvider,
     Future<void> Function()? beforeExport,
     DateTime Function()? clock,
     String? platformName,
@@ -149,6 +150,7 @@ class DataBackupService {
            (appUpdateService ?? AppUpdateService()).currentAppVersion,
        _supportDirectoryProvider =
            supportDirectoryProvider ?? getApplicationSupportDirectory,
+       _databasesPathProvider = databasesPathProvider ?? getDatabasesPath,
        _beforeExport = beforeExport,
        _clock = clock ?? DateTime.now,
        _platformName = platformName ?? Platform.operatingSystem;
@@ -157,6 +159,7 @@ class DataBackupService {
   final SecureAsmrTokenStore _accountStore;
   final Future<AppVersionInfo> Function() _appVersionProvider;
   final Future<Directory> Function() _supportDirectoryProvider;
+  final Future<String> Function() _databasesPathProvider;
   final Future<void> Function()? _beforeExport;
   final DateTime Function() _clock;
   final String _platformName;
@@ -260,7 +263,7 @@ class DataBackupService {
           await File(path.join(rollbackDirectory.path, _accountName)).exists();
       commitStarted = resumeCommit;
       final decoded = await _decodeAndValidate(pending);
-      final databaseDirectory = Directory(await getDatabasesPath());
+      final databaseDirectory = Directory(await _databasesPathProvider());
       await databaseDirectory.create(recursive: true);
       final currentDatabase = File(
         path.join(databaseDirectory.path, AppDatabase.fileName),
@@ -422,7 +425,7 @@ class DataBackupService {
     if (!await preferencesFile.exists() || !await accountFile.exists()) {
       throw StateError('restore_rollback_missing');
     }
-    final databaseDirectory = Directory(await getDatabasesPath());
+    final databaseDirectory = Directory(await _databasesPathProvider());
     final currentDatabase = File(
       path.join(databaseDirectory.path, AppDatabase.fileName),
     );

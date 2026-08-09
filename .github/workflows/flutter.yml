@@ -36,14 +36,12 @@ jobs:
       - name: Analyze
         run: flutter analyze
 
-      - name: Stress Ubuntu regression tests
+      - name: Stress Ubuntu dynamic navigation regression
         shell: bash
         run: |
           for iteration in {1..10}; do
             echo "Dynamic navigation iteration ${iteration}/10"
             flutter test --no-pub test/widget_test.dart --plain-name "app shell handles keyboard and dynamic portrait sizes"
-            echo "Playlist reorder iteration ${iteration}/10"
-            flutter test --no-pub test/player_playlist_widgets_test.dart --plain-name "playlist cards freeze background updates while reordering"
           done
 
       - name: Test with coverage

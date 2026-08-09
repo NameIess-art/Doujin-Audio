@@ -537,12 +537,18 @@ class _SessionVideoFullscreenPageState
   Widget build(BuildContext context) {
     final detail = ref.watch(sessionDetailTransportProvider(widget.sessionId));
     final paths = ref.read(audioPathCoordinatorProvider);
+    final allowVideoPlayback = ref.watch(
+      settingsStateProvider.select(
+        (state) => state.value?.allowVideoPlayback ?? true,
+      ),
+    );
     final session = _playback.sessionById(widget.sessionId);
     final activeSession = session;
     final track = activeSession == null
         ? null
         : paths.trackByPath(activeSession.currentTrackPath);
-    if (activeSession == null ||
+    if (!allowVideoPlayback ||
+        activeSession == null ||
         !shouldKeepSessionVideoFullscreen(
           sessionExists: true,
           currentTrackIsVideo: track?.isVideo == true,

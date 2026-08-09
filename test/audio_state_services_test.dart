@@ -314,6 +314,35 @@ void main() {
       expect(state.blurPlayerBackgroundEnabled, isTrue);
     });
 
+    test(
+      'video playback setting defaults on, publishes and persists',
+      () async {
+        final state = SettingsState();
+        final repository = SettingsRepository();
+        addTearDown(repository.dispose);
+
+        expect(state.allowVideoPlayback, isTrue);
+        expect(repository.allowVideoPlayback, isTrue);
+
+        await repository.setAllowVideoPlayback(false);
+
+        expect(repository.slice.state.allowVideoPlayback, isFalse);
+        final saved =
+            json.decode(
+                  (await SharedPreferences.getInstance()).getString(
+                    'playback_settings_v1',
+                  )!,
+                )
+                as Map<String, dynamic>;
+        expect(saved['allowVideoPlayback'], isFalse);
+
+        final restored = SettingsRepository();
+        addTearDown(restored.dispose);
+        await restored.loadPersistedState();
+        expect(restored.allowVideoPlayback, isFalse);
+      },
+    );
+
     test('blurred player background setting publishes and persists', () async {
       final repository = SettingsRepository();
       addTearDown(repository.dispose);

@@ -34,6 +34,7 @@ class SettingsRepository {
   int maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
   bool asmrPlaybackCacheEnabled = false;
   bool recordPlaybackProgress = true;
+  bool allowVideoPlayback = true;
   bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;
   bool hapticFeedbackEnabled = true;
@@ -96,6 +97,7 @@ class SettingsRepository {
       autoCheckUpdates = playback['autoCheckUpdates'] as bool? ?? false;
       recordPlaybackProgress =
           playback['recordPlaybackProgress'] as bool? ?? true;
+      allowVideoPlayback = playback['allowVideoPlayback'] as bool? ?? true;
       asmrPlaybackCacheEnabled =
           playback['asmrPlaybackCacheEnabled'] as bool? ?? false;
       blurPlayerBackgroundEnabled =
@@ -205,6 +207,7 @@ class SettingsRepository {
       'autoPlayAddedSessions': autoPlayAddedSessions,
       'autoCheckUpdates': autoCheckUpdates,
       'recordPlaybackProgress': recordPlaybackProgress,
+      'allowVideoPlayback': allowVideoPlayback,
       'asmrPlaybackCacheEnabled': asmrPlaybackCacheEnabled,
       'blurPlayerBackgroundEnabled': blurPlayerBackgroundEnabled,
       'uiBlurEffectEnabled': uiBlurEffectEnabled,
@@ -388,6 +391,11 @@ class SettingsRepository {
     update: () => recordPlaybackProgress = enabled,
   );
 
+  Future<void> setAllowVideoPlayback(bool enabled) => _setValue(
+    unchanged: allowVideoPlayback == enabled,
+    update: () => allowVideoPlayback = enabled,
+  );
+
   Future<void> setBlurPlayerBackgroundEnabled(bool enabled) => _setValue(
     unchanged: blurPlayerBackgroundEnabled == enabled,
     update: () => blurPlayerBackgroundEnabled = enabled,
@@ -528,6 +536,7 @@ class SettingsRepository {
     maxCacheBytes = AppCacheService.defaultMaxCacheBytes;
     asmrPlaybackCacheEnabled = false;
     recordPlaybackProgress = true;
+    allowVideoPlayback = true;
     blurPlayerBackgroundEnabled = true;
     uiBlurEffectEnabled = true;
     hapticFeedbackEnabled = true;
@@ -585,6 +594,7 @@ class SettingsRepository {
         maxCacheBytes: maxCacheBytes,
         asmrPlaybackCacheEnabled: asmrPlaybackCacheEnabled,
         recordPlaybackProgress: recordPlaybackProgress,
+        allowVideoPlayback: allowVideoPlayback,
         blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
         uiBlurEffectEnabled: uiBlurEffectEnabled,
         hapticFeedbackEnabled: hapticFeedbackEnabled,

@@ -459,6 +459,7 @@ const Map<String, String> appLanguageEn = {
   'blur_player_background': 'Blur player background',
   'ui_blur_effect': 'Glass effect',
   'multi_thread_playback': 'Play multiple tracks',
+  'allow_video_playback': 'Allow video playback',
   'notification_bar': 'Playback notification controls',
   'show_playback_card': 'Show playback card',
   'section_detail_info': 'Details',

@@ -16,6 +16,7 @@ import 'support/test_persistence_repository.dart';
 import 'package:nameless_audio/features/player/application/playback_facade.dart';
 import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:nameless_audio/features/player/presentation/playlist_tab.dart';
+import 'package:nameless_audio/features/player/presentation/session_video_viewport.dart';
 import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
 import 'package:nameless_audio/features/library/application/library_service.dart';
@@ -1902,6 +1903,11 @@ void main() {
         ).push(buildSessionDetailRoute(sessionId: queueSession.id)),
       );
       await tester.pumpAndSettle();
+      expect(find.byType(SessionVideoBlurredBackdrop), findsOneWidget);
+      await settingsRepository.setAllowVideoPlayback(false);
+      await tester.pump();
+      expect(find.byType(SessionVideoBlurredBackdrop), findsNothing);
+      expect(queueSession.currentTrackPath, track.path);
       expect(
         tester
             .getSize(find.byKey(const ValueKey('playback_secondary_controls')))

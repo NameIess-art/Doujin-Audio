@@ -18,6 +18,9 @@ class _SessionHeroArtwork extends ConsumerWidget {
     final library = ref.read(libraryFacadeProvider);
     final sessionId = session.id;
     final cs = Theme.of(context).colorScheme;
+    final allowVideoPlayback = ref.watch(
+      settingsStateProvider.select((s) => s.value?.allowVideoPlayback ?? true),
+    );
     final coverResolution = ref.watch(
       settingsStateProvider.select(
         (s) => s.value?.coverImageResolution ?? CoverImageResolution.balanced,
@@ -100,7 +103,9 @@ class _SessionHeroArtwork extends ConsumerWidget {
               clipBehavior: Clip.antiAlias,
               child: RepaintBoundary(
                 child: SessionVideoViewport(
-                  videoReady: _isSessionVideoReady(session, track),
+                  videoReady:
+                      allowVideoPlayback &&
+                      _isSessionVideoReady(session, track),
                   surfaceBuilder: (_) =>
                       NativeSessionVideoSurface(sessionId: sessionId),
                   onFullscreen: () => _showSessionVideoFullscreen(
@@ -112,7 +117,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
                   fullscreenTooltip: ref
                       .read(appLanguageProviderInstanceProvider)
                       .tr('fullscreen'),
-                  poster: track?.isVideo == true
+                  poster: allowVideoPlayback && track?.isVideo == true
                       ? SessionVideoBlurredBackdrop(child: coverPoster)
                       : coverPoster,
                 ),

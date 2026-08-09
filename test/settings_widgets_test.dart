@@ -243,6 +243,19 @@ void main() {
 
     await tester.tap(find.text(i18n.tr('section_playback')));
     await tester.pumpAndSettle();
+    final allowVideoPlaybackTile = find.byKey(
+      const ValueKey<String>('allow_video_playback_switch'),
+    );
+    expect(allowVideoPlaybackTile, findsOneWidget);
+    expect(tester.widget<SwitchListTile>(allowVideoPlaybackTile).value, isTrue);
+    await tester.ensureVisible(allowVideoPlaybackTile);
+    await tester.tap(allowVideoPlaybackTile);
+    await tester.pump();
+    expect(harness.settingsRepository.allowVideoPlayback, isFalse);
+    expect(
+      tester.widget<SwitchListTile>(allowVideoPlaybackTile).value,
+      isFalse,
+    );
     expect(
       find.text(i18n.tr('audio_device_disconnect_behavior')),
       findsOneWidget,

@@ -33,6 +33,25 @@ List<Widget> _buildSettingsPlaybackSection({
         ),
         Consumer(
           builder: (context, ref, _) {
+            final allowVideoPlayback = ref.watch(
+              settingsStateProvider.select(
+                (s) => s.value?.allowVideoPlayback ?? true,
+              ),
+            );
+            return SwitchListTile(
+              key: const ValueKey<String>('allow_video_playback_switch'),
+              value: allowVideoPlayback,
+              onChanged: settings.setAllowVideoPlayback,
+              title: _settingsTitle(i18n.tr('allow_video_playback')),
+              secondary: _settingsIcon(Icons.videocam_rounded, cs.onSurface),
+              shape: const RoundedRectangleBorder(
+                borderRadius: AppRadius.borderCard,
+              ),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
             final asmrPlaybackCacheEnabled = ref.watch(
               settingsStateProvider.select(
                 (s) => s.value?.asmrPlaybackCacheEnabled ?? false,

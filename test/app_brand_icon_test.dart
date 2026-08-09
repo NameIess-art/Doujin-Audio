@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/widgets/app_brand_icon.dart';
-import 'package:nameless_audio/core/ui/app_icon_color_group.dart';
+import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
+import 'package:doujin_audio/core/ui/app_icon_color_group.dart';
 
 void main() {
   testWidgets('app brand icon follows the active theme brightness', (

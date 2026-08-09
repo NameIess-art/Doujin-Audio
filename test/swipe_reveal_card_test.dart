@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/widgets/swipe_reveal_card.dart';
-import 'package:nameless_audio/app/theme/theme_provider.dart';
+import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
+import 'package:doujin_audio/app/theme/theme_provider.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

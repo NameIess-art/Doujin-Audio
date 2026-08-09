@@ -1,7 +1,7 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/platform/platform_channels.dart';
-import 'package:nameless_audio/features/library/application/library_scan_data_source.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 void main() {

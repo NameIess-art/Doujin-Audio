@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/player/presentation/session_video_viewport.dart';
+import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
 
 void main() {
   group('fullscreen video gesture math', () {

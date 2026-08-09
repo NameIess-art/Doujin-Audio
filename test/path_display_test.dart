@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/path_display.dart';
+import 'package:doujin_audio/core/media/path_display.dart';
 
 void main() {
   test('hides the Android shared storage prefix from display paths', () {

@@ -4,15 +4,15 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/features/data_support/application/data_backup_service.dart';
+import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
 
 void main() {
   late Directory temporaryDirectory;
 
   setUp(() async {
     temporaryDirectory = await Directory.systemTemp.createTemp(
-      'nameless_backup_validation_test_',
+      'doujin_backup_validation_test_',
     );
   });
 
@@ -31,7 +31,7 @@ void main() {
     );
     expect(
       File(
-        '${temporaryDirectory.path}/backup_restore/pending.nabackup',
+        '${temporaryDirectory.path}/backup_restore/pending.dabackup',
       ).existsSync(),
       isFalse,
     );
@@ -95,7 +95,7 @@ Future<BackupValidationResult> _inspect(
   Archive archive,
   Directory directory,
 ) async {
-  final file = File('${directory.path}/candidate.nabackup');
+  final file = File('${directory.path}/candidate.dabackup');
   await file.writeAsBytes(ZipEncoder().encode(archive));
   return DataBackupService(
     supportDirectoryProvider: () async => directory,

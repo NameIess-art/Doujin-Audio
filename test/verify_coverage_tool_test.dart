@@ -11,7 +11,7 @@ void main() {
 
   setUp(() async {
     temporaryDirectory = await Directory.systemTemp.createTemp(
-      'nameless_audio_coverage_verifier_',
+      'doujin_audio_coverage_verifier_',
     );
     verifierPath = File('tool/verify_coverage.dart').absolute.path;
   });

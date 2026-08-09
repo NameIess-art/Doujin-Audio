@@ -4,8 +4,8 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/platform/platform_channels.dart';
-import 'package:nameless_audio/features/settings/application/app_update_service.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -17,7 +17,7 @@ void main() {
   late HttpServer server;
   late List<int> payload;
   late AppUpdateService service;
-  const assetName = 'NamelessAudio-android-arm64-test.apk';
+  const assetName = 'DoujinAudio-android-arm64-test.apk';
 
   setUp(() async {
     tempDir = await Directory.systemTemp.createTemp('app_update_test_');
@@ -78,7 +78,7 @@ void main() {
     List<Map<String, dynamic>> assets = const <Map<String, dynamic>>[],
   }) => <String, dynamic>{
     'tag_name': tagName,
-    'name': 'Nameless Audio $tagName',
+    'name': 'Doujin Audio $tagName',
     'html_url': 'https://github.com/example/releases/tag/$tagName',
     'published_at': '2026-07-14T00:00:00Z',
     'draft': draft,
@@ -281,17 +281,17 @@ void main() {
   test('Android updater falls back to universal without ABI metadata', () {
     final selected =
         AppUpdateService.selectApkAssetForTesting(<Map<String, dynamic>>[
-          githubAsset('NamelessAudio-android-arm64-v0.13.0.apk'),
-          githubAsset('NamelessAudio-android-armv7-v0.13.0.apk'),
-          githubAsset('NamelessAudio-android-x64-v0.13.0.apk'),
-          githubAsset('NamelessAudio-android-universal-v0.13.0.apk'),
+          githubAsset('DoujinAudio-android-arm64-v0.13.0.apk'),
+          githubAsset('DoujinAudio-android-armv7-v0.13.0.apk'),
+          githubAsset('DoujinAudio-android-x64-v0.13.0.apk'),
+          githubAsset('DoujinAudio-android-universal-v0.13.0.apk'),
         ]);
 
-    expect(selected?['name'], 'NamelessAudio-android-universal-v0.13.0.apk');
+    expect(selected?['name'], 'DoujinAudio-android-universal-v0.13.0.apk');
     expect(
       AppUpdateService.selectApkAssetForTesting(<Map<String, dynamic>>[
-        githubAsset('NamelessAudio-android-arm64-v0.13.0.apk'),
-        githubAsset('NamelessAudio-android-armv7-v0.13.0.apk'),
+        githubAsset('DoujinAudio-android-arm64-v0.13.0.apk'),
+        githubAsset('DoujinAudio-android-armv7-v0.13.0.apk'),
       ]),
       isNull,
     );
@@ -299,10 +299,10 @@ void main() {
 
   test('Android updater selects the APK matching the device ABI', () {
     final assets = <Map<String, dynamic>>[
-      githubAsset('NamelessAudio-android-arm64-v0.13.0.apk'),
-      githubAsset('NamelessAudio-android-armv7-v0.13.0.apk'),
-      githubAsset('NamelessAudio-android-x64-v0.13.0.apk'),
-      githubAsset('NamelessAudio-android-universal-v0.13.0.apk'),
+      githubAsset('DoujinAudio-android-arm64-v0.13.0.apk'),
+      githubAsset('DoujinAudio-android-armv7-v0.13.0.apk'),
+      githubAsset('DoujinAudio-android-x64-v0.13.0.apk'),
+      githubAsset('DoujinAudio-android-universal-v0.13.0.apk'),
     ];
 
     expect(
@@ -310,55 +310,55 @@ void main() {
         assets,
         androidAssetVariant: 'arm64',
       )?['name'],
-      'NamelessAudio-android-arm64-v0.13.0.apk',
+      'DoujinAudio-android-arm64-v0.13.0.apk',
     );
     expect(
       AppUpdateService.selectApkAssetForTesting(
         assets,
         androidAssetVariant: 'armv7',
       )?['name'],
-      'NamelessAudio-android-armv7-v0.13.0.apk',
+      'DoujinAudio-android-armv7-v0.13.0.apk',
     );
     expect(
       AppUpdateService.selectApkAssetForTesting(
         assets,
         androidAssetVariant: 'x64',
       )?['name'],
-      'NamelessAudio-android-x64-v0.13.0.apk',
+      'DoujinAudio-android-x64-v0.13.0.apk',
     );
   });
 
   test('unknown Android ABI falls back to the universal APK', () {
     final selected =
         AppUpdateService.selectApkAssetForTesting(<Map<String, dynamic>>[
-          githubAsset('NamelessAudio-android-arm64-v0.13.0.apk'),
-          githubAsset('NamelessAudio-android-universal-v0.13.0.apk'),
+          githubAsset('DoujinAudio-android-arm64-v0.13.0.apk'),
+          githubAsset('DoujinAudio-android-universal-v0.13.0.apk'),
         ], androidAssetVariant: 'unknown');
 
-    expect(selected?['name'], 'NamelessAudio-android-universal-v0.13.0.apk');
+    expect(selected?['name'], 'DoujinAudio-android-universal-v0.13.0.apk');
   });
 
   test('asset selection ignores missing, mistyped, and invalid URLs', () {
     final selected = AppUpdateService.selectApkAssetForTesting(
       <Map<String, dynamic>>[
-        {'name': 'NamelessAudio-android-universal-v0.13.2.apk'},
+        {'name': 'DoujinAudio-android-universal-v0.13.2.apk'},
         {'name': 42, 'browser_download_url': 'https://example.test/bad.apk'},
         {
-          'name': 'NamelessAudio-android-universal-v0.13.1.apk',
+          'name': 'DoujinAudio-android-universal-v0.13.1.apk',
           'browser_download_url': 'file:///tmp/update.apk',
         },
-        githubAsset('NamelessAudio-android-universal-v0.13.0.apk'),
+        githubAsset('DoujinAudio-android-universal-v0.13.0.apk'),
       ],
     );
 
-    expect(selected?['name'], 'NamelessAudio-android-universal-v0.13.0.apk');
+    expect(selected?['name'], 'DoujinAudio-android-universal-v0.13.0.apk');
   });
 
   test('expanded release HTML produces typed, de-duplicated assets', () {
     final assets = AppUpdateService.parseExpandedReleaseAssetsForTesting('''
-      <a href="/example/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk?download=1&amp;source=expanded">apk</a>
-      <a href="/example/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk?download=1&amp;source=expanded">duplicate</a>
-      <a href="/example/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk.sha256">checksum</a>
+      <a href="/example/releases/download/v0.13.0/DoujinAudio-android-universal-v0.13.0.apk?download=1&amp;source=expanded">apk</a>
+      <a href="/example/releases/download/v0.13.0/DoujinAudio-android-universal-v0.13.0.apk?download=1&amp;source=expanded">duplicate</a>
+      <a href="/example/releases/download/v0.13.0/DoujinAudio-android-universal-v0.13.0.apk.sha256">checksum</a>
       <a href="/example/releases/download/v0.13.0/invalid%zz.apk">invalid encoding</a>
       <a href="/example/not-a-release-asset">ignored</a>
     ''');
@@ -367,8 +367,8 @@ void main() {
     expect(
       assets.map((asset) => asset['name']),
       containsAll(<String>[
-        'NamelessAudio-android-universal-v0.13.0.apk',
-        'NamelessAudio-android-universal-v0.13.0.apk.sha256',
+        'DoujinAudio-android-universal-v0.13.0.apk',
+        'DoujinAudio-android-universal-v0.13.0.apk.sha256',
       ]),
     );
     expect(
@@ -405,8 +405,8 @@ void main() {
           );
         case '/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/expanded_assets/v0.13.0':
           request.response.write('''
-            <a href="/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk">apk</a>
-            <a href="/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/NamelessAudio-android-universal-v0.13.0.apk.sha256">apk checksum</a>
+            <a href="/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/DoujinAudio-android-universal-v0.13.0.apk">apk</a>
+            <a href="/${AppUpdateService.owner}/${AppUpdateService.repo}/releases/download/v0.13.0/DoujinAudio-android-universal-v0.13.0.apk.sha256">apk checksum</a>
           ''');
         default:
           request.response.statusCode = HttpStatus.notFound;
@@ -444,7 +444,7 @@ void main() {
     expect(noAsset.status, AppUpdateStatus.missingAsset);
     expect(noAsset.isUpdateAvailable, isFalse);
 
-    const platformAssetName = 'NamelessAudio-android-arm64-v0.13.0.apk';
+    const platformAssetName = 'DoujinAudio-android-arm64-v0.13.0.apk';
     final missingChecksum = AppUpdateService.buildUpdateInfoForTesting(
       currentVersion: current,
       tagName: 'v0.13.0',

@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 
 void main() {
   test('subtitle track requests share the in-flight load', () async {

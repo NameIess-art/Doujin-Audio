@@ -4,15 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/core/ui/ui_operation_service.dart';
-import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/data_support/application/storage_usage_service.dart';
-import 'package:nameless_audio/features/data_support/presentation/data_support_page.dart';
-import 'package:nameless_audio/features/data_support/presentation/storage_usage_card.dart';
-import 'package:nameless_audio/features/settings/application/app_update_service.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
+import 'package:doujin_audio/features/data_support/presentation/data_support_page.dart';
+import 'package:doujin_audio/features/data_support/presentation/storage_usage_card.dart';
+import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

@@ -2,19 +2,19 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_download.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/features/library/domain/library_entry.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/core/media/card_info_field.dart';
-import 'package:nameless_audio/features/player/domain/playback_mode.dart';
-import 'package:nameless_audio/features/player/application/playback_session.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
-import 'package:nameless_audio/app/application/audio_state_slice.dart';
-import 'package:nameless_audio/features/library/application/library_service.dart';
-import 'package:nameless_audio/features/library/application/library_state_models.dart';
-import 'package:nameless_audio/features/settings/application/settings_repository.dart';
-import 'package:nameless_audio/features/settings/application/settings_state.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/features/library/domain/library_entry.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/card_info_field.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/features/player/application/playback_session.dart';
+import 'package:doujin_audio/features/player/application/audio_state_services.dart';
+import 'package:doujin_audio/app/application/audio_state_slice.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_state_models.dart';
+import 'package:doujin_audio/features/settings/application/settings_repository.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

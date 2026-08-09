@@ -1,9 +1,9 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/errors/native_result.dart';
-import 'package:nameless_audio/core/platform/platform_channels.dart';
-import 'package:nameless_audio/core/platform/subtitle_overlay_platform_service.dart';
-import 'package:nameless_audio/core/platform/update_platform_service.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/core/platform/subtitle_overlay_platform_service.dart';
+import 'package:doujin_audio/core/platform/update_platform_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

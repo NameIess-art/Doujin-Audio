@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/core/widgets/search_highlight.dart';
-import 'package:nameless_audio/features/library/domain/audio_library_category.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/widgets/search_highlight.dart';
+import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 
 void main() {
   group('SearchHighlightScope.withTerms', () {

@@ -1,21 +1,21 @@
-import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:nameless_audio/core/errors/native_result.dart';
-import 'package:nameless_audio/core/media/path_matcher.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'support/test_persistence_repository.dart';
-import 'package:nameless_audio/features/library/application/library_facade.dart';
-import 'package:nameless_audio/features/player/application/playback_facade.dart';
-import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
-import 'package:nameless_audio/features/player/application/native_playback_repository.dart';
-import 'package:nameless_audio/features/player/application/playback_session.dart';
-import 'package:nameless_audio/features/player/application/playback_queue_resolver.dart';
-import 'package:nameless_audio/features/player/domain/audio_effects.dart';
-import 'package:nameless_audio/features/player/domain/playback_mode.dart';
-import 'package:nameless_audio/features/player/domain/playback_queue.dart';
+import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/player/application/playback_facade.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
+import 'package:doujin_audio/features/player/application/playback_session.dart';
+import 'package:doujin_audio/features/player/application/playback_queue_resolver.dart';
+import 'package:doujin_audio/features/player/domain/audio_effects.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 
 void main() {
   test('PlaybackFacade owns session registration and reorder commands', () {

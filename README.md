@@ -1,12 +1,12 @@
-# Nameless Audio
+# Doujin Audio
 
-Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 播放器，使用 Flutter 与 Android 原生 Media3 / ExoPlayer 实现。
+Doujin Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 播放器，使用 Flutter 与 Android 原生 Media3 / ExoPlayer 实现。
 
-当前版本以 [`pubspec.yaml`](pubspec.yaml) 为唯一来源；正式安装包和更新均来自发布页：[GitHub Latest Release](https://github.com/NameIess-art/nameless-audio/releases/latest)。
+当前版本以 [`pubspec.yaml`](pubspec.yaml) 为唯一来源；正式安装包和更新均来自发布页：[GitHub Latest Release](https://github.com/NameIess-art/Doujin-Audio/releases/latest)。
 
 [GPL-3.0 License](LICENSE) · [隐私说明](PRIVACY.md) · [安全说明](SECURITY.md)
 
-如果 Nameless Audio 对你有帮助，欢迎通过[爱发电](https://ifdian.net/a/nameIess)自愿支持项目的开发与维护。赞助不解锁付费功能，应用主要功能会继续免费提供。
+如果 Doujin Audio 对你有帮助，欢迎通过[爱发电](https://ifdian.net/a/nameIess)自愿支持项目的开发与维护。赞助不解锁付费功能，应用主要功能会继续免费提供。
 
 ## 下载
 
@@ -14,10 +14,10 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 
 | 平台 | 发布资产 | 说明 |
 |---|---|---|
-| Android universal | `NamelessAudio-android-universal-<tag>.apk` | 推荐普通用户下载，兼容 arm64-v8a、armeabi-v7a 和 x86_64 |
-| Android arm64-v8a | `NamelessAudio-android-arm64-<tag>.apk` | 适用于大多数现代 64 位 Android 手机，安装包较小 |
-| Android armeabi-v7a | `NamelessAudio-android-armv7-<tag>.apk` | 适用于旧款 32 位 ARM Android 设备 |
-| Android x86_64 | `NamelessAudio-android-x64-<tag>.apk` | 适用于 x86_64 Android 设备或模拟器 |
+| Android universal | `DoujinAudio-android-universal-<tag>.apk` | 推荐普通用户下载，兼容 arm64-v8a、armeabi-v7a 和 x86_64 |
+| Android arm64-v8a | `DoujinAudio-android-arm64-<tag>.apk` | 适用于大多数现代 64 位 Android 手机，安装包较小 |
+| Android armeabi-v7a | `DoujinAudio-android-armv7-<tag>.apk` | 适用于旧款 32 位 ARM Android 设备 |
+| Android x86_64 | `DoujinAudio-android-x64-<tag>.apk` | 适用于 x86_64 Android 设备或模拟器 |
 
 本项目仅通过 GitHub Release 正式分发，不提供应用商店 AAB 或 iOS 安装包。
 
@@ -65,10 +65,10 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 - 作品卡片未手动设置封面时，会优先使用作品目录图片，再从作品目录树内的音频嵌入封面或视频帧自动选择并保存封面。
 - 封面显示按 300px、600px、900px、1200px 或原画策略解码，并根据分辨率设置调整 Flutter 图片缓存预算，切换分辨率时会清理旧尺寸缓存。
 - 文件夹或单文件重命名时会同步更新封面索引，失效路径自动回退到现有发现流程。
-- 详情信息以 SQLite 作为运行时数据源，目录内 `nameless-audio.json` 作为可移植导入/导出文档；声优和标签使用有序关系表保存，不再依赖数据库内 JSON 字符串。
+- 详情信息以 SQLite 作为运行时数据源，目录内 `doujin-audio.json` 作为可移植导入/导出文档；声优和标签使用有序关系表保存，不再依赖数据库内 JSON 字符串。
 - 添加文件、文件夹或曲库、刷新扫描、自动补时长/RJ 和启动维护只读取已有 JSON，不会创建、清空或改写目录中的任何 JSON 文件。
-- 只有用户明确保存作品详情或导入 DLsite 资料时才更新应用自有的 `nameless-audio.json`；保存会原子合并已知字段，并保留未知字段及数组中的其他条目。
-- 详情页选定的封面会保存到数据库和 `nameless-audio.json`：目录图片记录相对路径，音频内嵌封面和视频帧同时保存可恢复的图片数据，移除后重导入时仍会优先显示该封面。
+- 只有用户明确保存作品详情或导入 DLsite 资料时才更新应用自有的 `doujin-audio.json`；保存会原子合并已知字段，并保留未知字段及数组中的其他条目。
+- 详情页选定的封面会保存到数据库和 `doujin-audio.json`：目录图片记录相对路径，音频内嵌封面和视频帧同时保存可恢复的图片数据，移除后重导入时仍会优先显示该封面。
 - 可按分类、声优、社团、标签、RJ 号、发售日等信息整理本地作品。
 
 ### ASMR.ONE 与 DLsite
@@ -115,14 +115,14 @@ Nameless Audio 是一款面向 ASMR、语音作品和本地媒体库的 Android 
 每个更新资产必须同时发布同名 `.sha256` 校验文件：
 
 ```text
-NamelessAudio-android-universal-<tag>.apk
-NamelessAudio-android-universal-<tag>.apk.sha256
-NamelessAudio-android-arm64-<tag>.apk
-NamelessAudio-android-arm64-<tag>.apk.sha256
-NamelessAudio-android-armv7-<tag>.apk
-NamelessAudio-android-armv7-<tag>.apk.sha256
-NamelessAudio-android-x64-<tag>.apk
-NamelessAudio-android-x64-<tag>.apk.sha256
+DoujinAudio-android-universal-<tag>.apk
+DoujinAudio-android-universal-<tag>.apk.sha256
+DoujinAudio-android-arm64-<tag>.apk
+DoujinAudio-android-arm64-<tag>.apk.sha256
+DoujinAudio-android-armv7-<tag>.apk
+DoujinAudio-android-armv7-<tag>.apk.sha256
+DoujinAudio-android-x64-<tag>.apk
+DoujinAudio-android-x64-<tag>.apk.sha256
 ```
 
 Android 应用内自动更新会按设备 ABI 下载对应的 arm64、armv7 或 x64 APK，并校验同名 `.sha256` 后交给系统安装器；无法识别 ABI 时回退到 universal APK。

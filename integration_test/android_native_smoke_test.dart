@@ -5,13 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:nameless_audio/app/presentation/main_screen.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
-import 'package:nameless_audio/features/player/application/playback_facade.dart';
-import 'package:nameless_audio/features/player/domain/playback_mode.dart';
-import 'package:nameless_audio/main.dart' as app;
+import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/playback_facade.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/main.dart' as app;
 
 import 'support/app_startup_test_helper.dart';
 
@@ -46,7 +46,7 @@ void main() {
       final playback = container.read(playbackFacadeProvider);
       final wav = File(
         '${Directory.systemTemp.path}${Platform.pathSeparator}'
-        'nameless_audio_native_smoke_${DateTime.now().microsecondsSinceEpoch}.wav',
+        'doujin_audio_native_smoke_${DateTime.now().microsecondsSinceEpoch}.wav',
       );
       await wav.writeAsBytes(_pcmWav(seconds: 8), flush: true);
 

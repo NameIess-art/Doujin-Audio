@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/platform/subtitle_overlay_platform_service.dart';
-import 'package:nameless_audio/features/player/application/subtitle_overlay_controller.dart';
+import 'package:doujin_audio/core/platform/subtitle_overlay_platform_service.dart';
+import 'package:doujin_audio/features/player/application/subtitle_overlay_controller.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

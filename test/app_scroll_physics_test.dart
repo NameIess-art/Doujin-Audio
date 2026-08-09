@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/widgets/app_scroll_physics.dart';
+import 'package:doujin_audio/core/widgets/app_scroll_physics.dart';
 
 FixedScrollMetrics _metrics(double pixels) {
   return FixedScrollMetrics(

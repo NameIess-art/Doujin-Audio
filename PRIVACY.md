@@ -1,10 +1,10 @@
 # 隐私说明
 
-**Nameless Audio** 是一款以本地播放为核心，并提供可选在线元数据与下载功能的音频播放器。
+**Doujin Audio** 是一款以本地播放为核心，并提供可选在线元数据与下载功能的音频播放器。
 
 ## 数据收集
 
-Nameless Audio 不集成分析、广告、远程遥测或崩溃上报 SDK，不会主动收集或上传使用统计。
+Doujin Audio 不集成分析、广告、远程遥测或崩溃上报 SDK，不会主动收集或上传使用统计。
 
 ## 本地存储
 
@@ -56,7 +56,7 @@ Nameless Audio 不集成分析、广告、远程遥测或崩溃上报 SDK，不�
 ## 联系
 
 隐私相关问题请通过 GitHub Issues 联系：
-[github.com/NameIess-art/nameless-audio/issues](https://github.com/NameIess-art/nameless-audio/issues)
+[github.com/NameIess-art/Doujin-Audio/issues](https://github.com/NameIess-art/Doujin-Audio/issues)
 
 ---
 

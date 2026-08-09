@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/widgets/app_buttons.dart';
-import 'package:nameless_audio/core/widgets/app_dialog.dart';
-import 'package:nameless_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/app_buttons.dart';
+import 'package:doujin_audio/core/widgets/app_dialog.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 
 void main() {
   testWidgets('shared app dialog renders content and returns a typed result', (

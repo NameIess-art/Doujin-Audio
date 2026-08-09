@@ -52,12 +52,12 @@ if (Test-Path -LiteralPath $keystorePath -PathType Leaf) {
 
 $keytool = Find-Keytool
 $password = New-RandomPassword
-$alias = 'nameless-audio-local-release'
+$alias = 'doujin-audio-local-release'
 
 Write-Host '[INFO] Creating a persistent local release signing key...'
 & $keytool -genkeypair -keystore $keystorePath -storepass $password `
     -keypass $password -alias $alias -keyalg RSA -keysize 4096 -validity 10000 `
-    -dname 'CN=Nameless Audio Local Release, OU=Local Development, O=Nameless Audio, C=CN' `
+    -dname 'CN=Doujin Audio Local Release, OU=Local Development, O=Doujin Audio, C=CN' `
     -noprompt
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $keystorePath -PathType Leaf)) {
     throw 'keytool failed to create the local release keystore.'

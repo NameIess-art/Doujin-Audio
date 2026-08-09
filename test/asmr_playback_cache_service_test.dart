@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/asmr/application/asmr_playback_cache_service.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 
 void main() {
   test('same ASMR track shares one in-flight download', () async {

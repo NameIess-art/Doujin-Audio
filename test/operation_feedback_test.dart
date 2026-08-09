@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/widgets/operation_feedback.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
 
 void main() {
   testWidgets('status banner exposes a full-size cancel action', (

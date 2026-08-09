@@ -498,7 +498,7 @@ class CoverFallbackArtwork extends StatelessWidget {
     final normalizedSeed = seed?.trim();
     final hash =
         (normalizedSeed == null || normalizedSeed.isEmpty
-                ? 'nameless-audio'
+                ? 'doujin-audio'
                 : normalizedSeed)
             .hashCode
             .abs();

@@ -7,7 +7,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 abstract final class AppLogService {
-  static const _logFileName = 'nameless_audio.log';
+  static const _logFileName = 'doujin_audio.log';
   static const _maxLogBytes = 1024 * 1024;
 
   static IOSink? _sink;

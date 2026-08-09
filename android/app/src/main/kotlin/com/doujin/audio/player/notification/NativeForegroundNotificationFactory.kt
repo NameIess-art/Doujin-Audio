@@ -1,0 +1,150 @@
+@file:androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+
+package com.doujin.audio.player.notification
+
+import com.doujin.audio.R
+
+import android.app.Notification
+import android.app.PendingIntent
+import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
+import androidx.core.app.NotificationCompat
+import androidx.media3.session.MediaSession
+import androidx.media3.session.MediaStyleNotificationHelper
+
+internal class NativeForegroundNotificationFactory(
+    private val context: Context,
+    private val channelId: String
+) {
+    fun buildPlaybackNotification(
+        sessionId: String,
+        title: String,
+        subtitle: String?,
+        mediaSession: MediaSession?,
+        playing: Boolean,
+        hasPrevious: Boolean,
+        hasNext: Boolean
+    ): Notification {
+        UnifiedPlaybackNotificationController
+            .buildLiveMultiSessionForegroundNotification(
+                context = context,
+                liveItem = UnifiedPlaybackNotificationItem(
+                    id = sessionId,
+                    title = title,
+                    subtitle = subtitle,
+                    artPath = null,
+                    playing = playing,
+                    hasPrevious = hasPrevious,
+                    hasNext = hasNext
+                )
+            )
+            ?.let { return it }
+
+        val builder = baseBuilder()
+            .setContentTitle(title.ifBlank { context.getString(R.string.app_name) })
+            .setContentText(
+                subtitle
+                    ?.takeIf { it.isNotBlank() }
+                    ?: context.getString(R.string.keep_alive_playback_active)
+            )
+            .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+
+        val mediaStyle = if (mediaSession != null) {
+            MediaStyleNotificationHelper.MediaStyle(mediaSession)
+        } else null
+        
+        addNotificationTransportActions(
+            builder = builder,
+            context = context,
+            playing = playing,
+            hasPrevious = hasPrevious,
+            hasNext = hasNext,
+            buildIntent = ::buildControlIntent
+        )
+        mediaStyle?.setShowActionsInCompactView(
+            *notificationCompactActionIndices(hasPrevious, hasNext).toIntArray()
+        )
+
+        if (mediaStyle != null) {
+            builder.setStyle(mediaStyle)
+        }
+
+        return builder.build()
+    }
+
+    fun buildBootstrapNotification(mediaSession: MediaSession?): Notification {
+        val builder = baseBuilder()
+            .setContentTitle(context.getString(R.string.app_name))
+            .setContentText(context.getString(R.string.keep_alive_timer_active))
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+
+        val mediaStyle = if (mediaSession != null) {
+            MediaStyleNotificationHelper.MediaStyle(mediaSession)
+        } else null
+        
+        addNotificationTransportActions(
+            builder = builder,
+            context = context,
+            playing = false,
+            hasPrevious = true,
+            hasNext = true,
+            buildIntent = ::buildControlIntent
+        )
+        mediaStyle?.setShowActionsInCompactView(0, 1, 2)
+
+        if (mediaStyle != null) {
+            builder.setStyle(mediaStyle)
+        }
+
+        return builder.build()
+    }
+
+    private fun baseBuilder(): NotificationCompat.Builder {
+        val appIcon = notificationIconSpec(context)
+        return NotificationCompat.Builder(context, channelId)
+            .setSmallIcon(appIcon.resourceId)
+            .setColor(appIcon.color)
+            .setContentIntent(launchPendingIntent())
+            .setShowWhen(false)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
+    }
+
+    private fun launchPendingIntent(): PendingIntent? {
+        val launchIntent = Intent(Intent.ACTION_MAIN)
+            .addCategory(Intent.CATEGORY_LAUNCHER)
+            .setComponent(ComponentName(context.packageName, activeLauncherActivityName(context)))
+            .apply {
+                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            }
+        return if (context.packageManager.resolveActivity(launchIntent, 0) != null) {
+            PendingIntent.getActivity(
+                context,
+                0,
+                launchIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        } else {
+            null
+        }
+    }
+
+    private fun buildControlIntent(command: NotificationCommand): PendingIntent {
+        val intent = Intent(context, UnifiedPlaybackActionReceiver::class.java).apply {
+            action = command.actionName
+            putExtra("sessionId", "") // Fallback for focused session
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getBroadcast(
+            context,
+            command.actionName.hashCode(),
+            intent,
+            flags
+        )
+    }
+}

@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/natural_sort.dart';
+import 'package:doujin_audio/core/media/natural_sort.dart';
 
 void main() {
   test('compareNatural sorts numeric suffixes naturally', () {

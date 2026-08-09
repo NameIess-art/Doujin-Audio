@@ -7,7 +7,7 @@ import 'package:flutter/services.dart';
 class NativeSessionVideoSurface extends StatelessWidget {
   const NativeSessionVideoSurface({super.key, required this.sessionId});
 
-  static const viewType = 'com.nameless.audio/native_video_surface';
+  static const viewType = 'com.doujin.audio/native_video_surface';
 
   final String sessionId;
 

@@ -5,8 +5,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$appId = 'com.nameless.audio'
-$mainActivity = 'com.nameless.audio.MainActivity'
+$appId = 'com.doujin.audio'
+$mainActivity = 'com.doujin.audio.MainActivity'
 $apkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk'
 $arm64SplitVersionCodeOffset = 2000
 
@@ -158,7 +158,7 @@ That one-time migration uninstalls the old app and deletes its local data.
     Run-Command 'adb' @(
         '-s', $device, 'shell', 'am', 'start', '-n', "$appId/$mainActivity"
     )
-    Write-Host '[OK] Nameless Audio release deployment completed.'
+    Write-Host '[OK] Doujin Audio release deployment completed.'
 } catch {
     Write-Host "[ERROR] $($_.Exception.Message)" -ForegroundColor Red
     exit 1

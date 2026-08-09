@@ -3,16 +3,16 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/data_support/application/diagnostic_report_service.dart';
-import 'package:nameless_audio/features/settings/application/permission_status_service.dart';
-import 'package:nameless_audio/features/settings/application/app_update_service.dart';
-import 'package:nameless_audio/core/platform/power_platform_service.dart';
+import 'package:doujin_audio/features/data_support/application/diagnostic_report_service.dart';
+import 'package:doujin_audio/features/settings/application/permission_status_service.dart';
+import 'package:doujin_audio/features/settings/application/app_update_service.dart';
+import 'package:doujin_audio/core/platform/power_platform_service.dart';
 
 void main() {
   test('exports a local diagnostic report with sanitized logs', () async {
     final directory = await Directory.systemTemp.createTemp('diagnostic_test_');
     addTearDown(() => directory.delete(recursive: true));
-    final logFile = File('${directory.path}/nameless_audio.log');
+    final logFile = File('${directory.path}/doujin_audio.log');
     await logFile.writeAsString(
       'Bearer secret-token https://example.test/path?token=secret',
     );
@@ -48,7 +48,7 @@ void main() {
             )
             as Map<String, dynamic>;
     final log = utf8.decode(
-      archive.findFile('logs/nameless_audio.log')!.content as List<int>,
+      archive.findFile('logs/doujin_audio.log')!.content as List<int>,
     );
     expect(report['appVersion'], '1.2.3+4');
     expect(report['dartVisibleCacheBytes'], 42);

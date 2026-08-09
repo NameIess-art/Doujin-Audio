@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/library/application/library_startup_maintenance_coordinator.dart';
+import 'package:doujin_audio/features/library/application/library_startup_maintenance_coordinator.dart';
 
 void main() {
   test(

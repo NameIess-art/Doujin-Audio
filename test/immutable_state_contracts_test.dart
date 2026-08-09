@@ -1,11 +1,11 @@
 import 'dart:collection';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/immutable_collections.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
-import 'package:nameless_audio/features/library/domain/library_node.dart';
-import 'package:nameless_audio/features/player/domain/audio_effects.dart';
+import 'package:doujin_audio/core/immutable_collections.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/library/domain/library_node.dart';
+import 'package:doujin_audio/features/player/domain/audio_effects.dart';
 
 void main() {
   test('immutable collection helpers detach external read-only views', () {

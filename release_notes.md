@@ -1,4 +1,4 @@
-# Nameless Audio 0.17.0 Release Notes
+# Doujin Audio 0.17.0 Release Notes
 
 > **升级前必读：**0.16.1 可直接覆盖安装本版本，数据库会自动迁移。仅从不兼容的旧版本升级时，必须先卸载旧版本再重新安装；卸载会清除应用数据，请先在“数据与支持”中导出 `.nalbackup` 备份。
 
@@ -7,7 +7,7 @@
 - 完全重构作品详细信息的 JSON 存储、读取和数据库适配链路，统一由带 revision 校验的文档存储层处理本地文件与 Android SAF 文档。
 - 添加文件、文件夹或曲库、刷新扫描、自动补时长/RJ 以及启动维护全部改为只读导入，任何自动流程都不会创建、清空或改写目录中的 JSON 文件。
 - ASMR.ONE 下载遇到任何已存在的 `.json` 文件时保持原始字节不变，不受跳过、重命名或覆盖策略影响；新 JSON 只有在下载完整、非空且可解析后才会原子创建。
-- 用户明确保存详情时，应用自有的 `nameless-audio.json` 会合并目标条目并保留未知字段、无关条目和原有顺序；并发修改会返回冲突，不会覆盖较新的内容。
+- 用户明确保存详情时，应用自有的 `doujin-audio.json` 会合并目标条目并保留未知字段、无关条目和原有顺序；并发修改会返回冲突，不会覆盖较新的内容。
 - SQLite schema 升级到 v6，声优和标签迁移为保序关系表；移除数据库内的详情 JSON 列、后台镜像队列和自动回写流程，SQLite 作为运行时数据源，文件 JSON 只承担可移植导入/导出。
 
 ## 启动与稳定性
@@ -40,14 +40,14 @@
 ## 发布资产
 
 ```text
-NamelessAudio-android-universal-<tag>.apk
-NamelessAudio-android-universal-<tag>.apk.sha256
-NamelessAudio-android-arm64-<tag>.apk
-NamelessAudio-android-arm64-<tag>.apk.sha256
-NamelessAudio-android-armv7-<tag>.apk
-NamelessAudio-android-armv7-<tag>.apk.sha256
-NamelessAudio-android-x64-<tag>.apk
-NamelessAudio-android-x64-<tag>.apk.sha256
+DoujinAudio-android-universal-<tag>.apk
+DoujinAudio-android-universal-<tag>.apk.sha256
+DoujinAudio-android-arm64-<tag>.apk
+DoujinAudio-android-arm64-<tag>.apk.sha256
+DoujinAudio-android-armv7-<tag>.apk
+DoujinAudio-android-armv7-<tag>.apk.sha256
+DoujinAudio-android-x64-<tag>.apk
+DoujinAudio-android-x64-<tag>.apk.sha256
 ```
 
 普通 Android 用户可下载 universal APK。现代手机可选择 arm64，旧款 32 位 ARM 设备选择 armv7，x86_64 仅用于对应设备或模拟器。所有 APK 都附带同名 `.sha256`，并由 GitHub Actions 校验正式签名和 ABI 后发布。

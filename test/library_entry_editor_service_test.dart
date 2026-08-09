@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/features/library/application/library_entry_editor_service.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:path/path.dart' as path;
 
 void main() {

@@ -331,7 +331,7 @@ class PlatformLibraryScanDataSource implements LibraryScanDataSource {
 
   Future<Directory> _persistentImportDirectory() async {
     final supportDir = await getApplicationSupportDirectory();
-    return Directory(path.join(supportDir.path, 'nameless_audio_imports'));
+    return Directory(path.join(supportDir.path, 'doujin_audio_imports'));
   }
 
   Future<String?> _cachePickedFile(PlatformFile file, int index) async {

@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/list_sorting_utils.dart';
-import 'package:nameless_audio/features/library/presentation/library_sorting.dart';
-import 'package:nameless_audio/features/player/presentation/playlist_sorting.dart';
-import 'package:nameless_audio/features/settings/application/settings_state.dart';
+import 'package:doujin_audio/core/media/list_sorting_utils.dart';
+import 'package:doujin_audio/features/library/presentation/library_sorting.dart';
+import 'package:doujin_audio/features/player/presentation/playlist_sorting.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
 void main() {
   group('library sorting values', () {

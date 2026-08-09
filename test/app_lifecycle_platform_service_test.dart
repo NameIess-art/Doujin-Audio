@@ -1,6 +1,6 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/platform/app_lifecycle_platform_service.dart';
+import 'package:doujin_audio/core/platform/app_lifecycle_platform_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

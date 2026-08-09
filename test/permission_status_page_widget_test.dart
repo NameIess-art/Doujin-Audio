@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/features/settings/presentation/permission_status_page.dart';
-import 'package:nameless_audio/features/settings/application/permission_status_service.dart';
-import 'package:nameless_audio/features/settings/application/app_update_service.dart';
-import 'package:nameless_audio/core/widgets/operation_feedback.dart';
-import 'package:nameless_audio/core/widgets/top_page_header.dart';
-import 'package:nameless_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/features/settings/presentation/permission_status_page.dart';
+import 'package:doujin_audio/features/settings/application/permission_status_service.dart';
+import 'package:doujin_audio/features/settings/application/app_update_service.dart';
+import 'package:doujin_audio/core/widgets/operation_feedback.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 
 void main() {
   testWidgets('permission center groups optional capabilities by purpose', (

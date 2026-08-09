@@ -2,13 +2,13 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_download.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
-import 'package:nameless_audio/features/asmr/application/asmr_download_manager.dart';
-import 'package:nameless_audio/features/library/data/audio_detail_json_codec.dart';
-import 'package:nameless_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:doujin_audio/features/library/data/audio_detail_json_codec.dart';
+import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -586,7 +586,7 @@ void main() {
       if (await tempDir.exists()) await tempDir.delete(recursive: true);
     });
     final target = File('${tempDir.path}${Platform.pathSeparator}track.mp3');
-    final staging = File('${target.path}.nameless.part');
+    final staging = File('${target.path}.doujin.part');
     await target.writeAsBytes(<int>[1, 2, 3], flush: true);
     await staging.writeAsBytes(<int>[7, 8, 9], flush: true);
     var renameCount = 0;
@@ -607,7 +607,7 @@ void main() {
     );
 
     expect(await target.readAsBytes(), <int>[1, 2, 3]);
-    expect(await File('${target.path}.nameless.bak').exists(), isFalse);
+    expect(await File('${target.path}.doujin.bak').exists(), isFalse);
     expect(await staging.exists(), isTrue);
   });
 
@@ -649,7 +649,7 @@ void main() {
         final task = manager.getTask(1);
         expect(requestCount, 0);
         expect(await target.readAsBytes(), <int>[1, 2, 3]);
-        expect(await File('${target.path}.nameless.part').exists(), isFalse);
+        expect(await File('${target.path}.doujin.part').exists(), isFalse);
         expect(task?.skippedFiles, 1);
         expect(task?.fileDownloadedBytes['Track.mp3'], 256);
         expect(task?.downloadedBytes, task?.totalBytes);
@@ -671,8 +671,8 @@ void main() {
         if (await tempDir.exists()) await tempDir.delete(recursive: true);
       });
       final target = File('${tempDir.path}${Platform.pathSeparator}track.mp3');
-      final backup = File('${target.path}.nameless.bak');
-      final staging = File('${target.path}.nameless.part');
+      final backup = File('${target.path}.doujin.bak');
+      final staging = File('${target.path}.doujin.part');
       await backup.writeAsBytes(<int>[1, 2, 3], flush: true);
       await staging.writeAsBytes(<int>[7, 8, 9], flush: true);
 
@@ -722,7 +722,7 @@ void main() {
 
       final backupPath =
           '${tempDir.path}${Platform.pathSeparator}Work'
-          '${Platform.pathSeparator}nameless-audio.json';
+          '${Platform.pathSeparator}doujin-audio.json';
       final detail = const AudioDetailJsonCodec().decode(
         File(backupPath).readAsBytesSync(),
         AudioDetailTarget.libraryRootFolder(
@@ -769,7 +769,7 @@ void main() {
               '${workFolder.path}${Platform.pathSeparator}Metadata.JSON',
             );
             final backup = File(
-              '${workFolder.path}${Platform.pathSeparator}nameless-audio.json',
+              '${workFolder.path}${Platform.pathSeparator}doujin-audio.json',
             );
             const originalJson = '{\n  "external": true\n}\n';
             const originalBackup = '{"externalMetadata":true}';
@@ -928,7 +928,7 @@ void main() {
         expect(
           await File(
             '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
-            '${Platform.pathSeparator}nameless-audio.json',
+            '${Platform.pathSeparator}doujin-audio.json',
           ).exists(),
           isFalse,
         );
@@ -1096,7 +1096,7 @@ void main() {
         expect(await sentinel.readAsString(), 'keep');
         expect(
           await File(
-            '${workDir.path}${Platform.pathSeparator}Track.mp3.nameless.part',
+            '${workDir.path}${Platform.pathSeparator}Track.mp3.doujin.part',
           ).exists(),
           isFalse,
         );
@@ -1622,7 +1622,7 @@ void main() {
           '${workDir.path}${Platform.pathSeparator}Fast.mp3',
         );
         final slowPart = File(
-          '${workDir.path}${Platform.pathSeparator}Slow.mp3.nameless.part',
+          '${workDir.path}${Platform.pathSeparator}Slow.mp3.doujin.part',
         );
         final deadline = DateTime.now().add(const Duration(seconds: 5));
         while ((!await fastFile.exists() ||
@@ -1730,7 +1730,7 @@ void main() {
         );
         final part = File(
           '${tempDir.path}${Platform.pathSeparator}Work'
-          '${Platform.pathSeparator}Track.mp3.nameless.part',
+          '${Platform.pathSeparator}Track.mp3.doujin.part',
         );
         final deadline = DateTime.now().add(const Duration(seconds: 5));
         while ((!await part.exists() || await part.length() < 32768) &&

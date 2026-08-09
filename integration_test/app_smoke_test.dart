@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
-import 'package:nameless_audio/main.dart' as app;
+import 'package:doujin_audio/main.dart' as app;
 
 import 'support/app_startup_test_helper.dart';
 

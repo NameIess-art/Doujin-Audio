@@ -31,16 +31,16 @@ class ReleaseChannelConfig {
 
   String androidAssetPrefixFor(String? variant) {
     return switch (variant) {
-      'arm64' => 'NamelessAudio-android-arm64-',
-      'armv7' => 'NamelessAudio-android-armv7-',
-      'x64' => 'NamelessAudio-android-x64-',
+      'arm64' => 'DoujinAudio-android-arm64-',
+      'armv7' => 'DoujinAudio-android-armv7-',
+      'x64' => 'DoujinAudio-android-x64-',
       _ => androidAssetPrefix,
     };
   }
 
   static const ReleaseChannelConfig stable = ReleaseChannelConfig(
     tagPrefix: '',
-    androidAssetPrefix: 'NamelessAudio-android-universal-',
+    androidAssetPrefix: 'DoujinAudio-android-universal-',
   );
 }
 

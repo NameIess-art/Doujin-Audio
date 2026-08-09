@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/core/platform/permission_action_controller.dart';
-import 'package:nameless_audio/core/ui/ui_operation_service.dart';
-import 'package:nameless_audio/features/settings/application/app_update_service.dart';
-import 'package:nameless_audio/features/settings/presentation/app_update_flow.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/core/platform/permission_action_controller.dart';
+import 'package:doujin_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/features/settings/application/app_update_service.dart';
+import 'package:doujin_audio/features/settings/presentation/app_update_flow.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

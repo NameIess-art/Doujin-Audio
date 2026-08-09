@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_en.dart';
-import 'package:nameless_audio/app/localization/app_language_zh.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/app/theme/app_styles.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/core/media/card_info_field.dart';
-import 'package:nameless_audio/core/widgets/app_transitions.dart';
-import 'package:nameless_audio/core/widgets/async_cover_image.dart';
-import 'package:nameless_audio/core/widgets/library_like_cards.dart';
-import 'package:nameless_audio/core/widgets/marquee_text.dart';
-import 'package:nameless_audio/core/widgets/scroll_activity_gate.dart';
-import 'package:nameless_audio/core/widgets/top_page_header.dart';
-import 'package:nameless_audio/features/settings/application/settings_state.dart';
+import 'package:doujin_audio/app/localization/app_language_en.dart';
+import 'package:doujin_audio/app/localization/app_language_zh.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/card_info_field.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/core/widgets/marquee_text.dart';
+import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
 Widget _buildSurface(Widget child) => MaterialApp(
   theme: ThemeData.dark(useMaterial3: true),

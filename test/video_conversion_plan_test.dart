@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/video_converter/application/video_conversion_plan.dart';
+import 'package:doujin_audio/features/video_converter/application/video_conversion_plan.dart';
 
 void main() {
   test('parseVideoDurationMs accepts finite positive seconds only', () {

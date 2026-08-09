@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/presentation/main_screen.dart';
-import 'package:nameless_audio/app/presentation/onboarding_page.dart';
+import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/app/presentation/onboarding_page.dart';
 
 /// Starts the app while preserving Flutter test's process-wide error widget.
 ///

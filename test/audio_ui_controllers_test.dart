@@ -1,7 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/presentation/audio_ui_controllers.dart';
+import 'package:doujin_audio/app/presentation/audio_ui_controllers.dart';
 
 void main() {
   test('main screen controller can repeat the same scroll request', () async {

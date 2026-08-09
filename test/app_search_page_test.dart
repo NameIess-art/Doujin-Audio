@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/widgets/app_edge_fade_mask.dart';
-import 'package:nameless_audio/core/widgets/app_search_page.dart';
+import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
+import 'package:doujin_audio/core/widgets/app_search_page.dart';
 
 void main() {
   testWidgets('search route uses a fade-through transition', (tester) async {

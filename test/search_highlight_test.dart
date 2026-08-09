@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/widgets/library_like_cards.dart';
-import 'package:nameless_audio/core/widgets/search_highlight.dart';
+import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/core/widgets/search_highlight.dart';
 
 void main() {
   Future<void> pumpHighlight(

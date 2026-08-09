@@ -16,7 +16,7 @@ class DiagnosticReportExporter {
   Future<String?> export({required String dialogTitle}) async {
     final directory = await getTemporaryDirectory();
     final report = await _reportService.exportReport(
-      path.join(directory.path, 'NamelessAudio-diagnostic.zip'),
+      path.join(directory.path, 'DoujinAudio-diagnostic.zip'),
     );
     try {
       return FilePicker.saveFile(

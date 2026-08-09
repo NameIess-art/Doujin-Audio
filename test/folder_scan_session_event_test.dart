@@ -1,11 +1,11 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/library/application/library_scan_data_source.dart';
-import 'package:nameless_audio/features/library/application/library_scanner_isolate.dart';
-import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
-import 'package:nameless_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
+import 'package:doujin_audio/features/library/application/library_scanner_isolate.dart';
+import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
   test('parses Android folder scan chunk events', () {
@@ -172,7 +172,7 @@ void main() {
 
   test('desktop filesystem scans stream bounded chunks', () async {
     final root = await Directory.systemTemp.createTemp(
-      'nameless_audio_chunked_scan_',
+      'doujin_audio_chunked_scan_',
     );
     try {
       for (var index = 0; index < 250; index++) {

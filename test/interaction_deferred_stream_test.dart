@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/interaction_deferred_stream.dart';
-import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/app/state/interaction_deferred_stream.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

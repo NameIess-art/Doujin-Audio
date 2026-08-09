@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/core/media/dlsite_metadata.dart';
-import 'package:nameless_audio/features/library/application/dlsite_metadata_service.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/core/media/dlsite_metadata.dart';
+import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
 
 void main() {
   test('maps selected DLsite metadata language to locale headers', () {

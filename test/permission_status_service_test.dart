@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/platform/notifications_platform_service.dart';
-import 'package:nameless_audio/features/settings/application/permission_status_service.dart';
-import 'package:nameless_audio/core/platform/power_platform_service.dart';
+import 'package:doujin_audio/core/platform/notifications_platform_service.dart';
+import 'package:doujin_audio/features/settings/application/permission_status_service.dart';
+import 'package:doujin_audio/core/platform/power_platform_service.dart';
 
 void main() {
   test(

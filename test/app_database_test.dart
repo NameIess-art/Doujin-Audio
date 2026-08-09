@@ -1,14 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/player/domain/audio_effects.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/features/library/domain/library_entry.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
-import 'package:nameless_audio/features/player/domain/playback_queue.dart';
-import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
-import 'package:nameless_audio/features/player/domain/time_segment_label.dart';
-import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/features/player/domain/audio_effects.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/features/library/domain/library_entry.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/player/domain/playback_queue.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
+import 'package:doujin_audio/features/player/domain/time_segment_label.dart';
+import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'support/test_persistence_repository.dart';
 

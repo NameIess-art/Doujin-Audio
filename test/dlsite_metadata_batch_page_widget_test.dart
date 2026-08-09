@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/features/library/domain/audio_library_category.dart';
-import 'package:nameless_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
+import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 
 void main() {
   testWidgets('picker result is ignored after batch page is disposed', (

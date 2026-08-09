@@ -2,8 +2,8 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/features/library/data/audio_detail_json_codec.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/features/library/data/audio_detail_json_codec.dart';
 
 void main() {
   const codec = AudioDetailJsonCodec();

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
-import 'package:nameless_audio/features/asmr/application/asmr_api_service.dart';
-import 'package:nameless_audio/features/asmr/application/asmr_metadata_service.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_api_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 
 void main() {
   test('fetchByRjCode returns exact ASMR.ONE work metadata', () async {

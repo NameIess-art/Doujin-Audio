@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

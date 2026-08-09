@@ -3,14 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/application/app_bootstrap_controller.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/presentation/app_bootstrap_host.dart';
-import 'package:nameless_audio/app/presentation/onboarding_page.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/core/widgets/app_brand_icon.dart';
-import 'package:nameless_audio/features/settings/application/app_preferences.dart';
-import 'package:nameless_audio/main.dart';
+import 'package:doujin_audio/app/application/app_bootstrap_controller.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/presentation/app_bootstrap_host.dart';
+import 'package:doujin_audio/app/presentation/onboarding_page.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
+import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -96,7 +96,7 @@ void main() {
       find.byKey(const ValueKey<String>('app_error_view')),
       findsOneWidget,
     );
-    expect(find.text('Nameless Audio 启动失败'), findsOneWidget);
+    expect(find.text('Doujin Audio 启动失败'), findsOneWidget);
     expect(appBuilds, 0);
     expect(bootstrapSettledCalls, 1);
 
@@ -361,7 +361,7 @@ void main() {
     expect(theme.scaffoldBackgroundColor, const Color(0xFF211A1B));
     expect(find.byType(AppBrandIcon), findsNothing);
     expect(find.byType(CircularProgressIndicator), findsNothing);
-    expect(find.text('Starting Nameless Audio…'), findsNothing);
+    expect(find.text('Starting Doujin Audio…'), findsNothing);
   });
 
   testWidgets('blank startup shell follows the persisted background color', (

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/core/media/card_info_field.dart';
-import 'package:nameless_audio/features/library/application/dlsite_metadata_query.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/card_info_field.dart';
+import 'package:doujin_audio/features/library/application/dlsite_metadata_query.dart';
 
 AudioDetail _detail({
   String rjCode = 'RJ123456',

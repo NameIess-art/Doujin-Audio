@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
 import 'support/test_persistence_repository.dart';
-import 'package:nameless_audio/features/player/application/playback_facade.dart';
-import 'package:nameless_audio/features/player/application/playback_session_launcher.dart';
-import 'package:nameless_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/features/player/application/playback_facade.dart';
+import 'package:doujin_audio/features/player/application/playback_session_launcher.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

@@ -1,24 +1,24 @@
-import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/player/application/notification_facade.dart';
+import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:nameless_audio/app/application/audio_path_coordinator.dart';
+import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
 import 'support/runtime_test_models.dart';
-import 'package:nameless_audio/core/app_language.dart';
-import 'package:nameless_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/core/app_language.dart';
+import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'support/test_persistence_repository.dart';
-import 'package:nameless_audio/features/library/application/audio_detail_document_repository.dart';
-import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
-import 'package:nameless_audio/features/library/application/library_service.dart';
-import 'package:nameless_audio/features/library/presentation/library_cover_ui_controller.dart';
-import 'package:nameless_audio/features/player/application/playback_notification_service.dart';
-import 'package:nameless_audio/core/platform/platform_channels.dart';
-import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/presentation/library_cover_ui_controller.dart';
+import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 

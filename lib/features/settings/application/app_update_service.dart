@@ -34,7 +34,7 @@ class AppUpdateService {
        _clock = clock ?? DateTime.now;
 
   static const String owner = 'NameIess-art';
-  static const String repo = 'nameless-audio';
+  static const String repo = 'doujin-audio';
   static const ReleaseChannelConfig releaseChannel =
       ReleaseChannelConfig.stable;
   static const String releasesApi =
@@ -94,7 +94,7 @@ class AppUpdateService {
       HttpHeaders.acceptHeader,
       'application/vnd.github+json',
     );
-    request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+    request.headers.set(HttpHeaders.userAgentHeader, 'Doujin Audio updater');
     final response = await request.close().timeout(_requestTimeout);
     final body = await response
         .transform(utf8.decoder)
@@ -140,7 +140,7 @@ class AppUpdateService {
     return _buildUpdateInfo(
       currentVersion: currentVersion,
       tagName: tagName,
-      releaseName: 'Nameless Audio $tagName',
+      releaseName: 'Doujin Audio $tagName',
       releaseUrl: Uri.parse(
         'https://github.com/$owner/$repo/releases/tag/$tagName',
       ),
@@ -247,7 +247,7 @@ class AppUpdateService {
         .getUrl(Uri.parse(latestReleasePage))
         .timeout(_requestTimeout);
     request.followRedirects = false;
-    request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+    request.headers.set(HttpHeaders.userAgentHeader, 'Doujin Audio updater');
     final response = await request.close().timeout(_requestTimeout);
     final body = await response
         .transform(utf8.decoder)
@@ -273,7 +273,7 @@ class AppUpdateService {
   ) async {
     final uri = Uri.parse('$releasesPage/expanded_assets/$tagName');
     final request = await client.getUrl(uri).timeout(_requestTimeout);
-    request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+    request.headers.set(HttpHeaders.userAgentHeader, 'Doujin Audio updater');
     final response = await request.close().timeout(_requestTimeout);
     final body = await response
         .transform(utf8.decoder)
@@ -459,7 +459,7 @@ class AppUpdateService {
           .timeout(_requestTimeout);
       request.headers.set(
         HttpHeaders.userAgentHeader,
-        'Nameless Audio updater',
+        'Doujin Audio updater',
       );
       final response = await request.close().timeout(_requestTimeout);
       if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -514,7 +514,7 @@ class AppUpdateService {
     final request = await client
         .getUrl(Uri.parse(checksumUrl))
         .timeout(_requestTimeout);
-    request.headers.set(HttpHeaders.userAgentHeader, 'Nameless Audio updater');
+    request.headers.set(HttpHeaders.userAgentHeader, 'Doujin Audio updater');
     final response = await request.close().timeout(_requestTimeout);
     final body = await response
         .transform(utf8.decoder)
@@ -739,7 +739,7 @@ class AppUpdateService {
       value,
       replacement: '_',
       collapseWhitespace: false,
-      fallback: 'NamelessAudio-update',
+      fallback: 'DoujinAudio-update',
     );
     return cleaned.toLowerCase().endsWith(updateExtension)
         ? cleaned

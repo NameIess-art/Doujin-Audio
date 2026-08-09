@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/player/presentation/timer_tab.dart';
+import 'package:doujin_audio/features/player/presentation/timer_tab.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 

@@ -211,7 +211,7 @@ jobs:
       - name: Preserve universal release APK
         run: |
           cp build/app/outputs/flutter-apk/app-release.apk \
-            "NamelessAudio-android-universal-${GITHUB_REF_NAME}.apk"
+            "DoujinAudio-android-universal-${GITHUB_REF_NAME}.apk"
 
       - name: Build split release APKs
         run: >-
@@ -222,12 +222,12 @@ jobs:
         run: |
           set -euo pipefail
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk \
-            "NamelessAudio-android-arm64-${GITHUB_REF_NAME}.apk"
+            "DoujinAudio-android-arm64-${GITHUB_REF_NAME}.apk"
           cp build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk \
-            "NamelessAudio-android-armv7-${GITHUB_REF_NAME}.apk"
+            "DoujinAudio-android-armv7-${GITHUB_REF_NAME}.apk"
           cp build/app/outputs/flutter-apk/app-x86_64-release.apk \
-            "NamelessAudio-android-x64-${GITHUB_REF_NAME}.apk"
-          for apk in NamelessAudio-android-*-${GITHUB_REF_NAME}.apk; do
+            "DoujinAudio-android-x64-${GITHUB_REF_NAME}.apk"
+          for apk in DoujinAudio-android-*-${GITHUB_REF_NAME}.apk; do
             sha256sum "$apk" > "$apk.sha256"
           done
 
@@ -240,7 +240,7 @@ jobs:
           apksigner="$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
           test -x "$apksigner"
           expected_cert_sha256="$(printf '%s' "$ANDROID_SIGNING_CERT_SHA256" | tr '[:upper:]' '[:lower:]')"
-          for apk in NamelessAudio-android-*-${GITHUB_REF_NAME}.apk; do
+          for apk in DoujinAudio-android-*-${GITHUB_REF_NAME}.apk; do
             test -s "$apk"
             test -s "$apk.sha256"
             sha256sum --check "$apk.sha256"
@@ -257,12 +257,12 @@ jobs:
           has_abi() {
             unzip -Z1 "$1" | grep "^lib/$2/" >/dev/null
           }
-          universal="NamelessAudio-android-universal-${GITHUB_REF_NAME}.apk"
+          universal="DoujinAudio-android-universal-${GITHUB_REF_NAME}.apk"
           for abi in armeabi-v7a arm64-v8a x86_64; do
             has_abi "$universal" "$abi"
           done
           while read -r variant expected_abi; do
-            apk="NamelessAudio-android-${variant}-${GITHUB_REF_NAME}.apk"
+            apk="DoujinAudio-android-${variant}-${GITHUB_REF_NAME}.apk"
             for abi in armeabi-v7a arm64-v8a x86_64; do
               if [ "$abi" = "$expected_abi" ]; then
                 has_abi "$apk" "$abi"
@@ -284,14 +284,14 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           path: |
-            NamelessAudio-android-universal-${{ github.ref_name }}.apk
-            NamelessAudio-android-universal-${{ github.ref_name }}.apk.sha256
-            NamelessAudio-android-arm64-${{ github.ref_name }}.apk
-            NamelessAudio-android-arm64-${{ github.ref_name }}.apk.sha256
-            NamelessAudio-android-armv7-${{ github.ref_name }}.apk
-            NamelessAudio-android-armv7-${{ github.ref_name }}.apk.sha256
-            NamelessAudio-android-x64-${{ github.ref_name }}.apk
-            NamelessAudio-android-x64-${{ github.ref_name }}.apk.sha256
+            DoujinAudio-android-universal-${{ github.ref_name }}.apk
+            DoujinAudio-android-universal-${{ github.ref_name }}.apk.sha256
+            DoujinAudio-android-arm64-${{ github.ref_name }}.apk
+            DoujinAudio-android-arm64-${{ github.ref_name }}.apk.sha256
+            DoujinAudio-android-armv7-${{ github.ref_name }}.apk
+            DoujinAudio-android-armv7-${{ github.ref_name }}.apk.sha256
+            DoujinAudio-android-x64-${{ github.ref_name }}.apk
+            DoujinAudio-android-x64-${{ github.ref_name }}.apk.sha256
 
   publish-release:
     if: startsWith(github.ref, 'refs/tags/')
@@ -315,14 +315,14 @@ jobs:
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
           cat > expected-assets.txt <<EOF
-          NamelessAudio-android-universal-${tag}.apk
-          NamelessAudio-android-universal-${tag}.apk.sha256
-          NamelessAudio-android-arm64-${tag}.apk
-          NamelessAudio-android-arm64-${tag}.apk.sha256
-          NamelessAudio-android-armv7-${tag}.apk
-          NamelessAudio-android-armv7-${tag}.apk.sha256
-          NamelessAudio-android-x64-${tag}.apk
-          NamelessAudio-android-x64-${tag}.apk.sha256
+          DoujinAudio-android-universal-${tag}.apk
+          DoujinAudio-android-universal-${tag}.apk.sha256
+          DoujinAudio-android-arm64-${tag}.apk
+          DoujinAudio-android-arm64-${tag}.apk.sha256
+          DoujinAudio-android-armv7-${tag}.apk
+          DoujinAudio-android-armv7-${tag}.apk.sha256
+          DoujinAudio-android-x64-${tag}.apk
+          DoujinAudio-android-x64-${tag}.apk.sha256
           EOF
           find release-assets -maxdepth 1 -type f -printf '%f\n' | sort > actual-assets.txt
           sort -o expected-assets.txt expected-assets.txt
@@ -349,7 +349,7 @@ jobs:
           gh release create "$tag" \
             --verify-tag \
             --draft \
-            --title "Nameless Audio $version" \
+            --title "Doujin Audio $version" \
             --notes-file release_notes.md
           gh release upload "$tag" release-assets/*
           gh release view "$tag" --json assets --jq '.assets[].name' | sort > published-assets.txt

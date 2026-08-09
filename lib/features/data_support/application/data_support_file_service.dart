@@ -35,7 +35,7 @@ class DataSupportFileService {
 
   Future<String?> exportDiagnostics({required String dialogTitle}) async {
     final temporary = await _temporaryFile(
-      'NamelessAudio-diagnostic-${_timestamp()}.zip',
+      'DoujinAudio-diagnostic-${_timestamp()}.zip',
     );
     try {
       final report = await _diagnosticService.exportReport(temporary.path);
@@ -52,14 +52,14 @@ class DataSupportFileService {
 
   Future<String?> exportBackup({required String dialogTitle}) async {
     final temporary = await _temporaryFile(
-      'NamelessAudio-backup-${_timestamp()}.nabackup',
+      'DoujinAudio-backup-${_timestamp()}.dabackup',
     );
     try {
       final backup = await _backupService.exportBackup(temporary.path);
       return await _saveGeneratedFile(
         source: backup,
         dialogTitle: dialogTitle,
-        allowedExtensions: const <String>['nabackup'],
+        allowedExtensions: const <String>['dabackup'],
         mimeType: 'application/zip',
       );
     } finally {
@@ -73,7 +73,7 @@ class DataSupportFileService {
     final result = await FilePicker.pickFiles(
       dialogTitle: dialogTitle,
       type: FileType.custom,
-      allowedExtensions: const <String>['nabackup'],
+      allowedExtensions: const <String>['dabackup'],
       withReadStream: true,
       lockParentWindow: true,
     );
@@ -85,7 +85,7 @@ class DataSupportFileService {
     }
     final stream = selected.readStream;
     if (stream == null) return null;
-    final temporary = await _temporaryFile('selected-backup.nabackup');
+    final temporary = await _temporaryFile('selected-backup.dabackup');
     try {
       await stream.pipe(temporary.openWrite());
       return _backupService.inspectAndStageRestore(temporary.path);

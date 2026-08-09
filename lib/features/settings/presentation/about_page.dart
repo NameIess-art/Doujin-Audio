@@ -18,7 +18,7 @@ class AboutPage extends ConsumerWidget {
 
   static const _repositoryUrl = AppUpdateService.repositoryPage;
   static const _readmeUrl =
-      'https://github.com/NameIess-art/nameless-audio/blob/main/README.md';
+      'https://github.com/NameIess-art/Doujin-Audio/blob/main/README.md';
   static const _sponsorUrl =
       'https://ifdian.net/order/create?user_id=c6acfc3a646d11f0ae8a5254001e7c00';
 

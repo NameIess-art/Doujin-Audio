@@ -4,8 +4,8 @@ import 'dart:typed_data';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/library/application/embedded_cover_artwork_service.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/library/application/embedded_cover_artwork_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -182,7 +182,7 @@ Uint8List _flacWithVorbisPictureComment(Uint8List pictureBytes) {
     'METADATA_BLOCK_PICTURE=${base64.encode(_pictureBlock(pictureBytes))}',
   );
   final block = BytesBuilder();
-  final vendor = utf8.encode('nameless-audio-test');
+  final vendor = utf8.encode('doujin-audio-test');
   _addUint32Le(block, vendor.length);
   block.add(vendor);
   _addUint32Le(block, 1);

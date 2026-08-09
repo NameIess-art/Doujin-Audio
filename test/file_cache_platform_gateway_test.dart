@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
-import 'package:nameless_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -88,7 +88,7 @@ void main() {
       location: const <String, Object?>{
         'locationKind': 'folderChild',
         'basePath': 'content://library',
-        'name': 'nameless-audio.json',
+        'name': 'doujin-audio.json',
       },
       expectedRevision: 'revision-1',
     );
@@ -98,7 +98,7 @@ void main() {
     expect(calls.single.arguments, <String, Object?>{
       'locationKind': 'folderChild',
       'basePath': 'content://library',
-      'name': 'nameless-audio.json',
+      'name': 'doujin-audio.json',
       'expectedRevision': 'revision-1',
     });
   });

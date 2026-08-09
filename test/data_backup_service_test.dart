@@ -4,11 +4,11 @@ import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/features/asmr/application/asmr_auth_service.dart';
-import 'package:nameless_audio/features/data_support/application/data_backup_service.dart';
-import 'package:nameless_audio/features/settings/application/app_preferences.dart';
-import 'package:nameless_audio/features/settings/application/app_update_service.dart';
+import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
+import 'package:doujin_audio/features/data_support/application/data_backup_service.dart';
+import 'package:doujin_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -24,7 +24,7 @@ void main() {
 
   setUp(() async {
     temporaryDirectory = await Directory.systemTemp.createTemp(
-      'nameless_backup_test_',
+      'doujin_backup_test_',
     );
     sourceDatabase = await databaseFactoryFfi.openDatabase(
       '${temporaryDirectory.path}/source.db',
@@ -76,7 +76,7 @@ void main() {
         clock: () => DateTime.utc(2026, 8, 8),
       );
       final output = await service.exportBackup(
-        '${temporaryDirectory.path}/backup.nabackup',
+        '${temporaryDirectory.path}/backup.dabackup',
       );
 
       final archive = ZipDecoder().decodeBytes(await output.readAsBytes());

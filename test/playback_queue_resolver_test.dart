@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/player/domain/playback_mode.dart';
-import 'package:nameless_audio/features/player/application/playback_queue_resolver.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/features/player/application/playback_queue_resolver.dart';
 
 void main() {
   const resolver = PlaybackQueueResolver();

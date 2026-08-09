@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/widgets/glass_refresh_indicator.dart';
+import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 
 void main() {
   testWidgets('pull-to-refresh indicator has no shadow decoration', (

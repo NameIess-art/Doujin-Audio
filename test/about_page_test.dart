@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/app/theme/app_styles.dart';
-import 'package:nameless_audio/core/widgets/app_brand_icon.dart';
-import 'package:nameless_audio/core/widgets/top_page_header.dart';
-import 'package:nameless_audio/features/settings/application/app_update_service.dart';
-import 'package:nameless_audio/features/settings/presentation/about_page.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
+import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/settings/application/app_update_service.dart';
+import 'package:doujin_audio/features/settings/presentation/about_page.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 
@@ -151,7 +151,7 @@ void main() {
 
     expect(
       updateService.openedUrl,
-      'https://github.com/NameIess-art/nameless-audio/blob/main/README.md',
+      'https://github.com/NameIess-art/Doujin-Audio/blob/main/README.md',
     );
   });
 

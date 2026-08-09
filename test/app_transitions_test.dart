@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/widgets/app_transitions.dart';
-import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 
 class _StateProbe extends StatefulWidget {
   const _StateProbe({super.key, required this.label});

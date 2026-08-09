@@ -1,6 +1,6 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/asmr/application/asmr_auth_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_auth_service.dart';
 
 const _tokenKey = 'asmr_one_jwt_token_v1';
 const _nameKey = 'asmr_one_name_v1';

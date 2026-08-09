@@ -115,7 +115,7 @@ class AppCacheService {
           Directory(
             path.join(
               (await getApplicationSupportDirectory()).path,
-              'nameless_audio_imports',
+              'doujin_audio_imports',
             ),
           );
       if (!await directory.exists()) return 0;
@@ -218,7 +218,7 @@ class AppCacheService {
       // Temporary cache roots are optional and may be unavailable on startup.
     }
     roots.add(
-      Directory(path.join(Directory.systemTemp.path, 'nameless_audio_imports')),
+      Directory(path.join(Directory.systemTemp.path, 'doujin_audio_imports')),
     );
     return roots;
   }

@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 
 void main() {
   test('AsmrWork serialization/deserialization', () {

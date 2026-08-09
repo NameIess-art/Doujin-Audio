@@ -2,8 +2,8 @@ import 'dart:ui';
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/subtitle_settings_provider.dart';
-import 'package:nameless_audio/features/settings/application/app_preferences.dart';
+import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
+import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

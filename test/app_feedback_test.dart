@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/app/theme/app_design_tokens.dart';
-import 'package:nameless_audio/core/widgets/app_feedback.dart';
-import 'package:nameless_audio/core/widgets/confirm_action_dialog.dart';
-import 'package:nameless_audio/features/settings/application/settings_state.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/core/widgets/app_feedback.dart';
+import 'package:doujin_audio/core/widgets/confirm_action_dialog.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
 Widget _feedbackApp({required bool blurEnabled, required Widget home}) {
   return ProviderScope(

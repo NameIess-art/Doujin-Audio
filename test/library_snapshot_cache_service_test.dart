@@ -1,12 +1,12 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/core/persistence/json_document_store.dart';
-import 'package:nameless_audio/features/library/domain/library_node.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
-import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
-import 'package:nameless_audio/features/library/application/library_service.dart';
-import 'package:nameless_audio/features/library/application/library_snapshot_cache_service.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/persistence/json_document_store.dart';
+import 'package:doujin_audio/features/library/domain/library_node.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

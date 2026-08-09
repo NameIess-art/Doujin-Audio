@@ -15,8 +15,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$appId = 'com.nameless.audio'
-$mainActivity = "$appId/com.nameless.audio.MainActivity"
+$appId = 'com.doujin.audio'
+$mainActivity = "$appId/com.doujin.audio.MainActivity"
 $debugApkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-debug.apk'
 $arm64DebugApkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-arm64-v8a-debug.apk'
 $arm64ReleaseApkPath = Join-Path $repoRoot 'build\app\outputs\flutter-apk\app-arm64-v8a-release.apk'
@@ -542,7 +542,7 @@ function Save-Screenshot {
     param([string]$Serial)
     New-Item -ItemType Directory -Force -Path (Join-Path $repoRoot $OutputDir) | Out-Null
     $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $remotePath = "/sdcard/nameless-audio-$timestamp.png"
+    $remotePath = "/sdcard/doujin-audio-$timestamp.png"
     $localPath = Join-Path $repoRoot (Join-Path $OutputDir "screenshot-$timestamp.png")
     if ($ScreenshotDelaySeconds -gt 0) {
         Start-Sleep -Seconds $ScreenshotDelaySeconds

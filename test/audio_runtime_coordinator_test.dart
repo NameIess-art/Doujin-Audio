@@ -1,8 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/application/audio_runtime_coordinator.dart';
-import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/app/application/audio_runtime_coordinator.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 
 void main() {
   test('owns runtime subscriptions and lifecycle exactly once', () async {

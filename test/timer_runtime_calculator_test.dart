@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/player/domain/playback_mode.dart';
-import 'package:nameless_audio/features/player/application/timer_runtime_calculator.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/features/player/application/timer_runtime_calculator.dart';
 
 void main() {
   const calculator = TimerRuntimeCalculator();

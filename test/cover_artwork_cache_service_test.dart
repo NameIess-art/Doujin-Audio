@@ -3,17 +3,17 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'support/test_persistence_repository.dart';
-import 'package:nameless_audio/features/library/application/audio_detail_cache_service.dart';
-import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
-import 'package:nameless_audio/features/library/application/library_service.dart';
-import 'package:nameless_audio/features/settings/application/app_cache_service.dart';
-import 'package:nameless_audio/features/library/application/cover_artwork_cache_service.dart';
-import 'package:nameless_audio/features/library/application/cover_image_cache_policy.dart';
-import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
-import 'package:nameless_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/settings/application/app_cache_service.dart';
+import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
+import 'package:doujin_audio/features/library/application/cover_image_cache_policy.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 
 void main() {
   test('folder cover future reuses the same in-flight lookup', () async {

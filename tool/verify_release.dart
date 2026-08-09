@@ -37,7 +37,7 @@ void main(List<String> args) {
   const documentedTag = '<tag>';
   final documentedAssets = <String>[
     for (final variant in androidVariants)
-      'NamelessAudio-android-$variant-$documentedTag.apk',
+      'DoujinAudio-android-$variant-$documentedTag.apk',
   ];
   for (final asset in documentedAssets) {
     for (final document in <MapEntry<String, String>>[
@@ -55,7 +55,7 @@ void main(List<String> args) {
 
   final workflowAssets = <String>[
     for (final variant in androidVariants)
-      'NamelessAudio-android-$variant-\${{ github.ref_name }}.apk',
+      'DoujinAudio-android-$variant-\${{ github.ref_name }}.apk',
   ];
   for (final asset in workflowAssets) {
     if (!workflow.contains(asset) || !workflow.contains('$asset.sha256')) {
@@ -72,7 +72,7 @@ void main(List<String> args) {
     'actions/upload-artifact@',
     'actions/download-artifact@',
     'version="\${tag#v}"',
-    '--title "Nameless Audio \$version"',
+    '--title "Doujin Audio \$version"',
   ]) {
     if (!workflow.contains(required)) {
       _fail(
@@ -129,7 +129,7 @@ void main(List<String> args) {
     MapEntry<String, String>(
       'android UpdateMethodHandler.kt',
       File(
-        'android/app/src/main/kotlin/com/nameless/audio/update/UpdateMethodHandler.kt',
+        'android/app/src/main/kotlin/com/doujin/audio/update/UpdateMethodHandler.kt',
       ).readAsStringSync(),
     ),
   ];

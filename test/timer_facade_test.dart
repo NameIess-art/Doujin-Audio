@@ -1,10 +1,10 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/features/player/application/timer_facade.dart';
-import 'package:nameless_audio/features/player/application/audio_state_services.dart';
-import 'package:nameless_audio/features/player/domain/playback_mode.dart';
-import 'package:nameless_audio/core/platform/power_platform_service.dart';
+import 'package:doujin_audio/features/player/application/timer_facade.dart';
+import 'package:doujin_audio/features/player/application/audio_state_services.dart';
+import 'package:doujin_audio/features/player/domain/playback_mode.dart';
+import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

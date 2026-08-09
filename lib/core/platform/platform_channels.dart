@@ -8,16 +8,16 @@ library;
 // Channel names
 // ---------------------------------------------------------------------------
 abstract final class NativePlaybackChannel {
-  static const String name = 'nameless_audio/native_playback';
-  static const String eventName = 'nameless_audio/native_playback/events';
+  static const String name = 'doujin_audio/native_playback';
+  static const String eventName = 'doujin_audio/native_playback/events';
 }
 
 abstract final class AppIconChannel {
-  static const String name = 'nameless_audio/app_icon';
+  static const String name = 'doujin_audio/app_icon';
 }
 
 abstract final class AppLifecycleChannel {
-  static const String name = 'nameless_audio/app_lifecycle';
+  static const String name = 'doujin_audio/app_lifecycle';
 }
 
 abstract final class AppLifecycleMethod {
@@ -29,28 +29,28 @@ abstract final class AppIconMethod {
 }
 
 abstract final class PowerChannel {
-  static const String name = 'nameless_audio/power';
+  static const String name = 'doujin_audio/power';
 }
 
 abstract final class FileCacheChannel {
-  static const String name = 'nameless_audio/file_cache';
-  static const String scanEvents = 'nameless_audio/file_cache/scan_events';
+  static const String name = 'doujin_audio/file_cache';
+  static const String scanEvents = 'doujin_audio/file_cache/scan_events';
 }
 
 abstract final class SubtitleOverlayChannel {
-  static const String name = 'nameless_audio/subtitle_overlay';
+  static const String name = 'doujin_audio/subtitle_overlay';
 }
 
 abstract final class NotificationsChannel {
-  static const String name = 'nameless_audio/notifications';
+  static const String name = 'doujin_audio/notifications';
 }
 
 abstract final class UpdateChannel {
-  static const String name = 'nameless_audio/update';
+  static const String name = 'doujin_audio/update';
 }
 
 abstract final class VideoDisplayChannel {
-  static const String name = 'nameless_audio/video_display';
+  static const String name = 'doujin_audio/video_display';
 }
 
 // ---------------------------------------------------------------------------

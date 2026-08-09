@@ -3,12 +3,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/audio_detail.dart';
-import 'package:nameless_audio/core/media/path_matcher.dart';
-import 'package:nameless_audio/core/persistence/json_document_store.dart';
-import 'package:nameless_audio/features/library/application/audio_detail_document_repository.dart';
-import 'package:nameless_audio/features/library/application/audio_detail_repository.dart';
-import 'package:nameless_audio/features/library/domain/audio_detail_store.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/core/persistence/json_document_store.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
+import 'package:doujin_audio/features/library/domain/audio_detail_store.dart';
 
 void main() {
   late Directory directory;
@@ -29,7 +29,7 @@ void main() {
     );
     target = AudioDetailTarget.libraryRootFolder(directory.path);
     documentFile = File(
-      '${directory.path}${Platform.pathSeparator}nameless-audio.json',
+      '${directory.path}${Platform.pathSeparator}doujin-audio.json',
     );
   });
 

@@ -1,12 +1,12 @@
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_persistence_repository.dart';
-import 'package:nameless_audio/features/player/domain/playback_persistence_repository.dart';
-import 'package:nameless_audio/features/player/domain/time_segment_label.dart';
-import 'package:nameless_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
-import 'package:nameless_audio/infrastructure/sqlite/sqlite_library_repository.dart';
-import 'package:nameless_audio/infrastructure/sqlite/sqlite_playback_repository.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_persistence_repository.dart';
+import 'package:doujin_audio/features/player/domain/playback_persistence_repository.dart';
+import 'package:doujin_audio/features/player/domain/time_segment_label.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_library_repository.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_playback_repository.dart';
 
 /// Shared SQLite fixture for tests that exercise more than one feature port.
 class TestPersistenceRepository extends SqliteLibraryRepository

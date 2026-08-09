@@ -5,7 +5,7 @@ import '../../../core/persistence/json_document_store.dart';
 import '../data/audio_detail_cover_store.dart';
 import '../data/audio_detail_json_codec.dart';
 
-const String audioDetailDocumentName = 'nameless-audio.json';
+const String audioDetailDocumentName = 'doujin-audio.json';
 
 final class AudioDetailDocumentReadResult {
   const AudioDetailDocumentReadResult({

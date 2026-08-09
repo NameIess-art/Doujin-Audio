@@ -224,7 +224,7 @@ class DataBackupService {
     final decoded = await _decodeAndValidate(source);
     final restoreDirectory = await _restoreDirectory();
     await restoreDirectory.create(recursive: true);
-    final pending = File(path.join(restoreDirectory.path, 'pending.nabackup'));
+    final pending = File(path.join(restoreDirectory.path, 'pending.dabackup'));
     final temporary = File('${pending.path}.part');
     if (await temporary.exists()) await temporary.delete();
     await source.openRead().pipe(temporary.openWrite());
@@ -239,7 +239,7 @@ class DataBackupService {
 
   Future<StartupRestoreOutcome?> applyAtStartup() async {
     final restoreDirectory = await _restoreDirectory();
-    final pending = File(path.join(restoreDirectory.path, 'pending.nabackup'));
+    final pending = File(path.join(restoreDirectory.path, 'pending.dabackup'));
     if (!await pending.exists()) return null;
 
     final rollbackDirectory = Directory(

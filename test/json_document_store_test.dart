@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/persistence/json_document_store.dart';
+import 'package:doujin_audio/core/persistence/json_document_store.dart';
 
 void main() {
   late Directory directory;
@@ -15,7 +15,7 @@ void main() {
     store = DefaultJsonDocumentStore();
     location = JsonDocumentLocation.folderChild(
       folder: directory.path,
-      name: 'nameless-audio.json',
+      name: 'doujin-audio.json',
     );
   });
 
@@ -23,7 +23,7 @@ void main() {
 
   test('createIfAbsent preserves every byte of an existing document', () async {
     final file = File(
-      '${directory.path}${Platform.pathSeparator}NAMELESS-AUDIO.JSON',
+      '${directory.path}${Platform.pathSeparator}DOUJIN-AUDIO.JSON',
     );
     final original = utf8.encode('{"unknown": 1}\n');
     await file.writeAsBytes(original, flush: true);
@@ -40,7 +40,7 @@ void main() {
 
   test('replace refuses stale revision and keeps original non-empty', () async {
     final file = File(
-      '${directory.path}${Platform.pathSeparator}nameless-audio.json',
+      '${directory.path}${Platform.pathSeparator}doujin-audio.json',
     );
     await file.writeAsString('{"version": 1}', flush: true);
     final snapshot = (await store.read(location)).snapshot!;
@@ -70,7 +70,7 @@ void main() {
       expect(result.status, JsonDocumentWriteStatus.conflict);
       expect(
         File(
-          '${directory.path}${Platform.pathSeparator}nameless-audio.json',
+          '${directory.path}${Platform.pathSeparator}doujin-audio.json',
         ).existsSync(),
         isFalse,
       );
@@ -81,7 +81,7 @@ void main() {
     'delete requires the exact revision and never removes newer data',
     () async {
       final file = File(
-        '${directory.path}${Platform.pathSeparator}nameless-audio.json',
+        '${directory.path}${Platform.pathSeparator}doujin-audio.json',
       );
       await file.writeAsString('{"version": 1}', flush: true);
       final snapshot = (await store.read(location)).snapshot!;

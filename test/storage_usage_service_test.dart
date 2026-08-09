@@ -1,8 +1,8 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
-import 'package:nameless_audio/features/data_support/application/storage_usage_service.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

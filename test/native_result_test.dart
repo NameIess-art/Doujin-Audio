@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
 
 void main() {
   test('strict envelope decoder accepts success and stable failure fields', () {

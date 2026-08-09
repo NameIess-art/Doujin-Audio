@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/core/app_language.dart';
-import 'package:nameless_audio/core/persistence/app_database.dart';
-import 'package:nameless_audio/features/asmr/application/asmr_library_controller.dart';
-import 'package:nameless_audio/features/asmr/application/asmr_preferences.dart';
-import 'package:nameless_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
-import 'package:nameless_audio/features/asmr/presentation/asmr_tab.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/app_language.dart';
+import 'package:doujin_audio/core/persistence/app_database.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
+import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 
 import 'support/app_runtime_test_fixture.dart';
 

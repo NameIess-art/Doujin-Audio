@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/core/media/path_matcher.dart';
-import 'package:nameless_audio/features/library/application/library_catalog.dart';
-import 'package:nameless_audio/features/library/application/library_scan_data_source.dart';
-import 'package:nameless_audio/features/library/application/library_scanner_service.dart';
-import 'package:nameless_audio/features/library/application/library_state_models.dart';
-import 'package:nameless_audio/features/library/domain/library_entry.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
+import 'package:doujin_audio/features/library/application/library_catalog.dart';
+import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
+import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
+import 'package:doujin_audio/features/library/application/library_state_models.dart';
+import 'package:doujin_audio/features/library/domain/library_entry.dart';
 
 void main() {
   const labels = LibraryScanLabels(

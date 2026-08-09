@@ -2,14 +2,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/app/localization/app_language_ja.dart';
-import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
-import 'package:nameless_audio/core/widgets/library_like_cards.dart';
-import 'package:nameless_audio/core/widgets/marquee_text.dart';
-import 'package:nameless_audio/core/widgets/scroll_activity_gate.dart';
-import 'package:nameless_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/localization/app_language_ja.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/library_like_cards.dart';
+import 'package:doujin_audio/core/widgets/marquee_text.dart';
+import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 
 Widget _buildApp(Widget child) {
   return ProviderScope(

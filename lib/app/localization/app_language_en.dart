@@ -1,13 +1,13 @@
 const Map<String, String> appLanguageEn = {
-  'app_title': 'Nameless Audio',
-  'startup_initializing': 'Starting Nameless Audio…',
-  'startup_error_title': 'Nameless Audio could not start',
+  'app_title': 'Doujin Audio',
+  'startup_initializing': 'Starting Doujin Audio…',
+  'startup_error_title': 'Doujin Audio could not start',
   'startup_error_message':
       'Your local data is safe. Retry startup or export a diagnostic report.',
   'permission_group_playback': 'Playback basics',
   'permission_group_reliability': 'Timer & reliability',
   'permission_group_advanced': 'Advanced features',
-  'onboarding_title': 'Nameless Audio',
+  'onboarding_title': 'Doujin Audio',
   'onboarding_subtitle': 'A local-first player for ASMR and voice libraries.',
   'onboarding_local':
       'Your audio library and playback state stay on this device.',
@@ -136,7 +136,7 @@ const Map<String, String> appLanguageEn = {
   'scan_failed_next_step':
       'Check storage permission and whether the source folder still exists, then retry.',
   'detail_backup_import_failed':
-      '{count} detail backups could not be synchronized. Check nameless-audio.json and retry.',
+      '{count} detail backups could not be synchronized. Check doujin-audio.json and retry.',
   'refresh_done_added': 'Refresh complete: {count} new tracks added.',
   'refresh_done_no_new': 'No new audio found.',
   'asmr_refresh_done_updated': 'Category content updated.',
@@ -578,7 +578,7 @@ const Map<String, String> appLanguageEn = {
       'Backup restored. App data and the ASMR.ONE account were updated.',
   'backup_restore_failed_rolled_back':
       'Backup restore failed. The previous app data was restored safely.',
-  'unexpected_error_title': 'Nameless Audio encountered an unexpected error',
+  'unexpected_error_title': 'Doujin Audio encountered an unexpected error',
   'unexpected_error_message':
       'Your local data is safe. Export diagnostics, then close and restart the app.',
   'close_and_restart': 'Close and restart',

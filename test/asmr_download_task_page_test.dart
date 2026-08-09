@@ -3,12 +3,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_provider.dart';
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/features/asmr/application/asmr_download_manager.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_download.dart';
-import 'package:nameless_audio/features/asmr/domain/asmr_models.dart';
-import 'package:nameless_audio/features/asmr/presentation/asmr_download_page.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
+import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {

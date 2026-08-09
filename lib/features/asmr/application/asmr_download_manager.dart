@@ -65,7 +65,7 @@ Future<bool> commitLocalDownloadedFile({
 }) async {
   final renameFile =
       rename ?? (source, destination) => source.rename(destination);
-  final backup = File('${target.path}.nameless.bak');
+  final backup = File('${target.path}.doujin.bak');
 
   if (!await target.exists() && await backup.exists()) {
     await renameFile(backup, target.path);
@@ -874,10 +874,10 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
 
       if (backup != null) {
-        final backupPath = _joinFolderPath(workRootPath, 'nameless-audio.json');
+        final backupPath = _joinFolderPath(workRootPath, 'doujin-audio.json');
         final location = JsonDocumentLocation.folderChild(
           folder: workRootPath,
-          name: 'nameless-audio.json',
+          name: 'doujin-audio.json',
         );
         final write = await _writeWorkDetailBackup(backup, location);
         metadataCreated = write.status == JsonDocumentWriteStatus.created;
@@ -1211,7 +1211,7 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     final stagingFile = localTargetFile == null
         ? await _persistentStagingFile(workRootPath, normalizedRelativePath)
-        : File('${localTargetFile.path}.nameless.part');
+        : File('${localTargetFile.path}.doujin.part');
     final stagingExisted = await stagingFile.exists();
     if (!stagingExisted) _createdOutputPaths[workId]?.add(stagingFile.path);
     final tempResult = await _downloadToTemporaryFile(
@@ -1437,7 +1437,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       final request = await client.getUrl(uri).timeout(requestTimeout);
       request.headers.set(
         HttpHeaders.userAgentHeader,
-        'Nameless Audio downloader',
+        'Doujin Audio downloader',
       );
       for (final header in asmrMediaRequestHeadersForUrl(item.url).entries) {
         request.headers.set(header.key, header.value);
@@ -1748,7 +1748,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     final key = sha256
         .convert(utf8.encode('$workRootPath|$relativePath'))
         .toString();
-    return File(path.join(root.path, 'asmr_downloads', '$key.nameless.part'));
+    return File(path.join(root.path, 'asmr_downloads', '$key.doujin.part'));
   }
 
   String _trimRightSlash(String value) {

@@ -2,14 +2,14 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/core/media/subtitle_parser.dart';
-import 'package:nameless_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/media/subtitle_parser.dart';
+import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 
 void main() {
   test('loads, caches, and clears a local subtitle track', () async {
     final directory = await Directory.systemTemp.createTemp(
-      'nameless_audio_subtitle_',
+      'doujin_audio_subtitle_',
     );
     addTearDown(() => directory.delete(recursive: true));
     final audioPath = '${directory.path}${Platform.pathSeparator}track.mp3';

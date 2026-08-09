@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/app/localization/app_language_en.dart';
-import 'package:nameless_audio/app/localization/app_language_ja.dart';
-import 'package:nameless_audio/app/localization/app_language_zh.dart';
+import 'package:doujin_audio/app/localization/app_language_en.dart';
+import 'package:doujin_audio/app/localization/app_language_ja.dart';
+import 'package:doujin_audio/app/localization/app_language_zh.dart';
 
 void main() {
   test('localized language tables expose the same keys as Chinese', () {

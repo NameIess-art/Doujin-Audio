@@ -51,7 +51,7 @@ val validateReleaseSigning by tasks.registering {
 }
 
 android {
-    namespace = "com.nameless.audio"
+    namespace = "com.doujin.audio"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
 
@@ -65,7 +65,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.nameless.audio"
+        applicationId = "com.doujin.audio"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

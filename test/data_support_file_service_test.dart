@@ -5,11 +5,11 @@ import 'package:file_picker/file_picker.dart';
 import 'package:file_picker/src/platform/file_picker_platform_interface.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/platform/file_cache_platform_gateway.dart';
-import 'package:nameless_audio/core/platform/platform_channels.dart';
-import 'package:nameless_audio/features/data_support/application/data_support_file_service.dart';
-import 'package:nameless_audio/features/data_support/application/diagnostic_report_exporter.dart';
-import 'package:nameless_audio/features/data_support/application/diagnostic_report_service.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/features/data_support/application/data_support_file_service.dart';
+import 'package:doujin_audio/features/data_support/application/diagnostic_report_exporter.dart';
+import 'package:doujin_audio/features/data_support/application/diagnostic_report_service.dart';
 import 'package:path/path.dart' as path;
 
 void main() {
@@ -80,7 +80,7 @@ void main() {
       );
       expect(
         arguments['fileName'],
-        matches(r'^NamelessAudio-diagnostic-\d{8}-\d{6}\.zip$'),
+        matches(r'^DoujinAudio-diagnostic-\d{8}-\d{6}\.zip$'),
       );
       expect(arguments['mimeType'], 'application/zip');
       expect(
@@ -149,7 +149,7 @@ void main() {
       expect(filePicker.bytes, _TestDiagnosticReportService.contents);
       expect(
         File(
-          path.join(temporaryDirectory.path, 'NamelessAudio-diagnostic.zip'),
+          path.join(temporaryDirectory.path, 'DoujinAudio-diagnostic.zip'),
         ).existsSync(),
         isFalse,
       );

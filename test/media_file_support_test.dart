@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/media/media_file_support.dart';
+import 'package:doujin_audio/core/media/media_file_support.dart';
 
 void main() {
   test('supported media detection accepts audio and video containers', () {

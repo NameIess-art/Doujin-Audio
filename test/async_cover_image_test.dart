@@ -7,13 +7,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:nameless_audio/app/state/app_runtime_providers.dart';
-import 'package:nameless_audio/core/media/cover_image_resolution.dart';
-import 'package:nameless_audio/core/media/music_track.dart';
-import 'package:nameless_audio/features/settings/application/settings_state.dart';
-import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
-import 'package:nameless_audio/core/widgets/async_cover_image.dart';
-import 'package:nameless_audio/core/widgets/app_transitions.dart';
+import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/media/cover_image_resolution.dart';
+import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
+import 'package:doujin_audio/core/widgets/async_cover_image.dart';
+import 'package:doujin_audio/core/widgets/app_transitions.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 final class _ControlledImageProvider

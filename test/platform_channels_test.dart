@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nameless_audio/core/errors/native_result.dart';
-import 'package:nameless_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
+import 'package:doujin_audio/core/platform/platform_channels.dart';
 
 void main() {
   test('platform channel names remain stable and unique', () {
@@ -17,9 +17,9 @@ void main() {
     ];
 
     expect(names.toSet(), hasLength(names.length));
-    expect(UpdateChannel.name, 'nameless_audio/update');
-    expect(VideoDisplayChannel.name, 'nameless_audio/video_display');
-    expect(FileCacheChannel.name, 'nameless_audio/file_cache');
+    expect(UpdateChannel.name, 'doujin_audio/update');
+    expect(VideoDisplayChannel.name, 'doujin_audio/video_display');
+    expect(FileCacheChannel.name, 'doujin_audio/file_cache');
   });
 
   test('critical method names remain protocol compatible', () {

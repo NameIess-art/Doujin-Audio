@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'support/runtime_test_models.dart';
-import 'package:nameless_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 
 void main() {
   test(

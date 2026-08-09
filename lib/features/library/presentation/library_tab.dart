@@ -171,6 +171,14 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   int? _cardSnapshotRequestRevision;
   int? _durationBackfillStructureRevision;
   late final String _durationBackfillCommitKey;
+  List<LibraryNode>? _sortedTreeCache;
+  List<LibraryNode>? _sortedTreeSource;
+  LibrarySortCriterion? _sortedTreeCriterion;
+  bool? _sortedTreeAscending;
+  bool? _sortedTreeGroupByLibrary;
+  int? _sortedTreeStructureRevision;
+  int? _sortedTreeContentRevision;
+  int? _sortedTreeDetailRevision;
 
   @override
   int get tabIndex => 0;
@@ -553,6 +561,43 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     });
   }
 
+  List<LibraryNode> _sortTreeIfNeeded({
+    required List<LibraryNode> rawTree,
+    required LibraryFacade libraryFacade,
+    required LibrarySortCriterion criterion,
+    required bool ascending,
+    required bool groupByLibrary,
+    required int structureRevision,
+    required int contentRevision,
+    required int detailRevision,
+  }) {
+    if (identical(_sortedTreeSource, rawTree) &&
+        _sortedTreeCriterion == criterion &&
+        _sortedTreeAscending == ascending &&
+        _sortedTreeGroupByLibrary == groupByLibrary &&
+        _sortedTreeStructureRevision == structureRevision &&
+        _sortedTreeContentRevision == contentRevision &&
+        _sortedTreeDetailRevision == detailRevision) {
+      return _sortedTreeCache!;
+    }
+
+    final sortedTree = sortLibraryNodes(
+      nodes: rawTree,
+      criterion: criterion,
+      ascending: ascending,
+      groupByLibrary: groupByLibrary,
+      library: libraryFacade,
+    );
+    _sortedTreeSource = rawTree;
+    _sortedTreeCriterion = criterion;
+    _sortedTreeAscending = ascending;
+    _sortedTreeGroupByLibrary = groupByLibrary;
+    _sortedTreeStructureRevision = structureRevision;
+    _sortedTreeContentRevision = contentRevision;
+    _sortedTreeDetailRevision = detailRevision;
+    return _sortedTreeCache = sortedTree;
+  }
+
   @override
   void dispose() {
     widget.activeTabIndexListenable?.removeListener(_handleActiveTabChanged);
@@ -603,7 +648,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final listStateCanPullRefresh = _readOrWatch(
       libraryListUiProvider.select((s) => s.canPullRefresh),
     );
-    _readOrWatch(libraryDetailRevisionProvider);
+    final libraryDetailRevision = _readOrWatch(libraryDetailRevisionProvider);
     final librarySortCriterion = _readOrWatch(
       settingsStateProvider.select(
         (state) =>
@@ -653,12 +698,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           !listStateIsScanning &&
           !listStateIsBackgroundScanning,
     );
-    final tree = sortLibraryNodes(
-      nodes: listStateRawTree,
+    final tree = _sortTreeIfNeeded(
+      rawTree: listStateRawTree,
+      libraryFacade: libraryFacade,
       criterion: librarySortCriterion,
       ascending: librarySortAscending,
       groupByLibrary: libraryGroupByLibrary,
-      library: libraryFacade,
+      structureRevision: listStateStructureRevision,
+      contentRevision: libraryFacade.contentRevision,
+      detailRevision: libraryDetailRevision,
     );
     final bottomInset = MobileOverlayInset.of(context);
 

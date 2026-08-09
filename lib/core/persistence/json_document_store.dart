@@ -47,8 +47,19 @@ final class JsonDocumentLocation {
     'name': name,
   };
 
-  String get lockKey =>
-      '${kind.name}\u0000$basePath\u0000${name.toLowerCase()}';
+  String get lockKey {
+    if (usesSaf) {
+      final normalizedBase = basePath.trim().replaceAll(RegExp(r'/+$'), '');
+      return '${kind.name}\u0000$normalizedBase\u0000${name.toLowerCase()}';
+    }
+    final parentPath = switch (kind) {
+      JsonDocumentLocationKind.folderChild => basePath,
+      JsonDocumentLocationKind.fileSibling => path.dirname(basePath),
+    };
+    var targetPath = path.normalize(path.absolute(path.join(parentPath, name)));
+    if (Platform.isWindows) targetPath = targetPath.toLowerCase();
+    return 'local\u0000$targetPath';
+  }
 }
 
 enum JsonDocumentReadStatus { found, missing, unreadable }
@@ -135,7 +146,6 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     : _platformGateway = platformGateway ?? FileCachePlatformGateway.instance;
 
   final FileCachePlatformGateway _platformGateway;
-  final Map<String, Future<void>> _tails = <String, Future<void>>{};
 
   @override
   Future<JsonDocumentReadResult> read(JsonDocumentLocation location) {
@@ -210,6 +220,13 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
         return _decodePlatformDelete(value);
       }
       try {
+        final recoveryError = await _recoverLocal(location);
+        if (recoveryError != null) {
+          return JsonDocumentDeleteResult(
+            status: JsonDocumentDeleteStatus.conflict,
+            error: recoveryError,
+          );
+        }
         final target = _findCaseInsensitive(_localTarget(location));
         if (target == null) {
           return const JsonDocumentDeleteResult(
@@ -238,29 +255,20 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
   Future<T> _serialized<T>(
     JsonDocumentLocation location,
     Future<T> Function() action,
-  ) async {
-    final key = location.lockKey;
-    final previous = _tails[key] ?? Future<void>.value();
-    final ready = previous.then<void>((_) {}, onError: (_, _) {});
-    final completer = Completer<void>();
-    _tails[key] = completer.future;
-    await ready;
-    try {
-      return await action();
-    } finally {
-      completer.complete();
-      if (identical(_tails[key], completer.future)) {
-        final _ = _tails.remove(key);
-      }
-    }
-  }
+  ) => _JsonDocumentOperationCoordinator.run(location.lockKey, action);
 
-  JsonDocumentReadResult _readLocal(JsonDocumentLocation location) {
+  Future<JsonDocumentReadResult> _readLocal(
+    JsonDocumentLocation location,
+  ) async {
     try {
+      final recoveryError = await _recoverLocal(location);
+      if (recoveryError != null) {
+        return JsonDocumentReadResult.unreadable(recoveryError);
+      }
       final target = _localTarget(location);
       final actual = _findCaseInsensitive(target);
       if (actual == null) return const JsonDocumentReadResult.missing();
-      final bytes = actual.readAsBytesSync();
+      final bytes = await actual.readAsBytes();
       return JsonDocumentReadResult.found(
         JsonDocumentSnapshot(bytes: bytes, revision: _revision(bytes)),
       );
@@ -278,6 +286,13 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
     final target = _localTarget(location);
     final parent = target.parent;
     await parent.create(recursive: true);
+    final recoveryError = await _recoverLocal(location);
+    if (recoveryError != null) {
+      return JsonDocumentWriteResult(
+        status: JsonDocumentWriteStatus.conflict,
+        error: recoveryError,
+      );
+    }
     final existing = _findCaseInsensitive(target);
     if (mode == JsonDocumentWriteMode.createIfAbsent && existing != null) {
       return JsonDocumentWriteResult(
@@ -302,16 +317,17 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
       }
     }
 
-    final nonce = '${DateTime.now().microsecondsSinceEpoch}.$pid';
-    final targetName = path.basename(target.path);
-    final temporary = File(path.join(parent.path, '.$targetName.$nonce.part'));
-    final backup = File(path.join(parent.path, '.$targetName.$nonce.bak'));
+    final temporary = _transactionFile(target, '.doujin.part');
+    final backup = _transactionFile(target, '.doujin.bak');
     File? movedExisting;
     try {
-      final sink = temporary.openWrite(mode: FileMode.writeOnly);
-      sink.add(bytes);
-      await sink.flush();
-      await sink.close();
+      final stagedFile = await temporary.open(mode: FileMode.write);
+      try {
+        await stagedFile.writeFrom(bytes);
+        await stagedFile.flush();
+      } finally {
+        await stagedFile.close();
+      }
       final staged = await temporary.readAsBytes();
       if (_validate(staged) != null || _revision(staged) != _revision(bytes)) {
         throw const FormatException('staging_validation_failed');
@@ -338,6 +354,11 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
       }
 
       await temporary.rename(target.path);
+      final committed = await target.readAsBytes();
+      if (_validate(committed) != null ||
+          _revision(committed) != _revision(bytes)) {
+        throw const FormatException('commit_validation_failed');
+      }
       if (movedExisting != null && await movedExisting.exists()) {
         await movedExisting.delete();
       }
@@ -352,7 +373,8 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
       if (await temporary.exists()) await temporary.delete();
       if (movedExisting != null && await movedExisting.exists()) {
         final current = _findCaseInsensitive(target);
-        if (current == null) await movedExisting.rename(target.path);
+        if (current != null) await current.delete();
+        await movedExisting.rename(target.path);
       }
       return JsonDocumentWriteResult(
         status: JsonDocumentWriteStatus.conflict,
@@ -360,6 +382,65 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
       );
     }
   }
+
+  Future<String?> _recoverLocal(JsonDocumentLocation location) async {
+    final target = _localTarget(location);
+    final actualTarget = _findCaseInsensitive(target);
+    final backup = _findCaseInsensitive(
+      _transactionFile(target, '.doujin.bak'),
+    );
+    final staged = _findCaseInsensitive(
+      _transactionFile(target, '.doujin.part'),
+    );
+    final targetValid = await _isValidJsonFile(actualTarget);
+    final backupValid = await _isValidJsonFile(backup);
+    final stagedValid = await _isValidJsonFile(staged);
+
+    try {
+      if (targetValid) {
+        await _deleteIfPresent(backup);
+        await _deleteIfPresent(staged);
+        return null;
+      }
+
+      if (backupValid) {
+        await _deleteIfPresent(actualTarget);
+        await _deleteIfPresent(staged);
+        await backup!.rename(target.path);
+        return null;
+      }
+
+      if (stagedValid) {
+        await _deleteIfPresent(actualTarget);
+        await _deleteIfPresent(backup);
+        await staged!.rename(target.path);
+        return null;
+      }
+
+      if (actualTarget != null || backup != null || staged != null) {
+        return 'transaction_recovery_failed';
+      }
+      return null;
+    } on Object catch (error) {
+      return 'transaction_recovery_failed: $error';
+    }
+  }
+
+  Future<bool> _isValidJsonFile(File? file) async {
+    if (file == null) return false;
+    try {
+      return _validate(await file.readAsBytes()) == null;
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<void> _deleteIfPresent(File? file) async {
+    if (file != null && await file.exists()) await file.delete();
+  }
+
+  File _transactionFile(File target, String suffix) =>
+      File('${target.path}$suffix');
 
   File _localTarget(JsonDocumentLocation location) {
     final parentPath = switch (location.kind) {
@@ -433,6 +514,26 @@ final class DefaultJsonDocumentStore implements JsonDocumentStore {
       status: status,
       error: value?['error']?.toString(),
     );
+  }
+}
+
+final class _JsonDocumentOperationCoordinator {
+  static final Map<String, Future<void>> _tails = <String, Future<void>>{};
+
+  static Future<T> run<T>(String key, Future<T> Function() action) async {
+    final previous = _tails[key] ?? Future<void>.value();
+    final ready = previous.then<void>((_) {}, onError: (_, _) {});
+    final completer = Completer<void>();
+    _tails[key] = completer.future;
+    await ready;
+    try {
+      return await action();
+    } finally {
+      completer.complete();
+      if (identical(_tails[key], completer.future)) {
+        final _ = _tails.remove(key);
+      }
+    }
   }
 }
 

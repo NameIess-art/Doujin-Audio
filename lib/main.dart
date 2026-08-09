@@ -44,6 +44,7 @@ import 'features/settings/application/app_update_service.dart';
 import 'features/settings/application/settings_repository.dart';
 import 'features/settings/application/settings_state.dart';
 import 'core/persistence/app_database.dart';
+import 'core/persistence/json_document_store.dart';
 import 'features/data_support/application/data_backup_service.dart';
 
 StartupRestoreOutcome? _startupRestoreOutcome;
@@ -195,11 +196,15 @@ Widget _createAudioPlayerApp({
   final timerService = TimerService();
   final notificationCoordinatorService = NotificationCoordinatorService();
   final settingsRepository = SettingsRepository();
-  final asmrDownloadManager = AsmrDownloadManager();
+  final jsonDocumentStore = DefaultJsonDocumentStore();
+  final asmrDownloadManager = AsmrDownloadManager(
+    jsonDocumentStore: jsonDocumentStore,
+  );
   final appLanguageProvider = AppLanguageProvider();
   final appUpdateService = AppUpdateService();
   final libraryFacade = LibraryFacade.create(
     databaseRepository: libraryRepository,
+    jsonDocumentStore: jsonDocumentStore,
     service: libraryService,
   );
   final playbackFacade = PlaybackFacade.create(

@@ -15,6 +15,7 @@ import '../../../core/media/media_file_support.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
+import '../../../core/persistence/json_document_store.dart';
 import '../../asmr/application/asmr_metadata_service.dart';
 import '../../settings/application/app_preferences.dart';
 import '../../settings/application/app_cache_service.dart';
@@ -62,6 +63,7 @@ final class LibraryFacade implements LibraryCatalog {
   factory LibraryFacade.create({
     required LibraryPersistenceRepository databaseRepository,
     AudioDetailStore? audioDetailStore,
+    JsonDocumentStore? jsonDocumentStore,
     AudioDetailRepository? detailRepository,
     AudioDetailCacheService? detailCacheService,
     DlsiteMetadataService? metadataService,
@@ -88,6 +90,7 @@ final class LibraryFacade implements LibraryCatalog {
               detailRepository ??
               AudioDetailRepository(
                 databaseRepository: resolvedAudioDetailStore,
+                jsonDocumentStore: jsonDocumentStore,
               ),
         );
     final resolvedService = service ?? LibraryService();

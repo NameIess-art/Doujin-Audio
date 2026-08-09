@@ -13,8 +13,118 @@ import org.json.JSONTokener
 import java.io.File
 import java.io.FileOutputStream
 import java.security.MessageDigest
+import java.util.concurrent.locks.ReentrantLock
 import java.util.Locale
-import java.util.UUID
+
+internal data class SafDocumentRecovery<T>(
+    val document: T?,
+    val failed: Boolean = false
+)
+
+internal fun <T> recoverSafDocument(
+    targetName: String,
+    existing: T?,
+    staleBackup: T?,
+    staleTemp: T?,
+    isValid: (T) -> Boolean,
+    rename: (T, String) -> T?,
+    delete: (T) -> Boolean
+): SafDocumentRecovery<T> {
+    fun remove(document: T?): Boolean = document == null ||
+        runCatching { delete(document) }.getOrDefault(false)
+
+    if (existing != null && runCatching { isValid(existing) }.getOrDefault(false)) {
+        if (!remove(staleBackup) || !remove(staleTemp)) {
+            return SafDocumentRecovery(document = existing, failed = true)
+        }
+        return SafDocumentRecovery(document = existing)
+    }
+
+    if (staleBackup != null && runCatching { isValid(staleBackup) }.getOrDefault(false)) {
+        if (!remove(existing) || !remove(staleTemp)) {
+            return SafDocumentRecovery(document = null, failed = true)
+        }
+        val restored = runCatching { rename(staleBackup, targetName) }.getOrNull()
+        return SafDocumentRecovery(
+            document = restored,
+            failed = restored == null
+        )
+    }
+
+    if (staleTemp != null && runCatching { isValid(staleTemp) }.getOrDefault(false)) {
+        if (!remove(existing) || !remove(staleBackup)) {
+            return SafDocumentRecovery(document = null, failed = true)
+        }
+        val committed = runCatching { rename(staleTemp, targetName) }.getOrNull()
+        return SafDocumentRecovery(
+            document = committed,
+            failed = committed == null
+        )
+    }
+
+    return SafDocumentRecovery(
+        document = null,
+        failed = existing != null || staleBackup != null || staleTemp != null
+    )
+}
+
+internal object JsonDocumentOperationLocks {
+    private data class Entry(
+        val lock: ReentrantLock = ReentrantLock(),
+        var references: Int = 0
+    )
+
+    private val monitor = Any()
+    private val entries = mutableMapOf<String, Entry>()
+
+    fun <T> withLock(key: String, action: () -> T): T {
+        val entry = synchronized(monitor) {
+            entries.getOrPut(key) { Entry() }.also { it.references++ }
+        }
+        entry.lock.lock()
+        try {
+            return action()
+        } finally {
+            entry.lock.unlock()
+            synchronized(monitor) {
+                entry.references--
+                if (entry.references == 0 && entries[key] === entry) {
+                    entries.remove(key)
+                }
+            }
+        }
+    }
+}
+
+internal fun <T> commitSafDocumentReplacement(
+    targetName: String,
+    current: T?,
+    temporary: T,
+    isValidCommitted: (T) -> Boolean = { true },
+    rename: (T, String) -> T?,
+    delete: (T) -> Boolean
+): T? {
+    val backupName = "$targetName.doujin.bak"
+    val backup = if (current != null) {
+        runCatching { rename(current, backupName) }.getOrNull().also {
+            if (it == null) runCatching { delete(temporary) }
+        } ?: return null
+    } else {
+        null
+    }
+
+    val committed = runCatching { rename(temporary, targetName) }.getOrNull()
+    if (committed == null ||
+        !runCatching { isValidCommitted(committed) }.getOrDefault(false)) {
+        if (committed != null) runCatching { delete(committed) }
+        if (backup != null) runCatching { rename(backup, targetName) }
+        runCatching { delete(temporary) }
+        return null
+    }
+
+    if (backup != null) runCatching { delete(backup) }
+    return committed
+}
 
 internal fun <T> replaceSafDocument(
     targetName: String,
@@ -25,7 +135,6 @@ internal fun <T> replaceSafDocument(
     rename: (T, String) -> T?,
     delete: (T) -> Boolean
 ): Boolean {
-    val backupName = "$targetName.doujin.bak"
     var current = existing
     if (current == null && staleBackup != null) {
         current = runCatching { rename(staleBackup, targetName) }.getOrNull()
@@ -43,27 +152,13 @@ internal fun <T> replaceSafDocument(
         return false
     }
 
-    val backup = if (current != null) {
-        runCatching { rename(current, backupName) }.getOrNull().also {
-            if (it == null) cleanupTemp()
-        } ?: return false
-    } else {
-        null
-    }
-
-    val committed = runCatching { rename(temp, targetName) }.getOrNull()
-    if (committed == null) {
-        if (backup != null) {
-            runCatching { rename(backup, targetName) }
-        }
-        cleanupTemp()
-        return false
-    }
-
-    if (backup != null) {
-        runCatching { delete(backup) }
-    }
-    return true
+    return commitSafDocumentReplacement(
+        targetName = targetName,
+        current = current,
+        temporary = temp,
+        rename = rename,
+        delete = delete
+    ) != null
 }
 
 internal fun <T> createSafDocumentIfAbsent(
@@ -108,14 +203,26 @@ internal class DocumentStorageOperations(
         locationKind: String,
         basePath: String,
         name: String
+    ): Map<String, Any?> = JsonDocumentOperationLocks.withLock(
+        jsonDocumentLockKey(locationKind, basePath, name)
+    ) {
+        readJsonDocumentLocked(locationKind, basePath, name)
+    }
+
+    private fun readJsonDocumentLocked(
+        locationKind: String,
+        basePath: String,
+        name: String
     ): Map<String, Any?> {
         val folder = resolveJsonDocumentFolder(locationKind, basePath)
             ?: return mapOf("status" to "unreadable", "error" to "folder_unavailable")
-        val target = runCatching { folder.listFiles().firstOrNull {
-            it.isFile && sameDocumentName(it.name, name)
-        } }.getOrElse {
+        val recovery = recoverJsonDocument(folder, name).getOrElse {
             return mapOf("status" to "unreadable", "error" to it.toString())
-        } ?: return mapOf("status" to "missing")
+        }
+        if (recovery.failed) {
+            return mapOf("status" to "unreadable", "error" to "transaction_recovery_failed")
+        }
+        val target = recovery.document ?: return mapOf("status" to "missing")
         return runCatching {
             val bytes = contentResolver.openInputStream(target.uri)?.use { it.readBytes() }
                 ?: return mapOf("status" to "unreadable", "error" to "open_failed")
@@ -136,6 +243,26 @@ internal class DocumentStorageOperations(
         bytes: ByteArray,
         mode: String,
         expectedRevision: String?
+    ): Map<String, Any?> = JsonDocumentOperationLocks.withLock(
+        jsonDocumentLockKey(locationKind, basePath, name)
+    ) {
+        writeJsonDocumentLocked(
+            locationKind,
+            basePath,
+            name,
+            bytes,
+            mode,
+            expectedRevision
+        )
+    }
+
+    private fun writeJsonDocumentLocked(
+        locationKind: String,
+        basePath: String,
+        name: String,
+        bytes: ByteArray,
+        mode: String,
+        expectedRevision: String?
     ): Map<String, Any?> {
         if (!isValidJson(bytes)) {
             return jsonWriteConflict("invalid_json")
@@ -148,12 +275,13 @@ internal class DocumentStorageOperations(
         }
         val folder = resolveJsonDocumentFolder(locationKind, basePath)
             ?: return jsonWriteConflict("folder_unavailable")
-        val initialDocuments = runCatching { folder.listFiles().toList() }.getOrElse {
+        val recovery = recoverJsonDocument(folder, name).getOrElse {
             return jsonWriteConflict(it.toString())
         }
-        val existing = initialDocuments.firstOrNull {
-            it.isFile && sameDocumentName(it.name, name)
+        if (recovery.failed) {
+            return jsonWriteConflict("transaction_recovery_failed")
         }
+        val existing = recovery.document
         if (mode == "createIfAbsent" && existing != null) {
             return jsonPreserved(existing)
         }
@@ -166,8 +294,7 @@ internal class DocumentStorageOperations(
             }
         }
 
-        val token = UUID.randomUUID().toString()
-        val temporaryName = ".$name.$token.part"
+        val temporaryName = "$name.doujin.part"
         val temporary = runCatching {
             folder.createFile("application/octet-stream", temporaryName)
         }.getOrNull() ?: return jsonWriteConflict("staging_create_failed")
@@ -211,31 +338,23 @@ internal class DocumentStorageOperations(
             }
         }
 
-        var backup: DocumentFile? = null
-        if (current != null) {
-            val backupName = ".$name.$token.bak"
-            backup = renameDocumentFile(current, backupName)
-            if (backup == null || !sameDocumentName(backup.name, backupName)) {
-                deleteTemporary()
-                return jsonWriteConflict("backup_rename_failed")
-            }
-        }
-        val committed = renameDocumentFile(temporary, name)
-        if (committed == null || !sameDocumentName(committed.name, name)) {
-            if (backup != null) runCatching { renameDocumentFile(backup, name) }
-            deleteTemporary()
-            return jsonWriteConflict("commit_rename_failed")
-        }
-        val committedRevision = documentRevision(committed)
-        if (committedRevision != sha256(bytes)) {
-            runCatching { committed.delete() }
-            if (backup != null) runCatching { renameDocumentFile(backup, name) }
-            return jsonWriteConflict("commit_validation_failed")
-        }
-        if (backup != null) runCatching { backup.delete() }
+        val expectedCommittedRevision = sha256(bytes)
+        if (commitSafDocumentReplacement(
+            targetName = name,
+            current = current,
+            temporary = temporary,
+            isValidCommitted = { document ->
+                sameDocumentName(document.name, name) &&
+                    documentRevision(document) == expectedCommittedRevision
+            },
+            rename = { document, targetName ->
+                renameDocumentFile(document, targetName)
+            },
+            delete = { document -> document.delete() }
+        ) == null) return jsonWriteConflict("commit_failed")
         return mapOf(
             "status" to if (mode == "createIfAbsent") "created" else "replaced",
-            "revision" to committedRevision,
+            "revision" to expectedCommittedRevision,
             "bytesWritten" to bytes.size
         )
     }
@@ -245,14 +364,27 @@ internal class DocumentStorageOperations(
         basePath: String,
         name: String,
         expectedRevision: String
+    ): Map<String, Any?> = JsonDocumentOperationLocks.withLock(
+        jsonDocumentLockKey(locationKind, basePath, name)
+    ) {
+        deleteJsonDocumentLocked(locationKind, basePath, name, expectedRevision)
+    }
+
+    private fun deleteJsonDocumentLocked(
+        locationKind: String,
+        basePath: String,
+        name: String,
+        expectedRevision: String
     ): Map<String, Any?> {
         val folder = resolveJsonDocumentFolder(locationKind, basePath)
             ?: return mapOf("status" to "conflict", "error" to "folder_unavailable")
-        val target = runCatching { folder.listFiles().firstOrNull {
-            it.isFile && sameDocumentName(it.name, name)
-        } }.getOrElse {
+        val recovery = recoverJsonDocument(folder, name).getOrElse {
             return mapOf("status" to "conflict", "error" to it.toString())
-        } ?: return mapOf("status" to "missing")
+        }
+        if (recovery.failed) {
+            return mapOf("status" to "conflict", "error" to "transaction_recovery_failed")
+        }
+        val target = recovery.document ?: return mapOf("status" to "missing")
         val revision = documentRevision(target)
             ?: return mapOf("status" to "conflict", "error" to "document_unreadable")
         if (revision != expectedRevision) {
@@ -272,6 +404,46 @@ internal class DocumentStorageOperations(
         "folderChild" -> resolveDocumentFileForFolderPath(basePath)
         "fileSibling" -> resolveParentFolderForFile(basePath)
         else -> throw IllegalArgumentException("Unsupported JSON document location")
+    }
+
+    private fun jsonDocumentLockKey(
+        locationKind: String,
+        basePath: String,
+        name: String
+    ): String = buildString {
+        append(locationKind)
+        append('\u0000')
+        append(basePath.trim().trimEnd('/'))
+        append('\u0000')
+        append(name.lowercase(Locale.US))
+    }
+
+    private fun recoverJsonDocument(
+        folder: DocumentFile,
+        name: String
+    ): Result<SafDocumentRecovery<DocumentFile>> = runCatching {
+        val documents = folder.listFiles().toList()
+        recoverSafDocument(
+            targetName = name,
+            existing = documents.firstOrNull {
+                it.isFile && sameDocumentName(it.name, name)
+            },
+            staleBackup = documents.firstOrNull {
+                it.isFile && sameDocumentName(it.name, "$name.doujin.bak")
+            },
+            staleTemp = documents.firstOrNull {
+                it.isFile && sameDocumentName(it.name, "$name.doujin.part")
+            },
+            isValid = { document ->
+                contentResolver.openInputStream(document.uri)?.use { input ->
+                    isValidJson(input.readBytes())
+                } == true
+            },
+            rename = { document, targetName ->
+                renameDocumentFile(document, targetName)
+            },
+            delete = { document -> document.delete() }
+        )
     }
 
     private fun documentRevision(document: DocumentFile): String? = runCatching {

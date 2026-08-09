@@ -49,12 +49,15 @@ class AudioDetailRepository {
   AudioDetailRepository({
     required AudioDetailStore databaseRepository,
     AudioDetailDocumentRepository? documentRepository,
+    JsonDocumentStore? jsonDocumentStore,
     AudioDetailCoverStore? coverStore,
     DateTime Function()? now,
   }) : _store = databaseRepository,
        _documents =
            documentRepository ??
-           AudioDetailDocumentRepository(store: DefaultJsonDocumentStore()),
+           AudioDetailDocumentRepository(
+             store: jsonDocumentStore ?? DefaultJsonDocumentStore(),
+           ),
        _coverStore = coverStore ?? AudioDetailCoverStore(),
        _now = now ?? DateTime.now;
 

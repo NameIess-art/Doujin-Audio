@@ -99,7 +99,7 @@ void main() {
   );
 
   test(
-    'explicit save merges valid unknown fields and rebuilds invalid file',
+    'explicit save merges valid fields but preserves an invalid document',
     () async {
       await documentFile.writeAsString(
         '{"schemaVersion":1,"type":"audio-detail","unknown":7}',
@@ -113,14 +113,11 @@ void main() {
       expect(merged['workTitle'], 'One');
 
       await documentFile.writeAsString('', flush: true);
-      final rebuilt = await repository.save(
+      final rejected = await repository.save(
         AudioDetail.empty(target).copyWith(workTitle: 'Two'),
       );
-      expect(rebuilt.documentStatus, JsonDocumentWriteStatus.replaced);
-      expect(
-        (jsonDecode(await documentFile.readAsString()) as Map)['workTitle'],
-        'Two',
-      );
+      expect(rejected.documentStatus, JsonDocumentWriteStatus.conflict);
+      expect(await documentFile.readAsString(), isEmpty);
     },
   );
 

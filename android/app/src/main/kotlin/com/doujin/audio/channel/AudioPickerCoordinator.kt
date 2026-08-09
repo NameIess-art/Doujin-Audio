@@ -8,6 +8,8 @@ import android.os.Looper
 import android.provider.DocumentsContract
 import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
+import com.doujin.audio.storage.NewlyPersistedUriPermission
+import com.doujin.audio.storage.PersistedUriPermissionOperations
 import io.flutter.plugin.common.MethodChannel
 
 internal class AudioPickerCoordinator(
@@ -175,12 +177,14 @@ internal class AudioPickerCoordinator(
                 return
             }
             submitPickerTask(pending) {
-                persistReadPermission(maybeTreeUri, data.flags)
-                hashMapOf(
-                    "kind" to "folder",
-                    "path" to maybeTreeUri.toString(),
-                    "label" to resolveTreeDisplayName(maybeTreeUri)
-                )
+                PersistedUriPermissionOperations.withPermissionLock {
+                    persistReadPermission(maybeTreeUri, data.flags)
+                    hashMapOf(
+                        "kind" to "folder",
+                        "path" to maybeTreeUri.toString(),
+                        "label" to resolveTreeDisplayName(maybeTreeUri)
+                    )
+                }
             }
             return
         }
@@ -209,14 +213,25 @@ internal class AudioPickerCoordinator(
         }
 
         submitPickerTask(pending) {
-            val files = arrayListOf<HashMap<String, String>>()
-            for (uri in pickedUris) {
-                appendPickedFile(files, uri, data.flags)
+            PersistedUriPermissionOperations.withPermissionLock {
+                val files = arrayListOf<HashMap<String, String>>()
+                val newlyPersisted = mutableListOf<NewlyPersistedUriPermission>()
+                try {
+                    for (uri in pickedUris.distinct()) {
+                        appendPickedFile(files, uri, data.flags)?.let(newlyPersisted::add)
+                    }
+                } catch (error: Exception) {
+                    PersistedUriPermissionOperations.rollbackPickerGrants(
+                        activity.contentResolver,
+                        newlyPersisted
+                    )
+                    throw error
+                }
+                hashMapOf<String, Any>(
+                    "kind" to "files",
+                    "files" to files
+                )
             }
-            hashMapOf<String, Any>(
-                "kind" to "files",
-                "files" to files
-            )
         }
     }
 
@@ -239,7 +254,11 @@ internal class AudioPickerCoordinator(
                         is FileCacheTaskResult.Success ->
                             request.result.success(taskResult.value)
                         is FileCacheTaskResult.Failure -> request.result.error(
-                            "picker_failed",
+                            if (taskResult.exception is SecurityException) {
+                                "picker_permission_denied"
+                            } else {
+                                "picker_failed"
+                            },
                             taskResult.exception.message ?: "audio picker failed",
                             null
                         )
@@ -266,8 +285,8 @@ internal class AudioPickerCoordinator(
         files: MutableList<HashMap<String, String>>,
         uri: Uri,
         flags: Int
-    ) {
-        persistReadPermission(uri, flags)
+    ): NewlyPersistedUriPermission? {
+        val persisted = persistReadPermission(uri, flags)
         val name = resolveDisplayName(uri)
             ?: uri.lastPathSegment
             ?: "picked_audio"
@@ -277,24 +296,17 @@ internal class AudioPickerCoordinator(
                 "name" to name
             )
         )
+        return persisted
     }
 
-    private fun persistReadPermission(uri: Uri, flags: Int) {
-        val canRead = flags and Intent.FLAG_GRANT_READ_URI_PERMISSION != 0
-        val canWrite = flags and Intent.FLAG_GRANT_WRITE_URI_PERMISSION != 0
-        if (!canRead && !canWrite) return
-        try {
-            var modeFlags = 0
-            if (canRead) modeFlags = modeFlags or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            if (canWrite) modeFlags = modeFlags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            activity.contentResolver.takePersistableUriPermission(
-                uri,
-                modeFlags
-            )
-        } catch (_: Exception) {
-            // Some providers do not support persistable permissions.
-        }
-    }
+    private fun persistReadPermission(
+        uri: Uri,
+        flags: Int
+    ): NewlyPersistedUriPermission? = PersistedUriPermissionOperations.takeForPicker(
+        activity.contentResolver,
+        uri,
+        flags
+    )
 
     private fun resolveDisplayName(uri: Uri): String? {
         return try {

@@ -516,7 +516,9 @@ internal class NativePlaybackSession(
         return descriptors[currentIndex]
     }
 
-    override fun snapshot(): Map<String, Any?> {
+    override fun snapshot(): Map<String, Any?> = snapshot(includeRetainedUris = false)
+
+    fun snapshot(includeRetainedUris: Boolean): Map<String, Any?> {
         val p = _player
         if (p != null) {
             lastPositionMs = p.currentPosition.coerceAtLeast(0L)
@@ -538,7 +540,7 @@ internal class NativePlaybackSession(
             playWhenReady = lastPlayWhenReady
         )
 
-        return mapOf(
+        val result = mutableMapOf<String, Any?>(
             "sessionId" to sessionId,
             "path" to path,
             "uri" to uri,
@@ -561,6 +563,22 @@ internal class NativePlaybackSession(
             "transportCommandId" to transportCommandId,
             "error" to p?.playerError?.message
         )
+        if (includeRetainedUris) {
+            result["retainedUris"] = buildList {
+                add(path)
+                add(uri)
+                add(artUri)
+                queue.forEach { descriptor ->
+                    add(descriptor.path)
+                    add(descriptor.uri)
+                    add(descriptor.artUri)
+                }
+            }.filterNotNull()
+                .filter { it.startsWith("content://", ignoreCase = true) }
+                .map { it.substringBefore("::") }
+                .distinct()
+        }
+        return result
     }
 
     fun progressAnchorSnapshot(): NativePlaybackProgressAnchor = progressAnchor
@@ -610,7 +628,8 @@ internal class NativePlaybackSession(
                     uri = descriptor.uri,
                     title = descriptor.title,
                     subtitle = descriptor.subtitle,
-                    artUri = descriptor.artUri
+                    artUri = descriptor.artUri,
+                    candidateUris = descriptor.candidateUris
                 )
             },
             channelSwapEnabled = channelSwapEnabled,

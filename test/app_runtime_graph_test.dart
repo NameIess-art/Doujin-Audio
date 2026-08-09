@@ -197,6 +197,31 @@ void main() {
       same(localTrack),
     );
   });
+
+  test('native-only restored content session retains its SAF grant', () async {
+    final library = _createLibraryFacade();
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+    );
+    addTearDown(playback.dispose);
+
+    playback.updateNativeSessionRetainedContentUris(
+      'native-only-session',
+      const <String>[
+        'content://provider/document/audio-1',
+        'https://example.com/audio.mp3',
+      ],
+    );
+
+    expect(playback.sessions, isEmpty);
+    expect(playback.persistedContentUris, <String>{
+      'content://provider/document/audio-1',
+    });
+
+    playback.forgetNativeSessionRetainedContentUris('native-only-session');
+    expect(playback.persistedContentUris, isEmpty);
+  });
 }
 
 LibraryFacade _createLibraryFacade({LibraryService? service}) {

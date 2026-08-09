@@ -40,6 +40,7 @@ import androidx.media3.session.MediaSessionService
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicInteger
 
 internal fun shouldPublishProgressHeartbeat(
     isScreenOn: Boolean,
@@ -141,6 +142,9 @@ class NativePlaybackService : MediaSessionService() {
         private const val SCREEN_OFF_PROGRESS_HEARTBEAT_INTERVAL_MS = 5000L
         private const val LOG_TAG = "NativePlaybackService"
         private val internalStartToken = UUID.randomUUID().toString()
+        private val pendingCommandDeliveries = AtomicInteger(0)
+        private val controllerListeners =
+            ConcurrentHashMap<String, (NativePlaybackService?) -> Unit>()
 
         @Volatile
         private var instance: NativePlaybackService? = null
@@ -151,7 +155,45 @@ class NativePlaybackService : MediaSessionService() {
         @Volatile
         var notificationsDismissed = false
 
-        fun controller(): NativePlaybackService? = instance
+        fun controller(): NativePlaybackService? = instance?.takeIf {
+            isPlaybackServiceControllerAvailable(
+                instancePresent = true,
+                stoppingForIdleExit = it.stoppingForIdleExit
+            )
+        }
+
+        internal fun addControllerListener(
+            ownerId: String,
+            listener: (NativePlaybackService?) -> Unit
+        ) {
+            controllerListeners[ownerId] = listener
+        }
+
+        internal fun removeControllerListener(ownerId: String) {
+            controllerListeners.remove(ownerId)
+        }
+
+        internal fun publishController(service: NativePlaybackService?) {
+            controllerListeners.values.forEach { listener ->
+                runCatching { listener(service) }
+            }
+        }
+
+        internal fun beginCommandDelivery() {
+            pendingCommandDeliveries.incrementAndGet()
+        }
+
+        internal fun endCommandDelivery() {
+            val remaining = pendingCommandDeliveries.updateAndGet { current ->
+                (current - 1).coerceAtLeast(0)
+            }
+            if (remaining == 0) {
+                controller()?.onPendingCommandDeliveriesSettled()
+            }
+        }
+
+        internal fun hasPendingCommandDelivery(): Boolean =
+            pendingCommandDeliveries.get() > 0
 
         fun ensureStarted(
             context: Context,
@@ -200,6 +242,10 @@ class NativePlaybackService : MediaSessionService() {
         Thread(runnable, "NativePlaybackRestore").apply { isDaemon = true }
     }
     private var restoreGeneration = 0L
+    private var latestAcceptedStartId = 0
+    private var deferredIdleExit: DeferredIdleExit? = null
+    @Volatile
+    private var stoppingForIdleExit = false
     private val progressPublisher by lazy {
         NativePlaybackProgressPublisher(
             mainHandler = mainHandler,
@@ -700,6 +746,7 @@ class NativePlaybackService : MediaSessionService() {
         screenStateReceiverRegistered = true
         ensurePlaybackChannel()
         instance = this
+        publishController(this)
         logInfo("on_create")
     }
 
@@ -711,6 +758,11 @@ class NativePlaybackService : MediaSessionService() {
                 null
             )
             return rejectedStartResult(startId)
+        }
+        latestAcceptedStartId = startId
+        if (stoppingForIdleExit) {
+            stoppingForIdleExit = false
+            publishController(this)
         }
         super.onStartCommand(intent, flags, startId)
         // A startForegroundService call has a short deadline. Publish the
@@ -724,7 +776,7 @@ class NativePlaybackService : MediaSessionService() {
             shouldAttemptStickyPlaybackRestore(sessions.isNotEmpty(), attemptedStickyPlaybackRestore)
         ) {
             attemptedStickyPlaybackRestore = true
-            restorePersistedPlaybackAfterServiceRestart()
+            restorePersistedPlaybackAfterServiceRestart(startId)
         }
         return START_STICKY
     }
@@ -795,6 +847,7 @@ class NativePlaybackService : MediaSessionService() {
         stateListeners.clear()
         videoOutputs.clear()
         restoreGeneration += 1
+        deferredIdleExit = null
         if (audioDeviceDisconnectReceiverRegistered) {
             unregisterReceiver(audioDeviceDisconnectReceiver)
             audioDeviceDisconnectReceiverRegistered = false
@@ -816,7 +869,10 @@ class NativePlaybackService : MediaSessionService() {
         abandonAudioFocus(reason = "on_destroy")
         releaseWakeLock()
         PlaybackKeepAliveAlarmScheduler.cancel(this)
-        instance = null
+        if (instance === this) {
+            instance = null
+            publishController(null)
+        }
         super.onDestroy()
         logInfo("on_destroy_end")
     }
@@ -1284,7 +1340,9 @@ class NativePlaybackService : MediaSessionService() {
     fun snapshot(): Map<String, Any?> {
         val response = okResult(
             mapOf(
-                "sessions" to sessions.values.map { it.snapshot() },
+                "sessions" to sessions.values.map {
+                    it.snapshot(includeRetainedUris = true)
+                },
                 "focusedSessionId" to focusedSessionId
             )
         )
@@ -1756,24 +1814,30 @@ class NativePlaybackService : MediaSessionService() {
         statePersistence.persistNow()
     }
 
-    private fun restorePersistedPlaybackAfterServiceRestart() {
+    private fun restorePersistedPlaybackAfterServiceRestart(startId: Int) {
         val generation = ++restoreGeneration
         restoreExecutor.execute {
             val storedSessions = NativePlaybackStateStore.loadSessions(applicationContext)
                 .filter { it.playing || it.playWhenReady }
             mainHandler.post {
                 if (generation != restoreGeneration) return@post
-                restorePersistedPlaybackOnMain(storedSessions, generation)
+                restorePersistedPlaybackOnMain(storedSessions, generation, startId)
             }
         }
     }
 
     private fun restorePersistedPlaybackOnMain(
         storedSessions: List<StoredNativePlaybackSession>,
-        generation: Long
+        generation: Long,
+        startId: Int
     ) {
         if (storedSessions.isEmpty()) {
             logInfo("sticky_restore_skip no_active_sessions")
+            stopIdleServiceAfterRestoreIfEligible(
+                generation = generation,
+                startId = startId,
+                reason = "sticky_restore_empty"
+            )
             return
         }
 
@@ -1796,10 +1860,10 @@ class NativePlaybackService : MediaSessionService() {
             if (index >= storedSessions.size) {
                 if (restoredSessionIds.isEmpty()) {
                     logInfo("sticky_restore_skip restore_failed")
-                    releaseWakeLock()
-                    foregroundCoordinator.stop(
-                        reason = "sticky_restore_failed",
-                        removeNotification = true
+                    stopIdleServiceAfterRestoreIfEligible(
+                        generation = generation,
+                        startId = startId,
+                        reason = "sticky_restore_failed"
                     )
                     return
                 }
@@ -1835,6 +1899,78 @@ class NativePlaybackService : MediaSessionService() {
 
         restoreNext(0)
     }
+
+    private fun stopIdleServiceAfterRestoreIfEligible(
+        generation: Long,
+        startId: Int,
+        reason: String
+    ) {
+        val decision = decideIdlePlaybackServiceStopAfterRestore(
+            hasSessions = sessions.isNotEmpty(),
+            hasPlaybackToKeepAlive = hasPlaybackToKeepAlive(),
+            restoreGeneration = generation,
+            currentRestoreGeneration = restoreGeneration,
+            latestStartId = latestAcceptedStartId,
+            hasPendingCommandDelivery = hasPendingCommandDelivery()
+        )
+        if (decision.action == IdlePlaybackServiceStopAction.SKIP) {
+            logInfo(
+                "idle_exit_skip reason=$reason restoreStartId=$startId " +
+                    "latestStartId=$latestAcceptedStartId"
+            )
+            return
+        }
+        if (decision.action == IdlePlaybackServiceStopAction.DEFER) {
+            deferredIdleExit = DeferredIdleExit(
+                generation = generation,
+                startId = decision.startId ?: latestAcceptedStartId,
+                reason = reason
+            )
+            logInfo("idle_exit_defer reason=$reason pending_command_delivery=true")
+            return
+        }
+        deferredIdleExit = null
+        restoreGeneration += 1
+        mainHandler.removeCallbacks(positionTicker)
+        tickerScheduled = false
+        foregroundCoordinator.cancelGrace()
+        foregroundCoordinator.stopWatchdog()
+        stopStatePersistenceTicker()
+        cancelScheduledPersistSessionState()
+        playbackRecovery.clearAll()
+        releaseMediaSession(reason)
+        abandonAudioFocus(reason = reason)
+        releaseWakeLock()
+        PlaybackKeepAliveAlarmScheduler.cancel(this)
+        foregroundCoordinator.stop(reason = reason, removeNotification = true)
+        val stopStartId = decision.startId ?: latestAcceptedStartId
+        logInfo("idle_exit_stop_self reason=$reason startId=$stopStartId")
+        stoppingForIdleExit = true
+        publishController(null)
+        if (!stopSelfResult(stopStartId)) {
+            stoppingForIdleExit = false
+            publishController(this)
+        }
+    }
+
+    private fun onPendingCommandDeliveriesSettled() {
+        mainHandler.post {
+            if (hasPendingCommandDelivery()) return@post
+            val pending = deferredIdleExit ?: return@post
+            deferredIdleExit = null
+            stopIdleServiceAfterRestoreIfEligible(
+                generation = pending.generation,
+                startId = pending.startId,
+                reason = pending.reason
+            )
+        }
+    }
+
+    private data class DeferredIdleExit(
+        val generation: Long,
+        val startId: Int,
+        val reason: String
+    )
 
     private fun restorePersistedSessionsForTimer(sessionIds: List<String>) {
         val missingSessionIds = sessionIds.filterNot { sessions.containsKey(it) }.toSet()

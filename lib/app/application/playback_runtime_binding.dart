@@ -88,14 +88,15 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
       hasAdjacent: (session, {required forward}) =>
           playbackCommands.hasAdjacent(session, forward: forward),
     );
-    playback.attachLoopModeSynchronizer((session, mode) {
-      return playback.nativeRepository.setRepeatOne(
+    playback.attachLoopModeSynchronizer((session, mode) async {
+      final nativeQueue = playbackCommands.nativePlaybackQueueFor(
+        session,
+        currentPath: session.currentTrackPath,
+      );
+      final result = await playback.nativeRepository.setRepeatOne(
         session.id,
         mode == SessionLoopMode.single,
-        queue: playbackCommands.nativePlaybackQueueFor(
-          session,
-          currentPath: session.currentTrackPath,
-        ),
+        queue: nativeQueue,
         queueStartIndex: playbackCommands.nativePlaybackQueueStartIndexFor(
           session,
           currentPath: session.currentTrackPath,
@@ -103,6 +104,19 @@ final class PlaybackRuntimeBinding implements RuntimeBinding {
         repeatAll: mode != SessionLoopMode.single && !mode.isOneShot,
         shuffle: mode.isShuffle,
       );
+      if (result.isOk) {
+        playback.updateNativeSessionRetainedContentUris(
+          session.id,
+          <Object?>[
+            session.currentTrackPath,
+            for (final item in nativeQueue) ...<Object?>[
+              item['path'],
+              item['uri'],
+              item['artUri'],
+            ],
+          ].whereType<String>(),
+        );
+      }
     });
     final binding = PlaybackRuntimeBinding._(playback);
     _attached[playback] = binding;

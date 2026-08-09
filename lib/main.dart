@@ -223,6 +223,7 @@ Widget _createAudioPlayerApp({
     timer: timerFacade,
     notifications: notificationFacade,
     settings: settingsRepository,
+    asmrDownloads: asmrDownloadManager,
   );
   final asmrLibraryController = AsmrLibraryController(
     persistenceRepository: asmrRepository,

@@ -187,6 +187,19 @@ internal class FileCacheMethodHandler(
                     operations.readJsonDocument(locationKind, basePath, name)
                 }
             }
+            FileCacheMethods.RECONCILE_PERSISTED_URI_PERMISSIONS -> {
+                val retainedUris = arguments.requiredList("retainedUris")
+                    .mapIndexed { index, value ->
+                        (value as? String)?.trim()?.takeIf(String::isNotEmpty)
+                            ?: throw IllegalArgumentException(
+                                "Invalid retainedUris item at index $index"
+                            )
+                    }
+                    .toSet()
+                runAsync(result, errorCode = { "uri_permission_reconcile_failed" }) {
+                    operations.reconcilePersistedUriPermissions(retainedUris)
+                }
+            }
             FileCacheMethods.WRITE_JSON_DOCUMENT -> {
                 val locationKind = arguments.requiredString("locationKind")
                 val basePath = arguments.requiredString("basePath")

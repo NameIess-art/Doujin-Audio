@@ -99,12 +99,13 @@ internal class FolderScanOperations(
 
     fun scanFolder(
         folder: String,
-        observer: FolderScanObserver = NoopFolderScanObserver
-    ): ScanFolderResult = orchestrator.scanFolder(folder, observer)
+        observer: FolderScanObserver = NoopFolderScanObserver,
+        collectTracks: Boolean = true
+    ): ScanFolderResult = orchestrator.scanFolder(folder, observer, collectTracks)
 
     private fun scanDocumentTree(
         rootUri: Uri,
-        tracks: MutableMap<String, ScannedTrack>,
+        tracks: ScanTrackAccumulator,
         observer: FolderScanObserver
     ): Int {
         val root = DocumentFile.fromTreeUri(context, rootUri)
@@ -160,21 +161,21 @@ internal class FolderScanOperations(
 
     private fun scanFileSystem(
         root: File,
-        tracks: MutableMap<String, ScannedTrack>,
+        tracks: ScanTrackAccumulator,
         observer: FolderScanObserver
     ): Int = scanFiles(root, null, tracks, observer)
 
     private fun scanFileSystemAsDocumentTree(
         rootUri: Uri,
         root: File,
-        tracks: MutableMap<String, ScannedTrack>,
+        tracks: ScanTrackAccumulator,
         observer: FolderScanObserver
     ): Int = scanFiles(root, rootUri, tracks, observer)
 
     private fun scanFiles(
         root: File,
         documentRoot: Uri?,
-        tracks: MutableMap<String, ScannedTrack>,
+        tracks: ScanTrackAccumulator,
         observer: FolderScanObserver
     ): Int {
         if (!root.exists() || !root.isDirectory) return 1
@@ -233,7 +234,7 @@ internal class FolderScanOperations(
 
     private fun scanMediaStore(
         folder: String,
-        tracks: MutableMap<String, ScannedTrack>,
+        tracks: ScanTrackAccumulator,
         observer: FolderScanObserver
     ): Int {
         if (observer.isCancelled()) return 0
@@ -312,11 +313,11 @@ internal class FolderScanOperations(
     }
 
     private fun remember(
-        tracks: MutableMap<String, ScannedTrack>,
+        tracks: ScanTrackAccumulator,
         track: ScannedTrack,
         observer: FolderScanObserver
     ) {
-        if (tracks.putIfAbsent(track.path, track) == null) observer.onTrack(track)
+        tracks.remember(track, observer)
     }
 
     private fun normalized(value: String?): String =

@@ -24,7 +24,6 @@ class NativePlaybackBridge(
     private val listenerId = "flutter-${UUID.randomUUID()}"
     private val mainHandler = Handler(Looper.getMainLooper())
     private val pendingCalls = linkedSetOf<PendingServiceCall>()
-    private var pendingEventAttachment: PendingEventAttachment? = null
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         if (disposed) {
@@ -146,15 +145,16 @@ class NativePlaybackBridge(
         if (disposed || eventSink == null) return
         listening = true
         events = eventSink
-        pendingEventAttachment?.cancel()
-        val attachment = PendingEventAttachment(eventSink)
-        pendingEventAttachment = attachment
-        attachment.run()
+        NativePlaybackService.addControllerListener(
+            listenerId,
+            ::handleControllerChanged
+        )
+        attachEventListenerIfNeeded(NativePlaybackService.controller())
     }
 
     override fun onCancel(arguments: Any?) {
         listening = false
-        pendingEventAttachment?.cancel()
+        NativePlaybackService.removeControllerListener(listenerId)
         attachedService?.removeStateListener(listenerId)
         attachedService = null
         events = null
@@ -164,9 +164,9 @@ class NativePlaybackBridge(
         if (disposed) return
         disposed = true
         listening = false
-        pendingEventAttachment?.cancel()
         pendingCalls.toList().forEach(PendingServiceCall::cancel)
         mainHandler.removeCallbacksAndMessages(null)
+        NativePlaybackService.removeControllerListener(listenerId)
         commandService?.clearTemporarySpeeds()
         commandService = null
         attachedService?.removeStateListener(listenerId)
@@ -185,68 +185,23 @@ class NativePlaybackBridge(
 
     private fun attachEventListenerIfNeeded(service: NativePlaybackService?) {
         if (disposed || !listening || service == null) return
-        if (attachedService === service) {
-            pendingEventAttachment?.complete()
-            return
-        }
+        if (attachedService === service) return
         attachedService?.removeStateListener(listenerId)
         attachedService = service
         service.addStateListener(listenerId) { snapshot ->
             events?.success(snapshot)
         }
         service.settleForegroundAfterBridgeAttach()
-        pendingEventAttachment?.complete()
     }
 
-    private inner class PendingEventAttachment(
-        private val eventSink: EventChannel.EventSink
-    ) : Runnable {
-        private val startedAtMs = SystemClock.elapsedRealtime()
-        private var serviceStartRequested = false
-        private var completed = false
-
-        override fun run() {
-            if (completed || disposed || !listening || events !== eventSink) {
-                cancel()
-                return
-            }
-            val service = if (serviceStartRequested) {
-                NativePlaybackService.controller()
-            } else {
-                serviceStartRequested = true
-                ensureService()
-            }
-            if (service != null) {
-                commandService = service
-                attachEventListenerIfNeeded(service)
-                return
-            }
-            if (SystemClock.elapsedRealtime() - startedAtMs >= SERVICE_READY_TIMEOUT_MS) {
-                complete()
-                if (!disposed && listening && events === eventSink) {
-                    eventSink.error(
-                        ChannelErrorCodes.SERVICE_UNAVAILABLE,
-                        "Native playback service is not ready.",
-                        null
-                    )
-                }
-                return
-            }
-            mainHandler.postDelayed(this, SERVICE_READY_RETRY_DELAY_MS)
+    private fun handleControllerChanged(service: NativePlaybackService?) {
+        if (disposed || !listening) return
+        if (service == null) {
+            attachedService?.removeStateListener(listenerId)
+            attachedService = null
+            return
         }
-
-        fun cancel() {
-            complete()
-        }
-
-        fun complete() {
-            if (completed) return
-            completed = true
-            mainHandler.removeCallbacks(this)
-            if (pendingEventAttachment === this) {
-                pendingEventAttachment = null
-            }
-        }
+        attachEventListenerIfNeeded(service)
     }
 
     private inner class PendingServiceCall(
@@ -258,6 +213,10 @@ class NativePlaybackBridge(
         private val startedAtMs = SystemClock.elapsedRealtime()
         private var completed = false
         private var serviceStartRequested = false
+
+        init {
+            NativePlaybackService.beginCommandDelivery()
+        }
 
         override fun run() {
             if (completed) return
@@ -272,6 +231,7 @@ class NativePlaybackBridge(
                 ensureService(requireForegroundBootstrap)
             }
             if (service != null) {
+                commandService = service
                 attachEventListenerIfNeeded(service)
                 val response = try {
                     dispatch(service)
@@ -303,7 +263,11 @@ class NativePlaybackBridge(
             completed = true
             mainHandler.removeCallbacks(this)
             pendingCalls.remove(this)
-            result.success(response)
+            try {
+                result.success(response)
+            } finally {
+                NativePlaybackService.endCommandDelivery()
+            }
         }
     }
 

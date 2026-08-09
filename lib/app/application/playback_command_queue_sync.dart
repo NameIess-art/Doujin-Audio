@@ -21,7 +21,12 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         playing: false,
         processingState: ProcessingState.idle,
       );
-      await _nativePlaybackRepository.removeSession(session.id);
+      final response = await _nativePlaybackRepository.removeSession(
+        session.id,
+      );
+      if (response.isOk) {
+        _playbackFacade.forgetNativeSessionRetainedContentUris(session.id);
+      }
     } else {
       var nextIndex = selectFirst
           ? 0

@@ -169,7 +169,11 @@ internal class FileCacheScanStreamHandler(
 
         try {
             send(taskId, generationId, cancelled, baseEvent("started"))
-            val scanResult = operations.scanFolder(folder, observer)
+            val scanResult = operations.scanFolder(
+                folder,
+                observer,
+                collectTracks = false
+            )
             if (cancelled.get() || closed.get()) {
                 return
             }

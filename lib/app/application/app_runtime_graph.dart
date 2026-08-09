@@ -1,6 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import '../../core/ui/app_interaction_feedback_settings.dart';
+import '../../core/platform/file_cache_platform_gateway.dart';
+import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
@@ -17,6 +21,7 @@ import 'notification_runtime_binding.dart';
 import 'playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
 import 'playback_runtime_binding.dart';
+import 'persisted_uri_permission_coordinator.dart';
 import 'runtime_binding.dart';
 import 'timer_runtime_binding.dart';
 
@@ -42,6 +47,8 @@ AppRuntimeGraph createAppRuntimeGraph({
   required TimerFacade timer,
   required NotificationFacade notifications,
   required SettingsRepository settings,
+  AsmrDownloadManager? asmrDownloads,
+  FileCachePlatformGateway? fileCacheGateway,
   bool persistenceEnabled = true,
 }) {
   final audioPaths = AudioPathCoordinator(library: library, playback: playback);
@@ -145,6 +152,18 @@ AppRuntimeGraph createAppRuntimeGraph({
       syncPlaybackState: syncPlaybackState,
     ),
   ];
+  if (!kIsWeb &&
+      defaultTargetPlatform == TargetPlatform.android &&
+      asmrDownloads != null) {
+    bindings.add(
+      PersistedUriPermissionCoordinator.attach(
+        library: library,
+        playback: playback,
+        downloads: asmrDownloads,
+        gateway: fileCacheGateway,
+      ),
+    );
+  }
   final persistence = AppPersistenceCoordinator(
     library: library,
     playback: playback,

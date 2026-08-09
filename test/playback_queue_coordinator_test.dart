@@ -570,10 +570,12 @@ void main() {
           },
         );
 
+        List<Object?>? preparedQueue;
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
               if (call.method == NativePlaybackMethod.prepareSession) {
                 final args = call.arguments as Map<Object?, Object?>;
+                preparedQueue = (args['queue'] as List<Object?>?)?.toList();
                 return <String, Object?>{
                   'ok': true,
                   'value': <String, Object?>{
@@ -602,6 +604,16 @@ void main() {
         ], autoPlay: false);
 
         final session = runtimeGraph.playback.activeSessions.single;
+        final queueItems = preparedQueue!.cast<Map<Object?, Object?>>().toList(
+          growable: false,
+        );
+        expect(queueItems, hasLength(2));
+        expect(queueItems[0]['candidateUris'], <String>[
+          'https://example.com/asmr/01.mp3',
+        ]);
+        expect(queueItems[1]['candidateUris'], <String>[
+          'https://example.com/asmr/02.mp3',
+        ]);
         for (var i = 0; i < 100; i++) {
           if (runtimeGraph.playbackCommands.trackByPath(cachedPath) != null) {
             break;

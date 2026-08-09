@@ -99,6 +99,119 @@ class NativePlaybackServiceStartPolicyTest {
         assertRejected(malformed)
     }
 
+    @Test
+    fun `idle restore stops only for current start without sessions or playback`() {
+        assertEquals(
+            IdlePlaybackServiceStopAction.STOP,
+            decideIdlePlaybackServiceStopAfterRestore(
+                hasSessions = false,
+                hasPlaybackToKeepAlive = false,
+                restoreGeneration = 4,
+                currentRestoreGeneration = 4,
+                latestStartId = 12,
+                hasPendingCommandDelivery = false
+            ).action
+        )
+        assertEquals(
+            IdlePlaybackServiceStopAction.SKIP,
+            decideIdlePlaybackServiceStopAfterRestore(
+                hasSessions = true,
+                hasPlaybackToKeepAlive = false,
+                restoreGeneration = 4,
+                currentRestoreGeneration = 4,
+                latestStartId = 12,
+                hasPendingCommandDelivery = false
+            ).action
+        )
+        assertEquals(
+            IdlePlaybackServiceStopAction.SKIP,
+            decideIdlePlaybackServiceStopAfterRestore(
+                hasSessions = false,
+                hasPlaybackToKeepAlive = true,
+                restoreGeneration = 4,
+                currentRestoreGeneration = 4,
+                latestStartId = 12,
+                hasPendingCommandDelivery = false
+            ).action
+        )
+    }
+
+    @Test
+    fun `pending command delivery defers otherwise eligible idle exit`() {
+        assertEquals(
+            IdlePlaybackServiceStopAction.DEFER,
+            decideIdlePlaybackServiceStopAfterRestore(
+                hasSessions = false,
+                hasPlaybackToKeepAlive = false,
+                restoreGeneration = 4,
+                currentRestoreGeneration = 4,
+                latestStartId = 13,
+                hasPendingCommandDelivery = true
+            ).action
+        )
+    }
+
+    @Test
+    fun `settled concurrent cold starts stop with the latest start id`() {
+        val decision = decideIdlePlaybackServiceStopAfterRestore(
+            hasSessions = false,
+            hasPlaybackToKeepAlive = false,
+            restoreGeneration = 4,
+            currentRestoreGeneration = 4,
+            latestStartId = 13,
+            hasPendingCommandDelivery = false
+        )
+
+        assertEquals(IdlePlaybackServiceStopAction.STOP, decision.action)
+        assertEquals(13, decision.startId)
+    }
+
+    @Test
+    fun `command delivery guard remains active until every delivery settles`() {
+        assertFalse(NativePlaybackService.hasPendingCommandDelivery())
+        try {
+            NativePlaybackService.beginCommandDelivery()
+            NativePlaybackService.beginCommandDelivery()
+            NativePlaybackService.endCommandDelivery()
+
+            assertTrue(NativePlaybackService.hasPendingCommandDelivery())
+        } finally {
+            NativePlaybackService.endCommandDelivery()
+        }
+        assertFalse(NativePlaybackService.hasPendingCommandDelivery())
+    }
+
+    @Test
+    fun `controller listeners are notified passively without starting service`() {
+        var callbacks = 0
+        NativePlaybackService.addControllerListener("test-listener") {
+            callbacks += 1
+        }
+        try {
+            NativePlaybackService.publishController(null)
+            assertEquals(1, callbacks)
+            assertEquals(null, NativePlaybackService.controller())
+        } finally {
+            NativePlaybackService.removeControllerListener("test-listener")
+        }
+    }
+
+    @Test
+    fun `stopping service instance is not exposed as an available controller`() {
+        assertTrue(
+            isPlaybackServiceControllerAvailable(
+                instancePresent = true,
+                stoppingForIdleExit = false
+            )
+        )
+        assertFalse(
+            isPlaybackServiceControllerAvailable(
+                instancePresent = true,
+                stoppingForIdleExit = true
+            )
+        )
+    }
+
     private fun assertRejected(decision: NativePlaybackStartDecision) {
         assertEquals(NativePlaybackStartSource.REJECTED, decision.source)
         assertFalse(decision.accepted)

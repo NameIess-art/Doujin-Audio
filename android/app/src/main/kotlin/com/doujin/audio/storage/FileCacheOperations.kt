@@ -24,13 +24,22 @@ internal class FileCacheOperations(context: Context) {
     fun cacheFromUri(uri: String, name: String, index: Int): String =
         documentStorage.cacheFromUri(uri, name, index)
 
-    fun scanFolder(folder: String, observer: FolderScanObserver = NoopFolderScanObserver): ScanFolderResult =
-        folderScan.scanFolder(folder, observer)
+    fun scanFolder(
+        folder: String,
+        observer: FolderScanObserver = NoopFolderScanObserver,
+        collectTracks: Boolean = true
+    ): ScanFolderResult = folderScan.scanFolder(folder, observer, collectTracks)
 
     fun listChildFolders(folder: String): List<String> = documentStorage.listChildFolders(folder)
 
     fun renameDocumentTarget(path: String, name: String): HashMap<String, String> =
         documentStorage.renameDocumentTarget(path, name)
+
+    fun reconcilePersistedUriPermissions(retainedUris: Set<String>): Map<String, Any> =
+        PersistedUriPermissionOperations.reconcile(
+            documentStorage.contentResolverForPermissions,
+            retainedUris
+        ).toMap()
 
     fun readJsonDocument(
         locationKind: String,

@@ -15,7 +15,11 @@ class NativePlaybackSessionRestorerTest {
                     uri = "first-uri",
                     title = "First",
                     subtitle = "One",
-                    artUri = "first-art"
+                    artUri = "first-art",
+                    candidateUris = listOf(
+                        "https://example.com/first.mp3",
+                        "https://backup.example.com/first.mp3"
+                    )
                 ),
                 StoredNativePlaybackQueueItem(
                     path = "second-path",
@@ -31,6 +35,15 @@ class NativePlaybackSessionRestorerTest {
 
         assertEquals(listOf("first-path", "second-path"), restored.map { it.path })
         assertEquals(listOf("First", "Second"), restored.map { it.title })
+        assertEquals(
+            listOf(
+                "first-uri",
+                "https://example.com/first.mp3",
+                "https://backup.example.com/first.mp3"
+            ),
+            restored.first().candidateUris
+        )
+        assertEquals(listOf("second-uri"), restored[1].candidateUris)
     }
 
     @Test

@@ -8,7 +8,7 @@ internal fun StoredNativePlaybackSession.restoredQueue(): List<NativeMediaItemDe
             title = queueItem.title,
             subtitle = queueItem.subtitle,
             artUri = queueItem.artUri
-        )
+        ).withPlaybackCandidateUris(queueItem.candidateUris)
     }.ifEmpty {
         listOf(
             NativeMediaItemDescriptor(

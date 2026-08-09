@@ -151,6 +151,57 @@ class NativePlaybackCommandPayloadsTest {
         )
     }
 
+    @Test
+    fun `queue parser validates and keeps candidates for each item`() {
+        val parsed = NativePlaybackCommandPayloads.parseQueue(
+            listOf(
+                mapOf(
+                    "uri" to "https://example.com/first.mp3",
+                    "title" to "First",
+                    "candidateUris" to listOf(
+                        "https://cdn-1.example.com/first.mp3",
+                        "https://cdn-1.example.com/first.mp3",
+                        "https://cdn-2.example.com/first.mp3"
+                    )
+                ),
+                mapOf(
+                    "uri" to "https://example.com/second.mp3",
+                    "title" to "Second",
+                    "candidateUris" to listOf("https://backup.example.com/second.mp3")
+                )
+            )
+        )
+
+        assertEquals(
+            listOf(
+                "https://example.com/first.mp3",
+                "https://cdn-1.example.com/first.mp3",
+                "https://cdn-2.example.com/first.mp3"
+            ),
+            parsed[0].candidateUris
+        )
+        assertEquals(
+            listOf(
+                "https://example.com/second.mp3",
+                "https://backup.example.com/second.mp3"
+            ),
+            parsed[1].candidateUris
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `queue parser rejects invalid per item candidate`() {
+        NativePlaybackCommandPayloads.parseQueue(
+            listOf(
+                mapOf(
+                    "uri" to "https://example.com/audio.mp3",
+                    "title" to "Audio",
+                    "candidateUris" to listOf("file:///audio.mp3")
+                )
+            )
+        )
+    }
+
     @Test(expected = IllegalArgumentException::class)
     fun `prepare parser rejects non http candidate uri`() {
         NativePlaybackCommandPayloads.parsePrepareSession(

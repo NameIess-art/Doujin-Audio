@@ -96,6 +96,12 @@ final class PlaybackFacade {
   final PlaybackSessionService _service;
   final StreamController<String> _sessionActivations =
       StreamController<String>.broadcast(sync: true);
+  final StreamController<int> _persistedUriReferenceRevisionController =
+      StreamController<int>.broadcast(sync: true);
+  final Map<String, Set<String>> _nativeRetainedContentUrisBySession =
+      <String, Set<String>>{};
+  int _nativePersistedUriReferenceRevision = 0;
+  bool _nativeRetainedContentUriInventoryReady = false;
   MusicTrack? Function(String trackPath)? _persistedTrackResolver;
   bool Function()? _recordPlaybackProgress;
   RestoredPlaybackRuntime? _restoreRuntime;
@@ -171,6 +177,133 @@ final class PlaybackFacade {
         session.loadedPath != null,
   );
   bool get hasRetainedPlaybackSession => _service.sessions.isNotEmpty;
+  bool get persistedSessionStateReady => state.isInitialized;
+  bool get nativeRetainedContentUriInventoryReady =>
+      _nativeRetainedContentUriInventoryReady;
+  bool get persistedUriReferencesReady =>
+      persistedSessionStateReady && nativeRetainedContentUriInventoryReady;
+  int get persistedUriReferenceRevision => Object.hash(
+    _service.sessionStateVersion,
+    _nativePersistedUriReferenceRevision,
+  );
+  Stream<int> get persistedUriReferenceRevisions =>
+      _persistedUriReferenceRevisionController.stream;
+  Set<String> get persistedContentUris {
+    final references = <String>{};
+    void retain(String? value) {
+      if (value != null && PathMatcher.isContentUri(value)) {
+        references.add(value);
+      }
+    }
+
+    for (final session in _service.sessions.values) {
+      retain(session.currentTrackPath);
+      retain(session.loadedPath);
+      final queueTracks = session.isPlaybackQueue
+          ? session.playbackQueue?.expandedTracks
+          : session.customQueueTracks;
+      for (final track in queueTracks ?? const <MusicTrack>[]) {
+        retain(track.path);
+      }
+    }
+    for (final retainedUris in _nativeRetainedContentUrisBySession.values) {
+      for (final uri in retainedUris) {
+        retain(uri);
+      }
+    }
+    return references;
+  }
+
+  void updateNativeSessionRetainedContentUris(
+    String sessionId,
+    Iterable<String> retainedUris,
+  ) {
+    final next = retainedUris.where(PathMatcher.isContentUri).toSet();
+    final previous = _nativeRetainedContentUrisBySession[sessionId];
+    if (previous != null &&
+        previous.length == next.length &&
+        previous.containsAll(next)) {
+      return;
+    }
+    if (next.isEmpty) {
+      _nativeRetainedContentUrisBySession.remove(sessionId);
+    } else {
+      _nativeRetainedContentUrisBySession[sessionId] = Set.unmodifiable(next);
+    }
+    _nativePersistedUriReferenceRevision += 1;
+    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+  }
+
+  void replaceNativeRetainedContentUris(
+    Iterable<NativePlaybackSnapshot> snapshots,
+  ) {
+    final next = <String, Set<String>>{
+      for (final snapshot in snapshots)
+        if (snapshot.retainedUris.where(PathMatcher.isContentUri).isNotEmpty)
+          snapshot.sessionId: snapshot.retainedUris
+              .where(PathMatcher.isContentUri)
+              .toSet(),
+    };
+    var changed =
+        !_nativeRetainedContentUriInventoryReady ||
+        next.length != _nativeRetainedContentUrisBySession.length;
+    if (!changed) {
+      for (final entry in next.entries) {
+        final previous = _nativeRetainedContentUrisBySession[entry.key];
+        if (previous == null ||
+            previous.length != entry.value.length ||
+            !previous.containsAll(entry.value)) {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (!changed) return;
+    _nativeRetainedContentUriInventoryReady = true;
+    _nativeRetainedContentUrisBySession
+      ..clear()
+      ..addAll(
+        next.map((key, value) => MapEntry(key, Set.unmodifiable(value))),
+      );
+    _nativePersistedUriReferenceRevision += 1;
+    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+  }
+
+  Future<bool> refreshNativeRetainedContentUriInventory() async {
+    final response = await nativeRepository.snapshot();
+    final bundle = response.valueOrNull;
+    if (bundle == null) return false;
+    replaceNativeRetainedContentUris(bundle.sessions);
+    return true;
+  }
+
+  void _removeNativeRetainedContentUris(Iterable<String> sessionIds) {
+    var changed = false;
+    for (final sessionId in sessionIds) {
+      changed =
+          _nativeRetainedContentUrisBySession.remove(sessionId) != null ||
+          changed;
+    }
+    if (!changed) return;
+    _nativePersistedUriReferenceRevision += 1;
+    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+  }
+
+  void forgetNativeSessionRetainedContentUris(String sessionId) {
+    _removeNativeRetainedContentUris(<String>[sessionId]);
+  }
+
+  void _clearNativeRetainedContentUris() {
+    final changed =
+        !_nativeRetainedContentUriInventoryReady ||
+        _nativeRetainedContentUrisBySession.isNotEmpty;
+    _nativeRetainedContentUriInventoryReady = true;
+    _nativeRetainedContentUrisBySession.clear();
+    if (!changed) return;
+    _nativePersistedUriReferenceRevision += 1;
+    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
+  }
+
   Future<void> get pendingSessionPreparation =>
       _service.sessionPreparationQueue;
   bool get hasScheduledSessionStatePersistence =>
@@ -480,7 +613,8 @@ final class PlaybackFacade {
       session.dispose();
     }
     try {
-      await nativeRepository.clearAll();
+      final response = await nativeRepository.clearAll();
+      if (response.isOk) _clearNativeRetainedContentUris();
     } catch (error, stackTrace) {
       AppLogService.error(
         'playback_persisted_state_reset_clear_failed',
@@ -955,6 +1089,7 @@ final class PlaybackFacade {
     }
 
     final removedSessions = _service.removeSessions(removedSessionIds);
+    _removeNativeRetainedContentUris(removedSessionIds);
     if (removedSessions.isEmpty) return allSucceeded;
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
@@ -976,6 +1111,7 @@ final class PlaybackFacade {
       _logNativeCommandFailure('clearAllSessions', response);
       return false;
     }
+    _clearNativeRetainedContentUris();
     final removedSessions = _service.removeSessions(
       _service.sessions.keys.toList(growable: false),
     );
@@ -2039,6 +2175,7 @@ final class PlaybackFacade {
     final persistenceTail = _sessionPersistenceTail;
     if (persistenceTail != null) await persistenceTail;
     await _sessionActivations.close();
+    await _persistedUriReferenceRevisionController.close();
     final sessionsToDispose = _service.sessions.values.toList(growable: false);
     _service.sessions.clear();
     for (final session in sessionsToDispose) {

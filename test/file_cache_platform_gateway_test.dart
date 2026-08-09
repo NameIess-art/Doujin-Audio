@@ -78,6 +78,41 @@ void main() {
     expect(calls.single.arguments, isNull);
   });
 
+  test(
+    'persisted URI reconciliation sends unique retained references',
+    () async {
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return success(<String, Object?>{
+          'retainedCount': 2,
+          'releasedCount': 1,
+          'failedUris': <String>['content://provider/tree/failed'],
+        });
+      });
+
+      final result = await gateway.reconcilePersistedUriPermissions(<String>[
+        'content://provider/tree/library',
+        'content://provider/tree/library',
+        'content://provider/document/track',
+      ]);
+
+      expect(result?.retainedCount, 2);
+      expect(result?.releasedCount, 1);
+      expect(result?.failedUris, <String>['content://provider/tree/failed']);
+      expect(
+        calls.single.method,
+        FileCacheMethod.reconcilePersistedUriPermissions,
+      );
+      expect(
+        (calls.single.arguments as Map<Object?, Object?>)['retainedUris'],
+        <String>[
+          'content://provider/tree/library',
+          'content://provider/document/track',
+        ],
+      );
+    },
+  );
+
   test('JSON delete sends a revision-guarded structured request', () async {
     messenger.setMockMethodCallHandler(channel, (call) async {
       calls.add(call);

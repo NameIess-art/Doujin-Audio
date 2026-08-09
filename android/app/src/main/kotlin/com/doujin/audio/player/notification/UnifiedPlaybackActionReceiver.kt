@@ -46,7 +46,7 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
             )
             if (service == null) {
                 if (attempt >= maxServiceDeliveryAttempts) {
-                    pendingResult.finish()
+                    finishControlDelivery(pendingResult)
                     return
                 }
                 mainHandler.postDelayed(
@@ -67,7 +67,15 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
             try {
                 service.executeNotificationAction(action, requestedSessionId)
             } finally {
+                finishControlDelivery(pendingResult)
+            }
+        }
+
+        private fun finishControlDelivery(pendingResult: BroadcastReceiver.PendingResult) {
+            try {
                 pendingResult.finish()
+            } finally {
+                NativePlaybackService.endCommandDelivery()
             }
         }
     }
@@ -81,6 +89,7 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
         
         if (!NotificationCommand.isPlaybackControl(action)) return
         val intentSessionId = intent.getStringExtra("sessionId") ?: return
+        NativePlaybackService.beginCommandDelivery()
         deliverControlAction(
             context = context.applicationContext,
             action = action,

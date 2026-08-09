@@ -478,11 +478,16 @@ class AsmrDownloadManager extends ChangeNotifier {
   final Map<int, Map<String, _CreatedJsonDocument>> _createdJsonDocuments = {};
   final Map<int, int> _liveDownloadedBytes = {};
   final Map<int, Map<String, int>> _liveFileDownloadedBytes = {};
+  final StreamController<int> _persistedUriReferenceRevisionController =
+      StreamController<int>.broadcast(sync: true);
 
   static const int _maxConcurrentDownloads = 3;
   static const int _maxConcurrentFilesPerTask = 3;
 
   bool _disposed = false;
+  bool _initialized = false;
+  int _persistedUriReferenceRevision = 0;
+  Set<String> _persistedContentUris = const <String>{};
   Future<void>? _initializationFuture;
   Future<void> _persistenceTail = Future<void>.value();
   Timer? _deferredPersistenceTimer;
@@ -494,6 +499,11 @@ class AsmrDownloadManager extends ChangeNotifier {
   AsmrDownloadTaskSnapshot? getTask(int workId) => _tasks[workId];
   AsmrDownloadState get state => AsmrDownloadState.fromManager(this);
   bool get hasLiveTask => _activeTasks.isNotEmpty || _queue.isNotEmpty;
+  bool get persistedUriReferencesReady => _initialized;
+  int get persistedUriReferenceRevision => _persistedUriReferenceRevision;
+  Stream<int> get persistedUriReferenceRevisions =>
+      _persistedUriReferenceRevisionController.stream;
+  Set<String> get persistedContentUris => _persistedContentUris;
 
   AsmrDownloadButtonViewState get buttonViewState {
     if (_taskIdsSnapshot.isEmpty) {
@@ -596,7 +606,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
     }
     if (_disposed) return;
-    _notifyTaskChanged();
+    _initialized = true;
+    _notifyTaskChanged(forcePersistedUriReferenceRevision: true);
   }
 
   Future<String?> pickDestinationFolder({String? dialogTitle}) async {
@@ -1815,8 +1826,24 @@ class AsmrDownloadManager extends ChangeNotifier {
     return result;
   }
 
-  void _notifyTaskChanged({bool deferPersistence = false}) {
+  void _notifyTaskChanged({
+    bool deferPersistence = false,
+    bool forcePersistedUriReferenceRevision = false,
+  }) {
     if (_disposed) return;
+    final persistedContentUris = _tasks.values
+        .where((task) => task.status != AsmrDownloadTaskStatus.completed)
+        .map((task) => task.destinationRoot)
+        .where(PathMatcher.isContentUri)
+        .toSet();
+    if (forcePersistedUriReferenceRevision ||
+        !setEquals(persistedContentUris, _persistedContentUris)) {
+      _persistedContentUris = Set<String>.unmodifiable(persistedContentUris);
+      _persistedUriReferenceRevision += 1;
+      _persistedUriReferenceRevisionController.add(
+        _persistedUriReferenceRevision,
+      );
+    }
     _deferredProgressNotifyTimer?.cancel();
     _deferredProgressNotifyTimer = null;
     _publishLiveProgress();
@@ -2023,6 +2050,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     _activeHttpClients.clear();
     _liveDownloadedBytes.clear();
     _liveFileDownloadedBytes.clear();
+    unawaited(_persistedUriReferenceRevisionController.close());
     super.dispose();
   }
 

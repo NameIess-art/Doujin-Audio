@@ -49,3 +49,46 @@ private fun rejectedPlaybackStart(reason: String) = NativePlaybackStartDecision(
     source = NativePlaybackStartSource.REJECTED,
     rejectionReason = reason
 )
+
+internal enum class IdlePlaybackServiceStopAction {
+    SKIP,
+    DEFER,
+    STOP
+}
+
+internal data class IdlePlaybackServiceStopDecision(
+    val action: IdlePlaybackServiceStopAction,
+    val startId: Int? = null
+)
+
+internal fun decideIdlePlaybackServiceStopAfterRestore(
+    hasSessions: Boolean,
+    hasPlaybackToKeepAlive: Boolean,
+    restoreGeneration: Long,
+    currentRestoreGeneration: Long,
+    latestStartId: Int,
+    hasPendingCommandDelivery: Boolean
+): IdlePlaybackServiceStopDecision {
+    if (hasSessions ||
+        hasPlaybackToKeepAlive ||
+        restoreGeneration != currentRestoreGeneration
+    ) {
+        return IdlePlaybackServiceStopDecision(IdlePlaybackServiceStopAction.SKIP)
+    }
+    return if (hasPendingCommandDelivery) {
+        IdlePlaybackServiceStopDecision(
+            action = IdlePlaybackServiceStopAction.DEFER,
+            startId = latestStartId
+        )
+    } else {
+        IdlePlaybackServiceStopDecision(
+            action = IdlePlaybackServiceStopAction.STOP,
+            startId = latestStartId
+        )
+    }
+}
+
+internal fun isPlaybackServiceControllerAvailable(
+    instancePresent: Boolean,
+    stoppingForIdleExit: Boolean
+): Boolean = instancePresent && !stoppingForIdleExit

@@ -111,6 +111,7 @@ extension PlaybackCommandRestore on PlaybackCommandCoordinator {
       );
       return null;
     }
+    _playbackFacade.replaceNativeRetainedContentUris(bundle.sessions);
     for (final snapshot in bundle.sessions) {
       if (!_sessions.containsKey(snapshot.sessionId)) {
         AppLogService.warning(

@@ -59,7 +59,8 @@ data class StoredNativePlaybackQueueItem(
     val uri: String,
     val title: String,
     val subtitle: String?,
-    val artUri: String?
+    val artUri: String?,
+    val candidateUris: List<String> = emptyList()
 )
 
 data class StoredPlaybackTimerRuntimeState(
@@ -198,6 +199,10 @@ object NativePlaybackStateStore {
                                         .put("title", queueItem.title)
                                         .put("subtitle", queueItem.subtitle)
                                         .put("artUri", queueItem.artUri)
+                                        .put(
+                                            "candidateUris",
+                                            JSONArray(queueItem.candidateUris)
+                                        )
                                 )
                             }
                         }
@@ -484,9 +489,20 @@ private fun JSONObject.optQueueItems(): List<StoredNativePlaybackQueueItem> {
                     uri = uri,
                     title = item.optString("title", "Audio"),
                     subtitle = item.optNullableString("subtitle"),
-                    artUri = item.optNullableString("artUri")
+                    artUri = item.optNullableString("artUri"),
+                    candidateUris = item.optStringList("candidateUris")
                 )
             )
+        }
+    }
+}
+
+private fun JSONObject.optStringList(key: String): List<String> {
+    val values = optJSONArray(key) ?: return emptyList()
+    return buildList {
+        for (index in 0 until values.length()) {
+            val value = values.optString(index).trim()
+            if (value.isNotEmpty() && value !in this) add(value)
         }
     }
 }

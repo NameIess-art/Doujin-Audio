@@ -126,7 +126,7 @@ internal object NativePlaybackCommandPayloads {
                 title = rawItem.requiredString("title"),
                 subtitle = rawItem.optionalString("subtitle"),
                 artUri = rawItem.optionalString("artUri")?.also(::requireSupportedUri)
-            )
+            ).withPlaybackCandidateUris(parseCandidateUris(rawItem["candidateUris"]))
         }
     }
 

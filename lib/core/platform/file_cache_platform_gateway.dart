@@ -62,6 +62,18 @@ class StorageUsagePlatformSnapshot {
   final int cacheBytes;
 }
 
+class PersistedUriPermissionReconcileResult {
+  const PersistedUriPermissionReconcileResult({
+    required this.retainedCount,
+    required this.releasedCount,
+    required this.failedUris,
+  });
+
+  final int retainedCount;
+  final int releasedCount;
+  final List<String> failedUris;
+}
+
 class FileCachePlatformGateway {
   FileCachePlatformGateway({
     MethodChannel? channel,
@@ -218,6 +230,37 @@ class FileCachePlatformGateway {
           value == null ? null : Map<String, Object?>.from(value as Map),
     );
     return result.valueOrNull;
+  }
+
+  Future<PersistedUriPermissionReconcileResult?>
+  reconcilePersistedUriPermissions(Iterable<String> retainedUris) async {
+    if (!_isAndroid()) return null;
+    final result = await _client.invoke<Map<String, Object?>>(
+      FileCacheMethod.reconcilePersistedUriPermissions,
+      arguments: <String, Object?>{
+        'retainedUris': retainedUris.toSet().toList(growable: false),
+      },
+      decode: (value) => Map<String, Object?>.from(value as Map),
+    );
+    if (result case NativeFailure<Map<String, Object?>>()) {
+      _logOptionalFailure(
+        FileCacheMethod.reconcilePersistedUriPermissions,
+        result,
+      );
+      return null;
+    }
+    final value = result.valueOrNull;
+    if (value == null) return null;
+    return PersistedUriPermissionReconcileResult(
+      retainedCount: (value['retainedCount'] as num?)?.toInt() ?? 0,
+      releasedCount: (value['releasedCount'] as num?)?.toInt() ?? 0,
+      failedUris:
+          (value['failedUris'] as List?)
+              ?.map((item) => item?.toString().trim() ?? '')
+              .where((item) => item.isNotEmpty)
+              .toList(growable: false) ??
+          const <String>[],
+    );
   }
 
   Future<List<CoverImageReference>> discoverRootImages({

@@ -308,6 +308,9 @@ void main() {
                       'bufferedPositionMs': 0,
                       'volume': 1.0,
                       'channelSwap': false,
+                      'retainedUris': <String>[
+                        'content://provider/document/audio-1',
+                      ],
                     },
                   ],
                 },
@@ -328,6 +331,9 @@ void main() {
       expect(snapshot.valueOrNull?.focusedSessionId, 'focus-1');
       expect(snapshot.valueOrNull?.sessions, hasLength(1));
       expect(snapshot.valueOrNull?.sessions.single.speed, 1.0);
+      expect(snapshot.valueOrNull?.sessions.single.retainedUris, <String>[
+        'content://provider/document/audio-1',
+      ]);
       expect(failure.isFailure, isTrue);
       expect(failure.errorOrNull, 'native unavailable');
       expect(failure.errorCodeOrNull, 'service_unavailable');

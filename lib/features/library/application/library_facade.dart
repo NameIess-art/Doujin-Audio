@@ -149,6 +149,15 @@ final class LibraryFacade implements LibraryCatalog {
       UnmodifiableListView<MusicTrack>(_service.library);
   int get structureRevision => _service.structureRevision;
   int get contentRevision => _service.contentRevision;
+  bool get persistedUriReferencesReady => state.isInitialized;
+  int get persistedUriReferenceRevision => structureRevision;
+  Set<String> get persistedContentUris => <String>{
+    ..._service.watchedFolders.where(PathMatcher.isContentUri),
+    ..._service.watchedLibraries.where(PathMatcher.isContentUri),
+    ..._service.library
+        .map((track) => track.path)
+        .where(PathMatcher.isContentUri),
+  };
   List<String> get sortedLibraryTrackPaths =>
       UnmodifiableListView<String>(_service.sortedLibraryTrackPaths);
   Map<String, List<MusicTrack>> get tracksByGroup =>

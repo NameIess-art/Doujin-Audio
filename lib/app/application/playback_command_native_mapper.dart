@@ -2,6 +2,12 @@ part of 'playback_command_coordinator.dart';
 
 extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
   void _handleNativePlaybackSnapshot(NativePlaybackSnapshot snapshot) {
+    if (snapshot.hasRetainedUrisPayload) {
+      _playbackFacade.updateNativeSessionRetainedContentUris(
+        snapshot.sessionId,
+        snapshot.retainedUris,
+      );
+    }
     final application = _playbackFacade.applyNativeSnapshot(
       snapshot,
       hasLibraryTrack: (path) => trackByPath(path) != null,

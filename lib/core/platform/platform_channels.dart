@@ -121,6 +121,8 @@ abstract final class FileCacheMethod {
   static const String cancelFolderScan = 'cancelFolderScan';
   static const String listChildFolders = 'listChildFolders';
   static const String renameDocument = 'renameDocument';
+  static const String reconcilePersistedUriPermissions =
+      'reconcilePersistedUriPermissions';
   static const String readJsonDocument = 'readJsonDocument';
   static const String writeJsonDocument = 'writeJsonDocument';
   static const String deleteJsonDocument = 'deleteJsonDocument';

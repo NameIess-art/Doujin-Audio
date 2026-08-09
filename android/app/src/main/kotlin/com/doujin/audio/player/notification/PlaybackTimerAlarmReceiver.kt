@@ -237,10 +237,15 @@ object PlaybackTimerAlarmScheduler {
                 "execute_skip_stale_generation action=$action expected=${runtimeState.generation} " +
                     "actual=$generation"
             )
-            finishDelivery(pendingResult, deliveryWakeLock)
+            finishDelivery(
+                pendingResult,
+                deliveryWakeLock,
+                commandDeliveryRegistered = false
+            )
             onComplete?.invoke(resultStale)
             return
         }
+        NativePlaybackService.beginCommandDelivery()
         logInfo(context, "execute_now action=$action generation=$generation")
         deliverToService(
             context = context,
@@ -349,7 +354,8 @@ object PlaybackTimerAlarmScheduler {
 
     private fun finishDelivery(
         pendingResult: BroadcastReceiver.PendingResult?,
-        deliveryWakeLock: PowerManager.WakeLock?
+        deliveryWakeLock: PowerManager.WakeLock?,
+        commandDeliveryRegistered: Boolean = true
     ) {
         try {
             pendingResult?.finish()
@@ -359,6 +365,10 @@ object PlaybackTimerAlarmScheduler {
                     deliveryWakeLock.release()
                 }
             } catch (_: RuntimeException) {
+            } finally {
+                if (commandDeliveryRegistered) {
+                    NativePlaybackService.endCommandDelivery()
+                }
             }
         }
     }

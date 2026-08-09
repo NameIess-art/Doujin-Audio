@@ -308,6 +308,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           );
         }
       }
+      final nativeQueue = _nativePlaybackQueueFor(
+        session,
+        currentPath: target.resolvedPath,
+      );
       final result = await _nativePlaybackRepository.prepareSession(
         sessionId: session.id,
         uri: target.uri,
@@ -323,10 +327,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           channelSwapEnabled: session.channelSwapEnabled,
         ),
         repeatOne: session.loopMode == SessionLoopMode.single,
-        queue: _nativePlaybackQueueFor(
-          session,
-          currentPath: target.resolvedPath,
-        ),
+        queue: nativeQueue,
         queueStartIndex:
             targetQueueIndex ??
             _nativePlaybackQueueStartIndexFor(
@@ -345,6 +346,18 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
         );
       }
       if (result.isOk) {
+        _playbackFacade.updateNativeSessionRetainedContentUris(
+          session.id,
+          <Object?>[
+            target.resolvedPath,
+            target.artUri?.toString(),
+            for (final item in nativeQueue) ...<Object?>[
+              item['path'],
+              item['uri'],
+              item['artUri'],
+            ],
+          ].whereType<String>(),
+        );
         return _NativePreparationResult.success(result.valueOrNull);
       }
       lastError = result.errorOrNull;
@@ -477,7 +490,13 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       Object.hashAll(
         paths.map((trackPath) {
           final track = _trackForAnyPath(trackPath);
-          return Object.hash(trackPath, track?.displayName, track?.groupTitle);
+          final candidateUris = _candidatePlaybackUrisForTrack(track);
+          return Object.hash(
+            trackPath,
+            track?.displayName,
+            track?.groupTitle,
+            Object.hashAll(candidateUris ?? const <Uri>[]),
+          );
         }),
       ),
     );
@@ -557,6 +576,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     final artUri = coverPath == null
         ? track?.remoteCoverUrl
         : Uri.file(coverPath).toString();
+    final candidateUris = _candidatePlaybackUrisForTrack(track);
     return <String, Object?>{
       'path': resolvedTrackPath,
       'uri':
@@ -570,6 +590,10 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       // ignore: use_null_aware_elements
       if (subtitle != null) 'subtitle': subtitle,
       if (artUri != null && artUri.isNotEmpty) 'artUri': artUri,
+      if (candidateUris != null)
+        'candidateUris': candidateUris
+            .map((uri) => uri.toString())
+            .toList(growable: false),
     };
   }
 

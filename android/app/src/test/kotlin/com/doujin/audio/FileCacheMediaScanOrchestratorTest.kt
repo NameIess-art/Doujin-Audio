@@ -24,9 +24,8 @@ class FileCacheMediaScanOrchestratorTest {
                 scanFileSystem = { _, output, observer ->
                     repeat(240) { index ->
                         val track = track("${root.path}/$index.mp3")
-                        output[track.path] = track
                         observer.onEntryProcessed()
-                        observer.onTrack(track)
+                        output.remember(track, observer)
                     }
                     0
                 },
@@ -40,6 +39,47 @@ class FileCacheMediaScanOrchestratorTest {
 
             assertEquals(240, observed.size)
             assertEquals(240, result.tracks.size)
+            assertTrue(result.complete)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `streaming scan emits unique tracks without collecting result objects`() {
+        val root = Files.createTempDirectory("doujin-scan-streaming").toFile()
+        var observedCount = 0
+        try {
+            val orchestrator = FileCacheMediaScanOrchestrator(
+                resolveContentUri = { null },
+                contentUriToFilePath = { null },
+                scanDocumentTree = { _, _, _ -> error("unexpected document scan") },
+                scanFileSystemAsDocumentTree = { _, _, _, _ ->
+                    error("unexpected document filesystem scan")
+                },
+                scanFileSystem = { _, output, observer ->
+                    repeat(100_000) { index ->
+                        val track = track("${root.path}/$index.mp3")
+                        output.remember(track, observer)
+                        output.remember(track, observer)
+                    }
+                    0
+                },
+                scanMediaStore = { _, _, _ -> error("unexpected fallback") }
+            )
+
+            val result = orchestrator.scanFolder(
+                root.path,
+                observer = object : FolderScanObserver {
+                    override fun onTrack(track: ScannedTrack) {
+                        observedCount++
+                    }
+                },
+                collectTracks = false
+            )
+
+            assertEquals(100_000, observedCount)
+            assertTrue(result.tracks.isEmpty())
             assertTrue(result.complete)
         } finally {
             root.deleteRecursively()

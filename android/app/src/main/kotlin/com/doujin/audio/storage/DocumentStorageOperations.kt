@@ -1,12 +1,10 @@
 package com.doujin.audio.storage
 
 import android.content.Context
-import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
-import android.provider.OpenableColumns
 import android.webkit.MimeTypeMap
 import androidx.documentfile.provider.DocumentFile
 import org.json.JSONTokener
@@ -189,6 +187,7 @@ internal class DocumentStorageOperations(
     private val context: Context
 ) {
     private val contentResolver get() = context.contentResolver
+    internal val contentResolverForPermissions get() = contentResolver
     private val filesDir get() = context.filesDir
 
     private data class DocumentRenameTarget(
@@ -559,7 +558,15 @@ internal class DocumentStorageOperations(
             return null
         }
 
-        fun renameDocumentTarget(targetPath: String, newName: String): HashMap<String, String> {
+        fun renameDocumentTarget(targetPath: String, newName: String): HashMap<String, String> =
+            PersistedUriPermissionOperations.withPermissionLock {
+                renameDocumentTargetLocked(targetPath, newName)
+            }
+
+        private fun renameDocumentTargetLocked(
+            targetPath: String,
+            newName: String
+        ): HashMap<String, String> {
             val target = resolveDocumentRenameTarget(targetPath)
                 ?: throw IllegalArgumentException("Cannot resolve rename target.")
 
@@ -576,6 +583,7 @@ internal class DocumentStorageOperations(
                 // File rename not available 閳?fall through to SAF rename.
             }
 
+            val previousName = DocumentFile.fromSingleUri(context, target.uri)?.name
             val renamedUri = DocumentsContract.renameDocument(contentResolver, target.uri, newName)
                 ?: throw IllegalStateException("Provider did not return renamed document uri.")
             var renamedPermissionUri: Uri? = renamedUri
@@ -600,7 +608,35 @@ internal class DocumentStorageOperations(
                 }
                 else -> renamedUri.toString()
             }
-            renamedPermissionUri?.let { persistRenamedPermission(target.rootUri ?: target.uri, it) }
+            val permissionSourceUri = if (shouldMigratePermissionAfterRename(
+                    hasTreeRootGrant = target.rootUri != null,
+                    renamingTreeRoot = target.treeRoot
+                )
+            ) {
+                target.rootUri ?: target.uri
+            } else {
+                null
+            }
+            try {
+                if (permissionSourceUri != null && renamedPermissionUri != null) {
+                    PersistedUriPermissionOperations.migrateRenamedGrant(
+                        contentResolver,
+                        permissionSourceUri,
+                        renamedPermissionUri
+                    )
+                }
+            } catch (error: SecurityException) {
+                if (!previousName.isNullOrBlank()) {
+                    runCatching {
+                        DocumentsContract.renameDocument(
+                            contentResolver,
+                            renamedUri,
+                            previousName
+                        )
+                    }
+                }
+                throw error
+            }
             return hashMapOf("path" to renamedPath)
         }
 
@@ -637,9 +673,14 @@ internal class DocumentStorageOperations(
             val authority = rootUri.authority ?: return null
             val newTreeUri = DocumentsContract.buildTreeDocumentUri(authority, newDocumentId)
             try {
-                persistRenamedPermission(rootUri, newTreeUri)
-            } catch (_: Exception) {
-                // Permission migration is best-effort.
+                PersistedUriPermissionOperations.migrateRenamedGrant(
+                    contentResolver,
+                    rootUri,
+                    newTreeUri
+                )
+            } catch (error: SecurityException) {
+                runCatching { newFile.renameTo(oldFile) }
+                throw error
             }
             return newTreeUri.toString()
         }
@@ -671,25 +712,6 @@ internal class DocumentStorageOperations(
                 }
             } catch (_: Exception) {
                 null
-            }
-        }
-
-        private fun persistRenamedPermission(oldUri: Uri, newUri: Uri) {
-            val existing = contentResolver.persistedUriPermissions.firstOrNull {
-                it.uri == oldUri
-            } ?: return
-            var modeFlags = 0
-            if (existing.isReadPermission) {
-                modeFlags = modeFlags or Intent.FLAG_GRANT_READ_URI_PERMISSION
-            }
-            if (existing.isWritePermission) {
-                modeFlags = modeFlags or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-            }
-            if (modeFlags == 0) return
-            try {
-                contentResolver.takePersistableUriPermission(newUri, modeFlags)
-            } catch (_: Exception) {
-                // Some providers keep the old grant alive or do not expose a new persistable grant.
             }
         }
 

@@ -34,8 +34,11 @@ class NativePlaybackSnapshot {
     this.duration,
     this.error,
     this.queueIndex = 0,
+    List<String> retainedUris = const <String>[],
+    this.hasRetainedUrisPayload = false,
     this.transportCommandId,
-  }) : audioEffects = audioEffects ?? AudioEffectsState.flat,
+  }) : retainedUris = immutableList(retainedUris),
+       audioEffects = audioEffects ?? AudioEffectsState.flat,
        eqCapabilities = eqCapabilities ?? EqCapabilities.unsupported;
 
   final String sessionId;
@@ -60,6 +63,8 @@ class NativePlaybackSnapshot {
   final EqCapabilities eqCapabilities;
   final String? error;
   final int queueIndex;
+  final List<String> retainedUris;
+  final bool hasRetainedUrisPayload;
   final int? transportCommandId;
 
   NativePlaybackSnapshot copyWith({
@@ -92,6 +97,8 @@ class NativePlaybackSnapshot {
     String? error,
     bool clearError = false,
     int? queueIndex,
+    List<String>? retainedUris,
+    bool? hasRetainedUrisPayload,
     int? transportCommandId,
     bool clearTransportCommandId = false,
   }) {
@@ -122,6 +129,9 @@ class NativePlaybackSnapshot {
       eqCapabilities: eqCapabilities ?? this.eqCapabilities,
       error: clearError ? null : (error ?? this.error),
       queueIndex: queueIndex ?? this.queueIndex,
+      retainedUris: retainedUris ?? this.retainedUris,
+      hasRetainedUrisPayload:
+          hasRetainedUrisPayload ?? this.hasRetainedUrisPayload,
       transportCommandId: clearTransportCommandId
           ? null
           : (transportCommandId ?? this.transportCommandId),
@@ -166,6 +176,13 @@ class NativePlaybackSnapshot {
       eqCapabilities: EqCapabilities.fromJson(map['eqCapabilities']),
       error: map['error'] as String?,
       queueIndex: (map['queueIndex'] as num?)?.toInt() ?? 0,
+      retainedUris:
+          (map['retainedUris'] as List?)
+              ?.whereType<String>()
+              .where((value) => value.trim().isNotEmpty)
+              .toList(growable: false) ??
+          const <String>[],
+      hasRetainedUrisPayload: map.containsKey('retainedUris'),
       transportCommandId: (map['transportCommandId'] as num?)?.toInt(),
     );
   }

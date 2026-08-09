@@ -468,6 +468,57 @@ void main() {
     },
   );
 
+  test('download progress does not change persisted URI references', () async {
+    final manager = _manager();
+    manager.debugSetCurrentTaskForTesting(
+      AsmrDownloadTaskSnapshot(
+        work: _work(),
+        destinationRoot:
+            'content://com.android.externalstorage.documents/tree/primary%3AMusic',
+        workFolderName: 'RJ123456 - Work',
+        conflictPolicy: AsmrDownloadConflictPolicy.skip,
+        status: AsmrDownloadTaskStatus.downloading,
+        totalFiles: 1,
+        completedFiles: 0,
+        skippedFiles: 0,
+        failedFiles: 0,
+        totalBytes: 1024,
+        downloadedBytes: 0,
+        startedAt: DateTime(2026),
+      ),
+    );
+    final initialRevision = manager.persistedUriReferenceRevision;
+    final revisions = <int>[];
+    final subscription = manager.persistedUriReferenceRevisions.listen(
+      revisions.add,
+    );
+
+    for (var index = 0; index < 20; index++) {
+      manager.debugRecordDownloadChunkForTesting(1, 'track.mp3', 1, index + 1);
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+
+    expect(manager.persistedUriReferenceRevision, initialRevision);
+    expect(revisions, isEmpty);
+    await subscription.cancel();
+    manager.dispose();
+  });
+
+  test('initialization emits URI readiness even when no tasks exist', () async {
+    final manager = _manager();
+    final revisions = <int>[];
+    final subscription = manager.persistedUriReferenceRevisions.listen(
+      revisions.add,
+    );
+
+    await manager.initialize();
+
+    expect(manager.persistedUriReferencesReady, isTrue);
+    expect(revisions, <int>[1]);
+    await subscription.cancel();
+    manager.dispose();
+  });
+
   test('downloads files from one work with bounded concurrency', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_parallel_',

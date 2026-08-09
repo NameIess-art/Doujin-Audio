@@ -406,6 +406,47 @@ void main() {
     },
   );
 
+  test(
+    'large download chunks cannot bypass the notification interval',
+    () async {
+      final manager = _manager();
+      final work = _work();
+      manager.debugSetCurrentTaskForTesting(
+        AsmrDownloadTaskSnapshot(
+          work: work,
+          destinationRoot: 'C:\\Downloads',
+          workFolderName: 'RJ123456 - Work',
+          conflictPolicy: AsmrDownloadConflictPolicy.skip,
+          status: AsmrDownloadTaskStatus.downloading,
+          totalFiles: 1,
+          completedFiles: 0,
+          skippedFiles: 0,
+          failedFiles: 0,
+          totalBytes: 1024 * 1024,
+          downloadedBytes: 0,
+          startedAt: DateTime(2026),
+        ),
+      );
+      var notifications = 0;
+      manager.addListener(() => notifications++);
+
+      for (var index = 0; index < 4; index++) {
+        manager.debugRecordDownloadChunkForTesting(
+          1,
+          'track.mp3',
+          256 * 1024,
+          (index + 1) * 256 * 1024,
+        );
+      }
+
+      expect(notifications, 0);
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      expect(notifications, 1);
+      expect(manager.getTask(1)?.downloadedBytes, 1024 * 1024);
+      manager.dispose();
+    },
+  );
+
   test('downloads files from one work with bounded concurrency', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_parallel_',

@@ -83,7 +83,6 @@ class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
   @override
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
     initialized: true,
-    lastError: null,
     visibleCategories: kDefaultVisibleAsmrCategories,
     contentLanguage: AsmrContentLanguage.zh,
     contentLanguagePreference: ContentLanguagePreference.followPage,

@@ -380,7 +380,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       return;
     }
 
-    if (controller.lastError != null) {
+    if (controller.categoryViewState(_mainCategory).operationError != null) {
       showAppSnackBar(
         context,
         i18n.tr('asmr_refresh_failed'),

@@ -130,7 +130,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     try {
       final conversion = await ref
           .read(uiOperationServiceProvider)
-          .run<({VideoConversionResult result, String outputPath})>(
+          .run<VideoConversionResult>(
             scope: UiOperationScope.videoConverterConvert,
             labelKey: 'conversion_starting',
             cancelPrevious: false,
@@ -157,15 +157,14 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                   });
                 },
               );
-              return (result: result, outputPath: plan.outputPath);
+              return result;
             },
           );
       if (!mounted || generation != _conversionGeneration) return;
-      final result = conversion.result;
-      final outputPath = conversion.outputPath;
+      final result = conversion;
       switch (result.status) {
         case VideoConversionStatus.success:
-          _onConversionSuccess(i18n, outputPath, generation);
+          _onConversionSuccess(i18n, result.outputPath!, generation);
           break;
         case VideoConversionStatus.canceled:
           setState(() {

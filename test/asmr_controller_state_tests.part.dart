@@ -685,6 +685,49 @@ void registerAsmrControllerStateTests({
     expect(controller.isLoadingMoreCategory(AsmrCategoryType.release), isFalse);
   });
 
+  test('category failures stay isolated across concurrent refreshes', () async {
+    await resetPrefs();
+    final releaseRequestStarted = Completer<void>();
+    final releaseRequest = Completer<void>();
+    final api = _FakeAsmrApiService(
+      beforeFetchWorkResponse: (request) async {
+        if (request != 'release:desc:1') return;
+        releaseRequestStarted.complete();
+        await releaseRequest.future;
+        throw const HttpException('Simulated release failure');
+      },
+    );
+    final controller = AsmrLibraryController(
+      preferencesStore: preferences,
+      apiService: api,
+      persistenceRepository: _FakeTestPersistenceRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+
+    final failingRefresh = controller.refreshCategory(AsmrCategoryType.release);
+    await releaseRequestStarted.future;
+    await controller.refreshCategory(AsmrCategoryType.sales);
+
+    expect(
+      controller.categoryViewState(AsmrCategoryType.sales).operationError,
+      isNull,
+    );
+
+    releaseRequest.complete();
+    await failingRefresh;
+
+    expect(
+      controller.categoryViewState(AsmrCategoryType.release).operationError,
+      isA<HttpException>(),
+    );
+    expect(
+      controller.categoryViewState(AsmrCategoryType.sales).operationError,
+      isNull,
+    );
+  });
+
   test('pagination stops when loaded works reach the reported total', () async {
     await resetPrefs();
     final controller = AsmrLibraryController(

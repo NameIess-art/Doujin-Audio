@@ -307,8 +307,6 @@ final class _ProfileAsmrController extends AsmrLibraryController {
   @override
   bool get initialized => true;
   @override
-  Object? get lastError => null;
-  @override
   AppLanguage get pageLanguage => AppLanguage.zh;
   @override
   bool get isAsmrAccountLoggedIn => false;
@@ -323,7 +321,6 @@ final class _ProfileAsmrController extends AsmrLibraryController {
   @override
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
     initialized: true,
-    lastError: null,
     visibleCategories: kDefaultVisibleAsmrCategories,
     contentLanguage: AsmrContentLanguage.zh,
     contentLanguagePreference: ContentLanguagePreference.followPage,

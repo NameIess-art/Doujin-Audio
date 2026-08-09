@@ -434,7 +434,6 @@ class AsmrDownloadManager extends ChangeNotifier {
     milliseconds: 120,
   );
   static const int maxAutomaticFileRetries = 10;
-  static const int _progressNotifyMinByteDelta = 128 * 1024;
   final FileCachePlatformGateway _fileCacheGateway;
   final JsonDocumentStore _jsonDocumentStore;
   static const AudioDetailJsonCodec _audioDetailJsonCodec =
@@ -469,7 +468,6 @@ class AsmrDownloadManager extends ChangeNotifier {
   Timer? _deferredPersistenceTimer;
   Timer? _deferredProgressNotifyTimer;
   DateTime? _lastProgressNotifyAt;
-  int _lastProgressNotifyBytes = 0;
 
   List<AsmrDownloadTaskSnapshot> get tasks => _tasks.values.toList();
   List<int> get taskIds => _taskIdsSnapshot;
@@ -1872,17 +1870,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         ? _progressNotifyMinInterval
         : now.difference(_lastProgressNotifyAt!);
 
-    int totalDownloadedBytes = 0;
-    for (final task in _tasks.values) {
-      if (task.status == AsmrDownloadTaskStatus.downloading) {
-        totalDownloadedBytes +=
-            _liveDownloadedBytes[task.work.id] ?? task.downloadedBytes;
-      }
-    }
-
-    final byteDelta = (totalDownloadedBytes - _lastProgressNotifyBytes).abs();
-    if (byteDelta >= _progressNotifyMinByteDelta ||
-        elapsed >= _progressNotifyMinInterval) {
+    if (elapsed >= _progressNotifyMinInterval) {
       _notifyTaskChanged(deferPersistence: true);
       return;
     }
@@ -1891,20 +1879,13 @@ class AsmrDownloadManager extends ChangeNotifier {
       _progressNotifyMinInterval - elapsed,
       () {
         _deferredProgressNotifyTimer = null;
-        _notifyTaskChanged();
+        _notifyTaskChanged(deferPersistence: true);
       },
     );
   }
 
   void _markProgressNotified() {
     _lastProgressNotifyAt = DateTime.now();
-    int totalDownloadedBytes = 0;
-    for (final task in _tasks.values) {
-      if (task.status == AsmrDownloadTaskStatus.downloading) {
-        totalDownloadedBytes += task.downloadedBytes;
-      }
-    }
-    _lastProgressNotifyBytes = totalDownloadedBytes;
   }
 
   void _recordDownloadChunk(

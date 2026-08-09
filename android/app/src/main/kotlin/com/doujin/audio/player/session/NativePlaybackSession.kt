@@ -261,6 +261,20 @@ internal class NativePlaybackSession(
 
     fun isPlaying(): Boolean = _player?.isPlaying ?: lastIsPlaying
 
+    fun seekTo(positionMs: Long) {
+        val nonNegativePositionMs = positionMs.coerceAtLeast(0L)
+        val p = _player
+        if (p != null) {
+            p.seekTo(nonNegativePositionMs)
+            return
+        }
+        val targetPositionMs = lastDurationMs?.let { durationMs ->
+            nonNegativePositionMs.coerceAtMost(durationMs.coerceAtLeast(0L))
+        } ?: nonNegativePositionMs
+        lastPositionMs = targetPositionMs
+        lastBufferedPositionMs = maxOf(lastBufferedPositionMs, targetPositionMs)
+    }
+
     fun releasePlayer() {
         _player?.let { p ->
             lastPositionMs = p.currentPosition.coerceAtLeast(0L)

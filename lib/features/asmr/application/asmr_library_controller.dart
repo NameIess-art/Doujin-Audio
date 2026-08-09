@@ -22,7 +22,6 @@ import '../../../core/media/search_query_utils.dart';
 class AsmrLibraryGlobalViewState {
   AsmrLibraryGlobalViewState({
     required this.initialized,
-    required this.lastError,
     required List<AsmrCategoryType> visibleCategories,
     required this.contentLanguage,
     required this.contentLanguagePreference,
@@ -30,7 +29,6 @@ class AsmrLibraryGlobalViewState {
   }) : visibleCategories = immutableList(visibleCategories);
 
   final bool initialized;
-  final Object? lastError;
   final List<AsmrCategoryType> visibleCategories;
   final AsmrContentLanguage contentLanguage;
   final ContentLanguagePreference contentLanguagePreference;
@@ -40,7 +38,6 @@ class AsmrLibraryGlobalViewState {
   bool operator ==(Object other) {
     return other is AsmrLibraryGlobalViewState &&
         initialized == other.initialized &&
-        lastError == other.lastError &&
         listEquals(visibleCategories, other.visibleCategories) &&
         contentLanguage == other.contentLanguage &&
         contentLanguagePreference == other.contentLanguagePreference &&
@@ -50,7 +47,6 @@ class AsmrLibraryGlobalViewState {
   @override
   int get hashCode => Object.hash(
     initialized,
-    lastError,
     Object.hashAll(visibleCategories),
     contentLanguage,
     contentLanguagePreference,
@@ -360,6 +356,8 @@ class AsmrLibraryController extends ChangeNotifier
       <_AsmrWorkRequestKey, Future<List<AsmrTrackFile>>>{};
   final Map<AsmrCategoryType, int> _categoryRevisions =
       <AsmrCategoryType, int>{};
+  final Map<AsmrCategoryType, Object?> _categoryErrors =
+      <AsmrCategoryType, Object?>{};
   final Map<int, int> _trackRevisions = <int, int>{};
   final LinkedHashMap<_AsmrFilteredWorksCacheKey, List<AsmrWork>>
   _filteredWorksCache = LinkedHashMap();
@@ -385,7 +383,6 @@ class AsmrLibraryController extends ChangeNotifier
   AsmrSyncCancellationToken? _activeSyncCancellationToken;
   Future<void> _stateMutationTail = Future<void>.value();
   bool _initialized = false;
-  Object? _lastError;
   int _globalRevision = 0;
   int _authEpoch = 0;
   int _contentEpoch = 0;
@@ -460,6 +457,7 @@ class AsmrLibraryController extends ChangeNotifier
       _loadingMoreByCategory[category] = false;
       _loadMoreRetryByCategory.remove(category);
       if (_isRemoteCategory(category)) {
+        _categoryErrors.remove(category);
         _currentPageByCategory.remove(category);
         _totalCountByCategory.remove(category);
         _hasMoreByCategory.remove(category);
@@ -503,8 +501,6 @@ class AsmrLibraryController extends ChangeNotifier
   }
 
   bool get initialized => _initialized;
-  Object? get lastError => _lastError;
-
   List<AsmrCategoryType> get visibleCategories => _visibleCategories;
   ContentLanguagePreference get contentLanguagePreference =>
       _contentLanguagePreference;
@@ -536,7 +532,6 @@ class AsmrLibraryController extends ChangeNotifier
 
   AsmrLibraryGlobalViewState get globalViewState => AsmrLibraryGlobalViewState(
     initialized: _initialized,
-    lastError: _lastError,
     visibleCategories: _visibleCategories,
     contentLanguage: _contentLanguage,
     contentLanguagePreference: _contentLanguagePreference,
@@ -581,8 +576,8 @@ class AsmrLibraryController extends ChangeNotifier
           ? works.length
           : totalCountFor(category),
       activeQuery: activeQueryFor(category),
-      lastError: _lastError,
-      operationError: _lastError,
+      lastError: _categoryErrors[category],
+      operationError: _categoryErrors[category],
       revision: _categoryRevisionFor(category),
     );
   }
@@ -893,11 +888,15 @@ class AsmrLibraryController extends ChangeNotifier
     AsmrCategoryType category, {
     String searchQuery = '',
   }) async {
+    if (_categoryErrors.remove(category) != null) {
+      _bumpCategoryRevision(category);
+      notifyListeners();
+    }
     if (isAsmrAccountLoggedIn) {
       await syncAsmrAccount(force: true);
       if (_syncPhase == AsmrSyncPhase.failed) {
-        _lastError = _lastSyncError;
-        _bumpGlobalRevision();
+        _categoryErrors[category] = _lastSyncError;
+        _bumpCategoryRevision(category);
         notifyListeners();
         return;
       }
@@ -981,6 +980,7 @@ class AsmrLibraryController extends ChangeNotifier
     _refreshTaskQueries.clear();
     _refreshTaskKeys.clear();
     _worksByCategory.clear();
+    _categoryErrors.clear();
     _detailCache.clear();
     _trackCache.clear();
     _visibleTrackCache.clear();
@@ -1064,7 +1064,7 @@ class AsmrLibraryController extends ChangeNotifier
     final requestKey = _categoryRequestKey(requestId);
     _loadingMoreByCategory[category] = true;
     _loadMoreRetryByCategory[category] = false;
-    _lastError = null;
+    _categoryErrors.remove(category);
     _commitPresentation(
       'asmr_loading_more_start_${category.name}',
       notifyListeners,
@@ -1109,7 +1109,7 @@ class AsmrLibraryController extends ChangeNotifier
       );
     } catch (error) {
       if (_isCategoryRequestCurrent(category, requestKey)) {
-        _lastError = error;
+        _categoryErrors[category] = error;
         _loadMoreRetryByCategory[category] = true;
       }
     } finally {
@@ -1136,7 +1136,7 @@ class AsmrLibraryController extends ChangeNotifier
     final normalizedQuery = normalizeSearchQuery(searchQuery);
     _loadingByCategory[category] = true;
     _loadMoreRetryByCategory[category] = false;
-    _lastError = null;
+    _categoryErrors.remove(category);
     _commitPresentation(
       'asmr_loading_start_${category.name}',
       notifyListeners,
@@ -1212,7 +1212,7 @@ class AsmrLibraryController extends ChangeNotifier
       }
     } catch (error) {
       if (_isCategoryRequestCurrent(category, requestKey)) {
-        _lastError = error;
+        _categoryErrors[category] = error;
       }
     } finally {
       if (_isCategoryRequestCurrent(category, requestKey)) {

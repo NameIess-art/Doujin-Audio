@@ -1118,7 +1118,7 @@ class NativePlaybackService : MediaSessionService() {
     fun seek(sessionId: String, positionMs: Long): Map<String, Any?> {
         val session = sessions[sessionId] ?: return errorResult("Unknown session.")
         playbackRecovery.resetHealth(sessionId, "seek", cancelRecovery = true)
-        session.ensurePlayer().seekTo(positionMs.coerceAtLeast(0L))
+        session.seekTo(positionMs)
         publishSessionState(sessionId)
         schedulePersistSessionState()
         return okResult(session.snapshot())

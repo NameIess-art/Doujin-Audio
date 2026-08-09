@@ -17,6 +17,54 @@ import java.nio.ByteOrder
 
 class NativePlaybackSessionStateTest {
     @Test
+    fun `seeking a deferred session updates snapshots without creating a player`() {
+        var playerCreationCount = 0
+        val descriptor = NativeMediaItemDescriptor(
+            path = "/audio.mp3",
+            uri = "file:///audio.mp3",
+            title = "Audio",
+            subtitle = null,
+            artUri = null
+        )
+        val session = NativePlaybackSession(
+            sessionId = "deferred",
+            createPlayer = { _, _ ->
+                playerCreationCount++
+                error("player should stay deferred")
+            },
+            logWarn = { _, _, _ -> },
+            elapsedRealtimeMs = { 2_000L }
+        )
+        session.configure(
+            descriptor = descriptor,
+            queue = listOf(descriptor),
+            queueStartIndex = 0,
+            startPositionMs = 1_000L,
+            volume = 1f,
+            speed = 1f,
+            repeatOne = false,
+            repeatAll = false,
+            shuffleModeEnabled = false,
+            autoPlay = false,
+            deferPlayerCreation = true
+        )
+        session.lastDurationMs = 5_000L
+        session.lastBufferedPositionMs = 1_500L
+
+        session.seekTo(8_000L)
+
+        assertEquals(0, playerCreationCount)
+        assertEquals(5_000L, session.snapshot()["positionMs"])
+        assertEquals(5_000L, session.snapshot()["bufferedPositionMs"])
+        assertEquals(5_000L, session.storedSnapshot().positionMs)
+
+        session.seekTo(-100L)
+
+        assertEquals(0L, session.snapshot()["positionMs"])
+        assertEquals(0, playerCreationCount)
+    }
+
+    @Test
     fun `temporary speed affects progress without changing persisted speed`() {
         val descriptor = NativeMediaItemDescriptor(
             path = "/video.mp4",

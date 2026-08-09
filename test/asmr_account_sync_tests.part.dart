@@ -446,6 +446,39 @@ void registerAsmrAccountSyncTests({
     expect(categoryIndex, greaterThan(pullIndex));
   });
 
+  test('ASMR sync failure only marks the requested category', () async {
+    await resetPrefs();
+    final api = _FakeAsmrApiService();
+    final controller = AsmrLibraryController(
+      preferencesStore: preferences,
+      apiService: api,
+      authService: AsmrAuthService(
+        apiService: api,
+        tokenStore: _MemoryAsmrTokenStore(),
+      ),
+      persistenceRepository: _FakeTestPersistenceRepository(
+        const <MusicTrack>[],
+      ),
+    );
+    await controller.initialize(defaultLanguage: AsmrContentLanguage.en);
+    await controller.loginAsmrAccount('alice', 'password');
+    api.fetchReviewAuthFailuresRemaining = 1;
+    api.checkSessionAuthFailuresRemaining = 1;
+    api.loginFailureStatusCode = HttpStatus.forbidden;
+
+    await controller.refreshCategoryWithSync(AsmrCategoryType.release);
+
+    expect(controller.syncViewState.phase, AsmrSyncPhase.failed);
+    expect(
+      controller.categoryViewState(AsmrCategoryType.release).operationError,
+      same(controller.syncViewState.lastError),
+    );
+    expect(
+      controller.categoryViewState(AsmrCategoryType.sales).operationError,
+      isNull,
+    );
+  });
+
   test(
     'ASMR initialize restores account without blocking category load',
     () async {

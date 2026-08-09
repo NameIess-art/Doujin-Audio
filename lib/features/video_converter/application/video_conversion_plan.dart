@@ -2,29 +2,47 @@ import 'dart:io';
 
 import 'package:path/path.dart' as path;
 
-import '../../../core/immutable_collections.dart';
+int _videoConversionTemporarySequence = 0;
 
 class VideoConversionPlan {
   VideoConversionPlan({
     required this.inputPath,
     required this.outputPath,
+    required this.temporaryOutputPath,
     required this.format,
     required this.bitrate,
-    required List<String> commandArgs,
-  }) : commandArgs = immutableList(commandArgs);
+  });
 
   final String inputPath;
   final String outputPath;
+  final String temporaryOutputPath;
   final String format;
   final String bitrate;
-  final List<String> commandArgs;
 
   String get command => buildVideoConversionCommand(
     inputPath: inputPath,
-    outputPath: outputPath,
+    outputPath: temporaryOutputPath,
     format: format,
     bitrate: bitrate,
   );
+}
+
+Future<String> _resolveVideoConversionTemporaryPath({
+  required String outputDirectoryPath,
+  required String fileNameNoExt,
+  required String format,
+}) async {
+  while (true) {
+    final token =
+        '${DateTime.now().microsecondsSinceEpoch}_${_videoConversionTemporarySequence++}';
+    final candidatePath = path.join(
+      outputDirectoryPath,
+      '.$fileNameNoExt.$token.part.$format',
+    );
+    if (!await File(candidatePath).exists()) {
+      return candidatePath;
+    }
+  }
 }
 
 int parseVideoDurationMs(String? durationStr) {
@@ -114,21 +132,22 @@ Future<VideoConversionPlan> createVideoConversionPlan({
   required String format,
   required String bitrate,
 }) async {
+  final fileNameNoExt = path.basenameWithoutExtension(inputPath);
   final outputPath = await resolveVideoConversionOutputPath(
     outputDirectoryPath: outputDirectoryPath,
-    fileNameNoExt: path.basenameWithoutExtension(inputPath),
+    fileNameNoExt: fileNameNoExt,
+    format: format,
+  );
+  final temporaryOutputPath = await _resolveVideoConversionTemporaryPath(
+    outputDirectoryPath: outputDirectoryPath,
+    fileNameNoExt: fileNameNoExt,
     format: format,
   );
   return VideoConversionPlan(
     inputPath: inputPath,
     outputPath: outputPath,
+    temporaryOutputPath: temporaryOutputPath,
     format: format,
     bitrate: bitrate,
-    commandArgs: buildVideoConversionCommandArgs(
-      inputPath: inputPath,
-      outputPath: outputPath,
-      format: format,
-      bitrate: bitrate,
-    ),
   );
 }

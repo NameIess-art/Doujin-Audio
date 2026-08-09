@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/video_converter/application/video_conversion_plan.dart';
+import 'package:path/path.dart' as path;
 
 void main() {
   test('parseVideoDurationMs accepts finite positive seconds only', () {
@@ -69,8 +70,14 @@ void main() {
       );
 
       expect(plan.outputPath, endsWith('clip (1).mp3'));
+      expect(path.dirname(plan.temporaryOutputPath), dir.path);
+      expect(
+        path.basename(plan.temporaryOutputPath),
+        allOf(startsWith('.clip.'), endsWith('.part.mp3')),
+      );
       expect(plan.command, contains('-b:a 256k'));
-      expect(plan.command, contains('"${plan.outputPath}"'));
+      expect(plan.command, contains('"${plan.temporaryOutputPath}"'));
+      expect(plan.command, isNot(contains('"${plan.outputPath}"')));
     },
   );
 }

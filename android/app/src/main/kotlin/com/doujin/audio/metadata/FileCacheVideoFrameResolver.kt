@@ -4,9 +4,46 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
 import java.io.File
 import java.io.FileOutputStream
 import kotlin.math.abs
+import kotlin.math.roundToInt
+
+internal const val VIDEO_FRAME_MAX_EDGE_PX = 1200
+
+internal data class VideoFrameSize(
+    val width: Int,
+    val height: Int
+)
+
+internal fun calculateVideoFrameSize(
+    width: Int,
+    height: Int,
+    maxEdge: Int = VIDEO_FRAME_MAX_EDGE_PX
+): VideoFrameSize? {
+    if (width <= 0 || height <= 0 || maxEdge <= 0) return null
+    val sourceMaxEdge = maxOf(width, height)
+    if (sourceMaxEdge <= maxEdge) {
+        return VideoFrameSize(width = width, height = height)
+    }
+    val scale = maxEdge.toDouble() / sourceMaxEdge
+    return VideoFrameSize(
+        width = (width * scale).roundToInt().coerceAtLeast(1),
+        height = (height * scale).roundToInt().coerceAtLeast(1)
+    )
+}
+
+internal fun shouldDecodeLegacyVideoFrame(
+    width: Int?,
+    height: Int?,
+    maxEdge: Int = VIDEO_FRAME_MAX_EDGE_PX
+): Boolean =
+    width != null &&
+        height != null &&
+        width > 0 &&
+        height > 0 &&
+        maxOf(width, height) <= maxEdge
 
 internal class FileCacheVideoFrameResolver(
     private val context: Context,
@@ -25,7 +62,7 @@ internal class FileCacheVideoFrameResolver(
                 append('|')
                 append(modifiedAtMs)
             }
-            append("|v2")
+            append("|v3")
         }
         val outputFile = File(
             coverCacheDir,
@@ -58,19 +95,44 @@ internal class FileCacheVideoFrameResolver(
                 .extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull()
                 ?: 0L
-            val bitmap = selectFrame(retriever, durationMs) ?: return null
+            val sourceWidth = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)
+                ?.toIntOrNull()
+            val sourceHeight = retriever
+                .extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)
+                ?.toIntOrNull()
+            val frameSize = if (sourceWidth != null && sourceHeight != null) {
+                calculateVideoFrameSize(sourceWidth, sourceHeight)
+            } else {
+                null
+            }
+            if (frameSize == null) return null
+            if (
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.O_MR1 &&
+                !shouldDecodeLegacyVideoFrame(sourceWidth, sourceHeight)
+            ) {
+                return null
+            }
 
-            FileOutputStream(outputFile).use { output ->
-                bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)
-                output.flush()
+            val bitmap = selectFrame(retriever, durationMs, frameSize) ?: return null
+            try {
+                FileOutputStream(outputFile).use { output ->
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)) {
+                        "Video frame compression failed."
+                    }
+                    output.flush()
+                }
+                check(outputFile.length() > 0L) { "Video frame cache is empty." }
+                touchCacheFile(outputFile)
+                return outputFile.absolutePath
+            } finally {
+                bitmap.recycle()
             }
-            touchCacheFile(outputFile)
-            bitmap.recycle()
-            return outputFile.absolutePath
+        } catch (_: OutOfMemoryError) {
+            outputFile.delete()
+            return null
         } catch (_: Exception) {
-            if (outputFile.exists()) {
-                outputFile.delete()
-            }
+            outputFile.delete()
             return null
         } finally {
             try {
@@ -83,7 +145,8 @@ internal class FileCacheVideoFrameResolver(
 
     private fun selectFrame(
         retriever: MediaMetadataRetriever,
-        durationMs: Long
+        durationMs: Long,
+        frameSize: VideoFrameSize
     ): Bitmap? {
         if (durationMs > 3000L) {
             val timestampsUs = listOf(
@@ -93,9 +156,11 @@ internal class FileCacheVideoFrameResolver(
                 durationMs * 150L
             )
             for (timestampUs in timestampsUs) {
-                val frame = retriever.getFrameAtTime(
+                val frame = frameAtTime(
+                    retriever,
                     timestampUs,
-                    MediaMetadataRetriever.OPTION_CLOSEST
+                    MediaMetadataRetriever.OPTION_CLOSEST,
+                    frameSize
                 ) ?: continue
                 if (!isBlankBitmap(frame)) {
                     return frame
@@ -104,10 +169,35 @@ internal class FileCacheVideoFrameResolver(
             }
         }
 
-        return retriever.getFrameAtTime(
+        return frameAtTime(
+            retriever,
             1_000_000L,
-            MediaMetadataRetriever.OPTION_CLOSEST_SYNC
-        ) ?: retriever.frameAtTime
+            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+            frameSize
+        ) ?: frameAtTime(
+            retriever,
+            0L,
+            MediaMetadataRetriever.OPTION_CLOSEST_SYNC,
+            frameSize
+        )
+    }
+
+    private fun frameAtTime(
+        retriever: MediaMetadataRetriever,
+        timestampUs: Long,
+        option: Int,
+        frameSize: VideoFrameSize
+    ): Bitmap? {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            retriever.getScaledFrameAtTime(
+                timestampUs,
+                option,
+                frameSize.width,
+                frameSize.height
+            )
+        } else {
+            retriever.getFrameAtTime(timestampUs, option)
+        }
     }
 
     private fun isBlankBitmap(bitmap: Bitmap): Boolean {

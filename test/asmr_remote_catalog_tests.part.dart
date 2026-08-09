@@ -53,7 +53,12 @@ void registerAsmrRemoteCatalogTests({
 
     await controller.refreshCategory(AsmrCategoryType.recommendation);
 
-    expect(controller.lastError, isNull);
+    expect(
+      controller
+          .categoryViewState(AsmrCategoryType.recommendation)
+          .operationError,
+      isNull,
+    );
     expect(
       controller
           .worksFor(AsmrCategoryType.recommendation)
@@ -128,7 +133,10 @@ void registerAsmrRemoteCatalogTests({
 
     await controller.refreshCategory(AsmrCategoryType.release);
 
-    expect(controller.lastError, isNull);
+    expect(
+      controller.categoryViewState(AsmrCategoryType.release).operationError,
+      isNull,
+    );
     expect(
       api.fetchWorkRequests.where((request) => request == 'release:desc:1'),
       hasLength(2),
@@ -351,7 +359,10 @@ void registerAsmrRemoteCatalogTests({
     }
 
     await refresh;
-    expect(controller.lastError, isNull);
+    expect(
+      controller.categoryViewState(AsmrCategoryType.release).operationError,
+      isNull,
+    );
     expect(api.fetchWorkRequests, contains('create_date:desc:2'));
     expect(api.fetchWorkRequests, contains('dl_count:desc:2'));
     expect(api.fetchWorkRequests, contains('rate_average_2dp:desc:2'));

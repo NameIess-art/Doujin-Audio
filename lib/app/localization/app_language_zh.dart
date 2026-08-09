@@ -56,9 +56,9 @@ const Map<String, String> appLanguageZh = {
   'sort_duration': '时长',
   'sort_release_date': '发售时间',
   'sort_added_date': '添加时间',
-  'sort_ascending': '正序',
+  'sort_ascending': '升序',
   'sort_descending': '降序',
-  'sort_group_by_library': '曲库区分',
+  'sort_group_by_library': '曲库分组',
   'batch_metadata': '批量补全数据',
   'batch_metadata_hint':
       '将从上到下优先获取 ASMR.ONE 作品信息，失败时回退到 DLsite。确认当前作品后，会继续处理下一个作品。',

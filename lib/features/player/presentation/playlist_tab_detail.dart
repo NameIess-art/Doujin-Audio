@@ -1,7 +1,6 @@
 part of 'playlist_tab.dart';
 
 const double _kSessionDetailBackgroundBlurSigma = 32;
-const double _kAsmrSessionDetailBackgroundBlurSigma = 12;
 const int _kAsmrSessionDetailBackgroundCacheWidth = 300;
 
 ThemeData _createAsmrSessionDetailTheme(
@@ -625,9 +624,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             _kAsmrSessionDetailBackgroundCacheWidth,
           )
         : requestedBackgroundCacheWidth;
-    final backgroundBlurSigma = isAsmrTrack
-        ? _kAsmrSessionDetailBackgroundBlurSigma
-        : _kSessionDetailBackgroundBlurSigma;
     final blurEnabled = ref.watch(
       settingsStateProvider.select(
         (state) => state.value?.blurPlayerBackgroundEnabled ?? true,
@@ -728,10 +724,12 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                           child: KeyedSubtree(
                             key: ValueKey('session_detail_blur_${session.id}'),
                             child: ImageFiltered(
-                              key: const ValueKey('session_detail_background_blur'),
+                              key: const ValueKey(
+                                'session_detail_background_blur',
+                              ),
                               imageFilter: ImageFilter.blur(
-                                sigmaX: backgroundBlurSigma,
-                                sigmaY: backgroundBlurSigma,
+                                sigmaX: _kSessionDetailBackgroundBlurSigma,
+                                sigmaY: _kSessionDetailBackgroundBlurSigma,
                                 tileMode: TileMode.decal,
                               ),
                               child: AsyncCoverImage(
@@ -763,11 +761,12 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                     color: cs.surface.withValues(alpha: 0.45),
                                     colorBlendMode: BlendMode.darken,
                                     deferRetryDuringInteraction: true,
-                                    fallbackBuilder: (_) => CoverFallbackArtwork(
-                                      seed:
-                                          track?.displayName ??
-                                          session.currentTrackPath,
-                                    ),
+                                    fallbackBuilder: (_) =>
+                                        CoverFallbackArtwork(
+                                          seed:
+                                              track?.displayName ??
+                                              session.currentTrackPath,
+                                        ),
                                   );
                                 },
                               ),
@@ -796,10 +795,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               final subtitles = ref.read(
                                 playbackSubtitleServiceProvider,
                               );
-                              final cachedTrack = subtitles.trackSync(
+                              final hasSubtitle = subtitles.hasKnownSubtitle(
                                 session.currentTrackPath,
                               );
-                              final hasSubtitle = cachedTrack != null;
                               final settings = ref.watch(
                                 subtitleSettingsProvider,
                               );
@@ -932,10 +930,9 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                               final subtitles = ref.read(
                                 playbackSubtitleServiceProvider,
                               );
-                              final cachedTrack = subtitles.trackSync(
+                              final hasSubtitle = subtitles.hasKnownSubtitle(
                                 session.currentTrackPath,
                               );
-                              final hasSubtitle = cachedTrack != null;
                               final subtitleSettings = ref.watch(
                                 subtitleSettingsProvider,
                               );

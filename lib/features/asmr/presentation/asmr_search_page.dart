@@ -17,7 +17,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   Timer? _debounceTimer;
   AsmrCategoryType _category = AsmrCategoryType.collected;
   String _query = '';
-  bool _loadPending = false;
+  bool _showSearchPlaceholder = false;
   int _requestSerial = 0;
   late final AppLanguageProvider _languageProvider;
 
@@ -46,7 +46,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       final query = value.trim();
       if (_query == query) return;
       setState(() => _query = query);
-      unawaited(_refresh());
+      if (query.isNotEmpty) _jumpCurrentCategoryToTop();
+      unawaited(_refresh(showSearchPlaceholder: query.isNotEmpty));
     });
   }
 
@@ -55,7 +56,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     final query = value.trim();
     if (_query != query) setState(() => _query = query);
     FocusManager.instance.primaryFocus?.unfocus();
-    await _refresh();
+    if (query.isNotEmpty) _jumpCurrentCategoryToTop();
+    await _refresh(showSearchPlaceholder: query.isNotEmpty);
   }
 
   void _closeOrClear() {
@@ -67,7 +69,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
     _controller.clear();
     setState(() {
       _query = '';
-      _loadPending = false;
+      _showSearchPlaceholder = false;
       _requestSerial += 1;
     });
     unawaited(_refresh());
@@ -76,19 +78,25 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   void _selectCategory(AsmrCategoryType category) {
     if (_category == category) return;
     setState(() => _category = category);
-    final controller = _scrollControllers[category];
-    if (controller != null && controller.hasClients) controller.jumpTo(0);
-    unawaited(_refresh());
+    _jumpCurrentCategoryToTop();
+    unawaited(_refresh(showSearchPlaceholder: _query.isNotEmpty));
   }
 
-  Future<void> _refresh() async {
+  void _jumpCurrentCategoryToTop() {
+    final controller = _scrollControllers[_category];
+    if (controller != null && controller.hasClients) controller.jumpTo(0);
+  }
+
+  Future<void> _refresh({bool showSearchPlaceholder = false}) async {
     final query = _query;
     final requestSerial = ++_requestSerial;
-    setState(() => _loadPending = true);
+    setState(() {
+      _showSearchPlaceholder = showSearchPlaceholder && query.isNotEmpty;
+    });
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) {
       if (mounted && requestSerial == _requestSerial) {
-        setState(() => _loadPending = false);
+        setState(() => _showSearchPlaceholder = false);
       }
       return;
     }
@@ -105,7 +113,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       task: (_) => controller.refreshCategory(_category, searchQuery: query),
     );
     if (!mounted || requestSerial != _requestSerial) return;
-    setState(() => _loadPending = false);
+    setState(() => _showSearchPlaceholder = false);
   }
 
   @override
@@ -142,7 +150,7 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       key: ValueKey<String>('asmr_search_${_category.name}'),
       isActive: true,
       category: _category,
-      isLoadPending: _loadPending,
+      isLoadPending: _showSearchPlaceholder,
       scrollController: _scrollControllers[_category]!,
       searchQuery: _query,
       topInset: AppSearchPageScaffold.controlsTopInset(context),

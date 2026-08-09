@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -1550,6 +1551,18 @@ void main() {
       groupSubtitle: 'RJ123456',
       isSingle: false,
       remoteMetadataKind: 'asmr.one',
+      remoteMetadata: const <String, Object?>{
+        'subtitleUrl': 'https://asmr.one/media/work/track.vtt',
+      },
+    );
+    var subtitleLoadCount = 0;
+    final subtitleLoad = Completer<SubtitleTrack?>();
+    final subtitleService = PlaybackSubtitleService(
+      trackResolver: (path) => path == track.path ? track : null,
+      subtitleLoader: (_, _) {
+        subtitleLoadCount++;
+        return subtitleLoad.future;
+      },
     );
     final session = fixture.runtimeGraph.playback.createTrackSession(
       track,
@@ -1565,12 +1578,65 @@ void main() {
       isInitialized: true,
     );
 
-    await tester.pumpWidget(fixture.build(const PlaylistTab()));
+    await tester.pumpWidget(
+      fixture.build(const PlaylistTab(), subtitleService: subtitleService),
+    );
     await tester.pump();
 
     expect(find.text(track.displayName), findsOneWidget);
     expect(find.text(track.groupTitle), findsOneWidget);
     expect(find.text('f3d4baa6ec96a6ad'), findsNothing);
+    unawaited(
+      Navigator.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).push(buildSessionDetailRoute(sessionId: session.id)),
+    );
+    await tester.pumpAndSettle();
+
+    expect(subtitleLoadCount, 1);
+    expect(subtitleService.trackSync(track.path), isNull);
+    expect(
+      find.byTooltip(fixture.languageProvider.tr('turn_off_subtitle')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(fixture.languageProvider.tr('subtitle_global_display')),
+      findsOneWidget,
+    );
+    subtitleLoad.complete(null);
+    await tester.pump();
+    expect(subtitleService.trackSync(track.path), isNull);
+    expect(
+      find.byTooltip(fixture.languageProvider.tr('turn_off_subtitle')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(fixture.languageProvider.tr('subtitle_global_display')),
+      findsOneWidget,
+    );
+    await tester.tap(
+      find.byTooltip(fixture.languageProvider.tr('turn_off_subtitle')),
+    );
+    await tester.pump();
+    expect(
+      find.byTooltip(fixture.languageProvider.tr('turn_on_subtitle')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(fixture.languageProvider.tr('subtitle_global_display')),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<ImageFiltered>(
+            find.byKey(const ValueKey('session_detail_background_blur')),
+          )
+          .imageFilter,
+      ui.ImageFilter.blur(sigmaX: 32, sigmaY: 32, tileMode: ui.TileMode.decal),
+    );
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 120));
   });
@@ -1869,6 +1935,18 @@ void main() {
       expect(
         find.byKey(const ValueKey('session_detail_background_blur')),
         findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<ImageFiltered>(
+              find.byKey(const ValueKey('session_detail_background_blur')),
+            )
+            .imageFilter,
+        ui.ImageFilter.blur(
+          sigmaX: 32,
+          sigmaY: 32,
+          tileMode: ui.TileMode.decal,
+        ),
       );
 
       await settingsRepository.setBlurPlayerBackgroundEnabled(false);

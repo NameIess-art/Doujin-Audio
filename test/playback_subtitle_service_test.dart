@@ -29,6 +29,7 @@ void main() {
     expect(first, isNotNull);
     expect(second, same(first));
     expect(service.trackSync(audioPath), same(first));
+    expect(service.hasKnownSubtitle(audioPath), isTrue);
     expect(
       service.textAt(audioPath, const Duration(milliseconds: 1100)),
       'first line',
@@ -91,6 +92,28 @@ void main() {
     expect(service.hasResult(path), isFalse);
     expect(await service.load(path), loaded);
     expect(calls, 2);
+  });
+
+  test('reports an unloaded subtitle only from track metadata', () {
+    const knownPath = 'https://api.asmr.one/known.mp3';
+    const unknownPath = 'https://api.asmr.one/unknown.mp3';
+    final service = PlaybackSubtitleService(
+      trackResolver: (path) => path == knownPath
+          ? _remoteTrack(path)
+          : MusicTrack(
+              path: path,
+              displayName: 'Unknown ASMR track',
+              groupKey: 'work',
+              groupTitle: 'Work',
+              groupSubtitle: 'ASMR',
+              isSingle: false,
+              remoteMetadataKind: 'asmr.one',
+              remoteMetadata: const <String, Object?>{},
+            ),
+    );
+
+    expect(service.hasKnownSubtitle(knownPath), isTrue);
+    expect(service.hasKnownSubtitle(unknownPath), isFalse);
   });
 
   test('remote subtitle stalled response respects idle timeout', () async {

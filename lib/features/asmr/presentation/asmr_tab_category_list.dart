@@ -76,8 +76,11 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         );
     final works = state.works;
     final showPlaceholder =
-        works.isEmpty &&
-        (widget.isLoadPending || state.isLoading || !state.hasAttemptedLoad);
+        (widget.isLoadPending && normalizedSearchQuery.isNotEmpty) ||
+        (works.isEmpty &&
+            (widget.isLoadPending ||
+                state.isLoading ||
+                !state.hasAttemptedLoad));
     if (widget.isActive) {
       ref.watch(appLanguageStateProvider);
     } else {

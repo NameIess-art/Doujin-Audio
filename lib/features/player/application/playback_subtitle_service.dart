@@ -38,6 +38,9 @@ final class PlaybackSubtitleService {
 
   bool hasResult(String trackPath) => _tracks.containsKey(trackPath);
   bool isLoading(String trackPath) => _loading.containsKey(trackPath);
+  bool hasKnownSubtitle(String trackPath) =>
+      _tracks[trackPath] != null ||
+      _hasRemoteSubtitleUrl(_trackResolver(trackPath));
 
   Future<SubtitleTrack?> load(String trackPath) {
     if (_tracks.containsKey(trackPath)) {

@@ -382,4 +382,55 @@ void main() {
       ),
     );
   });
+
+  testWidgets('storage overview reloads when cache clearing completes', (
+    tester,
+  ) async {
+    var cacheBytes = 128 * 1024 * 1024;
+    var storageReads = 0;
+    messenger.setMockMethodCallHandler(storageChannel, (_) async {
+      storageReads += 1;
+      return <String, Object?>{
+        'ok': true,
+        'value': <String, Object?>{
+          'totalBytes': 1024 * 1024 * 1024,
+          'availableBytes': 512 * 1024 * 1024,
+          'cacheBytes': cacheBytes,
+        },
+      };
+    });
+    final languageProvider = AppLanguageProvider();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+          uiOperationServiceProvider.overrideWithValue(operationService),
+          dataSupportStorageUsageServiceProvider.overrideWithValue(
+            storageService(),
+          ),
+        ],
+        child: const MaterialApp(home: StorageUsageCard()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const appCacheSegmentKey = ValueKey(
+      'data-support-storage-segment-app-cache',
+    );
+    expect(find.byKey(appCacheSegmentKey), findsOneWidget);
+    expect(storageReads, 1);
+
+    cacheBytes = 0;
+    await operationService.run<void>(
+      scope: UiOperationScope.settingsCache,
+      labelKey: 'loading_dot',
+      task: (_) async {},
+    );
+    await tester.pumpAndSettle();
+
+    expect(storageReads, 2);
+    expect(find.byKey(appCacheSegmentKey), findsNothing);
+  });
 }

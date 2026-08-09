@@ -33,6 +33,7 @@ import 'package:nameless_audio/core/platform/platform_channels.dart';
 import 'package:nameless_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:nameless_audio/core/ui/ui_operation_service.dart';
 import 'package:nameless_audio/core/widgets/async_cover_image.dart';
+import 'package:nameless_audio/core/widgets/glass_refresh_indicator.dart';
 import 'package:nameless_audio/core/widgets/library_like_cards.dart';
 import 'package:nameless_audio/core/widgets/marquee_text.dart';
 import 'package:nameless_audio/core/widgets/mobile_overlay_inset.dart';
@@ -862,6 +863,96 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('ASMR search loading and manual refresh keep expected content', (
+    tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(400, 320));
+    final controller = _QueuedEmptyAsmrLibraryController(
+      delayCollectedSearch: true,
+    );
+    addTearDown(controller.dispose);
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 550));
+
+    final searchPage = find.byKey(
+      const ValueKey<String>('asmr_search_collected'),
+    );
+    final contentList = find.descendant(
+      of: searchPage,
+      matching: find.byKey(const ValueKey<String>('content')),
+    );
+    final scrollController = tester.widget<ListView>(contentList).controller!;
+    expect(scrollController.position.maxScrollExtent, greaterThan(0));
+    scrollController.jumpTo(scrollController.position.maxScrollExtent);
+    await tester.pump();
+    expect(scrollController.offset, greaterThan(0));
+
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      'sleep',
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+
+    expect(controller.collectedSearchRefreshCount, 1);
+    expect(
+      find.descendant(
+        of: searchPage,
+        matching: find.byType(LibraryLikeSkeletonCard),
+      ),
+      findsWidgets,
+    );
+
+    controller.completeCollectedSearchRefresh();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 800));
+    expect(scrollController.offset, 0);
+    final refreshIndicator = tester.widget<GlassRefreshIndicator>(
+      find.descendant(
+        of: searchPage,
+        matching: find.byType(GlassRefreshIndicator),
+      ),
+    );
+    final refreshFuture = refreshIndicator.onRefresh();
+    await tester.pump();
+
+    expect(controller.collectedSearchRefreshCount, 2);
+    expect(
+      find.descendant(
+        of: searchPage,
+        matching: find.text('Loaded work', findRichText: true),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: searchPage,
+        matching: find.byType(LibraryLikeSkeletonCard),
+      ),
+      findsNothing,
+    );
+
+    controller.completeCollectedSearchRefresh();
+    await refreshFuture;
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('ASMR work cards blend into the page surface', (tester) async {
     final controller = _QueuedEmptyAsmrLibraryController();
@@ -2104,6 +2195,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   _QueuedEmptyAsmrLibraryController({
     this.collectedHasMore = false,
     this.needsRetry = false,
+    this.delayCollectedSearch = false,
   }) : super(
          preferencesStore: AsmrPreferencesStore(
            repository: SqliteAsmrRepository(database: AppDatabase.instance),
@@ -2111,12 +2203,15 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
        );
 
   final Completer<void> _recommendationRefresh = Completer<void>();
+  final List<Completer<void>> _collectedSearchRefreshes = <Completer<void>>[];
   final bool collectedHasMore;
+  final bool delayCollectedSearch;
   bool needsRetry;
   bool _recommendationLoading = false;
   bool _isLoadingMore = false;
   int _revision = 0;
   int recommendationRefreshCount = 0;
+  int collectedSearchRefreshCount = 0;
   int loadMoreCount = 0;
   int initializeCount = 0;
   int categoryViewReadCount = 0;
@@ -2275,6 +2370,17 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     AsmrCategoryType category, {
     String searchQuery = '',
   }) async {
+    if (category == AsmrCategoryType.collected &&
+        searchQuery.isNotEmpty &&
+        delayCollectedSearch) {
+      collectedSearchRefreshCount++;
+      final refresh = Completer<void>();
+      _collectedSearchRefreshes.add(refresh);
+      await refresh.future;
+      _revision++;
+      notifyListeners();
+      return;
+    }
     if (category != AsmrCategoryType.recommendation) return;
     recommendationRefreshCount++;
     _recommendationLoading = true;
@@ -2288,6 +2394,14 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   void completeRecommendationRefresh() {
     if (!_recommendationRefresh.isCompleted) {
       _recommendationRefresh.complete();
+    }
+  }
+
+  void completeCollectedSearchRefresh() {
+    for (final refresh in _collectedSearchRefreshes) {
+      if (refresh.isCompleted) continue;
+      refresh.complete();
+      return;
     }
   }
 

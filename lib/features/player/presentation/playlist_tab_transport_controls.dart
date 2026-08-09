@@ -382,7 +382,7 @@ class _PlaybackSecondaryControls extends StatelessWidget {
                         active: subtitleEnabled,
                         onPressed: onToggleSubtitle,
                       ),
-                    if (hasSubtitle && subtitleEnabled)
+                    if (hasSubtitle)
                       _SecondaryControlButton(
                         icon: subtitleGlobalEnabled
                             ? Icons.check_rounded

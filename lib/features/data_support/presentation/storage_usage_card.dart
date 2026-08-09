@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
+import '../../../core/ui/ui_operation_service.dart';
 import '../../settings/application/app_cache_service.dart';
 import '../application/storage_usage_service.dart';
 
@@ -35,6 +36,18 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
   @override
   Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
+    ref.listen(uiOperationForScopeProvider(UiOperationScope.settingsCache), (
+      previous,
+      next,
+    ) {
+      final operationJustCompleted =
+          next.hasResult &&
+          (previous?.operationId != next.operationId ||
+              previous?.hasResult != true);
+      if (operationJustCompleted) {
+        _reloadStorageUsage();
+      }
+    });
     return FutureBuilder<StorageUsageSnapshot>(
       key: const ValueKey('data-support-storage-usage'),
       future: _storageUsageFuture,

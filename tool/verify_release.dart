@@ -109,9 +109,10 @@ void main(List<String> args) {
     MapEntry<String, String>('README.md', readme),
     MapEntry<String, String>('release_notes.md', releaseNotes),
   ]) {
-    if (!document.value.contains('必须先卸载旧版本再重新安装') ||
-        !document.value.contains('.nalbackup')) {
-      _fail('${document.key} is missing the reinstall/backup warning.');
+    if (!document.value.contains('不能覆盖') ||
+        !document.value.contains('不会继承') ||
+        !document.value.contains('.dabackup')) {
+      _fail('${document.key} is missing the app identity/backup warning.');
     }
     if (document.value.contains('\uFFFD')) {
       _fail('${document.key} contains invalid replacement characters.');

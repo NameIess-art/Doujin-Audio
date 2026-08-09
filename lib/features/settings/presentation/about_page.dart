@@ -189,21 +189,23 @@ class _AboutIdentity extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return Padding(
-      padding: const EdgeInsets.only(
-        left: AppSpacing.lg,
-        top: AppSpacing.md,
-        bottom: AppSpacing.md,
-      ),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+      child: Column(
         children: [
-          const AppBrandIcon(size: 84),
-          const SizedBox(width: AppSpacing.md),
-          Flexible(
-            child: Text(
-              i18n.tr('app_title'),
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-                fontSize: 32,
+          const AppBrandIcon(size: 104),
+          const SizedBox(height: AppSpacing.sm),
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                i18n.tr('app_title'),
+                maxLines: 1,
+                softWrap: false,
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 32,
+                ),
               ),
             ),
           ),

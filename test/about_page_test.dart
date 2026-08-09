@@ -89,6 +89,44 @@ void main() {
     },
   );
 
+  testWidgets('about identity shows its app name below the centered icon', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        AboutPage(
+          versionFuture: Future.value(
+            const AppVersionInfo(versionName: '1.2.3', buildNumber: 123),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final titleFinder = find.text(harness.languageProvider.tr('app_title'));
+    final title = tester.widget<Text>(titleFinder);
+    final iconRect = tester.getRect(find.byType(AppBrandIcon));
+    final titleRect = tester.getRect(titleFinder);
+
+    expect(tester.getSize(find.byType(AppBrandIcon)), const Size.square(104));
+    expect(title.maxLines, 1);
+    expect(title.softWrap, isFalse);
+    expect(
+      find.ancestor(of: titleFinder, matching: find.byType(FittedBox)),
+      findsOneWidget,
+    );
+    expect(titleRect.top, greaterThan(iconRect.bottom));
+    expect(titleRect.center.dx, closeTo(iconRect.center.dx, 0.01));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('reward opens the Afdian custom sponsorship order page', (
     tester,
   ) async {

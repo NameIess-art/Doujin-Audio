@@ -325,7 +325,7 @@ function Install-DebugApk {
     }
 
     if ($installText.Contains('INSTALL_FAILED_UPDATE_INCOMPATIBLE')) {
-        throw 'Existing app is signed with a different key. Export a .nalbackup first, then rerun with -ReplaceExisting if data loss is acceptable.'
+        throw 'Existing app is signed with a different key. Export a .dabackup first, then rerun with -ReplaceExisting if data loss is acceptable.'
     }
     throw 'Debug APK installation failed.'
 }
@@ -452,7 +452,7 @@ function Install-Apk {
             Invoke-Checked $adbPath @('-s', $Serial, 'install', '-g', $ApkPath)
             return
         }
-        throw 'Existing app is signed with a different key. Export a .nalbackup first, then rerun with the explicit replace option if data loss is acceptable.'
+        throw 'Existing app is signed with a different key. Export a .dabackup first, then rerun with the explicit replace option if data loss is acceptable.'
     }
 
     if ($installText.Contains('INSTALL_FAILED_VERSION_DOWNGRADE')) {

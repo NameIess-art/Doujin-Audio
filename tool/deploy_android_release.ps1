@@ -76,7 +76,7 @@ function Get-InstalledVersionCode {
 function Confirm-SignatureReplacement {
     Write-Warning 'Existing app uses a different signing key.'
     Write-Warning 'This one-time migration uninstalls the old app and deletes its local data.'
-    Write-Warning 'Export a .nalbackup from the app before continuing.'
+    Write-Warning 'Export a .dabackup from the app before continuing.'
     $answer = Read-Host 'Type REPLACE to uninstall the old app and continue'
     return $answer -ceq 'REPLACE'
 }
@@ -134,7 +134,7 @@ try {
             if (-not $ReplaceSignature -and -not ($PromptReplaceSignature -and (Confirm-SignatureReplacement))) {
                 throw @'
 Existing app uses a different signing key.
-Export a .nalbackup first, then rerun with -ReplaceSignature.
+Export a .dabackup first, then rerun with -ReplaceSignature.
 When using script\deploy_arm64.bat interactively, type REPLACE at the prompt
 to perform the one-time uninstall/reinstall migration.
 That one-time migration uninstalls the old app and deletes its local data.

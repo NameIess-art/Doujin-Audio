@@ -24,6 +24,7 @@ class SwipeRevealCard extends StatefulWidget {
     this.tertiaryActionIcon = Icons.download_rounded,
     this.destructive = true,
     this.verticalActions = false,
+    this.enabled = true,
     this.color,
     this.closedColor,
   });
@@ -47,6 +48,7 @@ class SwipeRevealCard extends StatefulWidget {
   final IconData tertiaryActionIcon;
   final bool destructive;
   final bool verticalActions;
+  final bool enabled;
   final Color? color;
   final Color? closedColor;
 
@@ -95,6 +97,9 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   @override
   void didUpdateWidget(covariant SwipeRevealCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!widget.enabled && oldWidget.enabled) {
+      _closePane(immediate: true);
+    }
     if (oldWidget.key != widget.key &&
         (_revealedWidth != 0 || _actionPaneActive)) {
       _resetPaneState();
@@ -147,6 +152,7 @@ class _SwipeRevealCardState extends State<SwipeRevealCard> {
   }
 
   void _handleHorizontalDragStart(DragStartDetails details) {
+    if (!widget.enabled) return;
     _dragStartRevealedWidth = _revealedWidth;
     _dragDx = 0;
     _dragDy = 0;

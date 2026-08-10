@@ -1180,62 +1180,70 @@ class _LibraryEditFolderTreeTileState
             fontWeight: FontWeight.w700,
           ),
         ),
-        trailing: SizedBox(
-          width: 126,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Flexible(
-                child: TextButton.icon(
-                  onPressed: inheritedExcluded
-                      ? null
-                      : () {
-                          if (widget.folder.children.isNotEmpty) {
-                            editState?.rememberFolderStructureSnapshot(
-                              folderPath,
-                              widget.folder,
-                            );
-                          }
-                          libraryService.setLibraryFolderExcluded(
-                            widget.libraryPath,
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextButtonTheme(
+              data: TextButtonThemeData(
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 4,
+                  ),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  visualDensity: VisualDensity.compact,
+                ),
+              ),
+              child: TextButton.icon(
+                onPressed: inheritedExcluded
+                    ? null
+                    : () {
+                        if (widget.folder.children.isNotEmpty) {
+                          editState?.rememberFolderStructureSnapshot(
                             folderPath,
-                            !explicitExcluded,
+                            widget.folder,
                           );
-                        },
-                  style: explicitExcluded
-                      ? null
-                      : TextButton.styleFrom(
-                          foregroundColor: const Color(0xFFFF4D6D),
-                        ),
-                  icon: Icon(
-                    explicitExcluded
-                        ? Icons.restore_rounded
-                        : Icons.block_rounded,
-                    size: 16,
-                  ),
-                  label: Text(
-                    explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude'),
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                        }
+                        libraryService.setLibraryFolderExcluded(
+                          widget.libraryPath,
+                          folderPath,
+                          !explicitExcluded,
+                        );
+                      },
+                style: explicitExcluded
+                    ? null
+                    : TextButton.styleFrom(
+                        foregroundColor: const Color(0xFFFF4D6D),
+                      ),
+                icon: Icon(
+                  explicitExcluded
+                      ? Icons.restore_rounded
+                      : Icons.block_rounded,
+                  size: 16,
+                ),
+                label: Text(
+                  explicitExcluded ? i18n.tr('restore') : i18n.tr('exclude'),
+                  overflow: TextOverflow.ellipsis,
                 ),
               ),
-              const SizedBox(width: 2),
-              IgnorePointer(
-                child: AnimatedRotation(
-                  turns: _expanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 180),
-                  curve: Curves.easeOutCubic,
-                  child: Icon(
-                    Icons.expand_more_rounded,
-                    color: muted
-                        ? cs.onSurfaceVariant
-                        : (_expanded ? cs.primary : cs.onSurfaceVariant),
-                    size: 20,
-                  ),
+            ),
+            const SizedBox(width: 2),
+            IgnorePointer(
+              child: AnimatedRotation(
+                turns: _expanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOutCubic,
+                child: Icon(
+                  Icons.expand_more_rounded,
+                  color: muted
+                      ? cs.onSurfaceVariant
+                      : (_expanded ? cs.primary : cs.onSurfaceVariant),
+                  size: 20,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
         children: _expanded || widget.initiallyExpanded
             ? [
@@ -1337,11 +1345,17 @@ class _LibraryEditTrackTile extends ConsumerWidget {
               fontSize: 13,
             ),
           ),
-          trailing: ConstrainedBox(
-            constraints: const BoxConstraints(
-              minWidth: 64,
-              maxWidth: 96,
-              minHeight: 48,
+          trailing: TextButtonTheme(
+            data: TextButtonThemeData(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 4,
+                ),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
             ),
             child: TextButton.icon(
               onPressed: viewState.inheritedExcluded

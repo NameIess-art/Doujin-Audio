@@ -429,6 +429,79 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   final ScrollController _scrollController = ScrollController();
   bool _initialPlaceholderDismissed = false;
   bool _initialPlaceholderDismissScheduled = false;
+  bool _isSelectionMode = false;
+  final Set<String> _selectedSessionIds = <String>{};
+
+  void _enterSelectionMode(String initialSessionId) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      _isSelectionMode = true;
+      _selectedSessionIds.clear();
+      _selectedSessionIds.add(initialSessionId);
+    });
+  }
+
+  void _exitSelectionMode() {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
+    setState(() {
+      _isSelectionMode = false;
+      _selectedSessionIds.clear();
+    });
+  }
+
+  void _toggleSessionSelection(String sessionId) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      if (_selectedSessionIds.contains(sessionId)) {
+        _selectedSessionIds.remove(sessionId);
+      } else {
+        _selectedSessionIds.add(sessionId);
+      }
+    });
+  }
+
+  Future<void> _handleBatchPlay() async {
+    if (_selectedSessionIds.isEmpty) return;
+    final multiThreadEnabled =
+        ref.read(settingsStateProvider).value?.multiThreadPlaybackEnabled ??
+        false;
+    if (!multiThreadEnabled && _selectedSessionIds.length > 1) return;
+
+    final playback = ref.read(playbackFacadeProvider);
+    unawaited(AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection));
+    final sessionIds = _selectedSessionIds.toList();
+    for (final id in sessionIds) {
+      final cardState = ref.read(playlistSessionCardStateProvider(id));
+      if (cardState != null && !cardState.isPlaying) {
+        await playback.toggleSessionPlayPause(id);
+      }
+    }
+  }
+
+  Future<void> _handleBatchPause() async {
+    if (_selectedSessionIds.isEmpty) return;
+    final playback = ref.read(playbackFacadeProvider);
+    unawaited(AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection));
+    final sessionIds = _selectedSessionIds.toList();
+    for (final id in sessionIds) {
+      final cardState = ref.read(playlistSessionCardStateProvider(id));
+      if (cardState != null && cardState.isPlaying) {
+        await playback.toggleSessionPlayPause(id);
+      }
+    }
+  }
+
+  Future<void> _handleBatchRemove() async {
+    if (_selectedSessionIds.isEmpty) return;
+    final playback = ref.read(playbackFacadeProvider);
+    unawaited(AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection));
+    final toRemove = _selectedSessionIds.toList();
+    _exitSelectionMode();
+    await playback.removeSessions(toRemove);
+    for (final id in toRemove) {
+      ref.read(subtitleSettingsProvider.notifier).resetForSession(id);
+    }
+  }
 
   @override
   int get tabIndex => 1;
@@ -667,6 +740,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 library: library,
                 playback: playback,
                 coverCacheWidth: coverCacheWidth,
+                isSelectionMode: _isSelectionMode,
+                isSelected: _selectedSessionIds.contains(session.id),
+                onLongPress: () => _enterSelectionMode(session.id),
+                onToggleSelect: () => _toggleSessionSelection(session.id),
                 onOpen: () => session.currentTrackPath.isEmpty
                     ? showAppSnackBar(
                         context,
@@ -686,6 +763,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 showSubtitles: subtitleSettings.isGlobalEnabled(session.id),
                 library: library,
                 playback: playback,
+                isSelectionMode: _isSelectionMode,
+                isSelected: _selectedSessionIds.contains(session.id),
+                onLongPress: () => _enterSelectionMode(session.id),
+                onToggleSelect: () => _toggleSessionSelection(session.id),
                 onOpen: () => _openSessionDetail(context, session.id),
               ),
       );
@@ -755,6 +836,64 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 final headerState = _isActive
                     ? ref.watch(playlistHeaderUiProvider)
                     : ref.read(playlistHeaderUiProvider);
+                final multiThreadEnabled = _readOrWatch(
+                  settingsStateProvider.select(
+                    (state) =>
+                        state.value?.multiThreadPlaybackEnabled ?? false,
+                  ),
+                );
+
+                if (_isSelectionMode) {
+                  final count = _selectedSessionIds.length;
+                  final isPlayEnabled =
+                      count > 0 && (multiThreadEnabled || count <= 1);
+                  final isPauseEnabled = count > 0;
+                  final isRemoveEnabled = count > 0;
+
+                  return TopPageHeader(
+                    key: const ValueKey('playlist_batch_selection_header'),
+                    leading: IconButton(
+                      key: const ValueKey('exit_selection_button'),
+                      onPressed: _exitSelectionMode,
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: i18n.tr('cancel'),
+                    ),
+                    title: count.toString(),
+                    padding: AppPageHeaderMetrics.mainTabPadding,
+                    trailing: SizedBox(
+                      height: 44,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          IconButton(
+                            key: const ValueKey('batch_pause_button'),
+                            onPressed: isPauseEnabled
+                                ? _handleBatchPause
+                                : null,
+                            icon: const Icon(Icons.pause_rounded),
+                            tooltip: i18n.tr('pause'),
+                          ),
+                          IconButton(
+                            key: const ValueKey('batch_play_button'),
+                            onPressed: isPlayEnabled ? _handleBatchPlay : null,
+                            icon: const Icon(Icons.play_arrow_rounded),
+                            tooltip: i18n.tr('play'),
+                          ),
+                          IconButton(
+                            key: const ValueKey('batch_remove_button'),
+                            onPressed: isRemoveEnabled
+                                ? _handleBatchRemove
+                                : null,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            tooltip: i18n.tr('remove'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
                 return TopPageHeader(
                   key: headerKey,
                   icon: Icons.graphic_eq_rounded,

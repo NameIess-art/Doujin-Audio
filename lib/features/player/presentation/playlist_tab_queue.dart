@@ -8,6 +8,10 @@ class _PlaybackQueueCard extends ConsumerWidget {
     required this.coverCacheWidth,
     required this.onOpen,
     required this.onEdit,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
+    this.onToggleSelect,
   });
 
   final PlaybackSession session;
@@ -16,6 +20,10 @@ class _PlaybackQueueCard extends ConsumerWidget {
   final int? coverCacheWidth;
   final VoidCallback onOpen;
   final VoidCallback onEdit;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onToggleSelect;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -62,6 +70,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
       shape: _playlistRowShape,
       color: revealActionColor,
       closedColor: cs.surface,
+      enabled: !isSelectionMode,
       destructive: false,
       primaryActionIcon: Icons.edit_rounded,
       actionLabel: i18n.tr('edit'),
@@ -79,13 +88,50 @@ class _PlaybackQueueCard extends ConsumerWidget {
                 isPlaying,
                 highlightColor,
               ),
+              color: isSelected
+                  ? cs.primaryContainer.withValues(alpha: 0.15)
+                  : null,
+              border: isSelected
+                  ? Border.all(color: cs.primary, width: 1.5)
+                  : null,
+              borderRadius: const BorderRadius.all(
+                Radius.circular(LibraryLikeCardMetrics.cardRadius),
+              ),
             ),
             child: InkWell(
-              onTap: onOpen,
+              onTap: () {
+                if (isSelectionMode) {
+                  onToggleSelect?.call();
+                } else {
+                  onOpen();
+                }
+              },
+              onLongPress: () {
+                if (isSelectionMode) {
+                  onToggleSelect?.call();
+                } else {
+                  onLongPress?.call();
+                }
+              },
               child: Padding(
                 padding: _playlistRowPadding,
                 child: Row(
                   children: [
+                    if (isSelectionMode) ...[
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        margin: const EdgeInsets.only(left: 4, right: 8),
+                        child: Icon(
+                          isSelected
+                              ? Icons.check_circle_rounded
+                              : Icons.radio_button_unchecked_rounded,
+                          color: isSelected
+                              ? cs.primary
+                              : cs.onSurfaceVariant.withValues(alpha: 0.5),
+                          size: 22,
+                        ),
+                      ),
+                    ],
                     if (coverItems.isNotEmpty) ...[
                       _QueueCoverGrid(
                         items: coverItems,

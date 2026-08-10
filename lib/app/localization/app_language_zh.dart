@@ -740,4 +740,5 @@ const Map<String, String> appLanguageZh = {
   'queue_add_audio_first': '请先向队列添加音频',
   'edit': '编辑',
   'save': '保存',
+  'selected_count': '已选择 {count} 项',
 };

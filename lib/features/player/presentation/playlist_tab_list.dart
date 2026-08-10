@@ -257,6 +257,10 @@ class _SessionListCard extends ConsumerWidget {
     required this.library,
     required this.playback,
     required this.onOpen,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
+    this.onToggleSelect,
   });
 
   final String sessionId;
@@ -268,6 +272,10 @@ class _SessionListCard extends ConsumerWidget {
   final LibraryFacade library;
   final PlaybackFacade playback;
   final VoidCallback onOpen;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onToggleSelect;
 
   Future<void> _confirmRemoveSession(BuildContext context) async {
     final removed = await playback.removeSession(sessionId);
@@ -363,6 +371,7 @@ class _SessionListCard extends ConsumerWidget {
       key: ValueKey(sessionId),
       shape: _playlistRowShape,
       closedColor: cs.surface,
+      enabled: !isSelectionMode,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
       onRemove: () => _confirmRemoveSession(context),
@@ -383,20 +392,55 @@ class _SessionListCard extends ConsumerWidget {
                   isPlaying,
                   highlightColor,
                 ),
+                color: isSelected
+                    ? cs.primaryContainer.withValues(alpha: 0.15)
+                    : null,
+                border: isSelected
+                    ? Border.all(color: cs.primary, width: 1.5)
+                    : null,
+                borderRadius: const BorderRadius.all(
+                  Radius.circular(LibraryLikeCardMetrics.cardRadius),
+                ),
               ),
               child: InkWell(
                 excludeFromSemantics: true,
                 onTap: () {
-                  AppInteractionFeedback.trigger(
-                    AppInteractionFeedbackType.tap,
-                  );
-                  onOpen();
+                  if (isSelectionMode) {
+                    onToggleSelect?.call();
+                  } else {
+                    AppInteractionFeedback.trigger(
+                      AppInteractionFeedbackType.tap,
+                    );
+                    onOpen();
+                  }
+                },
+                onLongPress: () {
+                  if (isSelectionMode) {
+                    onToggleSelect?.call();
+                  } else {
+                    onLongPress?.call();
+                  }
                 },
                 child: Padding(
                   key: ValueKey<String>('playlist_card_content_$sessionId'),
                   padding: _playlistRowPadding,
                   child: Row(
                     children: [
+                      if (isSelectionMode) ...[
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
+                          margin: const EdgeInsets.only(left: 4, right: 8),
+                          child: Icon(
+                            isSelected
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            color: isSelected
+                                ? cs.primary
+                                : cs.onSurfaceVariant.withValues(alpha: 0.5),
+                            size: 22,
+                          ),
+                        ),
+                      ],
                       if (showCover) ...[
                         _SessionCoverThumbnail(
                           sessionId: sessionId,

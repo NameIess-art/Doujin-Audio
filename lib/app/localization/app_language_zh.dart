@@ -389,6 +389,7 @@ const Map<String, String> appLanguageZh = {
   'cover_image_display_mode_fill': '填充',
   'cover_image_display_mode_stretch': '拉伸',
   'cover_image_display_mode_tile': '平铺',
+  'prefer_embedded_audio_cover': '音频优先显示自身封面',
   'theme_system': '跟随系统',
   'theme_light': '浅色',
   'theme_dark': '深色',

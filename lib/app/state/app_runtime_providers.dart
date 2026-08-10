@@ -329,6 +329,7 @@ final settingsCommandControllerProvider = Provider<SettingsCommandController>((
     settings: ref.watch(settingsRepositoryProvider),
     playback: ref.watch(playbackFacadeProvider),
     notifications: ref.watch(notificationFacadeProvider),
+    library: ref.watch(libraryFacadeProvider),
   );
 });
 

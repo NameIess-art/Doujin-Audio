@@ -429,6 +429,7 @@ const Map<String, String> appLanguageEn = {
   'cover_image_display_mode_fill': 'Fill',
   'cover_image_display_mode_stretch': 'Stretch',
   'cover_image_display_mode_tile': 'Fit with blurred backdrop',
+  'prefer_embedded_audio_cover': 'Prefer embedded audio covers',
   'theme_system': 'System',
   'theme_light': 'Light',
   'theme_dark': 'Dark',

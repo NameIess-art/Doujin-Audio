@@ -953,6 +953,11 @@ final class LibraryFacade implements LibraryCatalog {
     return storedCoverPath;
   }
 
+  void invalidateCoverArtwork() {
+    coverArtworkCacheService.invalidateAll();
+    _coverChangeHandler?.call();
+  }
+
   Future<DlsiteMetadataApplyResult> applyDlsiteMetadata(
     AudioDetail detail,
     DlsiteMetadata metadata, {
@@ -2237,6 +2242,7 @@ final class LibraryFacade implements LibraryCatalog {
   void configureCoverArtworkRuntime({
     required bool Function(String key) isActiveCoverKey,
     required void Function() onActiveCoverChanged,
+    bool Function()? preferEmbeddedAudioCover,
   }) {
     _coverArtworkCacheService ??= CoverArtworkCacheService(
       libraryService: _service,
@@ -2244,6 +2250,7 @@ final class LibraryFacade implements LibraryCatalog {
       audioDetailCacheService: detailCacheService,
       isActiveCoverKey: isActiveCoverKey,
       onActiveCoverChanged: onActiveCoverChanged,
+      preferEmbeddedAudioCover: preferEmbeddedAudioCover,
     );
   }
 

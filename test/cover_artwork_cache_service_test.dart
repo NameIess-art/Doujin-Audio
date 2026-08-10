@@ -1134,6 +1134,44 @@ void main() {
     },
   );
 
+  test('embedded audio preference ignores the selected folder cover', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'cover_cache_embedded_preference_',
+    );
+    addTearDown(() async {
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final trackPath = '${directory.path}${Platform.pathSeparator}voice.flac';
+    final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
+    const embeddedCover = '/cache/voice-embedded.image';
+    await File(trackPath).writeAsBytes(<int>[1]);
+    await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+
+    final track = _track(path: trackPath, groupKey: directory.path);
+    final library = LibraryService()
+      ..watchedFolders.add(directory.path)
+      ..library.add(track);
+    var preferEmbedded = true;
+    final cache = CoverArtworkCacheService(
+      libraryService: library,
+      fileCacheGateway: _FakeFileCachePlatformGateway(
+        coversByPath: <String, String>{trackPath: embeddedCover},
+      ),
+      preferEmbeddedAudioCover: () => preferEmbedded,
+    );
+
+    await cache.setFolderCoverSelection(directory.path, folderCover);
+
+    expect(await cache.futureForTrack(track), embeddedCover);
+    expect(await cache.futureForPlaybackTrack(track), embeddedCover);
+    expect(cache.resolvedForPlaybackTrack(track), embeddedCover);
+
+    preferEmbedded = false;
+    cache.invalidateAll();
+
+    expect(await cache.futureForPlaybackTrack(track), folderCover);
+  });
+
   test('tracks in one folder keep separate embedded cover caches', () async {
     final library = LibraryService();
     final first = _track(path: '/work/01.flac', groupKey: '/work');

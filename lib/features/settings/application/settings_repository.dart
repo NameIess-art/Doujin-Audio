@@ -45,6 +45,7 @@ class SettingsRepository {
       PlaybackDetailSubtitleStyle.compact;
   CoverImageResolution coverImageResolution = CoverImageResolution.balanced;
   CoverImageDisplayMode coverImageDisplayMode = CoverImageDisplayMode.fill;
+  bool preferEmbeddedAudioCover = true;
   String? asmrDownloadDestinationRoot;
   AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
       AsmrDownloadConflictPolicy.overwrite;
@@ -113,6 +114,8 @@ class SettingsRepository {
         (value) => value.name == playback['coverImageDisplayMode'],
         orElse: () => CoverImageDisplayMode.fill,
       );
+      preferEmbeddedAudioCover =
+          playback['preferEmbeddedAudioCover'] as bool? ?? true;
       asmrDownloadDestinationRoot = _optionalString(
         playback['asmrDownloadDestinationRoot'],
       );
@@ -214,6 +217,7 @@ class SettingsRepository {
       'hapticFeedbackEnabled': hapticFeedbackEnabled,
       'coverImageResolution': coverImageResolution.name,
       'coverImageDisplayMode': coverImageDisplayMode.name,
+      'preferEmbeddedAudioCover': preferEmbeddedAudioCover,
       'asmrDownloadDestinationRoot': asmrDownloadDestinationRoot,
       'asmrDownloadConflictPolicy': asmrDownloadConflictPolicy.name,
       'asmrDownloadSaveMetadata': asmrDownloadSaveMetadata,
@@ -446,6 +450,11 @@ class SettingsRepository {
         update: () => coverImageDisplayMode = mode,
       );
 
+  Future<void> setPreferEmbeddedAudioCover(bool enabled) => _setValue(
+    unchanged: preferEmbeddedAudioCover == enabled,
+    update: () => preferEmbeddedAudioCover = enabled,
+  );
+
   Future<void> setAsmrDownloadConflictPolicy(
     AsmrDownloadConflictPolicy policy,
   ) => _setValue(
@@ -546,6 +555,7 @@ class SettingsRepository {
     playbackDetailSubtitleStyle = PlaybackDetailSubtitleStyle.compact;
     coverImageResolution = CoverImageResolution.balanced;
     coverImageDisplayMode = CoverImageDisplayMode.fill;
+    preferEmbeddedAudioCover = true;
     asmrDownloadDestinationRoot = null;
     asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
     asmrDownloadSaveMetadata = true;
@@ -604,6 +614,7 @@ class SettingsRepository {
         playbackDetailSubtitleStyle: playbackDetailSubtitleStyle,
         coverImageResolution: coverImageResolution,
         coverImageDisplayMode: coverImageDisplayMode,
+        preferEmbeddedAudioCover: preferEmbeddedAudioCover,
         asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
         asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,
         asmrDownloadSaveMetadata: asmrDownloadSaveMetadata,

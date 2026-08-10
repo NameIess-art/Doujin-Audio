@@ -392,6 +392,7 @@ const Map<String, String> appLanguageJa = {
   'cover_image_display_mode_fill': '塗りつぶし',
   'cover_image_display_mode_stretch': '引き伸ばし',
   'cover_image_display_mode_tile': 'ぼかし背景で全体表示',
+  'prefer_embedded_audio_cover': '音声の埋め込みカバーを優先',
   'theme_system': 'システム',
   'theme_light': 'ライト',
   'theme_dark': 'ダーク',

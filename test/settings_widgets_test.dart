@@ -1104,6 +1104,37 @@ void main() {
     );
   });
 
+  testWidgets('appearance toggles embedded audio cover preference', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+
+    final toggle = find.byKey(
+      const ValueKey<String>('prefer_embedded_audio_cover_switch'),
+    );
+    await Scrollable.ensureVisible(tester.element(toggle), alignment: 0.5);
+    await tester.pumpAndSettle();
+    expect(harness.settingsRepository.preferEmbeddedAudioCover, isTrue);
+    final initialCoverGeneration =
+        harness.runtimeGraph.library.coverArtworkCacheService.generation;
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+
+    expect(harness.settingsRepository.preferEmbeddedAudioCover, isFalse);
+    expect(
+      harness.runtimeGraph.library.coverArtworkCacheService.generation,
+      initialCoverGeneration + 1,
+    );
+  });
+
   testWidgets('appearance selects app and conditional ASMR theme colors', (
     tester,
   ) async {

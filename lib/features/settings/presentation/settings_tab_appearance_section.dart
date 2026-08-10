@@ -195,6 +195,23 @@ List<Widget> _buildSettingsAppearanceSection({
           builder: (context, ref, _) {
             final enabled = ref.watch(
               settingsStateProvider.select(
+                (state) => state.value?.preferEmbeddedAudioCover ?? true,
+              ),
+            );
+            return SwitchListTile(
+              key: const ValueKey<String>('prefer_embedded_audio_cover_switch'),
+              value: enabled,
+              onChanged: settingsController.setPreferEmbeddedAudioCover,
+              title: _settingsTitle(i18n.tr('prefer_embedded_audio_cover')),
+              secondary: _settingsIcon(Icons.audio_file_rounded, cs.onSurface),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final enabled = ref.watch(
+              settingsStateProvider.select(
                 (state) => state.value?.uiBlurEffectEnabled ?? true,
               ),
             );

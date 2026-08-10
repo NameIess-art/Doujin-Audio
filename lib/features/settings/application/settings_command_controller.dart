@@ -1,4 +1,5 @@
 import '../../library/application/cover_image_cache_policy.dart';
+import '../../library/application/library_facade.dart';
 import '../../player/application/notification_facade.dart';
 import '../../player/application/playback_facade.dart';
 import '../../player/application/playback_session.dart';
@@ -13,13 +14,16 @@ final class SettingsCommandController {
     required SettingsRepository settings,
     required PlaybackFacade playback,
     required NotificationFacade notifications,
+    LibraryFacade? library,
   }) : _settings = settings,
        _playback = playback,
-       _notifications = notifications;
+       _notifications = notifications,
+       _library = library;
 
   final SettingsRepository _settings;
   final PlaybackFacade _playback;
   final NotificationFacade _notifications;
+  final LibraryFacade? _library;
 
   SettingsRepository get settings => _settings;
 
@@ -35,6 +39,12 @@ final class SettingsCommandController {
     if (_settings.coverImageResolution == resolution) return;
     applyCoverImageCachePolicy(resolution, clear: true);
     await _settings.setCoverImageResolution(resolution);
+  }
+
+  Future<void> setPreferEmbeddedAudioCover(bool enabled) async {
+    if (_settings.preferEmbeddedAudioCover == enabled) return;
+    await _settings.setPreferEmbeddedAudioCover(enabled);
+    _library?.invalidateCoverArtwork();
   }
 
   Future<void> setMaxCacheBytes(int bytes) async {

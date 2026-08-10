@@ -122,6 +122,7 @@ AppRuntimeGraph createAppRuntimeGraph({
       notifications: notifications,
       syncLibraryState: syncLibraryState,
       syncPlaybackState: syncPlaybackState,
+      preferEmbeddedAudioCover: () => settings.preferEmbeddedAudioCover,
     ),
     PlaybackRuntimeBinding.attach(
       library: library,

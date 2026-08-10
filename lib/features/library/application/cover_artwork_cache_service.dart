@@ -55,6 +55,7 @@ class CoverArtworkCacheService {
     Future<Directory> Function()? temporaryDirectory,
     bool Function(String coverSearchKey)? isActiveCoverKey,
     VoidCallback? onActiveCoverChanged,
+    bool Function()? preferEmbeddedAudioCover,
   }) : _libraryService = libraryService,
        _databaseRepository = databaseRepository,
        _audioDetailCacheService = audioDetailCacheService,
@@ -67,7 +68,8 @@ class CoverArtworkCacheService {
        _now = now ?? DateTime.now,
        _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
        _isActiveCoverKey = isActiveCoverKey,
-       _onActiveCoverChanged = onActiveCoverChanged;
+       _onActiveCoverChanged = onActiveCoverChanged,
+       _preferEmbeddedAudioCover = preferEmbeddedAudioCover;
 
   final LibraryService _libraryService;
   final LibraryPersistenceRepository? _databaseRepository;
@@ -82,6 +84,7 @@ class CoverArtworkCacheService {
   final Future<Directory> Function() _temporaryDirectory;
   final bool Function(String coverSearchKey)? _isActiveCoverKey;
   final VoidCallback? _onActiveCoverChanged;
+  final bool Function()? _preferEmbeddedAudioCover;
 
   final Map<String, Future<String?>> _folderCoverFutures =
       <String, Future<String?>>{};
@@ -125,11 +128,13 @@ class CoverArtworkCacheService {
       _manualCoverPathValidityCache.length;
 
   String? resolvedForTrack(MusicTrack? track, {String? trackPath}) {
-    final folderCoverPath = _resolvedExplicitFolderCoverForTrack(
-      track,
-      trackPath: trackPath,
-    );
-    if (folderCoverPath != null) return folderCoverPath;
+    if (!_preferTrackEmbeddedCover(track)) {
+      final folderCoverPath = _resolvedExplicitFolderCoverForTrack(
+        track,
+        trackPath: trackPath,
+      );
+      if (folderCoverPath != null) return folderCoverPath;
+    }
 
     final manualCoverPath = track?.isSingle == true
         ? _cachedManualCoverPath(track?.manualCoverPath)
@@ -153,13 +158,15 @@ class CoverArtworkCacheService {
   }
 
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
-    final folderScope = _playbackFallbackFolderScopeForTrack(
-      track,
-      trackPath: trackPath,
-    );
-    if (folderScope != null) {
-      final folderCoverPath = resolvedForFolder(folderScope);
-      if (folderCoverPath != null) return folderCoverPath;
+    if (!_preferTrackEmbeddedCover(track)) {
+      final folderScope = _playbackFallbackFolderScopeForTrack(
+        track,
+        trackPath: trackPath,
+      );
+      if (folderScope != null) {
+        final folderCoverPath = resolvedForFolder(folderScope);
+        if (folderCoverPath != null) return folderCoverPath;
+      }
     }
     return resolvedForTrack(track, trackPath: trackPath);
   }
@@ -214,10 +221,9 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) async {
-    final folderScope = _playbackFallbackFolderScopeForTrack(
-      track,
-      trackPath: trackPath,
-    );
+    final folderScope = _preferTrackEmbeddedCover(track)
+        ? null
+        : _playbackFallbackFolderScopeForTrack(track, trackPath: trackPath);
     if (folderScope != null) {
       final previousPlaybackCover = resolvedForPlaybackTrack(
         track,
@@ -336,6 +342,12 @@ class CoverArtworkCacheService {
     if (PathMatcher.isRemoteUri(pathValue)) return null;
     if (track.isVideo || _isStandaloneAudioTrack(track)) return null;
     return coverScopeFolderForTrack(track, trackPath: trackPath);
+  }
+
+  bool _preferTrackEmbeddedCover(MusicTrack? track) {
+    return track != null &&
+        !track.isVideo &&
+        (_preferEmbeddedAudioCover?.call() ?? false);
   }
 
   String? coverSearchKeyForTrack(MusicTrack? track, {String? trackPath}) {
@@ -714,17 +726,20 @@ class CoverArtworkCacheService {
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: pathValue);
     if (coverSearchKey == null) return Future<String?>.value();
 
-    final folderCoverPath = await _explicitFolderCoverFutureForTrack(
-      track,
-      trackPath: pathValue,
-    );
-    if (folderCoverPath != null) {
-      _resolvedTrackCovers[coverSearchKey] = folderCoverPath;
-      _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
-        folderCoverPath,
+    final preferEmbeddedCover = _preferTrackEmbeddedCover(track);
+    if (!preferEmbeddedCover) {
+      final folderCoverPath = await _explicitFolderCoverFutureForTrack(
+        track,
+        trackPath: pathValue,
       );
-      _trimResolvedTrackCovers();
-      return folderCoverPath;
+      if (folderCoverPath != null) {
+        _resolvedTrackCovers[coverSearchKey] = folderCoverPath;
+        _resolvedTrackCoverFutures[coverSearchKey] = SynchronousFuture<String?>(
+          folderCoverPath,
+        );
+        _trimResolvedTrackCovers();
+        return folderCoverPath;
+      }
     }
 
     final cachedManualPath = track?.isSingle == true
@@ -822,7 +837,10 @@ class CoverArtworkCacheService {
         if (track?.isVideo == true) {
           coverPath = await _resolveVideoFramePathForTrack(track!);
         } else if (track != null) {
-          coverPath = await _resolvePlatformCoverPathForTrack(track);
+          coverPath = await _resolvePlatformCoverPathForTrack(
+            track,
+            includeGroupCoverFallback: !preferEmbeddedCover,
+          );
         }
       }
 

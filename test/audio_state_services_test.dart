@@ -80,6 +80,7 @@ void main() {
           'hapticFeedbackEnabled': false,
           'coverImageResolution': CoverImageResolution.ultraHigh.name,
           'coverImageDisplayMode': CoverImageDisplayMode.tile.name,
+          'preferEmbeddedAudioCover': false,
           'asmrDownloadDestinationRoot': '/backup/asmr',
           'asmrDownloadConflictPolicy': AsmrDownloadConflictPolicy.skip.name,
           'audioDeviceDisconnectBehavior':
@@ -116,6 +117,7 @@ void main() {
       expect(repository.notificationsEnabled, isFalse);
       expect(repository.coverImageResolution, CoverImageResolution.ultraHigh);
       expect(repository.coverImageDisplayMode, CoverImageDisplayMode.tile);
+      expect(repository.preferEmbeddedAudioCover, isFalse);
       expect(repository.blurPlayerBackgroundEnabled, isFalse);
       expect(repository.startupPage, StartupPage.asmrOne);
       expect(repository.bottomNavigationStyle, BottomNavigationStyle.bar);
@@ -311,6 +313,7 @@ void main() {
         PlaybackDetailSubtitleStyle.compact,
       );
       expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
+      expect(state.preferEmbeddedAudioCover, isTrue);
       expect(state.blurPlayerBackgroundEnabled, isTrue);
     });
 

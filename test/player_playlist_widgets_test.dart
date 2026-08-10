@@ -16,6 +16,7 @@ import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
+import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/features/library/application/cover_artwork_cache_service.dart';
@@ -208,6 +209,67 @@ void main() {
   tearDownAll(() async {
     await AppRuntimeTestFixture.disposeSharedDatabase(testDatabase);
   });
+
+  testWidgets(
+    'mounted playback card refreshes when the cover generation changes',
+    (tester) async {
+      final coverCache = _RecordingPlaybackCoverCacheService();
+      final fixture = AppRuntimeWidgetTestFixture(
+        coverArtworkCacheService: coverCache,
+      );
+      addTearDown(fixture.dispose);
+      final track = MusicTrack(
+        path: '/library/work/01.mp3',
+        displayName: 'Track 01',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        groupSubtitle: '/library/work',
+        isSingle: false,
+        manualCoverPath: '/library/work/embedded.cover',
+      );
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      final session = PlaybackSession(
+        id: 'cover-refresh-session',
+        currentTrackPath: track.path,
+        loopMode: SessionLoopMode.folderSequential,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: PlayerState(false, ProcessingState.ready),
+        customQueueTracks: <MusicTrack>[track],
+      );
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          ActiveSessionCarousel(
+            sessions: <PlaybackSession>[session],
+            onOpenSession: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(coverCache.requestedPaths, contains(track.path));
+      coverCache.requestedPaths.clear();
+
+      fixture.runtimeGraph.library.invalidateCoverArtwork();
+      await tester.pumpAndSettle();
+
+      expect(coverCache.requestedPaths, contains(track.path));
+    },
+  );
 
   test('equalizer badge only appears while equalizer is enabled', () {
     final disabledIcons = sessionFeatureBadgeIcons(

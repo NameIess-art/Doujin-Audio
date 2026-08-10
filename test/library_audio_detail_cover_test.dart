@@ -396,6 +396,8 @@ void main() {
     test(
       'setFolderManualCover syncs the folder card cover to audio covers',
       () async {
+        await fixture.settings.setPreferEmbeddedAudioCover(false);
+        runtimeGraph.library.invalidateCoverArtwork();
         final workDir = await Directory.systemTemp.createTemp('folder_manual_');
         addTearDown(() async {
           if (await workDir.exists()) {

@@ -208,6 +208,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(coverGenerationProvider);
     final style = ref.watch(
       settingsStateProvider.select(
         (s) => s.value?.bottomNavigationStyle ?? BottomNavigationStyle.capsule,

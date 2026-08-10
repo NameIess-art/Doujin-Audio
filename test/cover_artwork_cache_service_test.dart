@@ -1134,43 +1134,100 @@ void main() {
     },
   );
 
-  test('embedded audio preference ignores the selected folder cover', () async {
-    final directory = await Directory.systemTemp.createTemp(
-      'cover_cache_embedded_preference_',
-    );
-    addTearDown(() async {
-      if (await directory.exists()) await directory.delete(recursive: true);
-    });
-    final trackPath = '${directory.path}${Platform.pathSeparator}voice.flac';
-    final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
-    const embeddedCover = '/cache/voice-embedded.image';
-    await File(trackPath).writeAsBytes(<int>[1]);
-    await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
+  test(
+    'embedded audio preference falls back to the selected folder cover',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'cover_cache_embedded_preference_',
+      );
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final trackPath = '${directory.path}${Platform.pathSeparator}voice.flac';
+      final folderCover = '${directory.path}${Platform.pathSeparator}cover.jpg';
+      const embeddedCover = '/cache/voice-embedded.image';
+      await File(trackPath).writeAsBytes(<int>[1]);
+      await File(folderCover).writeAsBytes(<int>[0xff, 0xd8, 0xff, 0xd9]);
 
-    final track = _track(path: trackPath, groupKey: directory.path);
-    final library = LibraryService()
-      ..watchedFolders.add(directory.path)
-      ..library.add(track);
-    var preferEmbedded = true;
-    final cache = CoverArtworkCacheService(
-      libraryService: library,
-      fileCacheGateway: _FakeFileCachePlatformGateway(
+      final track = _track(path: trackPath, groupKey: directory.path);
+      final library = LibraryService()
+        ..watchedFolders.add(directory.path)
+        ..library.add(track);
+      var preferEmbedded = true;
+      final gateway = _FakeFileCachePlatformGateway(
         coversByPath: <String, String>{trackPath: embeddedCover},
-      ),
-      preferEmbeddedAudioCover: () => preferEmbedded,
-    );
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: gateway,
+        preferEmbeddedAudioCover: () => preferEmbedded,
+      );
 
-    await cache.setFolderCoverSelection(directory.path, folderCover);
+      await cache.setFolderCoverSelection(directory.path, folderCover);
 
-    expect(await cache.futureForTrack(track), embeddedCover);
-    expect(await cache.futureForPlaybackTrack(track), embeddedCover);
-    expect(cache.resolvedForPlaybackTrack(track), embeddedCover);
+      expect(await cache.futureForTrack(track), embeddedCover);
+      expect(await cache.futureForPlaybackTrack(track), embeddedCover);
+      expect(cache.resolvedForPlaybackTrack(track), embeddedCover);
 
-    preferEmbedded = false;
-    cache.invalidateAll();
+      preferEmbedded = false;
+      cache.invalidateAll();
 
-    expect(await cache.futureForPlaybackTrack(track), folderCover);
-  });
+      expect(await cache.futureForPlaybackTrack(track), folderCover);
+
+      preferEmbedded = true;
+      gateway.coversByPath.clear();
+      cache.invalidateAll();
+
+      expect(await cache.futureForTrack(track), folderCover);
+      expect(await cache.futureForPlaybackTrack(track), folderCover);
+    },
+  );
+
+  test(
+    'embedded audio preference keeps resolving video frame covers',
+    () async {
+      const videoPath = '/work/video.mp4';
+      const videoFrame = '/cache/video-frame.image';
+      final track = _track(path: videoPath, groupKey: '/work');
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: const <String, String>{
+          videoPath: '/cache/incorrect-audio-cover.image',
+        },
+        videoFramesByPath: const <String, String>{videoPath: videoFrame},
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService()..library.add(track),
+        fileCacheGateway: gateway,
+        preferEmbeddedAudioCover: () => true,
+      );
+
+      expect(await cache.futureForTrack(track), videoFrame);
+      expect(await cache.futureForPlaybackTrack(track), videoFrame);
+      expect(gateway.resolveTrackCoverPaths, isEmpty);
+    },
+  );
+
+  test(
+    'embedded audio preference falls back to the normal group cover lookup',
+    () async {
+      const trackPath = '/work/voice.flac';
+      const groupCover = '/cache/group-cover.image';
+      final track = _track(path: trackPath, groupKey: '/work');
+      final gateway = _FakeFileCachePlatformGateway(
+        coversByPath: const <String, String>{},
+        resolveTrackCoverHandler: (path, groupKey) async =>
+            groupKey == null ? null : groupCover,
+      );
+      final cache = CoverArtworkCacheService(
+        libraryService: LibraryService()..library.add(track),
+        fileCacheGateway: gateway,
+        preferEmbeddedAudioCover: () => true,
+      );
+
+      expect(await cache.futureForTrack(track), groupCover);
+      expect(gateway.resolveTrackCoverGroupKeys, <String?>[null, '/work']);
+    },
+  );
 
   test('tracks in one folder keep separate embedded cover caches', () async {
     final library = LibraryService();

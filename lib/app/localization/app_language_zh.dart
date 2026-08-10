@@ -330,6 +330,7 @@ const Map<String, String> appLanguageZh = {
   'all_sessions_cleared': '已清空全部会话。',
   'audio_removed': '已移除音频。',
   'audio_excluded': '已从曲库中排除音频。',
+  'folder_audio_removed': '已移除文件夹下该音频',
   'folder_removed': '已移除文件夹',
   'folder_excluded': '已从曲库中排除文件夹。',
   'pause_all_sessions': '暂停全部会话',

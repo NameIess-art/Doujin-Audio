@@ -333,6 +333,7 @@ const Map<String, String> appLanguageJa = {
   'all_sessions_cleared': '全セッションをクリアしました。',
   'audio_removed': '音声を削除しました。',
   'audio_excluded': 'ライブラリから音声を除外しました。',
+  'folder_audio_removed': 'フォルダー内の音声を削除しました。',
   'folder_removed': 'フォルダを削除しました。',
   'folder_excluded': 'ライブラリからフォルダを除外しました。',
   'pause_all_sessions': '全セッションを一時停止',

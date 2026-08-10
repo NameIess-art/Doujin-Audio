@@ -12,8 +12,7 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
-import 'support/test_persistence_repository.dart';
-import 'package:doujin_audio/features/player/application/playback_facade.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
@@ -242,6 +241,7 @@ void main() {
         state: PlayerState(false, ProcessingState.ready),
         customQueueTracks: <MusicTrack>[track],
       );
+      addTearDown(session.dispose);
       fixture.playbackService.registerSession(session);
       fixture.playbackService.syncSlice(
         activeSessions: <PlaybackSession>[session],
@@ -408,9 +408,11 @@ void main() {
     );
   });
 
-  test('active track path provider exposes current session paths', () {
-    final playbackService = PlaybackSessionService();
-    addTearDown(playbackService.dispose);
+  testWidgets('active track path provider exposes current session paths', (
+    tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+
     final active = PlaybackSession(
       id: 'active',
       currentTrackPath: '/tracks/active.mp3',
@@ -429,9 +431,8 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     );
-    addTearDown(active.dispose);
-    addTearDown(empty.dispose);
-    playbackService.syncSlice(
+
+    fixture.playbackService.syncSlice(
       activeSessions: [active, empty],
       playingSessionCount: 0,
       focusedSessionId: null,
@@ -439,15 +440,12 @@ void main() {
       coverGeneration: 0,
       isInitialized: true,
     );
-    final playbackFacade = PlaybackFacade.create(
-      databaseRepository: TestPersistenceRepository(),
-      service: playbackService,
-    );
-    addTearDown(playbackFacade.dispose);
+
     final container = ProviderContainer(
-      overrides: [playbackFacadeProvider.overrideWithValue(playbackFacade)],
+      overrides: [
+        playbackFacadeProvider.overrideWithValue(fixture.playback),
+      ],
     );
-    addTearDown(container.dispose);
 
     final paths = container.read(activeTrackPathsProvider);
 
@@ -455,11 +453,17 @@ void main() {
     expect(paths.contains(''), isFalse);
     expect(container.read(isTrackActiveProvider('/tracks/active.mp3')), isTrue);
     expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isFalse);
+
+    container.dispose();
+    active.dispose();
+    empty.dispose();
+    fixture.dispose();
+    await tester.pump();
   });
 
-  test(
+  testWidgets(
     'detail cover warmup prioritizes current session before neighbors',
-    () async {
+    (tester) async {
       final coverCache = _RecordingPlaybackCoverCacheService();
       final fixture = AppRuntimeWidgetTestFixture(
         coverArtworkCacheService: coverCache,
@@ -501,12 +505,16 @@ void main() {
         coverGeneration: 0,
         isInitialized: true,
       );
+      for (final s in sessions) {
+        addTearDown(s.dispose);
+      }
 
       fixture.runtimeGraph.warmup.scheduleSessionDetailCovers(
         currentSessionId: 'current-session',
       );
-      await Future<void>.delayed(const Duration(milliseconds: 320));
+      await tester.pump(const Duration(milliseconds: 320));
       await fixture.runtimeGraph.warmup.waitUntilIdle();
+      await tester.pumpAndSettle();
 
       expect(coverCache.warmupRequestedPaths, hasLength(3));
       expect(coverCache.warmupRequestedPaths.first, tracks[1].path);
@@ -514,6 +522,7 @@ void main() {
         coverCache.warmupRequestedPaths.toSet(),
         tracks.map((e) => e.path).toSet(),
       );
+      UiInteractionCoordinator.instance.resetForTest();
     },
   );
 
@@ -549,6 +558,9 @@ void main() {
         for (final track in tracks)
           fixture.runtimeGraph.playback.createTrackSession(track),
       ];
+      for (final s in sessions) {
+        addTearDown(s.dispose);
+      }
       final subtitleLoads = <String>[];
       final firstSubtitle = SubtitleTrack(
         sourcePath: '/library/first.srt',
@@ -586,10 +598,8 @@ void main() {
         ).push(buildSessionDetailRoute(sessionId: sessions.first.id)),
       );
       await tester.pumpAndSettle();
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 200)),
-      );
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
       subtitleLoads.clear();
 
       void expectPrimaryControlsHaveNoFadeAncestor() {
@@ -674,10 +684,8 @@ void main() {
       }
       expectPrimaryControlsHaveNoFadeAncestor();
       await tester.pumpAndSettle();
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 200)),
-      );
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
 
       await tester.drag(find.byType(SessionDetailPage), const Offset(120, 0));
       await tester.pump();
@@ -702,12 +710,16 @@ void main() {
       expect(incomingBackward.opacity.value, inExclusiveRange(0, 1));
       expectPrimaryControlsHaveNoFadeAncestor();
       await tester.pumpAndSettle();
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 200)),
-      );
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      await tester.pumpAndSettle();
+      if (find.byType(SessionDetailPage).evaluate().isNotEmpty) {
+        Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
+        await tester.pumpAndSettle();
+      }
+      UiInteractionCoordinator.instance.resetForTest();
       await tester.pumpWidget(const SizedBox.shrink());
-      await tester.pump(const Duration(milliseconds: 120));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 10));
     },
   );
 
@@ -863,6 +875,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     )..audioEffects = AudioEffectsState.flat.copyWith(panning: 0.6);
+    addTearDown(session.dispose);
     runtimeGraph.library.addTracks(
       <MusicTrack>[track],
       notify: false,
@@ -1038,6 +1051,8 @@ void main() {
       createdAt: DateTime(2026, 1, 2),
       state: PlayerState(false, ProcessingState.ready),
     );
+    addTearDown(workSession.dispose);
+    addTearDown(singleSession.dispose);
     runtimeGraph.library.addTracks([workTrack, singleTrack], persist: false);
     playbackService.registerSession(workSession);
     playbackService.registerSession(singleSession);
@@ -1539,9 +1554,11 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     );
+    addTearDown(sourceSession.dispose);
     final queueSession = fixture.runtimeGraph.playback.createPlaybackQueue(
       'Queue',
     );
+    addTearDown(queueSession.dispose);
     fixture.playbackService.registerSession(sourceSession);
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[sourceSession, queueSession],
@@ -1632,6 +1649,7 @@ void main() {
       loopMode: SessionLoopMode.single,
       customQueueTracks: <MusicTrack>[track],
     );
+    addTearDown(session.dispose);
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
@@ -1701,7 +1719,7 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('local library playlist shows the work card name', (
@@ -1729,6 +1747,7 @@ void main() {
       track,
       customQueueTracks: <MusicTrack>[track],
     );
+    addTearDown(session.dispose);
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
@@ -1816,7 +1835,7 @@ void main() {
     );
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pumpAndSettle();
   });
 
   testWidgets('playlist cards show loading spinners without loading text', (
@@ -1854,6 +1873,8 @@ void main() {
             ],
           )
           ..isLoading = true;
+    addTearDown(trackSession.dispose);
+    addTearDown(queueSession.dispose);
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[trackSession, queueSession],
       playingSessionCount: 0,
@@ -1873,7 +1894,7 @@ void main() {
     expect(find.byKey(const ValueKey('loading')), findsNWidgets(2));
 
     await tester.pumpWidget(const SizedBox.shrink());
-    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pumpAndSettle();
   });
 
   testWidgets(
@@ -1912,6 +1933,7 @@ void main() {
         persist: false,
       );
       final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
+      addTearDown(queueSession.dispose);
       queueSession
         ..currentTrackPath = track.path
         ..currentQueueIndex = 0

@@ -13,6 +13,7 @@ import '../../../core/media/music_track.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../settings/application/app_cache_service.dart';
 import '../../../core/logging/app_log_service.dart';
+import '../../../core/media/media_file_support.dart';
 import '../domain/library_persistence_repository.dart';
 import 'audio_detail_cache_service.dart';
 import 'cover_image_cache_policy.dart';
@@ -128,7 +129,7 @@ class CoverArtworkCacheService {
       _manualCoverPathValidityCache.length;
 
   String? resolvedForTrack(MusicTrack? track, {String? trackPath}) {
-    if (!_preferTrackEmbeddedCover(track)) {
+    if (!_preferTrackEmbeddedCover(track, trackPath: trackPath)) {
       final folderCoverPath = _resolvedExplicitFolderCoverForTrack(
         track,
         trackPath: trackPath,
@@ -158,7 +159,7 @@ class CoverArtworkCacheService {
   }
 
   String? resolvedForPlaybackTrack(MusicTrack? track, {String? trackPath}) {
-    if (!_preferTrackEmbeddedCover(track)) {
+    if (!_preferTrackEmbeddedCover(track, trackPath: trackPath)) {
       final folderScope = _playbackFallbackFolderScopeForTrack(
         track,
         trackPath: trackPath,
@@ -221,7 +222,7 @@ class CoverArtworkCacheService {
     MusicTrack? track, {
     String? trackPath,
   }) async {
-    final folderScope = _preferTrackEmbeddedCover(track)
+    final folderScope = _preferTrackEmbeddedCover(track, trackPath: trackPath)
         ? null
         : _playbackFallbackFolderScopeForTrack(track, trackPath: trackPath);
     if (folderScope != null) {
@@ -280,7 +281,7 @@ class CoverArtworkCacheService {
     final pathValue = trackPath ?? track?.path;
     if (pathValue == null || pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) return null;
-    if (_isStandaloneAudioTrack(track)) return null;
+    if (_isStandaloneAudioTrack(track, trackPath: trackPath)) return null;
 
     final trackOwnPath = track?.path;
     final pathOverridesTrack =
@@ -340,14 +341,25 @@ class CoverArtworkCacheService {
     final pathValue = trackPath ?? track.path;
     if (pathValue.isEmpty) return null;
     if (PathMatcher.isRemoteUri(pathValue)) return null;
-    if (track.isVideo || _isStandaloneAudioTrack(track)) return null;
+    if (_isVideoTrack(track, trackPath: trackPath) ||
+        _isStandaloneAudioTrack(track, trackPath: trackPath)) {
+      return null;
+    }
     return coverScopeFolderForTrack(track, trackPath: trackPath);
   }
 
-  bool _preferTrackEmbeddedCover(MusicTrack? track) {
+  bool _preferTrackEmbeddedCover(MusicTrack? track, {String? trackPath}) {
     return track != null &&
-        !track.isVideo &&
+        !_isVideoTrack(track, trackPath: trackPath) &&
         (_preferEmbeddedAudioCover?.call() ?? false);
+  }
+
+  bool _isVideoTrack(MusicTrack? track, {String? trackPath}) {
+    if (track?.isVideo == true) return true;
+    final pathValue = trackPath ?? track?.path;
+    return pathValue != null &&
+        pathValue.isNotEmpty &&
+        isVideoMediaFile(pathValue);
   }
 
   String? coverSearchKeyForTrack(MusicTrack? track, {String? trackPath}) {
@@ -726,7 +738,10 @@ class CoverArtworkCacheService {
     final coverSearchKey = coverSearchKeyForTrack(track, trackPath: pathValue);
     if (coverSearchKey == null) return Future<String?>.value();
 
-    final preferEmbeddedCover = _preferTrackEmbeddedCover(track);
+    final preferEmbeddedCover = _preferTrackEmbeddedCover(
+      track,
+      trackPath: pathValue,
+    );
     if (!preferEmbeddedCover) {
       final folderCoverPath = await _explicitFolderCoverFutureForTrack(
         track,
@@ -834,13 +849,22 @@ class CoverArtworkCacheService {
       if (coverPath == null &&
           pathValue != null &&
           !PathMatcher.isRemoteUri(pathValue)) {
-        if (track?.isVideo == true) {
-          coverPath = await _resolveVideoFramePathForTrack(track!);
+        if (track != null && _isVideoTrack(track, trackPath: pathValue)) {
+          coverPath = await _resolveVideoFramePathForTrack(track);
         } else if (track != null) {
           coverPath = await _resolvePlatformCoverPathForTrack(
             track,
             includeGroupCoverFallback: !preferEmbeddedCover,
           );
+        }
+      }
+      if (coverPath == null && preferEmbeddedCover) {
+        coverPath = await _explicitFolderCoverFutureForTrack(
+          track,
+          trackPath: pathValue,
+        );
+        if (coverPath == null && track != null) {
+          coverPath = await _resolvePlatformCoverPathForTrack(track);
         }
       }
 
@@ -1571,7 +1595,7 @@ class CoverArtworkCacheService {
       final batch = tracks.sublist(start, end);
       final resolved = await Future.wait(
         batch.map(
-          (track) => track.isVideo
+          (track) => _isVideoTrack(track)
               ? _resolveVideoFramePathForTrack(track)
               : _resolvePlatformCoverPathForTrack(
                   track,
@@ -1594,7 +1618,7 @@ class CoverArtworkCacheService {
     if (nestedImages.isNotEmpty) return nestedImages.first;
 
     for (final track in _tracksInCompleteCoverScope(folderPath)) {
-      final candidate = track.isVideo
+      final candidate = _isVideoTrack(track)
           ? await _resolveVideoFramePathForTrack(track)
           : await _resolvePlatformCoverPathForTrack(
               track,
@@ -1765,8 +1789,12 @@ String? _mostSpecificContainingRoot(Iterable<String> roots, String value) {
   return bestMatch;
 }
 
-bool _isStandaloneAudioTrack(MusicTrack? track) {
-  return track?.isSingle == true && track?.isVideo != true;
+bool _isStandaloneAudioTrack(MusicTrack? track, {String? trackPath}) {
+  final pathValue = trackPath ?? track?.path;
+  final isVideo =
+      track?.isVideo == true ||
+      (pathValue?.isNotEmpty == true && isVideoMediaFile(pathValue!));
+  return track?.isSingle == true && !isVideo;
 }
 
 String? remoteCoverSearchKey(String url) {

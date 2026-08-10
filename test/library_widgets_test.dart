@@ -479,6 +479,73 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
+  testWidgets(
+    'removing a folder audio keeps the folder expanded and shows context',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      const folderPath = '/library/remove-folder-audio';
+      final removedTrack = testMusicTrack(
+        name: 'Remove this track',
+        path: '$folderPath/remove.mp3',
+        groupKey: folderPath,
+        groupTitle: 'Remove folder audio',
+      );
+      final retainedTrack = testMusicTrack(
+        name: 'Keep this track',
+        path: '$folderPath/keep.mp3',
+        groupKey: folderPath,
+        groupTitle: 'Remove folder audio',
+      );
+      runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[removedTrack, retainedTrack],
+        notify: false,
+        persist: false,
+      );
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final folderTile = find.byType(ExpansionTile).first;
+      await tester.ensureVisible(folderTile);
+      await tester.tap(folderTile);
+      await pumpUntilFound(
+        tester,
+        find.text('Remove this track', findRichText: true),
+      );
+      final trackCard = find.ancestor(
+        of: find.text('Remove this track', findRichText: true),
+        matching: find.byType(SwipeRevealCard),
+      );
+      tester.widget<SwipeRevealCard>(trackCard.first).onRemove();
+
+      await pumpUntilFound(tester, find.text('已移除文件夹下该音频'));
+      await pumpUntilNotFound(
+        tester,
+        find.text('Remove this track', findRichText: true),
+      );
+      await pumpUntilFound(
+        tester,
+        find.text('Keep this track', findRichText: true),
+      );
+
+      expect(find.text('Keep this track', findRichText: true), findsOneWidget);
+      expect(
+        tester
+            .widget<ExpansionTile>(find.byType(ExpansionTile).first)
+            .controller!
+            .isExpanded,
+        isTrue,
+      );
+    },
+  );
+
   testWidgets('switching library categories collapses the element selector', (
     WidgetTester tester,
   ) async {

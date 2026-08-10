@@ -719,7 +719,9 @@ void main() {
         );
         addTearDown(() async {
           if (await tempDir.exists()) {
-            await tempDir.delete(recursive: true);
+            try {
+              await tempDir.delete(recursive: true);
+            } catch (_) {}
           }
         });
 
@@ -853,7 +855,9 @@ void main() {
         );
         addTearDown(() async {
           if (await tempDir.exists()) {
-            await tempDir.delete(recursive: true);
+            try {
+              await tempDir.delete(recursive: true);
+            } catch (_) {}
           }
         });
 
@@ -871,6 +875,8 @@ void main() {
         final oldTrackPath =
             '${tempDir.path}${Platform.pathSeparator}Old Folder${Platform.pathSeparator}01.mp3';
 
+        await runtimeGraph.runtime.dispose();
+
         final restoredRepository = TestPersistenceRepository(
           database: AppDatabase.test(db),
         );
@@ -885,6 +891,10 @@ void main() {
             manualCoverPath: newCoverPath,
           ),
         ]);
+        await restoredRepository.saveAppSetting(
+          'folder_cover_selections_v1',
+          json.encode(<String, String>{newFolder.path: newCoverPath}),
+        );
         await restoredRepository.saveAllSessions(<PersistedPlaybackSession>[
           PersistedPlaybackSession(
             id: restoredSessionId,

@@ -85,6 +85,11 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     if (!identical(oldWidget.folder, widget.folder)) {
       _loadedFolder = null;
       _isLoadingChildren = false;
+      if (_expanded && widget.folder.children.isEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_loadChildren());
+        });
+      }
     }
     if (widget.initiallyExpanded && !_expanded) {
       _expanded = true;
@@ -404,7 +409,7 @@ class _TrackNodeWidget extends ConsumerWidget {
       if (context.mounted) {
         showAppSnackBar(
           context,
-          i18n.tr('audio_excluded'),
+          i18n.tr(track.isSingle ? 'audio_excluded' : 'folder_audio_removed'),
           tone: AppFeedbackTone.warning,
           icon: Icons.block_rounded,
         );
@@ -414,7 +419,7 @@ class _TrackNodeWidget extends ConsumerWidget {
       if (context.mounted) {
         showAppSnackBar(
           context,
-          i18n.tr('audio_removed'),
+          i18n.tr(track.isSingle ? 'audio_removed' : 'folder_audio_removed'),
           tone: AppFeedbackTone.destructive,
           icon: Icons.delete_outline_rounded,
         );

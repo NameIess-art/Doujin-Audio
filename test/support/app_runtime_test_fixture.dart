@@ -15,6 +15,7 @@ import 'package:doujin_audio/core/persistence/json_document_store.dart';
 import 'test_persistence_repository.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
@@ -546,6 +547,7 @@ final class AppRuntimeTestFixture {
     messenger.setMockMethodCallHandler(nativePlaybackChannel, null);
     messenger.setMockMethodCallHandler(notificationsChannel, null);
     await database.close();
+    UiInteractionCoordinator.instance.resetForTest();
   }
 
   void bindRuntimeGraph(AppRuntimeGraph graph) {

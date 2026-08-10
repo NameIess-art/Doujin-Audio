@@ -368,6 +368,7 @@ const Map<String, String> appLanguageEn = {
   'all_sessions_cleared': 'All sessions were cleared.',
   'audio_removed': 'Audio removed.',
   'audio_excluded': 'Audio excluded from library.',
+  'folder_audio_removed': 'Audio removed from the folder.',
   'folder_removed': 'Folder removed.',
   'folder_excluded': 'Folder excluded from library.',
   'pause_all_sessions': 'Pause all sessions',

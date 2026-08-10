@@ -204,6 +204,7 @@ class UiInteractionCoordinator extends ChangeNotifier {
     _idleTimers.clear();
     _activeSources.clear();
     _backgroundScheduler.setPaused(false);
+    _backgroundScheduler.clear();
     _pendingCommits.clear();
     for (final timer in _throttleTimers.values) {
       timer.cancel();

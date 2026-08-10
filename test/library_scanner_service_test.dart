@@ -179,6 +179,28 @@ void main() {
     expect(catalog.scanFailureCount, 1);
   });
 
+  test('refresh does not recreate permanently removed folders', () async {
+    const root = 'C:/music';
+    const removedFolder = '$root/removed';
+    const retainedFolder = '$root/retained';
+    final catalog = _RefreshCatalog(
+      watchedFolders: <String>[root],
+      permanentlyRemovedPaths: <String>{removedFolder},
+    );
+    final dataSource = _ChunkedRefreshDataSource(
+      catalog: catalog,
+      chunks: <FolderScanChunk>[
+        FolderScanChunk(folders: const <String>[removedFolder, retainedFolder]),
+      ],
+    );
+
+    await LibraryScannerService(
+      dataSource: dataSource,
+    ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+    expect(catalog.recordedFolderPaths, <String>[retainedFolder]);
+  });
+
   test('content URI refresh retains the legacy full-scan fallback', () async {
     const root = 'content://library/tree';
     final catalog = _RefreshCatalog(watchedFolders: <String>[root]);
@@ -370,6 +392,7 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
 class _RefreshCatalog implements LibraryCatalog {
   _RefreshCatalog({
     required List<String> watchedFolders,
+    this.permanentlyRemovedPaths = const <String>{},
     List<MusicTrack> initialTracks = const <MusicTrack>[],
     this.cancelAfterTrackChunk,
   }) : watchedFolders = List<String>.of(watchedFolders),
@@ -383,7 +406,9 @@ class _RefreshCatalog implements LibraryCatalog {
 
   @override
   final List<String> watchedLibraries = <String>[];
+  final Set<String> permanentlyRemovedPaths;
   final int? cancelAfterTrackChunk;
+  final List<String> recordedFolderPaths = <String>[];
 
   @override
   bool isScanning = false;
@@ -454,6 +479,12 @@ class _RefreshCatalog implements LibraryCatalog {
   bool isLibraryPathExcluded(String libraryPath, String entityPath) => false;
 
   @override
+  bool isLibraryPathIgnored(String libraryPath, String entityPath) =>
+      permanentlyRemovedPaths.any(
+        (removedPath) => PathMatcher.isWithinOrEqual(entityPath, removedPath),
+      );
+
+  @override
   void beginStagedLibraryRefresh() {
     stagedBatchDepth++;
     stagedBatchBeginCount++;
@@ -479,6 +510,7 @@ class _RefreshCatalog implements LibraryCatalog {
     Iterable<String> removeEntryPaths = const <String>[],
     bool persist = true,
   }) {
+    recordedFolderPaths.addAll(folderPaths);
     final before = library.length;
     for (final track in tracks) {
       library.removeWhere(

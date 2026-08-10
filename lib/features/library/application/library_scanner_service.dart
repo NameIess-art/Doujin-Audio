@@ -296,7 +296,7 @@ class LibraryScannerService {
     final visibleChildFolders = childFolders
         .where(
           (folderPath) =>
-              !provider.isLibraryPathExcluded(libraryRoot, folderPath),
+              !provider.isLibraryPathIgnored(libraryRoot, folderPath),
         )
         .toList(growable: false);
     await _scanFolderForRefresh(
@@ -355,7 +355,13 @@ class LibraryScannerService {
     );
     final retainedTrackPaths = <String>{};
     final retainedEntryPaths = <String>{};
-    final allFolderPaths = LinkedHashSet<String>.from(folderPaths);
+    final allFolderPaths = LinkedHashSet<String>.from(
+      folderPaths.where(
+        (folderPath) =>
+            !provider.isLibraryPathIgnored(libraryRoot, folderPath) ||
+            provider.isLibraryPathExcluded(libraryRoot, folderPath),
+      ),
+    );
     retainedEntryPaths.addAll(allFolderPaths.map(PathMatcher.normalize));
     var processedTracks = 0;
 
@@ -365,10 +371,15 @@ class LibraryScannerService {
       for (final track in chunk.tracks) {
         retainedTrackPaths.add(PathMatcher.normalize(track.path));
       }
-      allFolderPaths.addAll(chunk.folders);
+      final retainedFolders = chunk.folders.where(
+        (folderPath) =>
+            !provider.isLibraryPathIgnored(libraryRoot, folderPath) ||
+            provider.isLibraryPathExcluded(libraryRoot, folderPath),
+      );
+      allFolderPaths.addAll(retainedFolders);
       retainedEntryPaths
         ..addAll(retainedTrackPaths)
-        ..addAll(chunk.folders.map(PathMatcher.normalize));
+        ..addAll(retainedFolders.map(PathMatcher.normalize));
       if (chunk.tracks.isEmpty) {
         return provider.isScanGenerationActive(generation);
       }
@@ -1305,7 +1316,7 @@ class LibraryScannerService {
           folderPaths: childFolders,
         );
         for (final childFolder in importTargets) {
-          if (provider.isLibraryPathExcluded(
+          if (provider.isLibraryPathIgnored(
             normalizedFolderPath,
             childFolder,
           )) {
@@ -1333,7 +1344,7 @@ class LibraryScannerService {
       }
       if (completed) {
         for (final childFolder in importTargets) {
-          if (!provider.isLibraryPathExcluded(
+          if (!provider.isLibraryPathIgnored(
             normalizedFolderPath,
             childFolder,
           )) {

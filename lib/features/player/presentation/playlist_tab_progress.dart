@@ -420,7 +420,7 @@ class _ProgressSliderFrame extends StatelessWidget {
               onLongPressEnd: (_) => onLongPressEnd(),
               onLongPressCancel: onLongPressEnd,
               child: SizedBox(
-                height: 52,
+                height: 34,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
@@ -603,7 +603,7 @@ class _TimeSegmentProgressPainter extends CustomPainter {
     const horizontalPadding = 24.0;
     const trackStart = horizontalPadding;
     final trackWidth = max(1.0, size.width - horizontalPadding * 2);
-    const trackY = 26.0;
+    final trackY = size.height / 2.0;
     final trackRect = Rect.fromLTWH(trackStart, trackY - 4, trackWidth, 8);
 
     for (final label in labels) {

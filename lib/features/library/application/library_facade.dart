@@ -46,6 +46,8 @@ final class LibraryFacade implements LibraryCatalog {
   static const _watchedLibrariesPreferenceKey = 'watched_libraries_v1';
   static const _groupOrderPreferenceKey = 'group_order_v1';
   static const _libraryExclusionsPreferenceKey = 'library_exclusions_v1';
+  static const _removedLibraryFoldersPreferenceKey =
+      'removed_library_folders_v1';
   Future<void> _preferenceWriteTail = Future<void>.value();
   LibraryFacade({
     required this.databaseRepository,
@@ -205,6 +207,10 @@ final class LibraryFacade implements LibraryCatalog {
         _libraryExclusionsPreferenceKey,
         _decodeStringMap,
       ),
+      AppPreferences.readJson<Map<String, dynamic>>(
+        _removedLibraryFoldersPreferenceKey,
+        _decodeStringMap,
+      ),
     ]);
     final tracks = await tracksFuture;
     final entries = await entriesFuture;
@@ -227,6 +233,10 @@ final class LibraryFacade implements LibraryCatalog {
       _service.excludedLibraryFolders,
     );
     _decodeExclusionMap(exclusions?['tracks'], _service.excludedLibraryTracks);
+    _decodeExclusionMap(
+      preferences[4],
+      _service.permanentlyRemovedLibraryFolders,
+    );
     _service
       ..replaceLibraryEntries(entries)
       ..rebuildExclusionsFromEntries(entries);
@@ -274,6 +284,7 @@ final class LibraryFacade implements LibraryCatalog {
       ..watchedLibraries.clear()
       ..excludedLibraryFolders.clear()
       ..excludedLibraryTracks.clear()
+      ..permanentlyRemovedLibraryFolders.clear()
       ..libraryEntriesByLibrary.clear()
       ..isScanning = false
       ..isBackgroundScanning = false
@@ -309,8 +320,8 @@ final class LibraryFacade implements LibraryCatalog {
     for (final entry in raw.entries) {
       final values = entry.value;
       if (values is! List) continue;
-      target[path.normalize(entry.key.toString())] = values
-          .map((value) => path.normalize(value.toString()))
+      target[PathMatcher.normalize(entry.key.toString())] = values
+          .map((value) => PathMatcher.normalize(value.toString()))
           .where((value) => value.isNotEmpty)
           .toSet();
     }
@@ -323,6 +334,9 @@ final class LibraryFacade implements LibraryCatalog {
     final excludedFolders = _service.excludedLibraryFolders.values
         .expand((paths) => paths)
         .toSet();
+    excludedFolders.addAll(
+      _service.permanentlyRemovedLibraryFolders.values.expand((paths) => paths),
+    );
     if (excludedTracks.isEmpty && excludedFolders.isEmpty) return;
     final trackIndex = PathMembershipIndex(excludedTracks);
     final folderIndex = PathMembershipIndex(excludedFolders);
@@ -1052,6 +1066,11 @@ final class LibraryFacade implements LibraryCatalog {
   @override
   bool isLibraryPathExcluded(String libraryPath, String entityPath) =>
       _service.isLibraryPathExcluded(libraryPath, entityPath);
+
+  @override
+  bool isLibraryPathIgnored(String libraryPath, String entityPath) =>
+      _service.isLibraryPathIgnored(libraryPath, entityPath);
+
   bool isLibraryPathInheritedExcluded(String libraryPath, String entityPath) =>
       _service.isLibraryPathInheritedExcluded(libraryPath, entityPath);
 
@@ -1337,6 +1356,16 @@ final class LibraryFacade implements LibraryCatalog {
 
   Future<void> removeFolderFromLibrary(String folderPath) async {
     final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    final parentLibraryPath = _service.watchedLibraries.firstWhere(
+      (libraryPath) =>
+          PathMatcher.isWithinOrEqual(normalizedFolderPath, libraryPath),
+      orElse: () => '',
+    );
+    if (parentLibraryPath.isNotEmpty &&
+        PathMatcher.equalsNormalized(parentLibraryPath, normalizedFolderPath)) {
+      await removeLibrary(parentLibraryPath);
+      return;
+    }
     final wasWatched = _service.watchedFolders.any(
       (folder) => PathMatcher.equalsNormalized(folder, normalizedFolderPath),
     );
@@ -1346,14 +1375,25 @@ final class LibraryFacade implements LibraryCatalog {
           PathMatcher.isWithinOrEqual(track.groupKey, normalizedFolderPath),
       persist: false,
     );
-    if (removedPaths.isEmpty && !wasWatched) return;
+    final permanentRemoval = parentLibraryPath.isEmpty
+        ? null
+        : _service.permanentlyRemoveLibraryFolder(
+            parentLibraryPath,
+            normalizedFolderPath,
+          );
+    if (removedPaths.isEmpty &&
+        !wasWatched &&
+        !(permanentRemoval?.changed ?? false)) {
+      return;
+    }
 
-    final removedWatchedFolder = _service.removeWatchedFolder(
-      normalizedFolderPath,
-    );
-    _service
-      ..libraryEntriesByLibrary.remove(normalizedFolderPath)
-      ..syncGroupOrderFromLibrary();
+    final removedWatchedFolder = permanentRemoval == null
+        ? _service.removeWatchedFolder(normalizedFolderPath)
+        : permanentRemoval.removedWatchedFolderPaths.isNotEmpty;
+    if (permanentRemoval == null) {
+      _service.libraryEntriesByLibrary.remove(normalizedFolderPath);
+    }
+    _service.syncGroupOrderFromLibrary();
     _markLibraryStructureChanged();
     final persistenceTasks = <Future<void>>[
       deleteAudioDetail(
@@ -1364,11 +1404,28 @@ final class LibraryFacade implements LibraryCatalog {
       if (removedPaths.isNotEmpty) {
         persistenceTasks.add(databaseRepository.deleteTracks(removedPaths));
       }
-      persistenceTasks.add(
-        databaseRepository.deleteLibraryEntriesForLibrary(normalizedFolderPath),
-      );
+      if (permanentRemoval == null) {
+        persistenceTasks.add(
+          databaseRepository.deleteLibraryEntriesForLibrary(
+            normalizedFolderPath,
+          ),
+        );
+      } else if (permanentRemoval.removedEntryPaths.isNotEmpty) {
+        persistenceTasks.add(
+          databaseRepository.deleteLibraryEntries(
+            parentLibraryPath,
+            permanentRemoval.removedEntryPaths,
+          ),
+        );
+      }
       if (removedWatchedFolder) {
         persistenceTasks.add(_saveWatchedFolders());
+      }
+      if (permanentRemoval != null) {
+        persistenceTasks.add(_saveRemovedLibraryFolders());
+        if (permanentRemoval.exclusionsChanged) {
+          persistenceTasks.add(_saveLibraryExclusions());
+        }
       }
       persistenceTasks.add(_saveGroupOrder());
     }
@@ -1408,7 +1465,8 @@ final class LibraryFacade implements LibraryCatalog {
         persistenceTasks
           ..add(_saveWatchedFolders())
           ..add(_saveWatchedLibraries())
-          ..add(_saveLibraryExclusions());
+          ..add(_saveLibraryExclusions())
+          ..add(_saveRemovedLibraryFolders());
       }
     }
     await Future.wait(persistenceTasks);
@@ -1772,6 +1830,7 @@ final class LibraryFacade implements LibraryCatalog {
     await _saveWatchedFolders();
     await _saveWatchedLibraries();
     await _saveLibraryExclusions();
+    await _saveRemovedLibraryFolders();
     await _saveGroupOrder();
   }
 
@@ -1840,19 +1899,29 @@ final class LibraryFacade implements LibraryCatalog {
     );
   }
 
-  Future<void> _saveLibraryExclusions() {
-    Map<String, List<String>> encode(Map<String, Set<String>> source) {
-      return source.map(
-        (key, value) => MapEntry(key, value.toList(growable: false)..sort()),
-      );
-    }
+  Map<String, List<String>> _encodePathSetMap(Map<String, Set<String>> source) {
+    return source.map(
+      (key, value) => MapEntry(key, value.toList(growable: false)..sort()),
+    );
+  }
 
+  Future<void> _saveLibraryExclusions() {
     final value = json.encode(<String, Object?>{
-      'folders': encode(_service.excludedLibraryFolders),
-      'tracks': encode(_service.excludedLibraryTracks),
+      'folders': _encodePathSetMap(_service.excludedLibraryFolders),
+      'tracks': _encodePathSetMap(_service.excludedLibraryTracks),
     });
     return _queuePreferenceWrite(
       () => AppPreferences.setString(_libraryExclusionsPreferenceKey, value),
+    );
+  }
+
+  Future<void> _saveRemovedLibraryFolders() {
+    final value = json.encode(
+      _encodePathSetMap(_service.permanentlyRemovedLibraryFolders),
+    );
+    return _queuePreferenceWrite(
+      () =>
+          AppPreferences.setString(_removedLibraryFoldersPreferenceKey, value),
     );
   }
 

@@ -126,10 +126,6 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     });
   }
 
-  String? _findParentLibraryPath(LibraryFacade library) {
-    return library.libraryRootForPath(widget.folder.path);
-  }
-
   Future<void> _removeFolder(
     BuildContext context,
     LibraryFacade library,
@@ -138,27 +134,14 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final libraryPath = _findParentLibraryPath(library);
-    if (libraryPath != null) {
-      library.excludeLibraryFolder(libraryPath, widget.folder.path);
-      if (context.mounted) {
-        showAppSnackBar(
-          context,
-          i18n.tr('folder_excluded'),
-          tone: AppFeedbackTone.warning,
-          icon: Icons.block_rounded,
-        );
-      }
-    } else {
-      await library.removeFolderFromLibrary(widget.folder.path);
-      if (context.mounted) {
-        showAppSnackBar(
-          context,
-          i18n.tr('folder_removed'),
-          tone: AppFeedbackTone.destructive,
-          icon: Icons.delete_outline_rounded,
-        );
-      }
+    await library.removeFolderFromLibrary(widget.folder.path);
+    if (context.mounted) {
+      showAppSnackBar(
+        context,
+        i18n.tr('folder_removed'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.delete_outline_rounded,
+      );
     }
   }
 

@@ -19,6 +19,7 @@ abstract interface class LibraryCatalogReader {
   LibraryExclusionMatcher libraryExclusionMatcherForLibrary(String libraryPath);
   bool hasLibraryExclusions(String libraryPath);
   bool isLibraryPathExcluded(String libraryPath, String entityPath);
+  bool isLibraryPathIgnored(String libraryPath, String entityPath);
   bool isScanGenerationActive(int generation);
 }
 

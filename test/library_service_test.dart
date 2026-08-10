@@ -37,6 +37,62 @@ void main() {
     expect(service.excludedLibraryTracks, isEmpty);
   });
 
+  test('permanent folder removal stays separate from exclusions', () {
+    final service = LibraryService();
+    addTearDown(service.dispose);
+    const libraryPath = '/library';
+    const folderPath = '/library/work';
+    const trackPath = '$folderPath/01.mp3';
+    final normalizedLibraryPath = path.normalize(libraryPath);
+    final track = MusicTrack(
+      path: trackPath,
+      displayName: '01',
+      groupKey: folderPath,
+      groupTitle: 'work',
+      groupSubtitle: folderPath,
+      isSingle: false,
+    );
+    service
+      ..watchedLibraries.add(libraryPath)
+      ..watchedFolders.add(folderPath)
+      ..excludedLibraryFolders[normalizedLibraryPath] = <String>{
+        path.normalize(folderPath),
+      }
+      ..replaceLibraryEntries(<LibraryEntry>[
+        LibraryEntry.folder(
+          libraryPath: libraryPath,
+          path: folderPath,
+          state: LibraryEntryState.active,
+        ),
+        LibraryEntry.track(
+          libraryPath: libraryPath,
+          track: track,
+          state: LibraryEntryState.active,
+        ),
+      ]);
+
+    final result = service.permanentlyRemoveLibraryFolder(
+      libraryPath,
+      folderPath,
+    );
+
+    expect(result.changed, isTrue);
+    expect(
+      result.removedEntryPaths,
+      containsAll(<String>[folderPath, trackPath]),
+    );
+    expect(service.watchedFolders, isEmpty);
+    expect(service.libraryEntriesForLibrary(libraryPath), isEmpty);
+    expect(service.excludedFoldersForLibrary(libraryPath), isEmpty);
+    expect(
+      service.permanentlyRemovedLibraryFolders[normalizedLibraryPath],
+      <String>{path.normalize(folderPath)},
+    );
+    expect(service.isLibraryPathExcluded(libraryPath, trackPath), isFalse);
+    expect(service.isLibraryPathIgnored(libraryPath, trackPath), isTrue);
+    expect(service.clearLibraryExclusions(libraryPath).changed, isFalse);
+  });
+
   test(
     'retargetLibraryFolder moves all mutable library state together',
     () async {
@@ -60,6 +116,9 @@ void main() {
         ..watchedFolders.add(oldRoot)
         ..watchedLibraries.add(oldRoot)
         ..groupOrder.add(oldRoot)
+        ..permanentlyRemovedLibraryFolders[oldRoot] = <String>{
+          path.join(oldRoot, 'Removed'),
+        }
         ..replaceLibraryEntries(<LibraryEntry>[
           LibraryEntry.track(
             libraryPath: oldRoot,
@@ -86,6 +145,9 @@ void main() {
       expect(service.watchedLibraries, <String>[newRoot]);
       expect(service.groupOrder, <String>[newRoot]);
       expect(service.excludedTracksForLibrary(newRoot), <String>[newTrackPath]);
+      expect(service.permanentlyRemovedLibraryFolders[newRoot], <String>{
+        path.join(newRoot, 'Removed'),
+      });
       expect(service.libraryEntriesForLibrary(oldRoot), isEmpty);
       expect(
         service.libraryEntriesForLibrary(newRoot).single.path,

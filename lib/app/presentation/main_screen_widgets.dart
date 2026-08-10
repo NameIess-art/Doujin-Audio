@@ -72,7 +72,7 @@ class _BottomDestinationInkResponse extends StatelessWidget {
           LongPressGestureRecognizer:
               GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
                 () => LongPressGestureRecognizer(
-                  duration: const Duration(seconds: 1),
+                  duration: const Duration(milliseconds: 350),
                 ),
                 (recognizer) => recognizer.onLongPress = onLongPress,
               ),

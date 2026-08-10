@@ -33,6 +33,8 @@ class LibraryService {
       <String, Set<String>>{};
   final Map<String, Set<String>> excludedLibraryTracks =
       <String, Set<String>>{};
+  final Map<String, Set<String>> permanentlyRemovedLibraryFolders =
+      <String, Set<String>>{};
   final Map<String, Map<String, LibraryEntry>> libraryEntriesByLibrary =
       <String, Map<String, LibraryEntry>>{};
   bool isScanning = false;
@@ -169,8 +171,10 @@ class LibraryService {
       libraryPath: normalizedLibraryPath,
       excludedTrackPaths:
           excludedLibraryTracks[normalizedLibraryPath] ?? const <String>{},
-      excludedFolderPaths:
-          excludedLibraryFolders[normalizedLibraryPath] ?? const <String>{},
+      excludedFolderPaths: <String>{
+        ...?excludedLibraryFolders[normalizedLibraryPath],
+        ...?permanentlyRemovedLibraryFolders[normalizedLibraryPath],
+      },
     );
   }
 
@@ -209,6 +213,90 @@ class LibraryService {
     return folders.any(
       (folderPath) =>
           PathMatcher.isWithinOrEqualNormalized(normalizedPath, folderPath),
+    );
+  }
+
+  bool isLibraryPathIgnored(String libraryPath, String entityPath) {
+    if (isLibraryPathExcluded(libraryPath, entityPath)) return true;
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedPath = PathMatcher.normalize(entityPath);
+    final removedFolders =
+        permanentlyRemovedLibraryFolders[normalizedLibraryPath];
+    if (removedFolders == null) return false;
+    return removedFolders.any(
+      (folderPath) =>
+          PathMatcher.isWithinOrEqualNormalized(normalizedPath, folderPath),
+    );
+  }
+
+  ({
+    bool changed,
+    List<String> removedEntryPaths,
+    List<String> removedWatchedFolderPaths,
+    bool exclusionsChanged,
+  })
+  permanentlyRemoveLibraryFolder(String libraryPath, String folderPath) {
+    final normalizedLibraryPath = PathMatcher.normalize(libraryPath);
+    final normalizedFolderPath = PathMatcher.normalize(folderPath);
+    final removedFolders = permanentlyRemovedLibraryFolders.putIfAbsent(
+      normalizedLibraryPath,
+      () => <String>{},
+    );
+    final tombstoneChanged = removedFolders.add(normalizedFolderPath);
+
+    final removedWatchedFolderPaths = watchedFolders
+        .where(
+          (pathValue) => PathMatcher.isWithinOrEqualNormalized(
+            PathMatcher.normalize(pathValue),
+            normalizedFolderPath,
+          ),
+        )
+        .toList(growable: false);
+    watchedFolders.removeWhere(
+      (pathValue) => PathMatcher.isWithinOrEqualNormalized(
+        PathMatcher.normalize(pathValue),
+        normalizedFolderPath,
+      ),
+    );
+
+    final entries = libraryEntriesByLibrary[normalizedLibraryPath];
+    final removedEntryPaths = <String>[];
+    entries?.removeWhere((_, entry) {
+      if (!PathMatcher.isWithinOrEqualNormalized(
+        PathMatcher.normalize(entry.path),
+        normalizedFolderPath,
+      )) {
+        return false;
+      }
+      removedEntryPaths.add(entry.path);
+      return true;
+    });
+
+    final excludedFolders = excludedLibraryFolders[normalizedLibraryPath];
+    final excludedTracks = excludedLibraryTracks[normalizedLibraryPath];
+    final exclusionsChanged =
+        (excludedFolders != null &&
+            _removePathsWithin(excludedFolders, normalizedFolderPath)) |
+        (excludedTracks != null &&
+            _removePathsWithin(excludedTracks, normalizedFolderPath));
+    if (excludedFolders?.isEmpty ?? false) {
+      excludedLibraryFolders.remove(normalizedLibraryPath);
+    }
+    if (excludedTracks?.isEmpty ?? false) {
+      excludedLibraryTracks.remove(normalizedLibraryPath);
+    }
+
+    final changed =
+        tombstoneChanged ||
+        removedWatchedFolderPaths.isNotEmpty ||
+        removedEntryPaths.isNotEmpty ||
+        exclusionsChanged;
+    if (changed) markStructureChanged();
+    return (
+      changed: changed,
+      removedEntryPaths: removedEntryPaths,
+      removedWatchedFolderPaths: removedWatchedFolderPaths,
+      exclusionsChanged: exclusionsChanged,
     );
   }
 
@@ -455,12 +543,16 @@ class LibraryService {
 
     final nextFolderExclusions = retarget(excludedLibraryFolders);
     final nextTrackExclusions = retarget(excludedLibraryTracks);
+    final nextRemovedFolders = retarget(permanentlyRemovedLibraryFolders);
     excludedLibraryFolders
       ..clear()
       ..addAll(nextFolderExclusions);
     excludedLibraryTracks
       ..clear()
       ..addAll(nextTrackExclusions);
+    permanentlyRemovedLibraryFolders
+      ..clear()
+      ..addAll(nextRemovedFolders);
   }
 
   List<LibraryEntry> _retargetLibraryEntries(
@@ -1162,6 +1254,9 @@ class LibraryService {
     final hadTrackExclusions = excludedLibraryTracks.containsKey(
       normalizedLibraryPath,
     );
+    final hadRemovedFolders = permanentlyRemovedLibraryFolders.containsKey(
+      normalizedLibraryPath,
+    );
     final hadEntries = libraryEntriesByLibrary.containsKey(
       normalizedLibraryPath,
     );
@@ -1183,6 +1278,10 @@ class LibraryService {
       (pathValue, _) =>
           PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
     );
+    permanentlyRemovedLibraryFolders.removeWhere(
+      (pathValue, _) =>
+          PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
+    );
     libraryEntriesByLibrary.removeWhere(
       (pathValue, _) =>
           PathMatcher.equalsNormalized(pathValue, normalizedLibraryPath),
@@ -1192,6 +1291,7 @@ class LibraryService {
         watchedLibraries.length != watchedLibraryCount ||
         hadFolderExclusions ||
         hadTrackExclusions ||
+        hadRemovedFolders ||
         hadEntries;
     if (!changed) {
       return (changed: false, removedFolderPaths: const <String>[]);

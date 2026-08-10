@@ -597,11 +597,11 @@ void main() {
     await tester.pump(sectionTransitionSettlement);
 
     final gesture = await tester.startGesture(tester.getCenter(destination));
-    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump(const Duration(milliseconds: 250));
     expect(pageIsOffstage(localPageFinder), isFalse);
     expect(pageIsOffstage(asmrPageFinder), isTrue);
 
-    await tester.pump(const Duration(milliseconds: 120));
+    await tester.pump(const Duration(milliseconds: 150));
     expect(pageIsOffstage(localPageFinder), isFalse);
     expect(pageIsOffstage(asmrPageFinder), isFalse);
     await gesture.up();

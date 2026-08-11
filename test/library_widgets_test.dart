@@ -525,15 +525,33 @@ void main() {
       );
       tester.widget<SwipeRevealCard>(trackCard.first).onRemove();
 
+      final removedTrackFinder = find.text(
+        'Remove this track',
+        findRichText: true,
+      );
+      final retainedTrackFinder = find.text(
+        'Keep this track',
+        findRichText: true,
+      );
+      var removalCompleted = false;
+      for (var i = 0; i < 200; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(
+          retainedTrackFinder,
+          findsOneWidget,
+          reason: 'The expanded folder should not blank while refreshing',
+        );
+        if (removedTrackFinder.evaluate().isEmpty) {
+          removalCompleted = true;
+          break;
+        }
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+      expect(removalCompleted, isTrue);
+
       await pumpUntilFound(tester, find.text('已移除文件夹下该音频'));
-      await pumpUntilNotFound(
-        tester,
-        find.text('Remove this track', findRichText: true),
-      );
-      await pumpUntilFound(
-        tester,
-        find.text('Keep this track', findRichText: true),
-      );
 
       expect(find.text('Keep this track', findRichText: true), findsOneWidget);
       expect(

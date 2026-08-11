@@ -83,11 +83,22 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   void didUpdateWidget(covariant _FolderNodeWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.folder, widget.folder)) {
-      _loadedFolder = null;
+      final retainLoadedChildren =
+          _loadedFolder != null &&
+          widget.folder.children.isEmpty &&
+          PathMatcher.equalsNormalized(
+            oldWidget.folder.path,
+            widget.folder.path,
+          );
+      if (!retainLoadedChildren) {
+        _loadedFolder = null;
+      }
       _isLoadingChildren = false;
       if (_expanded && widget.folder.children.isEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) unawaited(_loadChildren());
+          if (mounted) {
+            unawaited(_loadChildren(refresh: retainLoadedChildren));
+          }
         });
       }
     }
@@ -108,15 +119,20 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     }
   }
 
-  Future<void> _loadChildren() async {
-    if (_loadedFolder != null ||
+  Future<void> _loadChildren({bool refresh = false}) async {
+    if ((!refresh && _loadedFolder != null) ||
         _isLoadingChildren ||
         widget.folder.children.isNotEmpty) {
       return;
     }
     final requestedCard = widget.folder;
     final requestedPath = widget.folder.path;
-    setState(() => _isLoadingChildren = true);
+    final keepCurrentChildrenVisible = _loadedFolder != null;
+    if (keepCurrentChildrenVisible) {
+      _isLoadingChildren = true;
+    } else {
+      setState(() => _isLoadingChildren = true);
+    }
     final folder = await ref
         .read(libraryFacadeProvider)
         .loadLibraryFolderTree(requestedPath);

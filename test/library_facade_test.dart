@@ -13,6 +13,7 @@ import 'package:doujin_audio/features/library/data/audio_detail_json_codec.dart'
 import 'package:doujin_audio/features/library/domain/audio_detail_store.dart';
 import 'package:doujin_audio/features/library/application/library_scan_coordinator.dart';
 import 'package:doujin_audio/features/library/application/library_scan_data_source.dart';
+import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_scanner_service.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
@@ -1099,7 +1100,8 @@ void main() {
       );
     });
 
-    test('content folder exclusion stores the canonical library child path', () {
+    test('content folder exclusion stores the canonical library child path',
+        () async {
       const libraryRoot =
           'content://com.android.externalstorage.documents/tree/primary%3AASMR';
       const childFolder = '$libraryRoot/document/primary%3AASMR%2FWorkA';
@@ -1120,12 +1122,9 @@ void main() {
         ),
       ], notify: false);
 
-      runtimeGraph.library.setLibraryFolderExcluded(
-        libraryRoot,
-        childFolder,
-        true,
-      );
+      final result = await runtimeGraph.library.removeFolder(childFolder);
 
+      expect(result, LibraryRemovalKind.libraryFolderRecoverable);
       expect(
         runtimeGraph.library.excludedFoldersForLibrary(libraryRoot),
         <String>[syntheticChildFolder],
@@ -1143,6 +1142,209 @@ void main() {
             .single
             .isExcluded,
         isTrue,
+      );
+    });
+
+    group('unified removal routing', () {
+      MusicTrack track({
+        required String path,
+        required String groupKey,
+        bool isSingle = false,
+      }) {
+        return MusicTrack(
+          path: path,
+          displayName: '01',
+          groupKey: groupKey,
+          groupTitle: 'work',
+          groupSubtitle: groupKey,
+          isSingle: isSingle,
+        );
+      }
+
+      test('permanently removes a standalone audio file', () async {
+        final audio = track(
+          path: '/single/01.mp3',
+          groupKey: '__single_files__',
+          isSingle: true,
+        );
+        runtimeGraph.library.addTracks(
+          <MusicTrack>[audio],
+          notify: false,
+          persist: false,
+        );
+
+        final result = await runtimeGraph.library.removeTrack(audio.path);
+
+        expect(result, LibraryRemovalKind.standaloneAudioPermanent);
+        expect(runtimeGraph.library.trackByPath(audio.path), isNull);
+        expect(
+          runtimeGraph.library.excludedTracksForLibrary('/single'),
+          isEmpty,
+        );
+      });
+
+      test('permanently removes a standalone folder source', () async {
+        const folderPath = '/standalone/work';
+        final audio = track(path: '$folderPath/01.mp3', groupKey: folderPath);
+        runtimeGraph.library
+          ..addWatchedFolder(folderPath, notify: false)
+          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+
+        final result = await runtimeGraph.library.removeFolder(folderPath);
+
+        expect(result, LibraryRemovalKind.standaloneFolderPermanent);
+        expect(runtimeGraph.library.watchedFolders, isEmpty);
+        expect(runtimeGraph.library.trackByPath(audio.path), isNull);
+      });
+
+      test('keeps standalone folder audio removed until reimport', () async {
+        const folderPath = '/standalone/work';
+        final audio = track(path: '$folderPath/01.mp3', groupKey: folderPath);
+        runtimeGraph.library
+          ..addWatchedFolder(folderPath, notify: false)
+          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+
+        final result = await runtimeGraph.library.removeTrack(audio.path);
+        await pumpEventQueue();
+
+        expect(result, LibraryRemovalKind.folderAudioPermanent);
+        expect(
+          runtimeGraph.library.excludedTracksForLibrary(folderPath),
+          <String>[path.normalize(audio.path)],
+        );
+        expect(runtimeGraph.library.trackByPath(audio.path), isNull);
+
+        runtimeGraph.library.clearLibraryExclusions(folderPath);
+        await pumpEventQueue();
+        expect(runtimeGraph.library.trackByPath(audio.path), isNotNull);
+      });
+
+      test('permanently removes a library root', () async {
+        const libraryPath = '/library';
+        const folderPath = '$libraryPath/work';
+        final audio = track(path: '$folderPath/01.mp3', groupKey: folderPath);
+        runtimeGraph.library
+          ..addWatchedLibrary(libraryPath, notify: false)
+          ..addWatchedFolder(folderPath, notify: false)
+          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+
+        final result = await runtimeGraph.library.removeFolder(libraryPath);
+
+        expect(result, LibraryRemovalKind.libraryPermanent);
+        expect(runtimeGraph.library.watchedLibraries, isEmpty);
+        expect(runtimeGraph.library.watchedFolders, isEmpty);
+        expect(runtimeGraph.library.trackByPath(audio.path), isNull);
+      });
+
+      test('excludes and restores a library child folder', () async {
+        const libraryPath = '/library';
+        const folderPath = '$libraryPath/work';
+        final audio = track(path: '$folderPath/01.mp3', groupKey: folderPath);
+        runtimeGraph.library
+          ..addWatchedLibrary(libraryPath, notify: false)
+          ..addWatchedFolder(folderPath, notify: false)
+          ..recordLibraryEntriesForTracks(
+            libraryPath,
+            <MusicTrack>[audio],
+            folderPaths: const <String>[folderPath],
+            persist: false,
+          )
+          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+
+        final result = await runtimeGraph.library.removeFolder(folderPath);
+        await pumpEventQueue();
+
+        expect(result, LibraryRemovalKind.libraryFolderRecoverable);
+        expect(
+          runtimeGraph.library.excludedFoldersForLibrary(libraryPath),
+          <String>[path.normalize(folderPath)],
+        );
+        expect(runtimeGraph.library.trackByPath(audio.path), isNull);
+
+        runtimeGraph.library.setLibraryFolderExcluded(
+          libraryPath,
+          folderPath,
+          false,
+        );
+        await pumpEventQueue();
+        expect(runtimeGraph.library.trackByPath(audio.path), isNotNull);
+      });
+
+      test('excludes and restores a library audio item', () async {
+        const libraryPath = '/library';
+        const folderPath = '$libraryPath/work';
+        final audio = track(path: '$folderPath/01.mp3', groupKey: folderPath);
+        runtimeGraph.library
+          ..addWatchedLibrary(libraryPath, notify: false)
+          ..recordLibraryEntriesForTracks(
+            libraryPath,
+            <MusicTrack>[audio],
+            folderPaths: const <String>[folderPath],
+            persist: false,
+          )
+          ..addTracks(<MusicTrack>[audio], notify: false, persist: false);
+
+        final result = await runtimeGraph.library.removeTrack(audio.path);
+        await pumpEventQueue();
+
+        expect(result, LibraryRemovalKind.libraryAudioRecoverable);
+        expect(
+          runtimeGraph.library.excludedTracksForLibrary(libraryPath),
+          <String>[path.normalize(audio.path)],
+        );
+        expect(runtimeGraph.library.trackByPath(audio.path), isNull);
+
+        runtimeGraph.library.setLibraryTrackExcluded(
+          libraryPath,
+          audio.path,
+          false,
+        );
+        await pumpEventQueue();
+        expect(runtimeGraph.library.trackByPath(audio.path), isNotNull);
+      });
+    });
+
+    test('legacy removed folders migrate to recoverable exclusions', () async {
+      const libraryPath = '/legacy-library';
+      const folderPath = '$libraryPath/work';
+      addTearDown(() async {
+        await AppPreferences.remove('removed_library_folders_v1');
+        await AppPreferences.remove('library_exclusions_v1');
+        await AppPreferences.remove('watched_libraries_v1');
+      });
+      await AppPreferences.setString(
+        'watched_libraries_v1',
+        json.encode(<String>[libraryPath]),
+      );
+      await AppPreferences.setString(
+        'removed_library_folders_v1',
+        json.encode(<String, List<String>>{
+          libraryPath: <String>[folderPath],
+        }),
+      );
+
+      await runtimeGraph.library.loadPersistedState();
+
+      expect(
+        runtimeGraph.library.excludedFoldersForLibrary(libraryPath),
+        <String>[path.normalize(folderPath)],
+      );
+      expect(
+        await AppPreferences.getString('removed_library_folders_v1'),
+        isNull,
+      );
+      final exclusions =
+          json.decode(
+                (await AppPreferences.getString('library_exclusions_v1'))!,
+              )
+              as Map<String, dynamic>;
+      expect(
+        ((exclusions['folders'] as Map<String, dynamic>)[path.normalize(
+                  libraryPath,
+                )]
+                as List)
+            .cast<String>(),
+        <String>[path.normalize(folderPath)],
       );
     });
 
@@ -1174,7 +1376,7 @@ void main() {
       );
       await repository.upsertTracks(<MusicTrack>[track]);
 
-      final removal = runtimeGraph.library.removeTrackFromLibrary(track.path);
+      final removal = runtimeGraph.library.removeTrack(track.path);
       var completed = false;
       unawaited(removal.then((_) => completed = true));
       await repository.trackDeletionStarted;
@@ -1230,7 +1432,7 @@ void main() {
         AudioDetail.empty(detailTarget),
       );
 
-      final removal = runtimeGraph.library.removeFolderFromLibrary(folderPath);
+      final removal = runtimeGraph.library.removeFolder(folderPath);
       var completed = false;
       unawaited(removal.then((_) => completed = true));
       await repository.trackDeletionStarted;
@@ -1297,7 +1499,7 @@ void main() {
       await runtimeGraph.library.saveAudioDetail(AudioDetail.empty(rootDetail));
       await runtimeGraph.library.saveAudioDetail(AudioDetail.empty(workDetail));
 
-      final removal = runtimeGraph.library.removeLibrary(libraryPath);
+      final removal = runtimeGraph.library.removeFolder(libraryPath);
       var completed = false;
       unawaited(removal.then((_) => completed = true));
       await repository.trackDeletionStarted;

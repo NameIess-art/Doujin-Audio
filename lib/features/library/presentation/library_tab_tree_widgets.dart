@@ -151,18 +151,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     BuildContext context,
     LibraryFacade library,
   ) async {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    await library.removeFolderFromLibrary(widget.folder.path);
-    if (context.mounted) {
-      showAppSnackBar(
-        context,
-        i18n.tr('folder_removed'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.delete_outline_rounded,
-      );
+    final result = await library.removeFolder(widget.folder.path);
+    if (context.mounted && result != null) {
+      _showLibraryRemovalFeedback(context, result);
     }
   }
 
@@ -415,31 +406,9 @@ class _TrackNodeWidget extends ConsumerWidget {
     LibraryFacade library,
     MusicTrack track,
   ) async {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final parentLibraryPath = library.libraryRootForPath(track.path);
-    if (parentLibraryPath != null) {
-      library.excludeLibraryTrack(parentLibraryPath, track.path);
-      if (context.mounted) {
-        showAppSnackBar(
-          context,
-          i18n.tr(track.isSingle ? 'audio_excluded' : 'folder_audio_removed'),
-          tone: AppFeedbackTone.warning,
-          icon: Icons.block_rounded,
-        );
-      }
-    } else {
-      await library.removeTrackFromLibrary(track.path);
-      if (context.mounted) {
-        showAppSnackBar(
-          context,
-          i18n.tr(track.isSingle ? 'audio_removed' : 'folder_audio_removed'),
-          tone: AppFeedbackTone.destructive,
-          icon: Icons.delete_outline_rounded,
-        );
-      }
+    final result = await library.removeTrack(track.path);
+    if (context.mounted && result != null) {
+      _showLibraryRemovalFeedback(context, result);
     }
   }
 

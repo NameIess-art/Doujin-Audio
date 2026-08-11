@@ -681,49 +681,12 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   final IconData secondaryIcon;
   final String secondaryText;
 
-  String? _findParentLibraryPath(LibraryFacade library) {
-    return library.libraryRootForPath(entry.path);
-  }
-
   Future<void> _remove(BuildContext context, LibraryFacade library) async {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final libraryPath = _findParentLibraryPath(library);
-    if (entry.isFolder) {
-      await library.removeFolderFromLibrary(entry.path);
-      if (context.mounted) {
-        showAppSnackBar(
-          context,
-          i18n.tr('folder_removed'),
-          tone: AppFeedbackTone.destructive,
-          icon: Icons.delete_outline_rounded,
-        );
-      }
-      return;
-    }
-
-    if (libraryPath != null) {
-      library.excludeLibraryTrack(libraryPath, entry.path);
-      if (context.mounted) {
-        showAppSnackBar(
-          context,
-          i18n.tr('audio_excluded'),
-          tone: AppFeedbackTone.warning,
-          icon: Icons.block_rounded,
-        );
-      }
-    } else {
-      await library.removeTrackFromLibrary(entry.path);
-      if (context.mounted) {
-        showAppSnackBar(
-          context,
-          i18n.tr('audio_removed'),
-          tone: AppFeedbackTone.destructive,
-          icon: Icons.delete_outline_rounded,
-        );
-      }
+    final result = entry.isFolder
+        ? await library.removeFolder(entry.path)
+        : await library.removeTrack(entry.path);
+    if (context.mounted && result != null) {
+      _showLibraryRemovalFeedback(context, result);
     }
   }
 

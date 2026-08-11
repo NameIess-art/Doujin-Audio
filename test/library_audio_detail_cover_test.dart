@@ -540,7 +540,7 @@ void main() {
                 as Map<String, dynamic>;
         expect(backup['cardCoverRelativePath'], 'cover.jpg');
         expect(backup['cardCoverEmbedded'], isNull);
-        await runtimeGraph.library.removeFolderFromLibrary(workDir.path);
+        await runtimeGraph.library.removeFolder(workDir.path);
         expect(await db.query('audio_details'), isEmpty);
 
         await db.delete(

@@ -14,6 +14,7 @@ import 'package:doujin_audio/core/widgets/swipe_reveal_card.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -564,6 +565,98 @@ void main() {
     },
   );
 
+  testWidgets(
+    'excluding a library audio keeps the folder expanded while refreshing',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      const libraryPath = '/library/recoverable-audio';
+      final removedTrack = testMusicTrack(
+        name: 'Exclude this track',
+        path: '$libraryPath/exclude.mp3',
+        groupKey: libraryPath,
+        groupTitle: 'Recoverable audio',
+      );
+      final retainedTrack = testMusicTrack(
+        name: 'Retain this track',
+        path: '$libraryPath/retain.mp3',
+        groupKey: libraryPath,
+        groupTitle: 'Recoverable audio',
+      );
+      runtimeGraph.library
+        ..addWatchedLibrary(libraryPath, notify: false)
+        ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+          removedTrack,
+          retainedTrack,
+        ], persist: false)
+        ..addTracks(
+          <MusicTrack>[removedTrack, retainedTrack],
+          notify: false,
+          persist: false,
+        );
+      fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      await tester.pumpWidget(fixture.build(const LibraryTab()));
+      await tester.pump();
+      await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+      await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+      await tester.pump(const Duration(milliseconds: 350));
+
+      final folderTile = find.byType(ExpansionTile).first;
+      await tester.ensureVisible(folderTile);
+      await tester.tap(folderTile);
+      final removedTrackFinder = find.text(
+        'Exclude this track',
+        findRichText: true,
+      );
+      final retainedTrackFinder = find.text(
+        'Retain this track',
+        findRichText: true,
+      );
+      await pumpUntilFound(tester, removedTrackFinder);
+      final trackCard = find.ancestor(
+        of: removedTrackFinder,
+        matching: find.byType(SwipeRevealCard),
+      );
+      tester.widget<SwipeRevealCard>(trackCard.first).onRemove();
+
+      var removalCompleted = false;
+      for (var i = 0; i < 200; i++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(
+          retainedTrackFinder,
+          findsOneWidget,
+          reason: 'Recoverable exclusion should not blank the open folder',
+        );
+        if (removedTrackFinder.evaluate().isEmpty) {
+          removalCompleted = true;
+          break;
+        }
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
+      }
+
+      expect(removalCompleted, isTrue);
+      await pumpUntilFound(
+        tester,
+        find.text(fixture.languageProvider.tr('audio_excluded')),
+      );
+      expect(
+        runtimeGraph.library.excludedTracksForLibrary(libraryPath),
+        <String>[PathMatcher.normalize(removedTrack.path)],
+      );
+      expect(
+        tester
+            .widget<ExpansionTile>(find.byType(ExpansionTile).first)
+            .controller!
+            .isExpanded,
+        isTrue,
+      );
+    },
+  );
+
   testWidgets('switching library categories collapses the element selector', (
     WidgetTester tester,
   ) async {
@@ -690,6 +783,80 @@ void main() {
     expect(find.text('收起'), findsNothing);
     expect(find.text(tagsLabel), findsOneWidget);
     expect(find.text(voiceActorsLabel), findsOneWidget);
+  });
+
+  testWidgets('category removal uses recoverable library audio semantics', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    const libraryPath = '/library/category-removal';
+    const trackPath = '$libraryPath/tagged.mp3';
+    final taggedTrack = testMusicTrack(
+      name: 'Tagged library audio',
+      path: trackPath,
+      groupKey: libraryPath,
+      groupTitle: 'Tagged library audio',
+      isSingle: true,
+    );
+    runtimeGraph.library
+      ..addWatchedLibrary(libraryPath, notify: false)
+      ..recordLibraryEntriesForTracks(libraryPath, <MusicTrack>[
+        taggedTrack,
+      ], persist: false)
+      ..addTracks(<MusicTrack>[taggedTrack], notify: false, persist: false);
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+    await tester.runAsync(
+      () => runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(
+          AudioDetailTarget.singleAudioFile(trackPath),
+        ).copyWith(tags: const <String>['removable']),
+      ),
+    );
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_search_button')),
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('library_search_results_all')),
+    );
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'app_search_category_AudioLibraryCategoryType.tags',
+        ),
+      ),
+    );
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('library_category_tags')),
+    );
+    final entryCard = find.byKey(const ValueKey<String>('category_$trackPath'));
+    await pumpUntilFound(tester, entryCard);
+    await tester.ensureVisible(entryCard);
+    final swipeCard = find.descendant(
+      of: entryCard,
+      matching: find.byType(SwipeRevealCard),
+    );
+    tester.widget<SwipeRevealCard>(swipeCard).onRemove();
+
+    await pumpUntilFound(
+      tester,
+      find.text(fixture.languageProvider.tr('audio_excluded')),
+    );
+    await pumpUntilNotFound(
+      tester,
+      find.text('Tagged library audio', findRichText: true),
+    );
+    expect(runtimeGraph.library.excludedTracksForLibrary(libraryPath), <String>[
+      PathMatcher.normalize(trackPath),
+    ]);
   });
 
   testWidgets('library search filters asynchronously and clears to content', (

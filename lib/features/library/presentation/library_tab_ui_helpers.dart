@@ -1,5 +1,48 @@
 part of 'library_tab.dart';
 
+void _showLibraryRemovalFeedback(
+  BuildContext context,
+  LibraryRemovalKind kind,
+) {
+  final i18n = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appLanguageProviderInstanceProvider);
+  final (messageKey, tone, icon) = switch (kind) {
+    LibraryRemovalKind.standaloneAudioPermanent => (
+      'audio_removed',
+      AppFeedbackTone.destructive,
+      Icons.delete_outline_rounded,
+    ),
+    LibraryRemovalKind.standaloneFolderPermanent => (
+      'folder_removed',
+      AppFeedbackTone.destructive,
+      Icons.delete_outline_rounded,
+    ),
+    LibraryRemovalKind.folderAudioPermanent => (
+      'folder_audio_removed',
+      AppFeedbackTone.destructive,
+      Icons.delete_outline_rounded,
+    ),
+    LibraryRemovalKind.libraryPermanent => (
+      'library_removed',
+      AppFeedbackTone.destructive,
+      Icons.delete_outline_rounded,
+    ),
+    LibraryRemovalKind.libraryFolderRecoverable => (
+      'folder_excluded',
+      AppFeedbackTone.warning,
+      Icons.block_rounded,
+    ),
+    LibraryRemovalKind.libraryAudioRecoverable => (
+      'audio_excluded',
+      AppFeedbackTone.warning,
+      Icons.block_rounded,
+    ),
+  };
+  showAppSnackBar(context, i18n.tr(messageKey), tone: tone, icon: icon);
+}
+
 extension _LibraryTabUiHelpers on _LibraryTabState {
   Widget _buildScanProgressCard(
     AppLanguageProvider i18n,

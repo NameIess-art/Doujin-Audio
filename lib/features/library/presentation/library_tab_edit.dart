@@ -211,15 +211,12 @@ Future<bool> _confirmRemoveWatchedLibrary(
     icon: Icons.library_music_rounded,
   );
   if (!confirmed || !context.mounted) return false;
-  await ref.read(libraryFacadeProvider).removeLibrary(libraryPath);
-  if (!context.mounted) return true;
-  showAppSnackBar(
-    context,
-    i18n.tr('library_removed'),
-    tone: AppFeedbackTone.destructive,
-    icon: Icons.delete_outline_rounded,
-  );
-  return true;
+  final result = await ref
+      .read(libraryFacadeProvider)
+      .removeFolder(libraryPath);
+  if (!context.mounted || result == null) return result != null;
+  _showLibraryRemovalFeedback(context, result);
+  return result == LibraryRemovalKind.libraryPermanent;
 }
 
 class LibraryEditPage extends ConsumerStatefulWidget {

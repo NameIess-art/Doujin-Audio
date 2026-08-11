@@ -116,12 +116,19 @@ void main() {
     expect(notifier.state.isGlobalEnabled('session'), isFalse);
 
     notifier.toggleShowSubtitles('other');
-    notifier.turnOffAllSubtitles();
-    expect(notifier.state.showSubtitlesMap, isEmpty);
+    notifier.setGlobalEnabled('global', true);
+    notifier.turnOffAllSubtitles(const <String>['active']);
+    expect(notifier.state.isShowEnabled('active'), isFalse);
+    expect(notifier.state.isShowEnabled('other'), isFalse);
+    expect(notifier.state.isShowEnabled('global'), isFalse);
+    expect(notifier.state.globalSubtitlesMap, isEmpty);
 
     await Future<void>.delayed(const Duration(milliseconds: 10));
     final prefs = await SharedPreferences.getInstance();
-    expect(prefs.getStringList('subtitle_show_map'), isEmpty);
+    expect(
+      prefs.getStringList('subtitle_show_map'),
+      containsAll(<String>['active|false', 'other|false', 'global|false']),
+    );
     expect(prefs.getStringList('subtitle_global_map'), isEmpty);
     expect(prefs.getStringList('subtitle_positions'), contains('session|96.5'));
   });

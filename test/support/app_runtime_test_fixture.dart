@@ -214,11 +214,12 @@ Widget buildAppRuntimeTestApp({
   required AppLanguageProvider languageProvider,
   PlaybackSubtitleService? subtitleService,
   UiOperationService? uiOperationService,
+  ThemeProvider? themeProvider,
   List<NavigatorObserver> navigatorObservers = const <NavigatorObserver>[],
   List<Override> overrides = const <Override>[],
   required Widget child,
 }) {
-  final themeProvider = ThemeProvider();
+  final resolvedThemeProvider = themeProvider ?? ThemeProvider();
   return ProviderScope(
     overrides: [
       ...createAppRuntimeOverrides(
@@ -236,7 +237,7 @@ Widget buildAppRuntimeTestApp({
         uiOperationService: uiOperationService,
       ),
       appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
-      themeProviderInstanceProvider.overrideWithValue(themeProvider),
+      themeProviderInstanceProvider.overrideWithValue(resolvedThemeProvider),
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
       ...overrides,
     ],
@@ -259,12 +260,14 @@ final class AppRuntimeWidgetTestFixture {
     CoverArtworkCacheService? coverArtworkCacheService,
     DlsiteMetadataService? dlsiteMetadataService,
     AsmrMetadataService? asmrMetadataService,
+    NativePlaybackRepository? providedNativePlaybackRepository,
     SettingsRepository? providedSettingsRepository,
     void Function(SettingsRepository settingsRepository)?
     configureSettingsRepository,
   }) : notificationService = PlaybackNotificationService(),
        persistenceRepository = TestPersistenceRepository(),
-       nativePlaybackRepository = NativePlaybackRepository(),
+       nativePlaybackRepository =
+           providedNativePlaybackRepository ?? NativePlaybackRepository(),
        libraryService = LibraryService(),
        playbackService = PlaybackSessionService(),
        timerService = TimerService(),
@@ -331,6 +334,7 @@ final class AppRuntimeWidgetTestFixture {
   Widget build(
     Widget child, {
     PlaybackSubtitleService? subtitleService,
+    ThemeProvider? themeProvider,
     List<NavigatorObserver> navigatorObservers = const <NavigatorObserver>[],
     List<Override> overrides = const <Override>[],
   }) => buildAppRuntimeTestApp(
@@ -346,6 +350,7 @@ final class AppRuntimeWidgetTestFixture {
     uiOperationService: uiOperationService,
     languageProvider: languageProvider,
     subtitleService: subtitleService,
+    themeProvider: themeProvider,
     navigatorObservers: navigatorObservers,
     overrides: overrides,
     child: child,

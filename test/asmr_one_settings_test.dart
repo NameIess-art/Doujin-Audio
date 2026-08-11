@@ -27,6 +27,7 @@ part 'asmr_remote_catalog_tests.part.dart';
 void main() {
   late Database db;
   late AsmrPreferencesStore preferences;
+  late TestPersistenceRepository persistenceRepository;
 
   Future<void> resetPrefs([Map<String, Object> values = const {}]) async {
     FlutterSecureStorage.setMockInitialValues(<String, String>{});
@@ -42,9 +43,8 @@ void main() {
     await AppDatabase.createSchemaForTest(db);
     final appDatabase = AppDatabase.test(db);
     AppDatabase.setInstanceForTest(appDatabase);
-    preferences = AsmrPreferencesStore(
-      repository: TestPersistenceRepository(database: appDatabase),
-    );
+    persistenceRepository = TestPersistenceRepository(database: appDatabase);
+    preferences = AsmrPreferencesStore(repository: persistenceRepository);
   });
 
   tearDownAll(() async {
@@ -55,6 +55,7 @@ void main() {
   registerAsmrControllerStateTests(
     resetPrefs: resetPrefs,
     preferencesStore: () => preferences,
+    persistenceRepository: () => persistenceRepository,
   );
   registerAsmrRemoteCatalogTests(
     resetPrefs: resetPrefs,
@@ -69,7 +70,10 @@ void main() {
     final overrides = _CountingHttpOverrides();
     HttpOverrides.global = overrides;
     try {
-      final controller = AsmrLibraryController(preferencesStore: preferences);
+      final controller = AsmrLibraryController(
+        preferencesStore: preferences,
+        persistenceRepository: persistenceRepository,
+      );
       expect(overrides.createdClients, 1);
       controller.dispose();
     } finally {
@@ -82,6 +86,7 @@ void main() {
     final controller = AsmrLibraryController(
       apiService: apiService,
       preferencesStore: preferences,
+      persistenceRepository: persistenceRepository,
     );
 
     controller.dispose();
@@ -91,6 +96,16 @@ void main() {
     apiService.close();
     expect(apiService.isClosed, isTrue);
   });
+
+  test(
+    'controller requires persistence when remote catalog is not injected',
+    () {
+      expect(
+        () => AsmrLibraryController(preferencesStore: preferences),
+        throwsArgumentError,
+      );
+    },
+  );
 }
 
 final class _CountingHttpOverrides extends HttpOverrides {

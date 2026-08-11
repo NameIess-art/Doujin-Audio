@@ -60,6 +60,9 @@ void main() {
         preferencesStore: AsmrPreferencesStore(
           repository: SqliteAsmrRepository(database: AppDatabase.instance),
         ),
+        persistenceRepository: SqliteAsmrRepository(
+          database: AppDatabase.instance,
+        ),
       );
 
       for (final extension in <String>['.vtt', '.srt', '.ass', '.ssa']) {
@@ -146,6 +149,9 @@ void main() {
     final controller = AsmrLibraryController(
       preferencesStore: AsmrPreferencesStore(
         repository: SqliteAsmrRepository(database: AppDatabase.instance),
+      ),
+      persistenceRepository: SqliteAsmrRepository(
+        database: AppDatabase.instance,
       ),
     );
 

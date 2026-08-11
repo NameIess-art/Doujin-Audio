@@ -122,6 +122,23 @@ void main() {
     expect(violations, isEmpty, reason: violations.join('\n'));
   });
 
+  test('feature application code does not import infrastructure', () {
+    final violations = <String>[];
+    for (final file in _dartFiles(libDirectory)) {
+      final path = _normalizedPath(file);
+      if (!path.contains('/features/') || !path.contains('/application/')) {
+        continue;
+      }
+      for (final import in _imports(file.readAsStringSync())) {
+        if (import.contains('infrastructure/')) {
+          violations.add('$path imports $import');
+        }
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
   test('production code does not silently swallow exceptions', () {
     final violations = <String>[];
     final emptyCatch = RegExp(r'catch\s*\([^)]*\)\s*\{\s*\}', multiLine: true);

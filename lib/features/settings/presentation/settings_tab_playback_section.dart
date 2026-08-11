@@ -109,9 +109,15 @@ List<Widget> _buildSettingsPlaybackSection({
                   return;
                 }
                 if (!value) {
+                  final activeSessions =
+                      ref.read(playbackStateProvider).value?.activeSessions ??
+                      ref.read(playbackFacadeProvider).activeSessions;
+                  final activeSessionIds = activeSessions.map(
+                    (session) => session.id,
+                  );
                   ref
                       .read(subtitleSettingsProvider.notifier)
-                      .turnOffAllSubtitles();
+                      .turnOffAllSubtitles(activeSessionIds);
                 }
               },
               title: _settingsTitle(i18n.tr('multi_thread_playback')),

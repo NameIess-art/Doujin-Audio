@@ -351,6 +351,39 @@ void main() {
       expect(service.treeSnapshotRevision, -1);
     },
   );
+
+  test('card snapshot propagates one failure and can retry', () async {
+    final library = LibraryService()
+      ..watchedFolders.add('/library')
+      ..markStructureChanged();
+    var buildCount = 0;
+    var commitCount = 0;
+    final service = LibrarySnapshotCacheService(
+      libraryService: library,
+      detailCacheService: AudioDetailCacheService(
+        repository: _FakeAudioDetailRepository(),
+      ),
+      cardSnapshotBuilder: (_) async {
+        buildCount++;
+        if (buildCount == 1) throw StateError('card build failed');
+        return LibraryTreeSnapshot(
+          tree: const <LibraryNode>[],
+          leafFolderCount: 0,
+        );
+      },
+    );
+
+    await expectLater(
+      service.cardSnapshot(onCommitted: () => commitCount++),
+      throwsStateError,
+    );
+    expect(commitCount, 0);
+
+    await service.cardSnapshot(onCommitted: () => commitCount++);
+
+    expect(buildCount, 2);
+    expect(commitCount, 1);
+  });
 }
 
 MusicTrack _track({required String path, required String groupKey}) {

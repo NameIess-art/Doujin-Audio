@@ -49,7 +49,15 @@ List<Widget> _buildSettingsAppearanceSection({
                 value: themeMode,
                 onChanged: (value) {
                   if (value != null) {
-                    ref.read(themeProviderInstanceProvider).setThemeMode(value);
+                    unawaited(
+                      _applyThemeChange(
+                        context: context,
+                        i18n: i18n,
+                        change: () => ref
+                            .read(themeProviderInstanceProvider)
+                            .setThemeMode(value),
+                      ),
+                    );
                   }
                 },
                 items: ThemeMode.values
@@ -68,7 +76,15 @@ List<Widget> _buildSettingsAppearanceSection({
         SwitchListTile(
           title: _settingsTitle(i18n.tr('differentiate_asmr_theme')),
           value: themeState.differentiateAsmrTheme,
-          onChanged: themeProvider.setDifferentiateAsmrTheme,
+          onChanged: (value) {
+            unawaited(
+              _applyThemeChange(
+                context: context,
+                i18n: i18n,
+                change: () => themeProvider.setDifferentiateAsmrTheme(value),
+              ),
+            );
+          },
           secondary: _settingsIcon(Icons.palette_rounded, cs.onSurface),
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         ),
@@ -355,7 +371,7 @@ void _showThemeColorPicker({
   required AppLanguageProvider i18n,
   required String title,
   required ThemeAccentPreset selected,
-  required Future<void> Function(ThemeAccentPreset value) onSelected,
+  required Future<bool> Function(ThemeAccentPreset value) onSelected,
 }) {
   showAppDialog<void>(
     context: context,
@@ -365,10 +381,31 @@ void _showThemeColorPicker({
       selected: selected,
       i18n: i18n,
       onSelected: (value) {
-        onSelected(value);
         Navigator.of(dialogContext).pop();
+        unawaited(
+          _applyThemeChange(
+            context: context,
+            i18n: i18n,
+            change: () => onSelected(value),
+          ),
+        );
       },
     ),
+  );
+}
+
+Future<void> _applyThemeChange({
+  required BuildContext context,
+  required AppLanguageProvider i18n,
+  required Future<bool> Function() change,
+}) async {
+  final updated = await change();
+  if (updated || !context.mounted) return;
+  showAppSnackBar(
+    context,
+    i18n.tr('operation_failed_retry'),
+    tone: AppFeedbackTone.destructive,
+    icon: Icons.error_outline_rounded,
   );
 }
 

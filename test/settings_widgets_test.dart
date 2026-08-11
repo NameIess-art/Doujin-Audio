@@ -3,13 +3,16 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:doujin_audio/core/app_language.dart';
+import 'package:doujin_audio/core/errors/native_result.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/widgets/mobile_overlay_inset.dart';
 import 'package:doujin_audio/core/widgets/subtitle_window_visual.dart';
 import 'package:doujin_audio/app/state/subtitle_settings_provider.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
+import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/settings/presentation/settings_tab.dart';
 import 'package:doujin_audio/features/settings/presentation/about_page.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
@@ -1231,6 +1234,85 @@ void main() {
     expect(themeProvider.asmrThemeColor, ThemeAccentPreset.orange);
   });
 
+  testWidgets('appearance reports a failed theme preference write', (
+    tester,
+  ) async {
+    await AppPreferences.init();
+    final harness = AppRuntimeWidgetTestFixture();
+    final themeProvider = ThemeProvider(
+      preferenceWriter: (_, _) async => false,
+    );
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(
+      harness.build(const SettingsTab(), themeProvider: themeProvider),
+    );
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('app_theme_color_tile')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('theme_color_mint')));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey('theme_color_dialog')), findsNothing);
+    expect(themeProvider.appThemeColor, ThemeAccentPreset.rose);
+    expect(find.text(i18n.tr('operation_failed_retry')), findsOneWidget);
+  });
+
+  testWidgets('disabling multi-thread playback closes facade sessions', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture(
+      providedNativePlaybackRepository: _SuccessfulPauseAllRepository(),
+    );
+    addTearDown(harness.dispose);
+    await harness.settingsRepository.setMultiThreadPlaybackEnabled(true);
+    harness.settingsRepository.syncSlice(isInitialized: true);
+    final session = PlaybackSession(
+      id: 'active-session',
+      currentTrackPath: '/audio/track.mp3',
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    );
+    addTearDown(session.dispose);
+    harness.playbackService.sessions[session.id] = session;
+    harness.playbackService.markActiveSessionsDirty();
+
+    await tester.pumpWidget(
+      harness.build(
+        const SettingsTab(),
+        overrides: [
+          playbackStateProvider.overrideWith(
+            (ref) => const Stream<PlaybackStateSliceData>.empty(),
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(SettingsTab)),
+      listen: false,
+    );
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_playback')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.widgetWithText(SwitchListTile, i18n.tr('multi_thread_playback')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      container.read(subtitleSettingsProvider).isShowEnabled('active-session'),
+      isFalse,
+    );
+  });
+
   testWidgets('update tile reflects checking and download progress', (
     tester,
   ) async {
@@ -1290,6 +1372,16 @@ void main() {
     await download;
     await tester.pump();
   });
+}
+
+final class _SuccessfulPauseAllRepository extends NativePlaybackRepository {
+  @override
+  Future<NativeResult<void>> pauseAll() async {
+    return const NativeSuccess<void>();
+  }
+
+  @override
+  Future<void> dispose() async {}
 }
 
 void _expectIconCentersAligned(WidgetTester tester, List<IconData> icons) {

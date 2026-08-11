@@ -106,7 +106,7 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
       );
       if (!isCurrent()) return;
       _notifications.syncPlaybackState(immediateUnifiedSync: true);
-      await _completeLoad();
+      await _completeLoad(isCurrent);
     } catch (error, stackTrace) {
       if (isCurrent()) _needsResetBeforeLoad = true;
       AppLogService.error(
@@ -118,7 +118,8 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     }
   }
 
-  Future<void> _completeLoad() async {
+  Future<void> _completeLoad(bool Function() isCurrent) async {
+    if (!isCurrent()) return;
     if (_reloading) {
       _uiWarmup.resumeForeground();
       _library.coverArtworkCacheService.invalidateAll();
@@ -129,6 +130,7 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
     }
     _keepAlive.sync();
     await _library.ensureCardSnapshot();
+    if (!isCurrent()) return;
     _syncSlices(isInitialized: true);
     _library.schedulePostStartupMaintenance();
   }

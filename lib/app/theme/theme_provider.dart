@@ -91,6 +91,8 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
   }
 }
 
+typedef ThemePreferenceWriter = Future<bool> Function(String key, Object value);
+
 class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   static const _themeModeKey = 'themeMode';
   static const _differentiateAsmrThemeKey = 'differentiateAsmrTheme';
@@ -101,6 +103,14 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   bool _differentiateAsmrTheme = true;
   ThemeAccentPreset _appThemeColor = ThemeAccentPreset.rose;
   ThemeAccentPreset _asmrThemeColor = ThemeAccentPreset.blue;
+  late ThemeMode _persistedThemeMode;
+  late bool _persistedDifferentiateAsmrTheme;
+  late ThemeAccentPreset _persistedAppThemeColor;
+  late ThemeAccentPreset _persistedAsmrThemeColor;
+  int _themeModeMutation = 0;
+  int _differentiateAsmrThemeMutation = 0;
+  int _appThemeColorMutation = 0;
+  int _asmrThemeColorMutation = 0;
   late ThemeData _lightTheme;
   late ThemeData _darkTheme;
 
@@ -111,15 +121,39 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   ThemeData get lightTheme => _lightTheme;
   ThemeData get darkTheme => _darkTheme;
 
-  ThemeProvider({AppIconPlatformService? appIconPlatformService})
-    : _appIconPlatformService =
-          appIconPlatformService ?? AppIconPlatformService() {
+  ThemeProvider({
+    AppIconPlatformService? appIconPlatformService,
+    ThemePreferenceWriter? preferenceWriter,
+  }) : _appIconPlatformService =
+           appIconPlatformService ?? AppIconPlatformService(),
+       _preferenceWriter = preferenceWriter ?? _writePreference {
     _loadThemeSync();
     _rebuildThemes();
     unawaited(_syncAppIconTheme());
   }
 
   final AppIconPlatformService _appIconPlatformService;
+  final ThemePreferenceWriter _preferenceWriter;
+  Future<void> _preferenceWriteTail = Future<void>.value();
+
+  static Future<bool> _writePreference(String key, Object value) {
+    return switch (value) {
+      String stringValue => AppPreferences.setString(key, stringValue),
+      bool boolValue => AppPreferences.setBool(key, boolValue),
+      _ => Future<bool>.value(false),
+    };
+  }
+
+  Future<bool> _writePreferenceInOrder(String key, Object value) {
+    final write = _preferenceWriteTail.then(
+      (_) => _preferenceWriter(key, value),
+    );
+    _preferenceWriteTail = write.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    return write;
+  }
 
   static ThemeMode readThemeModeSync() {
     final storedMode = AppPreferences.getStringSync(_themeModeKey);
@@ -146,6 +180,10 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
       AppPreferences.getStringSync(_asmrThemeColorKey),
       ThemeAccentPreset.blue,
     );
+    _persistedThemeMode = _themeMode;
+    _persistedDifferentiateAsmrTheme = _differentiateAsmrTheme;
+    _persistedAppThemeColor = _appThemeColor;
+    _persistedAsmrThemeColor = _asmrThemeColor;
   }
 
   ThemeAccentPreset _readThemeColor(
@@ -158,13 +196,23 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     );
   }
 
-  Future<void> setThemeMode(ThemeMode value) async {
-    if (_themeMode == value) return;
+  Future<bool> setThemeMode(ThemeMode value) async {
+    if (_themeMode == value) return true;
+    final mutation = ++_themeModeMutation;
     _themeMode = value;
     notifyListeners();
     final iconSync = _syncAppIconTheme();
-    await AppPreferences.setString(_themeModeKey, value.name);
+    final persisted = await _writePreferenceInOrder(_themeModeKey, value.name);
     await iconSync;
+    if (persisted) {
+      _persistedThemeMode = value;
+      return true;
+    }
+    if (mutation != _themeModeMutation) return false;
+    _themeMode = _persistedThemeMode;
+    notifyListeners();
+    await _syncAppIconTheme();
+    return false;
   }
 
   Future<void> _syncAppIconTheme() {
@@ -174,30 +222,70 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     );
   }
 
-  Future<void> setDifferentiateAsmrTheme(bool value) async {
-    if (_differentiateAsmrTheme == value) return;
+  Future<bool> setDifferentiateAsmrTheme(bool value) async {
+    if (_differentiateAsmrTheme == value) return true;
+    final mutation = ++_differentiateAsmrThemeMutation;
     _differentiateAsmrTheme = value;
     _rebuildThemes();
     notifyListeners();
-    await AppPreferences.setBool(_differentiateAsmrThemeKey, value);
+    final persisted = await _writePreferenceInOrder(
+      _differentiateAsmrThemeKey,
+      value,
+    );
+    if (persisted) {
+      _persistedDifferentiateAsmrTheme = value;
+      return true;
+    }
+    if (mutation != _differentiateAsmrThemeMutation) return false;
+    _differentiateAsmrTheme = _persistedDifferentiateAsmrTheme;
+    _rebuildThemes();
+    notifyListeners();
+    return false;
   }
 
-  Future<void> setAppThemeColor(ThemeAccentPreset value) async {
-    if (_appThemeColor == value) return;
+  Future<bool> setAppThemeColor(ThemeAccentPreset value) async {
+    if (_appThemeColor == value) return true;
+    final mutation = ++_appThemeColorMutation;
     _appThemeColor = value;
     _rebuildThemes();
     notifyListeners();
     final iconSync = _syncAppIconTheme();
-    await AppPreferences.setString(_appThemeColorKey, value.name);
+    final persisted = await _writePreferenceInOrder(
+      _appThemeColorKey,
+      value.name,
+    );
     await iconSync;
+    if (persisted) {
+      _persistedAppThemeColor = value;
+      return true;
+    }
+    if (mutation != _appThemeColorMutation) return false;
+    _appThemeColor = _persistedAppThemeColor;
+    _rebuildThemes();
+    notifyListeners();
+    await _syncAppIconTheme();
+    return false;
   }
 
-  Future<void> setAsmrThemeColor(ThemeAccentPreset value) async {
-    if (_asmrThemeColor == value) return;
+  Future<bool> setAsmrThemeColor(ThemeAccentPreset value) async {
+    if (_asmrThemeColor == value) return true;
+    final mutation = ++_asmrThemeColorMutation;
     _asmrThemeColor = value;
     _rebuildThemes();
     notifyListeners();
-    await AppPreferences.setString(_asmrThemeColorKey, value.name);
+    final persisted = await _writePreferenceInOrder(
+      _asmrThemeColorKey,
+      value.name,
+    );
+    if (persisted) {
+      _persistedAsmrThemeColor = value;
+      return true;
+    }
+    if (mutation != _asmrThemeColorMutation) return false;
+    _asmrThemeColor = _persistedAsmrThemeColor;
+    _rebuildThemes();
+    notifyListeners();
+    return false;
   }
 
   @override

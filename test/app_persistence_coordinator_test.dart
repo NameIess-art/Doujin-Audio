@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/application/app_persistence_coordinator.dart';
 import 'package:doujin_audio/app/application/audio_path_coordinator.dart';
@@ -8,6 +10,11 @@ import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
+import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
+import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
+import 'package:doujin_audio/features/library/domain/library_node.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
@@ -143,6 +150,151 @@ void main() {
     expect(library.state.isInitialized, isTrue);
     expect(playback.state.isInitialized, isTrue);
   });
+
+  test(
+    'dispose invalidates a load blocked on the final card snapshot',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final database = await databaseFactoryFfi.openDatabase(
+        inMemoryDatabasePath,
+      );
+      await AppDatabase.createSchemaForTest(database);
+      final repository = TestPersistenceRepository(
+        database: AppDatabase.test(database),
+      );
+      final libraryService = LibraryService()..watchedFolders.add('/library');
+      final detailCache = AudioDetailCacheService(
+        repository: AudioDetailRepository(databaseRepository: repository),
+      );
+      final buildStarted = Completer<void>();
+      final buildResult = Completer<LibraryTreeSnapshot>();
+      final snapshotService = LibrarySnapshotCacheService(
+        libraryService: libraryService,
+        detailCacheService: detailCache,
+        cardSnapshotBuilder: (_) {
+          buildStarted.complete();
+          return buildResult.future;
+        },
+      );
+      final library = LibraryFacade.create(
+        databaseRepository: repository,
+        detailCacheService: detailCache,
+        service: libraryService,
+        snapshotCacheService: snapshotService,
+      );
+      final native = _FakeNativePlaybackRepository();
+      final playback = PlaybackFacade.create(
+        databaseRepository: repository,
+        nativeRepository: native,
+      )..configurePersistence(enabled: false);
+      final timer = TimerFacade.create();
+      final notifications = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      final settings = SettingsRepository();
+      final paths = AudioPathCoordinator(library: library, playback: playback);
+      late final PlaybackSubtitleService subtitles;
+      subtitles = PlaybackSubtitleService(
+        trackResolver: library.trackByPath,
+        onTrackLoaded: notifications.handleSubtitleTrackLoaded,
+      );
+      final warmup = AudioUiWarmupCoordinator(
+        library: library,
+        playback: playback,
+        notifications: notifications,
+        subtitles: subtitles,
+      );
+      final keepAlive = PlaybackKeepAliveCoordinator(
+        playback: playback,
+        settings: settings,
+        enterBackgroundWarmup: warmup.enterBackground,
+        resumeForegroundWarmup: warmup.resumeForeground,
+      );
+      final commands = PlaybackCommandCoordinator(
+        library: library,
+        playback: playback,
+        timer: timer,
+        notifications: notifications,
+        settings: settings,
+        audioPaths: paths,
+        subtitles: subtitles,
+        keepAlive: keepAlive,
+        notifyPlaybackChanged: () {},
+        syncNotificationState: notifications.syncPlaybackState,
+      );
+      library.configureCoverArtworkRuntime(
+        isActiveCoverKey: notifications.isActiveCoverKey,
+        onActiveCoverChanged: () {},
+      );
+      notifications.attachActions(
+        playback: playback,
+        resolveSession: notifications.resolveNotificationSession,
+        resolveActionSession: () => notifications.notificationActionSession,
+        resumeSession: (session) =>
+            commands.startSession(session, shouldStartTriggerCountdown: false),
+        multiThreadPlaybackEnabled: () => settings.multiThreadPlaybackEnabled,
+        setFocusSessionId: notifications.setFocusedSession,
+        notify: () {},
+        syncKeepAlive: keepAlive.sync,
+        hasPlaybackToKeepAlive: () => false,
+        clearUnifiedNotifications:
+            notifications.clearUnifiedNotificationsOnPlatform,
+        preferredSessionId: () => commands.preferredSingleSessionId,
+        notifyNotificationChanged: () {},
+      );
+      notifications.attachSynchronization(
+        playbackCommands: commands,
+        subtitles: subtitles,
+        trackByPath: library.trackByPath,
+        coverArtworkCacheService: library.coverArtworkCacheService,
+        notificationsEnabled: () => settings.notificationsEnabled,
+      );
+      final coordinator = AppPersistenceCoordinator(
+        library: library,
+        playback: playback,
+        settings: settings,
+        timer: timer,
+        notifications: notifications,
+        playbackCommands: commands,
+        keepAlive: keepAlive,
+        uiWarmup: warmup,
+        subtitles: subtitles,
+      );
+      addTearDown(() async {
+        coordinator.dispose();
+        await warmup.shutdown();
+        await playback.dispose();
+        await library.dispose();
+        await timer.dispose();
+        await notifications.dispose();
+        await settings.dispose();
+        await database.close();
+      });
+
+      final load = coordinator.loadPersistedState();
+      await buildStarted.future.timeout(const Duration(seconds: 5));
+      library.syncPresentationState(isInitialized: false);
+      playback.syncPresentationState(
+        focusedSessionId: notifications.focusedSessionId,
+        multiThreadPlaybackEnabled: settings.multiThreadPlaybackEnabled,
+        coverGeneration: library.coverArtworkCacheService.generation,
+        isInitialized: false,
+      );
+      timer.syncPresentationState(isInitialized: false);
+      settings.syncSlice();
+
+      coordinator.dispose();
+      buildResult.complete(
+        LibraryTreeSnapshot(tree: const <LibraryNode>[], leafFolderCount: 0),
+      );
+      await load;
+
+      expect(library.state.isInitialized, isFalse);
+      expect(playback.state.isInitialized, isFalse);
+      expect(timer.state.isInitialized, isFalse);
+      expect(settings.slice.state.isInitialized, isFalse);
+    },
+  );
 }
 
 final class _FailOnceSettingsRepository extends SettingsRepository {

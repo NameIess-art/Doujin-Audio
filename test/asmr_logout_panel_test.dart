@@ -70,6 +70,9 @@ class _LogoutFailureAsmrLibraryController extends AsmrLibraryController {
         preferencesStore: AsmrPreferencesStore(
           repository: SqliteAsmrRepository(database: AppDatabase.instance),
         ),
+        persistenceRepository: SqliteAsmrRepository(
+          database: AppDatabase.instance,
+        ),
       );
 
   int logoutAttempts = 0;

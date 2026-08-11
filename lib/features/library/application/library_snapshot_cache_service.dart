@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 
 import '../../../core/immutable_collections.dart';
@@ -97,12 +95,31 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
   );
 }
 
+typedef LibraryCardSnapshotBuilder =
+    Future<LibraryTreeSnapshot> Function(LibraryDerivedSnapshotPayload payload);
+
+Future<LibraryTreeSnapshot> _defaultCardSnapshotBuilder(
+  LibraryDerivedSnapshotPayload payload,
+) {
+  return compute(
+    _buildLibraryCardsFromPayload,
+    _LibraryTreeBuildPayload(
+      tracks: payload.tracks,
+      watchedFolders: payload.watchedFolders,
+      watchedLibraries: payload.watchedLibraries,
+    ),
+  );
+}
+
 class LibrarySnapshotCacheService {
   LibrarySnapshotCacheService({
     required LibraryService libraryService,
     required AudioDetailCacheService detailCacheService,
+    LibraryCardSnapshotBuilder? cardSnapshotBuilder,
   }) : _libraryService = libraryService,
-       _detailCacheService = detailCacheService {
+       _detailCacheService = detailCacheService,
+       _cardSnapshotBuilder =
+           cardSnapshotBuilder ?? _defaultCardSnapshotBuilder {
     if (_libraryService.library.isEmpty &&
         _libraryService.watchedFolders.isEmpty) {
       _cachedCardRevision = _libraryService.structureRevision;
@@ -112,6 +129,7 @@ class LibrarySnapshotCacheService {
 
   final LibraryService _libraryService;
   final AudioDetailCacheService _detailCacheService;
+  final LibraryCardSnapshotBuilder _cardSnapshotBuilder;
 
   List<LibraryNode> _cachedCards = const <LibraryNode>[];
   int _cachedCardRevision = -1;
@@ -173,46 +191,41 @@ class LibrarySnapshotCacheService {
       return inFlight;
     }
 
-    final payload = _LibraryTreeBuildPayload(
+    final payload = LibraryDerivedSnapshotPayload(
       tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
       watchedFolders: List<String>.unmodifiable(_libraryService.watchedFolders),
       watchedLibraries: List<String>.unmodifiable(
         _libraryService.watchedLibraries,
       ),
     );
-    final future = AppLogService.measureAsync(
+    final buildFuture = AppLogService.measureAsync(
       'library_card_snapshot_build',
-      () => compute(_buildLibraryCardsFromPayload, payload),
+      () => _cardSnapshotBuilder(payload),
       details: <String, Object?>{'tracks': payload.tracks.length},
     );
-    _cardFuture = future;
     _cardFutureRevision = revision;
     _cardCommitCallbacks
       ..clear()
       ..add(onCommitted);
-    unawaited(
-      future
-          .then((snapshot) {
-            if (_libraryService.structureRevision != revision) return;
+    late final Future<LibraryTreeSnapshot> future;
+    future = buildFuture
+        .then((snapshot) {
+          if (_libraryService.structureRevision == revision) {
             final callbacks = List<VoidCallback>.of(_cardCommitCallbacks);
+            _cacheCardSnapshot(snapshot);
+            for (final callback in callbacks) {
+              callback();
+            }
+          }
+          return snapshot;
+        })
+        .whenComplete(() {
+          if (identical(_cardFuture, future)) {
+            _cardFuture = null;
             _cardCommitCallbacks.clear();
-            void commit() {
-              if (_libraryService.structureRevision != revision) return;
-              _cacheCardSnapshot(snapshot);
-              for (final callback in callbacks) {
-                callback();
-              }
-            }
-
-            commit();
-          })
-          .whenComplete(() {
-            if (identical(_cardFuture, future)) {
-              _cardFuture = null;
-              _cardCommitCallbacks.clear();
-            }
-          }),
-    );
+          }
+        });
+    _cardFuture = future;
     return future;
   }
 
@@ -241,39 +254,34 @@ class LibrarySnapshotCacheService {
         _libraryService.watchedLibraries,
       ),
     );
-    final future = AppLogService.measureAsync(
+    final buildFuture = AppLogService.measureAsync(
       'library_tree_snapshot_build',
       () => compute(_buildLibraryTreeFromPayload, payload),
       details: <String, Object?>{'tracks': payload.tracks.length},
     );
-    _treeFuture = future;
     _treeFutureRevision = revision;
     _treeCommitCallbacks
       ..clear()
       ..add(onCommitted);
-    unawaited(
-      future
-          .then((snapshot) {
-            if (_libraryService.structureRevision != revision) return;
-            void commit() {
-              if (_libraryService.structureRevision != revision) return;
-              _cacheTreeSnapshot(snapshot);
-              final callbacks = List<VoidCallback>.of(_treeCommitCallbacks);
-              _treeCommitCallbacks.clear();
-              for (final callback in callbacks) {
-                callback();
-              }
+    late final Future<LibraryTreeSnapshot> future;
+    future = buildFuture
+        .then((snapshot) {
+          if (_libraryService.structureRevision == revision) {
+            _cacheTreeSnapshot(snapshot);
+            final callbacks = List<VoidCallback>.of(_treeCommitCallbacks);
+            for (final callback in callbacks) {
+              callback();
             }
-
-            commit();
-          })
-          .whenComplete(() {
-            if (identical(_treeFuture, future)) {
-              _treeFuture = null;
-              _treeCommitCallbacks.clear();
-            }
-          }),
-    );
+          }
+          return snapshot;
+        })
+        .whenComplete(() {
+          if (identical(_treeFuture, future)) {
+            _treeFuture = null;
+            _treeCommitCallbacks.clear();
+          }
+        });
+    _treeFuture = future;
     return future;
   }
 
@@ -296,7 +304,7 @@ class LibrarySnapshotCacheService {
       return inFlight;
     }
 
-    final future = AppLogService.measureAsync(
+    final buildFuture = AppLogService.measureAsync(
       'library_category_database_snapshot_build',
       () => _buildCategorySnapshot(
         structureRevision: structureRevision,
@@ -304,36 +312,25 @@ class LibrarySnapshotCacheService {
       ),
       details: <String, Object?>{'tracks': _libraryService.library.length},
     );
-    _categoryFuture = future;
     _categoryFutureStructureRevision = structureRevision;
     _categoryFutureDetailRevision = detailRevision;
-    unawaited(
-      future
-          .then((snapshot) {
-            if (snapshot.structureRevision !=
-                    _libraryService.structureRevision ||
-                snapshot.detailRevision != _detailCacheService.revision) {
-              return;
-            }
-            void commit() {
-              if (snapshot.structureRevision !=
-                      _libraryService.structureRevision ||
-                  snapshot.detailRevision != _detailCacheService.revision) {
-                return;
-              }
-              _categorySnapshot = snapshot;
-              _categorySnapshotRevision++;
-              onCommitted();
-            }
-
-            commit();
-          })
-          .whenComplete(() {
-            if (identical(_categoryFuture, future)) {
-              _categoryFuture = null;
-            }
-          }),
-    );
+    late final Future<AudioLibraryCategorySnapshot> future;
+    future = buildFuture
+        .then((snapshot) {
+          if (snapshot.structureRevision == _libraryService.structureRevision &&
+              snapshot.detailRevision == _detailCacheService.revision) {
+            _categorySnapshot = snapshot;
+            _categorySnapshotRevision++;
+            onCommitted();
+          }
+          return snapshot;
+        })
+        .whenComplete(() {
+          if (identical(_categoryFuture, future)) {
+            _categoryFuture = null;
+          }
+        });
+    _categoryFuture = future;
     return future;
   }
 

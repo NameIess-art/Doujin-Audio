@@ -2200,6 +2200,9 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
          preferencesStore: AsmrPreferencesStore(
            repository: SqliteAsmrRepository(database: AppDatabase.instance),
          ),
+         persistenceRepository: SqliteAsmrRepository(
+           database: AppDatabase.instance,
+         ),
        );
 
   final Completer<void> _recommendationRefresh = Completer<void>();

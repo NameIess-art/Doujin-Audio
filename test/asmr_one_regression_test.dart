@@ -197,6 +197,9 @@ void main() {
       preferencesStore: AsmrPreferencesStore(
         repository: SqliteAsmrRepository(database: AppDatabase.instance),
       ),
+      persistenceRepository: SqliteAsmrRepository(
+        database: AppDatabase.instance,
+      ),
     );
     final tracks = controller.buildPlayableTracksFromNode(work, folder);
 
@@ -285,6 +288,9 @@ void main() {
     final controller = AsmrLibraryController(
       preferencesStore: AsmrPreferencesStore(
         repository: SqliteAsmrRepository(database: AppDatabase.instance),
+      ),
+      persistenceRepository: SqliteAsmrRepository(
+        database: AppDatabase.instance,
       ),
     );
     final tracks = controller.buildPlayableTracksFromNode(work, folder);

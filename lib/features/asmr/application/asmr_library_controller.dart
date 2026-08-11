@@ -7,8 +7,6 @@ import '../../../app/application/persisted_state_reloader.dart';
 import '../../../core/immutable_collections.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
-import '../../../core/persistence/app_database.dart';
-import '../../../infrastructure/sqlite/sqlite_asmr_repository.dart';
 import '../domain/asmr_persistence_repository.dart';
 import 'asmr_api_service.dart';
 import 'asmr_account_sync_service.dart';
@@ -250,6 +248,9 @@ final class _AsmrControllerDependencies {
     required AsmrPersistenceRepository? persistenceRepository,
     required AsmrPreferencesStore preferencesStore,
   }) {
+    if (remoteCatalogService == null && persistenceRepository == null) {
+      throw ArgumentError.notNull('persistenceRepository');
+    }
     final needsApi = remoteCatalogService == null || accountSyncService == null;
     final resolvedApi = needsApi ? (apiService ?? AsmrApiService()) : null;
     final resolvedAuth = accountSyncService == null
@@ -259,9 +260,7 @@ final class _AsmrControllerDependencies {
         remoteCatalogService ??
         AsmrRemoteCatalogService(
           apiService: resolvedApi!,
-          persistenceRepository:
-              persistenceRepository ??
-              SqliteAsmrRepository(database: AppDatabase.instance),
+          persistenceRepository: persistenceRepository!,
         );
     final resolvedAccount =
         accountSyncService ??

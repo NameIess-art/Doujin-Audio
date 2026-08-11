@@ -3,6 +3,7 @@ part of 'asmr_one_settings_test.dart';
 void registerAsmrControllerStateTests({
   required Future<void> Function([Map<String, Object> values]) resetPrefs,
   required AsmrPreferencesStore Function() preferencesStore,
+  required TestPersistenceRepository Function() persistenceRepository,
 }) {
   late AsmrPreferencesStore preferences;
   setUp(() => preferences = preferencesStore());
@@ -163,6 +164,7 @@ void registerAsmrControllerStateTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
+      persistenceRepository: persistenceRepository(),
     );
 
     final tracks = await controller.loadPlayableTracksStartingAt(
@@ -238,6 +240,7 @@ void registerAsmrControllerStateTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: api,
+        persistenceRepository: persistenceRepository(),
       );
       final work = _work(id: 1, title: 'Work');
 
@@ -319,6 +322,7 @@ void registerAsmrControllerStateTests({
       final controller = AsmrLibraryController(
         preferencesStore: preferences,
         apiService: _FakeAsmrApiService(trackTree: <AsmrTrackFile>[node]),
+        persistenceRepository: persistenceRepository(),
       );
 
       final tracks = await controller.loadPlayableTracks(
@@ -339,6 +343,7 @@ void registerAsmrControllerStateTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
+      persistenceRepository: persistenceRepository(),
     );
     final works = <AsmrWork>[
       for (var id = 1; id <= 129; id++) _work(id: id, title: 'Work $id'),
@@ -364,6 +369,7 @@ void registerAsmrControllerStateTests({
     final controller = AsmrLibraryController(
       preferencesStore: preferences,
       apiService: api,
+      persistenceRepository: persistenceRepository(),
     );
     final works = <AsmrWork>[
       for (var id = 1; id <= 33; id++) _work(id: id, title: 'Work $id'),

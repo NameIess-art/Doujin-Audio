@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/platform/app_icon_platform_service.dart';
@@ -119,6 +121,82 @@ void main() {
 
       expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
         (ThemeMode.system, AppIconColorGroup.blue),
+      ]);
+    },
+  );
+
+  test(
+    'failed preference writes roll back all optimistic theme changes',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final appIconService = _RecordingAppIconPlatformService();
+      final provider = ThemeProvider(
+        appIconPlatformService: appIconService,
+        preferenceWriter: (_, _) async => false,
+      );
+      appIconService.syncs.clear();
+
+      expect(await provider.setThemeMode(ThemeMode.dark), isFalse);
+      expect(provider.themeMode, ThemeMode.system);
+      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
+        (ThemeMode.dark, AppIconColorGroup.warm),
+        (ThemeMode.system, AppIconColorGroup.warm),
+      ]);
+
+      appIconService.syncs.clear();
+      expect(await provider.setAppThemeColor(ThemeAccentPreset.mint), isFalse);
+      expect(provider.appThemeColor, ThemeAccentPreset.rose);
+      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
+        (ThemeMode.system, AppIconColorGroup.green),
+        (ThemeMode.system, AppIconColorGroup.warm),
+      ]);
+
+      expect(await provider.setDifferentiateAsmrTheme(false), isFalse);
+      expect(provider.differentiateAsmrTheme, isTrue);
+      expect(
+        await provider.setAsmrThemeColor(ThemeAccentPreset.amber),
+        isFalse,
+      );
+      expect(provider.asmrThemeColor, ThemeAccentPreset.blue);
+    },
+  );
+
+  test(
+    'an older failed theme write does not replace a newer success',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      await AppPreferences.init();
+      final writes = <Completer<bool>>[];
+      final appIconService = _RecordingAppIconPlatformService();
+      final provider = ThemeProvider(
+        appIconPlatformService: appIconService,
+        preferenceWriter: (_, _) {
+          final write = Completer<bool>();
+          writes.add(write);
+          return write.future;
+        },
+      );
+      appIconService.syncs.clear();
+
+      final older = provider.setThemeMode(ThemeMode.dark);
+      final newer = provider.setThemeMode(ThemeMode.light);
+
+      expect(provider.themeMode, ThemeMode.light);
+      await Future<void>.delayed(Duration.zero);
+      expect(writes, hasLength(1));
+      writes.first.complete(false);
+      expect(await older, isFalse);
+      await Future<void>.delayed(Duration.zero);
+      expect(provider.themeMode, ThemeMode.light);
+      expect(writes, hasLength(2));
+
+      writes.last.complete(true);
+      expect(await newer, isTrue);
+      expect(provider.themeMode, ThemeMode.light);
+      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
+        (ThemeMode.dark, AppIconColorGroup.warm),
+        (ThemeMode.light, AppIconColorGroup.warm),
       ]);
     },
   );

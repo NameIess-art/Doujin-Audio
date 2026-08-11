@@ -257,10 +257,27 @@ class SubtitleSettingsNotifier extends StateNotifier<SubtitleSettingsState>
     AppPreferences.setStringList('subtitle_global_map', globalList);
   }
 
-  void turnOffAllSubtitles() {
+  void turnOffAllSubtitles(Iterable<String> activeSessionIds) {
+    final sessionIds = <String>{
+      ...activeSessionIds.where((id) => id.isNotEmpty),
+      ...state.showSubtitlesMap.keys,
+      ...state.globalSubtitlesMap.keys,
+    };
+    final showSubtitlesMap = <String, bool>{
+      for (final sessionId in sessionIds) sessionId: false,
+    };
     _invalidatePendingLoad();
-    state = state.copyWith(showSubtitlesMap: {});
-    AppPreferences.setStringList('subtitle_show_map', []);
+    state = state.copyWith(
+      showSubtitlesMap: showSubtitlesMap,
+      globalSubtitlesMap: const <String, bool>{},
+    );
+    AppPreferences.setStringList(
+      'subtitle_show_map',
+      showSubtitlesMap.entries
+          .map((entry) => '${entry.key}|${entry.value}')
+          .toList(),
+    );
+    AppPreferences.setStringList('subtitle_global_map', const <String>[]);
   }
 
   void updatePosition(String sessionId, double y) {

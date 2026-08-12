@@ -263,6 +263,7 @@ void main() {
       find.text(i18n.tr('audio_device_disconnect_behavior')),
       findsOneWidget,
     );
+    expect(find.text(i18n.tr('audio_focus_strategy')), findsOneWidget);
     expect(
       find.text(i18n.tr('transient_audio_focus_loss_behavior')),
       findsOneWidget,

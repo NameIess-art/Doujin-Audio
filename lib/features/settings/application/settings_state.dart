@@ -17,6 +17,8 @@ enum PlaybackDetailSubtitleStyle { compact, timeline }
 
 enum AudioDeviceDisconnectBehavior { pause, continuePlayback }
 
+enum AudioFocusStrategy { standard, mixWithOthers }
+
 enum TransientAudioFocusLossBehavior { duck, pause }
 
 enum InterruptionResumeBehavior { stayPaused, resume }
@@ -66,6 +68,7 @@ class SettingsState {
     List<AsmrDownloadFolderNameField> asmrDownloadFolderNameFields =
         kDefaultAsmrDownloadFolderNameFields,
     this.audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.pause,
+    this.audioFocusStrategy = AudioFocusStrategy.standard,
     this.transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck,
     this.interruptionResumeBehavior = InterruptionResumeBehavior.resume,
     this.startupPlaybackRestoreBehavior = StartupPlaybackRestoreBehavior.resume,
@@ -113,6 +116,7 @@ class SettingsState {
   final bool asmrDownloadSaveMetadata;
   final List<AsmrDownloadFolderNameField> asmrDownloadFolderNameFields;
   final AudioDeviceDisconnectBehavior audioDeviceDisconnectBehavior;
+  final AudioFocusStrategy audioFocusStrategy;
   final TransientAudioFocusLossBehavior transientAudioFocusLossBehavior;
   final InterruptionResumeBehavior interruptionResumeBehavior;
   final StartupPlaybackRestoreBehavior startupPlaybackRestoreBehavior;
@@ -161,6 +165,7 @@ class SettingsState {
           asmrDownloadFolderNameFields,
         ) &&
         other.audioDeviceDisconnectBehavior == audioDeviceDisconnectBehavior &&
+        other.audioFocusStrategy == audioFocusStrategy &&
         other.transientAudioFocusLossBehavior ==
             transientAudioFocusLossBehavior &&
         other.interruptionResumeBehavior == interruptionResumeBehavior &&
@@ -208,6 +213,7 @@ class SettingsState {
     asmrDownloadSaveMetadata,
     Object.hashAll(asmrDownloadFolderNameFields),
     audioDeviceDisconnectBehavior,
+    audioFocusStrategy,
     transientAudioFocusLossBehavior,
     interruptionResumeBehavior,
     startupPlaybackRestoreBehavior,

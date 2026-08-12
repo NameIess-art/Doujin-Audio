@@ -54,6 +54,7 @@ class SettingsRepository {
       kDefaultAsmrDownloadFolderNameFields;
   AudioDeviceDisconnectBehavior audioDeviceDisconnectBehavior =
       AudioDeviceDisconnectBehavior.pause;
+  AudioFocusStrategy audioFocusStrategy = AudioFocusStrategy.standard;
   TransientAudioFocusLossBehavior transientAudioFocusLossBehavior =
       TransientAudioFocusLossBehavior.duck;
   InterruptionResumeBehavior interruptionResumeBehavior =
@@ -133,6 +134,10 @@ class SettingsRepository {
             (value) => value.name == playback['audioDeviceDisconnectBehavior'],
             orElse: () => AudioDeviceDisconnectBehavior.pause,
           );
+      audioFocusStrategy = AudioFocusStrategy.values.firstWhere(
+        (value) => value.name == playback['audioFocusStrategy'],
+        orElse: () => AudioFocusStrategy.standard,
+      );
       transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.values
           .firstWhere(
             (value) =>
@@ -239,6 +244,7 @@ class SettingsRepository {
           .toList(growable: false),
       'maxCacheBytes': maxCacheBytes,
       'audioDeviceDisconnectBehavior': audioDeviceDisconnectBehavior.name,
+      'audioFocusStrategy': audioFocusStrategy.name,
       'transientAudioFocusLossBehavior': transientAudioFocusLossBehavior.name,
       'interruptionResumeBehavior': interruptionResumeBehavior.name,
       'startupPlaybackRestoreBehavior': startupPlaybackRestoreBehavior.name,
@@ -484,6 +490,11 @@ class SettingsRepository {
     update: () => audioDeviceDisconnectBehavior = behavior,
   );
 
+  Future<void> setAudioFocusStrategy(AudioFocusStrategy strategy) => _setValue(
+    unchanged: audioFocusStrategy == strategy,
+    update: () => audioFocusStrategy = strategy,
+  );
+
   Future<void> setTransientAudioFocusLossBehavior(
     TransientAudioFocusLossBehavior behavior,
   ) => _setValue(
@@ -561,6 +572,7 @@ class SettingsRepository {
     asmrDownloadSaveMetadata = true;
     asmrDownloadFolderNameFields = kDefaultAsmrDownloadFolderNameFields;
     audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.pause;
+    audioFocusStrategy = AudioFocusStrategy.standard;
     transientAudioFocusLossBehavior = TransientAudioFocusLossBehavior.duck;
     interruptionResumeBehavior = InterruptionResumeBehavior.resume;
     startupPlaybackRestoreBehavior = StartupPlaybackRestoreBehavior.resume;
@@ -623,6 +635,7 @@ class SettingsRepository {
               asmrDownloadFolderNameFields,
             ),
         audioDeviceDisconnectBehavior: audioDeviceDisconnectBehavior,
+        audioFocusStrategy: audioFocusStrategy,
         transientAudioFocusLossBehavior: transientAudioFocusLossBehavior,
         interruptionResumeBehavior: interruptionResumeBehavior,
         startupPlaybackRestoreBehavior: startupPlaybackRestoreBehavior,

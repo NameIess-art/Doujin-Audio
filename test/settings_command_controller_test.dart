@@ -5,6 +5,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
+import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
@@ -103,12 +104,58 @@ void main() {
     expect(updated, isFalse);
     expect(settings.multiThreadPlaybackEnabled, isTrue);
   });
+
+  test('mixing strategy disables native audio focus requests', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final settings = SettingsRepository()..syncSlice(isInitialized: true);
+    final native = _CapturingPlaybackBehaviorRepository();
+    final playback = PlaybackFacade.create(
+      databaseRepository: TestPersistenceRepository(),
+      nativeRepository: native,
+    );
+    final notifications = NotificationFacade.create(
+      service: PlaybackNotificationService(),
+    );
+    final controller = SettingsCommandController(
+      settings: settings,
+      playback: playback,
+      notifications: notifications,
+    );
+    addTearDown(settings.dispose);
+    addTearDown(playback.dispose);
+    addTearDown(notifications.dispose);
+
+    await controller.setAudioFocusStrategy(AudioFocusStrategy.mixWithOthers);
+
+    expect(settings.audioFocusStrategy, AudioFocusStrategy.mixWithOthers);
+    expect(native.requestAudioFocus, isFalse);
+  });
 }
 
 final class _FailingPauseAllRepository extends NativePlaybackRepository {
   @override
   Future<NativeResult<void>> pauseAll() async {
     return const NativeFailure<void>('pause all failed');
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+final class _CapturingPlaybackBehaviorRepository
+    extends NativePlaybackRepository {
+  bool? requestAudioFocus;
+
+  @override
+  Future<NativeResult<void>> setPlaybackBehavior({
+    required bool pauseOnAudioDeviceDisconnect,
+    required bool requestAudioFocus,
+    required bool pauseOnTransientAudioFocusLoss,
+    required bool resumeAfterTransientAudioFocusGain,
+    required bool resumePlaybackOnStartupRestore,
+  }) async {
+    this.requestAudioFocus = requestAudioFocus;
+    return const NativeSuccess<void>();
   }
 
   @override

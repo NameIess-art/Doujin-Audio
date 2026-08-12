@@ -13,6 +13,32 @@ import org.junit.Test
 
 class NativePlaybackFocusRecoveryPolicyTest {
     @Test
+    fun `mixing mode allows playback without requesting audio focus`() {
+        var requestCount = 0
+
+        val allowed = requestAudioFocusForPlayback(requestAudioFocus = false) {
+            requestCount++
+            false
+        }
+
+        assertTrue(allowed)
+        assertEquals(0, requestCount)
+    }
+
+    @Test
+    fun `standard mode returns the system audio focus result`() {
+        var requestCount = 0
+
+        val allowed = requestAudioFocusForPlayback(requestAudioFocus = true) {
+            requestCount++
+            false
+        }
+
+        assertFalse(allowed)
+        assertEquals(1, requestCount)
+    }
+
+    @Test
     fun `foreground sync waits for system gain during transient focus loss`() {
         assertTrue(
             shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(

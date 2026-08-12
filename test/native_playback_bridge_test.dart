@@ -88,6 +88,31 @@ void main() {
     expect(result.valueOrNull!.transportCommandId, 7);
   });
 
+  test('setPlaybackBehavior forwards the audio focus policy', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          expect(call.method, NativePlaybackMethod.setPlaybackBehavior);
+          expect(call.arguments, <String, Object?>{
+            'pauseOnAudioDeviceDisconnect': true,
+            'requestAudioFocus': false,
+            'pauseOnTransientAudioFocusLoss': false,
+            'resumeAfterTransientAudioFocusGain': true,
+            'resumePlaybackOnStartupRestore': false,
+          });
+          return <String, Object?>{'ok': true, 'value': null};
+        });
+
+    final result = await NativePlaybackBridge.instance.setPlaybackBehavior(
+      pauseOnAudioDeviceDisconnect: true,
+      requestAudioFocus: false,
+      pauseOnTransientAudioFocusLoss: false,
+      resumeAfterTransientAudioFocusGain: true,
+      resumePlaybackOnStartupRestore: false,
+    );
+
+    expect(result.isOk, isTrue);
+  });
+
   test('setSpeed forwards session id and speed to native playback', () async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {

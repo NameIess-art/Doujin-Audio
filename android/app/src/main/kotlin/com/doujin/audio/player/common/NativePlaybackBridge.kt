@@ -117,6 +117,7 @@ class NativePlaybackBridge(
                     service.setPlaybackBehavior(
                         pauseOnAudioDeviceDisconnect =
                             reader.requiredBoolean("pauseOnAudioDeviceDisconnect"),
+                        requestAudioFocus = reader.requiredBoolean("requestAudioFocus"),
                         pauseOnTransientAudioFocusLoss =
                             reader.requiredBoolean("pauseOnTransientAudioFocusLoss"),
                         resumeAfterTransientAudioFocusGain =
@@ -350,6 +351,7 @@ internal fun validatePlaybackArgumentsBeforeService(call: MethodCall) {
         NativePlaybackMethods.SET_FOREGROUND_ENABLED -> arguments.requiredBoolean("enabled")
         NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR -> {
             arguments.requiredBoolean("pauseOnAudioDeviceDisconnect")
+            arguments.requiredBoolean("requestAudioFocus")
             arguments.requiredBoolean("pauseOnTransientAudioFocusLoss")
             arguments.requiredBoolean("resumeAfterTransientAudioFocusGain")
             arguments.requiredBoolean("resumePlaybackOnStartupRestore")

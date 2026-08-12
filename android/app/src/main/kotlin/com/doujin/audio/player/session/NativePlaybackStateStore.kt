@@ -90,6 +90,7 @@ data class StoredPlaybackTimerRuntimeState(
 
 data class StoredPlaybackBehavior(
     val pauseOnAudioDeviceDisconnect: Boolean = true,
+    val requestAudioFocus: Boolean = true,
     val pauseOnTransientAudioFocusLoss: Boolean = false,
     val resumeAfterTransientAudioFocusGain: Boolean = true,
     val resumePlaybackOnStartupRestore: Boolean = true
@@ -116,6 +117,7 @@ object NativePlaybackStateStore {
     fun savePlaybackBehavior(context: Context, behavior: StoredPlaybackBehavior) {
         val encoded = JSONObject()
             .put("pauseOnAudioDeviceDisconnect", behavior.pauseOnAudioDeviceDisconnect)
+            .put("requestAudioFocus", behavior.requestAudioFocus)
             .put("pauseOnTransientAudioFocusLoss", behavior.pauseOnTransientAudioFocusLoss)
             .put(
                 "resumeAfterTransientAudioFocusGain",
@@ -137,6 +139,7 @@ object NativePlaybackStateStore {
             StoredPlaybackBehavior(
                 pauseOnAudioDeviceDisconnect =
                     json.optBoolean("pauseOnAudioDeviceDisconnect", true),
+                requestAudioFocus = json.optBoolean("requestAudioFocus", true),
                 pauseOnTransientAudioFocusLoss =
                     json.optBoolean("pauseOnTransientAudioFocusLoss", false),
                 resumeAfterTransientAudioFocusGain =

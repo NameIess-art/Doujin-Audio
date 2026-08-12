@@ -64,6 +64,12 @@ final class SettingsCommandController {
     await syncNativePlaybackBehavior();
   }
 
+  Future<void> setAudioFocusStrategy(AudioFocusStrategy strategy) async {
+    if (_settings.audioFocusStrategy == strategy) return;
+    await _settings.setAudioFocusStrategy(strategy);
+    await syncNativePlaybackBehavior();
+  }
+
   Future<void> setTransientAudioFocusLossBehavior(
     TransientAudioFocusLossBehavior behavior,
   ) async {
@@ -93,6 +99,8 @@ final class SettingsCommandController {
       pauseOnAudioDeviceDisconnect:
           _settings.audioDeviceDisconnectBehavior ==
           AudioDeviceDisconnectBehavior.pause,
+      requestAudioFocus:
+          _settings.audioFocusStrategy == AudioFocusStrategy.standard,
       pauseOnTransientAudioFocusLoss:
           _settings.transientAudioFocusLossBehavior ==
           TransientAudioFocusLossBehavior.pause,

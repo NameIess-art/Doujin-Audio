@@ -590,6 +590,10 @@ class NativePlaybackService : MediaSessionService() {
         }
     }
     private fun handleAudioFocusChange(change: Int) {
+        if (!playbackBehavior.requestAudioFocus) {
+            logInfo("audio_focus_change_ignored mixing_enabled")
+            return
+        }
         val action = nativeAudioFocusAction(
             change,
             pauseOnDuck = playbackBehavior.pauseOnTransientAudioFocusLoss
@@ -1358,17 +1362,30 @@ class NativePlaybackService : MediaSessionService() {
 
     fun setPlaybackBehavior(
         pauseOnAudioDeviceDisconnect: Boolean,
+        requestAudioFocus: Boolean,
         pauseOnTransientAudioFocusLoss: Boolean,
         resumeAfterTransientAudioFocusGain: Boolean,
         resumePlaybackOnStartupRestore: Boolean
     ): Map<String, Any?> {
+        val previouslyRequestedAudioFocus = playbackBehavior.requestAudioFocus
         playbackBehavior = StoredPlaybackBehavior(
             pauseOnAudioDeviceDisconnect = pauseOnAudioDeviceDisconnect,
+            requestAudioFocus = requestAudioFocus,
             pauseOnTransientAudioFocusLoss = pauseOnTransientAudioFocusLoss,
             resumeAfterTransientAudioFocusGain = resumeAfterTransientAudioFocusGain,
             resumePlaybackOnStartupRestore = resumePlaybackOnStartupRestore
         )
         NativePlaybackStateStore.savePlaybackBehavior(this, playbackBehavior)
+        if (!requestAudioFocus) {
+            abandonAudioFocus(reason = "mix_with_others_enabled")
+            publishAllSessionStates()
+            schedulePersistSessionState()
+        } else if (!previouslyRequestedAudioFocus && hasActivePlayback()) {
+            if (!requestAudioFocusIfNeeded()) {
+                logInfo("audio_focus_policy_restore_denied")
+                handleAudioFocusChange(AudioManager.AUDIOFOCUS_LOSS)
+            }
+        }
         return okResult(null)
     }
 
@@ -1998,13 +2015,16 @@ class NativePlaybackService : MediaSessionService() {
     }
 
     private fun requestAudioFocusIfNeeded(): Boolean {
-        if (shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
+        if (playbackBehavior.requestAudioFocus &&
+            shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
                 transientAudioFocusLossActive || focusDuckActive
             )
         ) {
             return false
         }
-        return audioFocusController.requestIfNeeded()
+        return requestAudioFocusForPlayback(playbackBehavior.requestAudioFocus) {
+            audioFocusController.requestIfNeeded()
+        }
     }
 
     private fun resumePendingAudioFocusSessionsIfPossible(trigger: String): Boolean {
@@ -2309,6 +2329,11 @@ internal fun shouldClearPlaybackIntentForPlayWhenReadyChange(
 internal fun shouldDeferPlaybackRecoveryForTransientAudioFocusLoss(
     transientAudioFocusLossActive: Boolean
 ): Boolean = transientAudioFocusLossActive
+
+internal fun requestAudioFocusForPlayback(
+    requestAudioFocus: Boolean,
+    request: () -> Boolean
+): Boolean = !requestAudioFocus || request()
 
 internal fun shouldTriggerPlaybackRecoveryOnKeepAlive(
     hasPlaybackToKeepAlive: Boolean,

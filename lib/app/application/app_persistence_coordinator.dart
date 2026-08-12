@@ -68,6 +68,8 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
         pauseOnAudioDeviceDisconnect:
             _settings.audioDeviceDisconnectBehavior ==
             AudioDeviceDisconnectBehavior.pause,
+        requestAudioFocus:
+            _settings.audioFocusStrategy == AudioFocusStrategy.standard,
         pauseOnTransientAudioFocusLoss:
             _settings.transientAudioFocusLossBehavior ==
             TransientAudioFocusLossBehavior.pause,

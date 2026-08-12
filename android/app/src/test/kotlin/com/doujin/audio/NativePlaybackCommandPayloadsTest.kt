@@ -47,6 +47,7 @@ class NativePlaybackCommandPayloadsTest {
                 NativePlaybackMethods.SET_PLAYBACK_BEHAVIOR,
                 mapOf(
                     "pauseOnAudioDeviceDisconnect" to true,
+                    "requestAudioFocus" to false,
                     "pauseOnTransientAudioFocusLoss" to false,
                     "resumeAfterTransientAudioFocusGain" to true,
                     "resumePlaybackOnStartupRestore" to false

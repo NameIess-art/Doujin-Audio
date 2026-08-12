@@ -85,6 +85,7 @@ void main() {
           'asmrDownloadConflictPolicy': AsmrDownloadConflictPolicy.skip.name,
           'audioDeviceDisconnectBehavior':
               AudioDeviceDisconnectBehavior.continuePlayback.name,
+          'audioFocusStrategy': AudioFocusStrategy.mixWithOthers.name,
           'transientAudioFocusLossBehavior':
               TransientAudioFocusLossBehavior.pause.name,
           'interruptionResumeBehavior':
@@ -130,6 +131,7 @@ void main() {
         repository.audioDeviceDisconnectBehavior,
         AudioDeviceDisconnectBehavior.continuePlayback,
       );
+      expect(repository.audioFocusStrategy, AudioFocusStrategy.mixWithOthers);
       expect(
         repository.transientAudioFocusLossBehavior,
         TransientAudioFocusLossBehavior.pause,
@@ -178,6 +180,7 @@ void main() {
         ..asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.skip
         ..audioDeviceDisconnectBehavior =
             AudioDeviceDisconnectBehavior.continuePlayback
+        ..audioFocusStrategy = AudioFocusStrategy.mixWithOthers
         ..transientAudioFocusLossBehavior =
             TransientAudioFocusLossBehavior.pause
         ..interruptionResumeBehavior = InterruptionResumeBehavior.stayPaused
@@ -259,6 +262,11 @@ void main() {
               AudioDeviceDisconnectBehavior.continuePlayback,
             )
             .having(
+              (state) => state.audioFocusStrategy,
+              'audio focus strategy',
+              AudioFocusStrategy.mixWithOthers,
+            )
+            .having(
               (state) => state.transientAudioFocusLossBehavior,
               'transient focus',
               TransientAudioFocusLossBehavior.pause,
@@ -293,6 +301,7 @@ void main() {
         state.audioDeviceDisconnectBehavior,
         AudioDeviceDisconnectBehavior.pause,
       );
+      expect(state.audioFocusStrategy, AudioFocusStrategy.standard);
       expect(
         state.transientAudioFocusLossBehavior,
         TransientAudioFocusLossBehavior.duck,
@@ -315,6 +324,32 @@ void main() {
       expect(state.coverImageDisplayMode, CoverImageDisplayMode.fill);
       expect(state.preferEmbeddedAudioCover, isTrue);
       expect(state.blurPlayerBackgroundEnabled, isTrue);
+    });
+
+    test('audio focus strategy persists with a safe fallback', () async {
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      await repository.setAudioFocusStrategy(AudioFocusStrategy.mixWithOthers);
+
+      expect(
+        repository.slice.state.audioFocusStrategy,
+        AudioFocusStrategy.mixWithOthers,
+      );
+      final restored = SettingsRepository();
+      addTearDown(restored.dispose);
+      await restored.loadPersistedState();
+      expect(restored.audioFocusStrategy, AudioFocusStrategy.mixWithOthers);
+
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'playback_settings_v1': json.encode(<String, Object?>{
+          'audioFocusStrategy': 'unknown',
+        }),
+      });
+      final invalid = SettingsRepository();
+      addTearDown(invalid.dispose);
+      await invalid.loadPersistedState();
+      expect(invalid.audioFocusStrategy, AudioFocusStrategy.standard);
     });
 
     test(

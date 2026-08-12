@@ -176,6 +176,44 @@ List<Widget> _buildSettingsPlaybackSection({
         ),
         Consumer(
           builder: (context, ref, _) {
+            final strategy = ref.watch(
+              settingsStateProvider.select(
+                (state) =>
+                    state.value?.audioFocusStrategy ??
+                    AudioFocusStrategy.standard,
+              ),
+            );
+            return ListTile(
+              title: _settingsTitle(i18n.tr('audio_focus_strategy')),
+              leading: _settingsIcon(
+                Icons.multitrack_audio_rounded,
+                cs.onSurface,
+              ),
+              trailing: _settingsDropdown<AudioFocusStrategy>(
+                context,
+                value: strategy,
+                onChanged: (value) {
+                  if (value != null) {
+                    settingsController.setAudioFocusStrategy(value);
+                  }
+                },
+                items: AudioFocusStrategy.values
+                    .map(
+                      (value) => DropdownMenuItem<AudioFocusStrategy>(
+                        value: value,
+                        child: _settingsDropdownText(
+                          i18n.tr('audio_focus_strategy_${value.name}'),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
             final behavior = ref.watch(
               settingsStateProvider.select(
                 (state) =>

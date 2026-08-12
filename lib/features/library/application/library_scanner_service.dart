@@ -516,7 +516,7 @@ class LibraryScannerService {
     required bool allowRemoval,
     required int generation,
   }) async {
-    if (!allowRemoval || retainedTrackPaths.isEmpty) {
+    if (!allowRemoval) {
       return (trackPaths: const <String>[], entryPaths: const <String>[]);
     }
     final normalizedSource = PathMatcher.normalize(sourceFolderPath);

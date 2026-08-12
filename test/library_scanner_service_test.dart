@@ -179,6 +179,68 @@ void main() {
     expect(catalog.scanFailureCount, 1);
   });
 
+  test(
+    'complete empty refresh removes entries inside only the scanned root',
+    () async {
+      final removed = _musicTrack('C:/music/nested/removed.mp3');
+      final outside = _musicTrack('C:/other/kept.mp3');
+      final catalog = _RefreshCatalog(
+        watchedFolders: <String>['C:/music'],
+        initialTracks: <MusicTrack>[removed, outside],
+        initialEntries: <LibraryEntry>[
+          LibraryEntry.folder(
+            libraryPath: 'C:/music',
+            path: 'C:/music/nested',
+            state: LibraryEntryState.active,
+          ),
+          LibraryEntry.track(
+            libraryPath: 'C:/music',
+            track: removed,
+            parentPath: 'C:/music/nested',
+            state: LibraryEntryState.active,
+          ),
+        ],
+      );
+
+      await LibraryScannerService(
+        dataSource: _ChunkedRefreshDataSource(catalog: catalog),
+      ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+      expect(catalog.library, <MusicTrack>[outside]);
+      expect(catalog.removedTrackPaths, <String>[removed.path]);
+      expect(
+        catalog.removedEntryPaths,
+        containsAll(<String>['C:/music/nested', removed.path]),
+      );
+    },
+  );
+
+  test('untrusted empty refreshes keep existing tracks', () async {
+    for (final scenario in <({int failures, bool complete, bool cancelled})>[
+      (failures: 1, complete: true, cancelled: false),
+      (failures: 0, complete: false, cancelled: false),
+      (failures: 0, complete: true, cancelled: true),
+    ]) {
+      final existing = _musicTrack('C:/music/existing.mp3');
+      final catalog = _RefreshCatalog(
+        watchedFolders: <String>['C:/music'],
+        initialTracks: <MusicTrack>[existing],
+      );
+
+      await LibraryScannerService(
+        dataSource: _ChunkedRefreshDataSource(
+          catalog: catalog,
+          terminalFailureCount: scenario.failures,
+          terminalCompletenessKnown: scenario.complete,
+          terminalWasCancelled: scenario.cancelled,
+        ),
+      ).refreshWatchedFolders(provider: catalog, labels: labels);
+
+      expect(catalog.library, <MusicTrack>[existing], reason: '$scenario');
+      expect(catalog.removedTrackPaths, isEmpty, reason: '$scenario');
+    }
+  });
+
   test('content URI refresh retains the legacy full-scan fallback', () async {
     const root = 'content://library/tree';
     final catalog = _RefreshCatalog(watchedFolders: <String>[root]);
@@ -279,6 +341,8 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
     this.chunks = const <FolderScanChunk>[],
     this.terminalPaths = const <String>{},
     this.terminalFailureCount = 0,
+    this.terminalCompletenessKnown = true,
+    this.terminalWasCancelled = false,
     this.nativeChunkingSupported = true,
     NativeScanResult? legacyResult,
   }) : legacyResult =
@@ -289,6 +353,8 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
   final List<FolderScanChunk> chunks;
   final Set<String> terminalPaths;
   final int terminalFailureCount;
+  final bool terminalCompletenessKnown;
+  final bool terminalWasCancelled;
   final bool nativeChunkingSupported;
   final NativeScanResult legacyResult;
   var chunkedScanCalls = 0;
@@ -359,7 +425,8 @@ class _ChunkedRefreshDataSource implements LibraryScanDataSource {
       const <ScannedTrack>[],
       terminalPaths,
       failureCount: terminalFailureCount,
-      completenessKnown: true,
+      completenessKnown: terminalCompletenessKnown,
+      wasCancelled: terminalWasCancelled,
     );
   }
 
@@ -371,9 +438,11 @@ class _RefreshCatalog implements LibraryCatalog {
   _RefreshCatalog({
     required List<String> watchedFolders,
     List<MusicTrack> initialTracks = const <MusicTrack>[],
+    List<LibraryEntry> initialEntries = const <LibraryEntry>[],
     this.cancelAfterTrackChunk,
   }) : watchedFolders = List<String>.of(watchedFolders),
-       library = List<MusicTrack>.of(initialTracks);
+       library = List<MusicTrack>.of(initialTracks),
+       _initialEntries = List<LibraryEntry>.of(initialEntries);
 
   @override
   final List<MusicTrack> library;
@@ -383,6 +452,7 @@ class _RefreshCatalog implements LibraryCatalog {
 
   @override
   final List<String> watchedLibraries = <String>[];
+  final List<LibraryEntry> _initialEntries;
   final int? cancelAfterTrackChunk;
 
   @override
@@ -398,6 +468,7 @@ class _RefreshCatalog implements LibraryCatalog {
   int scanFailureCount = 0;
 
   final removedTrackPaths = <String>[];
+  final removedEntryPaths = <String>[];
   int _generation = 0;
   var _appliedTrackChunks = 0;
   var stagedBatchDepth = 0;
@@ -440,7 +511,10 @@ class _RefreshCatalog implements LibraryCatalog {
 
   @override
   LibraryEntrySnapshot libraryEntrySnapshotForLibrary(String libraryPath) {
-    return LibraryEntrySnapshot(libraryPath: libraryPath);
+    return LibraryEntrySnapshot(
+      libraryPath: libraryPath,
+      entries: _initialEntries,
+    );
   }
 
   @override
@@ -493,6 +567,7 @@ class _RefreshCatalog implements LibraryCatalog {
     }
     final pathsToRemove = removeTrackPaths.toList(growable: false);
     removedTrackPaths.addAll(pathsToRemove);
+    removedEntryPaths.addAll(removeEntryPaths);
     library.removeWhere(
       (track) => pathsToRemove.any(
         (trackPath) => PathMatcher.equalsNormalized(track.path, trackPath),

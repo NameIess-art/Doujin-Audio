@@ -2071,6 +2071,43 @@ void main() {
   );
 
   test(
+    'unknown-size empty audio fails without committing staging or output',
+    () async {
+      final result = await _downloadUnknownSizeResponse(
+        responseBytes: const [],
+        expectedStatus: AsmrDownloadTaskStatus.failed,
+      );
+
+      expect(result.requests, AsmrDownloadManager.maxAutomaticFileRetries + 1);
+      expect(result.failedFiles, 1);
+      expect(result.outputExists, isFalse);
+      expect(result.stagingExists, isFalse);
+    },
+  );
+
+  test('unknown-size non-empty chunked audio completes', () async {
+    const bytes = <int>[1, 2, 3, 4];
+    final result = await _downloadUnknownSizeResponse(
+      responseBytes: bytes,
+      expectedStatus: AsmrDownloadTaskStatus.completed,
+    );
+
+    expect(result.outputBytes, bytes);
+  });
+
+  test('unknown-size empty non-media sidecar remains valid', () async {
+    final result = await _downloadUnknownSizeResponse(
+      responseBytes: const [],
+      expectedStatus: AsmrDownloadTaskStatus.completed,
+      title: 'empty.txt',
+      type: 'text',
+    );
+
+    expect(result.outputExists, isTrue);
+    expect(result.outputBytes, isEmpty);
+  });
+
+  test(
     'pausing preserves completed files and their recorded progress',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
@@ -2442,6 +2479,76 @@ void main() {
   );
 }
 
+Future<
+  ({
+    int requests,
+    int? failedFiles,
+    bool outputExists,
+    bool stagingExists,
+    List<int> outputBytes,
+  })
+>
+_downloadUnknownSizeResponse({
+  required List<int> responseBytes,
+  required AsmrDownloadTaskStatus expectedStatus,
+  String title = 'Track.mp3',
+  String type = 'audio',
+}) async {
+  final tempDir = await Directory.systemTemp.createTemp(
+    'asmr_download_unknown_size_',
+  );
+  final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  var requests = 0;
+  unawaited(
+    server.forEach((request) async {
+      requests++;
+      request.response.headers.chunkedTransferEncoding = true;
+      request.response.add(responseBytes);
+      await request.response.close();
+    }),
+  );
+  final manager = AsmrDownloadManager(
+    temporaryDirectoryProvider: () async => Directory.systemTemp,
+    automaticFileRetryDelay: Duration.zero,
+    persistTasks: false,
+  );
+  try {
+    await manager.startDownload(
+      work: _work(),
+      selectedRoots: <AsmrTrackFile>[
+        _file(
+          downloadUrl: 'http://${server.address.host}:${server.port}/$title',
+          size: 0,
+          title: title,
+          type: type,
+        ),
+      ],
+      destinationRoot: tempDir.path,
+      conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+    );
+    await _waitForTaskStatus(
+      manager,
+      1,
+      expectedStatus,
+      allowFailure: expectedStatus == AsmrDownloadTaskStatus.failed,
+    );
+
+    final output = File(path.join(tempDir.path, 'Work', title));
+    final outputExists = await output.exists();
+    return (
+      requests: requests,
+      failedFiles: manager.getTask(1)?.failedFiles,
+      outputExists: outputExists,
+      stagingExists: await File('${output.path}.doujin.part').exists(),
+      outputBytes: outputExists ? await output.readAsBytes() : const <int>[],
+    );
+  } finally {
+    manager.dispose();
+    await server.close(force: true);
+    if (await tempDir.exists()) await tempDir.delete(recursive: true);
+  }
+}
+
 AsmrDownloadManager _manager() {
   return AsmrDownloadManager(
     temporaryDirectoryProvider: () async => Directory.systemTemp,
@@ -2607,11 +2714,12 @@ AsmrTrackFile _file({
   required String downloadUrl,
   int size = 1,
   String title = 'Track.mp3',
+  String type = 'audio',
 }) {
   return AsmrTrackFile(
     hash: title,
     title: title,
-    type: 'audio',
+    type: type,
     streamUrl: null,
     downloadUrl: downloadUrl,
     lowQualityUrl: null,

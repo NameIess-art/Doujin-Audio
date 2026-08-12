@@ -270,26 +270,43 @@ final class TimerFacade {
       powerPlatformService.executeTimerExpiredNow,
       generation,
     );
-    if (result == TimerExecutionResult.failed) {
-      await _applyLocalTimerExpiryFallback();
+    if (!_isCurrentGeneration(generation) ||
+        result == TimerExecutionResult.stale) {
       return;
     }
-    await syncRuntimeFromNative();
+    if (result == TimerExecutionResult.failed) {
+      await _applyLocalTimerExpiryFallback(generation);
+      return;
+    }
+    final nativeRuntime = await _loadNativeRuntime(
+      expectedGeneration: generation,
+    );
+    if (!_isCurrentGeneration(generation) ||
+        nativeRuntime == _NativeTimerRuntimeLoadResult.stale) {
+      return;
+    }
     _maybeResetTimerAfterExpiry();
     _changed();
     unawaited(saveRuntime());
   }
 
-  Future<void> _applyLocalTimerExpiryFallback() async {
+  Future<void> _applyLocalTimerExpiryFallback(int generation) async {
+    if (!_isCurrentGeneration(generation)) return;
     final playingSessions = _sessions()
         .where((session) => session.effectivePlaying)
         .toList(growable: false);
-    _service.pausedByTimerSessionIds.clear();
+    final pausedSessionIds = <String>[];
     for (final session in playingSessions) {
+      if (!_isCurrentGeneration(generation)) return;
       if (await _pauseSession(session)) {
-        _service.pausedByTimerSessionIds.add(session.id);
+        if (!_isCurrentGeneration(generation)) return;
+        pausedSessionIds.add(session.id);
       }
     }
+    if (!_isCurrentGeneration(generation)) return;
+    _service.pausedByTimerSessionIds
+      ..clear()
+      ..addAll(pausedSessionIds);
     if (_service.autoResumeEnabled &&
         _service.pausedByTimerSessionIds.isNotEmpty) {
       scheduleAutoResumeTimer(
@@ -303,6 +320,7 @@ final class TimerFacade {
     _maybeResetTimerAfterExpiry();
     _changed();
     await saveRuntime();
+    if (!_isCurrentGeneration(generation)) return;
     await syncNativeAlarms();
   }
 
@@ -320,11 +338,21 @@ final class TimerFacade {
       powerPlatformService.executeAutoResumeNow,
       generation,
     );
-    if (result == TimerExecutionResult.failed) {
-      await _resumeTimerPausedSessions();
+    if (!_isCurrentGeneration(generation) ||
+        result == TimerExecutionResult.stale) {
       return;
     }
-    await syncRuntimeFromNative();
+    if (result == TimerExecutionResult.failed) {
+      await _resumeTimerPausedSessions(generation);
+      return;
+    }
+    final nativeRuntime = await _loadNativeRuntime(
+      expectedGeneration: generation,
+    );
+    if (!_isCurrentGeneration(generation) ||
+        nativeRuntime == _NativeTimerRuntimeLoadResult.stale) {
+      return;
+    }
     resetRuntimeState();
     _changed();
     unawaited(saveRuntime());
@@ -346,13 +374,16 @@ final class TimerFacade {
     }
   }
 
-  Future<void> _resumeTimerPausedSessions() async {
+  Future<void> _resumeTimerPausedSessions(int generation) async {
     if (!await _activateAudioSession()) {
+      if (!_isCurrentGeneration(generation)) return;
       _changed();
       await saveRuntime();
+      if (!_isCurrentGeneration(generation)) return;
       await syncNativeAlarms();
       return;
     }
+    if (!_isCurrentGeneration(generation)) return;
     final sessions = _sessions().toList(growable: false);
     final resumableSessions = sessions
         .where(
@@ -363,11 +394,14 @@ final class TimerFacade {
       _service.pausedByTimerSessionIds.clear();
       _changed();
       await saveRuntime();
+      if (!_isCurrentGeneration(generation)) return;
       await syncNativeAlarms();
       return;
     }
     for (final session in resumableSessions) {
-      if (await _resumeSession(session)) {
+      final resumed = await _resumeSession(session);
+      if (!_isCurrentGeneration(generation)) return;
+      if (resumed) {
         _service.pausedByTimerSessionIds.remove(session.id);
       }
     }
@@ -384,6 +418,7 @@ final class TimerFacade {
     }
     _changed();
     await saveRuntime();
+    if (!_isCurrentGeneration(generation)) return;
     await syncNativeAlarms();
   }
 
@@ -434,7 +469,9 @@ final class TimerFacade {
   }
 
   Future<void> loadRuntimeFromSystem() async {
-    if (await _loadNativeRuntime()) return;
+    if (await _loadNativeRuntime() == _NativeTimerRuntimeLoadResult.loaded) {
+      return;
+    }
     try {
       final raw = (await _preferences).getString(_runtimeKey);
       if (raw == null || raw.isEmpty) return;
@@ -516,24 +553,46 @@ final class TimerFacade {
     }
   }
 
-  Future<bool> _loadNativeRuntime() async {
+  Future<_NativeTimerRuntimeLoadResult> _loadNativeRuntime({
+    int? expectedGeneration,
+  }) async {
     try {
       final map = await powerPlatformService.getNativeTimerRuntimeState();
-      if (map == null || map.isEmpty) return false;
+      if (expectedGeneration != null &&
+          !_isCurrentGeneration(expectedGeneration)) {
+        return _NativeTimerRuntimeLoadResult.stale;
+      }
+      if (map == null || map.isEmpty) {
+        return _NativeTimerRuntimeLoadResult.empty;
+      }
+      final nativeGeneration = _readMillisValue(map['generation']);
+      if (expectedGeneration != null &&
+          nativeGeneration != null &&
+          nativeGeneration != expectedGeneration) {
+        return _NativeTimerRuntimeLoadResult.stale;
+      }
       await _restoreRuntimeFromMap(
         map,
         removeLegacyPrefsWhenEmpty: true,
         syncNativeAfterRestore: false,
       );
-      return true;
+      if (expectedGeneration != null &&
+          !_isCurrentGeneration(expectedGeneration)) {
+        return _NativeTimerRuntimeLoadResult.stale;
+      }
+      return _NativeTimerRuntimeLoadResult.loaded;
     } catch (error, stackTrace) {
       AppLogService.error(
         'native_timer_runtime_restore_failed',
         error: error,
         stackTrace: stackTrace,
       );
-      return false;
+      return _NativeTimerRuntimeLoadResult.failed;
     }
+  }
+
+  bool _isCurrentGeneration(int generation) {
+    return generation == _service.timerGeneration;
   }
 
   Future<void> _restoreRuntimeFromMap(
@@ -730,6 +789,8 @@ final class TimerFacade {
     await _service.dispose();
   }
 }
+
+enum _NativeTimerRuntimeLoadResult { loaded, empty, stale, failed }
 
 void _noop() {}
 void _noopFade(double _) {}

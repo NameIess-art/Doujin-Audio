@@ -1579,8 +1579,22 @@ class AsmrDownloadManager extends ChangeNotifier {
       } finally {
         await sink.close();
       }
+      final responseBytes = received - responseStart;
+      if (item.node.isAudio &&
+          item.size <= 0 &&
+          response.contentLength <= 0 &&
+          responseBytes == 0) {
+        return _TemporaryDownloadAttempt.failure(
+          retryable: true,
+          error: HttpException(
+            'Download response contained no media data.',
+            uri: uri,
+          ),
+          stackTrace: StackTrace.current,
+        );
+      }
       if ((response.contentLength > 0 &&
-              received - responseStart != response.contentLength) ||
+              responseBytes != response.contentLength) ||
           (item.size > 0 && received != item.size)) {
         return _TemporaryDownloadAttempt.failure(
           retryable: true,

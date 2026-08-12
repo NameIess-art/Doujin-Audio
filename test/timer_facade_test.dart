@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/player/application/timer_facade.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
+import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -164,5 +166,156 @@ void main() {
       expect(timerService.timerGeneration, 4);
       expect(restoreCount, 1);
     });
+
+    for (final result in <TimerExecutionResult>[
+      TimerExecutionResult.stale,
+      TimerExecutionResult.failed,
+    ]) {
+      test('$result expiry keeps a newly configured timer', () async {
+        final platform = _ControlledPowerPlatformService();
+        final timerService = TimerService();
+        var sessionReads = 0;
+        final timer = _createTimer(
+          timerService,
+          platform,
+          sessions: () {
+            sessionReads++;
+            return const [];
+          },
+        );
+
+        timer.configureTimer(TimerMode.manual, const Duration(milliseconds: 1));
+        timer.startCountdown();
+        await platform.expiryStarted.future;
+
+        timer.configureTimer(TimerMode.trigger, const Duration(minutes: 5));
+        final newGeneration = timerService.timerGeneration;
+        platform.expiryResult.complete(result);
+        await Future<void>.delayed(Duration.zero);
+
+        _expectNewTimer(timerService, newGeneration);
+        expect(platform.nativeRuntimeReads, 0);
+        expect(sessionReads, 0);
+        await _expectPersistedGeneration(newGeneration);
+      });
+    }
+
+    test('stale auto resume keeps a newly configured timer', () async {
+      final platform = _ControlledPowerPlatformService();
+      final timerService = TimerService()
+        ..timerGeneration = 7
+        ..autoResumeAt = DateTime.now().subtract(const Duration(seconds: 1))
+        ..pausedByTimerSessionIds.add('session-a');
+      final timer = _createTimer(timerService, platform);
+
+      timer.retryOverdueAutoResume();
+      await platform.autoResumeStarted.future;
+      timer.configureTimer(TimerMode.trigger, const Duration(minutes: 5));
+      final newGeneration = timerService.timerGeneration;
+      platform.autoResumeResult.complete(TimerExecutionResult.stale);
+      await Future<void>.delayed(Duration.zero);
+
+      _expectNewTimer(timerService, newGeneration);
+      expect(platform.nativeRuntimeReads, 0);
+      await _expectPersistedGeneration(newGeneration);
+    });
+
+    test('expiry ignores a late native runtime', () async {
+      final platform = _ControlledPowerPlatformService()
+        ..expiryResult.complete(TimerExecutionResult.executed);
+      final timerService = TimerService();
+      final timer = _createTimer(timerService, platform);
+
+      timer.configureTimer(TimerMode.manual, const Duration(milliseconds: 1));
+      timer.startCountdown();
+      await platform.nativeRuntimeReadStarted.future;
+      timer.configureTimer(TimerMode.trigger, const Duration(minutes: 5));
+      final newGeneration = timerService.timerGeneration;
+      platform.nativeRuntime.complete(<String, Object?>{
+        'generation': newGeneration,
+      });
+      await Future<void>.delayed(Duration.zero);
+
+      _expectNewTimer(timerService, newGeneration);
+      await _expectPersistedGeneration(newGeneration);
+    });
   });
+}
+
+void _attachNoopRuntime(
+  TimerFacade timer, {
+  List<PlaybackSession> Function()? sessions,
+}) {
+  timer.attachRuntime(
+    hasPlayingSession: () => false,
+    sessions: sessions ?? () => const [],
+    pauseSession: (_) async => false,
+    activateAudioSession: () async => false,
+    resumeSession: (_) async => false,
+    onStateChanged: () {},
+    onRuntimeRestored: () {},
+    applyFadeMultiplier: (_) {},
+  );
+}
+
+TimerFacade _createTimer(
+  TimerService service,
+  _ControlledPowerPlatformService platform, {
+  List<PlaybackSession> Function()? sessions,
+}) {
+  final timer = TimerFacade.create(
+    service: service,
+    powerPlatformService: platform,
+  );
+  addTearDown(timer.dispose);
+  _attachNoopRuntime(timer, sessions: sessions);
+  return timer;
+}
+
+void _expectNewTimer(TimerService service, int generation) {
+  expect(service.timerGeneration, generation);
+  expect(service.timerDuration, const Duration(minutes: 5));
+  expect(service.timerWaitingForPlayback, isTrue);
+}
+
+Future<void> _expectPersistedGeneration(int generation) async {
+  await Future<void>.delayed(const Duration(milliseconds: 20));
+  final preferences = await SharedPreferences.getInstance();
+  final runtime =
+      json.decode(preferences.getString('timer_runtime_v1')!)
+          as Map<String, dynamic>;
+  expect(runtime['generation'], generation);
+}
+
+final class _ControlledPowerPlatformService extends PowerPlatformService {
+  _ControlledPowerPlatformService() : super(isAndroidOverride: false);
+
+  final expiryStarted = Completer<void>();
+  final expiryResult = Completer<TimerExecutionResult>();
+  final autoResumeStarted = Completer<void>();
+  final autoResumeResult = Completer<TimerExecutionResult>();
+  final nativeRuntimeReadStarted = Completer<void>();
+  final nativeRuntime = Completer<Map<dynamic, dynamic>?>();
+  var nativeRuntimeReads = 0;
+
+  @override
+  Future<TimerExecutionResult> executeTimerExpiredNow(int generation) {
+    if (!expiryStarted.isCompleted) expiryStarted.complete();
+    return expiryResult.future;
+  }
+
+  @override
+  Future<TimerExecutionResult> executeAutoResumeNow(int generation) {
+    if (!autoResumeStarted.isCompleted) autoResumeStarted.complete();
+    return autoResumeResult.future;
+  }
+
+  @override
+  Future<Map<dynamic, dynamic>?> getNativeTimerRuntimeState() {
+    nativeRuntimeReads++;
+    if (!nativeRuntimeReadStarted.isCompleted) {
+      nativeRuntimeReadStarted.complete();
+    }
+    return nativeRuntime.future;
+  }
 }

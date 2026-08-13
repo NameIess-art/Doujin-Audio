@@ -442,9 +442,7 @@ void main() {
     );
 
     final container = ProviderContainer(
-      overrides: [
-        playbackFacadeProvider.overrideWithValue(fixture.playback),
-      ],
+      overrides: [playbackFacadeProvider.overrideWithValue(fixture.playback)],
     );
 
     final paths = container.read(activeTrackPathsProvider);
@@ -2186,116 +2184,176 @@ void main() {
     expect(tester.getSize(cover).height, greaterThan(loadingCoverHeight));
   });
 
-  testWidgets('timeline subtitles scroll, return, and seek while paused', (
-    tester,
-  ) async {
-    final subtitleTrack = SubtitleTrack(
-      sourcePath: '/library/subtitles/track.srt',
-      cues: <SubtitleCue>[
-        const SubtitleCue(
-          start: Duration.zero,
-          end: Duration(seconds: 2),
-          text: 'Cue zero',
-        ),
-        const SubtitleCue(
-          start: Duration(seconds: 2),
-          end: Duration(seconds: 4),
-          text: 'Cue one wraps onto a centered second line',
-        ),
-        const SubtitleCue(
-          start: Duration(seconds: 4),
-          end: Duration(seconds: 6),
-          text: 'Cue two',
-        ),
-      ],
-    );
-    final result = await _pumpSubtitleDetail(
-      tester: tester,
-      style: PlaybackDetailSubtitleStyle.timeline,
-      subtitleTrack: subtitleTrack,
-      initialPosition: const Duration(milliseconds: 2500),
-    );
-    final viewport = find.byKey(
-      const ValueKey<String>('subtitle_timeline_viewport'),
-    );
-    await pumpUntilFound(tester, viewport);
-    await tester.pumpAndSettle();
+  testWidgets(
+    'timeline subtitles scroll, snap, return, and seek while paused',
+    (tester) async {
+      final subtitleTrack = SubtitleTrack(
+        sourcePath: '/library/subtitles/track.srt',
+        cues: <SubtitleCue>[
+          const SubtitleCue(
+            start: Duration.zero,
+            end: Duration(seconds: 2),
+            text: 'Cue zero',
+          ),
+          const SubtitleCue(
+            start: Duration(seconds: 2),
+            end: Duration(seconds: 4),
+            text: 'Cue one wraps onto a centered second line',
+          ),
+          const SubtitleCue(
+            start: Duration(seconds: 4),
+            end: Duration(seconds: 6),
+            text: 'Cue two',
+          ),
+        ],
+      );
+      final result = await _pumpSubtitleDetail(
+        tester: tester,
+        style: PlaybackDetailSubtitleStyle.timeline,
+        subtitleTrack: subtitleTrack,
+        initialPosition: const Duration(milliseconds: 2500),
+      );
+      void syncSession({required bool playing}) {
+        result.fixture.playbackService
+          ..markActiveSessionsDirty()
+          ..syncSlice(
+            activeSessions: <PlaybackSession>[result.session],
+            playingSessionCount: playing ? 1 : 0,
+            focusedSessionId: result.session.id,
+            multiThreadPlaybackEnabled: false,
+            coverGeneration: 0,
+            isInitialized: true,
+          );
+      }
 
-    final cue0 = find.byKey(const ValueKey<String>('subtitle_timeline_cue_0'));
-    final cue1 = find.byKey(const ValueKey<String>('subtitle_timeline_cue_1'));
-    final cue2 = find.byKey(const ValueKey<String>('subtitle_timeline_cue_2'));
-    Opacity opacityFor(Finder cue) => tester.widget<Opacity>(
-      find.ancestor(of: cue, matching: find.byType(Opacity)).first,
-    );
+      final viewport = find.byKey(
+        const ValueKey<String>('subtitle_timeline_viewport'),
+      );
+      await pumpUntilFound(tester, viewport);
+      await tester.pumpAndSettle();
 
-    expect(tester.getSize(viewport).height, 96);
-    expect(opacityFor(cue0).opacity, 0.45);
-    expect(opacityFor(cue1).opacity, 1);
-    expect(opacityFor(cue2).opacity, 0.45);
-    expect(
-      tester.getCenter(cue1).dy,
-      closeTo(tester.getCenter(viewport).dy, 0.1),
-    );
-    expect(
-      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
-      findsNothing,
-    );
-    expect(
-      tester.widget<Text>(find.text(subtitleTrack.cues[1].text)).textAlign,
-      TextAlign.center,
-    );
-    final focusedText = tester.widget<Text>(
-      find.byKey(const ValueKey<String>('subtitle_timeline_text_1')),
-    );
-    final unfocusedText = tester.widget<Text>(
-      find.byKey(const ValueKey<String>('subtitle_timeline_text_0')),
-    );
-    final textPadding = tester.widget<Padding>(
-      find.byKey(const ValueKey<String>('subtitle_timeline_text_padding_1')),
-    );
-    expect(focusedText.style?.fontSize, 16);
-    expect(unfocusedText.style?.fontSize, 14);
-    expect(focusedText.maxLines, isNull);
-    expect(focusedText.overflow, isNull);
-    expect(
-      textPadding.padding,
-      const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-    );
+      final cue0 = find.byKey(
+        const ValueKey<String>('subtitle_timeline_cue_0'),
+      );
+      final cue1 = find.byKey(
+        const ValueKey<String>('subtitle_timeline_cue_1'),
+      );
+      final cue2 = find.byKey(
+        const ValueKey<String>('subtitle_timeline_cue_2'),
+      );
+      Opacity opacityFor(Finder cue) => tester.widget<Opacity>(
+        find.ancestor(of: cue, matching: find.byType(Opacity)).first,
+      );
 
-    final list = find.byKey(const ValueKey<String>('subtitle_timeline_list'));
-    await tester.drag(list, const Offset(0, -52));
-    await tester.pumpAndSettle();
-    expect(opacityFor(cue2).opacity, 1);
-    expect(
-      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
-      findsOneWidget,
-    );
+      expect(tester.getSize(viewport).height, 96);
+      expect(opacityFor(cue0).opacity, 0.45);
+      expect(opacityFor(cue1).opacity, 1);
+      expect(opacityFor(cue2).opacity, 0.45);
+      expect(
+        tester.getCenter(cue1).dy,
+        closeTo(tester.getCenter(viewport).dy, 0.1),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+        findsNothing,
+      );
+      expect(
+        tester.widget<Text>(find.text(subtitleTrack.cues[1].text)).textAlign,
+        TextAlign.center,
+      );
+      final focusedText = tester.widget<Text>(
+        find.byKey(const ValueKey<String>('subtitle_timeline_text_1')),
+      );
+      final unfocusedText = tester.widget<Text>(
+        find.byKey(const ValueKey<String>('subtitle_timeline_text_0')),
+      );
+      final textPadding = tester.widget<Padding>(
+        find.byKey(const ValueKey<String>('subtitle_timeline_text_padding_1')),
+      );
+      expect(focusedText.style?.fontSize, 16);
+      expect(unfocusedText.style?.fontSize, 14);
+      expect(focusedText.maxLines, isNull);
+      expect(focusedText.overflow, isNull);
+      expect(
+        textPadding.padding,
+        const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      );
 
-    await tester.pump(const Duration(milliseconds: 2999));
-    expect(opacityFor(cue2).opacity, 1);
-    await tester.pump(const Duration(milliseconds: 1));
-    await tester.pumpAndSettle();
-    expect(opacityFor(cue1).opacity, 1);
+      final list = find.byKey(const ValueKey<String>('subtitle_timeline_list'));
+      expect(
+        tester.widget<ListView>(list).physics,
+        isNot(isA<NeverScrollableScrollPhysics>()),
+      );
+      final fixedCenter = tester.getCenter(cue1);
+      final gesture = await tester.startGesture(tester.getCenter(list));
+      await gesture.moveBy(const Offset(0, -30));
+      await tester.pump();
+      await gesture.moveBy(const Offset(0, -70));
+      await tester.pump();
+      expect(tester.getCenter(cue1).dy, lessThan(fixedCenter.dy));
+      expect(opacityFor(cue2).opacity, 1);
+      await gesture.up();
+      await tester.pump();
+      expect(opacityFor(cue2).opacity, 1);
+      expect(
+        tester.getCenter(cue2).dy,
+        closeTo(tester.getCenter(viewport).dy, 0.5),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+        findsOneWidget,
+      );
 
-    await tester.drag(list, const Offset(0, -52));
-    await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
-      findsOneWidget,
-    );
-    await tester.tap(
-      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
-    );
-    await tester.pump();
+      await tester.pump(const Duration(milliseconds: 2500));
+      expect(opacityFor(cue2).opacity, 1);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pumpAndSettle();
+      expect(opacityFor(cue1).opacity, 1);
 
-    expect(result.session.position, const Duration(seconds: 4));
-    expect(result.session.state.playing, isFalse);
-    expect(
-      find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
-      findsNothing,
-    );
-    await tester.pump(PlaybackSession.loadingIndicatorThreshold);
-  });
+      result.session
+        ..setOptimisticState(playing: true)
+        ..setOptimisticPosition(const Duration(milliseconds: 3900));
+      syncSession(playing: true);
+      await tester.pump();
+      final playingGesture = await tester.startGesture(tester.getCenter(list));
+      await playingGesture.moveBy(const Offset(0, -30));
+      await tester.pump();
+      final draggedCueCenter = tester.getCenter(cue1);
+      result.session.setOptimisticPosition(const Duration(milliseconds: 4100));
+      syncSession(playing: true);
+      await tester.pump();
+      expect(opacityFor(cue1).opacity, 1);
+      expect(tester.getCenter(cue1), draggedCueCenter);
+      await playingGesture.moveBy(const Offset(0, -36));
+      await playingGesture.up();
+      await tester.pump();
+      expect(opacityFor(cue2).opacity, 1);
+      result.session
+        ..setOptimisticState(playing: false)
+        ..setOptimisticPosition(const Duration(milliseconds: 3900));
+      syncSession(playing: false);
+      await tester.pump();
+
+      await tester.drag(list, const Offset(0, -52));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+      );
+      await tester.pump();
+
+      expect(result.session.position, const Duration(seconds: 4));
+      expect(result.session.state.playing, isFalse);
+      expect(
+        find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
+        findsNothing,
+      );
+      await tester.pump(PlaybackSession.loadingIndicatorThreshold);
+    },
+  );
 
   testWidgets('timeline subtitles lazily expand a bounded cue window', (
     tester,

@@ -1,23 +1,27 @@
 import 'dart:async';
 
 import '../../core/logging/app_log_service.dart';
+import '../../core/media/path_matcher.dart';
 import '../../core/platform/file_cache_platform_gateway.dart';
 import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/settings/application/settings_repository.dart';
 import 'runtime_binding.dart';
 
 /// Reconciles Android persisted SAF grants against references owned by the
-/// three runtime modules that can retain content URIs.
+/// runtime modules and settings that can retain content URIs.
 final class PersistedUriPermissionCoordinator implements RuntimeBinding {
   PersistedUriPermissionCoordinator.attach({
     required LibraryFacade library,
     required PlaybackFacade playback,
     required AsmrDownloadManager downloads,
+    required SettingsRepository settings,
     FileCachePlatformGateway? gateway,
   }) : _library = library,
        _playback = playback,
        _downloads = downloads,
+       _settings = settings,
        _gateway = gateway ?? FileCachePlatformGateway.instance {
     _subscriptions.addAll(<StreamSubscription<Object?>>[
       _library.states.listen((_) => _requestReconcile()),
@@ -28,6 +32,7 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
       _downloads.persistedUriReferenceRevisions.listen(
         (_) => _requestReconcile(),
       ),
+      _settings.slice.stream.listen((_) => _requestReconcile()),
     ]);
     _requestReconcile();
   }
@@ -35,11 +40,12 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
   final LibraryFacade _library;
   final PlaybackFacade _playback;
   final AsmrDownloadManager _downloads;
+  final SettingsRepository _settings;
   final FileCachePlatformGateway _gateway;
   final List<StreamSubscription<Object?>> _subscriptions =
       <StreamSubscription<Object?>>[];
 
-  (int, int, int)? _lastSubmittedRevision;
+  (int, int, int, String?)? _lastSubmittedRevision;
   bool _requested = false;
   bool _running = false;
   bool _disposed = false;
@@ -76,7 +82,8 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
         _requested = false;
         if (!_library.persistedUriReferencesReady ||
             !_playback.persistedSessionStateReady ||
-            !_downloads.persistedUriReferencesReady) {
+            !_downloads.persistedUriReferencesReady ||
+            !_settings.slice.state.isInitialized) {
           continue;
         }
         if (!_playback.nativeRetainedContentUriInventoryReady) {
@@ -87,16 +94,28 @@ final class PersistedUriPermissionCoordinator implements RuntimeBinding {
             continue;
           }
         }
+        final savedDownloadRoot = _settings
+            .slice
+            .state
+            .asmrDownloadDestinationRoot
+            ?.trim();
+        final savedDownloadContentUri =
+            savedDownloadRoot != null &&
+                PathMatcher.isContentUri(savedDownloadRoot)
+            ? savedDownloadRoot
+            : null;
         final revision = (
           _library.persistedUriReferenceRevision,
           _playback.persistedUriReferenceRevision,
           _downloads.persistedUriReferenceRevision,
+          savedDownloadContentUri,
         );
         if (revision == _lastSubmittedRevision) continue;
         final retainedUris = <String>{
           ..._library.persistedContentUris,
           ..._playback.persistedContentUris,
           ..._downloads.persistedContentUris,
+          ?savedDownloadContentUri,
         };
         final result = await _gateway.reconcilePersistedUriPermissions(
           retainedUris,

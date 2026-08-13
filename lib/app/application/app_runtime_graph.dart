@@ -161,6 +161,7 @@ AppRuntimeGraph createAppRuntimeGraph({
         library: library,
         playback: playback,
         downloads: asmrDownloads,
+        settings: settings,
         gateway: fileCacheGateway,
       ),
     );

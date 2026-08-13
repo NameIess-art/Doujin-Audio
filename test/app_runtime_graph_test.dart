@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/application/app_runtime_graph.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
+import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/player/application/notification_facade.dart';
@@ -12,6 +16,7 @@ import 'package:doujin_audio/features/player/domain/playback_persistence_reposit
 import 'package:doujin_audio/features/player/application/playback_notification_service.dart';
 import 'package:doujin_audio/features/player/application/timer_facade.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'support/test_persistence_repository.dart';
 
@@ -222,6 +227,83 @@ void main() {
     playback.forgetNativeSessionRetainedContentUris('native-only-session');
     expect(playback.persistedContentUris, isEmpty);
   });
+
+  test('saved ASMR download folder retains its SAF grant', () async {
+    const destinationA =
+        'content://com.android.externalstorage.documents/tree/'
+        'primary%3ADownload%2FASMR';
+    const destinationB =
+        'content://com.android.externalstorage.documents/tree/'
+        'primary%3AMusic%2FASMR';
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final firstSettings = SettingsRepository();
+    await firstSettings.setAsmrDownloadDestinationRoot(destinationA);
+    await firstSettings.dispose();
+
+    final settings = SettingsRepository();
+    await settings.loadPersistedState();
+    final library = _createLibraryFacade();
+    library.syncPresentationState(isInitialized: true);
+    final playback = PlaybackFacade.create(
+      databaseRepository:
+          library.databaseRepository as PlaybackPersistenceRepository,
+    );
+    playback.syncPresentationState(
+      focusedSessionId: null,
+      multiThreadPlaybackEnabled: false,
+      coverGeneration: 0,
+      isInitialized: true,
+    );
+    playback.replaceNativeRetainedContentUris(const []);
+    final downloads = AsmrDownloadManager(persistTasks: false);
+    await downloads.initialize();
+    final gateway = _RecordingFileCachePlatformGateway();
+    final retainedA = gateway.calls.firstWhere(
+      (uris) => uris.contains(destinationA),
+    );
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    final graph = createAppRuntimeGraph(
+      library: library,
+      playback: playback,
+      timer: TimerFacade.create(),
+      notifications: NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      ),
+      settings: settings,
+      asmrDownloads: downloads,
+      fileCacheGateway: gateway,
+      persistenceEnabled: false,
+    );
+    addTearDown(() async {
+      debugDefaultTargetPlatformOverride = null;
+      await graph.runtime.dispose();
+      await gateway.dispose();
+    });
+
+    expect(await retainedA.timeout(const Duration(seconds: 1)), {destinationA});
+    await Future<void>.delayed(Duration.zero);
+    final startupCallCount = gateway.recordedCalls.length;
+    expect(startupCallCount, greaterThan(0));
+    expect(gateway.recordedCalls.last, <String>{destinationA});
+
+    await settings.setAsmrDownloadDestinationRoot(destinationA);
+    await Future<void>.delayed(Duration.zero);
+    expect(gateway.recordedCalls, hasLength(startupCallCount));
+
+    final retainedB = gateway.calls.firstWhere(
+      (uris) => uris.contains(destinationB),
+    );
+    await settings.setAsmrDownloadDestinationRoot(destinationB);
+    expect(await retainedB.timeout(const Duration(seconds: 1)), {destinationB});
+
+    final releasedCall = gateway.calls.firstWhere((uris) => uris.isEmpty);
+    await settings.setAsmrDownloadDestinationRoot(null);
+    expect(await releasedCall.timeout(const Duration(seconds: 1)), isEmpty);
+    expect(gateway.recordedCalls.skip(startupCallCount), <Set<String>>[
+      <String>{destinationB},
+      <String>{},
+    ]);
+  });
 }
 
 LibraryFacade _createLibraryFacade({LibraryService? service}) {
@@ -253,4 +335,30 @@ final class _ElementReadCountingList<E> extends ListBase<E> {
 
   @override
   void operator []=(int index, E value) => _values[index] = value;
+}
+
+final class _RecordingFileCachePlatformGateway
+    extends FileCachePlatformGateway {
+  _RecordingFileCachePlatformGateway() : super(isAndroid: () => true);
+
+  final StreamController<Set<String>> _calls =
+      StreamController<Set<String>>.broadcast();
+  final List<Set<String>> recordedCalls = <Set<String>>[];
+
+  Stream<Set<String>> get calls => _calls.stream;
+
+  @override
+  Future<PersistedUriPermissionReconcileResult?>
+  reconcilePersistedUriPermissions(Iterable<String> retainedUris) async {
+    final uris = Set<String>.unmodifiable(retainedUris);
+    recordedCalls.add(uris);
+    _calls.add(uris);
+    return PersistedUriPermissionReconcileResult(
+      retainedCount: uris.length,
+      releasedCount: 0,
+      failedUris: const <String>[],
+    );
+  }
+
+  Future<void> dispose() => _calls.close();
 }

@@ -911,11 +911,31 @@ void main() {
       ).push(buildSessionDetailRoute(sessionId: session.id)),
     );
     await tester.pumpAndSettle();
+    final artwork = find.byKey(ValueKey<String>('artwork_${session.id}'));
+    const expandedPanel = ValueKey<String>('playback_expanded_control_panel');
+    expect(artwork, findsOneWidget);
+    expect(find.byKey(expandedPanel), findsNothing);
+
+    await tester.tap(find.byTooltip(languageProvider.tr('audio_features')));
+    await tester.pumpAndSettle();
+    expect(artwork, findsNothing);
+    final panel = tester.widget<Container>(find.byKey(expandedPanel));
+    final panelDecoration = panel.decoration! as BoxDecoration;
+    expect(panelDecoration.color, isNotNull);
+    expect(panelDecoration.border, isNotNull);
+    expect(tester.getSize(find.byKey(expandedPanel)).width, 398);
+    expect(panelDecoration.borderRadius, BorderRadius.circular(16));
+    expect(panelDecoration.boxShadow, isNotEmpty);
+
+    await tester.tap(find.byTooltip(languageProvider.tr('audio_features')));
+    await tester.pumpAndSettle();
+    expect(artwork, findsOneWidget);
+    expect(find.byKey(expandedPanel), findsNothing);
     await tester.tap(find.byTooltip(languageProvider.tr('audio_features')));
     await tester.pumpAndSettle();
 
     const portraitDividerKey = ValueKey<String>('portrait_console_divider');
-    expect(find.byKey(portraitDividerKey), findsOneWidget);
+    expect(find.byKey(portraitDividerKey), findsNothing);
     tester.view.physicalSize = const Size(900, 430);
     await tester.pumpAndSettle();
     expect(find.byKey(portraitDividerKey), findsNothing);

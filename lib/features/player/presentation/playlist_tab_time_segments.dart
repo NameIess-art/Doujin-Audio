@@ -84,6 +84,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -103,20 +104,10 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
         MediaQuery.orientationOf(context) == Orientation.portrait;
 
     final content = Padding(
-      padding: const EdgeInsets.fromLTRB(0, 6, 0, 16),
+      padding: EdgeInsets.fromLTRB(0, isPortrait ? 14 : 6, 0, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (isPortrait)
-            Divider(
-              key: const ValueKey<String>('portrait_console_divider'),
-              height: 1,
-              thickness: 1,
-              color: Theme.of(
-                context,
-              ).colorScheme.outlineVariant.withValues(alpha: 0.56),
-            ),
-          const SizedBox(height: 12),
           Stack(
             alignment: Alignment.center,
             children: [
@@ -136,7 +127,10 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                   right: 0,
                   child: IconButton(
                     padding: const EdgeInsets.all(4),
-                    constraints: const BoxConstraints(),
+                    constraints: const BoxConstraints.tightFor(
+                      width: 44,
+                      height: 44,
+                    ),
                     iconSize: 20,
                     icon: const Icon(Icons.close_rounded),
                     onPressed: widget.onClose,
@@ -182,7 +176,26 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
         ],
       ),
     );
-    return SizedBox(height: targetHeight, child: content);
+    if (!isPortrait) return SizedBox(height: targetHeight, child: content);
+    return Container(
+      key: const ValueKey<String>('playback_expanded_control_panel'),
+      height: targetHeight,
+      clipBehavior: Clip.antiAlias,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHigh.withValues(alpha: 0.9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.55)),
+        boxShadow: [
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: 0.14),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: content,
+    );
   }
 
   Widget _buildSegmentPage(

@@ -422,8 +422,18 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
       );
     }
 
+    final resolvedDetailPadding = widget.detailPadding.resolve(
+      Directionality.of(context),
+    );
     final contentColumn = Padding(
-      padding: widget.detailPadding,
+      padding: !widget.isLandscape && _segmentPanelExpanded
+          ? EdgeInsets.fromLTRB(
+              16,
+              resolvedDetailPadding.top,
+              16,
+              resolvedDetailPadding.bottom,
+            )
+          : resolvedDetailPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -620,7 +630,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
 
     return Column(
       children: [
-        Expanded(child: widget.artworkWidget),
+        if (!_segmentPanelExpanded) Expanded(child: widget.artworkWidget),
         contentColumn,
       ],
     );

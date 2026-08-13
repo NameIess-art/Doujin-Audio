@@ -186,6 +186,7 @@ AppRuntimeGraph createAppRuntimeGraph({
     warmup: warmup,
     keepAlive: keepAlive,
     playbackCommands: playbackCommands,
+    asmrDownloads: asmrDownloads,
     bindings: bindings,
   );
   syncAllState();

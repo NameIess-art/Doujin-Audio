@@ -1,3 +1,4 @@
+import '../../features/asmr/application/asmr_download_manager.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
@@ -22,6 +23,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     required AudioUiWarmupCoordinator warmup,
     required PlaybackKeepAliveCoordinator keepAlive,
     required PlaybackCommandCoordinator playbackCommands,
+    AsmrDownloadManager? asmrDownloads,
     required List<RuntimeBinding> bindings,
   }) : _persistence = persistence,
        _library = library,
@@ -32,6 +34,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
        _warmup = warmup,
        _keepAlive = keepAlive,
        _playbackCommands = playbackCommands,
+       _asmrDownloads = asmrDownloads,
        _bindings = List<RuntimeBinding>.unmodifiable(bindings) {
     _runtime = AudioRuntimeCoordinator(
       snapshots: playback.nativeRepository.snapshots,
@@ -57,6 +60,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
     required AudioUiWarmupCoordinator warmup,
     required PlaybackKeepAliveCoordinator keepAlive,
     required PlaybackCommandCoordinator playbackCommands,
+    AsmrDownloadManager? asmrDownloads,
     required List<RuntimeBinding> bindings,
   }) {
     return AppLifecycleBinding._(
@@ -69,6 +73,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
       warmup: warmup,
       keepAlive: keepAlive,
       playbackCommands: playbackCommands,
+      asmrDownloads: asmrDownloads,
       bindings: bindings,
     );
   }
@@ -82,6 +87,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   final AudioUiWarmupCoordinator _warmup;
   final PlaybackKeepAliveCoordinator _keepAlive;
   final PlaybackCommandCoordinator _playbackCommands;
+  final AsmrDownloadManager? _asmrDownloads;
   final List<RuntimeBinding> _bindings;
   late final AudioRuntimeCoordinator _runtime;
   bool _bindingsDisposed = false;
@@ -99,6 +105,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   Future<void> dispose() => _runtime.dispose();
 
   Future<void> _enterBackground() async {
+    await _asmrDownloads?.pauseAllTasks();
     _playback.setBackgroundMode(true);
     _keepAlive.enterBackground();
   }
@@ -113,6 +120,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   }
 
   Future<void> _disposeRuntime() async {
+    await _asmrDownloads?.pauseAllTasks();
     _persistence.dispose();
     _playback.cancelScheduledPersistence();
     _library.cancelPendingScanProgressNotification();
@@ -124,6 +132,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
         await binding.dispose();
       }
     }
+    _asmrDownloads?.dispose();
     await _library.dispose();
     await _playback.dispose();
     await _timer.dispose();

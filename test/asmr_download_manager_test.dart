@@ -2227,23 +2227,22 @@ void main() {
       );
 
       final manager = _manager();
+      final selectedRoots = <AsmrTrackFile>[
+        _file(
+          downloadUrl: 'http://${server.address.host}:${server.port}/fast.mp3',
+          size: fastBytes,
+          title: 'Fast.mp3',
+        ),
+        _file(
+          downloadUrl: 'http://${server.address.host}:${server.port}/slow.mp3',
+          size: slowBytes,
+          title: 'Slow.mp3',
+        ),
+      ];
       try {
         await manager.startDownload(
           work: _work(),
-          selectedRoots: <AsmrTrackFile>[
-            _file(
-              downloadUrl:
-                  'http://${server.address.host}:${server.port}/fast.mp3',
-              size: fastBytes,
-              title: 'Fast.mp3',
-            ),
-            _file(
-              downloadUrl:
-                  'http://${server.address.host}:${server.port}/slow.mp3',
-              size: slowBytes,
-              title: 'Slow.mp3',
-            ),
-          ],
+          selectedRoots: selectedRoots,
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
           saveMetadata: false,
@@ -2275,12 +2274,85 @@ void main() {
         expect(paused?.downloadedBytes, greaterThan(fastBytes));
         expect(await fastFile.length(), fastBytes);
 
-        await manager.resumeTask(1);
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: selectedRoots,
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
         final completed = manager.getTask(1);
         expect(completed?.completedFiles, 2);
         expect(completed?.skippedFiles, 0);
         expect(fastRequests, 1);
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'resuming reuses a complete local file when persisted progress is stale',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_resume_completed_',
+      );
+      const fileBytes = 4096;
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requestCount = 0;
+      unawaited(
+        server.forEach((request) async {
+          requestCount++;
+          request.response.contentLength = fileBytes;
+          request.response.add(List<int>.filled(fileBytes, 9));
+          await request.response.close();
+        }),
+      );
+      final selectedRoots = <AsmrTrackFile>[
+        _file(
+          downloadUrl: 'http://${server.address.host}:${server.port}/track.mp3',
+          size: fileBytes,
+        ),
+      ];
+      final target = File(
+        '${tempDir.path}${Platform.pathSeparator}Work [1]'
+        '${Platform.pathSeparator}Track.mp3',
+      );
+      await target.parent.create(recursive: true);
+      await target.writeAsBytes(List<int>.filled(fileBytes, 7), flush: true);
+      final manager = _manager();
+      manager.debugSetCurrentTaskForTesting(
+        AsmrDownloadTaskSnapshot(
+          work: _work(),
+          destinationRoot: tempDir.path,
+          workFolderName: 'Work [1]',
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+          status: AsmrDownloadTaskStatus.paused,
+          totalFiles: 1,
+          completedFiles: 0,
+          skippedFiles: 0,
+          failedFiles: 0,
+          totalBytes: fileBytes,
+          downloadedBytes: fileBytes,
+          startedAt: DateTime(2026),
+          fileDownloadedBytes: const <String, int>{'Track.mp3': fileBytes},
+          fileTotalBytes: const <String, int>{'Track.mp3': fileBytes},
+          selectedRoots: selectedRoots,
+        ),
+      );
+
+      try {
+        await manager.resumeTask(1);
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        expect(requestCount, 0);
+        expect(manager.getTask(1)?.skippedFiles, 1);
+        expect(manager.getTask(1)?.completedFilePaths, contains('Track.mp3'));
+        expect(await target.readAsBytes(), List<int>.filled(fileBytes, 7));
       } finally {
         manager.dispose();
         await server.close(force: true);
@@ -2429,15 +2501,17 @@ void main() {
             DateTime.now().isBefore(deadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
-        await firstManager.pauseTask(1);
+        await firstManager.pauseAllTasks();
         await _waitForTaskStatus(
           firstManager,
           1,
           AsmrDownloadTaskStatus.paused,
         );
         final pausedBytes = await part.length();
+        final resumeMetadata = File('${part.path}.resume.json');
         expect(pausedBytes, greaterThan(0));
         expect(pausedBytes, lessThan(totalBytes));
+        expect(await resumeMetadata.exists(), isTrue);
 
         final persistDeadline = DateTime.now().add(const Duration(seconds: 5));
         while ((await AppPreferences.getString(
@@ -2447,7 +2521,21 @@ void main() {
             DateTime.now().isBefore(persistDeadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
-        firstManager.dispose();
+        final persisted =
+            jsonDecode(
+                  (await AppPreferences.getString(
+                    AppPreferences.asmrDownloadTasksKey,
+                  ))!,
+                )
+                as Map<String, dynamic>;
+        final persistedTask = Map<String, dynamic>.from(
+          (persisted['tasks'] as List).single as Map,
+        )..remove('fileResumeValidators');
+        persisted['tasks'] = <Object?>[persistedTask];
+        await AppPreferences.setString(
+          AppPreferences.asmrDownloadTasksKey,
+          jsonEncode(persisted),
+        );
 
         restoredManager = AsmrDownloadManager(
           temporaryDirectoryProvider: () async => Directory.systemTemp,
@@ -2461,7 +2549,7 @@ void main() {
           restoredTask?.fileDownloadedBytes['Track.mp3'],
           greaterThanOrEqualTo(pausedBytes),
         );
-        expect(restoredTask?.fileResumeValidators['Track.mp3'], '"restart"');
+        expect(restoredTask?.fileResumeValidators, isEmpty);
 
         await restoredManager.resumeTask(1);
         await _waitForTaskStatus(
@@ -2473,6 +2561,7 @@ void main() {
         expect(rangeStarts.last, 0);
         expect(ifRanges, contains('"restart"'));
         expect(await target.length(), totalBytes);
+        expect(await resumeMetadata.exists(), isFalse);
         expect(
           restoredManager.getTask(1)?.downloadedBytes,
           restoredManager.getTask(1)?.totalBytes,

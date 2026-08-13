@@ -467,6 +467,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   final List<int> _queue = [];
   final Set<int> _startingTasks = {};
   final Set<int> _activeTasks = {};
+  final Set<int> _resumingTasks = {};
   final Map<int, List<_PlannedDownloadFile>> _plannedFilesMap = {};
 
   final Map<int, bool> _cancelRequested = {};
@@ -656,6 +657,7 @@ class AsmrDownloadManager extends ChangeNotifier {
 
     if (_queue.contains(workId)) {
       _queue.remove(workId);
+      _resumingTasks.remove(workId);
       _createdOutputPaths.remove(workId);
       _createdJsonDocuments.remove(workId);
       _tasks.remove(workId);
@@ -689,6 +691,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
     _createdOutputPaths.remove(workId);
     _createdJsonDocuments.remove(workId);
+    _resumingTasks.remove(workId);
     _tasks.remove(workId);
     _notifyTaskChanged();
     await _persistenceTail;
@@ -708,6 +711,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     await _deleteDownloadRoot(workRootPath);
     _createdOutputPaths.remove(workId);
     _createdJsonDocuments.remove(workId);
+    _resumingTasks.remove(workId);
   }
 
   Future<void> pauseTask(int workId) async {
@@ -731,12 +735,54 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
   }
 
+  Future<void> pauseAllTasks() async {
+    if (_disposed) return;
+    await initialize();
+    if (_disposed) return;
+
+    final queuedWorkIds = List<int>.of(_queue);
+    _queue.clear();
+    for (final workId in queuedWorkIds) {
+      final task = _tasks[workId];
+      if (task == null) continue;
+      _tasks[workId] = task.copyWith(
+        status: AsmrDownloadTaskStatus.paused,
+        message: 'paused',
+      );
+    }
+
+    final activeWorkIds = List<int>.of(_activeTasks);
+    for (final workId in activeWorkIds) {
+      _pauseRequested[workId] = true;
+      _activeHttpClients[workId]?.close(force: true);
+    }
+    if (queuedWorkIds.isNotEmpty || activeWorkIds.isNotEmpty) {
+      _notifyTaskChanged();
+    }
+
+    await Future.wait<void>(
+      activeWorkIds.map(
+        (workId) =>
+            _downloadCompletions[workId]?.future ?? Future<void>.value(),
+      ),
+    );
+    await flushPersistence();
+  }
+
   Future<void> resumeTask(int workId) async {
     if (_disposed) return;
     final task = _tasks[workId];
-    if (task == null || task.status != AsmrDownloadTaskStatus.paused) {
+    if (task == null ||
+        (task.status != AsmrDownloadTaskStatus.paused &&
+            task.status != AsmrDownloadTaskStatus.failed)) {
       return;
     }
+    _enqueueExistingTask(task);
+  }
+
+  void _enqueueExistingTask(AsmrDownloadTaskSnapshot task) {
+    final workId = task.work.id;
+    _resumingTasks.add(workId);
     _tasks[workId] = task.copyWith(
       status: AsmrDownloadTaskStatus.idle,
       message: 'queued',
@@ -782,8 +828,15 @@ class AsmrDownloadManager extends ChangeNotifier {
             _activeTasks.contains(workId)) {
           return; // Already downloading or queued
         }
+        if (existingTask.status == AsmrDownloadTaskStatus.paused ||
+            existingTask.status == AsmrDownloadTaskStatus.failed) {
+          _enqueueExistingTask(existingTask);
+          await _persistenceTail;
+          return;
+        }
         _tasks.remove(workId);
       }
+      _resumingTasks.remove(workId);
 
       final workFolderName = buildAsmrDownloadWorkFolderName(
         work,
@@ -1150,6 +1203,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         completion.complete();
       }
       _activeTasks.remove(workId);
+      _resumingTasks.remove(workId);
       _liveDownloadedBytes.remove(workId);
       _liveFileDownloadedBytes.remove(workId);
       if (_tasks[workId]?.status == AsmrDownloadTaskStatus.completed) {
@@ -1226,6 +1280,14 @@ class AsmrDownloadManager extends ChangeNotifier {
       localTargetFile = File(
         _resolveLocalPathWithin(workRootPath, normalizedRelativePath),
       );
+      if (_resumingTasks.contains(workId) &&
+          item.size > 0 &&
+          (_tasks[workId]?.fileDownloadedBytes[normalizedRelativePath] ?? 0) >=
+              item.size &&
+          await localTargetFile.exists() &&
+          await localTargetFile.length() == item.size) {
+        return _WriteResult.skipped(bytesDownloaded: item.size);
+      }
       if ((preserveExistingJson ||
               conflictPolicy == AsmrDownloadConflictPolicy.skip) &&
           await localTargetFile.exists()) {
@@ -1352,10 +1414,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       return _WriteResult.success(bytesDownloaded: tempResult.bytesDownloaded);
     } finally {
       try {
-        if (_pauseRequested[workId] != true &&
-            !_disposed &&
-            await tempResult.file.exists()) {
-          await tempResult.file.delete();
+        if (_pauseRequested[workId] != true && !_disposed) {
+          await _deleteDownloadStaging(tempResult.file);
         }
       } catch (_) {
         // Temporary download cleanup is best effort after the primary result.
@@ -1372,7 +1432,10 @@ class AsmrDownloadManager extends ChangeNotifier {
   }) async {
     final tempFile = stagingFile;
     await tempFile.parent.create(recursive: true);
-    final cacheLease = AppCacheService.protectPaths(<String>[tempFile.path]);
+    final cacheLease = AppCacheService.protectPaths(<String>[
+      tempFile.path,
+      _stagingResumeMetadataFile(tempFile).path,
+    ]);
     var leaseTransferred = false;
     try {
       for (var attempt = 0; ; attempt++) {
@@ -1421,10 +1484,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       _setFileRetryAttempt(workId, item.relativePath, null);
       if (!leaseTransferred) {
         try {
-          if (_pauseRequested[workId] != true &&
-              !_disposed &&
-              await tempFile.exists()) {
-            await tempFile.delete();
+          if (_pauseRequested[workId] != true && !_disposed) {
+            await _deleteDownloadStaging(tempFile);
           }
         } catch (_) {
           // Incomplete staging file cleanup is best effort.
@@ -1454,11 +1515,17 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
       var resumeValidator =
           _tasks[workId]?.fileResumeValidators[item.relativePath];
+      if (received > 0 && allowResume && resumeValidator == null) {
+        resumeValidator = await _readStagingResumeValidator(stagingFile, item);
+        if (resumeValidator != null) {
+          _setFileResumeValidator(workId, item.relativePath, resumeValidator);
+        }
+      }
       final completeStagingFile = item.size > 0 && received >= item.size;
       if (received > 0 &&
           (!allowResume || resumeValidator == null || completeStagingFile)) {
         _discardLivePartialProgress(workId, item.relativePath, received);
-        await _deleteFileIfPresent(stagingFile);
+        await _deleteDownloadStaging(stagingFile);
         _setFileResumeValidator(workId, item.relativePath, null);
         received = 0;
         resumeValidator = null;
@@ -1492,7 +1559,7 @@ class AsmrDownloadManager extends ChangeNotifier {
           // The retry uses a new response even if cancellation already won.
         }
         _discardLivePartialProgress(workId, item.relativePath, received);
-        await _deleteFileIfPresent(stagingFile);
+        await _deleteDownloadStaging(stagingFile);
         _setFileResumeValidator(workId, item.relativePath, null);
         return _downloadToTemporaryFileAttempt(
           item,
@@ -1562,6 +1629,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         _discardLivePartialProgress(workId, item.relativePath, discardedBytes);
       }
       _setFileResumeValidator(workId, item.relativePath, responseValidator);
+      await _writeStagingResumeValidator(stagingFile, item, responseValidator);
       final sink = stagingFile.openWrite(
         mode: responseStart > 0 ? FileMode.append : FileMode.write,
       );
@@ -2058,6 +2126,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     _deferredProgressNotifyTimer?.cancel();
     _deferredProgressNotifyTimer = null;
     _queue.clear();
+    _resumingTasks.clear();
     for (final workId in _activeTasks) {
       _cancelRequested[workId] = true;
     }
@@ -2110,6 +2179,56 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
   }
 
+  File _stagingResumeMetadataFile(File stagingFile) =>
+      File('${stagingFile.path}.resume.json');
+
+  Future<String?> _readStagingResumeValidator(
+    File stagingFile,
+    _PlannedDownloadFile item,
+  ) async {
+    final metadataFile = _stagingResumeMetadataFile(stagingFile);
+    try {
+      if (!await metadataFile.exists() || await metadataFile.length() > 4096) {
+        return null;
+      }
+      final decoded = jsonDecode(await metadataFile.readAsString());
+      if (decoded is! Map ||
+          decoded['url'] != item.url ||
+          decoded['size'] != item.size) {
+        return null;
+      }
+      final validator = decoded['validator'];
+      return validator is String && validator.isNotEmpty ? validator : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeStagingResumeValidator(
+    File stagingFile,
+    _PlannedDownloadFile item,
+    String? validator,
+  ) async {
+    final metadataFile = _stagingResumeMetadataFile(stagingFile);
+    if (validator == null) {
+      await _deleteFileIfPresent(metadataFile);
+      return;
+    }
+    await metadataFile.writeAsString(
+      jsonEncode(<String, Object?>{
+        'url': item.url,
+        'size': item.size,
+        'validator': validator,
+      }),
+      flush: true,
+    );
+  }
+
+  Future<void> _deleteDownloadStaging(File stagingFile) async {
+    await _deleteFileIfPresent(stagingFile);
+    await _deleteFileIfPresent(_stagingResumeMetadataFile(stagingFile));
+  }
+
   Future<void> _cleanupCancelledTask(int workId) async {
     for (final createdPath in _createdOutputPaths[workId] ?? const <String>{}) {
       try {
@@ -2132,6 +2251,9 @@ class AsmrDownloadManager extends ChangeNotifier {
           final file = File(createdPath);
           if (await file.exists()) {
             await file.delete();
+          }
+          if (createdPath.endsWith('.doujin.part')) {
+            await _deleteFileIfPresent(_stagingResumeMetadataFile(file));
           }
         }
       } catch (_) {

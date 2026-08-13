@@ -758,6 +758,9 @@ class AsmrDownloadManager extends ChangeNotifier {
         kDefaultAsmrDownloadFolderNameFields,
   }) async {
     if (_disposed) return;
+    if (work.id <= 0) {
+      throw ArgumentError.value(work.id, 'work.id');
+    }
     final normalizedDestination = destinationRoot.trim();
     if (normalizedDestination.isEmpty) {
       throw ArgumentError.value(destinationRoot, 'destinationRoot');

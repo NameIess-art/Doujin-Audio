@@ -145,44 +145,8 @@ void main() {
   test(
     'ASMR work list and outbox roll back together on write failure',
     () async {
-      final originalWork = AsmrWork(
-        id: 1,
-        title: 'Original',
-        circleName: 'Circle',
-        sourceId: 'RJ000001',
-        sourceType: 'asmr',
-        sourceUrl: '',
-        coverUrl: '',
-        thumbnailUrl: '',
-        mainCoverUrl: '',
-        releaseDate: null,
-        createDate: null,
-        duration: Duration.zero,
-        dlCount: 0,
-        reviewCount: 0,
-        rating: 0,
-        voiceActors: const <String>[],
-        tags: const <String>[],
-      );
-      final replacementWork = AsmrWork(
-        id: 2,
-        title: 'Replacement',
-        circleName: 'Circle',
-        sourceId: 'RJ000002',
-        sourceType: 'asmr',
-        sourceUrl: '',
-        coverUrl: '',
-        thumbnailUrl: '',
-        mainCoverUrl: '',
-        releaseDate: null,
-        createDate: null,
-        duration: Duration.zero,
-        dlCount: 0,
-        reviewCount: 0,
-        rating: 0,
-        voiceActors: const <String>[],
-        tags: const <String>[],
-      );
+      final originalWork = _asmrWork(1, 'Original');
+      final replacementWork = _asmrWork(1, 'Replacement');
       final originalOperation = AsmrSyncOperation(
         type: AsmrSyncOperationType.favoriteAdd,
         workId: originalWork.id,
@@ -195,10 +159,10 @@ void main() {
         sourceId: replacementWork.sourceId,
         createdAt: DateTime.fromMillisecondsSinceEpoch(2),
       );
-      await repository.saveWorkListAndSyncOperations(
-        'favorites',
-        <AsmrWork>[originalWork],
-        <AsmrSyncOperation>[originalOperation],
+      await repository.saveAccountSyncState(
+        favoriteWorks: <AsmrWork>[originalWork],
+        historyWorks: const <AsmrWork>[],
+        operations: <AsmrSyncOperation>[originalOperation],
       );
       await db.execute('''
       CREATE TRIGGER fail_sync_operation_insert
@@ -209,18 +173,19 @@ void main() {
     ''');
 
       await expectLater(
-        repository.saveWorkListAndSyncOperations(
-          'favorites',
-          <AsmrWork>[replacementWork],
-          <AsmrSyncOperation>[replacementOperation],
+        repository.saveAccountSyncState(
+          favoriteWorks: const <AsmrWork>[],
+          historyWorks: <AsmrWork>[replacementWork],
+          operations: <AsmrSyncOperation>[replacementOperation],
         ),
         throwsA(isA<DatabaseException>()),
       );
 
       expect(
-        (await repository.loadWorkList('favorites')).map((work) => work.id),
-        <int>[originalWork.id],
+        (await repository.loadWorkList('favorites')).single.title,
+        originalWork.title,
       );
+      expect(await repository.loadWorkList('history'), isEmpty);
       expect(
         (await repository.loadSyncOperations()).map(
           (operation) => operation.workId,
@@ -229,6 +194,68 @@ void main() {
       );
     },
   );
+
+  test('ASMR account state rolls back when history membership fails', () async {
+    final original = _asmrWork(1, 'Original', isFavorite: true);
+    final replacement = _asmrWork(1, 'Replacement', isFavorite: true);
+    final operation = AsmrSyncOperation(
+      type: AsmrSyncOperationType.favoriteAdd,
+      workId: 1,
+      sourceId: original.sourceId,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+    );
+    await repository.saveAccountSyncState(
+      favoriteWorks: <AsmrWork>[original],
+      historyWorks: <AsmrWork>[original],
+      operations: <AsmrSyncOperation>[operation],
+    );
+    await db.execute('''
+      CREATE TRIGGER fail_history_membership_insert
+      BEFORE INSERT ON asmr_work_lists
+      WHEN NEW.list_type = 'history'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced history write failure');
+      END
+    ''');
+
+    await expectLater(
+      repository.saveAccountSyncState(
+        favoriteWorks: <AsmrWork>[replacement],
+        historyWorks: <AsmrWork>[replacement],
+        operations: const <AsmrSyncOperation>[],
+      ),
+      throwsA(isA<DatabaseException>()),
+    );
+
+    expect(
+      (await repository.loadWorkList('favorites')).single.title,
+      'Original',
+    );
+    expect((await repository.loadWorkList('history')).single.title, 'Original');
+    expect(await repository.loadSyncOperations(), hasLength(1));
+  });
+
+  test('ASMR account state writes shared work metadata once', () async {
+    final history = _asmrWork(7, 'History metadata', isFavorite: true);
+    final favorite = _asmrWork(7, 'Favorite metadata');
+    final historyOnly = _asmrWork(8, 'History only', isFavorite: true);
+
+    await repository.saveAccountSyncState(
+      favoriteWorks: <AsmrWork>[favorite],
+      historyWorks: <AsmrWork>[history, historyOnly],
+      operations: const <AsmrSyncOperation>[],
+    );
+
+    final reloadedFavorite = (await repository.loadWorkList(
+      'favorites',
+    )).single;
+    final reloadedHistory = await repository.loadWorkList('history');
+    expect(reloadedFavorite.title, 'Favorite metadata');
+    expect(reloadedHistory.first.title, 'Favorite metadata');
+    expect(reloadedFavorite.isFavorite, isTrue);
+    expect(reloadedHistory.first.isFavorite, isTrue);
+    expect(reloadedHistory.last.isFavorite, isFalse);
+  });
 
   test(
     'saveAllTracks and loadAllTracks round-trip the music library',
@@ -1203,4 +1230,27 @@ void main() {
     expect(indexNames, contains('idx_library_entries_library'));
     expect(indexNames, contains('idx_library_entries_state'));
   });
+}
+
+AsmrWork _asmrWork(int id, String title, {bool isFavorite = false}) {
+  return AsmrWork(
+    id: id,
+    title: title,
+    circleName: 'Circle',
+    sourceId: 'RJ${id.toString().padLeft(6, '0')}',
+    sourceType: 'asmr',
+    sourceUrl: '',
+    coverUrl: '',
+    thumbnailUrl: '',
+    mainCoverUrl: '',
+    releaseDate: null,
+    createDate: null,
+    duration: Duration.zero,
+    dlCount: 0,
+    reviewCount: 0,
+    rating: 0,
+    voiceActors: const <String>[],
+    tags: const <String>[],
+    isFavorite: isFavorite,
+  );
 }

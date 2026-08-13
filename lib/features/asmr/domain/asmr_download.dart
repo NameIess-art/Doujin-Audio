@@ -53,12 +53,13 @@ String buildAsmrDownloadWorkFolderName(
     if (value.isNotEmpty) parts.add(value);
   }
   final rawName = parts.isEmpty ? work.title.trim() : parts.join(' - ');
-  return PathDisplay.safeFileName(
+  final safeName = PathDisplay.safeFileName(
     rawName,
     replacement: '_',
     collapseWhitespace: false,
     fallback: 'ASMR_ONE',
   );
+  return '$safeName [${work.id}]';
 }
 
 String _joinVoiceActors(Iterable<String> voiceActors) {

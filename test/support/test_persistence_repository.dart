@@ -73,11 +73,15 @@ class TestPersistenceRepository extends SqliteLibraryRepository
   Future<void> saveSyncOperations(List<AsmrSyncOperation> operations) =>
       _asmr.saveSyncOperations(operations);
   @override
-  Future<void> saveWorkListAndSyncOperations(
-    String listType,
-    List<AsmrWork> works,
-    List<AsmrSyncOperation> operations,
-  ) => _asmr.saveWorkListAndSyncOperations(listType, works, operations);
+  Future<void> saveAccountSyncState({
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+    required List<AsmrSyncOperation> operations,
+  }) => _asmr.saveAccountSyncState(
+    favoriteWorks: favoriteWorks,
+    historyWorks: historyWorks,
+    operations: operations,
+  );
   @override
   Future<List<MusicTrack>> loadTracksForRecommendations() => loadAllTracks();
   @override

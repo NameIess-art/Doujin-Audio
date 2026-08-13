@@ -141,15 +141,38 @@ extension AppDatabaseAsmr on AppDatabase {
     });
   }
 
-  Future<void> saveAsmrWorkListAndSyncOperations(
-    String listType,
-    List<AsmrWorkRecord> works,
+  Future<void> saveAsmrAccountSyncState(
+    List<AsmrWorkRecord> favoriteWorks,
+    List<AsmrWorkRecord> historyWorks,
     List<AsmrSyncOperationRecord> operations,
   ) async {
     await _runDatabaseWrite((db) async {
       await db.transaction((txn) async {
         final batch = txn.batch();
-        _replaceAsmrWorkListInBatch(batch, listType, works);
+        final historyById = <int, AsmrWorkRecord>{
+          for (final work in historyWorks) work.id: work,
+        };
+        final favoriteById = <int, AsmrWorkRecord>{
+          for (final work in favoriteWorks) work.id: work,
+        };
+        final workById = <int, AsmrWorkRecord>{...historyById, ...favoriteById};
+        for (final work in workById.values) {
+          _writeAsmrWorkToBatch(
+            batch,
+            work,
+            isFavorite: favoriteById.containsKey(work.id),
+          );
+        }
+        _replaceAsmrWorkListMembershipInBatch(
+          batch,
+          'favorites',
+          favoriteById.values.toList(growable: false),
+        );
+        _replaceAsmrWorkListMembershipInBatch(
+          batch,
+          'history',
+          historyById.values.toList(growable: false),
+        );
         _replaceAsmrSyncOperationsInBatch(batch, operations);
         await batch.commit(noResult: true);
       });

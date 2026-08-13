@@ -71,15 +71,15 @@ class AsmrPreferencesStore {
     await _repository.saveSyncOperations(operations);
   }
 
-  Future<void> saveWorkListAndSyncOperations(
-    String listType,
-    List<AsmrWork> works,
-    List<AsmrSyncOperation> operations,
-  ) {
-    return _repository.saveWorkListAndSyncOperations(
-      listType,
-      works,
-      operations,
+  Future<void> saveAccountSyncState({
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+    required List<AsmrSyncOperation> operations,
+  }) {
+    return _repository.saveAccountSyncState(
+      favoriteWorks: favoriteWorks,
+      historyWorks: historyWorks,
+      operations: operations,
     );
   }
 

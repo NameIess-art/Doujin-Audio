@@ -301,7 +301,11 @@ Future<Map<int, List<String>>> _loadAsmrWorkTextValues(
   );
 }
 
-void _writeAsmrWorkToBatch(Batch batch, AsmrWorkRecord work) {
+void _writeAsmrWorkToBatch(
+  Batch batch,
+  AsmrWorkRecord work, {
+  bool? isFavorite,
+}) {
   batch.insert('asmr_works', {
     'id': work.id,
     'title': work.title,
@@ -319,7 +323,7 @@ void _writeAsmrWorkToBatch(Batch batch, AsmrWorkRecord work) {
     'review_count': work.reviewCount,
     'rating': work.rating,
     'has_subtitle': work.hasSubtitle ? 1 : 0,
-    'is_favorite': work.isFavorite ? 1 : 0,
+    'is_favorite': (isFavorite ?? work.isFavorite) ? 1 : 0,
   }, conflictAlgorithm: ConflictAlgorithm.replace);
   batch.delete(
     'asmr_work_voice_actors',
@@ -348,13 +352,23 @@ void _replaceAsmrWorkListInBatch(
   String listType,
   List<AsmrWorkRecord> works,
 ) {
+  for (final work in works) {
+    _writeAsmrWorkToBatch(batch, work);
+  }
+  _replaceAsmrWorkListMembershipInBatch(batch, listType, works);
+}
+
+void _replaceAsmrWorkListMembershipInBatch(
+  Batch batch,
+  String listType,
+  List<AsmrWorkRecord> works,
+) {
   batch.delete(
     'asmr_work_lists',
     where: 'list_type = ?',
     whereArgs: [listType],
   );
   for (var i = 0; i < works.length; i++) {
-    _writeAsmrWorkToBatch(batch, works[i]);
     batch.insert('asmr_work_lists', {
       'list_type': listType,
       'work_id': works[i].id,

@@ -247,6 +247,69 @@ void registerAsmrAccountSyncTests({
   );
 
   test(
+    'favorite metadata remains authoritative in history after reload',
+    () async {
+      await resetPrefs();
+      final service = AsmrAccountSyncService(
+        authService: AsmrAuthService(
+          apiService: _FakeAsmrApiService(),
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        apiService: _FakeAsmrApiService(),
+        preferencesStore: preferences,
+      );
+      await service.initialize();
+      final history = _work(id: 84, title: 'History metadata');
+      final favorite = _work(id: 84, title: 'Favorite metadata');
+
+      await service.recordHistory(history);
+      await service.toggleFavorite(favorite);
+
+      final reloaded = AsmrAccountSyncService(
+        authService: AsmrAuthService(
+          apiService: _FakeAsmrApiService(),
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        apiService: _FakeAsmrApiService(),
+        preferencesStore: preferences,
+      );
+      final snapshot = await reloaded.initialize();
+      expect(snapshot.favoriteWorks.single.title, 'Favorite metadata');
+      expect(snapshot.historyWorks.single.title, 'Favorite metadata');
+      expect(snapshot.favoriteWorks.single.isFavorite, isTrue);
+      expect(snapshot.historyWorks.single.isFavorite, isTrue);
+    },
+  );
+
+  test(
+    'failed account state write leaves the in-memory snapshot unchanged',
+    () async {
+      await resetPrefs();
+      final failingPreferences = _FailingAsmrPreferencesStore(
+        repository: TestPersistenceRepository(),
+      );
+      final service = AsmrAccountSyncService(
+        authService: AsmrAuthService(
+          apiService: _FakeAsmrApiService(),
+          tokenStore: _MemoryAsmrTokenStore(),
+        ),
+        apiService: _FakeAsmrApiService(),
+        preferencesStore: failingPreferences,
+      );
+      await service.initialize();
+
+      await expectLater(
+        service.toggleFavorite(_work(id: 85, title: 'Rejected favorite')),
+        throwsA(isA<FileSystemException>()),
+      );
+
+      expect(service.snapshot.favoriteWorks, isEmpty);
+      expect(service.snapshot.historyWorks, isEmpty);
+      expect(service.snapshot.pendingOperations, isEmpty);
+    },
+  );
+
+  test(
     'ASMR account sync refreshes expired token with saved credentials',
     () async {
       await resetPrefs();

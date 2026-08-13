@@ -42,13 +42,13 @@ class SqliteAsmrRepository implements AsmrPersistenceRepository {
         operations.map(_operationToRecord).toList(growable: false),
       );
   @override
-  Future<void> saveWorkListAndSyncOperations(
-    String listType,
-    List<AsmrWork> works,
-    List<AsmrSyncOperation> operations,
-  ) => _database.saveAsmrWorkListAndSyncOperations(
-    listType,
-    works.map(_workToRecord).toList(growable: false),
+  Future<void> saveAccountSyncState({
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+    required List<AsmrSyncOperation> operations,
+  }) => _database.saveAsmrAccountSyncState(
+    favoriteWorks.map(_workToRecord).toList(growable: false),
+    historyWorks.map(_workToRecord).toList(growable: false),
     operations.map(_operationToRecord).toList(growable: false),
   );
   @override

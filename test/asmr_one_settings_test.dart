@@ -474,14 +474,33 @@ class _BlockingAsmrPreferencesStore extends AsmrPreferencesStore {
   final Completer<void> releaseSave = Completer<void>();
 
   @override
-  Future<void> saveWorkListAndSyncOperations(
-    String listType,
-    List<AsmrWork> works,
-    List<AsmrSyncOperation> operations,
-  ) async {
-    if (!saveStarted.isCompleted) saveStarted.complete();
-    await releaseSave.future;
-    await super.saveWorkListAndSyncOperations(listType, works, operations);
+  Future<void> saveAccountSyncState({
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+    required List<AsmrSyncOperation> operations,
+  }) async {
+    if (favoriteWorks.isNotEmpty && !saveStarted.isCompleted) {
+      saveStarted.complete();
+      await releaseSave.future;
+    }
+    await super.saveAccountSyncState(
+      favoriteWorks: favoriteWorks,
+      historyWorks: historyWorks,
+      operations: operations,
+    );
+  }
+}
+
+class _FailingAsmrPreferencesStore extends AsmrPreferencesStore {
+  _FailingAsmrPreferencesStore({required super.repository});
+
+  @override
+  Future<void> saveAccountSyncState({
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+    required List<AsmrSyncOperation> operations,
+  }) {
+    throw const FileSystemException('forced account state failure');
   }
 }
 

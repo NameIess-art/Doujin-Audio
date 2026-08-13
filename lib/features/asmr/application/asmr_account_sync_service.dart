@@ -96,9 +96,13 @@ class AsmrAccountSyncService {
   AsmrAccountSnapshot get snapshot => _snapshot;
 
   Future<AsmrAccountSnapshot> initialize() async {
-    _snapshot = AsmrAccountSnapshot(
+    final normalized = _normalizeAccountWorks(
       favoriteWorks: await _preferencesStore.loadFavoriteWorks(),
       historyWorks: await _preferencesStore.loadHistoryWorks(),
+    );
+    _snapshot = AsmrAccountSnapshot(
+      favoriteWorks: normalized.favoriteWorks,
+      historyWorks: normalized.historyWorks,
       pendingOperations: await _preferencesStore.loadSyncOperations(),
       lastSyncAt: await _preferencesStore.loadLastSyncAt(),
     );
@@ -161,13 +165,18 @@ class AsmrAccountSyncService {
         current.pendingOperations,
         operation,
       );
-      await _preferencesStore.saveWorkListAndSyncOperations(
-        'favorites',
-        favorites,
-        operations,
+      final normalized = _normalizeAccountWorks(
+        favoriteWorks: favorites,
+        historyWorks: current.historyWorks,
+      );
+      await _preferencesStore.saveAccountSyncState(
+        favoriteWorks: normalized.favoriteWorks,
+        historyWorks: normalized.historyWorks,
+        operations: operations,
       );
       _snapshot = current.copyWith(
-        favoriteWorks: favorites,
+        favoriteWorks: normalized.favoriteWorks,
+        historyWorks: normalized.historyWorks,
         pendingOperations: operations,
       );
       return _snapshot;
@@ -191,13 +200,18 @@ class AsmrAccountSyncService {
         current.pendingOperations,
         operation,
       );
-      await _preferencesStore.saveWorkListAndSyncOperations(
-        'history',
-        history,
-        operations,
+      final normalized = _normalizeAccountWorks(
+        favoriteWorks: current.favoriteWorks,
+        historyWorks: history,
+      );
+      await _preferencesStore.saveAccountSyncState(
+        favoriteWorks: normalized.favoriteWorks,
+        historyWorks: normalized.historyWorks,
+        operations: operations,
       );
       _snapshot = current.copyWith(
-        historyWorks: history,
+        favoriteWorks: normalized.favoriteWorks,
+        historyWorks: normalized.historyWorks,
         pendingOperations: operations,
       );
       return _snapshot;
@@ -273,12 +287,12 @@ class AsmrAccountSyncService {
             .where((item) => !uploadedKeys.contains(_operationKey(item)))
             .toList(growable: false);
         final merged = _mergeRemoteState(_snapshot, records);
-        await _preferencesStore.saveFavoriteWorks(merged.favoriteWorks);
         token.throwIfCancelled();
-        await _preferencesStore.saveHistoryWorks(merged.historyWorks);
-        token.throwIfCancelled();
-        await _preferencesStore.saveSyncOperations(operations);
-        token.throwIfCancelled();
+        await _preferencesStore.saveAccountSyncState(
+          favoriteWorks: merged.favoriteWorks,
+          historyWorks: merged.historyWorks,
+          operations: operations,
+        );
         _snapshot = merged.copyWith(pendingOperations: operations);
         return _snapshot;
       });
@@ -461,12 +475,39 @@ class AsmrAccountSyncService {
     for (final record in remoteHistory) {
       if (seen.add(record.work.id)) history.add(record.work);
     }
-    return current.copyWith(
+    final normalized = _normalizeAccountWorks(
       favoriteWorks: favoriteById.values.toList(growable: false),
       historyWorks: history.take(_historyLimit).toList(growable: false),
+    );
+    return current.copyWith(
+      favoriteWorks: normalized.favoriteWorks,
+      historyWorks: normalized.historyWorks,
       remoteProgressByWorkId: <int, String>{
         for (final record in records) record.work.id: record.progress,
       },
+    );
+  }
+
+  ({List<AsmrWork> favoriteWorks, List<AsmrWork> historyWorks})
+  _normalizeAccountWorks({
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+  }) {
+    final favoriteById = <int, AsmrWork>{};
+    for (final work in favoriteWorks) {
+      favoriteById.putIfAbsent(work.id, () => work.copyWith(isFavorite: true));
+    }
+    final normalizedHistory = <AsmrWork>[];
+    final seenHistoryIds = <int>{};
+    for (final work in historyWorks) {
+      if (!seenHistoryIds.add(work.id)) continue;
+      normalizedHistory.add(
+        favoriteById[work.id] ?? work.copyWith(isFavorite: false),
+      );
+    }
+    return (
+      favoriteWorks: favoriteById.values.toList(growable: false),
+      historyWorks: normalizedHistory,
     );
   }
 

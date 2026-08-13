@@ -2005,6 +2005,9 @@ final class LibraryFacade implements LibraryCatalog {
 
   @override
   void beginLibraryBatch() {
+    if (_service.libraryBatchDepth == 0) {
+      _service.libraryDerivedGeneration++;
+    }
     _service.libraryBatchDepth++;
   }
 

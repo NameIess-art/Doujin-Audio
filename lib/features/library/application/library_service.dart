@@ -61,6 +61,7 @@ class LibraryService {
   );
 
   void markStructureChanged() {
+    libraryDerivedGeneration++;
     if (libraryBatchDepth > 0) {
       libraryBatchChanged = true;
       return;

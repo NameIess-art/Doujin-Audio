@@ -2350,12 +2350,12 @@ void main() {
       expect(opacityFor(cue2).opacity, 1);
       result.session
         ..setOptimisticState(playing: false)
-        ..setOptimisticPosition(const Duration(milliseconds: 3900));
+        ..setOptimisticPosition(const Duration(milliseconds: 2500));
       syncSession(playing: false);
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
 
-      await tester.drag(list, const Offset(0, -52));
-      await tester.pumpAndSettle();
+      await tester.drag(list, const Offset(0, -100));
+      await tester.pump();
       expect(
         find.byKey(const ValueKey<String>('subtitle_timeline_seek_button')),
         findsOneWidget,

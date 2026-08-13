@@ -673,6 +673,9 @@ class _MainScreenState extends ConsumerState<MainScreen>
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
     _switchAudioLibrarySection(nextSection);
+    if (_activePageIndex.value != 0) {
+      _switchPage(0);
+    }
   }
 
   void _handlePageTransitionCompleted(int index) {

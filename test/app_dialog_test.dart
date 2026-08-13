@@ -115,6 +115,37 @@ void main() {
     expect(find.byType(AppDialog), findsNothing);
   });
 
+  testWidgets('shared app dialog dismisses when tapping background scrim', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppDialog<void>(
+                context: context,
+                builder: (_) => const AppDialog(
+                  title: 'Dismissable dialog',
+                  content: Text('Content'),
+                ),
+              ),
+              child: const Text('Open dialog'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open dialog'));
+    await tester.pumpAndSettle();
+    expect(find.text('Dismissable dialog'), findsOneWidget);
+
+    await tester.tapAt(const Offset(1, 1));
+    await tester.pumpAndSettle();
+    expect(find.text('Dismissable dialog'), findsNothing);
+  });
+
   testWidgets('dialog actions stack on a narrow viewport', (tester) async {
     tester.view.physicalSize = const Size(240, 600);
     tester.view.devicePixelRatio = 1;

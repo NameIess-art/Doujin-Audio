@@ -167,9 +167,17 @@ Future<T?> showAppDialog<T>({
       return Stack(
         fit: StackFit.expand,
         children: [
-          _AppAnimatedScrim(
-            animation: animation,
-            scrimKey: const ValueKey('app_dialog_scrim'),
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: barrierDismissible
+                  ? () => Navigator.of(dialogContext).maybePop()
+                  : null,
+              child: _AppAnimatedScrim(
+                animation: animation,
+                scrimKey: const ValueKey('app_dialog_scrim'),
+              ),
+            ),
           ),
           SafeArea(
             child: Center(

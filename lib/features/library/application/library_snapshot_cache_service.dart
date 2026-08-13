@@ -98,6 +98,9 @@ LibraryDerivedSnapshot buildLibraryDerivedSnapshot(
 typedef LibraryCardSnapshotBuilder =
     Future<LibraryTreeSnapshot> Function(LibraryDerivedSnapshotPayload payload);
 
+typedef LibraryTreeSnapshotBuilder =
+    Future<LibraryTreeSnapshot> Function(LibraryDerivedSnapshotPayload payload);
+
 Future<LibraryTreeSnapshot> _defaultCardSnapshotBuilder(
   LibraryDerivedSnapshotPayload payload,
 ) {
@@ -111,15 +114,31 @@ Future<LibraryTreeSnapshot> _defaultCardSnapshotBuilder(
   );
 }
 
+Future<LibraryTreeSnapshot> _defaultTreeSnapshotBuilder(
+  LibraryDerivedSnapshotPayload payload,
+) {
+  return compute(
+    _buildLibraryTreeFromPayload,
+    _LibraryTreeBuildPayload(
+      tracks: payload.tracks,
+      watchedFolders: payload.watchedFolders,
+      watchedLibraries: payload.watchedLibraries,
+    ),
+  );
+}
+
 class LibrarySnapshotCacheService {
   LibrarySnapshotCacheService({
     required LibraryService libraryService,
     required AudioDetailCacheService detailCacheService,
     LibraryCardSnapshotBuilder? cardSnapshotBuilder,
+    LibraryTreeSnapshotBuilder? treeSnapshotBuilder,
   }) : _libraryService = libraryService,
        _detailCacheService = detailCacheService,
        _cardSnapshotBuilder =
-           cardSnapshotBuilder ?? _defaultCardSnapshotBuilder {
+           cardSnapshotBuilder ?? _defaultCardSnapshotBuilder,
+       _treeSnapshotBuilder =
+           treeSnapshotBuilder ?? _defaultTreeSnapshotBuilder {
     if (_libraryService.library.isEmpty &&
         _libraryService.watchedFolders.isEmpty) {
       _cachedCardRevision = _libraryService.structureRevision;
@@ -130,6 +149,7 @@ class LibrarySnapshotCacheService {
   final LibraryService _libraryService;
   final AudioDetailCacheService _detailCacheService;
   final LibraryCardSnapshotBuilder _cardSnapshotBuilder;
+  final LibraryTreeSnapshotBuilder _treeSnapshotBuilder;
 
   List<LibraryNode> _cachedCards = const <LibraryNode>[];
   int _cachedCardRevision = -1;
@@ -247,7 +267,7 @@ class LibrarySnapshotCacheService {
       return inFlight;
     }
 
-    final payload = _LibraryTreeBuildPayload(
+    final payload = LibraryDerivedSnapshotPayload(
       tracks: List<MusicTrack>.unmodifiable(_libraryService.library),
       watchedFolders: List<String>.unmodifiable(_libraryService.watchedFolders),
       watchedLibraries: List<String>.unmodifiable(
@@ -256,7 +276,7 @@ class LibrarySnapshotCacheService {
     );
     final buildFuture = AppLogService.measureAsync(
       'library_tree_snapshot_build',
-      () => compute(_buildLibraryTreeFromPayload, payload),
+      () => _treeSnapshotBuilder(payload),
       details: <String, Object?>{'tracks': payload.tracks.length},
     );
     _treeFutureRevision = revision;

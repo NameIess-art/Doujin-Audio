@@ -177,13 +177,15 @@ class LibraryScanUiState {
 
 @immutable
 class FilteredLibraryTreeResult {
-  const FilteredLibraryTreeResult({
+  FilteredLibraryTreeResult({
     required this.tree,
     required this.matchCount,
-  });
+    Iterable<String> expandedFolderPaths = const <String>[],
+  }) : expandedFolderPaths = Set<String>.unmodifiable(expandedFolderPaths);
 
   final List<LibraryNode> tree;
   final int matchCount;
+  final Set<String> expandedFolderPaths;
 }
 
 AudioLibraryCategorySnapshot? currentLibraryCategorySnapshot({
@@ -241,6 +243,7 @@ class LibrarySearchIndex {
     }
 
     final resultNodes = <LibraryNode>[];
+    final expandedFolderPaths = <String>{};
     var totalMatches = 0;
 
     for (final node in tree) {
@@ -253,6 +256,7 @@ class LibrarySearchIndex {
         if (folderResult == null) continue;
         resultNodes.add(folderResult.node);
         totalMatches += folderResult.matchCount;
+        expandedFolderPaths.addAll(folderResult.expandedFolderPaths);
         continue;
       }
 
@@ -266,6 +270,7 @@ class LibrarySearchIndex {
     return FilteredLibraryTreeResult(
       tree: List<LibraryNode>.unmodifiable(resultNodes),
       matchCount: totalMatches,
+      expandedFolderPaths: expandedFolderPaths,
     );
   }
 
@@ -296,10 +301,12 @@ class LibrarySearchIndex {
       return _FilteredFolderNodeResult(
         node: folder,
         matchCount: folder.totalTrackCount,
+        expandedFolderPaths: const <String>{},
       );
     }
 
     final filteredChildren = <LibraryNode>[];
+    final expandedFolderPaths = <String>{};
     var matchCount = 0;
 
     for (final child in folder.children) {
@@ -312,6 +319,7 @@ class LibrarySearchIndex {
         if (nestedResult == null) continue;
         filteredChildren.add(nestedResult.node);
         matchCount += nestedResult.matchCount;
+        expandedFolderPaths.addAll(nestedResult.expandedFolderPaths);
         continue;
       }
 
@@ -323,6 +331,7 @@ class LibrarySearchIndex {
     }
 
     if (filteredChildren.isEmpty) return null;
+    expandedFolderPaths.add(folder.path);
 
     final filteredFolder = FolderNode(
       folder.name,
@@ -332,6 +341,7 @@ class LibrarySearchIndex {
     return _FilteredFolderNodeResult(
       node: filteredFolder,
       matchCount: matchCount,
+      expandedFolderPaths: expandedFolderPaths,
     );
   }
 
@@ -413,10 +423,12 @@ class _FilteredFolderNodeResult {
   const _FilteredFolderNodeResult({
     required this.node,
     required this.matchCount,
+    required this.expandedFolderPaths,
   });
 
   final FolderNode node;
   final int matchCount;
+  final Set<String> expandedFolderPaths;
 }
 
 LibraryHeaderState libraryHeaderStateFromSlice(

@@ -141,6 +141,39 @@ void main() {
     );
   });
 
+  test('library search snapshot returns only ancestors that must expand', () {
+    final root = FolderNode('Work', '/library/work');
+    final disc = FolderNode('Disc', '/library/work/disc', depth: 1)
+      ..addChildren(<LibraryNode>[
+        TrackNode(track('Ocean chapter', '/library/work/disc/ocean.mp3')),
+        TrackNode(track('Quiet chapter', '/library/work/disc/quiet.mp3')),
+      ]);
+    root.addChild(disc);
+
+    final result = LibrarySearchIndex().resolve(
+      tree: <LibraryNode>[root],
+      query: 'ocean',
+      structureRevision: 1,
+    );
+
+    expect(result.matchCount, 1);
+    expect(result.expandedFolderPaths, <String>{
+      '/library/work',
+      '/library/work/disc',
+    });
+  });
+
+  test('folder-title matches stay collapsed until the user expands them', () {
+    final result = LibrarySearchIndex().resolve(
+      tree: buildTree(),
+      query: 'rain pack',
+      structureRevision: 1,
+    );
+
+    expect(result.matchCount, 2);
+    expect(result.expandedFolderPaths, isEmpty);
+  });
+
   test(
     'playlist header state only reflects relevant playback and timer fields',
     () {

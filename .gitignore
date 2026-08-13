@@ -76,3 +76,8 @@ work2.json
 
 # Local documentation and planning assets
 /docs/
+!/docs/
+/docs/*
+!/docs/reviews/
+/docs/reviews/*
+!/docs/reviews/2026-08-13-performance-audit.md

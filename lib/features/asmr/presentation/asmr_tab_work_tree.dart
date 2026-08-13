@@ -5,11 +5,15 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
     required this.work,
     required this.searchQuery,
     required this.isActive,
+    required this.expanded,
+    required this.onExpansionChanged,
   });
 
   final AsmrWork work;
   final String searchQuery;
   final bool isActive;
+  final bool expanded;
+  final ValueChanged<bool> onExpansionChanged;
 
   @override
   ConsumerState<_AsmrWorkTreeCard> createState() => _AsmrWorkTreeCardState();
@@ -18,7 +22,20 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
 class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   static const double _rootTileHeight = LibraryLikeCardMetrics.rootTileHeight;
   final ExpansibleController _expansionController = ExpansibleController();
-  bool _expanded = false;
+
+  @override
+  void didUpdateWidget(covariant _AsmrWorkTreeCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.expanded == widget.expanded) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (widget.expanded) {
+        _expansionController.expand();
+      } else {
+        _expansionController.collapse();
+      }
+    });
+  }
 
   T _readOrWatch<T>(ProviderListenable<T> provider) {
     return widget.isActive ? ref.watch(provider) : ref.read(provider);
@@ -125,15 +142,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
 
   @override
   Widget build(BuildContext context) {
-    final controller = ref.read(asmrLibraryControllerProvider);
-    final treeState = _expanded
-        ? _readOrWatch(asmrTrackTreeStateProvider(widget.work.id)).value ??
-              controller?.trackTreeViewState(widget.work.id)
-        : null;
-    final tree = treeState?.tree;
-    final visibleTree = treeState?.visibleTree;
-    final isTreeLoading = treeState?.isLoading ?? false;
-    final treeError = treeState?.operationError;
     _readOrWatch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
@@ -192,15 +200,14 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
           data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
           child: ExpansionTile(
             controller: _expansionController,
+            initiallyExpanded: widget.expanded,
             expansionAnimationStyle: appExpansionAnimationStyle(context),
             minTileHeight: _rootTileHeight,
             onExpansionChanged: (expanded) {
-              if (_expanded == expanded) {
+              if (widget.expanded == expanded) {
                 return;
               }
-              setState(() {
-                _expanded = expanded;
-              });
+              widget.onExpansionChanged(expanded);
               if (expanded) {
                 unawaited(_loadTrackTree());
               }
@@ -237,7 +244,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                   isActive: widget.isActive,
                 ),
                 onPlay: () => unawaited(_playWork(context)),
-                expanded: _expanded,
+                expanded: widget.expanded,
                 showExpandIndicator: true,
                 playTooltip: i18n.tr('asmr_add_to_playlist'),
                 accentColor: asmrBlue,
@@ -246,74 +253,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                 playLoading: playBusy,
               ),
             ),
-            children: _expanded
-                ? [
-                    if (visibleTree != null && visibleTree.isNotEmpty)
-                      for (final node in visibleTree)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: _AsmrTrackTreeNode(
-                            work: widget.work,
-                            node: node,
-                            isActive: widget.isActive,
-                          ),
-                        )
-                    else if (treeError != null && tree == null)
-                      Padding(
-                        key: ValueKey(
-                          'asmr-track-tree-error-${widget.work.id}',
-                        ),
-                        padding: const EdgeInsets.only(top: 4, bottom: 12),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              i18n.tr('operation_failed_retry'),
-                              textAlign: TextAlign.center,
-                              style: Theme.of(context).textTheme.bodySmall
-                                  ?.copyWith(
-                                    color: cs.onSurfaceVariant,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                            ),
-                            const SizedBox(height: 4),
-                            TextButton.icon(
-                              onPressed: isTreeLoading
-                                  ? null
-                                  : () => unawaited(_loadTrackTree()),
-                              icon: const Icon(Icons.refresh_rounded),
-                              label: Text(i18n.tr('retry')),
-                            ),
-                          ],
-                        ),
-                      )
-                    else if (tree == null)
-                      Padding(
-                        key: ValueKey(
-                          'asmr-track-tree-loading-${widget.work.id}',
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Center(
-                          child: CircularProgressIndicator(color: asmrBlue),
-                        ),
-                      )
-                    else
-                      Padding(
-                        key: ValueKey(
-                          'asmr-track-tree-empty-${widget.work.id}',
-                        ),
-                        padding: const EdgeInsets.only(top: 4, bottom: 12),
-                        child: Text(
-                          i18n.tr('asmr_empty_track_tree'),
-                          style: Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                color: cs.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                      ),
-                  ]
-                : const <Widget>[],
           ),
         ),
       ),
@@ -321,188 +260,151 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   }
 }
 
-class _AsmrTrackTreeNode extends ConsumerStatefulWidget {
+class _AsmrTrackTreeNode extends ConsumerWidget {
   const _AsmrTrackTreeNode({
     required this.work,
     required this.node,
     required this.isActive,
+    required this.expanded,
+    required this.onExpansionChanged,
   });
 
   final AsmrWork work;
   final AsmrTrackFile node;
   final bool isActive;
-
-  @override
-  ConsumerState<_AsmrTrackTreeNode> createState() => _AsmrTrackTreeNodeState();
-}
-
-class _AsmrTrackTreeNodeState extends ConsumerState<_AsmrTrackTreeNode> {
+  final bool expanded;
+  final ValueChanged<bool>? onExpansionChanged;
   static const double _childFolderTileHeight = 44;
   static const double _childFolderTitleBlockHeight = 36;
-  final ExpansibleController _expansionController = ExpansibleController();
-  bool _expanded = false;
 
   @override
-  Widget build(BuildContext context) {
-    if (widget.node.isFolder) {
-      final hasVisibleChildren = widget.node.children.any(
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (node.isFolder) {
+      final hasVisibleChildren = node.children.any(
         (child) => child.hasBrowsableContent,
       );
-      final visibleChildren = widget.node.children
-          .where((child) => child.hasBrowsableContent)
-          .toList(growable: false);
       final cs = Theme.of(context).colorScheme;
       final asmrBlue = AppDesignTokens.of(context).asmrAccent;
       final operationProvider = uiOperationForScopeProvider(
-        _trackPlayScope(widget.work, widget.node),
+        _trackPlayScope(work, node),
       );
       final busy =
-          (widget.isActive
+          (isActive
                   ? ref.watch(operationProvider)
                   : ref.read(operationProvider))
               .isBusy;
-      return Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          expansionAnimationStyle: appExpansionAnimationStyle(context),
-          controller: _expansionController,
-          minTileHeight: _childFolderTileHeight,
-          onExpansionChanged: (expanded) {
-            if (_expanded == expanded) {
-              return;
-            }
-            setState(() {
-              _expanded = expanded;
-            });
-          },
-          shape: const RoundedRectangleBorder(),
-          collapsedShape: const RoundedRectangleBorder(),
-          showTrailingIcon: false,
-          tilePadding: const EdgeInsets.fromLTRB(6, 2, 4, 2),
-          childrenPadding: const EdgeInsets.fromLTRB(4, 0, 0, 0),
-          title: Row(
-            children: [
-              Icon(
-                _expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
-                size: 20,
-                color: asmrBlue.withValues(alpha: 0.8),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: SizedBox(
-                  height: _childFolderTitleBlockHeight,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+      return SizedBox(
+        height: _childFolderTileHeight,
+        child: InkWell(
+          onTap: hasVisibleChildren
+              ? () => onExpansionChanged?.call(!expanded)
+              : null,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(6, 2, 4, 2),
+            child: Row(
+              children: [
+                Icon(
+                  expanded ? Icons.folder_open_rounded : Icons.folder_rounded,
+                  size: 20,
+                  color: asmrBlue.withValues(alpha: 0.8),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SizedBox(
+                    height: _childFolderTitleBlockHeight,
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          node.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                                height: 1.06,
+                                color: cs.onSurface.withValues(alpha: 0.9),
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: 62,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Text(
-                        widget.node.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                              height: 1.06,
-                              color: cs.onSurface.withValues(alpha: 0.9),
-                            ),
+                      IconButton(
+                        onPressed: busy
+                            ? null
+                            : () => unawaited(_playFolder(context, ref)),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: ref
+                            .read(appLanguageProviderInstanceProvider)
+                            .tr('asmr_add_to_playlist'),
+                        style: IconButton.styleFrom(
+                          foregroundColor: asmrBlue,
+                          minimumSize: const Size(40, 44),
+                          maximumSize: const Size(40, 44),
+                          padding: EdgeInsets.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        icon: busy
+                            ? SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: asmrBlue,
+                                ),
+                              )
+                            : const Icon(Icons.add_circle_rounded, size: 25),
                       ),
+                      const SizedBox(width: 2),
+                      if (hasVisibleChildren)
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: IgnorePointer(
+                            child: AnimatedRotation(
+                              turns: expanded ? 0.5 : 0,
+                              duration: const Duration(milliseconds: 180),
+                              curve: Curves.easeOutCubic,
+                              child: Icon(
+                                Icons.expand_more_rounded,
+                                color: cs.onSurfaceVariant,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
-              ),
-            ],
-          ),
-          trailing: SizedBox(
-            width: 62,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                IconButton(
-                  onPressed: busy
-                      ? null
-                      : () => unawaited(_playFolder(context)),
-                  visualDensity: VisualDensity.compact,
-                  tooltip: ref
-                      .read(appLanguageProviderInstanceProvider)
-                      .tr('asmr_add_to_playlist'),
-                  style: IconButton.styleFrom(
-                    foregroundColor: asmrBlue,
-                    minimumSize: const Size(40, 44),
-                    maximumSize: const Size(40, 44),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  icon: busy
-                      ? SizedBox.square(
-                          dimension: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: asmrBlue,
-                          ),
-                        )
-                      : const Icon(Icons.add_circle_rounded, size: 25),
-                ),
-                const SizedBox(width: 2),
-                if (hasVisibleChildren)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: IgnorePointer(
-                      child: AnimatedRotation(
-                        turns: _expanded ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 180),
-                        curve: Curves.easeOutCubic,
-                        child: Icon(
-                          Icons.expand_more_rounded,
-                          color: cs.onSurfaceVariant,
-                          size: 20,
-                        ),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
-          children: _expanded
-              ? [
-                  for (final child in visibleChildren)
-                    Padding(
-                      padding: EdgeInsets.zero,
-                      child: _AsmrTrackTreeNode(
-                        work: widget.work,
-                        node: child,
-                        isActive: widget.isActive,
-                      ),
-                    ),
-                ]
-              : const <Widget>[],
         ),
       );
     }
-    return _AsmrTrackLeafRow(
-      work: widget.work,
-      node: widget.node,
-      isActive: widget.isActive,
-    );
+    return _AsmrTrackLeafRow(work: work, node: node, isActive: isActive);
   }
 
-  Future<void> _playFolder(BuildContext context) async {
+  Future<void> _playFolder(BuildContext context, WidgetRef ref) async {
     final controller = ref.read(asmrLibraryControllerProvider);
     final playbackCoordinator = ref.read(asmrPlaybackCoordinatorProvider);
     if (controller == null || playbackCoordinator == null) return;
-    final tracks = controller.buildPlayableTracksFromNode(
-      widget.work,
-      widget.node,
-    );
+    final tracks = controller.buildPlayableTracksFromNode(work, node);
     if (!context.mounted || tracks.isEmpty) {
       return;
     }
     await ref
         .read(uiOperationServiceProvider)
         .run<void>(
-          scope: _trackPlayScope(widget.work, widget.node),
+          scope: _trackPlayScope(work, node),
           labelKey: 'loading_dot',
-          task: (_) => playbackCoordinator.playTracks(widget.work, tracks),
+          task: (_) => playbackCoordinator.playTracks(work, tracks),
         );
     if (!context.mounted) {
       return;
@@ -511,7 +413,7 @@ class _AsmrTrackTreeNodeState extends ConsumerState<_AsmrTrackTreeNode> {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     showAppSnackBar(
       context,
-      i18n.tr('asmr_added_to_playlist', {'title': widget.node.displayTitle}),
+      i18n.tr('asmr_added_to_playlist', {'title': node.displayTitle}),
       tone: AppFeedbackTone.success,
       icon: Icons.add_circle_rounded,
       iconColor: asmrBlue,

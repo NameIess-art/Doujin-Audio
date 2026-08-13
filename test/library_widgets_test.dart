@@ -16,6 +16,7 @@ import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/features/library/application/library_entry_editor_service.dart';
+import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -480,6 +481,87 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
+  testWidgets('deep library folders collapse and restore visible descendants', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    const rootPath = '/library/deep';
+    fixture.runtimeGraph.library.addWatchedFolder(rootPath, notify: false);
+    fixture.runtimeGraph.library.addTracks(
+      <MusicTrack>[
+        testMusicTrack(
+          name: 'Deep track',
+          path: '$rootPath/Disc/Chapter/deep.mp3',
+          groupKey: rootPath,
+          groupTitle: 'Deep work',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+    await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+    await tester.tap(find.byType(ExpansionTile).first);
+    await pumpUntilFound(tester, find.text('Disc', findRichText: true));
+    await tester.tap(find.text('Disc', findRichText: true));
+    await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
+    await tester.tap(find.text('Chapter', findRichText: true));
+    await pumpUntilFound(tester, find.text('Deep track', findRichText: true));
+
+    await tester.tap(find.text('Disc', findRichText: true));
+    await pumpUntilNotFound(
+      tester,
+      find.text('Deep track', findRichText: true),
+    );
+    await tester.tap(find.text('Disc', findRichText: true));
+    await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
+    expect(find.text('Deep track', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('content URI roots lazily expose their audio rows', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    const rootPath =
+        'content://com.android.externalstorage.documents/tree/primary%3AASMR';
+    const trackPath =
+        'content://com.android.externalstorage.documents/tree/primary%3AASMR/'
+        'document/primary%3AASMR%2Fcontent-track.mp3';
+    fixture.runtimeGraph.library.addWatchedFolder(rootPath, notify: false);
+    fixture.runtimeGraph.library.addTracks(
+      <MusicTrack>[
+        testMusicTrack(
+          name: 'Content track',
+          path: trackPath,
+          groupKey: rootPath,
+          groupTitle: 'Content work',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+    await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+    expect(find.text('Content track', findRichText: true), findsNothing);
+
+    await tester.tap(find.byType(ExpansionTile).first);
+    await pumpUntilFound(
+      tester,
+      find.text('Content track', findRichText: true),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('large expanded folders only build visible track rows', (
     WidgetTester tester,
   ) async {
@@ -538,6 +620,143 @@ void main() {
       maxScrolls: 400,
     );
     expect(find.text('Lazy track 1999', findRichText: true), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('large search results only build visible track rows', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    const folderPath = '/library/search-large';
+    final tracks = List<MusicTrack>.generate(
+      2000,
+      (index) => testMusicTrack(
+        name: 'Search track ${index.toString().padLeft(4, '0')}',
+        path: '$folderPath/track-$index.mp3',
+        groupKey: folderPath,
+        groupTitle: 'Search folder',
+      ),
+      growable: false,
+    );
+    fixture.runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+    fixture.runtimeGraph.library.addTracks(
+      tracks,
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_search_button')),
+    );
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('app_search_field')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      'Search track',
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    await pumpUntilFound(
+      tester,
+      find.text('Search track 0000', findRichText: true),
+    );
+
+    final builtRows = find.textContaining('Search track', findRichText: true);
+    expect(builtRows.evaluate().length, lessThan(100));
+    expect(find.text('Search track 1999', findRichText: true), findsNothing);
+
+    await tester.scrollUntilVisible(
+      find.text('Search track 1999', findRichText: true),
+      600,
+      scrollable: find
+          .descendant(
+            of: find.byKey(
+              const ValueKey<String>('library_search_results_all'),
+            ),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      maxScrolls: 400,
+    );
+    expect(find.text('Search track 1999', findRichText: true), findsOneWidget);
+  });
+
+  testWidgets('library search exposes retry and recovers after tree failure', (
+    WidgetTester tester,
+  ) async {
+    var attempts = 0;
+    var shouldFail = true;
+    final fixture = AppRuntimeWidgetTestFixture(
+      libraryTreeSnapshotBuilder: (payload) async {
+        attempts++;
+        if (shouldFail) throw StateError('synthetic tree failure');
+        return const LibraryOrganizer().buildTree(
+          tracks: payload.tracks,
+          watchedFolders: payload.watchedFolders,
+          watchedLibraries: payload.watchedLibraries,
+        );
+      },
+    );
+    addTearDown(fixture.dispose);
+    const folderPath = '/library/retry-search';
+    fixture.runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+    fixture.runtimeGraph.library.addTracks(
+      <MusicTrack>[
+        testMusicTrack(
+          name: 'Recovered track',
+          path: '$folderPath/track.mp3',
+          groupKey: folderPath,
+          groupTitle: 'Retry folder',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_search_button')),
+    );
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('app_search_field')),
+    );
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('library_search_error')),
+    );
+    await tester.pumpAndSettle();
+
+    shouldFail = false;
+    await tester.tap(find.text(fixture.languageProvider.tr('retry')));
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('library_search_results_all')),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      'Recovered',
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+    await pumpUntilFound(
+      tester,
+      find.text('Recovered track', findRichText: true),
+    );
+
+    expect(attempts, greaterThanOrEqualTo(2));
+    expect(
+      find.byKey(const ValueKey<String>('library_search_error')),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 

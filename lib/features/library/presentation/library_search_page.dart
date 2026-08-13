@@ -28,6 +28,13 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
   int? _visibleSearchRevision;
   int? _visibleSearchDetailRevision;
   String? _pendingSearchKey;
+  Object? _visibleSearchError;
+  String? _visibleSearchErrorKey;
+  final Set<String> _expandedSearchFolderPaths = <String>{};
+  List<_VisibleLibraryItem> _visibleSearchItems = const <_VisibleLibraryItem>[];
+  List<LibraryNode>? _visibleSearchItemsSource;
+  int _visibleSearchItemsVersion = 0;
+  int _visibleSearchItemsCacheVersion = -1;
 
   AudioLibraryCategorySnapshot? _lastCategoryFilterSnapshot;
   AudioLibraryCategoryType? _lastCategoryFilterType;
@@ -57,6 +64,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       setState(() {
         _query = query;
         _pendingSearchKey = null;
+        _clearSearchError();
       });
       _jumpToTop();
     });
@@ -69,6 +77,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       setState(() {
         _query = query;
         _pendingSearchKey = null;
+        _clearSearchError();
       });
     }
     FocusManager.instance.primaryFocus?.unfocus();
@@ -85,6 +94,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     setState(() {
       _query = '';
       _pendingSearchKey = null;
+      _clearSearchError();
     });
     _jumpToTop();
   }
@@ -128,9 +138,12 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
     if (_pendingSearchKey == requestKey) {
       return;
     }
+    if (_visibleSearchErrorKey == requestKey) {
+      return;
+    }
 
     if (query.isEmpty && _visibleSearchResult == null) {
-      final currentTree = libraryFacade.libraryTree;
+      final currentTree = libraryFacade.snapshotCacheService.tree;
       if (currentTree.isNotEmpty) {
         _visibleSearchResult = FilteredLibraryTreeResult(
           tree: currentTree,
@@ -160,77 +173,95 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
           : buildFilteredLibraryTreeSnapshot(request);
     }();
     unawaited(
-      searchFuture.then((result) {
-        if (!mounted || _pendingSearchKey != requestKey) return;
-        UiInteractionCoordinator.instance.scheduleCommit(
-          key: _searchCommitKey,
-          priority: 5,
-          commit: () {
-            if (!mounted || _pendingSearchKey != requestKey) return;
-            setState(() {
-              _visibleSearchResult = result;
-              _visibleSearchQuery = query;
-              _visibleSearchRevision = structureRevision;
-              _visibleSearchDetailRevision = categoryRevision;
-              _pendingSearchKey = null;
-            });
-          },
-        );
-      }),
+      searchFuture.then<void>(
+        (result) {
+          if (!mounted || _pendingSearchKey != requestKey) return;
+          UiInteractionCoordinator.instance.scheduleCommit(
+            key: _searchCommitKey,
+            priority: 5,
+            commit: () {
+              if (!mounted || _pendingSearchKey != requestKey) return;
+              setState(() {
+                _visibleSearchResult = result;
+                _visibleSearchQuery = query;
+                _visibleSearchRevision = structureRevision;
+                _visibleSearchDetailRevision = categoryRevision;
+                _pendingSearchKey = null;
+                _clearSearchError();
+                _expandedSearchFolderPaths
+                  ..clear()
+                  ..addAll(
+                    result.expandedFolderPaths.map(PathMatcher.normalize),
+                  );
+                _visibleSearchItemsVersion++;
+              });
+            },
+          );
+        },
+        onError: (Object error, StackTrace stackTrace) {
+          if (!mounted || _pendingSearchKey != requestKey) return;
+          AppLogService.error(
+            'library_search_snapshot_failed',
+            error: error,
+            stackTrace: stackTrace,
+          );
+          setState(() {
+            _pendingSearchKey = null;
+            _visibleSearchError = error;
+            _visibleSearchErrorKey = requestKey;
+          });
+        },
+      ),
     );
   }
 
-  bool _hasTrackMatchesInFolder(
-    FolderNode folder,
-    String query,
-    AudioLibraryCategorySnapshot? categorySnapshot,
-  ) {
-    final terms = extractSearchTerms(query);
-    if (terms.isEmpty) return false;
-    return _folderContainsMatchingTrack(folder, terms, categorySnapshot);
+  void _clearSearchError() {
+    _visibleSearchError = null;
+    _visibleSearchErrorKey = null;
   }
 
-  bool _folderContainsMatchingTrack(
-    FolderNode folder,
-    List<String> terms,
-    AudioLibraryCategorySnapshot? categorySnapshot,
-  ) {
-    for (final child in folder.children) {
-      if (child is TrackNode) {
-        if (_trackMatchesQuery(child, terms, categorySnapshot)) {
-          return true;
-        }
-      } else if (child is FolderNode) {
-        if (_folderContainsMatchingTrack(child, terms, categorySnapshot)) {
-          return true;
-        }
+  void _retrySearch() {
+    setState(() {
+      _pendingSearchKey = null;
+      _clearSearchError();
+    });
+  }
+
+  void _handleSearchFolderExpansionChanged(FolderNode folder, bool expanded) {
+    final normalizedPath = PathMatcher.normalize(folder.path);
+    final changed = expanded
+        ? _expandedSearchFolderPaths.add(normalizedPath)
+        : _expandedSearchFolderPaths.remove(normalizedPath);
+    if (changed) {
+      setState(() => _visibleSearchItemsVersion++);
+    }
+  }
+
+  List<_VisibleLibraryItem> _flattenVisibleSearchTree(List<LibraryNode> tree) {
+    if (identical(_visibleSearchItemsSource, tree) &&
+        _visibleSearchItemsCacheVersion == _visibleSearchItemsVersion) {
+      return _visibleSearchItems;
+    }
+    final result = <_VisibleLibraryItem>[];
+    void addNode(LibraryNode node, int depth) {
+      result.add(_VisibleLibraryItem(node: node, depth: depth));
+      if (node is! FolderNode ||
+          !_expandedSearchFolderPaths.contains(
+            PathMatcher.normalize(node.path),
+          )) {
+        return;
+      }
+      for (final child in node.children) {
+        addNode(child, depth + 1);
       }
     }
-    return false;
-  }
 
-  bool _trackMatchesQuery(
-    TrackNode trackNode,
-    List<String> searchTerms,
-    AudioLibraryCategorySnapshot? categorySnapshot,
-  ) {
-    final track = trackNode.track;
-    final trackEntry = categorySnapshot?.entryFor(
-      AudioDetailTarget.singleAudioFile(track.path),
-    );
-
-    return matchesSearchTerms(
-      <String>[
-        track.displayName,
-        track.groupTitle,
-        track.groupSubtitle,
-        track.path,
-        ...track.tags,
-        if (trackEntry != null) trackEntry.searchableText,
-      ],
-      '',
-      terms: searchTerms,
-    );
+    for (final node in tree) {
+      addNode(node, 0);
+    }
+    _visibleSearchItemsSource = tree;
+    _visibleSearchItemsCacheVersion = _visibleSearchItemsVersion;
+    return _visibleSearchItems = result;
   }
 
   Widget _buildAllResults({
@@ -245,15 +276,28 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       structureRevision: structureRevision,
       detailRevision: detailRevision,
     );
-    final result =
+    final hasCurrentResult =
         _visibleSearchQuery == _query &&
-            _visibleSearchRevision == structureRevision &&
-            _visibleSearchDetailRevision == detailRevision
+        _visibleSearchRevision == structureRevision &&
+        _visibleSearchDetailRevision == detailRevision;
+    final hasCurrentError =
+        _visibleSearchErrorKey == '$structureRevision|$detailRevision|$_query';
+    final result = hasCurrentResult
+        ? _visibleSearchResult
+        : hasCurrentError && _visibleSearchQuery == _query
         ? _visibleSearchResult
         : null;
     final tree = result?.tree;
     final Widget content;
-    if (tree == null) {
+    if (tree == null && hasCurrentError) {
+      content = AppErrorState(
+        key: const ValueKey<String>('library_search_error'),
+        title: i18n.tr('error'),
+        message: i18n.tr('operation_failed_retry'),
+        retryLabel: i18n.tr('retry'),
+        onRetry: _retrySearch,
+      );
+    } else if (tree == null) {
       content = const SizedBox.shrink();
     } else if (tree.isEmpty) {
       content = AppEmptyState(
@@ -267,6 +311,8 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
         ),
       );
     } else {
+      final visibleItems = _flattenVisibleSearchTree(tree);
+      final errorItemCount = hasCurrentError ? 1 : 0;
       content = SearchHighlightScope(
         query: _query,
         child: ListView.builder(
@@ -281,23 +327,37 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
           cacheExtent: 320,
           physics: const ClampingScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-          itemCount: tree.length,
+          itemCount: visibleItems.length + errorItemCount,
           itemBuilder: (context, index) {
-            final node = tree[index];
-            final shouldExpand =
-                node is FolderNode &&
-                _query.isNotEmpty &&
-                _hasTrackMatchesInFolder(
-                  node,
-                  _query,
-                  libraryFacade.categorySnapshot,
-                );
-            return RepaintBoundary(
-              key: ValueKey<String>('search_${node.path}'),
-              child: _LibraryTreeItem(
-                node: node,
-                initiallyExpanded: shouldExpand,
-                searchQuery: _query,
+            if (hasCurrentError && index == 0) {
+              return Padding(
+                key: const ValueKey<String>('library_search_stale_error'),
+                padding: const EdgeInsets.only(bottom: 8),
+                child: OperationStatusBanner(
+                  label: i18n.tr('operation_failed_retry'),
+                  error: _visibleSearchError,
+                  onRetry: _retrySearch,
+                  retryTooltip: i18n.tr('retry'),
+                ),
+              );
+            }
+            final item = visibleItems[index - errorItemCount];
+            final node = item.node;
+            return Padding(
+              padding: EdgeInsets.only(left: item.depth * 8.0),
+              child: RepaintBoundary(
+                key: ValueKey<String>('search_${node.path}'),
+                child: _LibraryTreeItem(
+                  node: node,
+                  initiallyExpanded:
+                      node is FolderNode &&
+                      _expandedSearchFolderPaths.contains(
+                        PathMatcher.normalize(node.path),
+                      ),
+                  onFolderExpansionChanged: _handleSearchFolderExpansionChanged,
+                  renderChildrenInline: false,
+                  searchQuery: _query,
+                ),
               ),
             );
           },
@@ -305,7 +365,7 @@ class _LibrarySearchPageState extends ConsumerState<_LibrarySearchPage> {
       );
     }
     return PlaceholderContentTransition(
-      showPlaceholder: result == null,
+      showPlaceholder: result == null && !hasCurrentError,
       placeholder: _LibraryLoadingSkeleton(
         bottomInset: 16,
         topInset: AppSearchPageScaffold.controlsTopInset(context),

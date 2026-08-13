@@ -212,6 +212,66 @@ void main() {
 
     expect(ranked.first.id, 2);
   });
+
+  test('rankAsync preserves synchronous ranking for large inputs', () async {
+    final candidates = <AsmrWork>[
+      for (var index = 1; index <= 120; index++)
+        work(
+          id: index,
+          title: 'Candidate $index',
+          tags: <String>['tag-${index % 12}'],
+          rating: 3 + (index % 20) / 10,
+        ),
+    ];
+    final localTracks = <MusicTrack>[
+      for (var index = 0; index < 1000; index++)
+        track(tags: <String>['tag-${index % 12}']),
+    ];
+    final request = AsmrRecommendationRankRequest(
+      candidates: candidates,
+      localTracks: localTracks,
+      favoriteWorks: const <AsmrWork>[],
+      historyWorks: const <AsmrWork>[],
+      refreshSeed: 7,
+      limit: 40,
+    );
+
+    expect(engine.usesBackgroundIsolate(request), isTrue);
+    final synchronous = engine.rank(
+      candidates: candidates,
+      localTracks: localTracks,
+      favoriteWorks: const <AsmrWork>[],
+      historyWorks: const <AsmrWork>[],
+      refreshSeed: 7,
+      limit: 40,
+    );
+    final asynchronous = await engine.rankAsync(
+      candidates: candidates,
+      localTracks: localTracks,
+      favoriteWorks: const <AsmrWork>[],
+      historyWorks: const <AsmrWork>[],
+      refreshSeed: 7,
+      limit: 40,
+    );
+
+    expect(
+      asynchronous.map((work) => work.id),
+      synchronous.map((work) => work.id),
+    );
+  });
+
+  test('small recommendation inputs avoid isolate startup', () {
+    final request = AsmrRecommendationRankRequest(
+      candidates: <AsmrWork>[work(id: 1, title: 'Candidate')],
+      localTracks: const <MusicTrack>[],
+      favoriteWorks: const <AsmrWork>[],
+      historyWorks: const <AsmrWork>[],
+      refreshSeed: 0,
+      limit: null,
+    );
+
+    expect(engine.usesBackgroundIsolate(request), isFalse);
+  });
 }
 
 AsmrWork work({

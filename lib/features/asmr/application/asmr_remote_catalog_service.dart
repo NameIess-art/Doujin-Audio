@@ -105,12 +105,34 @@ class AsmrRemoteCatalogService {
       }
     }
     if (candidates.isEmpty && firstError != null) throw firstError;
-    return _recommendationEngine.rank(
-      candidates: candidates.values.toList(growable: false),
-      localTracks: await localTracksFuture,
+    final candidateList = candidates.values.toList(growable: false);
+    final localTracks = await localTracksFuture;
+    final request = AsmrRecommendationRankRequest(
+      candidates: candidateList,
+      localTracks: localTracks,
       favoriteWorks: favoriteWorks,
       historyWorks: historyWorks,
       refreshSeed: refreshSeed,
+      limit: null,
+    );
+    return AppLogService.measureAsync(
+      'asmr_recommendation_rank',
+      () => _recommendationEngine.rankAsync(
+        candidates: candidateList,
+        localTracks: localTracks,
+        favoriteWorks: favoriteWorks,
+        historyWorks: historyWorks,
+        refreshSeed: refreshSeed,
+      ),
+      details: <String, Object?>{
+        'candidates': candidateList.length,
+        'localTracks': localTracks.length,
+        'favorites': favoriteWorks.length,
+        'history': historyWorks.length,
+        'backgroundIsolate': _recommendationEngine.usesBackgroundIsolate(
+          request,
+        ),
+      },
     );
   }
 

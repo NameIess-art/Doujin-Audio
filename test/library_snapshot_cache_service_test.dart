@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';
@@ -6,6 +8,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_repository.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
+import 'package:doujin_audio/features/library/application/library_organizer.dart';
 import 'package:doujin_audio/features/library/application/library_snapshot_cache_service.dart';
 
 void main() {
@@ -65,6 +68,39 @@ void main() {
 
       expect(firstCommitted, isTrue);
       expect(secondCommitted, isTrue);
+    },
+  );
+
+  test(
+    'tree snapshot builder can be injected and propagates failures',
+    () async {
+      final library = LibraryService()
+        ..watchedFolders.add('/library')
+        ..library.add(
+          _track(path: '/library/work/track.mp3', groupKey: '/library/work'),
+        )
+        ..markStructureChanged();
+      var buildCount = 0;
+      final service = LibrarySnapshotCacheService(
+        libraryService: library,
+        detailCacheService: AudioDetailCacheService(
+          repository: _FakeAudioDetailRepository(),
+        ),
+        treeSnapshotBuilder: (_) async {
+          buildCount++;
+          throw StateError('tree build failed');
+        },
+      );
+
+      await expectLater(
+        service.treeSnapshot(onCommitted: () {}),
+        throwsStateError,
+      );
+      await expectLater(
+        service.treeSnapshot(onCommitted: () {}),
+        throwsStateError,
+      );
+      expect(buildCount, 2);
     },
   );
 
@@ -323,6 +359,60 @@ void main() {
     expect(service.tree.whereType<FolderNode>(), isNotEmpty);
     expect(service.treeSnapshotRevision, library.structureRevision);
     expect(committed, isTrue);
+  });
+
+  test('an older in-flight tree cannot overwrite a newer revision', () async {
+    final library = LibraryService()
+      ..watchedFolders.add('/library')
+      ..library.add(_track(path: '/library/old.mp3', groupKey: '/library'))
+      ..markStructureChanged();
+    final builders = <Completer<LibraryTreeSnapshot>>[];
+    final service = LibrarySnapshotCacheService(
+      libraryService: library,
+      detailCacheService: AudioDetailCacheService(
+        repository: _FakeAudioDetailRepository(),
+      ),
+      treeSnapshotBuilder: (_) {
+        final completer = Completer<LibraryTreeSnapshot>();
+        builders.add(completer);
+        return completer.future;
+      },
+    );
+    var oldCommitted = false;
+    var newCommitted = false;
+
+    final oldFuture = service.treeSnapshot(
+      onCommitted: () => oldCommitted = true,
+    );
+    library.library.add(_track(path: '/library/new.mp3', groupKey: '/library'));
+    library.markStructureChanged();
+    service.markStructureChanged();
+    final newFuture = service.treeSnapshot(
+      onCommitted: () => newCommitted = true,
+    );
+
+    final newSnapshot = const LibraryOrganizer().buildTree(
+      tracks: List<MusicTrack>.of(library.library),
+      watchedFolders: List<String>.of(library.watchedFolders),
+    );
+    builders[1].complete(newSnapshot);
+    await newFuture;
+    final oldSnapshot = const LibraryOrganizer().buildTree(
+      tracks: <MusicTrack>[
+        _track(path: '/library/old.mp3', groupKey: '/library'),
+      ],
+      watchedFolders: const <String>['/library'],
+    );
+    builders[0].complete(oldSnapshot);
+    await oldFuture;
+
+    expect(oldCommitted, isFalse);
+    expect(newCommitted, isTrue);
+    expect(service.treeSnapshotRevision, library.structureRevision);
+    expect(
+      (service.tree.single as FolderNode).allTracks.map((track) => track.path),
+      containsAll(<String>['/library/old.mp3', '/library/new.mp3']),
+    );
   });
 
   test(

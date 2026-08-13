@@ -1,11 +1,41 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
+
 import '../../../core/media/audio_detail.dart';
 import '../domain/asmr_models.dart';
 import '../../../core/media/music_track.dart';
 
 class AsmrRecommendationEngine {
   const AsmrRecommendationEngine();
+
+  static const int isolateThreshold = 1000;
+
+  Future<List<AsmrWork>> rankAsync({
+    required List<AsmrWork> candidates,
+    required List<MusicTrack> localTracks,
+    required List<AsmrWork> favoriteWorks,
+    required List<AsmrWork> historyWorks,
+    int refreshSeed = 0,
+    int? limit,
+  }) {
+    final request = AsmrRecommendationRankRequest(
+      candidates: candidates,
+      localTracks: localTracks,
+      favoriteWorks: favoriteWorks,
+      historyWorks: historyWorks,
+      refreshSeed: refreshSeed,
+      limit: limit,
+    );
+    if (!usesBackgroundIsolate(request)) {
+      return Future<List<AsmrWork>>.value(rankAsmrRecommendations(request));
+    }
+    return compute(rankAsmrRecommendations, request);
+  }
+
+  bool usesBackgroundIsolate(AsmrRecommendationRankRequest request) {
+    return request.totalInputCount >= isolateThreshold;
+  }
 
   List<AsmrWork> rank({
     required List<AsmrWork> candidates,
@@ -168,6 +198,42 @@ class AsmrRecommendationEngine {
     final random = Random(seed ^ (workId * 0x1fffffff));
     return random.nextDouble();
   }
+}
+
+@immutable
+class AsmrRecommendationRankRequest {
+  const AsmrRecommendationRankRequest({
+    required this.candidates,
+    required this.localTracks,
+    required this.favoriteWorks,
+    required this.historyWorks,
+    required this.refreshSeed,
+    required this.limit,
+  });
+
+  final List<AsmrWork> candidates;
+  final List<MusicTrack> localTracks;
+  final List<AsmrWork> favoriteWorks;
+  final List<AsmrWork> historyWorks;
+  final int refreshSeed;
+  final int? limit;
+
+  int get totalInputCount =>
+      candidates.length +
+      localTracks.length +
+      favoriteWorks.length +
+      historyWorks.length;
+}
+
+List<AsmrWork> rankAsmrRecommendations(AsmrRecommendationRankRequest request) {
+  return const AsmrRecommendationEngine().rank(
+    candidates: request.candidates,
+    localTracks: request.localTracks,
+    favoriteWorks: request.favoriteWorks,
+    historyWorks: request.historyWorks,
+    refreshSeed: request.refreshSeed,
+    limit: request.limit,
+  );
 }
 
 class _RecommendationProfile {

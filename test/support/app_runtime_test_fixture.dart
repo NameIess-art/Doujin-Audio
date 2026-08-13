@@ -262,6 +262,7 @@ final class AppRuntimeWidgetTestFixture {
     AsmrMetadataService? asmrMetadataService,
     NativePlaybackRepository? providedNativePlaybackRepository,
     SettingsRepository? providedSettingsRepository,
+    LibraryTreeSnapshotBuilder? libraryTreeSnapshotBuilder,
     void Function(SettingsRepository settingsRepository)?
     configureSettingsRepository,
   }) : notificationService = PlaybackNotificationService(),
@@ -276,17 +277,26 @@ final class AppRuntimeWidgetTestFixture {
        uiOperationService = UiOperationService(),
        languageProvider = AppLanguageProvider() {
     configureSettingsRepository?.call(settingsRepository);
-    library = LibraryFacade.create(
-      databaseRepository: persistenceRepository,
-      detailCacheService: AudioDetailCacheService(
-        repository: AudioDetailRepository(
-          databaseRepository: persistenceRepository,
-          documentRepository: AudioDetailDocumentRepository(
-            store: TestJsonDocumentStore(),
-          ),
+    final detailCache = AudioDetailCacheService(
+      repository: AudioDetailRepository(
+        databaseRepository: persistenceRepository,
+        documentRepository: AudioDetailDocumentRepository(
+          store: TestJsonDocumentStore(),
         ),
       ),
+    );
+    final snapshotCache = libraryTreeSnapshotBuilder == null
+        ? null
+        : LibrarySnapshotCacheService(
+            libraryService: libraryService,
+            detailCacheService: detailCache,
+            treeSnapshotBuilder: libraryTreeSnapshotBuilder,
+          );
+    library = LibraryFacade.create(
+      databaseRepository: persistenceRepository,
+      detailCacheService: detailCache,
       service: libraryService,
+      snapshotCacheService: snapshotCache,
       coverArtworkCacheService: coverArtworkCacheService,
       metadataService: dlsiteMetadataService,
       asmrMetadataService: asmrMetadataService,

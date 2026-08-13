@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
@@ -194,68 +195,27 @@ class DataBackupService {
         excludedKeys: const <String>{'timer_runtime_v1'},
       );
       final account = await _accountStore.exportBackupSnapshot();
-      final preferencesFile = File(
-        path.join(workDirectory.path, _preferencesName),
-      );
-      final accountFile = File(path.join(workDirectory.path, _accountName));
-      await _writeLimitedJson(
-        preferencesFile,
-        preferences,
-        _maximumPreferencesBytes,
-      );
-      await _writeLimitedJson(
-        accountFile,
-        account.toJson(),
-        _maximumAccountBytes,
-      );
-      final payloads = <String, File>{
-        _databaseName: databaseFile,
-        _preferencesName: preferencesFile,
-        _accountName: accountFile,
-      };
-      final records = <String, BackupFileRecord>{};
-      var expandedBytes = 0;
-      for (final entry in payloads.entries) {
-        final record = await _recordFile(entry.value);
-        records[entry.key] = record;
-        expandedBytes = _checkedExpandedTotal(expandedBytes, record.length);
-      }
       final version = await _appVersionProvider();
-      final manifest = BackupManifest(
-        formatVersion: _backupFormatVersion,
-        appVersion: '${version.versionName}+${version.buildNumber}',
-        databaseSchemaVersion: AppDatabase.schemaVersion,
-        platform: _platformName,
-        createdAt: _clock().toUtc(),
-        containsSensitiveAccountData: true,
-        files: records,
-      );
-      final manifestBytes = utf8.encode(
-        const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
-      );
-      if (manifestBytes.length > _maximumManifestBytes) {
-        throw const FormatException('backup_too_large');
-      }
-      _checkedExpandedTotal(expandedBytes, manifestBytes.length);
 
       await output.parent.create(recursive: true);
       if (await temporaryOutput.exists()) await temporaryOutput.delete();
-      final outputStream = OutputFileStream(temporaryOutput.path);
-      try {
-        final encoder = ZipEncoder()..startEncode(outputStream);
-        encoder.add(ArchiveFile.bytes(_manifestName, manifestBytes));
-        _addFileToArchive(
-          encoder,
-          databaseFile,
-          _databaseName,
-          compression: CompressionType.none,
-        );
-        _addFileToArchive(encoder, preferencesFile, _preferencesName);
-        _addFileToArchive(encoder, accountFile, _accountName);
-        encoder.endEncode();
-      } finally {
-        await outputStream.close();
-      }
+      final workerRequest = <String, Object?>{
+        'workDirectoryPath': workDirectory.path,
+        'databasePath': databaseFile.path,
+        'temporaryOutputPath': temporaryOutput.path,
+        'preferences': preferences,
+        'account': account.toJson(),
+        'appVersion': '${version.versionName}+${version.buildNumber}',
+        'databaseSchemaVersion': AppDatabase.schemaVersion,
+        'platform': _platformName,
+        'createdAt': _clock().toUtc().toIso8601String(),
+        'maximumArchiveBytes': _maximumArchiveBytes,
+        'maximumExpandedBytes': _maximumExpandedBytes,
+        'maximumManifestBytes': _maximumManifestBytes,
+        'maximumPreferencesBytes': _maximumPreferencesBytes,
+        'maximumAccountBytes': _maximumAccountBytes,
+      };
+      await Isolate.run(() => _exportBackupArchive(workerRequest));
       if (await temporaryOutput.length() > _maximumArchiveBytes) {
         throw const FormatException('backup_too_large');
       }
@@ -387,190 +347,40 @@ class DataBackupService {
     File source,
     Directory decodeDirectory,
   ) async {
-    if (!await source.exists()) throw const FormatException('backup_missing');
-    final archiveLength = await source.length();
-    if (archiveLength > _maximumArchiveBytes) {
-      throw const FormatException('backup_too_large');
-    }
-    _preflightArchive(source, archiveLength);
-    await _deleteDirectory(decodeDirectory);
-    await decodeDirectory.create(recursive: true);
-    final input = InputFileStream(source.path);
-    Archive? archive;
     try {
-      archive = ZipDecoder().decodeStream(input);
-
-      var actualExpandedBytes = 0;
-      final extractedFiles = <String, File>{};
-      for (final entry in archive.files) {
-        final file = File(path.join(decodeDirectory.path, entry.name));
-        final output = _LimitedOutputFileStream(file.path, entry.size, (count) {
-          actualExpandedBytes = _checkedExpandedTotal(
-            actualExpandedBytes,
-            count,
-          );
-        });
-        try {
-          entry.writeContent(output);
-        } finally {
-          output.closeSync();
-        }
-        if (output.length != entry.size) {
-          throw const FormatException('invalid_backup_entry_length');
-        }
-        extractedFiles[entry.name] = file;
-      }
-
+      final workerRequest = <String, Object?>{
+        'sourcePath': source.path,
+        'decodeDirectoryPath': decodeDirectory.path,
+        'platform': _platformName,
+        'databaseSchemaVersion': AppDatabase.schemaVersion,
+        'maximumArchiveBytes': _maximumArchiveBytes,
+        'maximumExpandedBytes': _maximumExpandedBytes,
+        'maximumManifestBytes': _maximumManifestBytes,
+        'maximumPreferencesBytes': _maximumPreferencesBytes,
+        'maximumAccountBytes': _maximumAccountBytes,
+      };
+      final workerResult = await Isolate.run(
+        () => _decodeBackupArchive(workerRequest),
+      );
       final manifest = BackupManifest.fromJson(
-        Map<String, Object?>.from(
-          jsonDecode(await extractedFiles[_manifestName]!.readAsString())
-              as Map,
-        ),
+        Map<String, Object?>.from(workerResult['manifest']! as Map),
       );
-      if (manifest.formatVersion != _backupFormatVersion ||
-          manifest.platform != _platformName ||
-          manifest.databaseSchemaVersion > AppDatabase.schemaVersion ||
-          !manifest.containsSensitiveAccountData ||
-          manifest.files.keys.toSet().length != 3 ||
-          !manifest.files.keys.toSet().containsAll(<String>{
-            _databaseName,
-            _preferencesName,
-            _accountName,
-          })) {
-        throw const FormatException('incompatible_backup');
-      }
-      for (final name in const <String>[
-        _databaseName,
-        _preferencesName,
-        _accountName,
-      ]) {
-        final record = manifest.files[name];
-        final actual = await _recordFile(extractedFiles[name]!);
-        if (record == null ||
-            record.length != actual.length ||
-            record.sha256 != actual.sha256) {
-          throw const FormatException('backup_checksum_mismatch');
-        }
-      }
-      final preferencesRaw = jsonDecode(
-        await extractedFiles[_preferencesName]!.readAsString(),
-      );
-      if (preferencesRaw is! Map) {
-        throw const FormatException('invalid_preferences_backup');
-      }
-      final preferences = Map<String, Object?>.from(preferencesRaw)
-        ..remove('timer_runtime_v1');
-      final accountRaw = jsonDecode(
-        await extractedFiles[_accountName]!.readAsString(),
-      );
-      if (accountRaw is! Map) {
-        throw const FormatException('invalid_account_backup');
-      }
-      final account = AsmrAccountBackupSnapshot.fromJson(
-        Map<String, Object?>.from(accountRaw),
-      );
-      final databaseFile = extractedFiles[_databaseName]!;
+      final databaseFile = File(workerResult['databasePath']! as String);
       await _database.validateAndMigrateRestoreCandidate(databaseFile.path);
       return _DecodedBackup(
         manifest: manifest,
         databaseFile: databaseFile,
-        preferences: preferences,
-        account: account,
+        preferences: Map<String, Object?>.from(
+          workerResult['preferences']! as Map,
+        ),
+        account: AsmrAccountBackupSnapshot.fromJson(
+          Map<String, Object?>.from(workerResult['account']! as Map),
+        ),
       );
     } catch (_) {
       await _deleteDirectory(decodeDirectory);
       rethrow;
-    } finally {
-      archive?.clearSync();
-      input.closeSync();
     }
-  }
-
-  void _preflightArchive(File source, int archiveLength) {
-    final input = InputFileStream(source.path);
-    final directory = ZipDirectory();
-    try {
-      directory.read(input);
-      final names = <String>{};
-      var declaredExpandedBytes = 0;
-      for (final header in directory.fileHeaders) {
-        final name = header.filename;
-        final unixMode = header.externalFileAttributes >> 16;
-        final isSymbolicLink =
-            header.versionMadeBy >> 8 == 3 && unixMode & 0xf000 == 0xa000;
-        if (name.endsWith('/') ||
-            name.endsWith('\\') ||
-            isSymbolicLink ||
-            header.generalPurposeBitFlag & 1 != 0 ||
-            !_allowedArchiveEntries.contains(name) ||
-            !names.add(name) ||
-            (header.compressionMethod != ZipFile.zipCompressionStore &&
-                header.compressionMethod != ZipFile.zipCompressionDeflate)) {
-          throw const FormatException('invalid_backup_entries');
-        }
-        if (header.uncompressedSize < 0 ||
-            header.uncompressedSize > _maximumEntryBytes(name) ||
-            header.compressedSize < 0 ||
-            header.compressedSize > archiveLength) {
-          throw const FormatException('backup_too_large');
-        }
-        declaredExpandedBytes = _checkedExpandedTotal(
-          declaredExpandedBytes,
-          header.uncompressedSize,
-        );
-      }
-      if (directory.totalCentralDirectoryEntries !=
-              directory.fileHeaders.length ||
-          !names.containsAll(_allowedArchiveEntries) ||
-          names.length != _allowedArchiveEntries.length) {
-        throw const FormatException('invalid_backup_entries');
-      }
-    } finally {
-      for (final header in directory.fileHeaders) {
-        header.file?.closeSync();
-      }
-      input.closeSync();
-    }
-  }
-
-  int _maximumEntryBytes(String name) => switch (name) {
-    _manifestName => _maximumManifestBytes,
-    _preferencesName => _maximumPreferencesBytes,
-    _accountName => _maximumAccountBytes,
-    _databaseName => _maximumExpandedBytes,
-    _ => 0,
-  };
-
-  int _checkedExpandedTotal(int current, int additional) {
-    if (additional < 0 || current > _maximumExpandedBytes - additional) {
-      throw const FormatException('backup_too_large');
-    }
-    return current + additional;
-  }
-
-  Future<void> _writeLimitedJson(File file, Object? value, int limit) async {
-    final bytes = utf8.encode(jsonEncode(value));
-    if (bytes.length > limit) {
-      throw const FormatException('backup_too_large');
-    }
-    await file.writeAsBytes(bytes, flush: true);
-  }
-
-  Future<BackupFileRecord> _recordFile(File file) async {
-    final length = await file.length();
-    final digest = await sha256.bind(file.openRead()).first;
-    return BackupFileRecord(length: length, sha256: digest.toString());
-  }
-
-  void _addFileToArchive(
-    ZipEncoder encoder,
-    File file,
-    String name, {
-    CompressionType? compression,
-  }) {
-    final entry = ArchiveFile.stream(name, InputFileStream(file.path))
-      ..compression = compression;
-    encoder.add(entry);
   }
 
   Future<void> _rollback(Directory rollbackDirectory) async {
@@ -659,6 +469,288 @@ class DataBackupService {
       if (await file.exists()) await file.delete();
     }
   }
+}
+
+Future<void> _exportBackupArchive(Map<String, Object?> request) async {
+  final workDirectoryPath = request['workDirectoryPath']! as String;
+  final databaseFile = File(request['databasePath']! as String);
+  final temporaryOutput = File(request['temporaryOutputPath']! as String);
+  final maximumArchiveBytes = request['maximumArchiveBytes']! as int;
+  final maximumExpandedBytes = request['maximumExpandedBytes']! as int;
+  final maximumManifestBytes = request['maximumManifestBytes']! as int;
+  final maximumPreferencesBytes = request['maximumPreferencesBytes']! as int;
+  final maximumAccountBytes = request['maximumAccountBytes']! as int;
+  final preferencesFile = File(path.join(workDirectoryPath, _preferencesName));
+  final accountFile = File(path.join(workDirectoryPath, _accountName));
+  _writeLimitedJsonFile(
+    preferencesFile,
+    request['preferences'],
+    maximumPreferencesBytes,
+  );
+  _writeLimitedJsonFile(accountFile, request['account'], maximumAccountBytes);
+
+  final payloads = <String, File>{
+    _databaseName: databaseFile,
+    _preferencesName: preferencesFile,
+    _accountName: accountFile,
+  };
+  final records = <String, BackupFileRecord>{};
+  var expandedBytes = 0;
+  for (final entry in payloads.entries) {
+    final record = await _recordBackupFile(entry.value);
+    records[entry.key] = record;
+    expandedBytes = _checkedBackupExpandedTotal(
+      expandedBytes,
+      record.length,
+      maximumExpandedBytes,
+    );
+  }
+  final manifest = BackupManifest(
+    formatVersion: _backupFormatVersion,
+    appVersion: request['appVersion']! as String,
+    databaseSchemaVersion: request['databaseSchemaVersion']! as int,
+    platform: request['platform']! as String,
+    createdAt: DateTime.parse(request['createdAt']! as String),
+    containsSensitiveAccountData: true,
+    files: records,
+  );
+  final manifestBytes = utf8.encode(
+    const JsonEncoder.withIndent('  ').convert(manifest.toJson()),
+  );
+  if (manifestBytes.length > maximumManifestBytes) {
+    throw const FormatException('backup_too_large');
+  }
+  _checkedBackupExpandedTotal(
+    expandedBytes,
+    manifestBytes.length,
+    maximumExpandedBytes,
+  );
+
+  final outputStream = OutputFileStream(temporaryOutput.path);
+  try {
+    final encoder = ZipEncoder()..startEncode(outputStream);
+    encoder.add(ArchiveFile.bytes(_manifestName, manifestBytes));
+    _addBackupFileToArchive(
+      encoder,
+      databaseFile,
+      _databaseName,
+      compression: CompressionType.none,
+    );
+    _addBackupFileToArchive(encoder, preferencesFile, _preferencesName);
+    _addBackupFileToArchive(encoder, accountFile, _accountName);
+    encoder.endEncode();
+  } finally {
+    await outputStream.close();
+  }
+  if (await temporaryOutput.length() > maximumArchiveBytes) {
+    throw const FormatException('backup_too_large');
+  }
+}
+
+Future<Map<String, Object?>> _decodeBackupArchive(
+  Map<String, Object?> request,
+) async {
+  final source = File(request['sourcePath']! as String);
+  final decodeDirectory = Directory(request['decodeDirectoryPath']! as String);
+  final maximumArchiveBytes = request['maximumArchiveBytes']! as int;
+  final maximumExpandedBytes = request['maximumExpandedBytes']! as int;
+  if (!source.existsSync()) throw const FormatException('backup_missing');
+  final archiveLength = source.lengthSync();
+  if (archiveLength > maximumArchiveBytes) {
+    throw const FormatException('backup_too_large');
+  }
+  _preflightBackupArchive(source, archiveLength, request);
+  if (decodeDirectory.existsSync()) {
+    decodeDirectory.deleteSync(recursive: true);
+  }
+  decodeDirectory.createSync(recursive: true);
+  final input = InputFileStream(source.path);
+  Archive? archive;
+  try {
+    archive = ZipDecoder().decodeStream(input);
+    var actualExpandedBytes = 0;
+    final extractedFiles = <String, File>{};
+    for (final entry in archive.files) {
+      final file = File(path.join(decodeDirectory.path, entry.name));
+      final output = _LimitedOutputFileStream(file.path, entry.size, (count) {
+        actualExpandedBytes = _checkedBackupExpandedTotal(
+          actualExpandedBytes,
+          count,
+          maximumExpandedBytes,
+        );
+      });
+      try {
+        entry.writeContent(output);
+      } finally {
+        output.closeSync();
+      }
+      if (output.length != entry.size) {
+        throw const FormatException('invalid_backup_entry_length');
+      }
+      extractedFiles[entry.name] = file;
+    }
+
+    final manifestRaw = jsonDecode(
+      extractedFiles[_manifestName]!.readAsStringSync(),
+    );
+    if (manifestRaw is! Map) {
+      throw const FormatException('invalid_backup_manifest');
+    }
+    final manifestJson = Map<String, Object?>.from(manifestRaw);
+    final manifest = BackupManifest.fromJson(manifestJson);
+    if (manifest.formatVersion != _backupFormatVersion ||
+        manifest.platform != request['platform'] ||
+        manifest.databaseSchemaVersion >
+            (request['databaseSchemaVersion']! as int) ||
+        !manifest.containsSensitiveAccountData ||
+        manifest.files.keys.toSet().length != 3 ||
+        !manifest.files.keys.toSet().containsAll(<String>{
+          _databaseName,
+          _preferencesName,
+          _accountName,
+        })) {
+      throw const FormatException('incompatible_backup');
+    }
+    for (final name in const <String>[
+      _databaseName,
+      _preferencesName,
+      _accountName,
+    ]) {
+      final record = manifest.files[name];
+      final actual = await _recordBackupFile(extractedFiles[name]!);
+      if (record == null ||
+          record.length != actual.length ||
+          record.sha256 != actual.sha256) {
+        throw const FormatException('backup_checksum_mismatch');
+      }
+    }
+    final preferencesRaw = jsonDecode(
+      extractedFiles[_preferencesName]!.readAsStringSync(),
+    );
+    if (preferencesRaw is! Map) {
+      throw const FormatException('invalid_preferences_backup');
+    }
+    final preferences = Map<String, Object?>.from(preferencesRaw)
+      ..remove('timer_runtime_v1');
+    final accountRaw = jsonDecode(
+      extractedFiles[_accountName]!.readAsStringSync(),
+    );
+    if (accountRaw is! Map) {
+      throw const FormatException('invalid_account_backup');
+    }
+    return <String, Object?>{
+      'manifest': manifestJson,
+      'databasePath': extractedFiles[_databaseName]!.path,
+      'preferences': preferences,
+      'account': Map<String, Object?>.from(accountRaw),
+    };
+  } catch (_) {
+    if (decodeDirectory.existsSync()) {
+      decodeDirectory.deleteSync(recursive: true);
+    }
+    rethrow;
+  } finally {
+    archive?.clearSync();
+    input.closeSync();
+  }
+}
+
+void _preflightBackupArchive(
+  File source,
+  int archiveLength,
+  Map<String, Object?> request,
+) {
+  final input = InputFileStream(source.path);
+  final directory = ZipDirectory();
+  try {
+    directory.read(input);
+    final names = <String>{};
+    var declaredExpandedBytes = 0;
+    final maximumExpandedBytes = request['maximumExpandedBytes']! as int;
+    for (final header in directory.fileHeaders) {
+      final name = header.filename;
+      final unixMode = header.externalFileAttributes >> 16;
+      final isSymbolicLink =
+          header.versionMadeBy >> 8 == 3 && unixMode & 0xf000 == 0xa000;
+      if (name.endsWith('/') ||
+          name.endsWith('\\') ||
+          isSymbolicLink ||
+          header.generalPurposeBitFlag & 1 != 0 ||
+          !_allowedArchiveEntries.contains(name) ||
+          !names.add(name) ||
+          (header.compressionMethod != ZipFile.zipCompressionStore &&
+              header.compressionMethod != ZipFile.zipCompressionDeflate)) {
+        throw const FormatException('invalid_backup_entries');
+      }
+      if (header.uncompressedSize < 0 ||
+          header.uncompressedSize > _maximumBackupEntryBytes(name, request) ||
+          header.compressedSize < 0 ||
+          header.compressedSize > archiveLength) {
+        throw const FormatException('backup_too_large');
+      }
+      declaredExpandedBytes = _checkedBackupExpandedTotal(
+        declaredExpandedBytes,
+        header.uncompressedSize,
+        maximumExpandedBytes,
+      );
+    }
+    if (directory.totalCentralDirectoryEntries !=
+            directory.fileHeaders.length ||
+        !names.containsAll(_allowedArchiveEntries) ||
+        names.length != _allowedArchiveEntries.length) {
+      throw const FormatException('invalid_backup_entries');
+    }
+  } finally {
+    for (final header in directory.fileHeaders) {
+      header.file?.closeSync();
+    }
+    input.closeSync();
+  }
+}
+
+int _maximumBackupEntryBytes(String name, Map<String, Object?> request) =>
+    switch (name) {
+      _manifestName => request['maximumManifestBytes']! as int,
+      _preferencesName => request['maximumPreferencesBytes']! as int,
+      _accountName => request['maximumAccountBytes']! as int,
+      _databaseName => request['maximumExpandedBytes']! as int,
+      _ => 0,
+    };
+
+int _checkedBackupExpandedTotal(
+  int current,
+  int additional,
+  int maximumExpandedBytes,
+) {
+  if (additional < 0 || current > maximumExpandedBytes - additional) {
+    throw const FormatException('backup_too_large');
+  }
+  return current + additional;
+}
+
+void _writeLimitedJsonFile(File file, Object? value, int limit) {
+  final bytes = utf8.encode(jsonEncode(value));
+  if (bytes.length > limit) {
+    throw const FormatException('backup_too_large');
+  }
+  file.writeAsBytesSync(bytes, flush: true);
+}
+
+Future<BackupFileRecord> _recordBackupFile(File file) async {
+  final length = await file.length();
+  final digest = await sha256.bind(file.openRead()).first;
+  return BackupFileRecord(length: length, sha256: digest.toString());
+}
+
+void _addBackupFileToArchive(
+  ZipEncoder encoder,
+  File file,
+  String name, {
+  CompressionType? compression,
+}) {
+  final entry = ArchiveFile.stream(name, InputFileStream(file.path))
+    ..compression = compression;
+  encoder.add(entry);
 }
 
 class _DecodedBackup {

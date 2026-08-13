@@ -1044,6 +1044,73 @@ void main() {
     expect(find.text('Nested track'), findsNothing);
   });
 
+  testWidgets('large ASMR track trees only build visible rows', (
+    WidgetTester tester,
+  ) async {
+    final tree = List<AsmrTrackFile>.generate(
+      2000,
+      (index) => AsmrTrackFile(
+        hash: 'large-$index',
+        title: 'Large ASMR track ${index.toString().padLeft(4, '0')}.mp3',
+        type: 'audio',
+        streamUrl: 'https://example.com/large-$index.mp3',
+        downloadUrl: 'https://example.com/large-$index.mp3',
+        lowQualityUrl: null,
+        duration: const Duration(minutes: 1),
+        size: 1024,
+        children: const <AsmrTrackFile>[],
+        workId: 1,
+        workTitle: 'Loaded work',
+        sourceId: 'RJ000001',
+        relativePath: 'Large ASMR track $index.mp3',
+      ),
+      growable: false,
+    );
+    final controller = _QueuedEmptyAsmrLibraryController(trackTree: tree);
+    addTearDown(controller.dispose);
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.text('Loaded work', findRichText: true));
+    await tester.pumpAndSettle();
+
+    final builtRows = find.textContaining(
+      'Large ASMR track',
+      findRichText: true,
+    );
+    expect(builtRows.evaluate().length, lessThan(100));
+    expect(
+      find.text('Large ASMR track 1999', findRichText: true),
+      findsNothing,
+    );
+
+    final collectedCategory = find.byKey(
+      const ValueKey(AsmrCategoryType.collected),
+    );
+    await tester.scrollUntilVisible(
+      find.text('Large ASMR track 1999', findRichText: true),
+      600,
+      scrollable: find
+          .descendant(of: collectedCategory, matching: find.byType(Scrollable))
+          .last,
+      maxScrolls: 400,
+    );
+    expect(
+      find.text('Large ASMR track 1999', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('ASMR pagination shows progress without a pull-up hint', (
     tester,
   ) async {
@@ -2196,6 +2263,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     this.collectedHasMore = false,
     this.needsRetry = false,
     this.delayCollectedSearch = false,
+    this.trackTree,
   }) : super(
          preferencesStore: AsmrPreferencesStore(
            repository: SqliteAsmrRepository(database: AppDatabase.instance),
@@ -2209,6 +2277,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   final List<Completer<void>> _collectedSearchRefreshes = <Completer<void>>[];
   final bool collectedHasMore;
   final bool delayCollectedSearch;
+  final List<AsmrTrackFile>? trackTree;
   bool needsRetry;
   bool _recommendationLoading = false;
   bool _isLoadingMore = false;
@@ -2353,7 +2422,7 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   @override
   AsmrTrackTreeViewState trackTreeViewState(int workId) {
     final tree = workId == _collectedWork.id
-        ? <AsmrTrackFile>[_trackFolder]
+        ? trackTree ?? <AsmrTrackFile>[_trackFolder]
         : const <AsmrTrackFile>[];
     return AsmrTrackTreeViewState(
       workId: workId,

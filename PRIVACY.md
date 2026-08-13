@@ -51,8 +51,6 @@ Doujin Audio 不集成分析、广告、远程遥测或崩溃上报 SDK，不会
 - 安装未知应用权限仅用于用户主动触发的应用内更新。
 - 首次启动不会主动请求可选权限；拒绝权限后，不依赖该权限的功能仍可使用。
 
-详细权限说明见 [`docs/permissions.md`](docs/permissions.md)。
-
 ## 联系
 
 隐私相关问题请通过 GitHub Issues 联系：

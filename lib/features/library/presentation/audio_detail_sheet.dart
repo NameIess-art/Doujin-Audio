@@ -256,7 +256,9 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
           .read(uiOperationServiceProvider)
           .run<AudioDetailRenameResult>(
             scope: _operationScope,
-            labelKey: 'audio_detail_rename_folder_from_title',
+            labelKey: detail.target.isLibraryRootFolder
+                ? 'audio_detail_folder_name'
+                : 'audio_detail_file_name',
             task: (_) => ref
                 .read(audioPathCoordinatorProvider)
                 .renameAudioDetailTargetToName(detail, targetName),
@@ -412,7 +414,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       return;
     }
     final confirmed = await _confirmAction(
-      title: _renameWorkTitleLabel(detail, i18n),
+      title: i18n.tr('audio_detail_rename_file_from_title'),
       message: i18n.tr('audio_detail_rename_confirm'),
       confirmLabel: i18n.tr('confirm'),
     );
@@ -426,7 +428,7 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
           .read(uiOperationServiceProvider)
           .run<AudioDetailRenameResult>(
             scope: _operationScope,
-            labelKey: 'audio_detail_rename_folder_from_title',
+            labelKey: 'audio_detail_rename_file_from_title',
             task: (_) => ref
                 .read(audioPathCoordinatorProvider)
                 .renameAudioDetailTarget(detail),
@@ -529,6 +531,19 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                     ),
                   ),
                 ),
+                if (detail != null)
+                  IconButton(
+                    key: const ValueKey<String>('audio_detail_fetch_info'),
+                    constraints: const BoxConstraints.tightFor(
+                      width: 48,
+                      height: 48,
+                    ),
+                    onPressed: _runningAction
+                        ? null
+                        : () => _confirmFetchInfo(detail),
+                    tooltip: i18n.tr('audio_detail_fetch_info'),
+                    icon: const Icon(Icons.cloud_download_rounded),
+                  ),
                 IconButton(
                   onPressed: () => Navigator.of(context).maybePop(),
                   tooltip: MaterialLocalizations.of(context).closeButtonTooltip,
@@ -571,45 +586,25 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
                 ),
               )
             else if (detail != null) ...[
-              IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _runningAction
-                            ? null
-                            : () => _confirmFetchInfo(detail),
-                        icon: const Icon(Icons.cloud_download_rounded),
-                        label: Text(
-                          i18n.tr('audio_detail_fetch_info'),
-                          maxLines: 2,
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
+              if (!_target.isLibraryRootFolder) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _runningAction
+                        ? null
+                        : () => _confirmRename(detail),
+                    icon: const Icon(Icons.drive_file_rename_outline),
+                    label: Text(
+                      i18n.tr('audio_detail_rename_file_from_title'),
+                      maxLines: 2,
+                      textAlign: TextAlign.center,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontSize: 12),
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: _runningAction
-                            ? null
-                            : () => _confirmRename(detail),
-                        icon: const Icon(Icons.drive_file_rename_outline),
-                        label: Text(
-                          _renameWorkTitleLabel(detail, i18n),
-                          maxLines: 2,
-                          textAlign: TextAlign.center,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12),
-                        ),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
               if (_target.isLibraryRootFolder) ...[
                 _FolderCoverSelector(
                   key: ValueKey('${_target.targetPath}:$coverGeneration'),
@@ -691,10 +686,4 @@ class _AudioDetailSheetState extends ConsumerState<AudioDetailSheet> {
       ),
     );
   }
-}
-
-String _renameWorkTitleLabel(AudioDetail detail, AppLanguageProvider i18n) {
-  return detail.target.isLibraryRootFolder
-      ? i18n.tr('audio_detail_rename_folder_from_title')
-      : i18n.tr('audio_detail_rename_file_from_title');
 }

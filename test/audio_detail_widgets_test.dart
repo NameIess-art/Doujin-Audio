@@ -617,22 +617,29 @@ void main() {
     );
     await tester.pump();
 
-    _expectPrimaryFilledButton(
-      tester,
-      find.widgetWithText(
-        FilledButton,
-        languageProvider.tr('audio_detail_fetch_info'),
-      ),
+    final fetchInfoButton = find.byTooltip(
+      languageProvider.tr('audio_detail_fetch_info'),
     );
-    _expectPrimaryFilledButton(
-      tester,
-      find.widgetWithText(
-        FilledButton,
-        languageProvider.tr('audio_detail_rename_folder_from_title'),
-      ),
+    final fetchInfoIconButton = find.byKey(
+      const ValueKey<String>('audio_detail_fetch_info'),
     );
+    final collapseButton = find.byTooltip(
+      MaterialLocalizations.of(
+        tester.element(find.byType(AudioDetailSheet)),
+      ).closeButtonTooltip,
+    );
+    expect(fetchInfoButton, findsOneWidget);
+    expect(fetchInfoIconButton, findsOneWidget);
+    expect(collapseButton, findsOneWidget);
+    expect(tester.widget<IconButton>(fetchInfoIconButton).style, isNull);
+    expect(
+      tester.getCenter(fetchInfoButton).dx,
+      lessThan(tester.getCenter(collapseButton).dx),
+    );
+    expect(tester.getSize(fetchInfoButton), const Size.square(48));
+    expect(find.byIcon(Icons.drive_file_rename_outline), findsNothing);
 
-    await tester.tap(find.text(languageProvider.tr('audio_detail_fetch_info')));
+    await tester.tap(fetchInfoButton);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
 
@@ -672,6 +679,38 @@ void main() {
     );
     final label = fixture.languageProvider.tr('audio_detail_set_cover');
     final button = find.widgetWithText(FilledButton, label);
+    for (var i = 0; i < 40 && button.evaluate().isEmpty; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 10)),
+      );
+      await tester.pump(const Duration(milliseconds: 20));
+    }
+
+    _expectPrimaryFilledButton(tester, button);
+  });
+
+  testWidgets('single audio detail keeps the title rename action', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    const target = AudioDetailTarget(
+      targetType: AudioDetailTargetType.singleAudioFile,
+      targetPath: '/library/track.mp3',
+    );
+    await tester.runAsync(
+      () => fixture.runtimeGraph.library.saveAudioDetail(
+        AudioDetail.empty(target),
+      ),
+    );
+
+    await tester.pumpWidget(
+      fixture.build(const AudioDetailSheet(target: target)),
+    );
+    final button = find.widgetWithText(
+      FilledButton,
+      fixture.languageProvider.tr('audio_detail_rename_file_from_title'),
+    );
     for (var i = 0; i < 40 && button.evaluate().isEmpty; i++) {
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 10)),

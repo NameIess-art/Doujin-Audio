@@ -345,9 +345,8 @@ const Map<String, String> appLanguageEn = {
   'audio_detail_current_cover': 'Current cover',
   'audio_detail_rename_file': 'Rename file',
   'audio_detail_rename_file_from_title': 'Use work title\nas file name',
-  'audio_detail_rename_folder_from_title': 'Use work title\nas folder name',
   'audio_detail_rename_confirm':
-      'Use the work title to rename this file or folder. This moves the local path. Continue?',
+      'Use the work title to rename this file. This moves the local path. Continue?',
   'audio_detail_rename_missing_title': 'Fill in the work title first.',
   'audio_detail_rename_done': 'Renamed.',
   'audio_detail_rename_failed':

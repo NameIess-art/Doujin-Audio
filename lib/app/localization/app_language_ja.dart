@@ -312,9 +312,8 @@ const Map<String, String> appLanguageJa = {
   'audio_detail_current_cover': '現在のカバー',
   'audio_detail_rename_file': 'ファイル名を変更',
   'audio_detail_rename_file_from_title': '作品タイトルを\nファイル名にする',
-  'audio_detail_rename_folder_from_title': '作品タイトルを\nフォルダ名にする',
   'audio_detail_rename_confirm':
-      '作品タイトルを使って現在のファイルまたはフォルダ名を変更します。ローカルパスが移動されます。続行しますか？',
+      '作品タイトルを使って現在のファイル名を変更します。ローカルパスが移動されます。続行しますか？',
   'audio_detail_rename_missing_title': '先に作品タイトルを入力してください。',
   'audio_detail_rename_done': '名前を変更しました。',
   'audio_detail_rename_failed': '名前の変更に失敗しました。ファイルの存在や使用状態を確認してください。',

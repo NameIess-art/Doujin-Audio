@@ -101,6 +101,20 @@ enum _LibraryMoreAction {
   batchMetadata,
 }
 
+class _LoadedLibraryFolder {
+  const _LoadedLibraryFolder({required this.folder, required this.revision});
+
+  final FolderNode folder;
+  final int revision;
+}
+
+class _VisibleLibraryItem {
+  const _VisibleLibraryItem({required this.node, required this.depth});
+
+  final LibraryNode node;
+  final int depth;
+}
+
 class LibraryTab extends ConsumerStatefulWidget {
   const LibraryTab({
     super.key,
@@ -163,6 +177,15 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   bool _initialLibraryContentReady = false;
   bool _refreshTriggeredInCurrentScroll = false;
   final Set<String> _expandedCardPaths = <String>{};
+  final Map<String, _LoadedLibraryFolder> _loadedFolderTrees =
+      <String, _LoadedLibraryFolder>{};
+  final Map<String, int> _loadingFolderTreeRevisions = <String, int>{};
+  List<_VisibleLibraryItem> _visibleItemsCache = const <_VisibleLibraryItem>[];
+  List<LibraryNode>? _visibleItemsSource;
+  int? _visibleItemsStructureRevision;
+  int _visibleItemsVersion = 0;
+  int _visibleItemsCacheVersion = -1;
+  int _prunedFolderTreeRevision = -1;
 
   final GlobalKey<GlassRefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<GlassRefreshIndicatorState>();
@@ -249,12 +272,155 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     );
   }
 
-  void _handleCardExpansionChanged(String folderPath, bool expanded) {
+  void _handleCardExpansionChanged(FolderNode folder, bool expanded) {
+    final folderPath = folder.path;
     final normalizedPath = PathMatcher.normalize(folderPath);
     final changed = expanded
         ? _expandedCardPaths.add(normalizedPath)
         : _expandedCardPaths.remove(normalizedPath);
-    if (changed && mounted) setState(() {});
+    if (changed && mounted) {
+      setState(() => _visibleItemsVersion++);
+    }
+    if (expanded && folder.depth == 0) {
+      unawaited(_loadExpandedFolderTree(folderPath));
+    }
+  }
+
+  Future<void> _loadExpandedFolderTree(String folderPath) async {
+    final normalizedPath = PathMatcher.normalize(folderPath);
+    final libraryFacade = ref.read(libraryFacadeProvider);
+    final revision = libraryFacade.structureRevision;
+    if (_loadedFolderTrees[normalizedPath]?.revision == revision ||
+        _loadingFolderTreeRevisions[normalizedPath] == revision) {
+      return;
+    }
+    _loadingFolderTreeRevisions[normalizedPath] = revision;
+    final folder = await libraryFacade.loadLibraryFolderTree(folderPath);
+    if (!mounted) return;
+    if (_loadingFolderTreeRevisions[normalizedPath] == revision) {
+      _loadingFolderTreeRevisions.remove(normalizedPath);
+    }
+    if (folder == null || libraryFacade.structureRevision != revision) return;
+    setState(() {
+      final previousFolder = _loadedFolderTrees[normalizedPath]?.folder;
+      _loadedFolderTrees[normalizedPath] = _LoadedLibraryFolder(
+        folder: folder,
+        revision: revision,
+      );
+      if (previousFolder != null) {
+        _removeMissingExpandedFolderPaths(previousFolder, folder);
+      }
+      _visibleItemsVersion++;
+    });
+  }
+
+  List<_VisibleLibraryItem> _visibleLibraryItems({
+    required List<LibraryNode> tree,
+    required int structureRevision,
+  }) {
+    _pruneFolderTreeCaches(tree, structureRevision);
+    if (identical(_visibleItemsSource, tree) &&
+        _visibleItemsStructureRevision == structureRevision &&
+        _visibleItemsCacheVersion == _visibleItemsVersion) {
+      return _visibleItemsCache;
+    }
+    final result = <_VisibleLibraryItem>[];
+
+    void addNode(LibraryNode node, int depth, {FolderNode? expandedFolder}) {
+      result.add(_VisibleLibraryItem(node: node, depth: depth));
+      if (node is! FolderNode ||
+          !_expandedCardPaths.contains(PathMatcher.normalize(node.path))) {
+        return;
+      }
+      for (final child in (expandedFolder ?? node).children) {
+        addNode(child, depth + 1);
+      }
+    }
+
+    for (final node in tree) {
+      if (node is! FolderNode) {
+        addNode(node, 0);
+        continue;
+      }
+      final normalizedPath = PathMatcher.normalize(node.path);
+      final loaded = _loadedFolderTrees[normalizedPath];
+      addNode(node, 0, expandedFolder: loaded?.folder);
+      if (_expandedCardPaths.contains(normalizedPath) &&
+          loaded?.revision != structureRevision &&
+          _loadingFolderTreeRevisions[normalizedPath] != structureRevision) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_loadExpandedFolderTree(node.path));
+        });
+      }
+    }
+    _visibleItemsSource = tree;
+    _visibleItemsStructureRevision = structureRevision;
+    _visibleItemsCacheVersion = _visibleItemsVersion;
+    return _visibleItemsCache = result;
+  }
+
+  void _pruneFolderTreeCaches(List<LibraryNode> tree, int structureRevision) {
+    if (_prunedFolderTreeRevision == structureRevision) return;
+    _prunedFolderTreeRevision = structureRevision;
+    final rootPaths = tree
+        .whereType<FolderNode>()
+        .map((folder) => PathMatcher.normalize(folder.path))
+        .toSet();
+    var changed = false;
+    final removedRootPaths = _loadedFolderTrees.keys
+        .where((path) => !rootPaths.contains(path))
+        .toList(growable: false);
+    for (final path in removedRootPaths) {
+      _loadedFolderTrees.remove(path);
+      changed = true;
+    }
+    _loadingFolderTreeRevisions.removeWhere((path, _) {
+      final remove = !rootPaths.contains(path);
+      changed = changed || remove;
+      return remove;
+    });
+
+    final previousExpandedCount = _expandedCardPaths.length;
+    _retainCurrentExpandedFolderPaths(rootPaths: rootPaths);
+    changed = changed || _expandedCardPaths.length != previousExpandedCount;
+    if (changed) _visibleItemsVersion++;
+  }
+
+  void _retainCurrentExpandedFolderPaths({Set<String>? rootPaths}) {
+    final validExpandedPaths = <String>{...?rootPaths};
+    void collectFolderPaths(FolderNode folder) {
+      validExpandedPaths.add(PathMatcher.normalize(folder.path));
+      for (final child in folder.children.whereType<FolderNode>()) {
+        collectFolderPaths(child);
+      }
+    }
+
+    for (final loaded in _loadedFolderTrees.values) {
+      collectFolderPaths(loaded.folder);
+    }
+    _expandedCardPaths.retainWhere(validExpandedPaths.contains);
+  }
+
+  void _removeMissingExpandedFolderPaths(
+    FolderNode previousFolder,
+    FolderNode currentFolder,
+  ) {
+    Set<String> collectPaths(FolderNode root) {
+      final paths = <String>{};
+      void collect(FolderNode folder) {
+        paths.add(PathMatcher.normalize(folder.path));
+        for (final child in folder.children.whereType<FolderNode>()) {
+          collect(child);
+        }
+      }
+
+      collect(root);
+      return paths;
+    }
+
+    final currentPaths = collectPaths(currentFolder);
+    final removedPaths = collectPaths(previousFolder)..removeAll(currentPaths);
+    _expandedCardPaths.removeAll(removedPaths);
   }
 
   Future<void> _openVideoConverterPage() async {
@@ -708,6 +874,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       contentRevision: libraryFacade.contentRevision,
       detailRevision: libraryDetailRevision,
     );
+    final visibleItems = _visibleLibraryItems(
+      tree: tree,
+      structureRevision: listStateStructureRevision,
+    );
     final bottomInset = MobileOverlayInset.of(context);
 
     final headerControlsFullHeight = this.headerControlsFullHeight;
@@ -736,20 +906,25 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     final canPullRefresh = listStateCanPullRefresh;
 
     Widget buildTopLevelLibraryItem(BuildContext context, int index) {
-      if (index == tree.length) {
+      if (index == visibleItems.length) {
         return const SizedBox.shrink(key: ValueKey('bottom_spacing'));
       }
-      final node = tree[index];
+      final item = visibleItems[index];
+      final node = item.node;
       return KeyedSubtree(
         key: ValueKey(node.path),
-        child: RepaintBoundary(
-          child: _LibraryTreeItem(
-            node: node,
-            initiallyExpanded:
-                node is FolderNode &&
-                _expandedCardPaths.contains(PathMatcher.normalize(node.path)),
-            onFolderExpansionChanged: _handleCardExpansionChanged,
-            index: index,
+        child: Padding(
+          padding: EdgeInsets.only(left: item.depth * 8.0),
+          child: RepaintBoundary(
+            child: _LibraryTreeItem(
+              node: node,
+              initiallyExpanded:
+                  node is FolderNode &&
+                  _expandedCardPaths.contains(PathMatcher.normalize(node.path)),
+              onFolderExpansionChanged: _handleCardExpansionChanged,
+              renderChildrenInline: false,
+              index: index,
+            ),
           ),
         ),
       );
@@ -867,7 +1042,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                               : null,
                           keyboardDismissBehavior:
                               ScrollViewKeyboardDismissBehavior.onDrag,
-                          itemCount: tree.length + 1,
+                          itemCount: visibleItems.length + 1,
                           itemBuilder: buildTopLevelLibraryItem,
                         ),
                       ),

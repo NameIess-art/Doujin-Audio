@@ -10,41 +10,9 @@ import 'package:doujin_audio/app/presentation/onboarding_page.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/widgets/app_brand_icon.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
-import 'package:doujin_audio/main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  test('first frame policy releases onboarding and startup failures', () {
-    expect(
-      shouldReleaseFirstFrameAfterAppBootstrap(
-        phase: AppBootstrapPhase.ready,
-        shouldShowOnboarding: true,
-      ),
-      isTrue,
-    );
-    expect(
-      shouldReleaseFirstFrameAfterAppBootstrap(
-        phase: AppBootstrapPhase.ready,
-        shouldShowOnboarding: false,
-      ),
-      isFalse,
-    );
-    expect(
-      shouldReleaseFirstFrameAfterAppBootstrap(
-        phase: AppBootstrapPhase.failure,
-        shouldShowOnboarding: false,
-      ),
-      isTrue,
-    );
-    expect(
-      shouldReleaseFirstFrameAfterAppBootstrap(
-        phase: AppBootstrapPhase.initializing,
-        shouldShowOnboarding: true,
-      ),
-      isFalse,
-    );
-  });
-
   test('bootstrap attempts are single-flight', () async {
     final completer = Completer<void>();
     var attempts = 0;
@@ -217,13 +185,6 @@ void main() {
       expect(runtimeAttempts, 0);
       await tester.pump();
       expect(runtimeAttempts, 1);
-      expect(
-        shouldReleaseFirstFrameAfterAppBootstrap(
-          phase: AppBootstrapPhase.ready,
-          shouldShowOnboarding: showOnboarding,
-        ),
-        isTrue,
-      );
     },
   );
 
@@ -256,13 +217,6 @@ void main() {
 
     expect(find.text('runtime loading'), findsOneWidget);
     expect(runtimeSettledCalls, 0);
-    expect(
-      shouldReleaseFirstFrameAfterAppBootstrap(
-        phase: AppBootstrapPhase.ready,
-        shouldShowOnboarding: false,
-      ),
-      isFalse,
-    );
 
     runtimeInitialization.complete();
     await tester.pump();

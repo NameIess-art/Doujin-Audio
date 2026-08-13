@@ -382,11 +382,13 @@ class LibraryOrganizer {
     var totalTrackCount = 0;
     var childLeafFolderCount = 0;
     var hasChildFolder = false;
+    var totalDuration = Duration.zero;
     MusicTrack? firstTrack;
 
     for (final child in folder.children) {
       if (child is TrackNode) {
         totalTrackCount++;
+        totalDuration += child.track.duration;
         firstTrack ??= child.track;
         continue;
       }
@@ -395,6 +397,7 @@ class LibraryOrganizer {
         _cacheFolderTreeMetrics(child);
         totalTrackCount += child.totalTrackCount;
         childLeafFolderCount += child.leafFolderCount;
+        totalDuration += child.totalDuration;
         firstTrack ??= child.firstTrack;
       }
     }
@@ -403,6 +406,7 @@ class LibraryOrganizer {
       totalTrackCount: totalTrackCount,
       leafFolderCount: hasChildFolder ? childLeafFolderCount : 1,
       firstTrack: firstTrack,
+      totalDuration: totalDuration,
     );
   }
 }

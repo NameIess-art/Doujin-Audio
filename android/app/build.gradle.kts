@@ -27,6 +27,10 @@ val integrationTestRegistrantBlock = Regex(
 val releaseSigningConfigured = keystorePropertiesFile.exists() &&
     requiredReleaseSigningProperties.all { !keystoreProperties.getProperty(it).isNullOrBlank() } &&
     releaseKeystoreFile?.isFile == true
+val parallelProfileInstall = providers
+    .gradleProperty("parallelProfileInstall")
+    .map(String::toBoolean)
+    .getOrElse(false)
 
 val validateReleaseSigning by tasks.registering {
     group = "verification"
@@ -92,6 +96,14 @@ android {
 
     buildTypes {
         debug {
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
+        getByName("profile") {
+            if (parallelProfileInstall) {
+                applicationIdSuffix = ".perf"
+            }
             if (releaseSigningConfigured) {
                 signingConfig = signingConfigs.getByName("release")
             }

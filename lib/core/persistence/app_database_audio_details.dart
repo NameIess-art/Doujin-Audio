@@ -24,9 +24,11 @@ extension AppDatabaseAudioDetails on AppDatabase {
 
   Future<void> upsertAudioDetailRecord(AudioDetailRecord detail) async {
     await _runDatabaseWrite((db) async {
-      await db.transaction(
-        (transaction) => _upsertAudioDetailRecord(transaction, detail),
-      );
+      await db.transaction((transaction) async {
+        final batch = transaction.batch();
+        _writeAudioDetailRecordToBatch(batch, detail);
+        await batch.commit(noResult: true);
+      });
     });
   }
 
@@ -37,9 +39,11 @@ extension AppDatabaseAudioDetails on AppDatabase {
     if (values.isEmpty) return;
     await _runDatabaseWrite((db) async {
       await db.transaction((transaction) async {
+        final batch = transaction.batch();
         for (final detail in values) {
-          await _upsertAudioDetailRecord(transaction, detail);
+          _writeAudioDetailRecordToBatch(batch, detail);
         }
+        await batch.commit(noResult: true);
       });
     });
   }
@@ -260,12 +264,9 @@ Future<List<AudioDetailRecord>> _loadAudioDetailRecords(
       .toList(growable: false);
 }
 
-Future<void> _upsertAudioDetailRecord(
-  DatabaseExecutor db,
-  AudioDetailRecord detail,
-) async {
+void _writeAudioDetailRecordToBatch(Batch batch, AudioDetailRecord detail) {
   final targetPath = PathMatcher.normalize(detail.targetPath);
-  await db.insert('audio_details', <String, Object?>{
+  batch.insert('audio_details', <String, Object?>{
     'target_type': detail.targetType,
     'target_path': targetPath,
     'rj_code': detail.rjCode,
@@ -284,14 +285,14 @@ Future<void> _upsertAudioDetailRecord(
     'audio_detail_voice_actors',
     'audio_detail_tags',
   ]) {
-    await db.delete(
+    batch.delete(
       table,
       where: 'target_type = ? AND target_path = ?',
       whereArgs: <Object?>[detail.targetType, targetPath],
     );
   }
   for (var index = 0; index < detail.voiceActors.length; index++) {
-    await db.insert('audio_detail_voice_actors', <String, Object?>{
+    batch.insert('audio_detail_voice_actors', <String, Object?>{
       'target_type': detail.targetType,
       'target_path': targetPath,
       'voice_actor': detail.voiceActors[index],
@@ -299,7 +300,7 @@ Future<void> _upsertAudioDetailRecord(
     });
   }
   for (var index = 0; index < detail.tags.length; index++) {
-    await db.insert('audio_detail_tags', <String, Object?>{
+    batch.insert('audio_detail_tags', <String, Object?>{
       'target_type': detail.targetType,
       'target_path': targetPath,
       'tag': detail.tags[index],

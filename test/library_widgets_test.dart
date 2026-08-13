@@ -480,6 +480,67 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
+  testWidgets('large expanded folders only build visible track rows', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final runtimeGraph = fixture.runtimeGraph;
+    const folderPath = '/library/large-folder';
+    final tracks = List<MusicTrack>.generate(
+      2000,
+      (index) => testMusicTrack(
+        name: 'Lazy track ${index.toString().padLeft(4, '0')}',
+        path: '$folderPath/track-$index.mp3',
+        groupKey: folderPath,
+        groupTitle: 'Large folder',
+      ),
+      growable: false,
+    );
+    runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+    runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, runtimeGraph.library);
+    await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
+
+    final expansionStopwatch = Stopwatch()..start();
+    await tester.tap(find.byType(ExpansionTile).first);
+    await pumpUntilFound(
+      tester,
+      find.text('Lazy track 0000', findRichText: true),
+    );
+    expansionStopwatch.stop();
+
+    final builtRows = find.textContaining('Lazy track', findRichText: true);
+    expect(
+      builtRows.evaluate().length,
+      lessThan(100),
+      reason: 'Expanding a large folder must not build every track at once',
+    );
+    debugPrint(
+      'large_folder_expand '
+      'firstRowsMs=${expansionStopwatch.elapsedMilliseconds} '
+      'builtRows=${builtRows.evaluate().length} totalRows=${tracks.length}',
+    );
+
+    await tester.scrollUntilVisible(
+      find.text('Lazy track 1999', findRichText: true),
+      600,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const PageStorageKey<String>('library_list')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+      maxScrolls: 400,
+    );
+    expect(find.text('Lazy track 1999', findRichText: true), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'removing a folder audio keeps the folder expanded and shows context',
     (WidgetTester tester) async {

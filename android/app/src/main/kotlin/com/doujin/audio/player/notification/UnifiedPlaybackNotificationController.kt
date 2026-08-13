@@ -181,12 +181,11 @@ internal fun notificationIconSpec(context: Context): NotificationIconSpec {
 
 internal fun activeLauncherActivityName(context: Context): String {
     val packageName = context.packageName
-    return launcherActivityNames(packageName).firstOrNull { activityName ->
+    return launcherActivityNames().firstOrNull { activityName ->
         context.packageManager.getComponentEnabledSetting(
             ComponentName(packageName, activityName)
         ) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
     } ?: appIconLauncherActivityName(
-        packageName,
         mode = THEME_MODE_SYSTEM,
         colorGroup = ICON_GROUP_WARM
     )

@@ -1232,10 +1232,9 @@ final class PlaybackFacade {
 
   Future<void> seekSessionToNext(String sessionId) async {
     final session = _service.sessions[sessionId];
-    final target = session == null
-        ? null
-        : _resolveAdvance?.call(session, forward: true);
-    if (session == null || target == null) return;
+    if (session == null || session.pendingNativeTrackPath != null) return;
+    final target = _resolveAdvance?.call(session, forward: true);
+    if (target == null) return;
     session.beginLoadingIndicatorThreshold();
     await _prepareSession?.call(
       session,
@@ -1249,7 +1248,7 @@ final class PlaybackFacade {
 
   Future<void> seekSessionToPrev(String sessionId) async {
     final session = _service.sessions[sessionId];
-    if (session == null) return;
+    if (session == null || session.pendingNativeTrackPath != null) return;
     if (!session.isPlaybackQueue && session.position.inSeconds > 3) {
       await seekSession(sessionId, Duration.zero);
       return;

@@ -8,14 +8,16 @@ class _LibraryTreeItem extends StatelessWidget {
     this.searchQuery = '',
     this.index,
     this.onFolderExpansionChanged,
+    this.renderChildrenInline = true,
   });
 
   final LibraryNode node;
   final bool initiallyExpanded;
   final String searchQuery;
   final int? index;
-  final void Function(String folderPath, bool expanded)?
+  final void Function(FolderNode folder, bool expanded)?
   onFolderExpansionChanged;
+  final bool renderChildrenInline;
 
   @override
   Widget build(BuildContext context) {
@@ -24,6 +26,7 @@ class _LibraryTreeItem extends StatelessWidget {
         folder: node as FolderNode,
         initiallyExpanded: initiallyExpanded,
         onFolderExpansionChanged: onFolderExpansionChanged,
+        renderChildrenInline: renderChildrenInline,
         searchQuery: searchQuery,
         index: index,
       );
@@ -45,14 +48,16 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
     required this.searchQuery,
     this.index,
     this.onFolderExpansionChanged,
+    this.renderChildrenInline = true,
   });
 
   final FolderNode folder;
   final bool initiallyExpanded;
   final String searchQuery;
   final int? index;
-  final void Function(String folderPath, bool expanded)?
+  final void Function(FolderNode folder, bool expanded)?
   onFolderExpansionChanged;
+  final bool renderChildrenInline;
 
   @override
   ConsumerState<_FolderNodeWidget> createState() => _FolderNodeWidgetState();
@@ -72,7 +77,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   @override
   void initState() {
     super.initState();
-    if (widget.initiallyExpanded && widget.folder.children.isEmpty) {
+    if (widget.renderChildrenInline &&
+        widget.initiallyExpanded &&
+        widget.folder.children.isEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) unawaited(_loadChildren());
       });
@@ -94,7 +101,9 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         _loadedFolder = null;
       }
       _isLoadingChildren = false;
-      if (_expanded && widget.folder.children.isEmpty) {
+      if (widget.renderChildrenInline &&
+          _expanded &&
+          widget.folder.children.isEmpty) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
             unawaited(_loadChildren(refresh: retainLoadedChildren));
@@ -107,7 +116,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _expansionController.expand();
-        unawaited(_loadChildren());
+        if (widget.renderChildrenInline) unawaited(_loadChildren());
       });
       return;
     }
@@ -214,8 +223,10 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
           setState(() {
             _expanded = expanded;
           });
-          widget.onFolderExpansionChanged?.call(widget.folder.path, expanded);
-          if (expanded) unawaited(_loadChildren());
+          widget.onFolderExpansionChanged?.call(widget.folder, expanded);
+          if (expanded && widget.renderChildrenInline) {
+            unawaited(_loadChildren());
+          }
         },
         shape: isRootFolder
             ? RoundedRectangleBorder(
@@ -325,7 +336,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                   ],
                 ),
               ),
-        children: !_expanded
+        children: !_expanded || !widget.renderChildrenInline
             ? const <Widget>[]
             : <Widget>[
                 if (_isLoadingChildren)

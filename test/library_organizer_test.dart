@@ -12,6 +12,7 @@ void main() {
     String? groupTitle,
     String? groupSubtitle,
     bool isSingle = false,
+    Duration duration = Duration.zero,
   }) {
     return MusicTrack(
       path: path,
@@ -20,6 +21,7 @@ void main() {
       groupTitle: groupTitle ?? 'Group',
       groupSubtitle: groupSubtitle ?? groupKey ?? 'Group',
       isSingle: isSingle,
+      duration: duration,
     );
   }
 
@@ -188,8 +190,14 @@ void main() {
   test('deep multi-root tree caches counts and first tracks correctly', () {
     final snapshot = organizer.buildTree(
       tracks: <MusicTrack>[
-        track('/library/a/Disc 2/02.mp3'),
-        track('/library/a/Disc 1/Sub/01.mp3'),
+        track(
+          '/library/a/Disc 2/02.mp3',
+          duration: const Duration(seconds: 20),
+        ),
+        track(
+          '/library/a/Disc 1/Sub/01.mp3',
+          duration: const Duration(seconds: 10),
+        ),
         track('/library/b/Album/03.mp3'),
       ],
       watchedFolders: const <String>['/library/a', '/library/b'],
@@ -201,6 +209,7 @@ void main() {
     expect(firstRoot.totalTrackCount, 2);
     expect(firstRoot.leafFolderCount, 2);
     expect(firstRoot.firstTrack?.path, '/library/a/Disc 1/Sub/01.mp3');
+    expect(firstRoot.totalDuration, const Duration(seconds: 30));
     expect(secondRoot.totalTrackCount, 1);
     expect(secondRoot.leafFolderCount, 1);
     expect(secondRoot.firstTrack?.path, '/library/b/Album/03.mp3');

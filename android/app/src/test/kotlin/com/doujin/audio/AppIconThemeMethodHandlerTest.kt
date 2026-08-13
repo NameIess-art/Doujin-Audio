@@ -43,15 +43,14 @@ class AppIconThemeMethodHandlerTest {
     }
 
     @Test
-    fun `launcher activity component names stay stable`() {
-        val packageName = "com.doujin.audio"
+    fun `launcher activity component names stay in the code namespace`() {
         assertEquals(
-            "$packageName.common.MainActivityWarmSystem",
-            appIconLauncherActivityName(packageName, mode = "system", colorGroup = "warm")
+            "com.doujin.audio.common.MainActivityWarmSystem",
+            appIconLauncherActivityName(mode = "system", colorGroup = "warm")
         )
         assertEquals(
-            "$packageName.common.MainActivityBlueDark",
-            appIconLauncherActivityName(packageName, mode = "dark", colorGroup = "blue")
+            "com.doujin.audio.common.MainActivityBlueDark",
+            appIconLauncherActivityName(mode = "dark", colorGroup = "blue")
         )
     }
 
@@ -59,14 +58,14 @@ class AppIconThemeMethodHandlerTest {
     fun `six color groups expose eighteen launcher activities`() {
         assertEquals(6, ICON_COLOR_GROUPS.size)
         assertEquals("Neutral", iconColorGroupLauncherSuffix("neutral"))
-        val activities = launcherActivityNames("com.doujin.audio")
+        val activities = launcherActivityNames()
         assertEquals(18, activities.size)
         assertEquals(18, activities.toSet().size)
     }
 
     @Test
     fun `icon switches leave exactly one launcher activity enabled`() {
-        val activities = launcherActivityNames("com.doujin.audio")
+        val activities = launcherActivityNames()
         val target = "com.doujin.audio.common.MainActivityGreenSystem"
         val updates = launcherActivityUpdates(activities, target)
 
@@ -79,7 +78,7 @@ class AppIconThemeMethodHandlerTest {
     @Test(expected = IllegalArgumentException::class)
     fun `unregistered launcher activity is rejected`() {
         launcherActivityUpdates(
-            launcherActivityNames("com.doujin.audio"),
+            launcherActivityNames(),
             "com.doujin.audio.MainActivityMissing"
         )
     }

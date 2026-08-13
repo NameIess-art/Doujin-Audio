@@ -605,6 +605,72 @@ void main() {
   });
 
   test(
+    'rapid adjacent track commands do not duplicate in-flight preparation',
+    () async {
+      final library = _createLibraryFacade();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+      )..configurePersistence(enabled: false);
+      final session = _session('rapid_adjacent');
+      final preparationReleases = <Completer<void>>[];
+      final preparedPaths = <String>[];
+      addTearDown(() async {
+        session.dispose();
+        await playback.dispose();
+        await library.dispose();
+      });
+      playback
+        ..attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async {
+                final release = Completer<void>();
+                preparationReleases.add(release);
+                preparedPaths.add(nextPath);
+                session.pendingNativeTrackPath = nextPath;
+                await release.future;
+                session.pendingNativeTrackPath = null;
+                return true;
+              },
+          pauseSession: (_) async {},
+          startSession: (_, {required shouldStartTriggerCountdown}) async =>
+              true,
+          resolveAdvance: (_, {required forward}) => PlaybackAdvanceResult(
+            path: forward ? '/tracks/next.mp3' : '/tracks/previous.mp3',
+          ),
+          hasAdjacent: (_, {required forward}) => true,
+        )
+        ..registerSession(session);
+
+      final next = playback.seekSessionToNext(session.id);
+      await Future<void>.delayed(Duration.zero);
+      await playback.seekSessionToNext(session.id);
+
+      expect(preparedPaths, <String>['/tracks/next.mp3']);
+      preparationReleases.single.complete();
+      await next;
+
+      final previous = playback.seekSessionToPrev(session.id);
+      await Future<void>.delayed(Duration.zero);
+      await playback.seekSessionToPrev(session.id);
+
+      expect(preparedPaths, <String>[
+        '/tracks/next.mp3',
+        '/tracks/previous.mp3',
+      ]);
+      preparationReleases.last.complete();
+      await previous;
+    },
+  );
+
+  test(
     'sequential play pauses instead of auto-advancing on completion',
     () async {
       final library = _createLibraryFacade();

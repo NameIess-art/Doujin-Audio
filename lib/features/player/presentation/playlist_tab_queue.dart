@@ -390,9 +390,12 @@ class PlaybackQueueEditPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(playbackStateProvider);
+    final structure = ref.watch(playlistStructureUiProvider);
     final playback = ref.read(playbackFacadeProvider);
-    final session = playback.sessionById(sessionId);
+    final session = structure.entries
+        .where((entry) => entry.sessionId == sessionId)
+        .firstOrNull
+        ?.session;
     final queue = session?.playbackQueue;
     final i18n = ProviderScope.containerOf(
       context,
@@ -632,9 +635,17 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(playbackStateProvider);
+    final structure = ref.watch(playlistStructureUiProvider);
     final playback = ref.read(playbackFacadeProvider);
-    final queue = playback.sessionById(sessionId)?.playbackQueue;
+    final queue = structure.entries
+        .where((entry) => entry.sessionId == sessionId)
+        .firstOrNull
+        ?.session
+        .playbackQueue;
+    final ordinarySessions = structure.entries
+        .where((entry) => !entry.isPlaybackQueue)
+        .map((entry) => entry.session)
+        .toList(growable: false);
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -779,9 +790,9 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                         padding: const EdgeInsets.symmetric(
                           horizontal: AppSpacing.xs,
                         ),
-                        itemCount: playback.ordinarySessions.length,
+                        itemCount: ordinarySessions.length,
                         itemBuilder: (context, index) {
-                          final source = playback.ordinarySessions[index];
+                          final source = ordinarySessions[index];
                           return _QueueSourceAudioTile(
                             queueSessionId: sessionId,
                             source: source,
@@ -1029,9 +1040,12 @@ class _PlaybackQueueColorPanel extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.watch(playbackStateProvider);
+    final structure = ref.watch(playlistStructureUiProvider);
     final playback = ref.read(playbackFacadeProvider);
-    final value = playback.sessionById(sessionId)?.playbackQueue?.colorValue;
+    final value = structure.entries
+        .where((entry) => entry.sessionId == sessionId)
+        .firstOrNull
+        ?.queueColorValue;
     final color = value == null
         ? Theme.of(context).colorScheme.primary
         : Color(value);

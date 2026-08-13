@@ -1174,8 +1174,10 @@ void main() {
       updatedAt: DateTime.fromMillisecondsSinceEpoch(2000),
     );
 
-    await repository.upsert(detail);
-    await repository.upsert(AudioDetail.empty(secondTarget));
+    await repository.upsertMany(<AudioDetail>[
+      detail,
+      AudioDetail.empty(secondTarget),
+    ]);
 
     final loaded = await repository.load(target);
     expect(loaded?.rjCode, 'RJ123456');

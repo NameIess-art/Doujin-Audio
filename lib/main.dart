@@ -50,32 +50,13 @@ import 'features/data_support/application/data_backup_service.dart';
 StartupRestoreOutcome? _startupRestoreOutcome;
 
 Future<void> main() async {
-  final binding = WidgetsFlutterBinding.ensureInitialized();
-  binding.deferFirstFrame();
-  var firstFrameAllowed = false;
-  Timer? firstFrameWatchdog;
-  void allowFirstFrameOnce() {
-    if (firstFrameAllowed) return;
-    firstFrameAllowed = true;
-    firstFrameWatchdog?.cancel();
-    binding.allowFirstFrame();
-  }
-
-  // Never leave the Android splash animation locked indefinitely if a plugin
-  // call stops responding before the bootstrap controller can settle.
-  firstFrameWatchdog = Timer(const Duration(seconds: 15), allowFirstFrameOnce);
+  WidgetsFlutterBinding.ensureInitialized();
 
   await runZonedGuarded<Future<void>>(
     () async {
       AppLogService.installFlutterErrorHandler();
-      final logFlutterError = FlutterError.onError;
-      FlutterError.onError = (details) {
-        allowFirstFrameOnce();
-        logFlutterError?.call(details);
-      };
       AppLogService.installPlatformErrorHandler();
       ErrorWidget.builder = (details) {
-        allowFirstFrameOnce();
         AppLogService.error(
           'release_error_widget',
           error: details.exception,
@@ -99,36 +80,14 @@ Future<void> main() async {
           appBuilder: () => _createAudioPlayerApp(
             shouldShowOnboarding: shouldShowOnboarding!,
             startupRestoreOutcome: _startupRestoreOutcome,
-            onBootstrapSettled: allowFirstFrameOnce,
           ),
-          onBootstrapSettled: () {
-            if (shouldReleaseFirstFrameAfterAppBootstrap(
-              phase: appBootstrapController.state.phase,
-              shouldShowOnboarding: shouldShowOnboarding ?? false,
-            )) {
-              allowFirstFrameOnce();
-            }
-          },
         ),
       );
     },
     (error, stackTrace) {
-      allowFirstFrameOnce();
       AppLogService.logZoneError(error, stackTrace);
     },
   );
-}
-
-@visibleForTesting
-bool shouldReleaseFirstFrameAfterAppBootstrap({
-  required AppBootstrapPhase phase,
-  required bool shouldShowOnboarding,
-}) {
-  return switch (phase) {
-    AppBootstrapPhase.failure => true,
-    AppBootstrapPhase.ready => shouldShowOnboarding,
-    AppBootstrapPhase.initializing => false,
-  };
 }
 
 Future<void> _initializeAudioPlayerApp() async {

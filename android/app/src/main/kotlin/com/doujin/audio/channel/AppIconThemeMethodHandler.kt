@@ -76,12 +76,11 @@ internal class AppIconThemeMethodHandler(
         val packageManager = context.packageManager
         val packageName = context.packageName
         val enabledActivityName = appIconLauncherActivityName(
-            packageName,
             mode,
             colorGroup
         )
         val updates = launcherActivityUpdates(
-            launcherActivityNames(packageName),
+            launcherActivityNames(),
             enabledActivityName
         )
         val flags = PackageManager.DONT_KILL_APP
@@ -140,11 +139,12 @@ private val THEME_MODES = listOf(
 private const val APP_ICON_THEME_PREFERENCES = "app_icon_theme_v1"
 private const val APP_ICON_THEME_MODE_KEY = "theme_mode"
 private const val APP_ICON_COLOR_GROUP_KEY = "color_group"
+private const val LAUNCHER_ACTIVITY_CLASS_PACKAGE = "com.doujin.audio.common"
 
-internal fun launcherActivityNames(packageName: String): List<String> {
+internal fun launcherActivityNames(): List<String> {
     return ICON_COLOR_GROUPS.flatMap { colorGroup ->
         THEME_MODES.map { mode ->
-            appIconLauncherActivityName(packageName, mode, colorGroup)
+            appIconLauncherActivityName(mode, colorGroup)
         }
     }
 }
@@ -165,14 +165,13 @@ internal fun launcherActivityUpdates(
 }
 
 internal fun appIconLauncherActivityName(
-    packageName: String,
     mode: String,
     colorGroup: String
 ): String {
     val groupSuffix = iconColorGroupLauncherSuffix(colorGroup)
     val modeSuffix = launcherThemeModeSuffix(mode)
     val activityName = "MainActivity${groupSuffix}${modeSuffix}"
-    return "$packageName.common.$activityName"
+    return "$LAUNCHER_ACTIVITY_CLASS_PACKAGE.$activityName"
 }
 
 internal fun launcherThemeModeSuffix(mode: String): String {

@@ -10,6 +10,8 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
+import '../../../core/widgets/app_transitions.dart';
+import 'asmr_download_page.dart';
 
 Future<void> showAsmrWorkDetailSheet(BuildContext context, AsmrWork work) {
   return AppBottomSheet.show<void>(
@@ -30,6 +32,19 @@ class _AsmrWorkDetailSheet extends ConsumerStatefulWidget {
 
 class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
   late final Future<AsmrWorkDetail> _detailFuture;
+
+  Future<void> _openDownloadPage(AsmrWork work) async {
+    final navigator = Navigator.of(context);
+    await navigator.maybePop();
+    if (!navigator.mounted) return;
+    await navigator.push(
+      buildAppPageRoute<void>(
+        context: navigator.context,
+        style: AppPageTransitionStyle.sharedAxisZ,
+        child: AsmrDownloadPage(work: work),
+      ),
+    );
+  }
 
   @override
   void initState() {
@@ -84,6 +99,12 @@ class _AsmrWorkDetailSheetState extends ConsumerState<_AsmrWorkDetailSheet> {
                           fontWeight: FontWeight.w800,
                         ),
                       ),
+                    ),
+                    IconButton(
+                      key: const ValueKey<String>('asmr_work_detail_download'),
+                      onPressed: () => _openDownloadPage(effectiveWork),
+                      tooltip: i18n.tr('asmr_download_work_tooltip'),
+                      icon: const Icon(Icons.download_rounded),
                     ),
                     IconButton(
                       onPressed: () => Navigator.of(context).maybePop(),

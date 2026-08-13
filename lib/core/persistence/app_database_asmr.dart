@@ -102,9 +102,12 @@ extension AppDatabaseAsmr on AppDatabase {
     List<AsmrWorkRecord> works,
   ) async {
     await _runDatabaseWrite((db) async {
-      final batch = db.batch();
-      _replaceAsmrWorkListInBatch(batch, listType, works);
-      await batch.commit(noResult: true);
+      await db.transaction((txn) async {
+        final batch = txn.batch();
+        _replaceAsmrWorkListInBatch(batch, listType, works);
+        _deleteUnreferencedAsmrWorksInBatch(batch);
+        await batch.commit(noResult: true);
+      });
     });
   }
 
@@ -173,6 +176,7 @@ extension AppDatabaseAsmr on AppDatabase {
           'history',
           historyById.values.toList(growable: false),
         );
+        _deleteUnreferencedAsmrWorksInBatch(batch);
         _replaceAsmrSyncOperationsInBatch(batch, operations);
         await batch.commit(noResult: true);
       });

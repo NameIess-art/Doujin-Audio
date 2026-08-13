@@ -377,6 +377,16 @@ void _replaceAsmrWorkListMembershipInBatch(
   }
 }
 
+void _deleteUnreferencedAsmrWorksInBatch(Batch batch) {
+  const referencedWorkIds = 'SELECT work_id FROM asmr_work_lists';
+  batch.delete(
+    'asmr_work_voice_actors',
+    where: 'work_id NOT IN ($referencedWorkIds)',
+  );
+  batch.delete('asmr_work_tags', where: 'work_id NOT IN ($referencedWorkIds)');
+  batch.delete('asmr_works', where: 'id NOT IN ($referencedWorkIds)');
+}
+
 void _replaceAsmrSyncOperationsInBatch(
   Batch batch,
   List<AsmrSyncOperationRecord> operations,

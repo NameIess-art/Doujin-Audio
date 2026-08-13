@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
+import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
@@ -101,6 +102,13 @@ void main() {
       );
       expect(manifest.platform, 'test-platform');
       expect(manifest.containsSensitiveAccountData, isTrue);
+      expect(files['database.sqlite']!.compression, CompressionType.none);
+      final databaseBytes = files['database.sqlite']!.content as List<int>;
+      expect(manifest.files['database.sqlite']?.length, databaseBytes.length);
+      expect(
+        manifest.files['database.sqlite']?.sha256,
+        sha256.convert(databaseBytes).toString(),
+      );
 
       final preferences = Map<String, Object?>.from(
         jsonDecode(utf8.decode(files['preferences.json']!.content as List<int>))
@@ -137,6 +145,21 @@ void main() {
         (await snapshot.query('track_assets')).single['cover_cache_path'],
         isNull,
       );
+
+      final rejectedPath = '${temporaryDirectory.path}/rejected.dabackup';
+      await expectLater(
+        DataBackupService(
+          database: appDatabase,
+          accountStore: accountStore,
+          appUpdateService: _FakeAppUpdateService(),
+          supportDirectoryProvider: () async => temporaryDirectory,
+          platformName: 'test-platform',
+          maximumArchiveBytes: 1,
+        ).exportBackup(rejectedPath),
+        throwsA(isA<FormatException>()),
+      );
+      expect(File(rejectedPath).existsSync(), isFalse);
+      expect(File('$rejectedPath.part').existsSync(), isFalse);
     },
   );
 
@@ -163,6 +186,22 @@ void main() {
     final backup = await service.exportBackup(
       '${temporaryDirectory.path}/restore-source.dabackup',
     );
+    final exported = ZipDecoder().decodeBytes(await backup.readAsBytes());
+    final legacyArchive = Archive();
+    for (final entry in exported.files) {
+      legacyArchive.addFile(
+        ArchiveFile(entry.name, entry.size, entry.content as List<int>),
+      );
+    }
+    final legacyBackup = File('${temporaryDirectory.path}/legacy.dabackup');
+    await legacyBackup.writeAsBytes(ZipEncoder().encode(legacyArchive));
+    final legacyDecoded = ZipDecoder().decodeBytes(
+      await legacyBackup.readAsBytes(),
+    );
+    expect(
+      legacyDecoded.find('database.sqlite')?.compression,
+      CompressionType.deflate,
+    );
 
     await AppPreferences.replaceSnapshot(<String, Object?>{
       'themeMode': 'light',
@@ -177,8 +216,22 @@ void main() {
       ),
     );
 
-    final staged = await service.inspectAndStageRestore(backup.path);
-    final outcome = await service.applyAtStartup();
+    final expandedSize = legacyDecoded.files.fold<int>(
+      0,
+      (total, entry) => total + entry.size,
+    );
+    final restoreService = DataBackupService(
+      database: appDatabase,
+      accountStore: accountStore,
+      supportDirectoryProvider: () async => temporaryDirectory,
+      databasesPathProvider: () async => databaseDirectory.path,
+      platformName: 'test-platform',
+      maximumExpandedBytes: expandedSize,
+    );
+    final staged = await restoreService.inspectAndStageRestore(
+      legacyBackup.path,
+    );
+    final outcome = await restoreService.applyAtStartup();
 
     expect(staged.manifest.platform, 'test-platform');
     expect(outcome?.succeeded, isTrue);

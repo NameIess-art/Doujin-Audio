@@ -257,6 +257,130 @@ void main() {
     expect(reloadedHistory.last.isFavorite, isFalse);
   });
 
+  test('ASMR account state removes only unreferenced work metadata', () async {
+    final initialHistory = List<AsmrWork>.generate(
+      61,
+      (index) => _asmrWork(
+        index + 1,
+        'Work ${index + 1}',
+        voiceActors: <String>['Actor ${index + 1}'],
+        tags: <String>['Tag ${index + 1}'],
+      ),
+    );
+    final favorite = initialHistory[1];
+    await repository.saveAccountSyncState(
+      favoriteWorks: <AsmrWork>[favorite],
+      historyWorks: initialHistory,
+      operations: const <AsmrSyncOperation>[],
+    );
+
+    final retainedHistory = <AsmrWork>[
+      ...initialHistory.skip(2),
+      _asmrWork(62, 'Work 62'),
+    ];
+    await repository.saveAccountSyncState(
+      favoriteWorks: <AsmrWork>[favorite],
+      historyWorks: retainedHistory,
+      operations: const <AsmrSyncOperation>[],
+    );
+
+    expect(await db.query('asmr_works', where: 'id = 1'), isEmpty);
+    expect(
+      await db.query('asmr_work_voice_actors', where: 'work_id = 1'),
+      isEmpty,
+    );
+    expect(await db.query('asmr_work_tags', where: 'work_id = 1'), isEmpty);
+    expect(await db.query('asmr_works', where: 'id = 2'), hasLength(1));
+    expect(
+      await db.query('asmr_work_voice_actors', where: 'work_id = 2'),
+      hasLength(1),
+    );
+    expect(
+      await db.query('asmr_work_tags', where: 'work_id = 2'),
+      hasLength(1),
+    );
+    expect(await repository.loadWorkList('history'), hasLength(60));
+  });
+
+  test('ASMR orphan cleanup retains pending remove operation', () async {
+    final work = _asmrWork(
+      9,
+      'Removed work',
+      voiceActors: const <String>['Actor'],
+      tags: const <String>['Tag'],
+    );
+    final operation = AsmrSyncOperation(
+      type: AsmrSyncOperationType.favoriteRemove,
+      workId: work.id,
+      sourceId: work.sourceId,
+      createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+    );
+    await repository.saveWorkList('favorites', <AsmrWork>[work]);
+    await repository.saveSyncOperations(<AsmrSyncOperation>[operation]);
+    await repository.saveWorkList('favorites', const <AsmrWork>[]);
+
+    expect(await db.query('asmr_works'), isEmpty);
+    expect(await db.query('asmr_work_voice_actors'), isEmpty);
+    expect(await db.query('asmr_work_tags'), isEmpty);
+    expect((await repository.loadSyncOperations()).single.workId, work.id);
+  });
+
+  test(
+    'ASMR orphan cleanup failure rolls back the whole account state',
+    () async {
+      final original = _asmrWork(1, 'Original', tags: const <String>['Kept']);
+      final stale = _asmrWork(
+        2,
+        'Stale',
+        voiceActors: const <String>['Actor'],
+        tags: const <String>['Trigger'],
+      );
+      final originalOperation = AsmrSyncOperation(
+        type: AsmrSyncOperationType.favoriteAdd,
+        workId: original.id,
+        sourceId: original.sourceId,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+      );
+      await repository.saveAccountSyncState(
+        favoriteWorks: <AsmrWork>[original],
+        historyWorks: <AsmrWork>[stale],
+        operations: <AsmrSyncOperation>[originalOperation],
+      );
+      await db.execute('''
+      CREATE TRIGGER fail_orphan_tag_delete
+      BEFORE DELETE ON asmr_work_tags
+      WHEN OLD.work_id = 2
+      BEGIN
+        SELECT RAISE(ABORT, 'forced orphan cleanup failure');
+      END
+    ''');
+
+      await expectLater(
+        repository.saveAccountSyncState(
+          favoriteWorks: <AsmrWork>[_asmrWork(1, 'Replacement')],
+          historyWorks: const <AsmrWork>[],
+          operations: const <AsmrSyncOperation>[],
+        ),
+        throwsA(isA<DatabaseException>()),
+      );
+
+      expect(
+        (await repository.loadWorkList('favorites')).single.title,
+        'Original',
+      );
+      expect((await repository.loadWorkList('history')).single.title, 'Stale');
+      expect(
+        await db.query('asmr_work_voice_actors', where: 'work_id = 2'),
+        hasLength(1),
+      );
+      expect(
+        await db.query('asmr_work_tags', where: 'work_id = 2'),
+        hasLength(1),
+      );
+      expect(await repository.loadSyncOperations(), hasLength(1));
+    },
+  );
+
   test(
     'saveAllTracks and loadAllTracks round-trip the music library',
     () async {
@@ -1232,7 +1356,13 @@ void main() {
   });
 }
 
-AsmrWork _asmrWork(int id, String title, {bool isFavorite = false}) {
+AsmrWork _asmrWork(
+  int id,
+  String title, {
+  bool isFavorite = false,
+  List<String> voiceActors = const <String>[],
+  List<String> tags = const <String>[],
+}) {
   return AsmrWork(
     id: id,
     title: title,
@@ -1249,8 +1379,8 @@ AsmrWork _asmrWork(int id, String title, {bool isFavorite = false}) {
     dlCount: 0,
     reviewCount: 0,
     rating: 0,
-    voiceActors: const <String>[],
-    tags: const <String>[],
+    voiceActors: voiceActors,
+    tags: tags,
     isFavorite: isFavorite,
   );
 }

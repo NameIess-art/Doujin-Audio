@@ -13,6 +13,7 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/audio_library_page.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
@@ -165,6 +166,34 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 2);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('app lifecycle disposes downloads only when detached', (
+    tester,
+  ) async {
+    final downloads = _TrackingAsmrDownloadManager();
+    await _pumpAppShell(tester, downloads: downloads);
+
+    WidgetsBinding.instance.handleAppLifecycleStateChanged(
+      AppLifecycleState.paused,
+    );
+    await tester.pump();
+
+    expect(downloads.pauseAllCalls, 0);
+
+    WidgetsBinding.instance.handleAppLifecycleStateChanged(
+      AppLifecycleState.detached,
+    );
+    await tester.runAsync(
+      () => downloads.paused.timeout(const Duration(seconds: 2)),
+    );
+
+    expect(downloads.pauseAllCalls, 1);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    WidgetsBinding.instance.handleAppLifecycleStateChanged(
+      AppLifecycleState.resumed,
+    );
   });
 
   testWidgets(
@@ -2513,6 +2542,7 @@ Future<_AppShellHarness> _pumpAppShell(
   bool includePlaybackSession = true,
   MusicTrack? playbackTrack,
   bool waitForStartup = true,
+  AsmrDownloadManager? downloads,
 }) async {
   final themeProvider = ThemeProvider();
   final languageProvider = AppLanguageProvider();
@@ -2533,6 +2563,7 @@ Future<_AppShellHarness> _pumpAppShell(
     timerService: timerService,
     notificationStateService: notificationCoordinatorService,
     settingsRepository: settingsRepository,
+    asmrDownloads: downloads,
   );
   addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
   settingsRepository.syncSlice(isInitialized: true);
@@ -2585,6 +2616,21 @@ Future<_AppShellHarness> _pumpAppShell(
     language: languageProvider,
     playbackService: playbackService,
   );
+}
+
+final class _TrackingAsmrDownloadManager extends AsmrDownloadManager {
+  _TrackingAsmrDownloadManager() : super(persistTasks: false);
+
+  final Completer<void> _paused = Completer<void>();
+  int pauseAllCalls = 0;
+
+  Future<void> get paused => _paused.future;
+
+  @override
+  Future<void> pauseAllTasks() async {
+    pauseAllCalls++;
+    if (!_paused.isCompleted) _paused.complete();
+  }
 }
 
 Future<void> _pumpMainScreenAnimations(

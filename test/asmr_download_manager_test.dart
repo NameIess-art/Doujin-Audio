@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/core/media/audio_detail.dart';
@@ -57,24 +56,6 @@ void main() {
         reason: '$invalid',
       );
     }
-  });
-
-  test('resume validator prefers a strong ETag and rejects weak ETags', () {
-    expect(
-      selectDownloadResumeValidator(
-        etag: '"strong"',
-        lastModified: 'Sun, 09 Aug 2026 08:00:00 GMT',
-      ),
-      '"strong"',
-    );
-    expect(
-      selectDownloadResumeValidator(
-        etag: 'W/"weak"',
-        lastModified: 'Sun, 09 Aug 2026 08:00:00 GMT',
-      ),
-      'Sun, 09 Aug 2026 08:00:00 GMT',
-    );
-    expect(selectDownloadResumeValidator(etag: 'W/"weak"'), isNull);
   });
 
   test('destinationExists checks local download folders', () async {
@@ -1538,12 +1519,9 @@ void main() {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final bytes = List<int>.generate(1024, (index) => index % 251);
     final rangeStarts = <int>[];
-    final ifRanges = <String?>[];
     unawaited(
       server.forEach((request) async {
         final range = request.headers.value(HttpHeaders.rangeHeader);
-        ifRanges.add(request.headers.value(HttpHeaders.ifRangeHeader));
-        request.response.headers.set(HttpHeaders.etagHeader, '"stable"');
         if (range == null) {
           rangeStarts.add(0);
           request.response.add(bytes.take(128).toList());
@@ -1582,7 +1560,6 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(rangeStarts, <int>[0, 128]);
-      expect(ifRanges, <String?>[null, '"stable"']);
       expect(
         manager.getTask(1)?.downloadedBytes,
         manager.getTask(1)?.totalBytes,
@@ -1601,77 +1578,80 @@ void main() {
     }
   });
 
-  test('changed same-length entity discards the old partial prefix', () async {
-    final tempDir = await Directory.systemTemp.createTemp(
-      'asmr_download_changed_entity_',
-    );
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final firstBytes = List<int>.filled(1024, 1);
-    final replacementBytes = List<int>.filled(1024, 2);
-    final ranges = <String?>[];
-    final ifRanges = <String?>[];
-    var requestCount = 0;
-    unawaited(
-      server.forEach((request) async {
-        requestCount++;
-        ranges.add(request.headers.value(HttpHeaders.rangeHeader));
-        ifRanges.add(request.headers.value(HttpHeaders.ifRangeHeader));
-        if (requestCount == 1) {
-          request.response.headers.set(HttpHeaders.etagHeader, '"entity-a"');
-          request.response.add(firstBytes.take(128).toList());
-        } else if (requestCount == 2) {
-          const start = 128;
-          request.response.statusCode = HttpStatus.partialContent;
-          request.response.headers
-            ..set(HttpHeaders.etagHeader, '"entity-b"')
-            ..set(
-              HttpHeaders.contentRangeHeader,
-              'bytes $start-${replacementBytes.length - 1}/'
-              '${replacementBytes.length}',
-            );
-          final remaining = replacementBytes.sublist(start);
-          request.response.contentLength = remaining.length;
-          request.response.add(remaining);
-        } else {
-          request.response.headers.set(HttpHeaders.etagHeader, '"entity-b"');
-          request.response.contentLength = replacementBytes.length;
-          request.response.add(replacementBytes);
-        }
-        await request.response.close();
-      }),
-    );
-    final manager = _manager();
-    try {
-      await manager.startDownload(
-        work: _work(),
-        selectedRoots: <AsmrTrackFile>[
-          _file(
-            title: 'changed.mp3',
-            downloadUrl:
-                'http://${server.address.host}:${server.port}/changed.mp3',
-            size: replacementBytes.length,
-          ),
-        ],
-        destinationRoot: tempDir.path,
-        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+  test(
+    'v0.18 resumes a changed entity without an If-Range validator',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_changed_entity_',
       );
-      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final firstBytes = List<int>.filled(1024, 1);
+      final replacementBytes = List<int>.filled(1024, 2);
+      final ranges = <String?>[];
+      final ifRanges = <String?>[];
+      var requestCount = 0;
+      unawaited(
+        server.forEach((request) async {
+          requestCount++;
+          ranges.add(request.headers.value(HttpHeaders.rangeHeader));
+          ifRanges.add(request.headers.value(HttpHeaders.ifRangeHeader));
+          if (requestCount == 1) {
+            request.response.headers.set(HttpHeaders.etagHeader, '"entity-a"');
+            request.response.add(firstBytes.take(128).toList());
+          } else if (requestCount == 2) {
+            const start = 128;
+            request.response.statusCode = HttpStatus.partialContent;
+            request.response.headers
+              ..set(HttpHeaders.etagHeader, '"entity-b"')
+              ..set(
+                HttpHeaders.contentRangeHeader,
+                'bytes $start-${replacementBytes.length - 1}/'
+                '${replacementBytes.length}',
+              );
+            final remaining = replacementBytes.sublist(start);
+            request.response.contentLength = remaining.length;
+            request.response.add(remaining);
+          } else {
+            request.response.headers.set(HttpHeaders.etagHeader, '"entity-b"');
+            request.response.contentLength = replacementBytes.length;
+            request.response.add(replacementBytes);
+          }
+          await request.response.close();
+        }),
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              title: 'changed.mp3',
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/changed.mp3',
+              size: replacementBytes.length,
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-      expect(ranges, <String?>[null, 'bytes=128-', null]);
-      expect(ifRanges, <String?>[null, '"entity-a"', null]);
-      expect(
-        await File(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
-          '${Platform.pathSeparator}changed.mp3',
-        ).readAsBytes(),
-        replacementBytes,
-      );
-    } finally {
-      manager.dispose();
-      await server.close(force: true);
-      if (await tempDir.exists()) await tempDir.delete(recursive: true);
-    }
-  });
+        expect(ranges, <String?>[null, 'bytes=128-']);
+        expect(ifRanges, <String?>[null, null]);
+        expect(
+          await File(
+            '${tempDir.path}${Platform.pathSeparator}Work [1]'
+            '${Platform.pathSeparator}changed.mp3',
+          ).readAsBytes(),
+          <int>[...firstBytes.take(128), ...replacementBytes.skip(128)],
+        );
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
 
   test('a ranged request receiving 200 overwrites the partial file', () async {
     final tempDir = await Directory.systemTemp.createTemp(
@@ -1717,7 +1697,7 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(ranges, <String?>[null, 'bytes=128-']);
-      expect(ifRanges, <String?>[null, '"old"']);
+      expect(ifRanges, <String?>[null, null]);
       expect(
         await File(
           '${tempDir.path}${Platform.pathSeparator}Work [1]'
@@ -1732,7 +1712,7 @@ void main() {
     }
   });
 
-  test('a 206 response without a validator retries from byte zero', () async {
+  test('a 206 response without a validator resumes in v0.18 mode', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_206_no_validator_',
     );
@@ -1781,7 +1761,7 @@ void main() {
       );
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-      expect(ranges, <String?>[null, 'bytes=128-', null]);
+      expect(ranges, <String?>[null, 'bytes=128-']);
       expect(
         await File(
           '${tempDir.path}${Platform.pathSeparator}Work [1]'
@@ -1796,7 +1776,7 @@ void main() {
     }
   });
 
-  test('weak ETag resumes with Last-Modified as If-Range', () async {
+  test('v0.18 resume does not send If-Range for weak ETags', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_last_modified_',
     );
@@ -1846,7 +1826,7 @@ void main() {
       );
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-      expect(ifRanges, <String?>[null, lastModified]);
+      expect(ifRanges, <String?>[null, null]);
     } finally {
       manager.dispose();
       await server.close(force: true);
@@ -1854,114 +1834,115 @@ void main() {
     }
   });
 
-  test('partial file without a validator restarts from byte zero', () async {
-    final tempDir = await Directory.systemTemp.createTemp(
-      'asmr_download_no_validator_',
-    );
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final bytes = List<int>.generate(1024, (index) => index % 239);
-    final ranges = <String?>[];
-    var requestCount = 0;
-    unawaited(
-      server.forEach((request) async {
-        requestCount++;
-        ranges.add(request.headers.value(HttpHeaders.rangeHeader));
-        if (requestCount == 1) {
-          request.response.add(bytes.take(128).toList());
-        } else {
+  test(
+    'partial file without a validator still sends a range request',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_no_validator_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final bytes = List<int>.generate(1024, (index) => index % 239);
+      final ranges = <String?>[];
+      var requestCount = 0;
+      unawaited(
+        server.forEach((request) async {
+          requestCount++;
+          ranges.add(request.headers.value(HttpHeaders.rangeHeader));
+          if (requestCount == 1) {
+            request.response.add(bytes.take(128).toList());
+          } else {
+            request.response.contentLength = bytes.length;
+            request.response.add(bytes);
+          }
+          await request.response.close();
+        }),
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              title: 'no-validator.mp3',
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+              size: bytes.length,
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        expect(ranges, <String?>[null, 'bytes=128-']);
+        expect(
+          await File(
+            '${tempDir.path}${Platform.pathSeparator}Work [1]'
+            '${Platform.pathSeparator}no-validator.mp3',
+          ).readAsBytes(),
+          bytes,
+        );
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'v0.18 accepts a complete staging file without downloading again',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_complete_staging_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final bytes = List<int>.filled(1024, 9);
+      final ranges = <String?>[];
+      unawaited(
+        server.forEach((request) async {
+          ranges.add(request.headers.value(HttpHeaders.rangeHeader));
+          request.response.headers.set(HttpHeaders.etagHeader, '"fresh"');
           request.response.contentLength = bytes.length;
           request.response.add(bytes);
-        }
-        await request.response.close();
-      }),
-    );
-    final manager = _manager();
-    try {
-      await manager.startDownload(
-        work: _work(),
-        selectedRoots: <AsmrTrackFile>[
-          _file(
-            title: 'no-validator.mp3',
-            downloadUrl:
-                'http://${server.address.host}:${server.port}/track.mp3',
-            size: bytes.length,
-          ),
-        ],
-        destinationRoot: tempDir.path,
-        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          await request.response.close();
+        }),
       );
-      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-
-      expect(ranges, <String?>[null, null]);
-      expect(
-        await File(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
-          '${Platform.pathSeparator}no-validator.mp3',
-        ).readAsBytes(),
-        bytes,
+      final workRoot = path.join(tempDir.path, 'Work [1]');
+      final staging = File(path.join(workRoot, 'Track.mp3.doujin.part'));
+      await staging.parent.create(recursive: true);
+      await staging.writeAsBytes(
+        List<int>.filled(bytes.length, 1),
+        flush: true,
       );
-    } finally {
-      manager.dispose();
-      await server.close(force: true);
-      if (await tempDir.exists()) await tempDir.delete(recursive: true);
-    }
-  });
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+              size: bytes.length,
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-  test('complete uncommitted staging file is downloaded again', () async {
-    final tempDir = await Directory.systemTemp.createTemp(
-      'asmr_download_complete_staging_',
-    );
-    final stagingDir = await Directory.systemTemp.createTemp(
-      'asmr_download_complete_staging_cache_',
-    );
-    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final bytes = List<int>.filled(1024, 9);
-    final ranges = <String?>[];
-    unawaited(
-      server.forEach((request) async {
-        ranges.add(request.headers.value(HttpHeaders.rangeHeader));
-        request.response.headers.set(HttpHeaders.etagHeader, '"fresh"');
-        request.response.contentLength = bytes.length;
-        request.response.add(bytes);
-        await request.response.close();
-      }),
-    );
-    final workRoot = path.join(tempDir.path, 'Work [1]');
-    final key = sha256.convert(utf8.encode('$workRoot|Track.mp3')).toString();
-    final staging = File(
-      path.join(stagingDir.path, 'asmr_downloads', '$key.doujin.part'),
-    );
-    await staging.parent.create(recursive: true);
-    await staging.writeAsBytes(List<int>.filled(bytes.length, 1), flush: true);
-    final manager = AsmrDownloadManager(
-      stagingDirectoryProvider: () async => stagingDir,
-      automaticFileRetryDelay: const Duration(milliseconds: 20),
-      persistTasks: false,
-    );
-    try {
-      await manager.startDownload(
-        work: _work(),
-        selectedRoots: <AsmrTrackFile>[
-          _file(
-            downloadUrl:
-                'http://${server.address.host}:${server.port}/track.mp3',
-            size: bytes.length,
-          ),
-        ],
-        destinationRoot: tempDir.path,
-        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
-      );
-      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
-
-      expect(ranges, <String?>[null]);
-      expect(await File(path.join(workRoot, 'Track.mp3')).readAsBytes(), bytes);
-    } finally {
-      manager.dispose();
-      await server.close(force: true);
-      if (await tempDir.exists()) await tempDir.delete(recursive: true);
-      if (await stagingDir.exists()) await stagingDir.delete(recursive: true);
-    }
-  });
+        expect(ranges, isEmpty);
+        expect(
+          await File(path.join(workRoot, 'Track.mp3')).readAsBytes(),
+          List<int>.filled(bytes.length, 1),
+        );
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
 
   test(
     'transient failures exhaust ten retries and count one failure',
@@ -2141,20 +2122,18 @@ void main() {
     },
   );
 
-  test(
-    'unknown-size empty audio fails without committing staging or output',
-    () async {
-      final result = await _downloadUnknownSizeResponse(
-        responseBytes: const [],
-        expectedStatus: AsmrDownloadTaskStatus.failed,
-      );
+  test('v0.18 accepts an unknown-size empty audio response', () async {
+    final result = await _downloadUnknownSizeResponse(
+      responseBytes: const [],
+      expectedStatus: AsmrDownloadTaskStatus.completed,
+    );
 
-      expect(result.requests, AsmrDownloadManager.maxAutomaticFileRetries + 1);
-      expect(result.failedFiles, 1);
-      expect(result.outputExists, isFalse);
-      expect(result.stagingExists, isFalse);
-    },
-  );
+    expect(result.requests, 1);
+    expect(result.failedFiles, 0);
+    expect(result.outputExists, isTrue);
+    expect(result.outputBytes, isEmpty);
+    expect(result.stagingExists, isFalse);
+  });
 
   test('unknown-size non-empty chunked audio completes', () async {
     const bytes = <int>[1, 2, 3, 4];
@@ -2295,7 +2274,7 @@ void main() {
   );
 
   test(
-    'resuming reuses a complete local file when persisted progress is stale',
+    'v0.18 redownloads a local file when completed-path state is stale',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_resume_completed_',
@@ -2349,10 +2328,11 @@ void main() {
         await manager.resumeTask(1);
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-        expect(requestCount, 0);
-        expect(manager.getTask(1)?.skippedFiles, 1);
+        expect(requestCount, 1);
+        expect(manager.getTask(1)?.completedFiles, 1);
+        expect(manager.getTask(1)?.skippedFiles, 0);
         expect(manager.getTask(1)?.completedFilePaths, contains('Track.mp3'));
-        expect(await target.readAsBytes(), List<int>.filled(fileBytes, 7));
+        expect(await target.readAsBytes(), List<int>.filled(fileBytes, 9));
       } finally {
         manager.dispose();
         await server.close(force: true);
@@ -2361,7 +2341,7 @@ void main() {
     },
   );
 
-  test('version 1 task without resume validators restores safely', () async {
+  test('legacy task with resume validators restores safely', () async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await AppPreferences.init();
     final payload = jsonEncode(<String, Object?>{
@@ -2378,6 +2358,9 @@ void main() {
           'downloadedBytes': 128,
           'startedAt': DateTime(2026).toIso8601String(),
           'fileDownloadedBytes': <String, int>{'Track.mp3': 128},
+          'fileResumeValidators': <String, String>{
+            'Track.mp3': '"legacy-etag"',
+          },
           'fileTotalBytes': <String, int>{'Track.mp3': 1024},
           'completedFilePaths': <String>[],
           'selectedRoots': <Object?>[
@@ -2404,11 +2387,24 @@ void main() {
       await manager.initialize();
 
       expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
-      expect(manager.getTask(1)?.fileResumeValidators, isEmpty);
       expect(manager.getTask(1)?.workFolderName, 'Work');
       expect(
         manager.getTask(1)?.workRootPath,
         path.join(Directory.systemTemp.path, 'Work'),
+      );
+      await manager.flushPersistence();
+      final rewritten =
+          jsonDecode(
+                (await AppPreferences.getString(
+                  AppPreferences.asmrDownloadTasksKey,
+                ))!,
+              )
+              as Map<String, dynamic>;
+      expect(
+        ((rewritten['tasks'] as List).single as Map).containsKey(
+          'fileResumeValidators',
+        ),
+        isFalse,
       );
     } finally {
       manager.dispose();
@@ -2427,13 +2423,10 @@ void main() {
       const totalBytes = 512 * 1024;
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       final rangeStarts = <int>[];
-      final ifRanges = <String?>[];
       var rejectedRange = false;
       unawaited(
         server.forEach((request) async {
           final range = request.headers.value(HttpHeaders.rangeHeader);
-          ifRanges.add(request.headers.value(HttpHeaders.ifRangeHeader));
-          request.response.headers.set(HttpHeaders.etagHeader, '"restart"');
           final start = range == null
               ? 0
               : int.parse(RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!);
@@ -2508,10 +2501,8 @@ void main() {
           AsmrDownloadTaskStatus.paused,
         );
         final pausedBytes = await part.length();
-        final resumeMetadata = File('${part.path}.resume.json');
         expect(pausedBytes, greaterThan(0));
         expect(pausedBytes, lessThan(totalBytes));
-        expect(await resumeMetadata.exists(), isTrue);
 
         final persistDeadline = DateTime.now().add(const Duration(seconds: 5));
         while ((await AppPreferences.getString(
@@ -2521,22 +2512,6 @@ void main() {
             DateTime.now().isBefore(persistDeadline)) {
           await Future<void>.delayed(const Duration(milliseconds: 20));
         }
-        final persisted =
-            jsonDecode(
-                  (await AppPreferences.getString(
-                    AppPreferences.asmrDownloadTasksKey,
-                  ))!,
-                )
-                as Map<String, dynamic>;
-        final persistedTask = Map<String, dynamic>.from(
-          (persisted['tasks'] as List).single as Map,
-        )..remove('fileResumeValidators');
-        persisted['tasks'] = <Object?>[persistedTask];
-        await AppPreferences.setString(
-          AppPreferences.asmrDownloadTasksKey,
-          jsonEncode(persisted),
-        );
-
         restoredManager = AsmrDownloadManager(
           temporaryDirectoryProvider: () async => Directory.systemTemp,
         );
@@ -2549,8 +2524,6 @@ void main() {
           restoredTask?.fileDownloadedBytes['Track.mp3'],
           greaterThanOrEqualTo(pausedBytes),
         );
-        expect(restoredTask?.fileResumeValidators, isEmpty);
-
         await restoredManager.resumeTask(1);
         await _waitForTaskStatus(
           restoredManager,
@@ -2559,9 +2532,7 @@ void main() {
         );
         expect(rangeStarts, contains(pausedBytes));
         expect(rangeStarts.last, 0);
-        expect(ifRanges, contains('"restart"'));
         expect(await target.length(), totalBytes);
-        expect(await resumeMetadata.exists(), isFalse);
         expect(
           restoredManager.getTask(1)?.downloadedBytes,
           restoredManager.getTask(1)?.totalBytes,

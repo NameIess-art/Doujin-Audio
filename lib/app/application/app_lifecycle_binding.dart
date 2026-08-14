@@ -91,6 +91,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   final List<RuntimeBinding> _bindings;
   late final AudioRuntimeCoordinator _runtime;
   bool _bindingsDisposed = false;
+  Future<void>? _disposeFuture;
 
   @override
   Future<void> start() => _runtime.start();
@@ -102,10 +103,14 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   Future<void> resumeForeground() => _runtime.resumeForeground();
 
   @override
-  Future<void> dispose() => _runtime.dispose();
+  Future<void> dispose() => _disposeFuture ??= _dispose();
 
-  Future<void> _enterBackground() async {
+  Future<void> _dispose() async {
     await _asmrDownloads?.pauseAllTasks();
+    await _runtime.dispose();
+  }
+
+  void _enterBackground() {
     _playback.setBackgroundMode(true);
     _keepAlive.enterBackground();
   }
@@ -120,7 +125,6 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
   }
 
   Future<void> _disposeRuntime() async {
-    await _asmrDownloads?.pauseAllTasks();
     _persistence.dispose();
     _playback.cancelScheduledPersistence();
     _library.cancelPendingScanProgressNotification();

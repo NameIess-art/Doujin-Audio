@@ -18,6 +18,7 @@ import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_cache_service.dart';
 import 'package:doujin_audio/features/library/application/audio_detail_document_repository.dart';
@@ -62,6 +63,7 @@ AppRuntimeGraph createTestRuntimeGraph({
   NativePlaybackRepository? nativePlaybackRepository,
   PlaybackCommandRunner playbackCommandRunner = const PlaybackCommandRunner(),
   PowerPlatformService? powerPlatformService,
+  AsmrDownloadManager? asmrDownloads,
   LibraryService? libraryService,
   LibrarySnapshotCacheService? librarySnapshotCacheService,
   PlaybackSessionService? playbackService,
@@ -122,6 +124,7 @@ AppRuntimeGraph createTestRuntimeGraph({
           stateService: notificationStateService,
         ),
     settings: settings ?? settingsRepository ?? SettingsRepository(),
+    asmrDownloads: asmrDownloads,
     persistenceEnabled: !skipPersistence,
   );
   if (startRuntime) unawaited(graph.runtime.start());

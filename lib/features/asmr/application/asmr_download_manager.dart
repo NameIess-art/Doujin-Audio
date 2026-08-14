@@ -54,21 +54,6 @@ bool isValidDownloadContentRange(
       (expectedTotal <= 0 || total == null || total == expectedTotal);
 }
 
-@visibleForTesting
-String? selectDownloadResumeValidator({String? etag, String? lastModified}) {
-  final normalizedEtag = etag?.trim();
-  if (normalizedEtag != null &&
-      normalizedEtag.length >= 2 &&
-      normalizedEtag.startsWith('"') &&
-      normalizedEtag.endsWith('"')) {
-    return normalizedEtag;
-  }
-  final normalizedLastModified = lastModified?.trim();
-  return normalizedLastModified == null || normalizedLastModified.isEmpty
-      ? null
-      : normalizedLastModified;
-}
-
 typedef LocalFileRename =
     Future<File> Function(File source, String destination);
 
@@ -155,13 +140,11 @@ class AsmrDownloadTaskSnapshot {
     Map<String, int> fileDownloadedBytes = const {},
     Map<String, int> fileTotalBytes = const {},
     Map<String, int> fileRetryAttempts = const {},
-    Map<String, String> fileResumeValidators = const {},
     Set<String> completedFilePaths = const {},
     List<AsmrTrackFile> selectedRoots = const [],
   }) : fileDownloadedBytes = immutableMap(fileDownloadedBytes),
        fileTotalBytes = immutableMap(fileTotalBytes),
        fileRetryAttempts = immutableMap(fileRetryAttempts),
-       fileResumeValidators = immutableMap(fileResumeValidators),
        completedFilePaths = immutableSet(completedFilePaths),
        selectedRoots = immutableList(selectedRoots);
 
@@ -184,7 +167,6 @@ class AsmrDownloadTaskSnapshot {
   final Map<String, int> fileDownloadedBytes;
   final Map<String, int> fileTotalBytes;
   final Map<String, int> fileRetryAttempts;
-  final Map<String, String> fileResumeValidators;
   final Set<String> completedFilePaths;
   final List<AsmrTrackFile> selectedRoots;
 
@@ -230,7 +212,6 @@ class AsmrDownloadTaskSnapshot {
     Map<String, int>? fileDownloadedBytes,
     Map<String, int>? fileTotalBytes,
     Map<String, int>? fileRetryAttempts,
-    Map<String, String>? fileResumeValidators,
     Set<String>? completedFilePaths,
     List<AsmrTrackFile>? selectedRoots,
   }) {
@@ -254,7 +235,6 @@ class AsmrDownloadTaskSnapshot {
       fileDownloadedBytes: fileDownloadedBytes ?? this.fileDownloadedBytes,
       fileTotalBytes: fileTotalBytes ?? this.fileTotalBytes,
       fileRetryAttempts: fileRetryAttempts ?? this.fileRetryAttempts,
-      fileResumeValidators: fileResumeValidators ?? this.fileResumeValidators,
       completedFilePaths: completedFilePaths ?? this.completedFilePaths,
       selectedRoots: selectedRoots ?? this.selectedRoots,
     );
@@ -1058,7 +1038,6 @@ class AsmrDownloadManager extends ChangeNotifier {
                     : conflictPolicy,
                 client: client,
               );
-              _setFileResumeValidator(workId, item.relativePath, null);
 
               if (result.saved && !wasAlreadyAccounted) {
                 completed++;
@@ -1280,14 +1259,6 @@ class AsmrDownloadManager extends ChangeNotifier {
       localTargetFile = File(
         _resolveLocalPathWithin(workRootPath, normalizedRelativePath),
       );
-      if (_resumingTasks.contains(workId) &&
-          item.size > 0 &&
-          (_tasks[workId]?.fileDownloadedBytes[normalizedRelativePath] ?? 0) >=
-              item.size &&
-          await localTargetFile.exists() &&
-          await localTargetFile.length() == item.size) {
-        return _WriteResult.skipped(bytesDownloaded: item.size);
-      }
       if ((preserveExistingJson ||
               conflictPolicy == AsmrDownloadConflictPolicy.skip) &&
           await localTargetFile.exists()) {
@@ -1414,8 +1385,10 @@ class AsmrDownloadManager extends ChangeNotifier {
       return _WriteResult.success(bytesDownloaded: tempResult.bytesDownloaded);
     } finally {
       try {
-        if (_pauseRequested[workId] != true && !_disposed) {
-          await _deleteDownloadStaging(tempResult.file);
+        if (_pauseRequested[workId] != true &&
+            !_disposed &&
+            await tempResult.file.exists()) {
+          await tempResult.file.delete();
         }
       } catch (_) {
         // Temporary download cleanup is best effort after the primary result.
@@ -1432,10 +1405,7 @@ class AsmrDownloadManager extends ChangeNotifier {
   }) async {
     final tempFile = stagingFile;
     await tempFile.parent.create(recursive: true);
-    final cacheLease = AppCacheService.protectPaths(<String>[
-      tempFile.path,
-      _stagingResumeMetadataFile(tempFile).path,
-    ]);
+    final cacheLease = AppCacheService.protectPaths(<String>[tempFile.path]);
     var leaseTransferred = false;
     try {
       for (var attempt = 0; ; attempt++) {
@@ -1484,15 +1454,14 @@ class AsmrDownloadManager extends ChangeNotifier {
       _setFileRetryAttempt(workId, item.relativePath, null);
       if (!leaseTransferred) {
         try {
-          if (_pauseRequested[workId] != true && !_disposed) {
-            await _deleteDownloadStaging(tempFile);
+          if (_pauseRequested[workId] != true &&
+              !_disposed &&
+              await tempFile.exists()) {
+            await tempFile.delete();
           }
         } catch (_) {
           // Incomplete staging file cleanup is best effort.
         } finally {
-          if (_pauseRequested[workId] != true && !_disposed) {
-            _setFileResumeValidator(workId, item.relativePath, null);
-          }
           cacheLease.release();
         }
       }
@@ -1513,22 +1482,18 @@ class AsmrDownloadManager extends ChangeNotifier {
       } on FileSystemException {
         if (await stagingFile.exists()) rethrow;
       }
-      var resumeValidator =
-          _tasks[workId]?.fileResumeValidators[item.relativePath];
-      if (received > 0 && allowResume && resumeValidator == null) {
-        resumeValidator = await _readStagingResumeValidator(stagingFile, item);
-        if (resumeValidator != null) {
-          _setFileResumeValidator(workId, item.relativePath, resumeValidator);
-        }
-      }
-      final completeStagingFile = item.size > 0 && received >= item.size;
-      if (received > 0 &&
-          (!allowResume || resumeValidator == null || completeStagingFile)) {
+      if (!allowResume && received > 0) {
         _discardLivePartialProgress(workId, item.relativePath, received);
-        await _deleteDownloadStaging(stagingFile);
-        _setFileResumeValidator(workId, item.relativePath, null);
+        await _deleteFileIfPresent(stagingFile);
         received = 0;
-        resumeValidator = null;
+      }
+      if (item.size > 0 && received > item.size) {
+        _discardLivePartialProgress(workId, item.relativePath, received);
+        await _deleteFileIfPresent(stagingFile);
+        received = 0;
+      }
+      if (item.size > 0 && received == item.size) {
+        return _TemporaryDownloadAttempt.success(received);
       }
       const requestTimeout = Duration(seconds: 15);
       const downloadIdleTimeout = Duration(seconds: 30);
@@ -1544,13 +1509,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       }
       if (received > 0) {
         request.headers.set(HttpHeaders.rangeHeader, 'bytes=$received-');
-        request.headers.set(HttpHeaders.ifRangeHeader, resumeValidator!);
       }
       final response = await request.close().timeout(requestTimeout);
-      final responseValidator = selectDownloadResumeValidator(
-        etag: response.headers.value(HttpHeaders.etagHeader),
-        lastModified: response.headers.value(HttpHeaders.lastModifiedHeader),
-      );
 
       Future<_TemporaryDownloadAttempt> retryWithoutRange() async {
         try {
@@ -1559,8 +1519,7 @@ class AsmrDownloadManager extends ChangeNotifier {
           // The retry uses a new response even if cancellation already won.
         }
         _discardLivePartialProgress(workId, item.relativePath, received);
-        await _deleteDownloadStaging(stagingFile);
-        _setFileResumeValidator(workId, item.relativePath, null);
+        await _deleteFileIfPresent(stagingFile);
         return _downloadToTemporaryFileAttempt(
           item,
           workId: workId,
@@ -1610,17 +1569,6 @@ class AsmrDownloadManager extends ChangeNotifier {
             stackTrace: StackTrace.current,
           );
         }
-        if (received > 0 && responseValidator != resumeValidator) {
-          if (allowResume) return retryWithoutRange();
-          return _TemporaryDownloadAttempt.failure(
-            retryable: true,
-            error: HttpException(
-              'Download response changed its resume validator.',
-              uri: uri,
-            ),
-            stackTrace: StackTrace.current,
-          );
-        }
         responseStart = received;
       }
       if (responseStart == 0 && received > 0) {
@@ -1628,8 +1576,6 @@ class AsmrDownloadManager extends ChangeNotifier {
         received = 0;
         _discardLivePartialProgress(workId, item.relativePath, discardedBytes);
       }
-      _setFileResumeValidator(workId, item.relativePath, responseValidator);
-      await _writeStagingResumeValidator(stagingFile, item, responseValidator);
       final sink = stagingFile.openWrite(
         mode: responseStart > 0 ? FileMode.append : FileMode.write,
       );
@@ -1650,22 +1596,8 @@ class AsmrDownloadManager extends ChangeNotifier {
       } finally {
         await sink.close();
       }
-      final responseBytes = received - responseStart;
-      if (item.node.isAudio &&
-          item.size <= 0 &&
-          response.contentLength <= 0 &&
-          responseBytes == 0) {
-        return _TemporaryDownloadAttempt.failure(
-          retryable: true,
-          error: HttpException(
-            'Download response contained no media data.',
-            uri: uri,
-          ),
-          stackTrace: StackTrace.current,
-        );
-      }
       if ((response.contentLength > 0 &&
-              responseBytes != response.contentLength) ||
+              received - responseStart != response.contentLength) ||
           (item.size > 0 && received != item.size)) {
         return _TemporaryDownloadAttempt.failure(
           retryable: true,
@@ -1716,25 +1648,6 @@ class AsmrDownloadManager extends ChangeNotifier {
       attempts[relativePath] = attempt;
     }
     _tasks[workId] = task.copyWith(fileRetryAttempts: attempts);
-    _notifyProgressChanged();
-  }
-
-  void _setFileResumeValidator(
-    int workId,
-    String relativePath,
-    String? validator,
-  ) {
-    if (_disposed) return;
-    final task = _tasks[workId];
-    if (task == null) return;
-    final validators = Map<String, String>.from(task.fileResumeValidators);
-    if (validator == null) {
-      if (validators.remove(relativePath) == null) return;
-    } else {
-      if (validators[relativePath] == validator) return;
-      validators[relativePath] = validator;
-    }
-    _tasks[workId] = task.copyWith(fileResumeValidators: validators);
     _notifyProgressChanged();
   }
 
@@ -2179,56 +2092,6 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
   }
 
-  File _stagingResumeMetadataFile(File stagingFile) =>
-      File('${stagingFile.path}.resume.json');
-
-  Future<String?> _readStagingResumeValidator(
-    File stagingFile,
-    _PlannedDownloadFile item,
-  ) async {
-    final metadataFile = _stagingResumeMetadataFile(stagingFile);
-    try {
-      if (!await metadataFile.exists() || await metadataFile.length() > 4096) {
-        return null;
-      }
-      final decoded = jsonDecode(await metadataFile.readAsString());
-      if (decoded is! Map ||
-          decoded['url'] != item.url ||
-          decoded['size'] != item.size) {
-        return null;
-      }
-      final validator = decoded['validator'];
-      return validator is String && validator.isNotEmpty ? validator : null;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  Future<void> _writeStagingResumeValidator(
-    File stagingFile,
-    _PlannedDownloadFile item,
-    String? validator,
-  ) async {
-    final metadataFile = _stagingResumeMetadataFile(stagingFile);
-    if (validator == null) {
-      await _deleteFileIfPresent(metadataFile);
-      return;
-    }
-    await metadataFile.writeAsString(
-      jsonEncode(<String, Object?>{
-        'url': item.url,
-        'size': item.size,
-        'validator': validator,
-      }),
-      flush: true,
-    );
-  }
-
-  Future<void> _deleteDownloadStaging(File stagingFile) async {
-    await _deleteFileIfPresent(stagingFile);
-    await _deleteFileIfPresent(_stagingResumeMetadataFile(stagingFile));
-  }
-
   Future<void> _cleanupCancelledTask(int workId) async {
     for (final createdPath in _createdOutputPaths[workId] ?? const <String>{}) {
       try {
@@ -2251,9 +2114,6 @@ class AsmrDownloadManager extends ChangeNotifier {
           final file = File(createdPath);
           if (await file.exists()) {
             await file.delete();
-          }
-          if (createdPath.endsWith('.doujin.part')) {
-            await _deleteFileIfPresent(_stagingResumeMetadataFile(file));
           }
         }
       } catch (_) {
@@ -2284,7 +2144,6 @@ Map<String, Object?> _downloadTaskToJson(
   'message': task.message,
   'error': task.error,
   'fileDownloadedBytes': task.fileDownloadedBytes,
-  'fileResumeValidators': task.fileResumeValidators,
   'fileTotalBytes': task.fileTotalBytes,
   'completedFilePaths': task.completedFilePaths.toList(growable: false),
   'selectedRoots': task.selectedRoots.map(_downloadTrackToJson).toList(),
@@ -2334,7 +2193,6 @@ _PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
       message: json['message'] as String?,
       error: json['error'] as String?,
       fileDownloadedBytes: _jsonIntMap(json['fileDownloadedBytes']),
-      fileResumeValidators: _jsonStringMap(json['fileResumeValidators']),
       fileTotalBytes: _jsonIntMap(json['fileTotalBytes']),
       completedFilePaths:
           (json['completedFilePaths'] as List? ?? const <Object>[])
@@ -2411,15 +2269,6 @@ Map<String, int> _jsonIntMap(Object? value) {
     for (final entry in value.entries)
       if (entry.key is String && entry.value is num)
         entry.key as String: (entry.value as num).toInt(),
-  };
-}
-
-Map<String, String> _jsonStringMap(Object? value) {
-  if (value is! Map<Object?, Object?>) return const <String, String>{};
-  return <String, String>{
-    for (final entry in value.entries)
-      if (entry.key is String && entry.value is String)
-        entry.key as String: entry.value as String,
   };
 }
 

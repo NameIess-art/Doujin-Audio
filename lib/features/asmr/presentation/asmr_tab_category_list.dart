@@ -9,33 +9,20 @@ class _AsmrVisibleItem {
     this.node,
     this.depth = 0,
     this.error,
+    this.revealed = true,
+    this.animateInitialReveal = false,
   });
 
   const _AsmrVisibleItem.work(AsmrWork work)
     : this._(kind: _AsmrVisibleItemKind.work, work: work);
-
-  const _AsmrVisibleItem.loading(AsmrWork work)
-    : this._(kind: _AsmrVisibleItemKind.loading, work: work);
-
-  const _AsmrVisibleItem.error(AsmrWork work, Object error)
-    : this._(kind: _AsmrVisibleItemKind.error, work: work, error: error);
-
-  const _AsmrVisibleItem.empty(AsmrWork work)
-    : this._(kind: _AsmrVisibleItemKind.empty, work: work);
-
-  const _AsmrVisibleItem.node(AsmrWork work, AsmrTrackFile node, int depth)
-    : this._(
-        kind: _AsmrVisibleItemKind.node,
-        work: work,
-        node: node,
-        depth: depth,
-      );
 
   final _AsmrVisibleItemKind kind;
   final AsmrWork work;
   final AsmrTrackFile? node;
   final int depth;
   final Object? error;
+  final bool revealed;
+  final bool animateInitialReveal;
 }
 
 class _AsmrCategoryList extends ConsumerStatefulWidget {
@@ -73,6 +60,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   bool _automaticLoadMoreScheduled = false;
   final Set<int> _expandedWorkIds = <int>{};
   final Map<int, Set<String>> _expandedFolderPaths = <int, Set<String>>{};
+  final Map<String, bool> _treeExpansionMotions = <String, bool>{};
+  final Map<String, Timer> _treeExpansionMotionTimers = <String, Timer>{};
   List<_AsmrVisibleItem> _visibleItems = const <_AsmrVisibleItem>[];
   List<AsmrWork>? _visibleItemsWorks;
   int? _visibleItemsCategoryRevision;
@@ -88,9 +77,66 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             normalizeSearchQuery(widget.searchQuery)) {
       _expandedWorkIds.clear();
       _expandedFolderPaths.clear();
+      _treeExpansionMotions.clear();
+      for (final timer in _treeExpansionMotionTimers.values) {
+        timer.cancel();
+      }
+      _treeExpansionMotionTimers.clear();
       _visibleItemsWorks = null;
       _visibleItemsExpansionVersion++;
     }
+  }
+
+  @override
+  void dispose() {
+    for (final timer in _treeExpansionMotionTimers.values) {
+      timer.cancel();
+    }
+    super.dispose();
+  }
+
+  void _handleWorkExpansion(int workId, bool expanded) {
+    final motionKey = 'work:$workId';
+    final changed = expanded
+        ? _expandedWorkIds.add(workId)
+        : _expandedWorkIds.remove(workId);
+    if (!changed) return;
+    _startTreeExpansionMotion(motionKey, expanded);
+  }
+
+  void _handleFolderExpansion(int workId, String folderPath, bool expanded) {
+    final motionKey = 'folder:$workId:$folderPath';
+    final expandedPaths = _expandedFolderPaths.putIfAbsent(
+      workId,
+      () => <String>{},
+    );
+    final changed = expanded
+        ? expandedPaths.add(folderPath)
+        : expandedPaths.remove(folderPath);
+    if (!changed) return;
+    _startTreeExpansionMotion(motionKey, expanded);
+  }
+
+  void _startTreeExpansionMotion(String motionKey, bool expanded) {
+    _treeExpansionMotionTimers.remove(motionKey)?.cancel();
+    final animate = !MediaQuery.disableAnimationsOf(context);
+    setState(() {
+      if (animate) {
+        _treeExpansionMotions[motionKey] = expanded;
+      } else {
+        _treeExpansionMotions.remove(motionKey);
+      }
+      _visibleItemsExpansionVersion++;
+    });
+    if (!animate) return;
+    _treeExpansionMotionTimers[motionKey] = Timer(kAppMotionStandard, () {
+      _treeExpansionMotionTimers.remove(motionKey);
+      if (!mounted || _treeExpansionMotions[motionKey] != expanded) return;
+      setState(() {
+        _treeExpansionMotions.remove(motionKey);
+        _visibleItemsExpansionVersion++;
+      });
+    });
   }
 
   @override
@@ -135,7 +181,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         );
     final works = state.works;
     final trackStates = <int, AsmrTrackTreeViewState>{};
-    for (final workId in _expandedWorkIds) {
+    final closingWorkIds = works
+        .where((work) => _treeExpansionMotions['work:${work.id}'] == false)
+        .map((work) => work.id);
+    for (final workId in <int>{..._expandedWorkIds, ...closingWorkIds}) {
       final provider = asmrTrackTreeStateProvider(workId);
       final controllerState = ref
           .read(asmrLibraryControllerProvider)
@@ -379,21 +428,46 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     final result = <_AsmrVisibleItem>[];
     for (final work in works) {
       result.add(_AsmrVisibleItem.work(work));
-      if (!_expandedWorkIds.contains(work.id)) continue;
+      final workExpanded = _expandedWorkIds.contains(work.id);
+      final workMotion = _treeExpansionMotions['work:${work.id}'];
+      if (!workExpanded && workMotion != false) continue;
+      final animateWorkReveal = workExpanded && workMotion == true;
       final treeState = trackStates[work.id];
       final tree = treeState?.tree;
       final visibleTree = treeState?.visibleTree;
       if (treeState == null || (tree == null && treeState.isLoading)) {
-        result.add(_AsmrVisibleItem.loading(work));
+        result.add(
+          _AsmrVisibleItem._(
+            kind: _AsmrVisibleItemKind.loading,
+            work: work,
+            revealed: workExpanded,
+            animateInitialReveal: animateWorkReveal,
+          ),
+        );
         continue;
       }
       final error = treeState.operationError;
       if (tree == null && error != null) {
-        result.add(_AsmrVisibleItem.error(work, error));
+        result.add(
+          _AsmrVisibleItem._(
+            kind: _AsmrVisibleItemKind.error,
+            work: work,
+            error: error,
+            revealed: workExpanded,
+            animateInitialReveal: animateWorkReveal,
+          ),
+        );
         continue;
       }
       if (visibleTree == null || visibleTree.isEmpty) {
-        result.add(_AsmrVisibleItem.empty(work));
+        result.add(
+          _AsmrVisibleItem._(
+            kind: _AsmrVisibleItemKind.empty,
+            work: work,
+            revealed: workExpanded,
+            animateInitialReveal: animateWorkReveal,
+          ),
+        );
         continue;
       }
 
@@ -413,19 +487,48 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
       collectFolderPaths(visibleTree);
       expandedPaths.retainAll(validFolderPaths);
 
-      void addNode(AsmrTrackFile node, int depth) {
+      void addNode(
+        AsmrTrackFile node,
+        int depth, {
+        required bool revealed,
+        required bool animateInitialReveal,
+      }) {
         if (!node.hasBrowsableContent) return;
-        result.add(_AsmrVisibleItem.node(work, node, depth));
-        if (!node.isFolder || !expandedPaths.contains(node.relativePath)) {
-          return;
-        }
+        result.add(
+          _AsmrVisibleItem._(
+            kind: _AsmrVisibleItemKind.node,
+            work: work,
+            node: node,
+            depth: depth,
+            revealed: revealed,
+            animateInitialReveal: animateInitialReveal,
+          ),
+        );
+        if (!node.isFolder) return;
+        final expanded = expandedPaths.contains(node.relativePath);
+        final motion =
+            _treeExpansionMotions['folder:${work.id}:${node.relativePath}'];
+        if (!expanded && motion != false) return;
+        final revealChildren = revealed && expanded;
+        final animateChildren =
+            animateInitialReveal || (revealChildren && motion == true);
         for (final child in node.children) {
-          addNode(child, depth + 1);
+          addNode(
+            child,
+            depth + 1,
+            revealed: revealChildren,
+            animateInitialReveal: animateChildren,
+          );
         }
       }
 
       for (final node in visibleTree) {
-        addNode(node, 1);
+        addNode(
+          node,
+          1,
+          revealed: workExpanded,
+          animateInitialReveal: animateWorkReveal,
+        );
       }
     }
     _visibleItemsWorks = works;
@@ -441,6 +544,15 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
     required AppLanguageProvider i18n,
     required Color asmrBlue,
   }) {
+    Widget animatedTreeItem(String key, Widget child) {
+      return AnimatedTreeReveal(
+        key: ValueKey<String>(key),
+        visible: item.revealed,
+        animateInitial: item.animateInitialReveal,
+        child: child,
+      );
+    }
+
     switch (item.kind) {
       case _AsmrVisibleItemKind.work:
         return RepaintBoundary(
@@ -450,13 +562,8 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             searchQuery: widget.searchQuery,
             isActive: widget.isActive,
             expanded: _expandedWorkIds.contains(item.work.id),
-            onExpansionChanged: (expanded) {
-              final changed = expanded
-                  ? _expandedWorkIds.add(item.work.id)
-                  : _expandedWorkIds.remove(item.work.id);
-              if (!changed) return;
-              setState(() => _visibleItemsExpansionVersion++);
-            },
+            onExpansionChanged: (expanded) =>
+                _handleWorkExpansion(item.work.id, expanded),
           ),
         );
       case _AsmrVisibleItemKind.node:
@@ -464,59 +571,59 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
         final expanded =
             _expandedFolderPaths[item.work.id]?.contains(node.relativePath) ??
             false;
-        return Padding(
-          key: ValueKey<String>(
-            'asmr-tree-${item.work.id}-${node.relativePath}',
-          ),
-          padding: EdgeInsets.only(left: item.depth * 8.0),
-          child: RepaintBoundary(
-            child: _AsmrTrackTreeNode(
-              work: item.work,
-              node: node,
-              isActive: widget.isActive,
-              expanded: expanded,
-              onExpansionChanged: node.isFolder
-                  ? (nextExpanded) {
-                      final paths = _expandedFolderPaths.putIfAbsent(
+        return animatedTreeItem(
+          'asmr-tree-${item.work.id}-${node.relativePath}',
+          Padding(
+            padding: EdgeInsets.only(left: item.depth * 8.0),
+            child: RepaintBoundary(
+              child: _AsmrTrackTreeNode(
+                work: item.work,
+                node: node,
+                isActive: widget.isActive,
+                expanded: expanded,
+                onExpansionChanged: node.isFolder
+                    ? (nextExpanded) => _handleFolderExpansion(
                         item.work.id,
-                        () => <String>{},
-                      );
-                      final changed = nextExpanded
-                          ? paths.add(node.relativePath)
-                          : paths.remove(node.relativePath);
-                      if (!changed) return;
-                      setState(() => _visibleItemsExpansionVersion++);
-                    }
-                  : null,
+                        node.relativePath,
+                        nextExpanded,
+                      )
+                    : null,
+              ),
             ),
           ),
         );
       case _AsmrVisibleItemKind.loading:
-        return Padding(
-          key: ValueKey<String>('asmr-track-tree-loading-${item.work.id}'),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          child: Center(child: CircularProgressIndicator(color: asmrBlue)),
+        return animatedTreeItem(
+          'asmr-track-tree-loading-${item.work.id}',
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(child: CircularProgressIndicator(color: asmrBlue)),
+          ),
         );
       case _AsmrVisibleItemKind.error:
-        return Padding(
-          key: ValueKey<String>('asmr-track-tree-error-${item.work.id}'),
-          padding: const EdgeInsets.only(top: 4, bottom: 12),
-          child: OperationStatusBanner(
-            label: i18n.tr('operation_failed_retry'),
-            error: item.error,
-            retryTooltip: i18n.tr('retry'),
-            onRetry: () => unawaited(_retryTrackTree(item.work)),
+        return animatedTreeItem(
+          'asmr-track-tree-error-${item.work.id}',
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 12),
+            child: OperationStatusBanner(
+              label: i18n.tr('operation_failed_retry'),
+              error: item.error,
+              retryTooltip: i18n.tr('retry'),
+              onRetry: () => unawaited(_retryTrackTree(item.work)),
+            ),
           ),
         );
       case _AsmrVisibleItemKind.empty:
-        return Padding(
-          key: ValueKey<String>('asmr-track-tree-empty-${item.work.id}'),
-          padding: const EdgeInsets.only(top: 4, bottom: 12),
-          child: Text(
-            i18n.tr('asmr_empty_track_tree'),
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontWeight: FontWeight.w600,
+        return animatedTreeItem(
+          'asmr-track-tree-empty-${item.work.id}',
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 12),
+            child: Text(
+              i18n.tr('asmr_empty_track_tree'),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         );

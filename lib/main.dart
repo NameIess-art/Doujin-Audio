@@ -21,6 +21,7 @@ import 'features/asmr/application/asmr_library_controller.dart';
 import 'features/asmr/application/asmr_download_manager.dart';
 import 'features/asmr/application/asmr_playback_coordinator.dart';
 import 'features/asmr/application/asmr_preferences.dart';
+import 'features/asmr/domain/asmr_models.dart';
 import 'infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'infrastructure/sqlite/sqlite_library_repository.dart';
 import 'infrastructure/sqlite/sqlite_playback_repository.dart';
@@ -50,7 +51,15 @@ import 'features/data_support/application/data_backup_service.dart';
 StartupRestoreOutcome? _startupRestoreOutcome;
 
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  final binding = WidgetsFlutterBinding.ensureInitialized();
+  binding.deferFirstFrame();
+  var firstFrameAllowed = false;
+
+  void allowFirstFrame() {
+    if (firstFrameAllowed) return;
+    firstFrameAllowed = true;
+    binding.allowFirstFrame();
+  }
 
   await runZonedGuarded<Future<void>>(
     () async {
@@ -67,7 +76,8 @@ Future<void> main() async {
 
       bool? shouldShowOnboarding;
 
-      final appBootstrapController = AppBootstrapController(
+      late final AppBootstrapController appBootstrapController;
+      appBootstrapController = AppBootstrapController(
         initializer: () async {
           await _initializeAudioPlayerApp();
           shouldShowOnboarding = AppPreferences.shouldShowOnboardingSync();
@@ -80,7 +90,14 @@ Future<void> main() async {
           appBuilder: () => _createAudioPlayerApp(
             shouldShowOnboarding: shouldShowOnboarding!,
             startupRestoreOutcome: _startupRestoreOutcome,
+            onBootstrapSettled: allowFirstFrame,
           ),
+          onBootstrapSettled: () {
+            if (appBootstrapController.state.phase ==
+                AppBootstrapPhase.failure) {
+              allowFirstFrame();
+            }
+          },
         ),
       );
     },
@@ -194,6 +211,19 @@ Widget _createAudioPlayerApp({
   );
   final themeProvider = ThemeProvider();
 
+  Future<void> initializeRuntimeData() async {
+    await appLanguageProvider.initialized;
+    await Future.wait<void>([
+      runtimeGraph.runtime.start(),
+      asmrDownloadManager.initialize(),
+      asmrLibraryController.initialize(
+        defaultLanguage: AsmrContentLanguage.fromAppLanguage(
+          appLanguageProvider.language,
+        ),
+      ),
+    ]);
+  }
+
   final app = ProviderScope(
     overrides: [
       ...createAppRuntimeOverrides(
@@ -224,12 +254,10 @@ Widget _createAudioPlayerApp({
       shouldShowOnboarding: shouldShowOnboarding,
       startupRestoreOutcome: startupRestoreOutcome,
       onBootstrapSettled: onBootstrapSettled,
+      runtimeInitializer: initializeRuntimeData,
     ),
   );
 
-  WidgetsBinding.instance.addPostFrameCallback((_) {
-    unawaited(asmrDownloadManager.initialize());
-  });
   return app;
 }
 
@@ -258,12 +286,14 @@ class MusicPlayerApp extends ConsumerStatefulWidget {
     this.shouldShowOnboarding,
     this.startupRestoreOutcome,
     this.onBootstrapSettled,
+    this.runtimeInitializer,
     super.key,
   });
 
   final bool? shouldShowOnboarding;
   final StartupRestoreOutcome? startupRestoreOutcome;
   final VoidCallback? onBootstrapSettled;
+  final Future<void> Function()? runtimeInitializer;
 
   @override
   ConsumerState<MusicPlayerApp> createState() => _MusicPlayerAppState();
@@ -274,13 +304,17 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
   late final bool _shouldShowOnboarding;
   final _navigatorKey = GlobalKey<NavigatorState>();
   var _restoreOutcomeScheduled = false;
+  var _runtimeBootstrapSettledNotified = false;
 
   @override
   void initState() {
     super.initState();
     _runtimeBootstrapController = AppBootstrapController(
-      initializer: ref.read(audioRuntimeCoordinatorProvider).start,
+      initializer:
+          widget.runtimeInitializer ??
+          ref.read(audioRuntimeCoordinatorProvider).start,
     );
+    _runtimeBootstrapController.addListener(_handleRuntimeBootstrapState);
     _shouldShowOnboarding =
         widget.shouldShowOnboarding ??
         AppPreferences.shouldShowOnboardingSync();
@@ -288,8 +322,19 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
 
   @override
   void dispose() {
+    _runtimeBootstrapController.removeListener(_handleRuntimeBootstrapState);
     _runtimeBootstrapController.dispose();
     super.dispose();
+  }
+
+  void _handleRuntimeBootstrapState() {
+    if (_runtimeBootstrapSettledNotified ||
+        _runtimeBootstrapController.state.phase ==
+            AppBootstrapPhase.initializing) {
+      return;
+    }
+    _runtimeBootstrapSettledNotified = true;
+    widget.onBootstrapSettled?.call();
   }
 
   @override
@@ -355,7 +400,6 @@ class _MusicPlayerAppState extends ConsumerState<MusicPlayerApp> {
         child: AppBootstrapGate(
           controller: _runtimeBootstrapController,
           disposeController: false,
-          onBootstrapSettled: widget.onBootstrapSettled,
           readyBuilder: (_) => const GlobalShortcuts(child: MainScreen()),
           loadingBuilder: (_) => const AppBootstrapLoadingView(),
           failureBuilder: (_, state) => AppErrorView(

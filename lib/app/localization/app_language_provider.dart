@@ -84,6 +84,8 @@ class AppLanguageProvider
 
   AppLanguage get language => _language;
 
+  Future<void> get initialized => _loadFuture;
+
   Locale get locale {
     switch (_language) {
       case AppLanguage.zh:

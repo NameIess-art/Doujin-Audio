@@ -138,6 +138,51 @@ AnimationStyle appExpansionAnimationStyle(BuildContext context) {
   );
 }
 
+class AnimatedTreeReveal extends StatelessWidget {
+  const AnimatedTreeReveal({
+    super.key,
+    required this.visible,
+    required this.child,
+    this.animateInitial = false,
+  });
+
+  final bool visible;
+  final bool animateInitial;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return visible ? child : const SizedBox.shrink();
+    }
+    final target = visible ? 1.0 : 0.0;
+    return IgnorePointer(
+      ignoring: !visible,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(
+          begin: animateInitial && visible ? 0 : target,
+          end: target,
+        ),
+        duration: kAppMotionStandard,
+        curve: visible ? Curves.easeOutCubic : Curves.easeInCubic,
+        child: child,
+        builder: (context, value, child) {
+          // A non-zero extent keeps lazy lists from building every descendant
+          // while the newly inserted rows are still visually collapsed.
+          final heightFactor = 0.2 + (0.8 * value);
+          return ClipRect(
+            child: Align(
+              alignment: Alignment.topCenter,
+              heightFactor: heightFactor,
+              child: Opacity(opacity: value, child: child),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 Widget buildAppScaleFadeTransition({
   required BuildContext context,
   required Animation<double> animation,

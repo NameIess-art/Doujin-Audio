@@ -1069,6 +1069,19 @@ void main() {
     expect(find.text('Nested track'), findsOneWidget);
 
     await tester.tap(find.text('Disc 1'));
+    await tester.pump();
+    expect(find.text('Nested track'), findsOneWidget);
+    final collapsingReveal = tester.widget<AnimatedTreeReveal>(
+      find
+          .ancestor(
+            of: find.text('Nested track'),
+            matching: find.byType(AnimatedTreeReveal),
+          )
+          .first,
+    );
+    expect(collapsingReveal.visible, isFalse);
+    await tester.pump(kAppMotionStandard ~/ 2);
+    expect(find.text('Nested track'), findsOneWidget);
     await tester.pumpAndSettle();
     expect(find.text('Nested track'), findsNothing);
   });
@@ -1254,6 +1267,84 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 750));
     await tester.pump();
+  });
+
+  testWidgets('startup shell waits for every required local data load', (
+    tester,
+  ) async {
+    final runtime = Completer<void>();
+    final downloads = Completer<void>();
+    final asmrLibrary = Completer<void>();
+    var settledCalls = 0;
+
+    await _pumpAppShell(
+      tester,
+      waitForStartup: false,
+      runtimeInitializer: () => Future.wait<void>([
+        runtime.future,
+        downloads.future,
+        asmrLibrary.future,
+      ]),
+      onBootstrapSettled: () => settledCalls++,
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+      findsOneWidget,
+    );
+    expect(find.byType(MainScreen), findsNothing);
+    expect(settledCalls, 0);
+
+    runtime.complete();
+    downloads.complete();
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+      findsOneWidget,
+    );
+    expect(find.byType(MainScreen), findsNothing);
+    expect(settledCalls, 0);
+
+    asmrLibrary.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('app_bootstrap_loading')),
+      findsNothing,
+    );
+    expect(find.byType(MainScreen), findsOneWidget);
+    expect(settledCalls, 1);
+    await tester.pump(const Duration(milliseconds: 750));
+    await tester.pump();
+    expect(settledCalls, 1);
+  });
+
+  testWidgets('fresh install settles startup while onboarding is visible', (
+    tester,
+  ) async {
+    final initialization = Completer<void>();
+    var settledCalls = 0;
+
+    await _pumpAppShell(
+      tester,
+      waitForStartup: false,
+      shouldShowOnboarding: true,
+      runtimeInitializer: () => initialization.future,
+      onBootstrapSettled: () => settledCalls++,
+    );
+    await tester.pump();
+
+    expect(settledCalls, 0);
+    expect(find.byType(MainScreen), findsNothing);
+
+    initialization.complete();
+    await tester.pump();
+    await tester.pump();
+
+    expect(settledCalls, 1);
+    expect(find.byType(MainScreen), findsNothing);
   });
 
   testWidgets('app shell supports Android landscape navigation', (
@@ -2543,6 +2634,9 @@ Future<_AppShellHarness> _pumpAppShell(
   MusicTrack? playbackTrack,
   bool waitForStartup = true,
   AsmrDownloadManager? downloads,
+  Future<void> Function()? runtimeInitializer,
+  bool? shouldShowOnboarding,
+  VoidCallback? onBootstrapSettled,
 }) async {
   final themeProvider = ThemeProvider();
   final languageProvider = AppLanguageProvider();
@@ -2606,7 +2700,11 @@ Future<_AppShellHarness> _pumpAppShell(
         appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
         appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
       ],
-      child: const MusicPlayerApp(),
+      child: MusicPlayerApp(
+        shouldShowOnboarding: shouldShowOnboarding,
+        runtimeInitializer: runtimeInitializer,
+        onBootstrapSettled: onBootstrapSettled,
+      ),
     ),
   );
   if (waitForStartup) {

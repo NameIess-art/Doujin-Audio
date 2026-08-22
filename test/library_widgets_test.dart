@@ -508,16 +508,32 @@ void main() {
     await pumpUntilNotFound(tester, find.byType(LibraryLikeSkeletonCard));
     await tester.tap(find.byType(ExpansionTile).first);
     await pumpUntilFound(tester, find.text('Disc', findRichText: true));
+    await tester.pump(kAppMotionStandard);
+    await tester.pump();
     await tester.tap(find.text('Disc', findRichText: true));
-    await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
+    await tester.pump(kAppMotionStandard);
+    await tester.pump();
+    expect(find.text('Chapter', findRichText: true), findsOneWidget);
     await tester.tap(find.text('Chapter', findRichText: true));
     await pumpUntilFound(tester, find.text('Deep track', findRichText: true));
 
     await tester.tap(find.text('Disc', findRichText: true));
-    await pumpUntilNotFound(
-      tester,
-      find.text('Deep track', findRichText: true),
+    await tester.pump();
+    expect(find.text('Deep track', findRichText: true), findsOneWidget);
+    final collapsingReveal = tester.widget<AnimatedTreeReveal>(
+      find
+          .ancestor(
+            of: find.text('Deep track', findRichText: true),
+            matching: find.byType(AnimatedTreeReveal),
+          )
+          .first,
     );
+    expect(collapsingReveal.visible, isFalse);
+    await tester.pump(kAppMotionStandard ~/ 2);
+    expect(find.text('Deep track', findRichText: true), findsOneWidget);
+    await tester.pump(kAppMotionStandard);
+    await tester.pump();
+    expect(find.text('Deep track', findRichText: true), findsNothing);
     await tester.tap(find.text('Disc', findRichText: true));
     await pumpUntilFound(tester, find.text('Chapter', findRichText: true));
     expect(find.text('Deep track', findRichText: true), findsOneWidget);

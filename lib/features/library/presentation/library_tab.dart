@@ -110,10 +110,17 @@ class _LoadedLibraryFolder {
 }
 
 class _VisibleLibraryItem {
-  const _VisibleLibraryItem({required this.node, required this.depth});
+  const _VisibleLibraryItem({
+    required this.node,
+    required this.depth,
+    this.revealed = true,
+    this.animateInitialReveal = false,
+  });
 
   final LibraryNode node;
   final int depth;
+  final bool revealed;
+  final bool animateInitialReveal;
 }
 
 class LibraryTab extends ConsumerStatefulWidget {
@@ -178,6 +185,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   bool _initialLibraryContentReady = false;
   bool _refreshTriggeredInCurrentScroll = false;
   final Set<String> _expandedCardPaths = <String>{};
+  final Map<String, bool> _cardExpansionMotions = <String, bool>{};
+  final Map<String, Timer> _cardExpansionMotionTimers = <String, Timer>{};
   final Map<String, _LoadedLibraryFolder> _loadedFolderTrees =
       <String, _LoadedLibraryFolder>{};
   final Map<String, int> _loadingFolderTreeRevisions = <String, int>{};
@@ -276,11 +285,34 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   void _handleCardExpansionChanged(FolderNode folder, bool expanded) {
     final folderPath = folder.path;
     final normalizedPath = PathMatcher.normalize(folderPath);
+    _cardExpansionMotionTimers.remove(normalizedPath)?.cancel();
     final changed = expanded
         ? _expandedCardPaths.add(normalizedPath)
         : _expandedCardPaths.remove(normalizedPath);
-    if (changed && mounted) {
-      setState(() => _visibleItemsVersion++);
+    if (!changed || !mounted) return;
+    final animate = !MediaQuery.disableAnimationsOf(context);
+    setState(() {
+      if (animate) {
+        _cardExpansionMotions[normalizedPath] = expanded;
+      } else {
+        _cardExpansionMotions.remove(normalizedPath);
+      }
+      _visibleItemsVersion++;
+    });
+    if (animate) {
+      _cardExpansionMotionTimers[normalizedPath] = Timer(
+        kAppMotionStandard,
+        () {
+          _cardExpansionMotionTimers.remove(normalizedPath);
+          if (!mounted || _cardExpansionMotions[normalizedPath] != expanded) {
+            return;
+          }
+          setState(() {
+            _cardExpansionMotions.remove(normalizedPath);
+            _visibleItemsVersion++;
+          });
+        },
+      );
     }
     if (expanded && folder.depth == 0) {
       unawaited(_loadExpandedFolderTree(folderPath));
@@ -327,14 +359,38 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     }
     final result = <_VisibleLibraryItem>[];
 
-    void addNode(LibraryNode node, int depth, {FolderNode? expandedFolder}) {
-      result.add(_VisibleLibraryItem(node: node, depth: depth));
-      if (node is! FolderNode ||
-          !_expandedCardPaths.contains(PathMatcher.normalize(node.path))) {
+    void addNode(
+      LibraryNode node,
+      int depth, {
+      FolderNode? expandedFolder,
+      bool revealed = true,
+      bool animateInitialReveal = false,
+    }) {
+      result.add(
+        _VisibleLibraryItem(
+          node: node,
+          depth: depth,
+          revealed: revealed,
+          animateInitialReveal: animateInitialReveal,
+        ),
+      );
+      if (node is! FolderNode) {
         return;
       }
+      final normalizedPath = PathMatcher.normalize(node.path);
+      final expanded = _expandedCardPaths.contains(normalizedPath);
+      final motion = _cardExpansionMotions[normalizedPath];
+      if (!expanded && motion != false) return;
+      final revealChildren = revealed && expanded;
+      final animateChildren =
+          animateInitialReveal || (revealChildren && motion == true);
       for (final child in (expandedFolder ?? node).children) {
-        addNode(child, depth + 1);
+        addNode(
+          child,
+          depth + 1,
+          revealed: revealChildren,
+          animateInitialReveal: animateChildren,
+        );
       }
     }
 
@@ -773,6 +829,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       _handleStartupRefreshInteractionChanged,
     );
     _startupRefreshIdleTimer?.cancel();
+    for (final timer in _cardExpansionMotionTimers.values) {
+      timer.cancel();
+    }
     UiInteractionCoordinator.instance.cancelCommit(_durationBackfillCommitKey);
     disposeTabState();
     _scanCoordinator.dispose();
@@ -912,22 +971,30 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       }
       final item = visibleItems[index];
       final node = item.node;
-      return KeyedSubtree(
-        key: ValueKey(node.path),
-        child: Padding(
-          padding: EdgeInsets.only(left: item.depth * 8.0),
-          child: RepaintBoundary(
-            child: _LibraryTreeItem(
-              node: node,
-              initiallyExpanded:
-                  node is FolderNode &&
-                  _expandedCardPaths.contains(PathMatcher.normalize(node.path)),
-              onFolderExpansionChanged: _handleCardExpansionChanged,
-              renderChildrenInline: false,
-              index: index,
-            ),
+      final treeItem = Padding(
+        padding: EdgeInsets.only(left: item.depth * 8.0),
+        child: RepaintBoundary(
+          child: _LibraryTreeItem(
+            node: node,
+            initiallyExpanded:
+                node is FolderNode &&
+                _expandedCardPaths.contains(PathMatcher.normalize(node.path)),
+            onFolderExpansionChanged: _handleCardExpansionChanged,
+            renderChildrenInline: false,
+            index: index,
           ),
         ),
+      );
+      return KeyedSubtree(
+        key: ValueKey(node.path),
+        child: item.depth == 0
+            ? treeItem
+            : AnimatedTreeReveal(
+                key: ValueKey<String>('library-tree-reveal:${node.path}'),
+                visible: item.revealed,
+                animateInitial: item.animateInitialReveal,
+                child: treeItem,
+              ),
       );
     }
 

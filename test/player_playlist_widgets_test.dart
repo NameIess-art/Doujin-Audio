@@ -1875,7 +1875,8 @@ void main() {
       persist: false,
     );
     final trackSession = fixture.runtimeGraph.playback.createTrackSession(track)
-      ..isLoading = true;
+      ..isLoading = true
+      ..isPlaybackStarting = true;
     final queueSession =
         fixture.runtimeGraph.playback.createPlaybackQueue('Loading queue')
           ..currentTrackPath = track.path
@@ -1890,12 +1891,13 @@ void main() {
               ),
             ],
           )
-          ..isLoading = true;
+          ..isLoading = true
+          ..isPlaybackStarting = true;
     addTearDown(trackSession.dispose);
     addTearDown(queueSession.dispose);
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[trackSession, queueSession],
-      playingSessionCount: 0,
+      playingSessionCount: 2,
       focusedSessionId: trackSession.id,
       multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
@@ -2143,11 +2145,13 @@ void main() {
     );
     final initialCoverHeight = tester.getSize(cover).height;
 
-    result.session.isLoading = true;
+    result.session
+      ..isLoading = true
+      ..isPlaybackStarting = true;
     result.fixture.playbackService.markActiveSessionsDirty();
     result.fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[result.session],
-      playingSessionCount: 0,
+      playingSessionCount: 1,
       focusedSessionId: result.session.id,
       multiThreadPlaybackEnabled: false,
       coverGeneration: 0,
@@ -2173,7 +2177,9 @@ void main() {
     expect(initialCoverHeight, greaterThan(midCoverHeight));
     expect(midCoverHeight, greaterThan(loadingCoverHeight));
 
-    result.session.isLoading = false;
+    result.session
+      ..isLoading = false
+      ..isPlaybackStarting = false;
     result.fixture.playbackService.markActiveSessionsDirty();
     result.fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[result.session],

@@ -245,7 +245,7 @@ class SessionDetailViewState {
   final EqCapabilities eqCapabilities;
   final String? playbackError;
 
-  bool get showPauseIcon => isPlaying || isLoading || playbackError != null;
+  bool get showPauseIcon => isPlaying;
 
   @override
   bool operator ==(Object other) {
@@ -439,8 +439,8 @@ SessionDetailViewState? sessionDetailViewStateFromPlaybackState(
       sessionId: session.id,
       trackPath: session.currentTrackPath,
       loopMode: session.loopMode,
-      isPlaying: session.effectivePlaying,
-      isLoading: session.isPlaybackLoading,
+      isPlaying: session.playbackRequested,
+      isLoading: session.isPlaybackLoading && session.playbackRequested,
       channelSwapEnabled: session.channelSwapEnabled,
       volume: session.volume,
       speed: session.speed,
@@ -469,8 +469,8 @@ PlaylistSessionCardState playlistSessionCardStateFromSession(
     sessionId: session.id,
     trackPath: session.currentTrackPath,
     loopMode: session.loopMode,
-    isPlaying: session.effectivePlaying,
-    isLoading: session.isPlaybackLoading,
+    isPlaying: session.playbackRequested,
+    isLoading: session.isPlaybackLoading && session.playbackRequested,
     channelSwapEnabled: session.channelSwapEnabled,
     audioEffects: session.audioEffects,
     speed: session.speed,

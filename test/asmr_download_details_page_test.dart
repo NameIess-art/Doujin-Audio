@@ -65,7 +65,7 @@ void main() {
     await tester.pumpWidget(
       _downloadDetailsApp(
         languageProvider,
-        retryingTask.copyWith(fileRetryAttempts: const <String, int>{}),
+        retryingTask.copyWith(status: AsmrDownloadTaskStatus.completed),
       ),
     );
     await tester.pump();

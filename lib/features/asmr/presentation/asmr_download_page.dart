@@ -507,11 +507,13 @@ class _TaskCard extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
-    final retryAttempt = task.fileRetryAttempts.values.fold<int?>(
-      null,
-      (highest, attempt) =>
-          highest == null || attempt > highest ? attempt : highest,
-    );
+    final retryAttempt = task.isActive
+        ? task.fileRetryAttempts.values.fold<int?>(
+            null,
+            (highest, attempt) =>
+                highest == null || attempt > highest ? attempt : highest,
+          )
+        : null;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),

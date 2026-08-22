@@ -83,6 +83,8 @@ class PlaybackSession {
       _bufferedPositionController.stream;
   Duration get position => lastKnownPosition;
   bool get effectivePlaying => pendingPlayingIntent ?? state.playing;
+  bool get playbackRequested =>
+      pendingPlayingIntent ?? (isPlaybackStarting || state.playing);
   bool get isPlaybackLoading {
     final processingState = state.processingState;
     return isLoading ||

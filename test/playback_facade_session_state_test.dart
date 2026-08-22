@@ -341,6 +341,61 @@ void main() {
     },
   );
 
+  test(
+    'paused session defers audio preparation until playback starts',
+    () async {
+      final library = _createLibraryFacade();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+      )..configurePersistence(enabled: false);
+      var prepareCount = 0;
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
+      playback.attachPlaybackCommands(
+        prepareSession:
+            (
+              session, {
+              required nextPath,
+              autoPlay = true,
+              forceStartAtZero = false,
+              showLoading = true,
+              targetQueueIndex,
+            }) async {
+              prepareCount++;
+              session.loadedPath = nextPath;
+              return true;
+            },
+        pauseSession: (_) async {},
+        startSession: (_, {required shouldStartTriggerCountdown}) async => true,
+        resolveAdvance: (_, {required forward}) => null,
+        hasAdjacent: (_, {required forward}) => false,
+      );
+      final track = MusicTrack(
+        path: '/tracks/lazy.mp3',
+        displayName: 'Lazy',
+        groupKey: '/tracks',
+        groupTitle: 'Tracks',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+
+      await playback.spawnSession(track, autoPlay: false);
+      await playback.pendingSessionPreparation;
+
+      final session = playback.activeSessions.single;
+      expect(prepareCount, 0);
+      expect(session.loadedPath, isNull);
+
+      await playback.toggleSessionPlayPause(session.id);
+
+      expect(prepareCount, 1);
+      expect(session.loadedPath, track.path);
+    },
+  );
+
   test('PlaybackFacade owns transport command decisions', () async {
     final library = _createLibraryFacade();
     final native = _RecordingNativePlaybackRepository();

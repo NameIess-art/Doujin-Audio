@@ -64,10 +64,14 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     final generation = session.loadGeneration;
 
     final wasLoading = session.isLoading;
+    final wasPlaybackStarting = session.isPlaybackStarting;
     if (showLoading) {
       session.isLoading = true;
     }
-    if (showLoading && !wasLoading) {
+    if (autoPlay) {
+      session.isPlaybackStarting = true;
+    }
+    if ((showLoading && !wasLoading) || (autoPlay && !wasPlaybackStarting)) {
       _notifyPlaybackChanged();
     }
 
@@ -182,6 +186,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
           session.loadGeneration == generation) {
         session.pendingNativeTrackPath = null;
         session.isLoading = false;
+        if (!prepared && autoPlay) {
+          session.isPlaybackStarting = false;
+        }
         session.isAdvancingAfterCompletion = false;
         _syncNotificationState();
         if (prepared || preparationFailed) {
@@ -198,9 +205,12 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       return false;
     }
 
-    if (autoPlay && prepared) {
+    if (autoPlay && prepared && session.playbackRequested) {
       return _startSessionPlayback(session, shouldStartTriggerCountdown: true);
     } else {
+      if (autoPlay) {
+        session.isPlaybackStarting = false;
+      }
       _syncNotificationState();
     }
     return prepared;

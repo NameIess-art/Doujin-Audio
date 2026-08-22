@@ -1177,7 +1177,7 @@ final class PlaybackFacade {
       }
       return;
     }
-    if (session.effectivePlaying) {
+    if (session.playbackRequested) {
       await _pauseSession?.call(session);
       return;
     }
@@ -2083,13 +2083,10 @@ final class PlaybackFacade {
       if (!removed) return;
     }
     final session = createTrackSession(track);
-    unawaited(
-      _enqueueSessionPreparation(
-        session,
-        nextPath: track.path,
-        autoPlay: autoPlay ?? _autoPlayAddedSessions(),
-      ),
-    );
+    final shouldAutoPlay = autoPlay ?? _autoPlayAddedSessions();
+    if (shouldAutoPlay) {
+      unawaited(_enqueueSessionPreparation(session, nextPath: track.path));
+    }
     publishSessionActivated(session.id);
   }
 
@@ -2112,13 +2109,10 @@ final class PlaybackFacade {
       loopMode: loopMode,
       customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
     );
-    unawaited(
-      _enqueueSessionPreparation(
-        session,
-        nextPath: startTrack.path,
-        autoPlay: autoPlay ?? _autoPlayAddedSessions(),
-      ),
-    );
+    final shouldAutoPlay = autoPlay ?? _autoPlayAddedSessions();
+    if (shouldAutoPlay) {
+      unawaited(_enqueueSessionPreparation(session, nextPath: startTrack.path));
+    }
     publishSessionActivated(session.id);
   }
 
@@ -2156,15 +2150,10 @@ final class PlaybackFacade {
   Future<void> _enqueueSessionPreparation(
     PlaybackSession session, {
     required String nextPath,
-    required bool autoPlay,
   }) {
     _service.enqueueSessionPreparation(() async {
       if (!_service.sessions.containsKey(session.id)) return;
-      await _prepareSession?.call(
-        session,
-        nextPath: nextPath,
-        autoPlay: autoPlay,
-      );
+      await _prepareSession?.call(session, nextPath: nextPath, autoPlay: true);
     });
     return _service.sessionPreparationQueue;
   }

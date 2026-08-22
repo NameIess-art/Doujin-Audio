@@ -356,7 +356,7 @@ void main() {
     expect(detailState?.loopMode, SessionLoopMode.folderSequential);
   });
 
-  test('session detail uses pause icon while loading or retryable', () {
+  test('session detail loading follows the current playback intent', () {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
     addTearDown(detailSession.dispose);
 
@@ -368,12 +368,21 @@ void main() {
     expect(view()?.showPauseIcon, isFalse);
 
     detailSession.isLoading = true;
+    expect(view()?.isLoading, isFalse);
+    expect(view()?.showPauseIcon, isFalse);
+
+    detailSession.isPlaybackStarting = true;
+    expect(view()?.isLoading, isTrue);
     expect(view()?.showPauseIcon, isTrue);
+
+    detailSession.beginTransportCommand(commandId: 1, playing: false);
+    expect(view()?.isLoading, isFalse);
+    expect(view()?.showPauseIcon, isFalse);
 
     detailSession
       ..isLoading = false
       ..playbackError = 'load failed';
-    expect(view()?.showPauseIcon, isTrue);
+    expect(view()?.showPauseIcon, isFalse);
   });
 
   test('session detail view state ignores progress-only changes', () {
@@ -461,14 +470,14 @@ void main() {
     expect(cardState?.isLoading, isTrue);
 
     detailSession
+      ..beginTransportCommand(commandId: 2, playing: false)
       ..isLoading = false
-      ..isPlaybackStarting = false
       ..state = PlayerState(false, ProcessingState.buffering);
     final loadingState = sessionDetailViewStateFromPlaybackState(
       PlaybackStateSliceData(activeSessions: [detailSession]),
       'detail',
     );
-    expect(loadingState?.isLoading, isTrue);
+    expect(loadingState?.isLoading, isFalse);
   });
 
   test('session detail view state tracks console control inputs', () {

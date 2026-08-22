@@ -53,9 +53,45 @@ void main() {
 
     expect(manager.getTask(1), isNull);
   });
+
+  testWidgets('terminal download task does not show a stale retry status', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final languageProvider = AppLanguageProvider();
+    addTearDown(languageProvider.dispose);
+    await languageProvider.setLanguage(AppLanguage.en);
+    final manager = AsmrDownloadManager(
+      temporaryDirectoryProvider: () async => Directory.systemTemp,
+      automaticFileRetryDelay: Duration.zero,
+      persistTasks: false,
+    );
+    addTearDown(manager.dispose);
+    manager.debugSetCurrentTaskForTesting(
+      _failedTask(fileRetryAttempts: const <String, int>{'Track.mp3': 1}),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+          asmrDownloadManagerProvider.overrideWithValue(manager),
+        ],
+        child: const MaterialApp(home: AsmrDownloadTaskPage()),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Retrying (1/10)'), findsNothing);
+    expect(find.text('Failed'), findsOneWidget);
+  });
 }
 
-AsmrDownloadTaskSnapshot _failedTask() {
+AsmrDownloadTaskSnapshot _failedTask({
+  Map<String, int> fileRetryAttempts = const <String, int>{},
+}) {
   return AsmrDownloadTaskSnapshot(
     work: AsmrWork(
       id: 1,
@@ -87,5 +123,6 @@ AsmrDownloadTaskSnapshot _failedTask() {
     totalBytes: 1024,
     downloadedBytes: 0,
     startedAt: DateTime(2026),
+    fileRetryAttempts: fileRetryAttempts,
   );
 }

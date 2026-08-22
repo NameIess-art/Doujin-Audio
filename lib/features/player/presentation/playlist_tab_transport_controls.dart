@@ -42,12 +42,10 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
       session: session,
       playback: playback,
       paths: paths,
-      showPauseIcon:
-          transport?.showPauseIcon ??
-          (session.effectivePlaying ||
-              session.isPlaybackLoading ||
-              session.playbackError != null),
-      isLoading: transport?.isLoading ?? session.isPlaybackLoading,
+      showPauseIcon: transport?.showPauseIcon ?? session.playbackRequested,
+      isLoading:
+          transport?.isLoading ??
+          (session.isPlaybackLoading && session.playbackRequested),
       hasSiblings: hasSiblings,
       segmentPanelExpanded: segmentPanelExpanded,
       hasSubtitle: hasSubtitle,

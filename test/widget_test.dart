@@ -1693,10 +1693,12 @@ void main() {
       isInitialized: true,
     );
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
 
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
-    expect(find.text(languageProvider.tr('playback_loading')), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text(languageProvider.tr('playback_loading')), findsNothing);
     expect(find.byIcon(Icons.pause_rounded), findsNothing);
+    expect(find.byIcon(Icons.play_arrow_rounded), findsWidgets);
 
     session.setOptimisticState(
       playing: true,

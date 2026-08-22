@@ -241,10 +241,8 @@ void main() {
 
       await runtimeGraph.settings.setAutoPlayAddedSessions(false);
       await runtimeGraph.playback.spawnSession(track);
-      for (var i = 0; i < 20 && prepareCalls < 1; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
-      expect(prepareCalls, 1);
+      await runtimeGraph.playback.pendingSessionPreparation;
+      expect(prepareCalls, 0);
       expect(playCalls, 0);
 
       await runtimeGraph.settings.setAutoPlayAddedSessions(true);
@@ -252,7 +250,7 @@ void main() {
       for (var i = 0; i < 20 && playCalls < 1; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
-      expect(prepareCalls, 2);
+      expect(prepareCalls, 1);
       expect(playCalls, 1);
     });
 
@@ -272,6 +270,67 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('pausing during preparation cancels the pending autoplay', () async {
+      final prepareStarted = Completer<void>();
+      final prepareResponse = Completer<Object?>();
+      var playCalls = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              if (!prepareStarted.isCompleted) prepareStarted.complete();
+              return prepareResponse.future;
+            }
+            if (call.method == NativePlaybackMethod.pause) {
+              return <String, Object?>{
+                'ok': false,
+                'error': 'Session is still preparing.',
+              };
+            }
+            if (call.method == NativePlaybackMethod.play) {
+              playCalls++;
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      final track = MusicTrack(
+        path: '/music/cancel-preparation.mp3',
+        displayName: 'Cancel Preparation',
+        groupKey: '/music',
+        groupTitle: 'Music',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+
+      await runtimeGraph.playback.spawnSession(track, autoPlay: true);
+      await prepareStarted.future;
+      final session = runtimeGraph.playback.activeSessions.single;
+      expect(session.playbackRequested, isTrue);
+      expect(session.isPlaybackLoading, isTrue);
+
+      await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+      expect(session.playbackRequested, isFalse);
+
+      prepareResponse.complete(<String, Object?>{
+        'ok': true,
+        'value': <String, Object?>{
+          'sessionId': session.id,
+          'path': track.path,
+          'uri': Uri.file(track.path).toString(),
+          'playing': false,
+          'playWhenReady': false,
+          'processingState': 'ready',
+          'positionMs': 0,
+          'bufferedPositionMs': 0,
+          'durationMs': 1000,
+          'volume': 1.0,
+          'channelSwap': false,
+        },
+      });
+      await runtimeGraph.playback.pendingSessionPreparation;
+
+      expect(session.playbackRequested, isFalse);
+      expect(playCalls, 0);
     });
 
     test('toggling play-pause with unknown id does not throw', () {
@@ -335,15 +394,6 @@ void main() {
 
       await runtimeGraph.playback.spawnSession(firstTrack, autoPlay: false);
       await runtimeGraph.playback.spawnSession(secondTrack, autoPlay: false);
-      for (var i = 0; i < 100; i++) {
-        if (runtimeGraph.playback.activeSessions.length == 2 &&
-            runtimeGraph.playback.activeSessions.every(
-              (session) => session.loadedPath != null && !session.isLoading,
-            )) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-      }
       final firstSession = runtimeGraph.playback.activeSessions.firstWhere(
         (session) => PathMatcher.equalsNormalized(
           session.currentTrackPath,
@@ -364,10 +414,11 @@ void main() {
       final toggle = runtimeGraph.playback.toggleSessionPlayPause(
         secondSession.id,
       );
-      expect(firstSession.effectivePlaying, isFalse);
-      expect(secondSession.effectivePlaying, isTrue);
+      expect(firstSession.effectivePlaying, isTrue);
+      expect(secondSession.playbackRequested, isTrue);
       await toggle;
 
+      expect(firstSession.effectivePlaying, isFalse);
       expect(pauseCalls, 0);
       expect(playArguments?['exclusive'], isTrue);
       expect(playArguments?['transportCommandId'], isPositive);

@@ -570,6 +570,7 @@ class AsmrDownloadManager extends ChangeNotifier {
               final task = restored.task;
               _tasks[task.work.id] = task.copyWith(
                 status: AsmrDownloadTaskStatus.paused,
+                fileRetryAttempts: const <String, int>{},
                 message: 'paused',
               );
               _createdOutputPaths[task.work.id] = restored.createdOutputPaths;
@@ -708,6 +709,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       _queue.remove(workId);
       _tasks[workId] = task.copyWith(
         status: AsmrDownloadTaskStatus.paused,
+        fileRetryAttempts: const <String, int>{},
         message: 'paused',
       );
       _notifyTaskChanged();
@@ -727,6 +729,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       if (task == null) continue;
       _tasks[workId] = task.copyWith(
         status: AsmrDownloadTaskStatus.paused,
+        fileRetryAttempts: const <String, int>{},
         message: 'paused',
       );
     }
@@ -1123,6 +1126,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         failedFiles: failed,
         downloadedBytes: finalDownloadedBytes,
         fileDownloadedBytes: fileDownloadedBytes,
+        fileRetryAttempts: const <String, int>{},
         message: failed > 0 ? 'completed_with_failures' : 'completed',
       );
       if (failed == 0) {
@@ -1135,11 +1139,13 @@ class AsmrDownloadManager extends ChangeNotifier {
         if (_pauseRequested[workId] == true) {
           _tasks[workId] = currentTask.copyWith(
             status: AsmrDownloadTaskStatus.paused,
+            fileRetryAttempts: const <String, int>{},
             message: 'paused',
           );
         } else {
           _tasks[workId] = currentTask.copyWith(
             status: AsmrDownloadTaskStatus.failed,
+            fileRetryAttempts: const <String, int>{},
             message: 'cancelled',
           );
         }
@@ -1157,6 +1163,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       if (!_disposed && currentTask != null) {
         _tasks[workId] = currentTask.copyWith(
           status: AsmrDownloadTaskStatus.failed,
+          fileRetryAttempts: const <String, int>{},
           error: error.toString(),
           message: 'failed',
         );
@@ -2030,6 +2037,7 @@ class AsmrDownloadManager extends ChangeNotifier {
       if (task != null) {
         _tasks[workId] = task.copyWith(
           status: AsmrDownloadTaskStatus.paused,
+          fileRetryAttempts: const <String, int>{},
           message: 'paused',
         );
       }

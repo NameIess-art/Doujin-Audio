@@ -43,8 +43,10 @@ class _ActiveSessionCard extends ConsumerWidget {
             ) ??
             session;
         return (
-          playing: currentSession.effectivePlaying,
-          loading: currentSession.isPlaybackLoading,
+          playing: currentSession.playbackRequested,
+          loading:
+              currentSession.isPlaybackLoading &&
+              currentSession.playbackRequested,
           trackPath: currentSession.currentTrackPath,
           channelSwapEnabled: currentSession.channelSwapEnabled,
           audioEffects: currentSession.audioEffects,
@@ -238,6 +240,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                           session: session,
                           displayName: displayName,
                           playbackError: view.error,
+                          isLoading: view.loading,
                           useAsmrOneErrorText: hasAsmrOnePlaybackError,
                         ),
                         _ActiveSessionProgressStrip(
@@ -374,12 +377,14 @@ class _ActiveSessionTitleSubtitle extends ConsumerStatefulWidget {
     required this.session,
     required this.displayName,
     required this.playbackError,
+    required this.isLoading,
     required this.useAsmrOneErrorText,
   });
 
   final PlaybackSession session;
   final String displayName;
   final String? playbackError;
+  final bool isLoading;
   final bool useAsmrOneErrorText;
 
   @override
@@ -471,9 +476,7 @@ class _ActiveSessionTitleSubtitleState
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final secondaryText = widget.playbackError == null
-        ? (widget.session.isPlaybackLoading
-              ? i18n.tr('playback_loading')
-              : _subtitleText)
+        ? (widget.isLoading ? i18n.tr('playback_loading') : _subtitleText)
         : widget.useAsmrOneErrorText
         ? localizedPlaybackErrorText(
             i18n,

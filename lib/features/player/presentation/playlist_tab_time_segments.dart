@@ -25,7 +25,7 @@ class _TimeSegmentPanel extends StatefulWidget {
     this.onClose,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final List<TimeSegmentLabel> labels;
   final String? selectedId;

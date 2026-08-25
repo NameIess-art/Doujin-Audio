@@ -381,9 +381,9 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(asmrDownloadStateProvider).value;
+    final state = ref.watch(asmrDownloadTaskIdsProvider).value;
     final taskIds =
-        state?.taskIds ??
+        state ??
         ref.read(asmrDownloadManagerProvider)?.taskIds ??
         const <int>[];
     ref.watch(appLanguageStateProvider);

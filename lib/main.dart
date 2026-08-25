@@ -11,6 +11,7 @@ import 'app/localization/app_language_provider.dart';
 import 'app/application/app_bootstrap_controller.dart';
 import 'app/application/app_runtime_graph.dart';
 import 'app/state/app_runtime_providers.dart';
+import 'app/presentation/app_presentation_providers.dart';
 import 'app/presentation/app_bootstrap_host.dart';
 import 'app/presentation/app_error_view.dart';
 import 'app/presentation/app_orientation_controller.dart';

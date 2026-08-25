@@ -10,6 +10,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/core/app_language.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -23,6 +24,7 @@ import 'package:doujin_audio/features/data_support/application/data_backup_servi
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
+import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_view_models.dart';
@@ -88,7 +90,7 @@ void main() {
         : null;
     addTearDown(() async {
       for (final session in sessions) {
-        session.dispose();
+        await session.shutdown();
       }
       asmrController.dispose();
       await backupFixture?.dispose();
@@ -107,8 +109,8 @@ void main() {
           asmrLibraryControllerProvider.overrideWithValue(asmrController),
           mainOverlayUiProvider.overrideWithValue(
             const MainOverlayUiState(
-              overlaySessions: <PlaybackSession>[],
-              visibleSessions: <PlaybackSession>[],
+              overlaySessions: <PlaybackSessionSnapshot>[],
+              visibleSessions: <PlaybackSessionSnapshot>[],
               playingSessionCount: 0,
               activeSessionCount: 0,
               showPlaybackCard: false,

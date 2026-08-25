@@ -4,9 +4,10 @@ import '../../core/media/path_display.dart';
 import '../../core/media/path_matcher.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/playback_facade.dart';
+import '../../features/player/application/playback_track_resolver.dart';
 
 /// Coordinates path changes that affect both the library and active playback.
-final class AudioPathCoordinator {
+final class AudioPathCoordinator implements PlaybackTrackResolver {
   const AudioPathCoordinator({
     required LibraryFacade library,
     required PlaybackFacade playback,
@@ -35,6 +36,7 @@ final class AudioPathCoordinator {
     return null;
   }
 
+  @override
   MusicTrack? sessionTrackForPath(String sessionId, String trackPath) {
     final session = _playback.sessionById(sessionId);
     if (session == null) {

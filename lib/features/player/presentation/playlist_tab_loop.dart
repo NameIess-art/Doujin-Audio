@@ -3,7 +3,7 @@ part of 'playlist_tab.dart';
 class _ExpandableLoopOptions extends StatefulWidget {
   const _ExpandableLoopOptions({required this.session, required this.playback});
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
   @override
@@ -15,6 +15,8 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
   final LayerLink _anchorLink = LayerLink();
   OverlayEntry? _overlayEntry;
   late final AnimationController _expandController;
+  late SessionLoopMode _loopMode;
+  late SessionLoopMode _nonSingleLoopMode;
 
   bool get _expanded => _overlayEntry != null;
 
@@ -27,13 +29,13 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
   }
 
   SessionLoopMode get _effectiveNonSingleMode {
-    if (widget.session.loopMode == SessionLoopMode.single) {
-      return widget.session.nonSingleLoopMode;
+    if (_loopMode == SessionLoopMode.single) {
+      return _nonSingleLoopMode;
     }
-    return widget.session.loopMode;
+    return _loopMode;
   }
 
-  bool get _singleActive => widget.session.loopMode == SessionLoopMode.single;
+  bool get _singleActive => _loopMode == SessionLoopMode.single;
   bool get _shuffleActive => _isShuffle(_effectiveNonSingleMode);
   bool get _crossFolderActive => _isCross(_effectiveNonSingleMode);
 
@@ -74,11 +76,24 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
   @override
   void initState() {
     super.initState();
+    _loopMode = widget.session.loopMode;
+    _nonSingleLoopMode = widget.session.nonSingleLoopMode;
     _expandController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 360),
       reverseDuration: const Duration(milliseconds: 260),
     );
+  }
+
+  @override
+  void didUpdateWidget(covariant _ExpandableLoopOptions oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session.loopMode != widget.session.loopMode ||
+        oldWidget.session.nonSingleLoopMode !=
+            widget.session.nonSingleLoopMode) {
+      _loopMode = widget.session.loopMode;
+      _nonSingleLoopMode = widget.session.nonSingleLoopMode;
+    }
   }
 
   Future<void> _toggleExpanded() async {
@@ -121,26 +136,32 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
   }
 
   Future<void> _toggleSingleLoop() async {
+    if (_loopMode == SessionLoopMode.single) {
+      _loopMode = _nonSingleLoopMode;
+    } else {
+      _nonSingleLoopMode = _loopMode;
+      _loopMode = SessionLoopMode.single;
+    }
     await _refreshImmediately(
       widget.playback.toggleSessionSingleLoop(widget.session.id),
     );
   }
 
   Future<void> _toggleShuffleLoop() async {
-    final current = widget.session.loopMode == SessionLoopMode.single
-        ? widget.session.nonSingleLoopMode
-        : widget.session.loopMode;
+    final current = _effectiveNonSingleMode;
     final nextMode = current.nextOrderMode;
+    _loopMode = nextMode;
+    _nonSingleLoopMode = nextMode;
     await _refreshImmediately(
       widget.playback.setSessionLoopMode(widget.session.id, nextMode),
     );
   }
 
   Future<void> _toggleCrossFolderLoop() async {
-    final current = widget.session.loopMode == SessionLoopMode.single
-        ? widget.session.nonSingleLoopMode
-        : widget.session.loopMode;
+    final current = _effectiveNonSingleMode;
     final nextMode = current.toggledScopeMode;
+    _loopMode = nextMode;
+    _nonSingleLoopMode = nextMode;
     await _refreshImmediately(
       widget.playback.setSessionLoopMode(widget.session.id, nextMode),
     );

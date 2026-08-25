@@ -15,6 +15,18 @@ class PlaybackNotificationService {
 
   bool get enabled => _enabled;
 
+  Future<bool> areNotificationsEnabled() =>
+      _notificationsPlatformService.areNotificationsEnabled();
+
+  Future<bool> openNotificationSettings() =>
+      _notificationsPlatformService.openNotificationSettings();
+
+  Future<String?> consumePendingNotificationSessionId() =>
+      _notificationsPlatformService.consumePendingNotificationSessionId();
+
+  void setOpenSessionHandler(NotificationSessionHandler? handler) =>
+      _notificationsPlatformService.setOpenSessionHandler(handler);
+
   Future<void> setEnabled(bool enabled) async {
     if (_enabled == enabled) return;
     if (!enabled) {

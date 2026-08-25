@@ -75,6 +75,7 @@ class PlaybackSession {
   String? playbackError;
   PlayerState? previousStateBeforeLastStateEvent;
   bool isDisposed = false;
+  Future<void>? _shutdownFuture;
 
   Stream<PlayerState> get stateStream => _stateController.stream;
   Stream<Duration> get positionStream => _positionController.stream;
@@ -257,19 +258,37 @@ class PlaybackSession {
     _bufferedPositionController.add(Duration.zero);
   }
 
-  void dispose() {
-    if (isDisposed) return;
+  Future<void> shutdown() => _shutdownFuture ??= _shutdown();
+
+  Future<void> _shutdown() async {
     isDisposed = true;
     _loadingIndicatorTimer?.cancel();
     _loadingIndicatorTimer = null;
-    for (final subscription in subscriptions) {
-      subscription.cancel();
-    }
+    final subscriptionsToCancel = subscriptions.toList(growable: false);
     subscriptions.clear();
-    _stateController.close();
-    _positionController.close();
-    _durationController.close();
-    _bufferedPositionController.close();
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    Future<void> attempt(Future<void> Function() action) async {
+      try {
+        await action();
+      } catch (error, stackTrace) {
+        firstError ??= error;
+        firstStackTrace ??= stackTrace;
+      }
+    }
+
+    await Future.wait(
+      subscriptionsToCancel.map((subscription) => attempt(subscription.cancel)),
+    );
+    await Future.wait(<Future<void>>[
+      attempt(_stateController.close),
+      attempt(_positionController.close),
+      attempt(_durationController.close),
+      attempt(_bufferedPositionController.close),
+    ]);
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStackTrace!);
+    }
   }
 }
 

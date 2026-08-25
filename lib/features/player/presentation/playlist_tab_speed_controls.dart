@@ -7,7 +7,7 @@ class _SpeedWheelPage extends ConsumerStatefulWidget {
     required this.playback,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
   @override

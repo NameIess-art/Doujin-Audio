@@ -1,16 +1,23 @@
 part of 'main_screen.dart';
 
 extension _MainScreenNotifications on _MainScreenState {
+  PermissionStatusService get _permissionStatusService =>
+      ref.read(permissionStatusServiceProvider);
+
   Future<bool> _areNotificationsEnabled() async {
-    return _notificationsPlatformService.areNotificationsEnabled();
+    return _permissionStatusService.isGranted(
+      PermissionCapability.notifications,
+    );
   }
 
   Future<bool> _isIgnoringBatteryOptimizations() async {
-    return _powerPlatformService.isIgnoringBatteryOptimizations();
+    return _permissionStatusService.isGranted(
+      PermissionCapability.backgroundRun,
+    );
   }
 
   Future<void> _openBatteryOptimizationSettings() async {
-    await _powerPlatformService.openBatteryOptimizationSettings();
+    await _permissionStatusService.openBatteryOptimizationSettings();
   }
 
   Future<void> _maybePromptForBackgroundPlaybackReliability() async {
@@ -20,8 +27,8 @@ extension _MainScreenNotifications on _MainScreenState {
           _backgroundPlaybackPromptShownThisLaunch) {
         return;
       }
-      final diagnostics = await _powerPlatformService
-          .getBackgroundRunDiagnostics();
+      final diagnostics = await _permissionStatusService
+          .loadBackgroundRunDiagnostics();
       if (!mounted) return;
       final ignoringBatteryOptimizations =
           diagnostics?.batteryOptimizationExempt ??
@@ -58,11 +65,9 @@ extension _MainScreenNotifications on _MainScreenState {
   }
 
   Future<void> _openNotificationSettings() async {
-    final opened = await _notificationsPlatformService
-        .openNotificationSettings();
-    if (!opened && mounted && Platform.isAndroid) {
-      await openAppSettings();
-    }
+    await _permissionStatusService.openSettings(
+      PermissionCapability.notifications,
+    );
   }
 
   String _notificationPermissionTitle(AppLanguageProvider i18n) {
@@ -110,22 +115,16 @@ extension _MainScreenNotifications on _MainScreenState {
     var enabled = await _areNotificationsEnabled();
     if (enabled) return;
 
-    var status = await Permission.notification.status;
-    if (status.isGranted) {
-      await _promptOpenNotificationSettings();
+    final permissionGranted = await _permissionStatusService.request(
+      PermissionCapability.notifications,
+    );
+    if (!mounted) return;
+    enabled = await _areNotificationsEnabled();
+    if (!mounted) return;
+    if (permissionGranted && enabled) {
+      notifications.refreshState();
+      _showNotificationPermissionEnabledSnack();
       return;
-    }
-
-    if (status.isDenied) {
-      status = await Permission.notification.request();
-      if (!mounted) return;
-      enabled = await _areNotificationsEnabled();
-      if (!mounted) return;
-      if (status.isGranted && enabled) {
-        notifications.refreshState();
-        _showNotificationPermissionEnabledSnack();
-        return;
-      }
     }
 
     await _promptOpenNotificationSettings();
@@ -165,7 +164,8 @@ extension _MainScreenNotifications on _MainScreenState {
 
   Future<void> _consumePendingNotificationSession() async {
     if (!Platform.isAndroid || !mounted) return;
-    final sessionId = await _notificationsPlatformService
+    final sessionId = await ref
+        .read(notificationFacadeProvider)
         .consumePendingNotificationSessionId();
     if (!mounted || sessionId == null || sessionId.isEmpty) {
       return;
@@ -196,7 +196,7 @@ extension _MainScreenNotifications on _MainScreenState {
     final sessionId = _pendingNotificationSessionId;
     if (sessionId == null || sessionId.isEmpty) return;
     final playback = ref.read(playbackFacadeProvider);
-    if (playback.sessionById(sessionId) == null) {
+    if (!playback.hasSession(sessionId)) {
       _pendingNotificationSessionRetryCount++;
       final startedAt = _pendingNotificationSessionStartedAt;
       if (startedAt == null ||

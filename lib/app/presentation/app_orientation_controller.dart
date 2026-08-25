@@ -2,7 +2,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/logging/app_log_service.dart';
-import '../../core/platform/video_display_platform_service.dart';
+import '../../core/platform/video_display_platform_gateway.dart';
+import '../state/app_runtime_providers.dart';
 
 typedef PreferredOrientationsSetter =
     Future<void> Function(List<DeviceOrientation> orientations);
@@ -39,7 +40,9 @@ class AppOrientationPolicy {
 final appOrientationControllerProvider = Provider<AppOrientationController>((
   ref,
 ) {
-  return AppOrientationController(videoDisplay: VideoDisplayPlatformService());
+  return AppOrientationController(
+    videoDisplay: ref.watch(videoDisplayPlatformGatewayProvider),
+  );
 });
 
 class AppOrientationController {

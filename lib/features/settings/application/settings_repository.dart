@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-import '../../../app/application/audio_state_slice.dart';
+import '../../../core/state/audio_state_slice.dart';
 import '../../../core/app_language.dart';
 import '../../../core/media/card_info_field.dart';
 import '../../asmr/domain/asmr_download.dart';

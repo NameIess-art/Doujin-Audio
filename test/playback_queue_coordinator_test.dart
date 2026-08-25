@@ -364,6 +364,8 @@ void main() {
         final otherSession = runtimeGraph.playback.activeSessions.firstWhere(
           (session) => session.currentTrackPath == otherTrack.path,
         );
+        await runtimeGraph.playback.toggleSessionPlayPause(otherSession.id);
+        await runtimeGraph.playback.pendingSessionPreparation;
         final trackKey = timeSegments.trackKeyForTrack(loopTrack);
         final now = DateTime(2026, 6, 2);
         final label = TimeSegmentLabel(
@@ -604,6 +606,9 @@ void main() {
         ], autoPlay: false);
 
         final session = runtimeGraph.playback.activeSessions.single;
+        expect(preparedQueue, isNull);
+        await runtimeGraph.playback.toggleSessionPlayPause(session.id);
+        await runtimeGraph.playback.pendingSessionPreparation;
         final queueItems = preparedQueue!.cast<Map<Object?, Object?>>().toList(
           growable: false,
         );

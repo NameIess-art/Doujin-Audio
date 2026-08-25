@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../application/persisted_state_reloader.dart';
+import '../../core/persistence/persisted_state_reloader.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/platform/app_icon_platform_service.dart';
 import '../../core/ui/app_icon_color_group.dart';

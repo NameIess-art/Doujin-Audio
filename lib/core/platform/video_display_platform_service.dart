@@ -3,24 +3,7 @@ import 'package:flutter/services.dart';
 import '../errors/native_result.dart';
 import 'platform_channels.dart';
 import 'platform_method_client.dart';
-
-class PlatformBrightnessLease {
-  const PlatformBrightnessLease({
-    required this.token,
-    required this.brightness,
-  });
-
-  final String token;
-  final double brightness;
-}
-
-abstract interface class VideoDisplayPlatformGateway {
-  Future<NativeResult<PlatformBrightnessLease>> beginBrightnessControl();
-
-  Future<NativeResult<void>> setBrightness(String token, double brightness);
-
-  Future<NativeResult<void>> endBrightnessControl(String token);
-}
+import 'video_display_platform_gateway.dart';
 
 class VideoDisplayPlatformService implements VideoDisplayPlatformGateway {
   VideoDisplayPlatformService({MethodChannel? channel})

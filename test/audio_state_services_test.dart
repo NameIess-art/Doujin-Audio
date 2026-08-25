@@ -10,7 +10,7 @@ import 'package:doujin_audio/core/media/card_info_field.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
-import 'package:doujin_audio/app/application/audio_state_slice.dart';
+import 'package:doujin_audio/core/state/audio_state_slice.dart';
 import 'package:doujin_audio/features/library/application/library_service.dart';
 import 'package:doujin_audio/features/library/application/library_state_models.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
@@ -822,8 +822,8 @@ void main() {
         createdAt: DateTime(2026, 1, 2),
         state: PlayerState(false, ProcessingState.ready),
       );
-      addTearDown(first.dispose);
-      addTearDown(second.dispose);
+      addTearDown(first.shutdown);
+      addTearDown(second.shutdown);
 
       service.registerSession(first);
       service.registerSession(second);
@@ -854,8 +854,8 @@ void main() {
         createdAt: DateTime(2026, 1, 2),
         state: PlayerState(true, ProcessingState.ready),
       );
-      addTearDown(first.dispose);
-      addTearDown(second.dispose);
+      addTearDown(first.shutdown);
+      addTearDown(second.shutdown);
 
       service.sessions['s1'] = first;
       service.sessions['s2'] = second;
@@ -885,7 +885,7 @@ void main() {
         createdAt: DateTime(2026, 1, 3),
         state: PlayerState(true, ProcessingState.ready),
       );
-      addTearDown(session.dispose);
+      addTearDown(session.shutdown);
 
       service.syncSlice(
         activeSessions: [session],

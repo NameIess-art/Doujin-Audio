@@ -9,13 +9,14 @@ import 'package:path/path.dart' as path;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/library_like_cards.dart';
-import '../application/playback_session.dart';
+import '../application/playback_session_snapshot.dart';
 import '../../settings/application/settings_state.dart';
 import '../domain/audio_effects.dart';
 import '../../library/application/library_facade.dart';
@@ -48,7 +49,7 @@ class ActiveSessionCarousel extends ConsumerStatefulWidget {
     this.viewportFraction,
   });
 
-  final List<PlaybackSession>? sessions;
+  final List<PlaybackSessionSnapshot>? sessions;
   final AppLanguageProvider? i18n;
   final ValueChanged<String>? onOpenSession;
   final bool compactForFab;
@@ -124,7 +125,7 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final sessions =
         widget.sessions ??
         (ref.read(playbackStateProvider).value?.activeSessions ??
-            const <PlaybackSession>[]);
+            const <PlaybackSessionSnapshot>[]);
     final targetIndex = sessions.indexWhere((s) => s.id == sessionId);
     if (targetIndex < 0 || !_pageController.hasClients) return;
     _lastCarouselSnapSessionId = sessionId;
@@ -191,7 +192,10 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     );
   }
 
-  void _openSessionDetail(BuildContext context, PlaybackSession session) {
+  void _openSessionDetail(
+    BuildContext context,
+    PlaybackSessionSnapshot session,
+  ) {
     AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
     final onOpenSession = widget.onOpenSession;
     if (onOpenSession != null) {
@@ -231,14 +235,15 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
     final isBar = style == BottomNavigationStyle.bar;
 
     final library = ref.read(libraryFacadeProvider);
-    final List<PlaybackSession> sessions;
+    final List<PlaybackSessionSnapshot> sessions;
     final providedSessions = widget.sessions;
     if (providedSessions != null) {
       sessions = providedSessions;
     } else {
       sessions = ref.watch(
         playbackStateProvider.select(
-          (state) => state.value?.activeSessions ?? const <PlaybackSession>[],
+          (state) =>
+              state.value?.activeSessions ?? const <PlaybackSessionSnapshot>[],
         ),
       );
     }

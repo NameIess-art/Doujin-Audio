@@ -1151,8 +1151,8 @@ void main() {
         createdAt: DateTime(2026, 1, 2),
         state: PlayerState(false, ProcessingState.idle),
       );
-      addTearDown(first.dispose);
-      addTearDown(second.dispose);
+      addTearDown(first.shutdown);
+      addTearDown(second.shutdown);
 
       final secondStates = <PlayerState>[];
       second.stateStream.listen(secondStates.add);
@@ -1192,7 +1192,7 @@ void main() {
         createdAt: DateTime(2026),
         state: PlayerState(false, ProcessingState.idle),
       );
-      addTearDown(session.dispose);
+      addTearDown(session.shutdown);
 
       final states = <PlayerState>[];
       session.stateStream.listen(states.add);

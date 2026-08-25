@@ -3,7 +3,7 @@ part of 'playlist_tab.dart';
 class _AudioFeaturesPage extends ConsumerWidget {
   const _AudioFeaturesPage({required this.session, required this.playback});
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
   @override
@@ -135,7 +135,7 @@ class _FeatureSwitchTile extends StatelessWidget {
 class _VolumeBalancePage extends ConsumerWidget {
   const _VolumeBalancePage({required this.session, required this.playback});
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
   @override
@@ -245,7 +245,7 @@ class _VolumeBalancePage extends ConsumerWidget {
 class _EqualizerPage extends ConsumerWidget {
   const _EqualizerPage({required this.session, required this.playback});
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
   @override
@@ -418,7 +418,7 @@ class _EqualizerPage extends ConsumerWidget {
   Future<void> _showSavePresetDialog(
     BuildContext context, {
     required SettingsCommandController commands,
-    required PlaybackSession session,
+    required PlaybackSessionSnapshot session,
   }) async {
     final i18n = ProviderScope.containerOf(
       context,
@@ -458,7 +458,7 @@ class _EqualizerPage extends ConsumerWidget {
     );
     controller.dispose();
     if (name == null || name.trim().isEmpty) return;
-    unawaited(commands.saveCustomEqPreset(name, session));
+    unawaited(commands.saveCustomEqPreset(name, session.id));
   }
 }
 

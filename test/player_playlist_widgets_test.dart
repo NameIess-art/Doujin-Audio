@@ -10,10 +10,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
+import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/presentation/active_session_carousel.dart';
 import 'package:doujin_audio/features/player/presentation/session_video_viewport.dart';
@@ -241,7 +243,7 @@ void main() {
         state: PlayerState(false, ProcessingState.ready),
         customQueueTracks: <MusicTrack>[track],
       );
-      addTearDown(session.dispose);
+      addTearDown(session.shutdown);
       fixture.playbackService.registerSession(session);
       fixture.playbackService.syncSlice(
         activeSessions: <PlaybackSession>[session],
@@ -255,7 +257,9 @@ void main() {
       await tester.pumpWidget(
         fixture.build(
           ActiveSessionCarousel(
-            sessions: <PlaybackSession>[session],
+            sessions: <PlaybackSessionSnapshot>[
+              PlaybackSessionSnapshot.fromRuntime(session),
+            ],
             onOpenSession: (_) {},
           ),
         ),
@@ -453,8 +457,8 @@ void main() {
     expect(container.read(isTrackActiveProvider('/tracks/other.mp3')), isFalse);
 
     container.dispose();
-    active.dispose();
-    empty.dispose();
+    await active.shutdown();
+    await empty.shutdown();
     fixture.dispose();
     await tester.pump();
   });
@@ -504,7 +508,7 @@ void main() {
         isInitialized: true,
       );
       for (final s in sessions) {
-        addTearDown(s.dispose);
+        addTearDown(s.shutdown);
       }
 
       fixture.runtimeGraph.warmup.scheduleSessionDetailCovers(
@@ -557,7 +561,7 @@ void main() {
           fixture.runtimeGraph.playback.createTrackSession(track),
       ];
       for (final s in sessions) {
-        addTearDown(s.dispose);
+        addTearDown(s.shutdown);
       }
       final subtitleLoads = <String>[];
       final firstSubtitle = SubtitleTrack(
@@ -873,7 +877,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     )..audioEffects = AudioEffectsState.flat.copyWith(panning: 0.6);
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
     runtimeGraph.library.addTracks(
       <MusicTrack>[track],
       notify: false,
@@ -1069,8 +1073,8 @@ void main() {
       createdAt: DateTime(2026, 1, 2),
       state: PlayerState(false, ProcessingState.ready),
     );
-    addTearDown(workSession.dispose);
-    addTearDown(singleSession.dispose);
+    addTearDown(workSession.shutdown);
+    addTearDown(singleSession.shutdown);
     runtimeGraph.library.addTracks([workTrack, singleTrack], persist: false);
     playbackService.registerSession(workSession);
     playbackService.registerSession(singleSession);
@@ -1572,11 +1576,11 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     );
-    addTearDown(sourceSession.dispose);
+    addTearDown(sourceSession.shutdown);
     final queueSession = fixture.runtimeGraph.playback.createPlaybackQueue(
       'Queue',
     );
-    addTearDown(queueSession.dispose);
+    addTearDown(queueSession.shutdown);
     fixture.playbackService.registerSession(sourceSession);
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[sourceSession, queueSession],
@@ -1667,7 +1671,7 @@ void main() {
       loopMode: SessionLoopMode.single,
       customQueueTracks: <MusicTrack>[track],
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
@@ -1765,7 +1769,7 @@ void main() {
       track,
       customQueueTracks: <MusicTrack>[track],
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[session],
       playingSessionCount: 0,
@@ -1893,8 +1897,8 @@ void main() {
           )
           ..isLoading = true
           ..isPlaybackStarting = true;
-    addTearDown(trackSession.dispose);
-    addTearDown(queueSession.dispose);
+    addTearDown(trackSession.shutdown);
+    addTearDown(queueSession.shutdown);
     fixture.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[trackSession, queueSession],
       playingSessionCount: 2,
@@ -1953,7 +1957,7 @@ void main() {
         persist: false,
       );
       final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
-      addTearDown(queueSession.dispose);
+      addTearDown(queueSession.shutdown);
       queueSession
         ..currentTrackPath = track.path
         ..currentQueueIndex = 0

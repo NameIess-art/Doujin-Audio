@@ -111,7 +111,7 @@ List<Widget> _buildSettingsPlaybackSection({
                 if (!value) {
                   final activeSessions =
                       ref.read(playbackStateProvider).value?.activeSessions ??
-                      ref.read(playbackFacadeProvider).activeSessions;
+                      ref.read(playbackFacadeProvider).state.activeSessions;
                   final activeSessionIds = activeSessions.map(
                     (session) => session.id,
                   );

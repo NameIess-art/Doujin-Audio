@@ -6,7 +6,7 @@ const int _maxSessionVolumePercent = 200;
 class _SessionVolumeButton extends StatefulWidget {
   const _SessionVolumeButton({required this.session, required this.playback});
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
   @override
@@ -184,7 +184,7 @@ class _VerticalVolumeSlider extends StatefulWidget {
     required this.onClose,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final VoidCallback onClose;
 

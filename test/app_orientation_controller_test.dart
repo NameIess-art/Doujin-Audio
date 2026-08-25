@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/presentation/app_orientation_controller.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
-import 'package:doujin_audio/core/platform/video_display_platform_service.dart';
+import 'package:doujin_audio/core/platform/video_display_platform_gateway.dart';
 
 void main() {
   test(

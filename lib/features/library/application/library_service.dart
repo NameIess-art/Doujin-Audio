@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
-import '../../../app/application/audio_state_slice.dart';
+import '../../../core/state/audio_state_slice.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/path_display.dart';

@@ -4,18 +4,19 @@ import '../../../core/media/natural_sort.dart';
 import '../../../core/media/music_track.dart';
 import '../../library/application/library_facade.dart';
 import '../../settings/application/settings_state.dart';
-import '../application/playback_session.dart';
+import '../application/playback_session_snapshot.dart';
 
-List<PlaybackSession> sortPlaylistSessions({
-  required List<PlaybackSession> sessions,
+List<PlaybackSessionSnapshot> sortPlaylistSessions({
+  required List<PlaybackSessionSnapshot> sessions,
   required PlaylistSortCriterion criterion,
   required bool ascending,
   required bool groupByLibrary,
   required LibraryFacade library,
-  required MusicTrack? Function(PlaybackSession session) trackForSession,
+  required MusicTrack? Function(PlaybackSessionSnapshot session)
+  trackForSession,
 }) {
   if (sessions.length < 2) return sessions;
-  final sorted = List<PlaybackSession>.of(sessions);
+  final sorted = List<PlaybackSessionSnapshot>.of(sessions);
   sorted.sort((left, right) {
     final leftValue = _playlistSortValue(left, library, trackForSession);
     final rightValue = _playlistSortValue(right, library, trackForSession);
@@ -38,7 +39,7 @@ List<PlaybackSession> sortPlaylistSessions({
     if (nameResult != 0) return nameResult;
     return compareNatural(left.id, right.id, caseSensitive: true);
   });
-  return List<PlaybackSession>.unmodifiable(sorted);
+  return List<PlaybackSessionSnapshot>.unmodifiable(sorted);
 }
 
 class PlaylistSortValue {
@@ -58,9 +59,9 @@ class PlaylistSortValue {
 }
 
 PlaylistSortValue _playlistSortValue(
-  PlaybackSession session,
+  PlaybackSessionSnapshot session,
   LibraryFacade library,
-  MusicTrack? Function(PlaybackSession session) trackForSession,
+  MusicTrack? Function(PlaybackSessionSnapshot session) trackForSession,
 ) {
   final queue = session.playbackQueue;
   final currentTrack = trackForSession(session);

@@ -7,6 +7,7 @@ import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
+import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/app/presentation/screen_view_models.dart';
 import 'package:doujin_audio/features/player/application/audio_state_services.dart';
 
@@ -47,6 +48,9 @@ void main() {
       state: PlayerState(playing, ProcessingState.ready),
     );
   }
+
+  PlaybackSessionSnapshot snapshot(PlaybackSession value) =>
+      PlaybackSessionSnapshot.fromRuntime(value);
 
   test(
     'library search index caches by revision and reuses matching folder nodes',
@@ -239,27 +243,29 @@ void main() {
     'playlist structure ignores card-only state but tracks path changes',
     () {
       final playbackSession = session(id: 'structure', path: '/tracks/a.mp3');
-      addTearDown(playbackSession.dispose);
+      addTearDown(playbackSession.shutdown);
 
       final pausedStructure = playlistStructureStateFromPlaybackState(
         PlaybackStateSliceData(
-          activeSessions: [playbackSession],
-          sessionStateVersion: 1,
+          activeSessions: [snapshot(playbackSession)],
           isInitialized: true,
         ),
       );
-      final pausedCard = playlistSessionCardStateFromSession(playbackSession);
+      final pausedCard = playlistSessionCardStateFromSession(
+        snapshot(playbackSession),
+      );
 
       playbackSession.state = PlayerState(true, ProcessingState.ready);
       final playingStructure = playlistStructureStateFromPlaybackState(
         PlaybackStateSliceData(
-          activeSessions: [playbackSession],
+          activeSessions: [snapshot(playbackSession)],
           playingSessionCount: 1,
-          sessionStateVersion: 2,
           isInitialized: true,
         ),
       );
-      final playingCard = playlistSessionCardStateFromSession(playbackSession);
+      final playingCard = playlistSessionCardStateFromSession(
+        snapshot(playbackSession),
+      );
 
       expect(playingStructure, pausedStructure);
       expect(playingCard, isNot(pausedCard));
@@ -267,8 +273,7 @@ void main() {
       playbackSession.currentTrackPath = '/tracks/b.mp3';
       final nextTrackStructure = playlistStructureStateFromPlaybackState(
         PlaybackStateSliceData(
-          activeSessions: [playbackSession],
-          sessionStateVersion: 3,
+          activeSessions: [snapshot(playbackSession)],
           isInitialized: true,
         ),
       );
@@ -310,18 +315,18 @@ void main() {
       path: '/tracks/b.mp3',
       playing: true,
     );
-    addTearDown(paused.dispose);
-    addTearDown(playing.dispose);
+    addTearDown(paused.shutdown);
+    addTearDown(playing.shutdown);
 
     final singlePlaybackOverlay = overlaySessionsFromPlaybackState(
       PlaybackStateSliceData(
-        activeSessions: [paused, playing],
+        activeSessions: [snapshot(paused), snapshot(playing)],
         playingSessionCount: 1,
       ),
     );
     final multiPlaybackOverlay = overlaySessionsFromPlaybackState(
       PlaybackStateSliceData(
-        activeSessions: [paused, playing],
+        activeSessions: [snapshot(paused), snapshot(playing)],
         playingSessionCount: 1,
         multiThreadPlaybackEnabled: true,
       ),
@@ -344,10 +349,10 @@ void main() {
       playing: true,
       loopMode: SessionLoopMode.folderSequential,
     );
-    addTearDown(detailSession.dispose);
+    addTearDown(detailSession.shutdown);
 
     final detailState = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [detailSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
       'detail',
     );
 
@@ -358,10 +363,10 @@ void main() {
 
   test('session detail loading follows the current playback intent', () {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
-    addTearDown(detailSession.dispose);
+    addTearDown(detailSession.shutdown);
 
     SessionDetailViewState? view() => sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [detailSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
       'detail',
     );
 
@@ -391,10 +396,10 @@ void main() {
       path: '/tracks/detail.mp3',
       playing: true,
     )..setOptimisticDuration(const Duration(minutes: 5));
-    addTearDown(detailSession.dispose);
+    addTearDown(detailSession.shutdown);
 
     final originalView = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [detailSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
       'detail',
     );
     detailSession
@@ -403,7 +408,7 @@ void main() {
       ..setOptimisticDuration(const Duration(minutes: 6));
 
     final updatedView = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [detailSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
       'detail',
     );
     expect(updatedView, originalView);
@@ -422,11 +427,11 @@ void main() {
         path: '/tracks/other.mp3',
         playing: true,
       )..setOptimisticDuration(const Duration(minutes: 3));
-      addTearDown(detailSession.dispose);
-      addTearDown(otherSession.dispose);
+      addTearDown(detailSession.shutdown);
+      addTearDown(otherSession.shutdown);
 
       final originalState = PlaybackStateSliceData(
-        activeSessions: [detailSession, otherSession],
+        activeSessions: [snapshot(detailSession), snapshot(otherSession)],
         coverGeneration: 1,
       );
       final originalView = sessionDetailViewStateFromPlaybackState(
@@ -439,7 +444,7 @@ void main() {
         ..setOptimisticDuration(const Duration(minutes: 4));
 
       final updatedState = PlaybackStateSliceData(
-        activeSessions: [detailSession, otherSession],
+        activeSessions: [snapshot(detailSession), snapshot(otherSession)],
         coverGeneration: 1,
       );
       final updatedView = sessionDetailViewStateFromPlaybackState(
@@ -454,14 +459,14 @@ void main() {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3')
       ..loadedPath = '/tracks/detail.mp3'
       ..beginTransportCommand(commandId: 1, playing: true);
-    addTearDown(detailSession.dispose);
+    addTearDown(detailSession.shutdown);
 
     final detailState = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [detailSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
       'detail',
     );
     final cardState = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [detailSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
     )['detail'];
 
     expect(detailState?.isPlaying, isTrue);
@@ -474,7 +479,7 @@ void main() {
       ..isLoading = false
       ..state = PlayerState(false, ProcessingState.buffering);
     final loadingState = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [detailSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
       'detail',
     );
     expect(loadingState?.isLoading, isFalse);
@@ -482,10 +487,10 @@ void main() {
 
   test('session detail view state tracks console control inputs', () {
     final detailSession = session(id: 'detail', path: '/tracks/detail.mp3');
-    addTearDown(detailSession.dispose);
+    addTearDown(detailSession.shutdown);
 
     final original = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [detailSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
       'detail',
     );
     detailSession
@@ -504,7 +509,7 @@ void main() {
         bands: <EqBandInfo>[const EqBandInfo(frequencyHz: 1000)],
       );
     final updated = sessionDetailViewStateFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [detailSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(detailSession)]),
       'detail',
     );
 
@@ -524,16 +529,16 @@ void main() {
         name: 'Queue',
         entries: <PlaybackQueueEntry>[],
       );
-    addTearDown(queueSession.dispose);
+    addTearDown(queueSession.shutdown);
 
     final original = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [queueSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(queueSession)]),
     )['queue'];
     queueSession.playbackQueue = queueSession.playbackQueue?.copyWith(
       colorValue: 0xFF336699,
     );
     final updated = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [queueSession]),
+      PlaybackStateSliceData(activeSessions: [snapshot(queueSession)]),
     )['queue'];
 
     expect(queueSession.effectivePlaying, isFalse);
@@ -548,19 +553,25 @@ void main() {
       playing: true,
     );
     final other = session(id: 'other', path: '/tracks/other.mp3');
-    addTearDown(focused.dispose);
-    addTearDown(other.dispose);
+    addTearDown(focused.shutdown);
+    addTearDown(other.shutdown);
 
     final original = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [focused, other]),
+      PlaybackStateSliceData(
+        activeSessions: [snapshot(focused), snapshot(other)],
+      ),
     )['focused'];
     other.volume = 0.25;
     final unchanged = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [focused, other]),
+      PlaybackStateSliceData(
+        activeSessions: [snapshot(focused), snapshot(other)],
+      ),
     )['focused'];
     focused.loopMode = SessionLoopMode.folderSequential;
     final changed = playlistSessionCardStatesFromPlaybackState(
-      PlaybackStateSliceData(activeSessions: [focused, other]),
+      PlaybackStateSliceData(
+        activeSessions: [snapshot(focused), snapshot(other)],
+      ),
     )['focused'];
 
     expect(unchanged, original);

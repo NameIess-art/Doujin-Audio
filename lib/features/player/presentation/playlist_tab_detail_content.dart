@@ -16,7 +16,7 @@ class _SessionDetailContent extends ConsumerStatefulWidget {
     this.onShowAudioDetail,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final Widget artworkWidget;
   final ValueNotifier<bool>? segmentPanelExpandedNotifier;
   final bool isLandscape;
@@ -638,7 +638,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
 
   Widget _buildSegmentPanel({
     required PlaybackFacade playback,
-    required PlaybackSession session,
+    required PlaybackSessionSnapshot session,
     required Key key,
   }) {
     return _TimeSegmentPanel(

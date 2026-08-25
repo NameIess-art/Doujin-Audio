@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../domain/audio_effects.dart';
 import '../domain/playback_mode.dart';
-import '../application/playback_session.dart';
+import '../application/playback_session_snapshot.dart';
 import '../application/audio_state_services.dart';
 
 @immutable
@@ -59,7 +59,7 @@ class PlaylistListState {
     required this.isInitialized,
   });
 
-  final List<PlaybackSession> sessions;
+  final List<PlaybackSessionSnapshot> sessions;
   final Map<String, PlaylistSessionCardState> cardStates;
   final int coverGeneration;
   final bool isInitialized;
@@ -100,7 +100,7 @@ class PlaylistStructureEntry {
     required this.queueContentSignature,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final String sessionId;
   final String trackPath;
   final bool isPlaybackQueue;
@@ -166,8 +166,8 @@ class MainOverlayUiState {
     required this.startupReady,
   });
 
-  final List<PlaybackSession> overlaySessions;
-  final List<PlaybackSession> visibleSessions;
+  final List<PlaybackSessionSnapshot> overlaySessions;
+  final List<PlaybackSessionSnapshot> visibleSessions;
   final int playingSessionCount;
   final int activeSessionCount;
   final bool showPlaybackCard;
@@ -411,7 +411,7 @@ PlaylistHeaderState playlistHeaderStateFromSlices(
   );
 }
 
-List<PlaybackSession> overlaySessionsFromPlaybackState(
+List<PlaybackSessionSnapshot> overlaySessionsFromPlaybackState(
   PlaybackStateSliceData playbackState,
 ) {
   return playbackState.activeSessions
@@ -463,7 +463,7 @@ playlistSessionCardStatesFromPlaybackState(
 }
 
 PlaylistSessionCardState playlistSessionCardStateFromSession(
-  PlaybackSession session,
+  PlaybackSessionSnapshot session,
 ) {
   return PlaylistSessionCardState(
     sessionId: session.id,
@@ -514,7 +514,9 @@ PlaylistStructureState playlistStructureStateFromListState(
   );
 }
 
-PlaylistStructureEntry _playlistStructureEntry(PlaybackSession session) {
+PlaylistStructureEntry _playlistStructureEntry(
+  PlaybackSessionSnapshot session,
+) {
   return PlaylistStructureEntry(
     session: session,
     sessionId: session.id,
@@ -525,7 +527,7 @@ PlaylistStructureEntry _playlistStructureEntry(PlaybackSession session) {
   );
 }
 
-int? _playlistQueueContentSignature(PlaybackSession session) {
+int? _playlistQueueContentSignature(PlaybackSessionSnapshot session) {
   final queue = session.playbackQueue;
   if (queue == null) return null;
   return Object.hash(

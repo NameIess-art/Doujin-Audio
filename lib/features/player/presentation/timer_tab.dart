@@ -12,8 +12,7 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../application/audio_state_services.dart';
 import '../application/timer_facade.dart';
 import '../domain/playback_mode.dart';
-import '../../../core/platform/notifications_platform_service.dart';
-import '../../../core/platform/power_platform_service.dart';
+import '../../settings/application/permission_status_service.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../application/timer_runtime_calculator.dart';
 import '../../../core/ui/ui_operation_service.dart';
@@ -49,9 +48,6 @@ class _TimerTabState extends ConsumerState<TimerTab>
     with WidgetsBindingObserver {
   static const TimerRuntimeCalculator _timerRuntimeCalculator =
       TimerRuntimeCalculator();
-  final PowerPlatformService _powerPlatformService = PowerPlatformService();
-  final NotificationsPlatformService _notificationsPlatformService =
-      NotificationsPlatformService();
   int _hours = 0;
   int _minutes = 30;
   int _seconds = 0;
@@ -103,6 +99,9 @@ class _TimerTabState extends ConsumerState<TimerTab>
       Duration(hours: _hours, minutes: _minutes, seconds: _seconds);
 
   bool get _durationIsZero => _pickedDuration == Duration.zero;
+
+  PermissionStatusService get _permissionStatusService =>
+      ref.read(permissionStatusServiceProvider);
 
   String _draftKey(TimerMode mode, Duration duration) =>
       '${mode.index}:${duration.inSeconds}';
@@ -164,29 +163,38 @@ class _TimerTabState extends ConsumerState<TimerTab>
   }
 
   Future<bool> _canScheduleExactAlarms() async {
-    return _powerPlatformService.canScheduleExactAlarms();
+    return _permissionStatusService.isGranted(PermissionCapability.exactAlarms);
   }
 
   Future<bool> _isIgnoringBatteryOptimizations() async {
-    return _powerPlatformService.isIgnoringBatteryOptimizations(
+    return _permissionStatusService.isGranted(
+      PermissionCapability.backgroundRun,
       errorDefault: true,
     );
   }
 
   Future<bool> _areNotificationsEnabled() async {
-    return _notificationsPlatformService.areNotificationsEnabled();
+    return _permissionStatusService.isGranted(
+      PermissionCapability.notifications,
+    );
   }
 
   Future<void> _openExactAlarmSettings() async {
-    await _powerPlatformService.openExactAlarmSettings();
+    await _permissionStatusService.openSettings(
+      PermissionCapability.exactAlarms,
+    );
   }
 
   Future<void> _openBackgroundRunSettings() async {
-    await _powerPlatformService.openBackgroundRunSettings();
+    await _permissionStatusService.openSettings(
+      PermissionCapability.backgroundRun,
+    );
   }
 
   Future<void> _openNotificationSettings() async {
-    await _notificationsPlatformService.openNotificationSettings();
+    await _permissionStatusService.openSettings(
+      PermissionCapability.notifications,
+    );
   }
 
   Future<_TimerReliabilityStatus> _loadReliabilityStatus() async {

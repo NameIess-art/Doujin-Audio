@@ -4,7 +4,7 @@ import '../../core/ui/warmup_scheduler.dart';
 import '../../features/library/application/library_facade.dart';
 import '../../features/player/application/notification_facade.dart';
 import '../../features/player/application/playback_facade.dart';
-import '../../features/player/application/playback_session.dart';
+import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 
 final class AudioUiWarmupCoordinator {
@@ -167,7 +167,15 @@ final class AudioUiWarmupCoordinator {
     final sessions = _playback.state.activeSessions;
     if (sessions.isEmpty) return;
     final focusedId = _notifications.state.focusedSessionId;
-    final focused = focusedId == null ? null : _playback.sessionById(focusedId);
+    PlaybackSessionSnapshot? focused;
+    if (focusedId != null) {
+      for (final candidate in sessions) {
+        if (candidate.id == focusedId) {
+          focused = candidate;
+          break;
+        }
+      }
+    }
     final session =
         focused ??
         sessions.firstWhere(
@@ -183,7 +191,7 @@ final class AudioUiWarmupCoordinator {
   }
 
   void _scheduleNeighborSessionCovers(
-    List<PlaybackSession> sessions,
+    List<PlaybackSessionSnapshot> sessions,
     String currentSessionId,
     int generation, {
     int priorityOffset = 0,

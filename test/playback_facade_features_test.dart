@@ -1300,7 +1300,7 @@ void main() {
         notify: false,
         persist: false,
       );
-      await runtimeGraph.playback.spawnSession(track, autoPlay: false);
+      await runtimeGraph.playback.spawnSession(track, autoPlay: true);
 
       for (var i = 0; i < 20 && prepareArguments == null; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -1313,6 +1313,32 @@ void main() {
         (queue!.first as Map<Object?, Object?>)['artUri'],
         track.remoteCoverUrl,
       );
+    });
+
+    test('defers native preparation for a paused session', () async {
+      var prepareCallCount = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            if (call.method == NativePlaybackMethod.prepareSession) {
+              prepareCallCount++;
+            }
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+
+      await runtimeGraph.playback.spawnSession(
+        MusicTrack(
+          path: '/music/lazy-session.mp3',
+          displayName: 'Lazy Session',
+          groupKey: '/music',
+          groupTitle: 'Music',
+          groupSubtitle: '',
+          isSingle: true,
+        ),
+        autoPlay: false,
+      );
+      await runtimeGraph.playback.pendingSessionPreparation;
+
+      expect(prepareCallCount, 0);
     });
 
     test('dismissing active playback keeps session playing', () async {

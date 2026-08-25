@@ -22,7 +22,7 @@ class _ProgressBar extends StatelessWidget {
     this.onManualSeek,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final AudioPathCoordinator paths;
   final List<TimeSegmentLabel> timeSegmentLabels;
@@ -66,7 +66,7 @@ class _ProgressSliderAndTimecodes extends StatefulWidget {
     required this.onManualSeek,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final Color primaryColor;
   final Widget staticLayer;
@@ -533,7 +533,7 @@ class _ProgressBarStaticLayer extends StatelessWidget {
     required this.colorScheme,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final List<TimeSegmentLabel> labels;
   final String? selectedSegmentId;
   final ColorScheme colorScheme;
@@ -754,7 +754,7 @@ class _TimeSegmentDragTooltip extends StatelessWidget {
 class _SessionSubtitlePanel extends ConsumerStatefulWidget {
   const _SessionSubtitlePanel({required this.session});
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
 
   @override
   ConsumerState<_SessionSubtitlePanel> createState() =>

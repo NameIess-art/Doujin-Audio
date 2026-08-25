@@ -21,7 +21,7 @@ class _TransportPlaybackControlPanel extends ConsumerWidget {
     this.onShowAudioDetail,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final AudioPathCoordinator paths;
   final bool hasSiblings;
@@ -79,7 +79,7 @@ class _PlaybackControlPanel extends StatelessWidget {
     this.onShowAudioDetail,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final AudioPathCoordinator paths;
   final bool showPauseIcon;
@@ -146,7 +146,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
     required this.isLoading,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final AudioPathCoordinator paths;
   final bool showPauseIcon;
@@ -318,7 +318,7 @@ class _PlaybackSecondaryControls extends StatelessWidget {
     this.onShowAudioDetail,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
   final bool hasSiblings;
   final bool segmentPanelExpanded;

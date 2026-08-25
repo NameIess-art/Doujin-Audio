@@ -14,7 +14,7 @@ class _PlaybackQueueCard extends ConsumerWidget {
     this.onToggleSelect,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final LibraryFacade library;
   final PlaybackFacade playback;
   final int? coverCacheWidth;
@@ -851,7 +851,7 @@ class _QueueSourceAudioTile extends ConsumerWidget {
     required this.source,
   });
   final String queueSessionId;
-  final PlaybackSession source;
+  final PlaybackSessionSnapshot source;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

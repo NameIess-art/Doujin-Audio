@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../core/logging/app_log_service.dart';
-import '../../../core/platform/permission_action_controller.dart';
+import '../../../core/ui/permission_action_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_buttons.dart';
 import '../../../core/widgets/app_dialog.dart';

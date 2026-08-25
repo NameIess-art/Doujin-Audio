@@ -1,18 +1,18 @@
 import 'dart:async';
 import 'dart:math';
 
-import '../../../app/application/audio_path_coordinator.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../domain/playback_persistence_repository.dart';
 import '../domain/time_segment_label.dart';
 import 'playback_facade.dart';
+import 'playback_track_resolver.dart';
 
 final class PlaybackTimeSegmentService {
   PlaybackTimeSegmentService({
     required PlaybackPersistenceRepository database,
     required PlaybackFacade playback,
-    required AudioPathCoordinator paths,
+    required PlaybackTrackResolver paths,
     DateTime Function()? now,
     Random? random,
   }) : _database = database,
@@ -25,7 +25,7 @@ final class PlaybackTimeSegmentService {
 
   final PlaybackPersistenceRepository _database;
   final PlaybackFacade _playback;
-  final AudioPathCoordinator _paths;
+  final PlaybackTrackResolver _paths;
   final DateTime Function() _now;
   final Random _random;
   final Map<String, _TimeSegmentLoopRuntime> _loops =

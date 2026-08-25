@@ -50,11 +50,12 @@ void main() {
               eqEnabled: true,
               eqBandLevels: <int, double>{60: 2.5, 1000: -1.5},
             );
-      addTearDown(session.dispose);
+      addTearDown(session.shutdown);
+      playback.registerSession(session);
 
       await controller.saveCustomEqPreset(
         '  Night voice  ',
-        session,
+        session.id,
         now: DateTime.fromMicrosecondsSinceEpoch(42),
       );
 

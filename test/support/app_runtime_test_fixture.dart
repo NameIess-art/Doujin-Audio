@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/application/app_runtime_graph.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:doujin_audio/core/persistence/app_database.dart';
 import 'package:doujin_audio/core/persistence/json_document_store.dart';

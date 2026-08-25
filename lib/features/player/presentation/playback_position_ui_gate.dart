@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
-import '../application/playback_session.dart';
+import '../application/playback_session_snapshot.dart';
 
 @immutable
 class PlaybackPositionUiSnapshot {
@@ -14,7 +14,9 @@ class PlaybackPositionUiSnapshot {
     required this.bufferedPosition,
   });
 
-  factory PlaybackPositionUiSnapshot.fromSession(PlaybackSession session) {
+  factory PlaybackPositionUiSnapshot.fromSession(
+    PlaybackSessionSnapshot session,
+  ) {
     return PlaybackPositionUiSnapshot(
       position: session.position,
       duration: session.duration,
@@ -56,7 +58,7 @@ const Object _durationUnchanged = Object();
 
 class PlaybackPositionUiGate extends ChangeNotifier {
   PlaybackPositionUiGate({
-    required PlaybackSession session,
+    required PlaybackSessionSnapshot session,
     UiInteractionCoordinator? interactionCoordinator,
     this.minUpdateInterval = const Duration(milliseconds: 32),
     this.deferDuringInteraction = true,
@@ -73,7 +75,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
   final Duration minUpdateInterval;
   final bool deferDuringInteraction;
   final bool includeBufferedPosition;
-  PlaybackSession _session;
+  PlaybackSessionSnapshot _session;
   PlaybackPositionUiSnapshot _value;
   StreamSubscription<Duration>? _positionSub;
   StreamSubscription<Duration?>? _durationSub;
@@ -97,7 +99,7 @@ class PlaybackPositionUiGate extends ChangeNotifier {
     }
   }
 
-  void updateSession(PlaybackSession session) {
+  void updateSession(PlaybackSessionSnapshot session) {
     if (identical(_session, session)) return;
     _sessionGeneration++;
     _throttleTimer?.cancel();

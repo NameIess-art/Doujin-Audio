@@ -14,17 +14,18 @@ import '../../../app/localization/app_language_provider.dart';
 import '../../../app/presentation/app_orientation_controller.dart';
 import '../../../app/application/audio_path_coordinator.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
 import '../application/playback_facade.dart';
 import '../../settings/application/settings_state.dart';
-import '../application/playback_session.dart';
+import '../application/playback_session_snapshot.dart';
 import '../application/subtitle_overlay_controller.dart';
 import '../application/playback_time_segment_service.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
-import '../../../core/platform/permission_action_controller.dart';
+import '../../../core/ui/permission_action_controller.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
@@ -468,7 +469,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     if (!multiThreadEnabled && _selectedSessionIds.length > 1) return;
 
     final playback = ref.read(playbackFacadeProvider);
-    unawaited(AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection));
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     final sessionIds = _selectedSessionIds.toList();
     for (final id in sessionIds) {
       final cardState = ref.read(playlistSessionCardStateProvider(id));
@@ -481,7 +484,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   Future<void> _handleBatchPause() async {
     if (_selectedSessionIds.isEmpty) return;
     final playback = ref.read(playbackFacadeProvider);
-    unawaited(AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection));
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     final sessionIds = _selectedSessionIds.toList();
     for (final id in sessionIds) {
       final cardState = ref.read(playlistSessionCardStateProvider(id));
@@ -494,7 +499,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   Future<void> _handleBatchRemove() async {
     if (_selectedSessionIds.isEmpty) return;
     final playback = ref.read(playbackFacadeProvider);
-    unawaited(AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection));
+    unawaited(
+      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    );
     final toRemove = _selectedSessionIds.toList();
     _exitSelectionMode();
     await playback.removeSessions(toRemove);
@@ -838,8 +845,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     : ref.read(playlistHeaderUiProvider);
                 final multiThreadEnabled = _readOrWatch(
                   settingsStateProvider.select(
-                    (state) =>
-                        state.value?.multiThreadPlaybackEnabled ?? false,
+                    (state) => state.value?.multiThreadPlaybackEnabled ?? false,
                   ),
                 );
 

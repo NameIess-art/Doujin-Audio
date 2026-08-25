@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
 
 void main() {
   final libDirectory = Directory('lib');
@@ -139,6 +140,73 @@ void main() {
     expect(violations, isEmpty, reason: violations.join('\n'));
   });
 
+  test('feature application code does not depend on app assembly', () {
+    final violations = <String>[];
+    for (final file in _dartFiles(libDirectory)) {
+      final filePath = _normalizedPath(file);
+      if (!filePath.contains('/features/') ||
+          !filePath.contains('/application/')) {
+        continue;
+      }
+      for (final import in _imports(file.readAsStringSync())) {
+        final resolved = _resolvedProjectImport(file, import);
+        if (resolved != null && resolved.startsWith('lib/app/')) {
+          violations.add('$filePath imports $import');
+        }
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
+  test('app state does not depend on presentation', () {
+    final violations = <String>[];
+    for (final file in _dartFiles(Directory('lib/app/state'))) {
+      final filePath = _normalizedPath(file);
+      for (final import in _imports(file.readAsStringSync())) {
+        final resolved = _resolvedProjectImport(file, import);
+        if (resolved != null && resolved.contains('/presentation/')) {
+          violations.add('$filePath imports $import');
+        }
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
+  test('presentation does not import platform service implementations', () {
+    final violations = <String>[];
+    for (final file in _dartFiles(libDirectory)) {
+      final filePath = _normalizedPath(file);
+      if (!filePath.contains('/presentation/')) continue;
+      for (final import in _imports(file.readAsStringSync())) {
+        final resolved = _resolvedProjectImport(file, import);
+        if (resolved != null &&
+            resolved.startsWith('lib/core/platform/') &&
+            resolved.endsWith('_service.dart')) {
+          violations.add('$filePath imports $import');
+        }
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
+  test('presentation does not import platform permission plugins', () {
+    final violations = <String>[];
+    for (final file in _dartFiles(libDirectory)) {
+      final filePath = _normalizedPath(file);
+      if (!filePath.contains('/presentation/')) continue;
+      for (final import in _imports(file.readAsStringSync())) {
+        if (import == 'package:permission_handler/permission_handler.dart') {
+          violations.add('$filePath imports $import');
+        }
+      }
+    }
+
+    expect(violations, isEmpty, reason: violations.join('\n'));
+  });
+
   test('production code does not silently swallow exceptions', () {
     final violations = <String>[];
     final emptyCatch = RegExp(r'catch\s*\([^)]*\)\s*\{\s*\}', multiLine: true);
@@ -198,4 +266,18 @@ Iterable<String> _imports(String content) sync* {
   for (final match in pattern.allMatches(content)) {
     yield match.group(1)!;
   }
+}
+
+String? _resolvedProjectImport(File source, String import) {
+  if (import.startsWith('dart:') ||
+      (import.startsWith('package:') &&
+          !import.startsWith('package:doujin_audio/'))) {
+    return null;
+  }
+  if (import.startsWith('package:doujin_audio/')) {
+    return 'lib/${import.substring('package:doujin_audio/'.length)}';
+  }
+  return path
+      .normalize(path.join(path.dirname(source.path), import))
+      .replaceAll('\\', '/');
 }

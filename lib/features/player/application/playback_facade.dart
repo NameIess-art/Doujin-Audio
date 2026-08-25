@@ -15,11 +15,17 @@ import '../domain/playback_mode.dart';
 import '../domain/playback_queue.dart';
 import '../domain/playback_persistence_repository.dart';
 import 'playback_session.dart';
+import 'playback_session_snapshot.dart';
 import 'audio_state_services.dart';
 import 'native_playback_repository.dart';
 import 'native_playback_bridge.dart';
 import 'playback_command_runner.dart';
 import 'playback_queue_resolver.dart';
+
+part 'playback_native_state_coordinator.dart';
+part 'playback_session_persistence_coordinator.dart';
+part 'playback_effects_coordinator.dart';
+part 'playback_queue_path_coordinator.dart';
 
 typedef PlaybackQueueSessionSynchronizer =
     Future<void> Function(PlaybackSession session, {bool selectFirst});
@@ -167,6 +173,14 @@ final class PlaybackFacade {
       UnmodifiableMapView<String, PlaybackSession>(_service.sessions);
   List<PlaybackSession> get activeSessions =>
       List<PlaybackSession>.unmodifiable(_service.activeSessions);
+  PlaybackSessionSnapshot? sessionSnapshotById(String sessionId) {
+    final runtime = _service.sessionById(sessionId);
+    return runtime == null
+        ? null
+        : PlaybackSessionSnapshot.fromRuntime(runtime);
+  }
+
+  bool hasSession(String sessionId) => _service.sessions.containsKey(sessionId);
   bool get hasPlayingSession =>
       _service.sessions.values.any((session) => session.state.playing);
   bool get hasPlaybackToKeepAlive => _service.sessions.values.any(
@@ -214,606 +228,12 @@ final class PlaybackFacade {
     return references;
   }
 
-  void updateNativeSessionRetainedContentUris(
-    String sessionId,
-    Iterable<String> retainedUris,
-  ) {
-    final next = retainedUris.where(PathMatcher.isContentUri).toSet();
-    final previous = _nativeRetainedContentUrisBySession[sessionId];
-    if (previous != null &&
-        previous.length == next.length &&
-        previous.containsAll(next)) {
-      return;
-    }
-    if (next.isEmpty) {
-      _nativeRetainedContentUrisBySession.remove(sessionId);
-    } else {
-      _nativeRetainedContentUrisBySession[sessionId] = Set.unmodifiable(next);
-    }
-    _nativePersistedUriReferenceRevision += 1;
-    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
-  }
-
-  void replaceNativeRetainedContentUris(
-    Iterable<NativePlaybackSnapshot> snapshots,
-  ) {
-    final next = <String, Set<String>>{
-      for (final snapshot in snapshots)
-        if (snapshot.retainedUris.where(PathMatcher.isContentUri).isNotEmpty)
-          snapshot.sessionId: snapshot.retainedUris
-              .where(PathMatcher.isContentUri)
-              .toSet(),
-    };
-    var changed =
-        !_nativeRetainedContentUriInventoryReady ||
-        next.length != _nativeRetainedContentUrisBySession.length;
-    if (!changed) {
-      for (final entry in next.entries) {
-        final previous = _nativeRetainedContentUrisBySession[entry.key];
-        if (previous == null ||
-            previous.length != entry.value.length ||
-            !previous.containsAll(entry.value)) {
-          changed = true;
-          break;
-        }
-      }
-    }
-    if (!changed) return;
-    _nativeRetainedContentUriInventoryReady = true;
-    _nativeRetainedContentUrisBySession
-      ..clear()
-      ..addAll(
-        next.map((key, value) => MapEntry(key, Set.unmodifiable(value))),
-      );
-    _nativePersistedUriReferenceRevision += 1;
-    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
-  }
-
-  Future<bool> refreshNativeRetainedContentUriInventory() async {
-    final response = await nativeRepository.snapshot();
-    final bundle = response.valueOrNull;
-    if (bundle == null) return false;
-    replaceNativeRetainedContentUris(bundle.sessions);
-    return true;
-  }
-
-  void _removeNativeRetainedContentUris(Iterable<String> sessionIds) {
-    var changed = false;
-    for (final sessionId in sessionIds) {
-      changed =
-          _nativeRetainedContentUrisBySession.remove(sessionId) != null ||
-          changed;
-    }
-    if (!changed) return;
-    _nativePersistedUriReferenceRevision += 1;
-    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
-  }
-
-  void forgetNativeSessionRetainedContentUris(String sessionId) {
-    _removeNativeRetainedContentUris(<String>[sessionId]);
-  }
-
-  void _clearNativeRetainedContentUris() {
-    final changed =
-        !_nativeRetainedContentUriInventoryReady ||
-        _nativeRetainedContentUrisBySession.isNotEmpty;
-    _nativeRetainedContentUriInventoryReady = true;
-    _nativeRetainedContentUrisBySession.clear();
-    if (!changed) return;
-    _nativePersistedUriReferenceRevision += 1;
-    _persistedUriReferenceRevisionController.add(persistedUriReferenceRevision);
-  }
-
-  Future<void> get pendingSessionPreparation =>
-      _service.sessionPreparationQueue;
-  bool get hasScheduledSessionStatePersistence =>
-      _service.saveSessionStateTimer != null;
-  bool get hasScheduledSessionOrderPersistence =>
-      _service.saveSessionOrderTimer != null;
-  PlaybackSession? sessionById(String sessionId) =>
-      _service.sessionById(sessionId);
-  List<PlaybackSession> get ordinarySessions => _service.activeSessions
-      .where((session) => !session.isPlaybackQueue)
-      .toList(growable: false);
-
-  int nextTransportCommandId() => ++_transportCommandSequence;
-
-  bool isRegisteredSession(PlaybackSession session) =>
-      !session.isDisposed && identical(_service.sessions[session.id], session);
-
-  void markSessionStateDirty() => _service.markActiveSessionsDirty();
-
-  void syncPresentationState({
-    required String? focusedSessionId,
-    required bool multiThreadPlaybackEnabled,
-    required int coverGeneration,
-    bool? isInitialized,
-  }) {
-    _service.markSessionStateDirty();
-    final current = _service.slice.state;
-    _service.syncSlice(
-      activeSessions: _service.activeSessions,
-      playingSessionCount: _service.playingSessionCount,
-      focusedSessionId: focusedSessionId,
-      multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
-      coverGeneration: coverGeneration,
-      isInitialized: isInitialized ?? current.isInitialized,
-    );
-  }
-
-  Future<void> removeSessionsForTrackPaths(Iterable<String> trackPaths) async {
-    final removedPaths = trackPaths.toSet();
-    final sessionIds = _service.sessions.values
-        .where((session) => removedPaths.contains(session.currentTrackPath))
-        .map((session) => session.id)
-        .toList(growable: false);
-    if (sessionIds.isEmpty) return;
-    await removeSessions(sessionIds, persist: false, notify: false);
-  }
-
-  void applyFadeMultiplierToPlayingSessions(double multiplier) {
-    for (final session in _service.sessions.values) {
-      if (!session.state.playing) continue;
-      unawaited(nativeRepository.setFadeMultiplier(session.id, multiplier));
-    }
-  }
-
-  void observeTransportCommandId(int? commandId) {
-    if (commandId != null && commandId > _transportCommandSequence) {
-      _transportCommandSequence = commandId;
-    }
-  }
-
-  void applyNativeProgress(NativePlaybackProgressUpdate progress) {
-    if (_service.sessions[progress.sessionId]?.pendingNativeTrackPath != null) {
-      return;
-    }
-    _service.applyNativeProgress(progress);
-  }
-
-  PlaybackNativeSnapshotApplication applyNativeSnapshot(
-    NativePlaybackSnapshot snapshot, {
-    required bool Function(String path) hasLibraryTrack,
-  }) {
-    observeTransportCommandId(snapshot.transportCommandId);
-    final normalized = _normalizeNativeSnapshot(
-      snapshot,
-      hasLibraryTrack: hasLibraryTrack,
-    );
-    final session = _service.sessions[normalized.sessionId];
-    if (session == null || session.pendingNativeTrackPath != null) {
-      return PlaybackNativeSnapshotApplication.notApplied(normalized);
-    }
-    final previousTrackPath = session.currentTrackPath;
-    final previousState = session.state;
-    final previousIsPlaybackStarting = session.isPlaybackStarting;
-    final previousPendingPlayingIntent = session.pendingPlayingIntent;
-    if (!_service.applyNativeSnapshot(normalized)) {
-      return PlaybackNativeSnapshotApplication.notApplied(normalized);
-    }
-    return PlaybackNativeSnapshotApplication(
-      snapshot: normalized,
-      session: session,
-      previousTrackPath: previousTrackPath,
-      trackChanged: session.currentTrackPath != previousTrackPath,
-      playbackIntentChanged:
-          session.state == previousState &&
-          (session.isPlaybackStarting != previousIsPlaybackStarting ||
-              session.pendingPlayingIntent != previousPendingPlayingIntent),
-    );
-  }
-
-  NativePlaybackSnapshot _normalizeNativeSnapshot(
-    NativePlaybackSnapshot snapshot, {
-    required bool Function(String path) hasLibraryTrack,
-  }) {
-    final rawPath = snapshot.path ?? _pathFromSnapshotUri(snapshot.uri);
-    if (rawPath == null || rawPath.isEmpty) return snapshot;
-    final resolvedPath = resolveRetargetedPath(rawPath);
-    final currentSession = _service.sessions[snapshot.sessionId];
-    final currentSessionPath = currentSession?.currentTrackPath;
-    if (currentSession != null &&
-        currentSessionPath != null &&
-        currentSessionPath.isNotEmpty &&
-        PathMatcher.equalsNormalized(resolvedPath, rawPath)) {
-      final originalTrack = _sessionTrackForResolvedPath(
-        currentSession,
-        resolvedPath,
-      );
-      if (originalTrack != null &&
-          PathMatcher.equalsNormalized(
-            resolveRetargetedPath(originalTrack.path),
-            resolvedPath,
-          )) {
-        return snapshot.copyWith(
-          path: originalTrack.path,
-          uri: _snapshotUriForPath(originalTrack.path),
-        );
-      }
-    }
-    if (!PathMatcher.equalsNormalized(resolvedPath, rawPath)) {
-      return snapshot.copyWith(
-        path: resolvedPath,
-        uri: _snapshotUriForPath(resolvedPath),
-      );
-    }
-    if (currentSessionPath == null || currentSessionPath.isEmpty) {
-      return snapshot;
-    }
-    final resolvedSessionPath = resolveRetargetedPath(currentSessionPath);
-    if (PathMatcher.equalsNormalized(resolvedSessionPath, resolvedPath) ||
-        hasLibraryTrack(resolvedPath) ||
-        !hasLibraryTrack(resolvedSessionPath)) {
-      return snapshot;
-    }
-    return snapshot.copyWith(
-      path: resolvedSessionPath,
-      uri: _snapshotUriForPath(resolvedSessionPath),
-    );
-  }
-
-  MusicTrack? _sessionTrackForResolvedPath(
-    PlaybackSession session,
-    String resolvedPath,
-  ) {
-    for (final track in session.customQueueTracks ?? const <MusicTrack>[]) {
-      if (PathMatcher.equalsNormalized(
-        resolveRetargetedPath(track.path),
-        resolvedPath,
-      )) {
-        return track;
-      }
-    }
-    return null;
-  }
-
-  String _snapshotUriForPath(String value) {
-    if (PathMatcher.isContentUri(value) || PathMatcher.isRemoteUri(value)) {
-      return value;
-    }
-    return Uri.file(value).toString();
-  }
-
-  String? _pathFromSnapshotUri(String? value) {
-    if (value == null || value.isEmpty) return null;
-    final uri = Uri.tryParse(value);
-    if (uri == null) return value;
-    if (uri.scheme == 'file') {
-      return uri.toFilePath();
-    }
-    if (uri.scheme == 'content' ||
-        uri.scheme == 'http' ||
-        uri.scheme == 'https') {
-      return value;
-    }
-    return null;
-  }
-
-  void publishSessionActivated(String sessionId) {
-    if (sessionId.isEmpty || _sessionActivations.isClosed) return;
-    _sessionActivations.add(sessionId);
-  }
-
   void attachSessionDefaults({
     required bool Function() autoPlayAddedSessions,
     required bool Function() allowDuplicateWorks,
   }) {
     _autoPlayAddedSessions = autoPlayAddedSessions;
     _allowDuplicateWorks = allowDuplicateWorks;
-  }
-
-  void attachPersistenceRuntime({
-    required MusicTrack? Function(String trackPath) trackByPath,
-    required bool Function() recordPlaybackProgress,
-    required RestoredPlaybackRuntime restoreRuntime,
-    required PlaybackHistoryUpdater updatePlaybackHistory,
-    required void Function(String? sessionId) onFocusChanged,
-  }) {
-    _persistedTrackResolver ??= trackByPath;
-    _recordPlaybackProgress ??= recordPlaybackProgress;
-    _restoreRuntime ??= restoreRuntime;
-    _updatePlaybackHistory ??= updatePlaybackHistory;
-    _onPersistenceFocusChanged ??= onFocusChanged;
-  }
-
-  void configurePersistence({required bool enabled}) {
-    _persistenceEnabled = enabled;
-    if (!enabled) cancelScheduledPersistence();
-  }
-
-  Future<void> loadPersistedState() async {
-    final persistedSessions = await databaseRepository.loadAllSessions();
-    if (persistedSessions.isEmpty) return;
-    final legacyOrder = await AppPreferences.readJson<List<String>>(
-      'session_order_v1',
-      (value) => (value as List<dynamic>).cast<String>(),
-    );
-    final restoredSessions = <PlaybackSession>[];
-    final recordProgress = _recordPlaybackProgress?.call() ?? true;
-
-    for (final item in persistedSessions) {
-      final customQueueTracks = item.customQueueTracks == null
-          ? null
-          : List<MusicTrack>.unmodifiable(item.customQueueTracks!);
-      MusicTrack? track;
-      if (customQueueTracks != null && customQueueTracks.isNotEmpty) {
-        track = customQueueTracks.firstWhere(
-          (candidate) =>
-              PathMatcher.equalsNormalized(candidate.path, item.trackPath),
-          orElse: () => customQueueTracks.first,
-        );
-      }
-      track ??= _persistedTrackResolver?.call(item.trackPath);
-      if (track == null && item.playbackQueue == null) continue;
-
-      final loopMode =
-          SessionLoopMode.values[item.loopModeIndex.clamp(
-            0,
-            SessionLoopMode.values.length - 1,
-          )];
-      final restoredPosition = Duration(
-        milliseconds: max(0, recordProgress ? item.positionMs : 0),
-      );
-      final session = PlaybackSession(
-        id: item.id,
-        currentTrackPath: track?.path ?? '',
-        loopMode: loopMode,
-        nonSingleLoopMode: loopMode == SessionLoopMode.single
-            ? SessionLoopMode.folderSequential
-            : loopMode,
-        volume: item.volume.clamp(0.0, maxSessionVolume),
-        createdAt: item.createdAtMs == null
-            ? DateTime.now()
-            : DateTime.fromMillisecondsSinceEpoch(item.createdAtMs!),
-        state: PlayerState(false, ProcessingState.idle),
-        customQueueTracks: customQueueTracks,
-        playbackQueue: item.playbackQueue,
-        currentQueueIndex: recordProgress ? item.currentQueueIndex : 0,
-      );
-      session
-        ..lastKnownPosition = restoredPosition
-        ..setOptimisticDuration(Duration(milliseconds: item.durationMs))
-        ..lastPersistedPositionBucket =
-            restoredPosition.inSeconds ~/ positionBucketSeconds
-        ..channelSwapEnabled = item.channelSwapEnabled
-        ..speed = nearestPlaybackSpeed(item.speed)
-        ..audioEffects = item.audioEffects;
-      _service.sessions[session.id] = session;
-      observeSession(session);
-      restoredSessions.add(session);
-    }
-
-    final restoredIds = restoredSessions.map((session) => session.id).toSet();
-    final orderedIds = (legacyOrder ?? const <String>[])
-        .where(restoredIds.contains)
-        .toList(growable: true);
-    for (final session in restoredSessions) {
-      if (!orderedIds.contains(session.id)) orderedIds.add(session.id);
-    }
-    _service.sessionOrder
-      ..clear()
-      ..addAll(orderedIds);
-    _service.markActiveSessionsDirty();
-    final focusedSessionId = orderedIds.firstOrNull;
-    _onPersistenceFocusChanged?.call(focusedSessionId);
-    await _restoreRuntime?.call(
-      restoredSessions,
-      focusedSessionId: focusedSessionId,
-    );
-  }
-
-  Future<void> resetPersistedState() async {
-    cancelScheduledPersistence();
-    final removedSessions = _service.sessions.values.toList(growable: false);
-    _service.sessions.clear();
-    _service.sessionOrder.clear();
-    _service.markActiveSessionsDirty();
-    for (final session in removedSessions) {
-      session.isPlaybackStarting = false;
-      session.dispose();
-    }
-    try {
-      final response = await nativeRepository.clearAll();
-      if (response.isOk) _clearNativeRetainedContentUris();
-    } catch (error, stackTrace) {
-      AppLogService.error(
-        'playback_persisted_state_reset_clear_failed',
-        error: error,
-        stackTrace: stackTrace,
-      );
-    }
-    clearDeferredVolumeReloads();
-    clearRetargetedPaths();
-    _onPersistenceFocusChanged?.call(null);
-  }
-
-  PersistedPlaybackSession _persistedSessionSnapshot(
-    PlaybackSession session, {
-    required int sortOrder,
-    required DateTime now,
-    List<MusicTrack>? tracksToUpdate,
-  }) {
-    final positionMs = max(
-      0,
-      max(
-        session.position.inMilliseconds,
-        session.lastKnownPosition.inMilliseconds,
-      ),
-    );
-    final position = Duration(milliseconds: positionMs);
-    final track = _persistedTrackResolver?.call(session.currentTrackPath);
-    if (tracksToUpdate != null &&
-        track != null &&
-        (track.lastPlayedPosition.inSeconds ~/ positionBucketSeconds !=
-                position.inSeconds ~/ positionBucketSeconds ||
-            session.state.playing)) {
-      final updated = _updatePlaybackHistory?.call(
-        trackPath: track.path,
-        position: position,
-        now: now,
-        updatePlayedAt: session.state.playing,
-      );
-      if (updated != null) tracksToUpdate.add(updated);
-    }
-    return PersistedPlaybackSession(
-      id: session.id,
-      trackPath: session.currentTrackPath,
-      loopModeIndex: session.loopMode.index,
-      volume: session.volume,
-      speed: session.speed,
-      positionMs: positionMs,
-      durationMs: session.duration?.inMilliseconds ?? 0,
-      customQueueTracks: session.customQueueTracks,
-      playbackQueue: session.playbackQueue,
-      currentQueueIndex: session.currentQueueIndex,
-      channelSwapEnabled: session.channelSwapEnabled,
-      audioEffects: session.audioEffects,
-      createdAtMs: session.createdAt.millisecondsSinceEpoch,
-      updatedAtMs: now.millisecondsSinceEpoch,
-      lastPlayedAtMs: session.state.playing ? now.millisecondsSinceEpoch : null,
-      sortOrder: sortOrder,
-    );
-  }
-
-  Future<void> _enqueueSessionPersistence(Future<void> Function() persist) {
-    final previous = _sessionPersistenceTail;
-    final result = previous == null
-        ? Future<void>.sync(persist)
-        : previous.then((_) => persist());
-    _sessionPersistenceTail = result.then<void>(
-      (_) {},
-      onError: (Object error, StackTrace stackTrace) {
-        AppLogService.error(
-          'playback_session_persistence_failed',
-          error: error,
-          stackTrace: stackTrace,
-        );
-      },
-    );
-    return result;
-  }
-
-  Future<void> savePersistedState() {
-    if (!_persistenceEnabled) return Future<void>.value();
-    _savePlaybackStateTimer?.cancel();
-    _savePlaybackStateTimer = null;
-    _pendingPlaybackStateSessionIds.clear();
-    return _enqueueSessionPersistence(_savePersistedStateNow);
-  }
-
-  Future<void> _savePersistedStateNow() async {
-    if (!_persistenceEnabled) return;
-    final ordered = _service.sessionOrder
-        .map((id) => _service.sessions[id])
-        .whereType<PlaybackSession>()
-        .toList(growable: false);
-    final tracksToUpdate = <MusicTrack>[];
-    final now = DateTime.now();
-    final payload = ordered
-        .asMap()
-        .entries
-        .map((entry) {
-          return _persistedSessionSnapshot(
-            entry.value,
-            sortOrder: entry.key,
-            now: now,
-            tracksToUpdate: tracksToUpdate,
-          );
-        })
-        .toList(growable: false);
-    if (tracksToUpdate.isNotEmpty) {
-      await databaseRepository.upsertTracks(tracksToUpdate);
-    }
-    await databaseRepository.saveAllSessions(payload);
-  }
-
-  Future<void> _savePendingPlaybackStates() async {
-    if (!_persistenceEnabled || _pendingPlaybackStateSessionIds.isEmpty) {
-      return;
-    }
-    final sessionIds = Set<String>.of(_pendingPlaybackStateSessionIds);
-    _pendingPlaybackStateSessionIds.removeAll(sessionIds);
-    final now = DateTime.now();
-    final tracksToUpdate = <MusicTrack>[];
-    final orderedIds = _service.sessionOrder;
-    for (final sessionId in sessionIds) {
-      final session = _service.sessions[sessionId];
-      if (session == null) continue;
-      final sortOrder = orderedIds.indexOf(sessionId);
-      await databaseRepository.upsertSessionPlaybackState(
-        _persistedSessionSnapshot(
-          session,
-          sortOrder: sortOrder < 0 ? orderedIds.length : sortOrder,
-          now: now,
-          tracksToUpdate: tracksToUpdate,
-        ),
-      );
-    }
-    if (tracksToUpdate.isNotEmpty) {
-      await databaseRepository.upsertTracks(tracksToUpdate);
-    }
-  }
-
-  Future<void> saveSessionOrder() async {
-    if (!_persistenceEnabled) return;
-    await databaseRepository.updateSessionOrder(
-      _service.sessionOrder.toList(growable: false),
-    );
-    await AppPreferences.remove('session_order_v1');
-  }
-
-  void scheduleSessionStatePersistence({
-    Duration delay = const Duration(milliseconds: 220),
-  }) {
-    if (!_persistenceEnabled) return;
-    _savePlaybackStateTimer?.cancel();
-    _savePlaybackStateTimer = null;
-    _pendingPlaybackStateSessionIds.clear();
-    _service.saveSessionStateTimer?.cancel();
-    _service.saveSessionStateTimer = Timer(delay, () {
-      _service.saveSessionStateTimer = null;
-      unawaited(savePersistedState());
-    });
-  }
-
-  void _scheduleSessionPlaybackStatePersistence(
-    String sessionId, {
-    Duration delay = const Duration(milliseconds: 800),
-  }) {
-    if (!_persistenceEnabled || _service.saveSessionStateTimer != null) return;
-    _pendingPlaybackStateSessionIds.add(sessionId);
-    _savePlaybackStateTimer?.cancel();
-    _savePlaybackStateTimer = Timer(delay, () {
-      _savePlaybackStateTimer = null;
-      unawaited(_enqueueSessionPersistence(_savePendingPlaybackStates));
-    });
-  }
-
-  void scheduleSessionOrderPersistence({
-    Duration delay = const Duration(milliseconds: 180),
-  }) {
-    if (!_persistenceEnabled) return;
-    _service.saveSessionOrderTimer?.cancel();
-    _service.saveSessionOrderTimer = Timer(delay, () {
-      _service.saveSessionOrderTimer = null;
-      unawaited(saveSessionOrder());
-    });
-  }
-
-  Future<void> flushSessionStatePersistence() async {
-    _service.saveSessionStateTimer?.cancel();
-    _service.saveSessionStateTimer = null;
-    await savePersistedState();
-  }
-
-  void cancelScheduledPersistence() {
-    _savePlaybackStateTimer?.cancel();
-    _savePlaybackStateTimer = null;
-    _pendingPlaybackStateSessionIds.clear();
-    _service.saveSessionStateTimer?.cancel();
-    _service.saveSessionStateTimer = null;
-    _service.saveSessionOrderTimer?.cancel();
-    _service.saveSessionOrderTimer = null;
   }
 
   void attachSessionRuntime({
@@ -1094,8 +514,8 @@ final class PlaybackFacade {
     for (final session in removedSessions) {
       session.isPlaybackStarting = false;
       _deferredVolumeReloadSessionIds.remove(session.id);
-      session.dispose();
     }
+    await Future.wait(removedSessions.map((session) => session.shutdown()));
     _onSessionsRemoved?.call(removedSessions);
     if (notify) _onSessionStateChanged?.call();
     _onRuntimeStateChanged?.call();
@@ -1122,9 +542,7 @@ final class PlaybackFacade {
     }
     _onSessionsRemoved?.call(removedSessions);
     _onSessionStateChanged?.call();
-    for (final session in removedSessions) {
-      session.dispose();
-    }
+    await Future.wait(removedSessions.map((session) => session.shutdown()));
     _onRuntimeStateChanged?.call();
     _scheduleNewSessionPersistence(respectConfiguration: false);
     return true;
@@ -1341,294 +759,6 @@ final class PlaybackFacade {
     await setSessionLoopMode(sessionId, session.loopMode.toggledScopeMode);
   }
 
-  Future<void> setSessionChannelSwap(String sessionId, bool enabled) {
-    final session = _service.sessions[sessionId];
-    if (session == null) return Future<void>.value();
-    if (session.channelSwapEnabled == enabled) {
-      return session.audioEffectsSyncFuture ?? flushSessionStatePersistence();
-    }
-    return _queueSessionAudioEffectsSync(
-      session,
-      audioEffects: session.audioEffects,
-      channelSwapEnabled: enabled,
-      errorLabel: 'setSessionChannelSwap',
-    );
-  }
-
-  Future<void> setSessionSkipSilence(String sessionId, bool enabled) {
-    return _updateSessionAudioEffects(
-      sessionId,
-      (state) => state.copyWith(skipSilenceEnabled: enabled),
-      errorLabel: 'setSessionSkipSilence',
-    );
-  }
-
-  Future<void> setSessionNoiseReduction(String sessionId, bool enabled) {
-    return _updateSessionAudioEffects(
-      sessionId,
-      (state) => state.copyWith(noiseReductionEnabled: enabled),
-      errorLabel: 'setSessionNoiseReduction',
-    );
-  }
-
-  Future<void> setSessionVolumeNormalization(String sessionId, bool enabled) {
-    return _updateSessionAudioEffects(
-      sessionId,
-      (state) => state.copyWith(volumeNormalizationEnabled: enabled),
-      errorLabel: 'setSessionVolumeNormalization',
-    );
-  }
-
-  Future<void> setSessionPanning(String sessionId, double panning) {
-    return _updateSessionAudioEffects(
-      sessionId,
-      (state) => state.copyWith(panning: panning),
-      errorLabel: 'setSessionPanning',
-    );
-  }
-
-  Future<void> setSessionEqEnabled(String sessionId, bool enabled) {
-    return _updateSessionAudioEffects(
-      sessionId,
-      (state) => state.copyWith(eqEnabled: enabled),
-      errorLabel: 'setSessionEqEnabled',
-    );
-  }
-
-  Future<void> setSessionEqBandLevel(
-    String sessionId,
-    int frequencyHz,
-    double gainDb,
-  ) {
-    return _updateSessionAudioEffects(sessionId, (state) {
-      final levels = Map<int, double>.of(state.eqBandLevels);
-      levels[frequencyHz] = _clampEqGainForSession(sessionId, gainDb);
-      return state.copyWith(
-        eqEnabled: true,
-        eqPresetId: null,
-        eqBandLevels: levels,
-      );
-    }, errorLabel: 'setSessionEqBandLevel');
-  }
-
-  Future<void> applySessionEqPreset(String sessionId, EqPreset preset) {
-    return _updateSessionAudioEffects(sessionId, (state) {
-      final isFlatPreset = preset.bandLevels.isEmpty;
-      return state.copyWith(
-        eqEnabled: isFlatPreset ? state.eqEnabled : true,
-        eqPresetId: preset.id,
-        eqBandLevels: _mapPresetToSessionBands(sessionId, preset),
-      );
-    }, errorLabel: 'applySessionEqPreset');
-  }
-
-  Future<NativeResult<NativePlaybackSnapshot>> _syncSessionAudioEffects(
-    PlaybackSession session,
-    NativeAudioEffects audioEffects,
-  ) async {
-    final shouldKeepPlaying = session.effectivePlaying;
-    final loadedPath = session.loadedPath;
-    final needsPrepare =
-        loadedPath == null ||
-        !PathMatcher.equalsNormalized(loadedPath, session.currentTrackPath);
-    if (needsPrepare) {
-      final prepare = _prepareSession;
-      if (prepare == null) {
-        return const NativeFailure('Playback session preparation unavailable.');
-      }
-      await prepare(
-        session,
-        nextPath: session.currentTrackPath,
-        autoPlay: shouldKeepPlaying,
-      );
-      if (!_service.sessions.containsKey(session.id)) {
-        return const NativeFailure(
-          'Session removed before audio effects sync.',
-        );
-      }
-      if (session.loadedPath == null) {
-        return const NativeFailure(
-          'Failed to prepare session before audio effects sync.',
-        );
-      }
-    }
-    var response = await nativeRepository.setAudioEffects(
-      session.id,
-      audioEffects,
-    );
-    if (response.isOk ||
-        needsPrepare ||
-        !_service.sessions.containsKey(session.id)) {
-      return response;
-    }
-
-    session.loadedPath = null;
-    final prepare = _prepareSession;
-    if (prepare == null) return response;
-    await prepare(
-      session,
-      nextPath: session.currentTrackPath,
-      autoPlay: shouldKeepPlaying,
-      showLoading: false,
-    );
-    if (session.loadedPath == null ||
-        !_service.sessions.containsKey(session.id)) {
-      return response;
-    }
-    response = await nativeRepository.setAudioEffects(session.id, audioEffects);
-    return response;
-  }
-
-  Future<void> _updateSessionAudioEffects(
-    String sessionId,
-    AudioEffectsState Function(AudioEffectsState state) update, {
-    required String errorLabel,
-  }) {
-    final session = _service.sessions[sessionId];
-    if (session == null) return Future<void>.value();
-    return _queueSessionAudioEffectsSync(
-      session,
-      audioEffects: update(session.audioEffects),
-      channelSwapEnabled: session.channelSwapEnabled,
-      errorLabel: errorLabel,
-    );
-  }
-
-  Future<void> _queueSessionAudioEffectsSync(
-    PlaybackSession session, {
-    required AudioEffectsState audioEffects,
-    required bool channelSwapEnabled,
-    required String errorLabel,
-  }) {
-    if (!session.hasPendingAudioEffectsSync) {
-      session.confirmedNativeAudioEffects = NativeAudioEffects(
-        state: session.audioEffects,
-        channelSwapEnabled: session.channelSwapEnabled,
-      );
-    }
-    session
-      ..pendingNativeAudioEffects = NativeAudioEffects(
-        state: audioEffects,
-        channelSwapEnabled: channelSwapEnabled,
-      )
-      ..audioEffects = audioEffects
-      ..channelSwapEnabled = channelSwapEnabled
-      ..audioEffectsSyncRevision += 1
-      ..audioEffectsSyncErrorLabel = errorLabel;
-    _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-
-    final activeDrain = session.audioEffectsSyncFuture;
-    if (activeDrain != null) return activeDrain;
-
-    final completer = Completer<void>();
-    session.audioEffectsSyncFuture = completer.future;
-    unawaited(() async {
-      try {
-        await _drainSessionAudioEffectsSync(session);
-        completer.complete();
-      } catch (error, stackTrace) {
-        completer.completeError(error, stackTrace);
-      } finally {
-        if (identical(session.audioEffectsSyncFuture, completer.future)) {
-          session.audioEffectsSyncFuture = null;
-        }
-      }
-    }());
-    return completer.future;
-  }
-
-  Future<void> _drainSessionAudioEffectsSync(PlaybackSession session) async {
-    while (identical(_service.sessions[session.id], session)) {
-      final revision = session.audioEffectsSyncRevision;
-      final desiredAudioEffects = session.pendingNativeAudioEffects;
-      if (desiredAudioEffects == null) return;
-      final errorLabel = session.audioEffectsSyncErrorLabel;
-
-      final response = await _syncSessionAudioEffects(
-        session,
-        desiredAudioEffects,
-      );
-      if (!identical(_service.sessions[session.id], session)) return;
-
-      if (response.isOk) {
-        final snapshot = response.valueOrNull;
-        session.confirmedNativeAudioEffects = NativeAudioEffects(
-          state: _resolvedAudioEffects(
-            snapshot,
-            fallbackAudioEffects: desiredAudioEffects.state,
-          ),
-          channelSwapEnabled: snapshot?.hasChannelSwapPayload ?? false
-              ? snapshot!.channelSwapEnabled
-              : desiredAudioEffects.channelSwapEnabled,
-        );
-        if (snapshot != null) session.eqCapabilities = snapshot.eqCapabilities;
-      } else {
-        AppLogService.warning(
-          'PlaybackFacade.$errorLabel error: '
-          '${response.errorOrNull}',
-        );
-      }
-
-      if (revision != session.audioEffectsSyncRevision) continue;
-      final confirmed = session.confirmedNativeAudioEffects!;
-      session
-        ..audioEffects = confirmed.state
-        ..channelSwapEnabled = confirmed.channelSwapEnabled;
-      _service.markActiveSessionsDirty();
-      _onSessionStateChanged?.call();
-
-      await flushSessionStatePersistence();
-      if (!identical(_service.sessions[session.id], session)) return;
-      if (revision != session.audioEffectsSyncRevision) continue;
-      session.pendingNativeAudioEffects = null;
-      return;
-    }
-  }
-
-  AudioEffectsState _resolvedAudioEffects(
-    NativePlaybackSnapshot? snapshot, {
-    required AudioEffectsState fallbackAudioEffects,
-  }) {
-    if (snapshot == null || !snapshot.hasAudioEffectsPayload) {
-      return fallbackAudioEffects;
-    }
-    final shouldKeepFallback =
-        fallbackAudioEffects != AudioEffectsState.flat &&
-        snapshot.audioEffects == AudioEffectsState.flat;
-    return shouldKeepFallback ? fallbackAudioEffects : snapshot.audioEffects;
-  }
-
-  Map<int, double> _mapPresetToSessionBands(String sessionId, EqPreset preset) {
-    final session = _service.sessions[sessionId];
-    final bands = session?.eqCapabilities.bands ?? const <EqBandInfo>[];
-    if (bands.isEmpty) {
-      return Map<int, double>.unmodifiable(preset.bandLevels);
-    }
-    final mapped = <int, double>{};
-    for (final presetEntry in preset.bandLevels.entries) {
-      final targetBand = bands.reduce((best, candidate) {
-        final bestDistance = (best.frequencyHz - presetEntry.key).abs();
-        final candidateDistance = (candidate.frequencyHz - presetEntry.key)
-            .abs();
-        return candidateDistance < bestDistance ? candidate : best;
-      });
-      mapped[targetBand.frequencyHz] = _clampEqGainForSession(
-        sessionId,
-        (mapped[targetBand.frequencyHz] ?? 0) + presetEntry.value,
-      );
-    }
-    return Map<int, double>.unmodifiable(mapped);
-  }
-
-  double _clampEqGainForSession(String sessionId, double gainDb) {
-    final capabilities = _service.sessions[sessionId]?.eqCapabilities;
-    if (capabilities == null || !capabilities.supported) {
-      return gainDb.clamp(-12.0, 12.0);
-    }
-    return gainDb.clamp(capabilities.minGainDb, capabilities.maxGainDb);
-  }
-
   Future<bool> setSessionVolume(
     String sessionId,
     double volume, {
@@ -1778,400 +908,247 @@ final class PlaybackFacade {
     _deferredVolumeReloadSessionIds.clear();
   }
 
-  Future<void> addTrackToPlaybackQueue(String sessionId, MusicTrack track) {
-    return _addPlaybackQueueEntry(
-      sessionId,
-      PlaybackQueueEntry(
-        id: _nextQueueEntryId(),
-        kind: PlaybackQueueEntryKind.track,
-        title: track.displayName,
-        tracks: <MusicTrack>[track],
-      ),
-    );
-  }
+  Future<void> get pendingSessionPreparation =>
+      PlaybackNativeStateCoordinator(this).pendingSessionPreparation;
+  bool get hasScheduledSessionStatePersistence =>
+      PlaybackNativeStateCoordinator(this).hasScheduledSessionStatePersistence;
+  bool get hasScheduledSessionOrderPersistence =>
+      PlaybackNativeStateCoordinator(this).hasScheduledSessionOrderPersistence;
+  PlaybackSession? sessionById(String sessionId) =>
+      PlaybackNativeStateCoordinator(this).sessionById(sessionId);
+  List<PlaybackSession> get ordinarySessions =>
+      PlaybackNativeStateCoordinator(this).ordinarySessions;
 
+  void updateNativeSessionRetainedContentUris(
+    String sessionId,
+    Iterable<String> retainedUris,
+  ) => PlaybackNativeStateCoordinator(
+    this,
+  ).updateNativeSessionRetainedContentUris(sessionId, retainedUris);
+  void replaceNativeRetainedContentUris(
+    Iterable<NativePlaybackSnapshot> snapshots,
+  ) => PlaybackNativeStateCoordinator(
+    this,
+  ).replaceNativeRetainedContentUris(snapshots);
+  Future<bool> refreshNativeRetainedContentUriInventory() =>
+      PlaybackNativeStateCoordinator(
+        this,
+      ).refreshNativeRetainedContentUriInventory();
+  void forgetNativeSessionRetainedContentUris(String sessionId) =>
+      PlaybackNativeStateCoordinator(
+        this,
+      ).forgetNativeSessionRetainedContentUris(sessionId);
+  int nextTransportCommandId() =>
+      PlaybackNativeStateCoordinator(this).nextTransportCommandId();
+  bool isRegisteredSession(PlaybackSession session) =>
+      PlaybackNativeStateCoordinator(this).isRegisteredSession(session);
+  void markSessionStateDirty() =>
+      PlaybackNativeStateCoordinator(this).markSessionStateDirty();
+  void syncPresentationState({
+    required String? focusedSessionId,
+    required bool multiThreadPlaybackEnabled,
+    required int coverGeneration,
+    bool? isInitialized,
+  }) => PlaybackNativeStateCoordinator(this).syncPresentationState(
+    focusedSessionId: focusedSessionId,
+    multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
+    coverGeneration: coverGeneration,
+    isInitialized: isInitialized,
+  );
+  Future<void> removeSessionsForTrackPaths(Iterable<String> trackPaths) =>
+      PlaybackNativeStateCoordinator(
+        this,
+      ).removeSessionsForTrackPaths(trackPaths);
+  void applyFadeMultiplierToPlayingSessions(double multiplier) =>
+      PlaybackNativeStateCoordinator(
+        this,
+      ).applyFadeMultiplierToPlayingSessions(multiplier);
+  void observeTransportCommandId(int? commandId) =>
+      PlaybackNativeStateCoordinator(this).observeTransportCommandId(commandId);
+  void applyNativeProgress(NativePlaybackProgressUpdate progress) =>
+      PlaybackNativeStateCoordinator(this).applyNativeProgress(progress);
+  PlaybackNativeSnapshotApplication applyNativeSnapshot(
+    NativePlaybackSnapshot snapshot, {
+    required bool Function(String path) hasLibraryTrack,
+  }) => PlaybackNativeStateCoordinator(
+    this,
+  ).applyNativeSnapshot(snapshot, hasLibraryTrack: hasLibraryTrack);
+  void publishSessionActivated(String sessionId) =>
+      PlaybackNativeStateCoordinator(this).publishSessionActivated(sessionId);
+
+  void attachPersistenceRuntime({
+    required MusicTrack? Function(String trackPath) trackByPath,
+    required bool Function() recordPlaybackProgress,
+    required RestoredPlaybackRuntime restoreRuntime,
+    required PlaybackHistoryUpdater updatePlaybackHistory,
+    required void Function(String? sessionId) onFocusChanged,
+  }) => PlaybackSessionPersistenceCoordinator(this).attachPersistenceRuntime(
+    trackByPath: trackByPath,
+    recordPlaybackProgress: recordPlaybackProgress,
+    restoreRuntime: restoreRuntime,
+    updatePlaybackHistory: updatePlaybackHistory,
+    onFocusChanged: onFocusChanged,
+  );
+  void configurePersistence({required bool enabled}) =>
+      PlaybackSessionPersistenceCoordinator(
+        this,
+      ).configurePersistence(enabled: enabled);
+  Future<void> loadPersistedState() =>
+      PlaybackSessionPersistenceCoordinator(this).loadPersistedState();
+  Future<void> resetPersistedState() =>
+      PlaybackSessionPersistenceCoordinator(this).resetPersistedState();
+  Future<void> savePersistedState() =>
+      PlaybackSessionPersistenceCoordinator(this).savePersistedState();
+  Future<void> saveSessionOrder() =>
+      PlaybackSessionPersistenceCoordinator(this).saveSessionOrder();
+  void scheduleSessionStatePersistence({
+    Duration delay = const Duration(milliseconds: 220),
+  }) => PlaybackSessionPersistenceCoordinator(
+    this,
+  ).scheduleSessionStatePersistence(delay: delay);
+  void scheduleSessionOrderPersistence({
+    Duration delay = const Duration(milliseconds: 180),
+  }) => PlaybackSessionPersistenceCoordinator(
+    this,
+  ).scheduleSessionOrderPersistence(delay: delay);
+  Future<void> flushSessionStatePersistence() =>
+      PlaybackSessionPersistenceCoordinator(
+        this,
+      ).flushSessionStatePersistence();
+  void cancelScheduledPersistence() =>
+      PlaybackSessionPersistenceCoordinator(this).cancelScheduledPersistence();
+
+  Future<void> setSessionChannelSwap(String sessionId, bool enabled) =>
+      PlaybackEffectsCoordinator(
+        this,
+      ).setSessionChannelSwap(sessionId, enabled);
+  Future<void> setSessionSkipSilence(String sessionId, bool enabled) =>
+      PlaybackEffectsCoordinator(
+        this,
+      ).setSessionSkipSilence(sessionId, enabled);
+  Future<void> setSessionNoiseReduction(String sessionId, bool enabled) =>
+      PlaybackEffectsCoordinator(
+        this,
+      ).setSessionNoiseReduction(sessionId, enabled);
+  Future<void> setSessionVolumeNormalization(String sessionId, bool enabled) =>
+      PlaybackEffectsCoordinator(
+        this,
+      ).setSessionVolumeNormalization(sessionId, enabled);
+  Future<void> setSessionPanning(String sessionId, double panning) =>
+      PlaybackEffectsCoordinator(this).setSessionPanning(sessionId, panning);
+  Future<void> setSessionEqEnabled(String sessionId, bool enabled) =>
+      PlaybackEffectsCoordinator(this).setSessionEqEnabled(sessionId, enabled);
+  Future<void> setSessionEqBandLevel(
+    String sessionId,
+    int frequencyHz,
+    double gainDb,
+  ) => PlaybackEffectsCoordinator(
+    this,
+  ).setSessionEqBandLevel(sessionId, frequencyHz, gainDb);
+  Future<void> applySessionEqPreset(String sessionId, EqPreset preset) =>
+      PlaybackEffectsCoordinator(this).applySessionEqPreset(sessionId, preset);
+
+  Future<void> addTrackToPlaybackQueue(String sessionId, MusicTrack track) =>
+      PlaybackQueuePathCoordinator(
+        this,
+      ).addTrackToPlaybackQueue(sessionId, track);
   Future<void> addWorkToPlaybackQueue(
     String sessionId, {
     required String title,
     required List<MusicTrack> tracks,
     String? workRootPath,
-  }) {
-    if (tracks.isEmpty) return Future<void>.value();
-    return _addPlaybackQueueEntry(
-      sessionId,
-      PlaybackQueueEntry(
-        id: _nextQueueEntryId(),
-        kind: PlaybackQueueEntryKind.work,
-        title: title,
-        tracks: List<MusicTrack>.unmodifiable(tracks),
-        workRootPath: workRootPath,
-      ),
-    );
-  }
-
-  Future<void> _addPlaybackQueueEntry(
-    String sessionId,
-    PlaybackQueueEntry entry,
-  ) async {
-    final session = _service.sessions[sessionId];
-    final queue = session?.playbackQueue;
-    if (session == null || queue == null) return;
-    final wasEmpty = queue.expandedTracks.isEmpty;
-    session.playbackQueue = queue.copyWith(
-      entries: List<PlaybackQueueEntry>.unmodifiable(<PlaybackQueueEntry>[
-        ...queue.entries,
-        entry,
-      ]),
-    );
-    _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-    _scheduleNewSessionPersistence();
-    await _synchronizePlaybackQueueSession?.call(
-      session,
-      selectFirst: wasEmpty,
-    );
-    _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-    publishSessionActivated(session.id);
-  }
-
-  Future<void> removePlaybackQueueEntry(
-    String sessionId,
-    String entryId,
-  ) async {
-    final session = _service.sessions[sessionId];
-    final queue = session?.playbackQueue;
-    if (session == null || queue == null) return;
-    final entries = queue.entries
-        .where((entry) => entry.id != entryId)
-        .toList(growable: false);
-    if (entries.length == queue.entries.length) return;
-    session.playbackQueue = queue.copyWith(entries: entries);
-    await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
-    _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-    _scheduleNewSessionPersistence();
-  }
-
+  }) => PlaybackQueuePathCoordinator(this).addWorkToPlaybackQueue(
+    sessionId,
+    title: title,
+    tracks: tracks,
+    workRootPath: workRootPath,
+  );
+  Future<void> removePlaybackQueueEntry(String sessionId, String entryId) =>
+      PlaybackQueuePathCoordinator(
+        this,
+      ).removePlaybackQueueEntry(sessionId, entryId);
   Future<void> reorderPlaybackQueueEntry(
     String sessionId,
     int oldIndex,
     int newIndex,
-  ) async {
-    final session = _service.sessions[sessionId];
-    final queue = session?.playbackQueue;
-    if (session == null || queue == null) return;
-    if (oldIndex < newIndex) newIndex -= 1;
-    final entries = queue.entries.toList();
-    if (oldIndex < 0 ||
-        oldIndex >= entries.length ||
-        newIndex < 0 ||
-        newIndex > entries.length) {
-      return;
-    }
-    final item = entries.removeAt(oldIndex);
-    entries.insert(newIndex, item);
-    session.playbackQueue = queue.copyWith(entries: entries);
-    await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
-    _service.markActiveSessionsDirty();
-    _onSessionStateChanged?.call();
-    await databaseRepository.updatePlaybackQueueEntryOrder(
-      session.id,
-      entries.map((entry) => entry.id).toList(growable: false),
-    );
-  }
-
-  String _nextQueueEntryId() =>
-      'queue_entry_${DateTime.now().microsecondsSinceEpoch}_${_random.nextInt(1 << 20)}';
-
-  bool renamePlaybackQueue(String sessionId, String name) {
-    final session = _service.sessions[sessionId];
-    final queue = session?.playbackQueue;
-    final trimmed = name.trim();
-    if (session == null || queue == null || trimmed.isEmpty) return false;
-    session.playbackQueue = queue.copyWith(name: trimmed);
-    _service.markActiveSessionsDirty();
-    scheduleSessionStatePersistence();
-    _onSessionStateChanged?.call();
-    return true;
-  }
-
-  bool setPlaybackQueueColorValue(String sessionId, int? colorValue) {
-    final session = _service.sessions[sessionId];
-    final queue = session?.playbackQueue;
-    if (session == null || queue == null) return false;
-    session.playbackQueue = queue.copyWith(
-      colorValue: colorValue,
-      clearColor: colorValue == null,
-    );
-    _service.markActiveSessionsDirty();
-    scheduleSessionStatePersistence();
-    _onSessionStateChanged?.call();
-    return true;
-  }
-
-  bool replaceSessionTrackSnapshots(MusicTrack updatedTrack) {
-    var changed = false;
-    for (final session in _service.sessions.values) {
-      final customQueueTracks = session.customQueueTracks;
-      if (customQueueTracks != null) {
-        var customQueueChanged = false;
-        final tracks = customQueueTracks
-            .map((track) {
-              if (!PathMatcher.equalsNormalized(
-                track.path,
-                updatedTrack.path,
-              )) {
-                return track;
-              }
-              customQueueChanged = true;
-              return updatedTrack;
-            })
-            .toList(growable: false);
-        if (customQueueChanged) {
-          session.customQueueTracks = List<MusicTrack>.unmodifiable(tracks);
-          changed = true;
-        }
-      }
-      final queue = session.playbackQueue;
-      if (queue == null) continue;
-      var queueChanged = false;
-      final entries = queue.entries
-          .map((entry) {
-            var entryChanged = false;
-            final tracks = entry.tracks
-                .map((track) {
-                  if (!PathMatcher.equalsNormalized(
-                    track.path,
-                    updatedTrack.path,
-                  )) {
-                    return track;
-                  }
-                  entryChanged = true;
-                  queueChanged = true;
-                  return updatedTrack;
-                })
-                .toList(growable: false);
-            if (!entryChanged) return entry;
-            return PlaybackQueueEntry(
-              id: entry.id,
-              kind: entry.kind,
-              title: entry.title,
-              tracks: List<MusicTrack>.unmodifiable(tracks),
-              workRootPath: entry.workRootPath,
-            );
-          })
-          .toList(growable: false);
-      if (!queueChanged) continue;
-      session.playbackQueue = queue.copyWith(
-        entries: List.unmodifiable(entries),
-      );
-      changed = true;
-    }
-    return changed;
-  }
-
-  void rememberRetargetedPath(String oldPath, String newPath) {
-    final normalizedOldPath = PathMatcher.normalize(oldPath);
-    final normalizedNewPath = PathMatcher.normalize(newPath);
-    if (PathMatcher.equalsNormalized(normalizedOldPath, normalizedNewPath)) {
-      return;
-    }
-    _retargetedPathAliases[normalizedOldPath] = normalizedNewPath;
-  }
-
-  String resolveRetargetedPath(String value) {
-    if (value.isEmpty || _retargetedPathAliases.isEmpty) {
-      return PathMatcher.normalize(value);
-    }
-    var current = PathMatcher.normalize(value);
-    final seen = <String>{current};
-    while (true) {
-      String? bestMatch;
-      String? nextValue;
-      for (final entry in _retargetedPathAliases.entries) {
-        if (!PathMatcher.isWithinOrEqual(current, entry.key)) continue;
-        if (bestMatch == null || entry.key.length > bestMatch.length) {
-          bestMatch = entry.key;
-          nextValue = entry.value;
-        }
-      }
-      if (bestMatch == null || nextValue == null) return current;
-      final resolved = PathMatcher.normalize(
-        PathMatcher.replaceWithinOrEqual(current, bestMatch, nextValue),
-      );
-      if (PathMatcher.equalsNormalized(resolved, current) ||
-          !seen.add(resolved)) {
-        return resolved;
-      }
-      current = resolved;
-    }
-  }
-
-  void clearRetargetedPaths() => _retargetedPathAliases.clear();
-
-  Future<void> retargetPath(String oldPath, String newPath) async {
-    rememberRetargetedPath(oldPath, newPath);
-    var changed = false;
-    final sessionsToReload = <PlaybackSession>[];
-    for (final session in _service.sessions.values) {
-      if (PathMatcher.isWithinOrEqual(session.currentTrackPath, oldPath)) {
-        session.currentTrackPath = PathMatcher.replaceWithinOrEqual(
-          session.currentTrackPath,
-          oldPath,
-          newPath,
-        );
-        changed = true;
-      }
-      final loadedPath = session.loadedPath;
-      if (loadedPath != null &&
-          PathMatcher.isWithinOrEqual(loadedPath, oldPath)) {
-        // Keep the old loaded path until the native player is prepared with
-        // the new file. This makes the preparation path detect a real source
-        // change instead of treating the stale ExoPlayer item as current.
-        sessionsToReload.add(session);
-        changed = true;
-      }
-    }
-    if (!changed) return;
-    _service.markActiveSessionsDirty();
-    final current = _service.slice.state;
-    _service.syncSlice(
-      activeSessions: _service.activeSessions,
-      playingSessionCount: _service.playingSessionCount,
-      focusedSessionId: current.focusedSessionId,
-      multiThreadPlaybackEnabled: current.multiThreadPlaybackEnabled,
-      coverGeneration: current.coverGeneration,
-      isInitialized: current.isInitialized,
-    );
-    final prepare = _prepareSession;
-    if (prepare != null) {
-      for (final session in sessionsToReload) {
-        _service.enqueueSessionPreparation(() async {
-          if (!isRegisteredSession(session)) return;
-          await prepare(
-            session,
-            nextPath: session.currentTrackPath,
-            autoPlay: session.effectivePlaying,
-            forceStartAtZero: false,
-            showLoading: false,
-            targetQueueIndex: session.currentQueueIndex,
-          );
-        });
-      }
-      await _service.sessionPreparationQueue;
-    }
-    await savePersistedState();
-  }
-
+  ) => PlaybackQueuePathCoordinator(
+    this,
+  ).reorderPlaybackQueueEntry(sessionId, oldIndex, newIndex);
+  bool renamePlaybackQueue(String sessionId, String name) =>
+      PlaybackQueuePathCoordinator(this).renamePlaybackQueue(sessionId, name);
+  bool setPlaybackQueueColorValue(String sessionId, int? colorValue) =>
+      PlaybackQueuePathCoordinator(
+        this,
+      ).setPlaybackQueueColorValue(sessionId, colorValue);
+  bool replaceSessionTrackSnapshots(MusicTrack updatedTrack) =>
+      PlaybackQueuePathCoordinator(
+        this,
+      ).replaceSessionTrackSnapshots(updatedTrack);
+  void rememberRetargetedPath(String oldPath, String newPath) =>
+      PlaybackQueuePathCoordinator(
+        this,
+      ).rememberRetargetedPath(oldPath, newPath);
+  String resolveRetargetedPath(String value) =>
+      PlaybackQueuePathCoordinator(this).resolveRetargetedPath(value);
+  void clearRetargetedPaths() =>
+      PlaybackQueuePathCoordinator(this).clearRetargetedPaths();
+  Future<void> retargetPath(String oldPath, String newPath) =>
+      PlaybackQueuePathCoordinator(this).retargetPath(oldPath, newPath);
   Future<void> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,
     required SessionLoopMode loopMode,
-  }) {
-    return spawnSessionWithQueue(
-      tracks,
-      autoPlay: autoPlay,
-      loopMode: loopMode,
-    );
-  }
-
-  Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
-    final matchingSessionIds = _matchingWorkSessionIds(track);
-    if (matchingSessionIds.isNotEmpty) {
-      final removed = await removeSessions(matchingSessionIds);
-      if (!removed) return;
-    }
-    final session = createTrackSession(track);
-    final shouldAutoPlay = autoPlay ?? _autoPlayAddedSessions();
-    if (shouldAutoPlay) {
-      unawaited(_enqueueSessionPreparation(session, nextPath: track.path));
-    }
-    publishSessionActivated(session.id);
-  }
-
+  }) => PlaybackQueuePathCoordinator(
+    this,
+  ).launchQueue(tracks, autoPlay: autoPlay, loopMode: loopMode);
+  Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) =>
+      PlaybackQueuePathCoordinator(
+        this,
+      ).spawnSession(track, autoPlay: autoPlay);
   Future<void> spawnSessionWithQueue(
     List<MusicTrack> tracks, {
     int startIndex = 0,
     bool? autoPlay,
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
-  }) async {
-    if (tracks.isEmpty) return;
-    final clampedStartIndex = startIndex.clamp(0, tracks.length - 1);
-    final startTrack = tracks[clampedStartIndex];
-    final matchingSessionIds = _matchingWorkSessionIds(startTrack);
-    if (matchingSessionIds.isNotEmpty) {
-      final removed = await removeSessions(matchingSessionIds);
-      if (!removed) return;
-    }
-    final session = createTrackSession(
-      startTrack,
-      loopMode: loopMode,
-      customQueueTracks: List<MusicTrack>.unmodifiable(tracks),
-    );
-    final shouldAutoPlay = autoPlay ?? _autoPlayAddedSessions();
-    if (shouldAutoPlay) {
-      unawaited(_enqueueSessionPreparation(session, nextPath: startTrack.path));
-    }
-    publishSessionActivated(session.id);
-  }
-
-  List<String> _matchingWorkSessionIds(MusicTrack incomingTrack) {
-    if (_allowDuplicateWorks()) return const <String>[];
-    final incomingKey = _workKey(incomingTrack);
-    return _service.sessions.values
-        .where((session) {
-          final representative = _representativeTrack(session);
-          return representative != null &&
-              _workKey(representative) == incomingKey;
-        })
-        .map((session) => session.id)
-        .toList(growable: false);
-  }
-
-  MusicTrack? _representativeTrack(PlaybackSession session) {
-    final queueTracks = session.customQueueTracks;
-    if (queueTracks != null && queueTracks.isNotEmpty) {
-      return queueTracks.first;
-    }
-    return _persistedTrackResolver?.call(session.currentTrackPath);
-  }
-
-  String _workKey(MusicTrack track) {
-    if (track.isSingle || track.groupKey == '__single_files__') {
-      return 'track:${PathMatcher.normalize(track.path)}';
-    }
-    final groupKey = PathMatcher.normalize(track.groupKey);
-    return groupKey.isEmpty
-        ? 'track:${PathMatcher.normalize(track.path)}'
-        : 'group:$groupKey';
-  }
-
-  Future<void> _enqueueSessionPreparation(
-    PlaybackSession session, {
-    required String nextPath,
-  }) {
-    _service.enqueueSessionPreparation(() async {
-      if (!_service.sessions.containsKey(session.id)) return;
-      await _prepareSession?.call(session, nextPath: nextPath, autoPlay: true);
-    });
-    return _service.sessionPreparationQueue;
-  }
+  }) => PlaybackQueuePathCoordinator(this).spawnSessionWithQueue(
+    tracks,
+    startIndex: startIndex,
+    autoPlay: autoPlay,
+    loopMode: loopMode,
+  );
 
   Future<void> dispose() async {
+    Object? firstError;
+    StackTrace? firstStackTrace;
+    Future<void> attempt(Future<void> Function() action) async {
+      try {
+        await action();
+      } catch (error, stackTrace) {
+        firstError ??= error;
+        firstStackTrace ??= stackTrace;
+      }
+    }
+
     cancelScheduledPersistence();
     final persistenceTail = _sessionPersistenceTail;
-    if (persistenceTail != null) await persistenceTail;
-    await _sessionActivations.close();
-    await _persistedUriReferenceRevisionController.close();
+    if (persistenceTail != null) {
+      await attempt(() => persistenceTail);
+    }
+    await Future.wait(<Future<void>>[
+      attempt(_sessionActivations.close),
+      attempt(_persistedUriReferenceRevisionController.close),
+    ]);
     final sessionsToDispose = _service.sessions.values.toList(growable: false);
     _service.sessions.clear();
-    for (final session in sessionsToDispose) {
-      session.dispose();
+    await Future.wait(
+      sessionsToDispose.map((session) => attempt(session.shutdown)),
+    );
+    await attempt(playbackCacheService.dispose);
+    await attempt(nativeRepository.dispose);
+    await attempt(_service.dispose);
+    if (firstError != null) {
+      Error.throwWithStackTrace(firstError!, firstStackTrace!);
     }
-    await playbackCacheService.dispose();
-    await nativeRepository.dispose();
-    await _service.dispose();
   }
 
   void _dispatchSessionCompleted(String sessionId) {

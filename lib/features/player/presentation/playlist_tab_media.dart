@@ -8,7 +8,7 @@ class _SessionHeroArtwork extends ConsumerWidget {
     required this.coverPathFuture,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final double height;
   final MusicTrack? track;
   final Future<String?> coverPathFuture;
@@ -176,7 +176,7 @@ class _SessionCoverThumbnailState
   Widget build(BuildContext context) {
     final session = ref
         .read(playbackFacadeProvider)
-        .sessionById(widget.sessionId);
+        .sessionSnapshotById(widget.sessionId);
     final library = ref.read(libraryFacadeProvider);
     final cover = AsyncLocalCoverImage(
       future: _futureFor(library),

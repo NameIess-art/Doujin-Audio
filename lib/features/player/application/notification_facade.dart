@@ -155,6 +155,17 @@ final class NotificationFacade {
 
   MusicTrack? trackByPath(String trackPath) => _trackByPath(trackPath);
 
+  Future<bool> areNotificationsEnabled() => _service.areNotificationsEnabled();
+
+  Future<bool> openNotificationSettings() =>
+      _service.openNotificationSettings();
+
+  Future<String?> consumePendingNotificationSessionId() =>
+      _service.consumePendingNotificationSessionId();
+
+  void setOpenSessionHandler(void Function(String sessionId)? handler) =>
+      _service.setOpenSessionHandler(handler);
+
   void handleSubtitleTrackLoaded(String trackPath, SubtitleTrack? track) =>
       _handleSubtitleTrackLoaded(trackPath, track);
 

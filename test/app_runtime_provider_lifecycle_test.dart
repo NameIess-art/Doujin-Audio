@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -101,7 +103,7 @@ void main() {
       );
       final languageValues = <AppLanguageState>[];
       final themeValues = <ThemeState>[];
-      final downloadValues = <AsmrDownloadState>[];
+      final downloadValues = <List<int>>[];
       final subscriptions = [
         container.listen(appLanguageStateProvider, (_, next) {
           if (next case AsyncData(:final value)) languageValues.add(value);
@@ -109,7 +111,7 @@ void main() {
         container.listen(themeStateProvider, (_, next) {
           if (next case AsyncData(:final value)) themeValues.add(value);
         }),
-        container.listen(asmrDownloadStateProvider, (_, next) {
+        container.listen(asmrDownloadTaskIdsProvider, (_, next) {
           if (next case AsyncData(:final value)) downloadValues.add(value);
         }),
       ];
@@ -117,20 +119,15 @@ void main() {
       await container.pump();
       expect(languageValues.single.language, language.language);
       expect(themeValues.single.themeMode, ThemeMode.system);
-      expect(downloadValues.single.taskIds, isEmpty);
+      expect(downloadValues.single, isEmpty);
 
       await language.setLanguage(AppLanguage.en);
       await theme.setDifferentiateAsmrTheme(false);
-      downloads.emit(
-        AsmrDownloadState(
-          taskIds: const <int>[42],
-          tasksByWorkId: const <int, AsmrDownloadTaskSnapshot>{},
-        ),
-      );
+      downloads.emit(const <int>[42]);
       await container.pump();
       expect(languageValues.last.language, AppLanguage.en);
       expect(themeValues.last.differentiateAsmrTheme, isFalse);
-      expect(downloadValues.last.taskIds, const <int>[42]);
+      expect(downloadValues.last, const <int>[42]);
 
       for (final subscription in subscriptions) {
         subscription.close();
@@ -139,7 +136,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(language.removeListenerCalls, 1);
       expect(theme.removeListenerCalls, 1);
-      expect(downloads.removeListenerCalls, 1);
+      expect(downloads.cancelCalls, 1);
       language.dispose();
       theme.dispose();
       downloads.dispose();
@@ -163,17 +160,28 @@ final class _TrackingLanguageProvider extends AppLanguageProvider
 final class _TrackingThemeProvider extends ThemeProvider
     with _TracksListeners {}
 
-final class _TrackingDownloadManager extends AsmrDownloadManager
-    with _TracksListeners {
-  _TrackingDownloadManager() : super(persistTasks: false);
+final class _TrackingDownloadManager extends AsmrDownloadManager {
+  _TrackingDownloadManager() : super(persistTasks: false) {
+    _taskIdsController = StreamController<List<int>>.broadcast(
+      sync: true,
+      onCancel: () => cancelCalls++,
+    );
+  }
 
-  AsmrDownloadState _state = AsmrDownloadState.empty;
+  late final StreamController<List<int>> _taskIdsController;
+  int cancelCalls = 0;
 
   @override
-  AsmrDownloadState get state => _state;
+  Stream<List<int>> get taskIdsStream async* {
+    yield const <int>[];
+    yield* _taskIdsController.stream;
+  }
 
-  void emit(AsmrDownloadState state) {
-    _state = state;
-    notifyListeners();
+  void emit(List<int> taskIds) => _taskIdsController.add(taskIds);
+
+  @override
+  void dispose() {
+    unawaited(_taskIdsController.close());
+    super.dispose();
   }
 }

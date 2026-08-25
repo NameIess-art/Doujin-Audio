@@ -10,7 +10,7 @@ class _ActiveSessionCard extends ConsumerWidget {
     this.compact = false,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final int position;
   final int count;
   final Future<String?> coverPathFuture;
@@ -381,7 +381,7 @@ class _ActiveSessionTitleSubtitle extends ConsumerStatefulWidget {
     required this.useAsmrOneErrorText,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final String displayName;
   final String? playbackError;
   final bool isLoading;
@@ -538,7 +538,7 @@ class _ActiveSessionProgressStrip extends StatefulWidget {
     required this.activeColor,
   });
 
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final Color activeColor;
 
   @override

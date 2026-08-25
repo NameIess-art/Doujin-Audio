@@ -351,7 +351,9 @@ class _SessionDetailPageState extends ConsumerState<SessionDetailPage>
           child: RepaintBoundary(
             child: Builder(
               builder: (context) {
-                final pageSession = playback.sessionById(_currentSessionId);
+                final pageSession = playback.sessionSnapshotById(
+                  _currentSessionId,
+                );
                 if (pageSession == null) {
                   return const SizedBox.shrink();
                 }
@@ -455,7 +457,7 @@ class _SessionDetailBackdrop extends StatelessWidget {
 }
 
 class _SessionDetailScaffold extends ConsumerStatefulWidget {
-  final PlaybackSession session;
+  final PlaybackSessionSnapshot session;
   final Future<String?> coverPathFuture;
   final Animation<double> dismissAnimation;
   final VoidCallback onClose;
@@ -570,7 +572,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
 
   void _showAudioDetailForSession(
     BuildContext context,
-    PlaybackSession session,
+    PlaybackSessionSnapshot session,
     MusicTrack? track,
   ) {
     if (track?.remoteMetadataKind == 'asmr.one' &&

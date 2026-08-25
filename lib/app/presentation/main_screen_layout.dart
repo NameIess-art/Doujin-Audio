@@ -286,7 +286,7 @@ extension _MainScreenLayout on _MainScreenState {
   Widget _buildMobileBottomDock(
     BuildContext context, {
     required AppLanguageProvider i18n,
-    required List<PlaybackSession> overlaySessions,
+    required List<PlaybackSessionSnapshot> overlaySessions,
     required BottomNavigationStyle style,
     bool tinyMode = false,
   }) {
@@ -330,7 +330,7 @@ extension _MainScreenLayout on _MainScreenState {
     BuildContext context, {
     Key? key,
     required AppLanguageProvider i18n,
-    required List<PlaybackSession> overlaySessions,
+    required List<PlaybackSessionSnapshot> overlaySessions,
     bool tinyMode = false,
     bool isCurrent = true,
   }) {
@@ -420,7 +420,7 @@ extension _MainScreenLayout on _MainScreenState {
     BuildContext context, {
     Key? key,
     required AppLanguageProvider i18n,
-    required List<PlaybackSession> overlaySessions,
+    required List<PlaybackSessionSnapshot> overlaySessions,
     bool tinyMode = false,
     bool isCurrent = true,
   }) {
@@ -493,7 +493,7 @@ extension _MainScreenLayout on _MainScreenState {
   Widget _buildDesktopNavigation(
     BuildContext context,
     AppLanguageProvider i18n,
-    List<PlaybackSession> overlaySessions,
+    List<PlaybackSessionSnapshot> overlaySessions,
   ) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -541,8 +541,7 @@ extension _MainScreenLayout on _MainScreenState {
               builder: (context, constraints) {
                 final rail = ValueListenableBuilder<int>(
                   valueListenable: _activePageIndex,
-                  builder: (context, selectedIndex, _) =>
-                      ValueListenableBuilder<int>(
+                  builder: (context, selectedIndex, _) => ValueListenableBuilder<int>(
                     valueListenable: _audioLibrarySectionIndex,
                     builder: (context, sectionIndex, _) => Theme(
                       data: Theme.of(context).copyWith(
@@ -618,7 +617,9 @@ extension _MainScreenLayout on _MainScreenState {
                                                 color: cs.onPrimaryContainer,
                                               ),
                                             ),
-                                            const SizedBox(width: AppSpacing.sm),
+                                            const SizedBox(
+                                              width: AppSpacing.sm,
+                                            ),
                                             Expanded(
                                               child: Text(
                                                 i18n.tr('asmr_player'),
@@ -628,7 +629,8 @@ extension _MainScreenLayout on _MainScreenState {
                                                     .textTheme
                                                     .titleMedium
                                                     ?.copyWith(
-                                                      fontWeight: FontWeight.w800,
+                                                      fontWeight:
+                                                          FontWeight.w800,
                                                     ),
                                               ),
                                             ),
@@ -642,187 +644,175 @@ extension _MainScreenLayout on _MainScreenState {
                                         ),
                                 ),
                               ),
-                        destinations: _MainScreenState._destinations
-                            .asMap()
-                            .entries
-                            .map((entry) {
-                              final index = entry.key;
-                              final item = entry.value;
-                              final isSelected = selectedIndex == index;
-                              final label = index == 0
-                                  ? (sectionIndex == AudioLibraryPage.asmrSection
-                                        ? 'ASMR.ONE'
-                                        : i18n.tr('music_library'))
-                                  : i18n.tr(item.labelKey);
+                        destinations: _MainScreenState._destinations.asMap().entries.map((
+                          entry,
+                        ) {
+                          final index = entry.key;
+                          final item = entry.value;
+                          final isSelected = selectedIndex == index;
+                          final label = index == 0
+                              ? (sectionIndex == AudioLibraryPage.asmrSection
+                                    ? 'ASMR.ONE'
+                                    : i18n.tr('music_library'))
+                              : i18n.tr(item.labelKey);
 
-                              Widget labelWidget;
-                              if (index == 0) {
-                                final labelTextWidget = Text(
-                                  label,
-                                  style: isSelected
-                                      ? TextStyle(
-                                          color: cs.primary,
-                                          fontWeight: FontWeight.w700,
-                                        )
-                                      : null,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                );
+                          Widget labelWidget;
+                          if (index == 0) {
+                            final labelTextWidget = Text(
+                              label,
+                              style: isSelected
+                                  ? TextStyle(
+                                      color: cs.primary,
+                                      fontWeight: FontWeight.w700,
+                                    )
+                                  : null,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            );
 
-                                final labelContent = _isMenuCollapsed
-                                    ? labelTextWidget
-                                    : Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Icon(
-                                            Icons.chevron_left_rounded,
-                                            key: const ValueKey<String>(
-                                              'main_destination_library_left_indicator',
-                                            ),
-                                            size: 14,
-                                            color: isSelected
-                                                ? cs.primary
-                                                : cs.onSurfaceVariant.withValues(
-                                                    alpha: 0.6,
-                                                  ),
-                                          ),
-                                          const SizedBox(width: 2),
-                                          Flexible(child: labelTextWidget),
-                                          const SizedBox(width: 2),
-                                          Icon(
-                                            Icons.chevron_right_rounded,
-                                            key: const ValueKey<String>(
-                                              'main_destination_library_right_indicator',
-                                            ),
-                                            size: 14,
-                                            color: isSelected
-                                                ? cs.primary
-                                                : cs.onSurfaceVariant.withValues(
-                                                    alpha: 0.6,
-                                                  ),
-                                          ),
-                                        ],
-                                      );
-
-                                labelWidget = _isMenuCollapsed
-                                    ? labelContent
-                                    : _BottomDestinationInkResponse(
-                                        inkKey: ValueKey<String>(
-                                          'main_destination_ink_${item.labelKey}',
+                            final labelContent = _isMenuCollapsed
+                                ? labelTextWidget
+                                : Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.chevron_left_rounded,
+                                        key: const ValueKey<String>(
+                                          'main_destination_library_left_indicator',
                                         ),
-                                        onTap: () => _switchPage(index),
-                                        onLongPress:
-                                            _toggleAudioLibrarySectionFromNavigation,
-                                        onHorizontalSwipe:
-                                            _toggleAudioLibrarySectionFromNavigation,
-                                        child: labelContent,
-                                      );
-                              } else {
-                                labelWidget = Text(
-                                  _isMenuCollapsed ? '' : label,
-                                  style: isSelected
-                                      ? TextStyle(
-                                          color: cs.primary,
-                                          fontWeight: FontWeight.w700,
-                                        )
-                                      : null,
-                                );
-                              }
-
-                              Widget buildIconWidget(
-                                IconData iconData, {
-                                bool includeKey = false,
-                              }) {
-                                final rawIcon = Icon(
-                                  iconData,
-                                  key: includeKey
-                                      ? ValueKey<String>(
-                                          'main_destination_${item.labelKey}',
-                                        )
-                                      : null,
-                                );
-                                if (index == 0) {
-                                  final paddedIcon = SizedBox(
-                                    width: 56,
-                                    height: 40,
-                                    child: Center(child: rawIcon),
-                                  );
-                                  if (_isMenuCollapsed) {
-                                    return _BottomDestinationInkResponse(
-                                      inkKey: ValueKey<String>(
-                                        'main_destination_ink_${item.labelKey}',
-                                      ),
-                                      onTap: () => _switchPage(index),
-                                      onLongPress:
-                                          _toggleAudioLibrarySectionFromNavigation,
-                                      onHorizontalSwipe:
-                                          _toggleAudioLibrarySectionFromNavigation,
-                                      child: paddedIcon,
-                                    );
-                                  } else {
-                                    var horizontalDragDistance = 0.0;
-                                    return RawGestureDetector(
-                                      behavior: HitTestBehavior.opaque,
-                                      gestures: <Type, GestureRecognizerFactory>{
-                                        LongPressGestureRecognizer:
-                                            GestureRecognizerFactoryWithHandlers<
-                                              LongPressGestureRecognizer
-                                            >(
-                                              () => LongPressGestureRecognizer(
-                                                duration: const Duration(
-                                                  milliseconds: 350,
-                                                ),
+                                        size: 14,
+                                        color: isSelected
+                                            ? cs.primary
+                                            : cs.onSurfaceVariant.withValues(
+                                                alpha: 0.6,
                                               ),
-                                              (recognizer) =>
-                                                  recognizer.onLongPress =
-                                                      _toggleAudioLibrarySectionFromNavigation,
-                                            ),
-                                        HorizontalDragGestureRecognizer:
-                                            GestureRecognizerFactoryWithHandlers<
-                                              HorizontalDragGestureRecognizer
-                                            >(
-                                              HorizontalDragGestureRecognizer
-                                                  .new,
-                                              (recognizer) {
-                                                recognizer.onStart = (_) {
-                                                  horizontalDragDistance = 0;
-                                                };
-                                                recognizer.onUpdate = (
-                                                  details,
-                                                ) {
-                                                  horizontalDragDistance +=
-                                                      details.primaryDelta ?? 0;
-                                                };
-                                                recognizer.onEnd = (_) {
-                                                  if (horizontalDragDistance
-                                                          .abs() >=
-                                                      24) {
-                                                    _toggleAudioLibrarySectionFromNavigation();
-                                                  }
-                                                };
-                                              },
-                                            ),
-                                      },
-                                      child: paddedIcon,
-                                    );
-                                  }
-                                }
-                                return rawIcon;
-                              }
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Flexible(child: labelTextWidget),
+                                      const SizedBox(width: 2),
+                                      Icon(
+                                        Icons.chevron_right_rounded,
+                                        key: const ValueKey<String>(
+                                          'main_destination_library_right_indicator',
+                                        ),
+                                        size: 14,
+                                        color: isSelected
+                                            ? cs.primary
+                                            : cs.onSurfaceVariant.withValues(
+                                                alpha: 0.6,
+                                              ),
+                                      ),
+                                    ],
+                                  );
 
-                              return NavigationRailDestination(
-                                icon: buildIconWidget(
-                                  item.icon,
-                                  includeKey: true,
-                                ),
-                                selectedIcon: buildIconWidget(
-                                  item.selectedIcon,
-                                  includeKey: false,
-                                ),
-                                label: labelWidget,
+                            labelWidget = _isMenuCollapsed
+                                ? labelContent
+                                : _BottomDestinationInkResponse(
+                                    inkKey: ValueKey<String>(
+                                      'main_destination_ink_${item.labelKey}',
+                                    ),
+                                    onTap: () => _switchPage(index),
+                                    onLongPress:
+                                        _toggleAudioLibrarySectionFromNavigation,
+                                    onHorizontalSwipe:
+                                        _toggleAudioLibrarySectionFromNavigation,
+                                    child: labelContent,
+                                  );
+                          } else {
+                            labelWidget = Text(
+                              _isMenuCollapsed ? '' : label,
+                              style: isSelected
+                                  ? TextStyle(
+                                      color: cs.primary,
+                                      fontWeight: FontWeight.w700,
+                                    )
+                                  : null,
+                            );
+                          }
+
+                          Widget buildIconWidget(
+                            IconData iconData, {
+                            bool includeKey = false,
+                          }) {
+                            final rawIcon = Icon(
+                              iconData,
+                              key: includeKey
+                                  ? ValueKey<String>(
+                                      'main_destination_${item.labelKey}',
+                                    )
+                                  : null,
+                            );
+                            if (index == 0) {
+                              final paddedIcon = SizedBox(
+                                width: 56,
+                                height: 40,
+                                child: Center(child: rawIcon),
                               );
-                            })
-                            .toList(),
+                              if (_isMenuCollapsed) {
+                                return _BottomDestinationInkResponse(
+                                  inkKey: ValueKey<String>(
+                                    'main_destination_ink_${item.labelKey}',
+                                  ),
+                                  onTap: () => _switchPage(index),
+                                  onLongPress:
+                                      _toggleAudioLibrarySectionFromNavigation,
+                                  onHorizontalSwipe:
+                                      _toggleAudioLibrarySectionFromNavigation,
+                                  child: paddedIcon,
+                                );
+                              } else {
+                                var horizontalDragDistance = 0.0;
+                                return RawGestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  gestures: <Type, GestureRecognizerFactory>{
+                                    LongPressGestureRecognizer:
+                                        GestureRecognizerFactoryWithHandlers<
+                                          LongPressGestureRecognizer
+                                        >(
+                                          () => LongPressGestureRecognizer(
+                                            duration: const Duration(
+                                              milliseconds: 350,
+                                            ),
+                                          ),
+                                          (
+                                            recognizer,
+                                          ) => recognizer.onLongPress =
+                                              _toggleAudioLibrarySectionFromNavigation,
+                                        ),
+                                    HorizontalDragGestureRecognizer:
+                                        GestureRecognizerFactoryWithHandlers<
+                                          HorizontalDragGestureRecognizer
+                                        >(HorizontalDragGestureRecognizer.new, (
+                                          recognizer,
+                                        ) {
+                                          recognizer.onStart = (_) {
+                                            horizontalDragDistance = 0;
+                                          };
+                                          recognizer.onUpdate = (details) {
+                                            horizontalDragDistance +=
+                                                details.primaryDelta ?? 0;
+                                          };
+                                          recognizer.onEnd = (_) {
+                                            if (horizontalDragDistance.abs() >=
+                                                24) {
+                                              _toggleAudioLibrarySectionFromNavigation();
+                                            }
+                                          };
+                                        }),
+                                  },
+                                  child: paddedIcon,
+                                );
+                              }
+                            }
+                            return rawIcon;
+                          }
+
+                          return NavigationRailDestination(
+                            icon: buildIconWidget(item.icon, includeKey: true),
+                            selectedIcon: buildIconWidget(item.selectedIcon),
+                            label: labelWidget,
+                          );
+                        }).toList(),
                       ),
                     ),
                   ),

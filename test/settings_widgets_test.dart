@@ -1334,7 +1334,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
     harness.playbackService.sessions[session.id] = session;
     harness.playbackService.markActiveSessionsDirty();
 

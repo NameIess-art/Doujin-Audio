@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../application/app_cache_service.dart';
 import '../application/settings_command_controller.dart';
 import '../application/app_update_service.dart';
@@ -14,7 +15,7 @@ import '../application/settings_repository.dart';
 import '../application/settings_state.dart';
 import '../../../core/media/path_display.dart';
 import '../../../core/media/card_info_field.dart';
-import '../../../core/platform/permission_action_controller.dart';
+import '../../../core/ui/permission_action_controller.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';

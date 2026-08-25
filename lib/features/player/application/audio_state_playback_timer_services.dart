@@ -124,12 +124,13 @@ class PlaybackSessionService {
   }) {
     slice.update(
       PlaybackStateSliceData(
-        activeSessions: activeSessions,
+        activeSessions: activeSessions
+            .map(PlaybackSessionSnapshot.fromRuntime)
+            .toList(growable: false),
         playingSessionCount: playingSessionCount,
         focusedSessionId: focusedSessionId,
         multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
         coverGeneration: coverGeneration,
-        sessionStateVersion: sessionStateVersion,
         isInitialized: isInitialized,
       ),
     );

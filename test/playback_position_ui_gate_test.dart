@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/application/playback_session.dart';
+import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
@@ -28,12 +29,12 @@ void main() {
       final session = _session('one');
       final coordinator = UiInteractionCoordinator();
       final gate = PlaybackPositionUiGate(
-        session: session,
+        session: PlaybackSessionSnapshot.fromRuntime(session),
         interactionCoordinator: coordinator,
         minUpdateInterval: const Duration(hours: 1),
       );
       addTearDown(coordinator.dispose);
-      addTearDown(session.dispose);
+      addTearDown(session.shutdown);
 
       var notifications = 0;
       gate.addListener(() => notifications++);
@@ -58,13 +59,13 @@ void main() {
       final coordinator = UiInteractionCoordinator();
       final source = Object();
       final gate = PlaybackPositionUiGate(
-        session: session,
+        session: PlaybackSessionSnapshot.fromRuntime(session),
         interactionCoordinator: coordinator,
         minUpdateInterval: Duration.zero,
       );
       addTearDown(gate.dispose);
       addTearDown(coordinator.dispose);
-      addTearDown(session.dispose);
+      addTearDown(session.shutdown);
 
       var notifications = 0;
       gate.addListener(() => notifications++);
@@ -97,11 +98,11 @@ void main() {
   ) async {
     final session = _session('one');
     final gate = PlaybackPositionUiGate(
-      session: session,
+      session: PlaybackSessionSnapshot.fromRuntime(session),
       minUpdateInterval: const Duration(milliseconds: 20),
     );
     addTearDown(gate.dispose);
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     var notifications = 0;
     gate.addListener(() => notifications++);
@@ -126,13 +127,13 @@ void main() {
     final coordinator = UiInteractionCoordinator();
     final source = Object();
     final gate = PlaybackPositionUiGate(
-      session: session,
+      session: PlaybackSessionSnapshot.fromRuntime(session),
       interactionCoordinator: coordinator,
       minUpdateInterval: const Duration(milliseconds: 100),
     );
     addTearDown(gate.dispose);
     addTearDown(coordinator.dispose);
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     var notifications = 0;
     gate.addListener(() => notifications++);
@@ -163,11 +164,11 @@ void main() {
     (tester) async {
       final session = _session('one');
       final gate = PlaybackPositionUiGate(
-        session: session,
+        session: PlaybackSessionSnapshot.fromRuntime(session),
         minUpdateInterval: Duration.zero,
       );
       addTearDown(gate.dispose);
-      addTearDown(session.dispose);
+      addTearDown(session.shutdown);
 
       var notifications = 0;
       gate.addListener(() => notifications++);
@@ -212,12 +213,12 @@ void main() {
     (tester) async {
       final session = _session('one');
       final gate = PlaybackPositionUiGate(
-        session: session,
+        session: PlaybackSessionSnapshot.fromRuntime(session),
         minUpdateInterval: Duration.zero,
         includeBufferedPosition: false,
       );
       addTearDown(gate.dispose);
-      addTearDown(session.dispose);
+      addTearDown(session.shutdown);
 
       var notifications = 0;
       gate.addListener(() => notifications++);

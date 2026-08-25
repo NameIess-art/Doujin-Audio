@@ -8,6 +8,8 @@ import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'support/test_persistence_repository.dart';
 import 'package:doujin_audio/features/library/application/library_facade.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
+import 'package:doujin_audio/features/player/application/audio_state_services.dart';
 import 'package:doujin_audio/features/player/application/playback_facade.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
@@ -18,6 +20,34 @@ import 'package:doujin_audio/features/player/domain/playback_mode.dart';
 import 'package:doujin_audio/features/player/domain/playback_queue.dart';
 
 void main() {
+  test(
+    'dispose releases dependencies when session cancellation fails',
+    () async {
+      final library = _createLibraryFacade();
+      final native = _RecordingNativePlaybackRepository();
+      final cache = _RecordingPlaybackCacheService();
+      final source = StreamController<void>(
+        onCancel: () => Future<void>.error(StateError('cancel failed')),
+      );
+      final session = _session('failing')
+        ..subscriptions.add(source.stream.listen((_) {}));
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+        nativeRepository: native,
+        playbackCacheService: cache,
+        service: PlaybackSessionService(),
+      )..registerSession(session);
+
+      await expectLater(playback.dispose(), throwsStateError);
+
+      expect(cache.disposeCount, 1);
+      expect(native.disposeCount, 1);
+      await source.close();
+      await library.dispose();
+    },
+  );
+
   test('PlaybackFacade owns session registration and reorder commands', () {
     final library = _createLibraryFacade();
     final playback = PlaybackFacade.create(
@@ -27,8 +57,8 @@ void main() {
     final first = _session('first');
     final second = _session('second');
     addTearDown(() async {
-      first.dispose();
-      second.dispose();
+      await first.shutdown();
+      await second.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -303,7 +333,7 @@ void main() {
       var pauseCount = 0;
       var prepareCount = 0;
       addTearDown(() async {
-        session.dispose();
+        await session.shutdown();
         await playback.dispose();
         await library.dispose();
       });
@@ -427,7 +457,7 @@ void main() {
     var pauseCount = 0;
     var startCount = 0;
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -486,51 +516,54 @@ void main() {
     expect(playback.hasSessionAdjacentTrack(session.id, forward: true), isTrue);
   });
 
-  test('playback error retries an existing native source through transport', () async {
-    final library = _createLibraryFacade();
-    final playback = PlaybackFacade.create(
-      databaseRepository:
-          library.databaseRepository as PlaybackPersistenceRepository,
-    )..configurePersistence(enabled: false);
-    final session = _session('failed-native-source')
-      ..loadedPath = '/tracks/failed.mp3'
-      ..playbackError = 'network failed'
-      ..state = PlayerState(false, ProcessingState.idle);
-    var prepareCount = 0;
-    var startCount = 0;
-    addTearDown(() async {
-      await playback.dispose();
-      await library.dispose();
-    });
-    playback
-      ..attachPlaybackCommands(
-        prepareSession:
-            (
-              session, {
-              required nextPath,
-              autoPlay = true,
-              forceStartAtZero = false,
-              showLoading = true,
-              targetQueueIndex,
-            }) async {
-              prepareCount++;
-              return true;
-            },
-        pauseSession: (_) async {},
-        startSession: (_, {required shouldStartTriggerCountdown}) async {
-          startCount++;
-          return true;
-        },
-        resolveAdvance: (_, {required forward}) => null,
-        hasAdjacent: (_, {required forward}) => false,
-      )
-      ..registerSession(session);
+  test(
+    'playback error retries an existing native source through transport',
+    () async {
+      final library = _createLibraryFacade();
+      final playback = PlaybackFacade.create(
+        databaseRepository:
+            library.databaseRepository as PlaybackPersistenceRepository,
+      )..configurePersistence(enabled: false);
+      final session = _session('failed-native-source')
+        ..loadedPath = '/tracks/failed.mp3'
+        ..playbackError = 'network failed'
+        ..state = PlayerState(false, ProcessingState.idle);
+      var prepareCount = 0;
+      var startCount = 0;
+      addTearDown(() async {
+        await playback.dispose();
+        await library.dispose();
+      });
+      playback
+        ..attachPlaybackCommands(
+          prepareSession:
+              (
+                session, {
+                required nextPath,
+                autoPlay = true,
+                forceStartAtZero = false,
+                showLoading = true,
+                targetQueueIndex,
+              }) async {
+                prepareCount++;
+                return true;
+              },
+          pauseSession: (_) async {},
+          startSession: (_, {required shouldStartTriggerCountdown}) async {
+            startCount++;
+            return true;
+          },
+          resolveAdvance: (_, {required forward}) => null,
+          hasAdjacent: (_, {required forward}) => false,
+        )
+        ..registerSession(session);
 
-    await playback.toggleSessionPlayPause(session.id);
+      await playback.toggleSessionPlayPause(session.id);
 
-    expect(prepareCount, 0);
-    expect(startCount, 1);
-  });
+      expect(prepareCount, 0);
+      expect(startCount, 1);
+    },
+  );
 
   test('track changes preserve the session playback intent', () async {
     final library = _createLibraryFacade();
@@ -560,7 +593,7 @@ void main() {
       ];
     final autoPlayValues = <bool>[];
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -618,7 +651,7 @@ void main() {
     )..configurePersistence(enabled: false);
     final session = _session('adjacent_loading');
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -671,7 +704,7 @@ void main() {
       final preparationReleases = <Completer<void>>[];
       final preparedPaths = <String>[];
       addTearDown(() async {
-        session.dispose();
+        await session.shutdown();
         await playback.dispose();
         await library.dispose();
       });
@@ -737,7 +770,7 @@ void main() {
         ..loopMode = SessionLoopMode.folderOnce;
       var completedCount = 0;
       addTearDown(() async {
-        session.dispose();
+        await session.shutdown();
         await playback.dispose();
         await library.dispose();
       });
@@ -787,7 +820,7 @@ void main() {
     )..configurePersistence(enabled: false);
     final session = _session('completion_failure');
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -840,7 +873,7 @@ void main() {
     final synchronizedModes = <SessionLoopMode>[];
     var settingsChanges = 0;
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -891,7 +924,7 @@ void main() {
     )..configurePersistence(enabled: false);
     final session = _session('effects')..loadedPath = '/tracks/effects.mp3';
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -922,7 +955,7 @@ void main() {
     );
     addTearDown(() async {
       for (final session in playback.sessions.values) {
-        session.dispose();
+        await session.shutdown();
       }
       await playback.dispose();
       await library.dispose();
@@ -976,7 +1009,7 @@ void main() {
     });
     playback.configurePersistence(enabled: false);
     final queue = playback.createPlaybackQueue('No persistence');
-    addTearDown(queue.dispose);
+    addTearDown(queue.shutdown);
 
     await Future<void>.delayed(const Duration(milliseconds: 10));
 
@@ -995,7 +1028,7 @@ void main() {
     final session = _session('retargeted')
       ..currentTrackPath = '/new/work/track.mp3';
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -1052,7 +1085,7 @@ void main() {
         ..lastKnownPosition = const Duration(seconds: 12)
         ..setOptimisticState(playing: true);
       addTearDown(() async {
-        session.dispose();
+        await session.shutdown();
         await playback.dispose();
         await library.dispose();
       });
@@ -1162,7 +1195,7 @@ void main() {
         isSingle: true,
       );
       addTearDown(() async {
-        session.dispose();
+        await session.shutdown();
         await playback.dispose();
         await library.dispose();
       });
@@ -1210,7 +1243,7 @@ void main() {
     );
     final session = _session('full-supersedes-position');
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -1264,7 +1297,7 @@ void main() {
         ],
       );
     addTearDown(() async {
-      queueSession.dispose();
+      await queueSession.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -1354,7 +1387,7 @@ void _backgroundBucketTests() {
     );
     final session = _session('bucket');
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await playback.dispose();
       await library.dispose();
     });
@@ -1419,6 +1452,7 @@ final class _RecordingNativePlaybackRepository
   Completer<NativeResult<NativePlaybackSnapshot>>? speedGate;
   int audioEffectsCalls = 0;
   bool failAudioEffects = false;
+  int disposeCount = 0;
 
   @override
   Future<NativeResult<void>> pauseAll() async {
@@ -1492,5 +1526,16 @@ final class _RecordingNativePlaybackRepository
   }
 
   @override
-  Future<void> dispose() async {}
+  Future<void> dispose() async {
+    disposeCount++;
+  }
+}
+
+final class _RecordingPlaybackCacheService extends AsmrPlaybackCacheService {
+  int disposeCount = 0;
+
+  @override
+  Future<void> dispose() async {
+    disposeCount++;
+  }
 }

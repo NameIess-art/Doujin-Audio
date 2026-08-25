@@ -10,6 +10,7 @@ import 'package:lottie/lottie.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/card_info_field.dart';

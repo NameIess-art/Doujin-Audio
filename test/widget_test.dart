@@ -21,6 +21,7 @@ import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
+import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'support/test_persistence_repository.dart';
@@ -1550,7 +1551,7 @@ void main() {
       state: PlayerState(false, ProcessingState.idle),
     )..playbackError = 'network failed';
     addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
     runtimeGraph.library.addTracks([track], notify: false, persist: false);
     playbackService.registerSession(session);
     playbackService.syncSlice(
@@ -1575,7 +1576,7 @@ void main() {
           home: Scaffold(
             body: Center(
               child: ActiveSessionCarousel(
-                sessions: [session],
+                sessions: [PlaybackSessionSnapshot.fromRuntime(session)],
                 onOpenSession: (_) {},
               ),
             ),
@@ -1788,8 +1789,8 @@ void main() {
       state: PlayerState(false, ProcessingState.ready),
     );
     addTearDown(() => unawaited(runtimeGraph.runtime.dispose()));
-    addTearDown(firstSession.dispose);
-    addTearDown(secondSession.dispose);
+    addTearDown(firstSession.shutdown);
+    addTearDown(secondSession.shutdown);
     runtimeGraph.library.addTracks(
       [firstTrack, secondTrack],
       notify: false,
@@ -1821,7 +1822,10 @@ void main() {
           home: Scaffold(
             body: Center(
               child: ActiveSessionCarousel(
-                sessions: [firstSession, secondSession],
+                sessions: [
+                  PlaybackSessionSnapshot.fromRuntime(firstSession),
+                  PlaybackSessionSnapshot.fromRuntime(secondSession),
+                ],
                 onOpenSession: (_) {},
               ),
             ),
@@ -1901,7 +1905,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
     harness.playbackService.registerSession(session);
     harness.playbackService.syncSlice(
       activeSessions: <PlaybackSession>[session],
@@ -2682,7 +2686,7 @@ Future<_AppShellHarness> _pumpAppShell(
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
     playbackService.registerSession(session);
     playbackService.syncSlice(
       activeSessions: [session],

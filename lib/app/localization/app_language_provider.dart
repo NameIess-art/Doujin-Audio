@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../application/persisted_state_reloader.dart';
+import '../../core/persistence/persisted_state_reloader.dart';
 import '../../core/app_language.dart';
 import '../../features/settings/application/app_preferences.dart';
 

@@ -807,7 +807,7 @@ void main() {
               }
             });
 
-        await runtimeGraph.playback.spawnSession(track, autoPlay: false);
+        await runtimeGraph.playback.spawnSession(track, autoPlay: true);
         await prepareStarted.future;
         final session = runtimeGraph.playback.activeSessions.single;
 

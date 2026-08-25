@@ -2,7 +2,6 @@ import '../../library/application/cover_image_cache_policy.dart';
 import '../../library/application/library_facade.dart';
 import '../../player/application/notification_facade.dart';
 import '../../player/application/playback_facade.dart';
-import '../../player/application/playback_session.dart';
 import '../../player/domain/audio_effects.dart';
 import 'settings_repository.dart';
 import 'settings_state.dart';
@@ -115,11 +114,13 @@ final class SettingsCommandController {
 
   Future<void> saveCustomEqPreset(
     String name,
-    PlaybackSession session, {
+    String sessionId, {
     DateTime? now,
   }) async {
     final trimmedName = name.trim();
     if (trimmedName.isEmpty) return;
+    final session = _playback.sessionSnapshotById(sessionId);
+    if (session == null) return;
     final timestamp = now ?? DateTime.now();
     _settings.customEqPresets = List<EqPreset>.unmodifiable(<EqPreset>[
       ..._settings.customEqPresets,

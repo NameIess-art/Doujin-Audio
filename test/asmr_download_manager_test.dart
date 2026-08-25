@@ -227,9 +227,10 @@ void main() {
     () async {
       final manager = _manager();
       final notifications = <AsmrDownloadTaskSnapshot?>[];
-      manager.addListener(() {
-        notifications.add(manager.getTask(1));
+      manager.taskStream(1).listen((task) {
+        if (task != null) notifications.add(task);
       });
+      await Future<void>.delayed(Duration.zero);
 
       final startedAt = DateTime(2026);
       final work = _work();
@@ -431,7 +432,7 @@ void main() {
       );
       manager.debugSetCurrentTaskForTesting(initial);
       var notifications = 0;
-      manager.addListener(() => notifications++);
+      manager.taskStream(1).skip(1).listen((_) => notifications++);
 
       for (var index = 0; index < 20; index++) {
         manager.debugRecordDownloadChunkForTesting(
@@ -474,7 +475,7 @@ void main() {
         ),
       );
       var notifications = 0;
-      manager.addListener(() => notifications++);
+      manager.taskStream(1).skip(1).listen((_) => notifications++);
 
       for (var index = 0; index < 4; index++) {
         manager.debugRecordDownloadChunkForTesting(
@@ -489,6 +490,49 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 150));
       expect(notifications, 1);
       expect(manager.getTask(1)?.downloadedBytes, 1024 * 1024);
+      manager.dispose();
+    },
+  );
+
+  test(
+    'single-task progress does not notify unrelated task or task ids',
+    () async {
+      final manager = _manager();
+      final startedAt = DateTime(2026);
+      for (var workId = 1; workId <= 100; workId++) {
+        manager.debugSetCurrentTaskForTesting(
+          AsmrDownloadTaskSnapshot(
+            work: _work(id: workId),
+            destinationRoot: 'C:\\Downloads',
+            workFolderName: 'Work $workId',
+            conflictPolicy: AsmrDownloadConflictPolicy.skip,
+            status: AsmrDownloadTaskStatus.downloading,
+            totalFiles: 1,
+            completedFiles: 0,
+            skippedFiles: 0,
+            failedFiles: 0,
+            totalBytes: 1024,
+            downloadedBytes: 0,
+            startedAt: startedAt,
+          ),
+        );
+      }
+      var targetEvents = 0;
+      var unrelatedEvents = 0;
+      var taskIdEvents = 0;
+      manager.taskStream(1).skip(1).listen((_) => targetEvents++);
+      manager.taskStream(2).skip(1).listen((_) => unrelatedEvents++);
+      manager.taskIdsStream.skip(1).listen((_) => taskIdEvents++);
+
+      manager.debugSetCurrentTaskForTesting(
+        manager.getTask(1)!.copyWith(downloadedBytes: 1),
+        progressOnly: true,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+
+      expect(targetEvents, 1);
+      expect(unrelatedEvents, 0);
+      expect(taskIdEvents, 0);
       manager.dispose();
     },
   );
@@ -1018,8 +1062,7 @@ void main() {
       );
       final manager = _manager();
       final observed = <int>[];
-      manager.addListener(() {
-        final task = manager.getTask(1);
+      manager.taskStream(1).skip(1).listen((task) {
         if (task != null && task.status == AsmrDownloadTaskStatus.downloading) {
           observed.add(task.downloadedBytes);
         }
@@ -1861,10 +1904,9 @@ void main() {
       );
       final manager = _manager();
       var observedRetry = false;
-      manager.addListener(() {
+      manager.taskStream(1).skip(1).listen((task) {
         observedRetry =
-            observedRetry ||
-            manager.getTask(1)?.fileRetryAttempts['retry.mp3'] == 1;
+            observedRetry || task?.fileRetryAttempts['retry.mp3'] == 1;
       });
       try {
         final baseUrl = 'http://${server.address.host}:${server.port}';
@@ -2973,7 +3015,7 @@ void main() {
       );
       final manager = _manager();
       var notificationCount = 0;
-      manager.addListener(() => notificationCount++);
+      manager.taskIdsStream.skip(1).listen((_) => notificationCount++);
       try {
         final downloadUrl =
             'http://${server.address.host}:${server.port}/track.mp3';

@@ -3,27 +3,25 @@ part of 'audio_state_services.dart';
 @immutable
 class PlaybackStateSliceData {
   PlaybackStateSliceData({
-    List<PlaybackSession> activeSessions = const <PlaybackSession>[],
+    List<PlaybackSessionSnapshot> activeSessions =
+        const <PlaybackSessionSnapshot>[],
     this.playingSessionCount = 0,
     this.focusedSessionId,
     this.multiThreadPlaybackEnabled = false,
     this.coverGeneration = 0,
-    this.sessionStateVersion = 0,
     this.isInitialized = false,
   }) : activeSessions = immutableList(activeSessions);
 
-  final List<PlaybackSession> activeSessions;
+  final List<PlaybackSessionSnapshot> activeSessions;
   final int playingSessionCount;
   final String? focusedSessionId;
   final bool multiThreadPlaybackEnabled;
   final int coverGeneration;
-  final int sessionStateVersion;
   final bool isInitialized;
 
   @override
   bool operator ==(Object other) {
     return other is PlaybackStateSliceData &&
-        other.sessionStateVersion == sessionStateVersion &&
         listEquals(other.activeSessions, activeSessions) &&
         other.playingSessionCount == playingSessionCount &&
         other.focusedSessionId == focusedSessionId &&
@@ -34,7 +32,6 @@ class PlaybackStateSliceData {
 
   @override
   int get hashCode => Object.hash(
-    sessionStateVersion,
     Object.hashAll(activeSessions),
     playingSessionCount,
     focusedSessionId,

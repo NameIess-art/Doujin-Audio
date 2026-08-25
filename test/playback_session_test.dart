@@ -1,7 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
+import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
 
 void main() {
   test(
@@ -25,8 +28,8 @@ void main() {
         createdAt: DateTime(2026, 1, 2),
         state: PlayerState(false, ProcessingState.idle),
       );
-      addTearDown(first.dispose);
-      addTearDown(second.dispose);
+      addTearDown(first.shutdown);
+      addTearDown(second.shutdown);
 
       final firstStates = <PlayerState>[];
       final secondStates = <PlayerState>[];
@@ -97,7 +100,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.idle),
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     final states = <PlayerState>[];
     session.stateStream.listen(states.add);
@@ -127,7 +130,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(true, ProcessingState.ready),
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     session.beginLoadingIndicatorThreshold(
       threshold: const Duration(milliseconds: 20),
@@ -152,7 +155,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     session.beginTransportCommand(commandId: 2, playing: true);
     expect(session.effectivePlaying, isTrue);
@@ -219,7 +222,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(true, ProcessingState.ready),
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     session.beginTransportCommand(commandId: 3, playing: false);
     session.beginTransportCommand(commandId: 4, playing: true);
@@ -244,7 +247,7 @@ void main() {
           ..loadedPath = '/audio/one.mp3'
           ..audioEffects = AudioEffectsState(skipSilenceEnabled: true)
           ..currentQueueIndex = 4;
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     final positions = <Duration>[];
     final durations = <Duration?>[];
@@ -298,7 +301,7 @@ void main() {
             eqBandLevels: <int, double>{1000: 2.5},
             panning: -0.4,
           );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     final snapshot = NativePlaybackSnapshot.fromMap(<String, Object?>{
       'sessionId': 'session_1',
@@ -339,7 +342,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(true, ProcessingState.ready),
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     session.applyNativeProgress(
       const NativePlaybackProgressUpdate(
@@ -378,7 +381,7 @@ void main() {
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.idle),
     );
-    addTearDown(session.dispose);
+    addTearDown(session.shutdown);
 
     session.applyNativeSnapshot(
       NativePlaybackSnapshot(
@@ -411,4 +414,110 @@ void main() {
     );
     expect(session.playbackError, isNull);
   });
+
+  test('shutdown awaits subscriptions and closes every stream once', () async {
+    final cancellationStarted = Completer<void>();
+    final allowCancellation = Completer<void>();
+    final source = StreamController<void>(
+      onCancel: () async {
+        cancellationStarted.complete();
+        await allowCancellation.future;
+      },
+    );
+    final session = PlaybackSession(
+      id: 'session_1',
+      currentTrackPath: '/audio/one.mp3',
+      loopMode: SessionLoopMode.single,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.idle),
+    );
+    session.subscriptions.add(source.stream.listen((_) {}));
+
+    final streamsDone = Future.wait<void>(<Future<void>>[
+      session.stateStream.drain<void>(),
+      session.positionStream.drain<void>(),
+      session.durationStream.drain<void>(),
+      session.bufferedPositionStream.drain<void>(),
+    ]);
+    final firstShutdown = session.shutdown();
+    final secondShutdown = session.shutdown();
+
+    expect(identical(firstShutdown, secondShutdown), isTrue);
+    expect(session.isDisposed, isTrue);
+    await cancellationStarted.future;
+    var completed = false;
+    unawaited(firstShutdown.then((_) => completed = true));
+    await Future<void>.delayed(Duration.zero);
+    expect(completed, isFalse);
+
+    allowCancellation.complete();
+    await firstShutdown;
+    await streamsDone;
+    expect(session.subscriptions, isEmpty);
+    await source.close();
+  });
+
+  test(
+    'shutdown closes every stream when subscription cancellation fails',
+    () async {
+      final source = StreamController<void>(
+        onCancel: () => Future<void>.error(StateError('cancel failed')),
+      );
+      final session = PlaybackSession(
+        id: 'session_1',
+        currentTrackPath: '/audio/one.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: PlayerState(false, ProcessingState.idle),
+      );
+      session.subscriptions.add(source.stream.listen((_) {}));
+      final streamsDone = Future.wait<void>(<Future<void>>[
+        session.stateStream.drain<void>(),
+        session.positionStream.drain<void>(),
+        session.durationStream.drain<void>(),
+        session.bufferedPositionStream.drain<void>(),
+      ]);
+
+      await expectLater(session.shutdown(), throwsStateError);
+      await streamsDone;
+      expect(session.subscriptions, isEmpty);
+      await source.close();
+    },
+  );
+
+  test(
+    'immutable snapshots detect runtime changes without a revision',
+    () async {
+      final session = PlaybackSession(
+        id: 'session_1',
+        currentTrackPath: '/audio/one.mp3',
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.folderSequential,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: PlayerState(false, ProcessingState.idle),
+      );
+      addTearDown(session.shutdown);
+      final before = PlaybackSessionSnapshot.fromRuntime(session);
+
+      session
+        ..volume = 0.5
+        ..setOptimisticState(
+          playing: true,
+          processingState: ProcessingState.ready,
+        );
+      final after = PlaybackSessionSnapshot.fromRuntime(session);
+
+      expect(after, isNot(before));
+      expect(before.volume, 1);
+      expect(before.state.playing, isFalse);
+      expect(after.volume, 0.5);
+      expect(after.state.playing, isTrue);
+      expect(after.state.processing, PlaybackProcessingStatus.ready);
+    },
+  );
 }

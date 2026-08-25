@@ -9,7 +9,7 @@ import '../../features/player/application/timer_facade.dart';
 import '../../features/settings/application/settings_repository.dart';
 import '../../features/settings/application/settings_state.dart';
 import 'audio_ui_warmup_coordinator.dart';
-import 'persisted_state_reloader.dart';
+import '../../core/persistence/persisted_state_reloader.dart';
 import 'playback_command_coordinator.dart';
 import 'playback_keep_alive_coordinator.dart';
 

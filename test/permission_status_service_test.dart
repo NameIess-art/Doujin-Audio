@@ -52,15 +52,79 @@ void main() {
     expect(snapshot.notificationsEnabled, isFalse);
     expect(snapshot.overlayAllowed, isTrue);
   });
+
+  test(
+    'capability checks and settings actions use the focused contract',
+    () async {
+      var overlayOpenCount = 0;
+      final service = PermissionStatusService(
+        isAndroidOverride: true,
+        powerService: _FakePowerService(),
+        notificationsService: _FakeNotificationsService(
+          check: () async => true,
+        ),
+        overlayCheck: () async => false,
+        overlayOpen: () async {
+          overlayOpenCount++;
+          return true;
+        },
+        updateInstallCheck: () async => true,
+        updateInstallOpen: () async => true,
+      );
+
+      expect(await service.isGranted(PermissionCapability.overlay), isFalse);
+      expect(await service.openSettings(PermissionCapability.overlay), isTrue);
+      expect(overlayOpenCount, 1);
+    },
+  );
+
+  test(
+    'notification permission request and settings fallback stay in service',
+    () async {
+      var requestCount = 0;
+      var fallbackCount = 0;
+      final service = PermissionStatusService(
+        isAndroidOverride: true,
+        powerService: _FakePowerService(),
+        notificationsService: _FakeNotificationsService(
+          check: () async => false,
+          open: () async => false,
+        ),
+        notificationPermissionCheck: () async => false,
+        notificationPermissionRequest: () async {
+          requestCount++;
+          return true;
+        },
+        notificationAppSettingsOpen: () async {
+          fallbackCount++;
+          return true;
+        },
+        overlayCheck: () async => true,
+        updateInstallCheck: () async => true,
+      );
+
+      expect(await service.request(PermissionCapability.notifications), isTrue);
+      expect(requestCount, 1);
+      expect(
+        await service.openSettings(PermissionCapability.notifications),
+        isTrue,
+      );
+      expect(fallbackCount, 1);
+    },
+  );
 }
 
 class _FakeNotificationsService extends NotificationsPlatformService {
-  _FakeNotificationsService({required this.check});
+  _FakeNotificationsService({required this.check, this.open});
 
   final Future<bool> Function() check;
+  final Future<bool> Function()? open;
 
   @override
   Future<bool> areNotificationsEnabled() => check();
+
+  @override
+  Future<bool> openNotificationSettings() => open?.call() ?? Future.value(true);
 }
 
 class _FakePowerService extends PowerPlatformService {

@@ -7,11 +7,9 @@ class _AsmrDownloadProgressInlineButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final manager = ref.read(asmrDownloadManagerProvider);
-    final state = ref.watch(asmrDownloadStateProvider).value != null
-        ? manager?.buttonViewState ??
-              const AsmrDownloadButtonViewState(visible: false, progress: null)
-        : const AsmrDownloadButtonViewState(visible: false, progress: null);
+    final state =
+        ref.watch(asmrDownloadButtonViewStateProvider).value ??
+        const AsmrDownloadButtonViewState(visible: false, progress: null);
     if (!state.visible) {
       return const SizedBox.shrink();
     }

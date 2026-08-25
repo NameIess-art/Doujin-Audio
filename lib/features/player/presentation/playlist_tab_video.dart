@@ -1,6 +1,6 @@
 part of 'playlist_tab.dart';
 
-bool _isSessionVideoReady(PlaybackSession session, MusicTrack? track) {
+bool _isSessionVideoReady(PlaybackSessionSnapshot session, MusicTrack? track) {
   final loadedPath = session.loadedPath;
   return Platform.isAndroid &&
       track?.isVideo == true &&
@@ -69,7 +69,7 @@ class _SessionVideoFullscreenPageState
   static const _gestureThreshold = 8.0;
 
   late final PlaybackFacade _playback;
-  PlaybackSession? _initialSession;
+  PlaybackSessionSnapshot? _initialSession;
   PlaybackPositionUiGate? _positionGate;
   Future<String?>? _coverFuture;
   late String _activeTrackPath;
@@ -106,7 +106,7 @@ class _SessionVideoFullscreenPageState
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _playback = ref.read(playbackFacadeProvider);
-    _initialSession = _playback.sessionById(widget.sessionId);
+    _initialSession = _playback.sessionSnapshotById(widget.sessionId);
     final session = _initialSession;
     if (session != null) {
       _positionGate = PlaybackPositionUiGate(
@@ -172,7 +172,7 @@ class _SessionVideoFullscreenPageState
         widget.sessionId,
         pendingVolume,
       );
-      if (!ok && _playback.sessionById(widget.sessionId) != null) {
+      if (!ok && _playback.hasSession(widget.sessionId)) {
         _showOperationFailure();
       }
       _dragVolume.value = null;
@@ -542,7 +542,7 @@ class _SessionVideoFullscreenPageState
         (state) => state.value?.allowVideoPlayback ?? true,
       ),
     );
-    final session = _playback.sessionById(widget.sessionId);
+    final session = _playback.sessionSnapshotById(widget.sessionId);
     final activeSession = session;
     final track = activeSession == null
         ? null
@@ -701,7 +701,7 @@ class _SessionVideoFullscreenPageState
 
   Widget _buildControls(
     BuildContext context,
-    PlaybackSession session,
+    PlaybackSessionSnapshot session,
     SessionDetailViewState? detail,
     bool playing,
   ) {

@@ -5,9 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
-import '../../../core/platform/notifications_platform_service.dart';
 import '../application/permission_status_service.dart';
-import '../../../core/platform/power_platform_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
@@ -26,8 +24,6 @@ class PermissionStatusPage extends ConsumerStatefulWidget {
 
 class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
     with WidgetsBindingObserver {
-  final _powerService = PowerPlatformService();
-  final _notificationsService = NotificationsPlatformService();
   UiOperationService get _operationService =>
       ref.read(uiOperationServiceProvider);
   late final PermissionStatusService _statusService;
@@ -39,14 +35,7 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
   void initState() {
     super.initState();
     _statusService =
-        widget.statusService ??
-        PermissionStatusService(
-          powerService: _powerService,
-          notificationsService: _notificationsService,
-          subtitleOverlayController: ref.read(
-            subtitleOverlayControllerProvider,
-          ),
-        );
+        widget.statusService ?? ref.read(permissionStatusServiceProvider);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _snapshot != null) return;
       final snapshot = _loadSnapshot();
@@ -184,7 +173,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
                         description: i18n.tr(
                           'permission_notification_description',
                         ),
-                        action: _notificationsService.openNotificationSettings,
+                        action: () => _statusService.openSettings(
+                          PermissionCapability.notifications,
+                        ),
                       ),
                     ),
                     _PermissionTile(
@@ -199,7 +190,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
                         description: i18n.tr(
                           'permission_background_description',
                         ),
-                        action: _powerService.openBackgroundRunSettings,
+                        action: () => _statusService.openSettings(
+                          PermissionCapability.backgroundRun,
+                        ),
                       ),
                     ),
                     _PermissionSection(
@@ -219,7 +212,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
                         description: i18n.tr(
                           'permission_exact_alarm_description',
                         ),
-                        action: _powerService.openExactAlarmSettings,
+                        action: () => _statusService.openSettings(
+                          PermissionCapability.exactAlarms,
+                        ),
                       ),
                     ),
                     _PermissionSection(
@@ -239,7 +234,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
                         description: i18n.tr(
                           'permission_manage_files_description',
                         ),
-                        action: _powerService.openManageAllFilesAccessSettings,
+                        action: () => _statusService.openSettings(
+                          PermissionCapability.manageFiles,
+                        ),
                       ),
                     ),
                     _PermissionTile(
@@ -252,9 +249,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
                       onTap: () => _open(
                         title: i18n.tr('overlay_permission_title'),
                         description: i18n.tr('permission_overlay_description'),
-                        action: ref
-                            .read(subtitleOverlayControllerProvider)
-                            .openOverlaySettings,
+                        action: () => _statusService.openSettings(
+                          PermissionCapability.overlay,
+                        ),
                       ),
                     ),
                     _PermissionTile(
@@ -271,9 +268,9 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
                         description: i18n.tr(
                           'permission_update_install_description',
                         ),
-                        action: ref
-                            .read(appUpdateServiceProvider)
-                            .openInstallPermissionSettings,
+                        action: () => _statusService.openSettings(
+                          PermissionCapability.updateInstalls,
+                        ),
                       ),
                     ),
                   ],

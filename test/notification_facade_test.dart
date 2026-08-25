@@ -145,7 +145,7 @@ void main() {
     );
     var focusedSessionId = '';
     addTearDown(() async {
-      session.dispose();
+      await session.shutdown();
       await facade.dispose();
       await playback.dispose();
       await library.dispose();
@@ -335,7 +335,7 @@ final class _NotificationFixture {
   final PlaybackSession session;
 
   Future<void> dispose() async {
-    session.dispose();
+    await session.shutdown();
     await facade.dispose();
     await playback.dispose();
     await library.dispose();

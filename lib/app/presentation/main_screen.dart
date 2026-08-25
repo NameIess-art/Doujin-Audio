@@ -7,21 +7,20 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:permission_handler/permission_handler.dart';
-
 import '../localization/app_language_provider.dart';
 import '../state/app_runtime_providers.dart';
+import 'app_presentation_providers.dart';
 import '../state/subtitle_settings_provider.dart';
 import '../../features/settings/application/app_preferences.dart';
+import '../../features/settings/application/permission_status_service.dart';
 import '../../features/settings/application/settings_state.dart';
 import '../../core/logging/app_log_service.dart';
 import '../../features/player/application/playback_facade.dart';
-import '../../features/player/application/playback_session.dart';
+import '../../features/player/application/notification_facade.dart';
+import '../../features/player/application/playback_session_snapshot.dart';
 import '../../features/player/domain/playback_mode.dart';
 import '../../features/player/application/subtitle_overlay_controller.dart';
-import '../../core/platform/notifications_platform_service.dart';
-import '../../core/platform/permission_action_controller.dart';
-import '../../core/platform/power_platform_service.dart';
+import '../../core/ui/permission_action_controller.dart';
 import '../../core/ui/ui_interaction_coordinator.dart';
 import '../../core/ui/ui_operation_service.dart';
 import '../theme/app_design_tokens.dart';
@@ -58,10 +57,6 @@ class MainScreen extends ConsumerStatefulWidget {
 class _MainScreenState extends ConsumerState<MainScreen>
     with WidgetsBindingObserver {
   static const double _desktopBreakpoint = 980;
-  final PowerPlatformService _powerPlatformService = PowerPlatformService();
-  final NotificationsPlatformService _notificationsPlatformService =
-      NotificationsPlatformService();
-
   bool _isMenuCollapsed = false;
   late final ValueNotifier<int> _activePageIndex;
   late final ValueNotifier<int> _audioLibrarySectionIndex;
@@ -80,6 +75,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       PermissionActionController();
   late final AppUpdateFlow _updateFlow;
   late final SubtitleOverlayController _subtitleOverlay;
+  late final NotificationFacade _notificationFacade;
 
   bool _isDataReady = false;
   bool? _lastHasNowPlaying;
@@ -91,6 +87,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   DateTime? _lastOpenedNotificationAt;
   Timer? _metricsRecoveryTimer;
   Size? _lastRecoveredViewSize;
+  FlutterView? _observedView;
   bool _appInForeground = true;
   bool _globalSubtitleOverlayRunning = false;
   bool _globalSubtitleOverlaySyncing = false;
@@ -123,6 +120,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void initState() {
     super.initState();
     _subtitleOverlay = ref.read(subtitleOverlayControllerProvider);
+    _notificationFacade = ref.read(notificationFacadeProvider);
     _updateFlow = AppUpdateFlow(
       permissionController: _permissionActionController,
       languageProvider: ref.read(appLanguageProviderInstanceProvider),
@@ -163,7 +161,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
       }
     });
     WidgetsBinding.instance.addObserver(this);
-    _notificationsPlatformService.setOpenSessionHandler(
+    _notificationFacade.setOpenSessionHandler(
       _queueNotificationSessionNavigation,
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -180,6 +178,12 @@ class _MainScreenState extends ConsumerState<MainScreen>
         );
       });
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _observedView = View.maybeOf(context);
   }
 
   void _handleStartupReadyChanged(bool startupReady) {
@@ -280,7 +284,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _globalSubtitleOverlayTimer?.cancel();
     unawaited(_stopGlobalSubtitleOverlay(immediate: true));
     _permissionActionController.dispose();
-    _notificationsPlatformService.setOpenSessionHandler(null);
+    _notificationFacade.setOpenSessionHandler(null);
     _activePageIndex.dispose();
     _audioLibrarySectionIndex.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -301,22 +305,22 @@ class _MainScreenState extends ConsumerState<MainScreen>
   }
 
   Size _currentLogicalViewSize() {
-    final view = View.maybeOf(context);
+    final view = _observedView;
     if (view != null &&
         view.physicalSize.width > 0 &&
         view.physicalSize.height > 0 &&
         view.devicePixelRatio > 0) {
       return view.physicalSize / view.devicePixelRatio;
     }
-    return MediaQuery.sizeOf(context);
+    return Size.zero;
   }
 
   double _currentLogicalKeyboardInset() {
-    final view = View.maybeOf(context);
+    final view = _observedView;
     if (view != null && view.devicePixelRatio > 0) {
       return view.viewInsets.bottom / view.devicePixelRatio;
     }
-    return MediaQuery.viewInsetsOf(context).bottom;
+    return 0;
   }
 
   bool get _isKeyboardVisible => _currentLogicalKeyboardInset() > 0.5;
@@ -373,7 +377,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     });
   }
 
-  PlaybackSession? _globalSubtitleOverlaySession(
+  PlaybackSessionSnapshot? _globalSubtitleOverlaySession(
     PlaybackFacade playback,
     SubtitleSettingsState settings,
   ) {
@@ -538,7 +542,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _updateGlobalSubtitleOverlayForSession(session);
   }
 
-  void _updateGlobalSubtitleOverlayForSession(PlaybackSession session) {
+  void _updateGlobalSubtitleOverlayForSession(PlaybackSessionSnapshot session) {
     final subtitles = ref.read(playbackSubtitleServiceProvider);
     if (_globalSubtitleOverlaySessionId != session.id) {
       _globalSubtitleOverlaySessionId = session.id;

@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter_riverpod/legacy.dart';
 import '../../core/immutable_collections.dart';
-import '../application/persisted_state_reloader.dart';
+import '../../core/persistence/persisted_state_reloader.dart';
 import '../../features/settings/application/app_preferences.dart';
 
 final subtitleSettingsProvider =

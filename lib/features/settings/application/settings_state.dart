@@ -64,7 +64,10 @@ class SettingsState {
     this.preferEmbeddedAudioCover = true,
     this.asmrDownloadDestinationRoot,
     this.asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite,
+    this.asmrDownloadRetryCount = kDefaultAsmrDownloadRetryCount,
+    this.asmrDownloadThreadCount = kDefaultAsmrDownloadThreadCount,
     this.asmrDownloadSaveMetadata = true,
+    this.asmrDownloadSaveCover = true,
     List<AsmrDownloadFolderNameField> asmrDownloadFolderNameFields =
         kDefaultAsmrDownloadFolderNameFields,
     this.audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.pause,
@@ -113,7 +116,10 @@ class SettingsState {
   final bool preferEmbeddedAudioCover;
   final String? asmrDownloadDestinationRoot;
   final AsmrDownloadConflictPolicy asmrDownloadConflictPolicy;
+  final int asmrDownloadRetryCount;
+  final int asmrDownloadThreadCount;
   final bool asmrDownloadSaveMetadata;
+  final bool asmrDownloadSaveCover;
   final List<AsmrDownloadFolderNameField> asmrDownloadFolderNameFields;
   final AudioDeviceDisconnectBehavior audioDeviceDisconnectBehavior;
   final AudioFocusStrategy audioFocusStrategy;
@@ -159,7 +165,10 @@ class SettingsState {
         other.preferEmbeddedAudioCover == preferEmbeddedAudioCover &&
         other.asmrDownloadDestinationRoot == asmrDownloadDestinationRoot &&
         other.asmrDownloadConflictPolicy == asmrDownloadConflictPolicy &&
+        other.asmrDownloadRetryCount == asmrDownloadRetryCount &&
+        other.asmrDownloadThreadCount == asmrDownloadThreadCount &&
         other.asmrDownloadSaveMetadata == asmrDownloadSaveMetadata &&
+        other.asmrDownloadSaveCover == asmrDownloadSaveCover &&
         listEquals(
           other.asmrDownloadFolderNameFields,
           asmrDownloadFolderNameFields,
@@ -210,7 +219,10 @@ class SettingsState {
     preferEmbeddedAudioCover,
     asmrDownloadDestinationRoot,
     asmrDownloadConflictPolicy,
+    asmrDownloadRetryCount,
+    asmrDownloadThreadCount,
     asmrDownloadSaveMetadata,
+    asmrDownloadSaveCover,
     Object.hashAll(asmrDownloadFolderNameFields),
     audioDeviceDisconnectBehavior,
     audioFocusStrategy,

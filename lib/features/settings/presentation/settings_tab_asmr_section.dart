@@ -94,6 +94,89 @@ List<Widget> _buildSettingsAsmrSection({
             );
           },
         ),
+        Consumer(
+          builder: (context, ref, _) {
+            final retryCount = ref.watch(
+              settingsStateProvider.select(
+                (s) =>
+                    s.value?.asmrDownloadRetryCount ??
+                    kDefaultAsmrDownloadRetryCount,
+              ),
+            );
+            return ListTile(
+              title: _settingsTitle(i18n.tr('asmr_download_retry_count')),
+              leading: _settingsIcon(Icons.refresh_rounded, cs.onSurface),
+              trailing: _settingsDropdown<int>(
+                context,
+                value: retryCount,
+                onChanged: (value) {
+                  if (value != null) settings.setAsmrDownloadRetryCount(value);
+                },
+                items:
+                    <int>[
+                          for (
+                            var value = kMinAsmrDownloadRetryCount;
+                            value <= kMaxAsmrDownloadRetryCount;
+                            value++
+                          )
+                            value,
+                        ]
+                        .map(
+                          (value) => DropdownMenuItem<int>(
+                            value: value,
+                            child: _settingsDropdownText(value.toString()),
+                          ),
+                        )
+                        .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final threadCount = ref.watch(
+              settingsStateProvider.select(
+                (s) =>
+                    s.value?.asmrDownloadThreadCount ??
+                    kDefaultAsmrDownloadThreadCount,
+              ),
+            );
+            return ListTile(
+              title: _SettingsTitleBlock(
+                title: i18n.tr('asmr_download_thread_count'),
+                subtitle: Text(i18n.tr('asmr_download_thread_count_hint')),
+              ),
+              leading: _settingsIcon(Icons.dynamic_feed_rounded, cs.onSurface),
+              trailing: _settingsDropdown<int>(
+                context,
+                value: threadCount,
+                onChanged: (value) {
+                  if (value != null) {
+                    settings.setAsmrDownloadThreadCount(value);
+                  }
+                },
+                items:
+                    <int>[
+                          for (
+                            var value = kMinAsmrDownloadThreadCount;
+                            value <= kMaxAsmrDownloadThreadCount;
+                            value++
+                          )
+                            value,
+                        ]
+                        .map(
+                          (value) => DropdownMenuItem<int>(
+                            value: value,
+                            child: _settingsDropdownText(value.toString()),
+                          ),
+                        )
+                        .toList(),
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            );
+          },
+        ),
       ],
     ),
     _SettingsSectionCard(
@@ -116,6 +199,22 @@ List<Widget> _buildSettingsAsmrSection({
                 Icons.description_outlined,
                 cs.onSurface,
               ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            );
+          },
+        ),
+        Consumer(
+          builder: (context, ref, _) {
+            final saveCover = ref.watch(
+              settingsStateProvider.select(
+                (s) => s.value?.asmrDownloadSaveCover ?? true,
+              ),
+            );
+            return SwitchListTile(
+              value: saveCover,
+              onChanged: settings.setAsmrDownloadSaveCover,
+              title: _settingsTitle(i18n.tr('asmr_download_save_cover')),
+              secondary: _settingsIcon(Icons.image_outlined, cs.onSurface),
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             );
           },

@@ -5,6 +5,19 @@ enum AsmrDownloadConflictPolicy { skip, overwrite }
 
 enum AsmrDownloadFolderNameField { rjCode, voiceActors, circleName, workTitle }
 
+const int kMinAsmrDownloadRetryCount = 3;
+const int kMaxAsmrDownloadRetryCount = 10;
+const int kDefaultAsmrDownloadRetryCount = 5;
+const int kMinAsmrDownloadThreadCount = 1;
+const int kMaxAsmrDownloadThreadCount = 5;
+const int kDefaultAsmrDownloadThreadCount = 3;
+
+int normalizeAsmrDownloadRetryCount(int value) =>
+    value.clamp(kMinAsmrDownloadRetryCount, kMaxAsmrDownloadRetryCount);
+
+int normalizeAsmrDownloadThreadCount(int value) =>
+    value.clamp(kMinAsmrDownloadThreadCount, kMaxAsmrDownloadThreadCount);
+
 const List<AsmrDownloadFolderNameField> kDefaultAsmrDownloadFolderNameFields =
     <AsmrDownloadFolderNameField>[AsmrDownloadFolderNameField.workTitle];
 

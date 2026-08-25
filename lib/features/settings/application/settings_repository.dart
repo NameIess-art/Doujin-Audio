@@ -49,7 +49,10 @@ class SettingsRepository {
   String? asmrDownloadDestinationRoot;
   AsmrDownloadConflictPolicy asmrDownloadConflictPolicy =
       AsmrDownloadConflictPolicy.overwrite;
+  int asmrDownloadRetryCount = kDefaultAsmrDownloadRetryCount;
+  int asmrDownloadThreadCount = kDefaultAsmrDownloadThreadCount;
   bool asmrDownloadSaveMetadata = true;
+  bool asmrDownloadSaveCover = true;
   List<AsmrDownloadFolderNameField> asmrDownloadFolderNameFields =
       kDefaultAsmrDownloadFolderNameFields;
   AudioDeviceDisconnectBehavior audioDeviceDisconnectBehavior =
@@ -126,6 +129,16 @@ class SettingsRepository {
       );
       asmrDownloadSaveMetadata =
           playback['asmrDownloadSaveMetadata'] as bool? ?? true;
+      asmrDownloadSaveCover =
+          playback['asmrDownloadSaveCover'] as bool? ?? true;
+      asmrDownloadRetryCount = normalizeAsmrDownloadRetryCount(
+        (playback['asmrDownloadRetryCount'] as num?)?.toInt() ??
+            kDefaultAsmrDownloadRetryCount,
+      );
+      asmrDownloadThreadCount = normalizeAsmrDownloadThreadCount(
+        (playback['asmrDownloadThreadCount'] as num?)?.toInt() ??
+            kDefaultAsmrDownloadThreadCount,
+      );
       asmrDownloadFolderNameFields = decodeAsmrDownloadFolderNameFields(
         playback['asmrDownloadFolderNameFields'],
       );
@@ -225,7 +238,10 @@ class SettingsRepository {
       'preferEmbeddedAudioCover': preferEmbeddedAudioCover,
       'asmrDownloadDestinationRoot': asmrDownloadDestinationRoot,
       'asmrDownloadConflictPolicy': asmrDownloadConflictPolicy.name,
+      'asmrDownloadRetryCount': asmrDownloadRetryCount,
+      'asmrDownloadThreadCount': asmrDownloadThreadCount,
       'asmrDownloadSaveMetadata': asmrDownloadSaveMetadata,
+      'asmrDownloadSaveCover': asmrDownloadSaveCover,
       'asmrDownloadFolderNameFields': asmrDownloadFolderNameFields
           .map((field) => field.name)
           .toList(growable: false),
@@ -473,6 +489,27 @@ class SettingsRepository {
     update: () => asmrDownloadSaveMetadata = enabled,
   );
 
+  Future<void> setAsmrDownloadRetryCount(int count) {
+    final normalized = normalizeAsmrDownloadRetryCount(count);
+    return _setValue(
+      unchanged: asmrDownloadRetryCount == normalized,
+      update: () => asmrDownloadRetryCount = normalized,
+    );
+  }
+
+  Future<void> setAsmrDownloadThreadCount(int count) {
+    final normalized = normalizeAsmrDownloadThreadCount(count);
+    return _setValue(
+      unchanged: asmrDownloadThreadCount == normalized,
+      update: () => asmrDownloadThreadCount = normalized,
+    );
+  }
+
+  Future<void> setAsmrDownloadSaveCover(bool enabled) => _setValue(
+    unchanged: asmrDownloadSaveCover == enabled,
+    update: () => asmrDownloadSaveCover = enabled,
+  );
+
   Future<void> setAsmrDownloadFolderNameFields(
     Iterable<AsmrDownloadFolderNameField> fields,
   ) async {
@@ -569,7 +606,10 @@ class SettingsRepository {
     preferEmbeddedAudioCover = true;
     asmrDownloadDestinationRoot = null;
     asmrDownloadConflictPolicy = AsmrDownloadConflictPolicy.overwrite;
+    asmrDownloadRetryCount = kDefaultAsmrDownloadRetryCount;
+    asmrDownloadThreadCount = kDefaultAsmrDownloadThreadCount;
     asmrDownloadSaveMetadata = true;
+    asmrDownloadSaveCover = true;
     asmrDownloadFolderNameFields = kDefaultAsmrDownloadFolderNameFields;
     audioDeviceDisconnectBehavior = AudioDeviceDisconnectBehavior.pause;
     audioFocusStrategy = AudioFocusStrategy.standard;
@@ -629,7 +669,10 @@ class SettingsRepository {
         preferEmbeddedAudioCover: preferEmbeddedAudioCover,
         asmrDownloadDestinationRoot: asmrDownloadDestinationRoot,
         asmrDownloadConflictPolicy: asmrDownloadConflictPolicy,
+        asmrDownloadRetryCount: asmrDownloadRetryCount,
+        asmrDownloadThreadCount: asmrDownloadThreadCount,
         asmrDownloadSaveMetadata: asmrDownloadSaveMetadata,
+        asmrDownloadSaveCover: asmrDownloadSaveCover,
         asmrDownloadFolderNameFields:
             List<AsmrDownloadFolderNameField>.unmodifiable(
               asmrDownloadFolderNameFields,

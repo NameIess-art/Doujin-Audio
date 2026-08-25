@@ -307,8 +307,7 @@ class _AsmrDownloadDetailsNodeTileState
                             ? '${_formatBytes(downloaded)} / ${_formatBytes(total)}'
                             : widget.i18n.tr('asmr_download_status_retrying', {
                                 'attempt': retryAttempt,
-                                'max':
-                                    AsmrDownloadManager.maxAutomaticFileRetries,
+                                'max': widget.task.automaticFileRetryCount,
                               }),
                         key: retryAttempt == null
                             ? null

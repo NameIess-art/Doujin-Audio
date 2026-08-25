@@ -54,7 +54,7 @@ void main() {
     expect(manager.getTask(1), isNull);
   });
 
-  testWidgets('terminal download task does not show a stale retry status', (
+  testWidgets('task uses its retry maximum and clears terminal retry status', (
     tester,
   ) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
@@ -68,7 +68,10 @@ void main() {
     );
     addTearDown(manager.dispose);
     manager.debugSetCurrentTaskForTesting(
-      _failedTask(fileRetryAttempts: const <String, int>{'Track.mp3': 1}),
+      _failedTask(
+        status: AsmrDownloadTaskStatus.downloading,
+        fileRetryAttempts: const <String, int>{'Track.mp3': 1},
+      ),
     );
 
     await tester.pumpWidget(
@@ -84,12 +87,20 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Retrying (1/10)'), findsNothing);
+    expect(find.text('Retrying (1/7)'), findsOneWidget);
+
+    manager.debugSetCurrentTaskForTesting(
+      _failedTask(fileRetryAttempts: const <String, int>{'Track.mp3': 1}),
+    );
+    await tester.pump();
+
+    expect(find.text('Retrying (1/7)'), findsNothing);
     expect(find.text('Failed'), findsOneWidget);
   });
 }
 
 AsmrDownloadTaskSnapshot _failedTask({
+  AsmrDownloadTaskStatus status = AsmrDownloadTaskStatus.failed,
   Map<String, int> fileRetryAttempts = const <String, int>{},
 }) {
   return AsmrDownloadTaskSnapshot(
@@ -115,7 +126,8 @@ AsmrDownloadTaskSnapshot _failedTask({
     destinationRoot: r'C:\Downloads',
     workFolderName: 'Work',
     conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
-    status: AsmrDownloadTaskStatus.failed,
+    automaticFileRetryCount: 7,
+    status: status,
     totalFiles: 1,
     completedFiles: 0,
     skippedFiles: 0,

@@ -603,6 +603,401 @@ void main() {
     }
   });
 
+  test('saves the preferred cover in the shared Cover folder', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_cover_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    unawaited(
+      server.forEach((request) async {
+        if (request.uri.path == '/cover') {
+          request.response.headers.contentType = ContentType('image', 'png');
+          request.response.contentLength = 4;
+          request.response.add(const <int>[1, 2, 3, 4]);
+        } else {
+          request.response.contentLength = 3;
+          request.response.add(const <int>[5, 6, 7]);
+        }
+        await request.response.close();
+      }),
+    );
+    final manager = _manager();
+    try {
+      final baseUrl = 'http://${server.address.host}:${server.port}';
+      await manager.startDownload(
+        work: _work(mainCoverUrl: '$baseUrl/cover'),
+        selectedRoots: <AsmrTrackFile>[
+          _file(downloadUrl: '$baseUrl/track.mp3', size: 3),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+      );
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+      final cover = File(path.join(tempDir.path, 'Cover', 'RJ123456.png'));
+      expect(await cover.readAsBytes(), const <int>[1, 2, 3, 4]);
+      expect(manager.getTask(1)?.totalFiles, 2);
+      expect(manager.getTask(1)?.totalBytes, 3);
+      expect(manager.getTask(1)?.downloadedBytes, 3);
+      expect(manager.getTask(1)?.coverOutputPath, cover.path);
+
+      await manager.deleteTask(1);
+      expect(await cover.exists(), isFalse);
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test(
+    'failed cover marks the task failed and retry only fetches cover',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_cover_retry_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var audioRequests = 0;
+      var coverRequests = 0;
+      var coverSucceeds = false;
+      unawaited(
+        server.forEach((request) async {
+          if (request.uri.path == '/cover.jpg') {
+            coverRequests++;
+            if (!coverSucceeds) {
+              request.response.statusCode = HttpStatus.serviceUnavailable;
+            } else {
+              request.response.headers.contentType = ContentType(
+                'image',
+                'jpeg',
+              );
+              request.response.contentLength = 2;
+              request.response.add(const <int>[8, 9]);
+            }
+          } else {
+            audioRequests++;
+            request.response.contentLength = 1;
+            request.response.add(const <int>[7]);
+          }
+          await request.response.close();
+        }),
+      );
+      final manager = AsmrDownloadManager(
+        temporaryDirectoryProvider: () async => Directory.systemTemp,
+        automaticFileRetryDelay: Duration.zero,
+        persistTasks: false,
+      );
+      try {
+        final baseUrl = 'http://${server.address.host}:${server.port}';
+        await manager.startDownload(
+          work: _work(mainCoverUrl: '$baseUrl/cover.jpg'),
+          selectedRoots: <AsmrTrackFile>[
+            _file(downloadUrl: '$baseUrl/track.mp3'),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+          automaticFileRetryCount: 3,
+        );
+        await _waitForTaskStatus(
+          manager,
+          1,
+          AsmrDownloadTaskStatus.failed,
+          allowFailure: true,
+        );
+        expect(audioRequests, 1);
+        expect(coverRequests, 4);
+        expect(manager.getTask(1)?.failedFiles, 1);
+
+        coverSucceeds = true;
+        await manager.startDownload(
+          work: _work(mainCoverUrl: '$baseUrl/cover.jpg'),
+          selectedRoots: <AsmrTrackFile>[
+            _file(downloadUrl: '$baseUrl/track.mp3'),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        expect(audioRequests, 1);
+        expect(coverRequests, 5);
+        expect(
+          await File(
+            path.join(tempDir.path, 'Cover', 'RJ123456.jpg'),
+          ).readAsBytes(),
+          const <int>[8, 9],
+        );
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test('rejects a non-image response even when the URL ends in jpg', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_cover_content_type_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    unawaited(
+      server.forEach((request) async {
+        if (request.uri.path == '/cover.jpg') {
+          request.response.headers.contentType = ContentType.html;
+          request.response.contentLength = 4;
+          request.response.write('oops');
+        } else {
+          request.response.contentLength = 1;
+          request.response.add(const <int>[1]);
+        }
+        await request.response.close();
+      }),
+    );
+    final manager = _manager();
+    try {
+      final baseUrl = 'http://${server.address.host}:${server.port}';
+      await manager.startDownload(
+        work: _work(mainCoverUrl: '$baseUrl/cover.jpg'),
+        selectedRoots: <AsmrTrackFile>[
+          _file(downloadUrl: '$baseUrl/track.mp3'),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+      );
+      await _waitForTaskStatus(
+        manager,
+        1,
+        AsmrDownloadTaskStatus.failed,
+        allowFailure: true,
+      );
+
+      expect(manager.getTask(1)?.failedFiles, 1);
+      expect(
+        await File(path.join(tempDir.path, 'Cover', 'RJ123456.jpg')).exists(),
+        isFalse,
+      );
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test('pauses and resumes a partial cover download', () async {
+    const coverBytes = 512 * 1024;
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_cover_resume_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final firstCoverStarted = Completer<void>();
+    var coverRequests = 0;
+    unawaited(
+      server.forEach((request) async {
+        if (request.uri.path != '/cover.jpg') {
+          request.response.contentLength = 1;
+          request.response.add(const <int>[1]);
+          await request.response.close();
+          return;
+        }
+
+        coverRequests++;
+        if (!firstCoverStarted.isCompleted) firstCoverStarted.complete();
+        final range = request.headers.value(HttpHeaders.rangeHeader);
+        final start =
+            int.tryParse(
+              RegExp(r'^bytes=(\d+)-$').firstMatch(range ?? '')?.group(1) ?? '',
+            ) ??
+            0;
+        if (start > 0) {
+          request.response.statusCode = HttpStatus.partialContent;
+          request.response.headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes $start-${coverBytes - 1}/$coverBytes',
+          );
+        }
+        request.response.headers.contentType = ContentType('image', 'jpeg');
+        request.response.contentLength = coverBytes - start;
+        try {
+          for (var offset = start; offset < coverBytes; offset += 4096) {
+            final length = (coverBytes - offset).clamp(0, 4096);
+            request.response.add(List<int>.filled(length, 6));
+            await request.response.flush();
+            await Future<void>.delayed(const Duration(milliseconds: 5));
+          }
+        } catch (_) {
+          // Pausing closes the first response while preserving its staging file.
+        } finally {
+          await request.response.close().catchError((_) {});
+        }
+      }),
+    );
+    final manager = AsmrDownloadManager(
+      temporaryDirectoryProvider: () async => Directory.systemTemp,
+      automaticFileRetryDelay: Duration.zero,
+      persistTasks: false,
+    );
+    try {
+      final baseUrl = 'http://${server.address.host}:${server.port}';
+      await manager.startDownload(
+        work: _work(mainCoverUrl: '$baseUrl/cover.jpg'),
+        selectedRoots: <AsmrTrackFile>[
+          _file(downloadUrl: '$baseUrl/track.mp3'),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+      );
+      await firstCoverStarted.future.timeout(const Duration(seconds: 5));
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await manager.pauseTask(1);
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.paused);
+
+      await manager.resumeTask(1);
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+      expect(coverRequests, greaterThanOrEqualTo(2));
+      expect(
+        await File(path.join(tempDir.path, 'Cover', 'RJ123456.jpg')).length(),
+        coverBytes,
+      );
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
+
+  test('saves a cover through an Android SAF destination', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    unawaited(
+      server.forEach((request) async {
+        request.response.headers.contentType = request.uri.path.endsWith('.png')
+            ? ContentType('image', 'png')
+            : ContentType.binary;
+        request.response.contentLength = 1;
+        request.response.add(const <int>[1]);
+        await request.response.close();
+      }),
+    );
+    final gateway = _RecordingSafGateway();
+    final manager = AsmrDownloadManager(
+      fileCacheGateway: gateway,
+      temporaryDirectoryProvider: () async => Directory.systemTemp,
+      automaticFileRetryDelay: Duration.zero,
+      persistTasks: false,
+    );
+    const destinationRoot =
+        'content://com.android.externalstorage.documents/tree/primary%3ADownload';
+    try {
+      final baseUrl = 'http://${server.address.host}:${server.port}';
+      await manager.startDownload(
+        work: _work(mainCoverUrl: '$baseUrl/cover.png'),
+        selectedRoots: <AsmrTrackFile>[
+          _file(downloadUrl: '$baseUrl/track.mp3'),
+        ],
+        destinationRoot: destinationRoot,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+      );
+      await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+      expect(gateway.copiedRelativePaths, contains('Track.mp3'));
+      expect(gateway.copiedRelativePaths, contains('Cover/RJ123456.png'));
+      expect(gateway.ensuredRelativePaths, contains('Cover'));
+
+      await manager.deleteTask(1);
+      expect(
+        gateway.deletedPaths,
+        contains('$destinationRoot::Cover/RJ123456.png'),
+      );
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+    }
+  });
+
+  test(
+    'updates concurrent work scheduling without canceling active tasks',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_work_concurrency_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final release = Completer<void>();
+      var requests = 0;
+      unawaited(
+        server.forEach((request) async {
+          requests++;
+          await release.future;
+          request.response.contentLength = 1;
+          request.response.add(const <int>[1]);
+          await request.response.close();
+        }),
+      );
+      final manager = AsmrDownloadManager(
+        temporaryDirectoryProvider: () async => Directory.systemTemp,
+        maxConcurrentDownloads: 1,
+        persistTasks: false,
+      );
+      try {
+        final baseUrl = 'http://${server.address.host}:${server.port}';
+        for (var id = 1; id <= 2; id++) {
+          await manager.startDownload(
+            work: _work(id: id),
+            selectedRoots: <AsmrTrackFile>[
+              _file(downloadUrl: '$baseUrl/$id.mp3'),
+            ],
+            destinationRoot: tempDir.path,
+            conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+            saveMetadata: false,
+          );
+        }
+        await _waitForRequestCount(() => requests, 1);
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(requests, 1);
+
+        manager.setMaxConcurrentDownloads(2);
+        await _waitForRequestCount(() => requests, 2);
+        manager.setMaxConcurrentDownloads(1);
+        await manager.startDownload(
+          work: _work(id: 3),
+          selectedRoots: <AsmrTrackFile>[_file(downloadUrl: '$baseUrl/3.mp3')],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 80));
+        expect(requests, 2);
+
+        release.complete();
+        await _waitForRequestCount(() => requests, 3);
+        final outputFiles = <File>[
+          for (var id = 1; id <= 3; id++)
+            File(
+              path.join(
+                tempDir.path,
+                id == 1 ? 'Work [1]' : 'Work $id [$id]',
+                'Track.mp3',
+              ),
+            ),
+        ];
+        await _waitForFiles(outputFiles);
+        for (var id = 1; id <= 3; id++) {
+          expect(await outputFiles[id - 1].readAsBytes(), const <int>[1]);
+        }
+        expect(requests, 3);
+      } finally {
+        if (!release.isCompleted) release.complete();
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
   test(
     'parallel file completion does not reset aggregate byte progress',
     () async {
@@ -1945,7 +2340,7 @@ void main() {
   );
 
   test(
-    'transient failures exhaust ten retries and count one failure',
+    'transient failures exhaust configured retries and count one failure',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_retry_exhausted_',
@@ -1971,6 +2366,7 @@ void main() {
           ],
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          automaticFileRetryCount: 3,
         );
         await _waitForTaskStatus(
           manager,
@@ -1979,7 +2375,8 @@ void main() {
           allowFailure: true,
         );
 
-        expect(requests, 11);
+        expect(requests, 4);
+        expect(manager.getTask(1)?.automaticFileRetryCount, 3);
         expect(manager.getTask(1)?.failedFiles, 1);
         expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
       } finally {
@@ -2388,6 +2785,11 @@ void main() {
 
       expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
       expect(manager.getTask(1)?.workFolderName, 'Work');
+      expect(manager.getTask(1)?.saveCover, isFalse);
+      expect(
+        manager.getTask(1)?.automaticFileRetryCount,
+        kMaxAsmrDownloadRetryCount,
+      );
       expect(
         manager.getTask(1)?.workRootPath,
         path.join(Directory.systemTemp.path, 'Work'),
@@ -2746,6 +3148,44 @@ final class _ExistingJsonSafGateway extends FileCachePlatformGateway {
   }
 }
 
+final class _RecordingSafGateway extends FileCachePlatformGateway {
+  _RecordingSafGateway() : super(isAndroid: () => true);
+
+  final List<String> ensuredRelativePaths = <String>[];
+  final List<String> copiedRelativePaths = <String>[];
+  final List<String> deletedPaths = <String>[];
+
+  @override
+  Future<bool> documentPathExists(String path) async => false;
+
+  @override
+  Future<bool> ensureFolderPath({
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async {
+    ensuredRelativePaths.add(relativePath);
+    return true;
+  }
+
+  @override
+  Future<bool> copyFileToFolder({
+    required String sourcePath,
+    required String folder,
+    required String relativePath,
+    required bool overwrite,
+  }) async {
+    copiedRelativePaths.add(relativePath);
+    return true;
+  }
+
+  @override
+  Future<bool> deleteDocumentPath(String path) async {
+    deletedPaths.add(path);
+    return true;
+  }
+}
+
 final class _UnknownExistingRootSafGateway extends FileCachePlatformGateway {
   _UnknownExistingRootSafGateway() : super(isAndroid: () => true);
 
@@ -2779,6 +3219,28 @@ Future<void> _waitForLiveTask(AsmrDownloadManager manager) async {
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
   fail('Timed out waiting for a live download task');
+}
+
+Future<void> _waitForRequestCount(int Function() readCount, int count) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    if (readCount() >= count) return;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  fail('Timed out waiting for $count download requests.');
+}
+
+Future<void> _waitForFiles(Iterable<File> files) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    if ((await Future.wait(
+      files.map((file) => file.exists()),
+    )).every((exists) => exists)) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+  fail('Timed out waiting for downloaded files.');
 }
 
 Future<void> _waitForFileRetryAttempt(
@@ -2824,6 +3286,9 @@ AsmrWork _work({
   int id = 1,
   String? title,
   String? sourceId,
+  String coverUrl = '',
+  String thumbnailUrl = '',
+  String mainCoverUrl = '',
   DateTime? releaseDate,
   Duration duration = Duration.zero,
   int dlCount = 0,
@@ -2836,9 +3301,9 @@ AsmrWork _work({
     sourceId: sourceId ?? (id == 1 ? 'RJ123456' : 'RJ12345$id'),
     sourceType: 'asmr',
     sourceUrl: '',
-    coverUrl: '',
-    thumbnailUrl: '',
-    mainCoverUrl: '',
+    coverUrl: coverUrl,
+    thumbnailUrl: thumbnailUrl,
+    mainCoverUrl: mainCoverUrl,
     releaseDate: releaseDate,
     createDate: null,
     duration: duration,

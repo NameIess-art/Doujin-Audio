@@ -60,7 +60,7 @@ void main() {
       find.byKey(const ValueKey<String>('asmr_download_retry_Track.mp3')),
       findsOneWidget,
     );
-    expect(find.text('Retrying (1/10)'), findsOneWidget);
+    expect(find.text('Retrying (1/7)'), findsOneWidget);
 
     await tester.pumpWidget(
       _downloadDetailsApp(
@@ -70,7 +70,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('Retrying (1/10)'), findsNothing);
+    expect(find.text('Retrying (1/7)'), findsNothing);
     expect(find.text('128 B / 1.0 KB'), findsNWidgets(2));
   });
 }
@@ -130,6 +130,7 @@ AsmrDownloadTaskSnapshot _downloadTask({
     destinationRoot: r'C:\Downloads',
     workFolderName: 'Work',
     conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+    automaticFileRetryCount: 7,
     status: AsmrDownloadTaskStatus.downloading,
     totalFiles: 1,
     completedFiles: 0,

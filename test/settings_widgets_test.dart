@@ -362,6 +362,48 @@ void main() {
       );
       expect(metadataTile, findsOneWidget);
       expect(tester.widget<SwitchListTile>(metadataTile).value, isTrue);
+      final coverTile = find.widgetWithText(
+        SwitchListTile,
+        i18n.tr('asmr_download_save_cover'),
+      );
+      expect(coverTile, findsOneWidget);
+      final coverListTile = tester.widget<SwitchListTile>(coverTile);
+      expect(coverListTile.value, isTrue);
+      expect(coverListTile.title, isA<Text>());
+      expect(coverListTile.subtitle, isNull);
+
+      final retryTile = find.widgetWithText(
+        ListTile,
+        i18n.tr('asmr_download_retry_count'),
+      );
+      final threadTile = find.widgetWithText(
+        ListTile,
+        i18n.tr('asmr_download_thread_count'),
+      );
+      expect(retryTile, findsOneWidget);
+      expect(tester.widget<ListTile>(retryTile).title, isA<Text>());
+      expect(tester.widget<ListTile>(retryTile).subtitle, isNull);
+      expect(find.text(i18n.tr('asmr_download_thread_count')), findsOneWidget);
+      expect(
+        find.text(i18n.tr('asmr_download_thread_count_hint')),
+        findsOneWidget,
+      );
+
+      final retryDropdown = find.descendant(
+        of: retryTile,
+        matching: find.byType(DropdownButton<int>),
+      );
+      final threadDropdown = find.descendant(
+        of: threadTile,
+        matching: find.byType(DropdownButton<int>),
+      );
+      expect(retryDropdown, findsOneWidget);
+      expect(threadDropdown, findsOneWidget);
+      expect(tester.getSize(retryDropdown).width, greaterThan(0));
+      expect(
+        tester.getSize(retryDropdown).width,
+        greaterThan(tester.getSize(threadDropdown).width),
+      );
       expect(
         find.text(i18n.tr('asmr_download_folder_name_setting')),
         findsOneWidget,
@@ -391,7 +433,12 @@ void main() {
         closeTo(tester.getRect(folderNameTile).center.dy, 1),
       );
 
-      await tester.tap(find.text(i18n.tr('asmr_download_folder_name_setting')));
+      final folderNameSetting = find.text(
+        i18n.tr('asmr_download_folder_name_setting'),
+      );
+      await tester.ensureVisible(folderNameSetting);
+      await tester.pumpAndSettle();
+      await tester.tap(folderNameSetting);
       await tester.pumpAndSettle();
       expect(
         find.text(i18n.tr('asmr_download_folder_name_hint')),
@@ -473,9 +520,16 @@ void main() {
     await tester.pump();
 
     final i18n = harness.languageProvider;
-    await tester.tap(find.text(i18n.tr('section_asmr_download')));
+    final asmrCategory = find.text(i18n.tr('section_asmr_download'));
+    await tester.ensureVisible(asmrCategory);
+    await tester.tap(asmrCategory);
     await tester.pumpAndSettle();
-    await tester.tap(find.text(i18n.tr('asmr_download_folder_name_setting')));
+    final folderNameSetting = find.text(
+      i18n.tr('asmr_download_folder_name_setting'),
+    );
+    await tester.ensureVisible(folderNameSetting);
+    await tester.pumpAndSettle();
+    await tester.tap(folderNameSetting);
     await tester.pumpAndSettle();
 
     final workTitle = i18n.tr('asmr_download_folder_field_work_title');

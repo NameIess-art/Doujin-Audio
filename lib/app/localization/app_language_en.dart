@@ -512,8 +512,12 @@ const Map<String, String> appLanguageEn = {
   'asmr_download_path_setting': 'Download folder',
   'asmr_download_path_not_set': 'Not set',
   'asmr_download_conflict_setting': 'Existing file handling',
+  'asmr_download_retry_count': 'Retry count',
+  'asmr_download_thread_count': 'Thread count',
+  'asmr_download_thread_count_hint': 'Works downloaded at the same time',
   'asmr_download_save_metadata_setting':
       'Automatically save work information after download',
+  'asmr_download_save_cover': 'Save cover image',
   'asmr_download_folder_name_setting': 'Downloaded work folder name',
   'asmr_download_folder_name_hint':
       'Select the fields to use and drag selected fields to reorder them. Keep at least one field.',

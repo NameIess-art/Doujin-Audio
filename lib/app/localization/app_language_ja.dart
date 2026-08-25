@@ -475,7 +475,11 @@ const Map<String, String> appLanguageJa = {
   'asmr_download_path_setting': 'ダウンロード先',
   'asmr_download_path_not_set': '未設定',
   'asmr_download_conflict_setting': '既存ファイルの処理',
+  'asmr_download_retry_count': '再試行回数',
+  'asmr_download_thread_count': 'スレッド数',
+  'asmr_download_thread_count_hint': '同時にダウンロードする作品数',
   'asmr_download_save_metadata_setting': 'ダウンロード後に作品情報を自動保存',
+  'asmr_download_save_cover': 'カバー画像を保存',
   'asmr_download_folder_name_setting': 'ダウンロード後の作品フォルダー名',
   'asmr_download_folder_name_hint':
       '使用する項目を選択し、選択済みの項目をドラッグして並べ替えます。1項目以上必要です。',

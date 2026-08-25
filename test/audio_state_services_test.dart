@@ -550,6 +550,58 @@ void main() {
       ]);
     });
 
+    test('ASMR download retry, thread, and cover settings persist', () async {
+      final state = SettingsState();
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      expect(state.asmrDownloadRetryCount, kDefaultAsmrDownloadRetryCount);
+      expect(state.asmrDownloadThreadCount, kDefaultAsmrDownloadThreadCount);
+      expect(state.asmrDownloadSaveCover, isTrue);
+
+      await repository.setAsmrDownloadRetryCount(8);
+      await repository.setAsmrDownloadThreadCount(4);
+      await repository.setAsmrDownloadSaveCover(false);
+
+      final saved =
+          json.decode(
+                (await SharedPreferences.getInstance()).getString(
+                  'playback_settings_v1',
+                )!,
+              )
+              as Map<String, dynamic>;
+      expect(saved['asmrDownloadRetryCount'], 8);
+      expect(saved['asmrDownloadThreadCount'], 4);
+      expect(saved['asmrDownloadSaveCover'], isFalse);
+
+      final restored = SettingsRepository();
+      addTearDown(restored.dispose);
+      await restored.loadPersistedState();
+      expect(restored.asmrDownloadRetryCount, 8);
+      expect(restored.asmrDownloadThreadCount, 4);
+      expect(restored.asmrDownloadSaveCover, isFalse);
+    });
+
+    test('ASMR download numeric settings clamp persisted values', () async {
+      SharedPreferences.setMockInitialValues(<String, Object>{
+        'playback_settings_v1': json.encode(<String, Object?>{
+          'asmrDownloadRetryCount': 99,
+          'asmrDownloadThreadCount': 0,
+        }),
+      });
+      final repository = SettingsRepository();
+      addTearDown(repository.dispose);
+
+      await repository.loadPersistedState();
+
+      expect(repository.asmrDownloadRetryCount, kMaxAsmrDownloadRetryCount);
+      expect(repository.asmrDownloadThreadCount, kMinAsmrDownloadThreadCount);
+      await repository.setAsmrDownloadRetryCount(1);
+      await repository.setAsmrDownloadThreadCount(20);
+      expect(repository.asmrDownloadRetryCount, kMinAsmrDownloadRetryCount);
+      expect(repository.asmrDownloadThreadCount, kMaxAsmrDownloadThreadCount);
+    });
+
     test('invalid ASMR folder name fields fall back to work title', () async {
       SharedPreferences.setMockInitialValues(<String, Object>{
         'playback_settings_v1': json.encode(<String, Object?>{

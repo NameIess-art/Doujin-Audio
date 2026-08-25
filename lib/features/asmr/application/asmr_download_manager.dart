@@ -126,6 +126,8 @@ class AsmrDownloadTaskSnapshot {
     required this.workFolderName,
     required this.conflictPolicy,
     this.saveMetadata = true,
+    this.saveCover = false,
+    this.automaticFileRetryCount = kMaxAsmrDownloadRetryCount,
     required this.status,
     required this.totalFiles,
     required this.completedFiles,
@@ -135,6 +137,7 @@ class AsmrDownloadTaskSnapshot {
     required this.downloadedBytes,
     required this.startedAt,
     this.currentItemPath,
+    this.coverOutputPath,
     this.message,
     this.error,
     Map<String, int> fileDownloadedBytes = const {},
@@ -153,6 +156,8 @@ class AsmrDownloadTaskSnapshot {
   final String workFolderName;
   final AsmrDownloadConflictPolicy conflictPolicy;
   final bool saveMetadata;
+  final bool saveCover;
+  final int automaticFileRetryCount;
   final AsmrDownloadTaskStatus status;
   final int totalFiles;
   final int completedFiles;
@@ -162,6 +167,7 @@ class AsmrDownloadTaskSnapshot {
   final int downloadedBytes;
   final DateTime startedAt;
   final String? currentItemPath;
+  final String? coverOutputPath;
   final String? message;
   final String? error;
   final Map<String, int> fileDownloadedBytes;
@@ -207,6 +213,7 @@ class AsmrDownloadTaskSnapshot {
     int? totalBytes,
     int? downloadedBytes,
     String? currentItemPath,
+    String? coverOutputPath,
     String? message,
     String? error,
     Map<String, int>? fileDownloadedBytes,
@@ -221,6 +228,8 @@ class AsmrDownloadTaskSnapshot {
       workFolderName: workFolderName,
       conflictPolicy: conflictPolicy ?? this.conflictPolicy,
       saveMetadata: saveMetadata,
+      saveCover: saveCover,
+      automaticFileRetryCount: automaticFileRetryCount,
       status: status ?? this.status,
       totalFiles: totalFiles ?? this.totalFiles,
       completedFiles: completedFiles ?? this.completedFiles,
@@ -230,6 +239,7 @@ class AsmrDownloadTaskSnapshot {
       downloadedBytes: downloadedBytes ?? this.downloadedBytes,
       startedAt: startedAt,
       currentItemPath: currentItemPath ?? this.currentItemPath,
+      coverOutputPath: coverOutputPath ?? this.coverOutputPath,
       message: message ?? this.message,
       error: error ?? this.error,
       fileDownloadedBytes: fileDownloadedBytes ?? this.fileDownloadedBytes,
@@ -414,6 +424,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     Future<Directory> Function()? temporaryDirectoryProvider,
     Future<Directory> Function()? stagingDirectoryProvider,
     Duration automaticFileRetryDelay = const Duration(seconds: 2),
+    int maxConcurrentDownloads = kDefaultAsmrDownloadThreadCount,
     bool persistTasks = true,
   }) : _fileCacheGateway =
            fileCacheGateway ?? FileCachePlatformGateway.instance,
@@ -428,12 +439,15 @@ class AsmrDownloadManager extends ChangeNotifier {
            temporaryDirectoryProvider ??
            getApplicationSupportDirectory,
        _automaticFileRetryDelay = automaticFileRetryDelay,
+       _maxConcurrentDownloads = normalizeAsmrDownloadThreadCount(
+         maxConcurrentDownloads,
+       ),
        _persistTasks = persistTasks;
 
   static const Duration _progressNotifyMinInterval = Duration(
     milliseconds: 120,
   );
-  static const int maxAutomaticFileRetries = 10;
+  static const int _maxCoverBytes = 5 * 1024 * 1024;
   final FileCachePlatformGateway _fileCacheGateway;
   final JsonDocumentStore _jsonDocumentStore;
   static const AudioDetailJsonCodec _audioDetailJsonCodec =
@@ -462,8 +476,8 @@ class AsmrDownloadManager extends ChangeNotifier {
   final StreamController<int> _persistedUriReferenceRevisionController =
       StreamController<int>.broadcast(sync: true);
 
-  static const int _maxConcurrentDownloads = 3;
   static const int _maxConcurrentFilesPerTask = 3;
+  int _maxConcurrentDownloads;
 
   bool _disposed = false;
   bool _initialized = false;
@@ -479,6 +493,14 @@ class AsmrDownloadManager extends ChangeNotifier {
   List<int> get taskIds => _taskIdsSnapshot;
   AsmrDownloadTaskSnapshot? getTask(int workId) => _tasks[workId];
   AsmrDownloadState get state => AsmrDownloadState.fromManager(this);
+
+  void setMaxConcurrentDownloads(int count) {
+    final normalized = normalizeAsmrDownloadThreadCount(count);
+    if (_maxConcurrentDownloads == normalized) return;
+    _maxConcurrentDownloads = normalized;
+    _processQueue();
+  }
+
   bool get hasLiveTask => _activeTasks.isNotEmpty || _queue.isNotEmpty;
   bool get persistedUriReferencesReady => _initialized;
   int get persistedUriReferenceRevision => _persistedUriReferenceRevision;
@@ -682,6 +704,7 @@ class AsmrDownloadManager extends ChangeNotifier {
     final task = _tasks[workId];
     if (task == null) return;
     final workRootPath = task.workRootPath;
+    final coverOutputPath = task.coverOutputPath;
     if (_activeTasks.contains(workId) || _queue.contains(workId)) {
       await cancelTask(workId);
     } else {
@@ -690,6 +713,9 @@ class AsmrDownloadManager extends ChangeNotifier {
       await _persistenceTail;
     }
     await _deleteDownloadRoot(workRootPath);
+    if (coverOutputPath != null) {
+      await _deleteOutputPath(coverOutputPath);
+    }
     _createdOutputPaths.remove(workId);
     _createdJsonDocuments.remove(workId);
     _resumingTasks.remove(workId);
@@ -783,6 +809,8 @@ class AsmrDownloadManager extends ChangeNotifier {
     required String destinationRoot,
     required AsmrDownloadConflictPolicy conflictPolicy,
     bool saveMetadata = true,
+    bool saveCover = true,
+    int automaticFileRetryCount = kDefaultAsmrDownloadRetryCount,
     Iterable<AsmrDownloadFolderNameField> folderNameFields =
         kDefaultAsmrDownloadFolderNameFields,
   }) async {
@@ -797,6 +825,9 @@ class AsmrDownloadManager extends ChangeNotifier {
     if (selectedRoots.isEmpty) {
       throw ArgumentError.value(selectedRoots, 'selectedRoots');
     }
+    final normalizedRetryCount = normalizeAsmrDownloadRetryCount(
+      automaticFileRetryCount,
+    );
 
     await initialize();
     if (_disposed) return;
@@ -826,8 +857,12 @@ class AsmrDownloadManager extends ChangeNotifier {
         folderNameFields,
       );
       final plannedFiles = _collectPlannedFiles(selectedRoots);
+      final coverFile = saveCover ? _plannedCoverFile(work) : null;
+      if (coverFile != null) plannedFiles.add(coverFile);
       for (final file in plannedFiles) {
-        _validatedDownloadRelativePath(file.relativePath);
+        if (!file.isCover) {
+          _validatedDownloadRelativePath(file.relativePath);
+        }
       }
       final workRootPath = _joinFolderPath(
         normalizedDestination,
@@ -848,7 +883,7 @@ class AsmrDownloadManager extends ChangeNotifier {
 
       final fileTotalBytes = <String, int>{};
       for (final file in plannedFiles) {
-        fileTotalBytes[file.relativePath] = file.size;
+        if (!file.isCover) fileTotalBytes[file.relativePath] = file.size;
       }
       _plannedFilesMap[workId] = plannedFiles;
 
@@ -858,6 +893,8 @@ class AsmrDownloadManager extends ChangeNotifier {
         workFolderName: workFolderName,
         conflictPolicy: conflictPolicy,
         saveMetadata: saveMetadata,
+        saveCover: coverFile != null,
+        automaticFileRetryCount: normalizedRetryCount,
         status: AsmrDownloadTaskStatus.idle,
         totalFiles: totalFiles,
         completedFiles: 0,
@@ -1003,6 +1040,10 @@ class AsmrDownloadManager extends ChangeNotifier {
       var plannedFiles = _plannedFilesMap[workId];
       if (plannedFiles == null) {
         plannedFiles = _collectPlannedFiles(_tasks[workId]!.selectedRoots);
+        if (taskSnapshot.saveCover) {
+          final coverFile = _plannedCoverFile(work);
+          if (coverFile != null) plannedFiles.add(coverFile);
+        }
         _plannedFilesMap[workId] = plannedFiles;
       }
       if (plannedFiles.isNotEmpty) {
@@ -1035,6 +1076,7 @@ class AsmrDownloadManager extends ChangeNotifier {
               final result = await _downloadItem(
                 item,
                 workId: workId,
+                task: taskSnapshot,
                 workRootPath: workRootPath,
                 conflictPolicy: wasAlreadyAccounted
                     ? AsmrDownloadConflictPolicy.skip
@@ -1211,6 +1253,25 @@ class AsmrDownloadManager extends ChangeNotifier {
     return result;
   }
 
+  _PlannedDownloadFile? _plannedCoverFile(AsmrWork work) {
+    final url = work.preferredCoverUrl.trim();
+    if (url.isEmpty) return null;
+    final rawStem = work.rjCode.trim().isEmpty
+        ? work.id.toString()
+        : work.rjCode.trim().toUpperCase();
+    final stem = PathDisplay.safeFileName(
+      rawStem,
+      replacement: '_',
+      fallback: work.id.toString(),
+    );
+    return _PlannedDownloadFile.cover(
+      url: url,
+      relativePath: 'Cover/$stem.cover',
+      coverFileStem: stem,
+      maxBytes: _maxCoverBytes,
+    );
+  }
+
   void _collectPlannedFilesRecursively(
     AsmrTrackFile node,
     List<_PlannedDownloadFile> result,
@@ -1230,7 +1291,6 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
     result.add(
       _PlannedDownloadFile(
-        node: node,
         url: url,
         relativePath: node.relativePath,
         size: node.size,
@@ -1241,11 +1301,21 @@ class AsmrDownloadManager extends ChangeNotifier {
   Future<_WriteResult> _downloadItem(
     _PlannedDownloadFile item, {
     required int workId,
+    required AsmrDownloadTaskSnapshot task,
     required String workRootPath,
     required AsmrDownloadConflictPolicy conflictPolicy,
     required HttpClient client,
   }) async {
     _throwIfCancelled(workId);
+    if (item.isCover) {
+      return _downloadCoverItem(
+        item,
+        workId: workId,
+        task: task,
+        conflictPolicy: conflictPolicy,
+        client: client,
+      );
+    }
     final normalizedRelativePath = _validatedDownloadRelativePath(
       item.relativePath,
     );
@@ -1404,6 +1474,133 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
   }
 
+  Future<_WriteResult> _downloadCoverItem(
+    _PlannedDownloadFile item, {
+    required int workId,
+    required AsmrDownloadTaskSnapshot task,
+    required AsmrDownloadConflictPolicy conflictPolicy,
+    required HttpClient client,
+  }) async {
+    final knownExtension = _coverUrlExtension(item.url);
+    final knownTargetPath = knownExtension == null
+        ? task.coverOutputPath
+        : _joinFolderPath(
+            task.destinationRoot,
+            'Cover/${item.coverFileStem!}$knownExtension',
+          );
+    if (knownTargetPath != null &&
+        conflictPolicy == AsmrDownloadConflictPolicy.skip &&
+        await _outputPathExists(knownTargetPath)) {
+      return const _WriteResult.skipped(bytesDownloaded: 0);
+    }
+    if (!await _ensureFolderPath(
+      basePath: task.destinationRoot,
+      relativePath: 'Cover',
+      overwrite: false,
+    )) {
+      return const _WriteResult.failure(bytesDownloaded: 0);
+    }
+
+    final stagingFile = await _persistentStagingFile(
+      task.destinationRoot,
+      item.relativePath,
+    );
+    final stagingExisted = await stagingFile.exists();
+    if (!stagingExisted) _createdOutputPaths[workId]?.add(stagingFile.path);
+    final tempResult = await _downloadToTemporaryFile(
+      item,
+      workId: workId,
+      client: client,
+      stagingFile: stagingFile,
+    );
+    if (tempResult == null) {
+      return const _WriteResult.failure(bytesDownloaded: 0);
+    }
+
+    try {
+      _throwIfCancelled(workId);
+      if (tempResult.bytesDownloaded <= 0 ||
+          (tempResult.mimeType != null &&
+              !tempResult.mimeType!.toLowerCase().startsWith('image/'))) {
+        return const _WriteResult.failure(bytesDownloaded: 0);
+      }
+      final extension = _coverExtension(item.url, tempResult.mimeType);
+      final relativePath = 'Cover/${item.coverFileStem!}$extension';
+      final targetPath = _joinFolderPath(task.destinationRoot, relativePath);
+      final targetExisted = PathMatcher.isContentUri(task.destinationRoot)
+          ? await _fileCacheGateway.documentPathExists(targetPath)
+          : await File(targetPath).exists();
+      if (targetExisted && conflictPolicy == AsmrDownloadConflictPolicy.skip) {
+        return const _WriteResult.skipped(bytesDownloaded: 0);
+      }
+
+      if (PathMatcher.isContentUri(task.destinationRoot)) {
+        final saved = await _fileCacheGateway.copyFileToFolder(
+          sourcePath: tempResult.file.path,
+          folder: task.destinationRoot,
+          relativePath: relativePath,
+          overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
+        );
+        if (!saved) return const _WriteResult.failure(bytesDownloaded: 0);
+      } else {
+        final targetFile = File(targetPath);
+        await targetFile.parent.create(recursive: true);
+        final committed = await commitLocalDownloadedFile(
+          staging: tempResult.file,
+          target: targetFile,
+        );
+        if (!committed) {
+          return const _WriteResult.failure(bytesDownloaded: 0);
+        }
+      }
+
+      if (!targetExisted) _createdOutputPaths[workId]?.add(targetPath);
+      final currentTask = _tasks[workId];
+      if (currentTask != null) {
+        _tasks[workId] = currentTask.copyWith(coverOutputPath: targetPath);
+      }
+      return const _WriteResult.success(bytesDownloaded: 0);
+    } finally {
+      try {
+        if (_pauseRequested[workId] != true &&
+            !_disposed &&
+            await tempResult.file.exists()) {
+          await tempResult.file.delete();
+        }
+      } catch (_) {
+        // Temporary cover cleanup is best effort after the primary result.
+      }
+      tempResult.cacheLease.release();
+    }
+  }
+
+  String _coverExtension(String url, String? mimeType) {
+    final urlExtension = _coverUrlExtension(url);
+    if (urlExtension != null) return urlExtension;
+    return switch (mimeType?.toLowerCase()) {
+      'image/png' => '.png',
+      'image/webp' => '.webp',
+      'image/gif' => '.gif',
+      'image/jpeg' || 'image/jpg' => '.jpg',
+      _ => '.jpg',
+    };
+  }
+
+  String? _coverUrlExtension(String url) {
+    final extension = path
+        .extension(Uri.tryParse(url)?.path ?? '')
+        .toLowerCase();
+    return const <String>{
+          '.jpg',
+          '.jpeg',
+          '.png',
+          '.webp',
+          '.gif',
+        }.contains(extension)
+        ? extension
+        : null;
+  }
+
   Future<_TemporaryDownloadResult?> _downloadToTemporaryFile(
     _PlannedDownloadFile item, {
     required int workId,
@@ -1430,11 +1627,15 @@ class AsmrDownloadManager extends ChangeNotifier {
           return _TemporaryDownloadResult(
             file: tempFile,
             bytesDownloaded: bytesDownloaded,
+            mimeType: result.mimeType,
             cacheLease: cacheLease,
           );
         }
 
-        if (!result.retryable || attempt >= maxAutomaticFileRetries) {
+        final maxRetries =
+            _tasks[workId]?.automaticFileRetryCount ??
+            kMaxAsmrDownloadRetryCount;
+        if (!result.retryable || attempt >= maxRetries) {
           if (result.error case final error?) {
             AppLogService.error(
               'asmr_download_transfer_failed path=${item.relativePath}',
@@ -1449,7 +1650,7 @@ class AsmrDownloadManager extends ChangeNotifier {
         _setFileRetryAttempt(workId, item.relativePath, retryAttempt);
         AppLogService.warning(
           'asmr_download_transfer_retry path=${item.relativePath} '
-          'attempt=$retryAttempt/$maxAutomaticFileRetries',
+          'attempt=$retryAttempt/$maxRetries',
           error: result.error,
           stackTrace: result.stackTrace,
         );
@@ -1490,12 +1691,16 @@ class AsmrDownloadManager extends ChangeNotifier {
         if (await stagingFile.exists()) rethrow;
       }
       if (!allowResume && received > 0) {
-        _discardLivePartialProgress(workId, item.relativePath, received);
+        if (item.countsTowardByteProgress) {
+          _discardLivePartialProgress(workId, item.relativePath, received);
+        }
         await _deleteFileIfPresent(stagingFile);
         received = 0;
       }
       if (item.size > 0 && received > item.size) {
-        _discardLivePartialProgress(workId, item.relativePath, received);
+        if (item.countsTowardByteProgress) {
+          _discardLivePartialProgress(workId, item.relativePath, received);
+        }
         await _deleteFileIfPresent(stagingFile);
         received = 0;
       }
@@ -1525,7 +1730,9 @@ class AsmrDownloadManager extends ChangeNotifier {
         } catch (_) {
           // The retry uses a new response even if cancellation already won.
         }
-        _discardLivePartialProgress(workId, item.relativePath, received);
+        if (item.countsTowardByteProgress) {
+          _discardLivePartialProgress(workId, item.relativePath, received);
+        }
         await _deleteFileIfPresent(stagingFile);
         return _downloadToTemporaryFileAttempt(
           item,
@@ -1558,6 +1765,26 @@ class AsmrDownloadManager extends ChangeNotifier {
         );
       }
 
+      final maxBytes = item.maxBytes;
+      if (maxBytes != null &&
+          (received > maxBytes ||
+              (response.contentLength > 0 &&
+                  received + response.contentLength > maxBytes))) {
+        try {
+          await response.listen((_) {}).cancel();
+        } catch (_) {
+          // The configured size limit is sufficient to reject the response.
+        }
+        return _TemporaryDownloadAttempt.failure(
+          retryable: false,
+          error: FileSystemException(
+            'Download exceeds the maximum allowed size.',
+            item.relativePath,
+          ),
+          stackTrace: StackTrace.current,
+        );
+      }
+
       var responseStart = 0;
       if (response.statusCode == HttpStatus.partialContent) {
         if (!isValidDownloadContentRange(
@@ -1581,7 +1808,13 @@ class AsmrDownloadManager extends ChangeNotifier {
       if (responseStart == 0 && received > 0) {
         final discardedBytes = received;
         received = 0;
-        _discardLivePartialProgress(workId, item.relativePath, discardedBytes);
+        if (item.countsTowardByteProgress) {
+          _discardLivePartialProgress(
+            workId,
+            item.relativePath,
+            discardedBytes,
+          );
+        }
       }
       final sink = stagingFile.openWrite(
         mode: responseStart > 0 ? FileMode.append : FileMode.write,
@@ -1590,14 +1823,22 @@ class AsmrDownloadManager extends ChangeNotifier {
         await for (final chunk in response.timeout(downloadIdleTimeout)) {
           _throwIfCancelled(workId);
           received += chunk.length;
+          if (maxBytes != null && received > maxBytes) {
+            throw FileSystemException(
+              'Download exceeds the maximum allowed size.',
+              item.relativePath,
+            );
+          }
           sink.add(chunk);
 
-          _recordDownloadChunk(
-            workId,
-            item.relativePath,
-            chunk.length,
-            received,
-          );
+          if (item.countsTowardByteProgress) {
+            _recordDownloadChunk(
+              workId,
+              item.relativePath,
+              chunk.length,
+              received,
+            );
+          }
         }
         await sink.flush();
       } finally {
@@ -1615,7 +1856,10 @@ class AsmrDownloadManager extends ChangeNotifier {
           stackTrace: StackTrace.current,
         );
       }
-      return _TemporaryDownloadAttempt.success(received);
+      return _TemporaryDownloadAttempt.success(
+        received,
+        mimeType: response.headers.contentType?.mimeType,
+      );
     } on _DownloadCancelled {
       rethrow;
     } catch (error, stackTrace) {
@@ -2100,6 +2344,25 @@ class AsmrDownloadManager extends ChangeNotifier {
     }
   }
 
+  Future<void> _deleteOutputPath(String outputPath) async {
+    try {
+      if (PathMatcher.isContentUri(outputPath)) {
+        await _fileCacheGateway.deleteDocumentPath(outputPath);
+      } else {
+        await _deleteFileIfPresent(File(outputPath));
+      }
+    } catch (_) {
+      // Removing downloaded output is best effort.
+    }
+  }
+
+  Future<bool> _outputPathExists(String outputPath) async {
+    if (PathMatcher.isContentUri(outputPath)) {
+      return _fileCacheGateway.documentPathExists(outputPath);
+    }
+    return File(outputPath).exists();
+  }
+
   Future<void> _cleanupCancelledTask(int workId) async {
     for (final createdPath in _createdOutputPaths[workId] ?? const <String>{}) {
       try {
@@ -2141,6 +2404,8 @@ Map<String, Object?> _downloadTaskToJson(
   'workFolderName': task.workFolderName,
   'conflictPolicy': task.conflictPolicy.name,
   'saveMetadata': task.saveMetadata,
+  'saveCover': task.saveCover,
+  'automaticFileRetryCount': task.automaticFileRetryCount,
   'totalFiles': task.totalFiles,
   'completedFiles': task.completedFiles,
   'skippedFiles': task.skippedFiles,
@@ -2149,6 +2414,7 @@ Map<String, Object?> _downloadTaskToJson(
   'downloadedBytes': task.downloadedBytes,
   'startedAt': task.startedAt.toIso8601String(),
   'currentItemPath': task.currentItemPath,
+  'coverOutputPath': task.coverOutputPath,
   'message': task.message,
   'error': task.error,
   'fileDownloadedBytes': task.fileDownloadedBytes,
@@ -2187,6 +2453,11 @@ _PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
         AsmrDownloadConflictPolicy.skip,
       ),
       saveMetadata: json['saveMetadata'] as bool? ?? true,
+      saveCover: json['saveCover'] as bool? ?? false,
+      automaticFileRetryCount: normalizeAsmrDownloadRetryCount(
+        (json['automaticFileRetryCount'] as num?)?.toInt() ??
+            kMaxAsmrDownloadRetryCount,
+      ),
       status: AsmrDownloadTaskStatus.paused,
       totalFiles: _jsonInt(json['totalFiles']),
       completedFiles: _jsonInt(json['completedFiles']),
@@ -2198,6 +2469,7 @@ _PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
           DateTime.tryParse(json['startedAt'] as String? ?? '') ??
           DateTime.now(),
       currentItemPath: json['currentItemPath'] as String?,
+      coverOutputPath: json['coverOutputPath'] as String?,
       message: json['message'] as String?,
       error: json['error'] as String?,
       fileDownloadedBytes: _jsonIntMap(json['fileDownloadedBytes']),
@@ -2337,16 +2609,30 @@ final class _CreatedJsonDocument {
 
 class _PlannedDownloadFile {
   const _PlannedDownloadFile({
-    required this.node,
     required this.url,
     required this.relativePath,
     required this.size,
-  });
+  }) : isCover = false,
+       coverFileStem = null,
+       maxBytes = null,
+       countsTowardByteProgress = true;
 
-  final AsmrTrackFile node;
+  const _PlannedDownloadFile.cover({
+    required this.url,
+    required this.relativePath,
+    required String this.coverFileStem,
+    required int this.maxBytes,
+  }) : size = 0,
+       isCover = true,
+       countsTowardByteProgress = false;
+
   final String url;
   final String relativePath;
   final int size;
+  final bool isCover;
+  final String? coverFileStem;
+  final int? maxBytes;
+  final bool countsTowardByteProgress;
 }
 
 class _WriteResult {
@@ -2374,17 +2660,25 @@ class _TemporaryDownloadResult {
   const _TemporaryDownloadResult({
     required this.file,
     required this.bytesDownloaded,
+    required this.mimeType,
     required this.cacheLease,
   });
 
   final File file;
   final int bytesDownloaded;
+  final String? mimeType;
   final CachePathLease cacheLease;
 }
 
 class _TemporaryDownloadAttempt {
-  const _TemporaryDownloadAttempt.success(int bytesDownloaded)
-    : this._(bytesDownloaded: bytesDownloaded, retryable: false);
+  const _TemporaryDownloadAttempt.success(
+    int bytesDownloaded, {
+    String? mimeType,
+  }) : this._(
+         bytesDownloaded: bytesDownloaded,
+         retryable: false,
+         mimeType: mimeType,
+       );
 
   const _TemporaryDownloadAttempt.failure({
     required bool retryable,
@@ -2400,12 +2694,14 @@ class _TemporaryDownloadAttempt {
   const _TemporaryDownloadAttempt._({
     required this.bytesDownloaded,
     required this.retryable,
+    this.mimeType,
     this.error,
     this.stackTrace,
   });
 
   final int? bytesDownloaded;
   final bool retryable;
+  final String? mimeType;
   final Object? error;
   final StackTrace? stackTrace;
 }

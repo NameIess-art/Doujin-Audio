@@ -3,8 +3,8 @@ part of 'settings_tab.dart';
 const double _settingsTileHeight = 78;
 const double _settingsTileTitleFontSize = 16;
 const double _settingsTileSubtitleFontSize = 13;
-const double _settingsDropdownMinWidth = 128;
 const double _settingsDropdownMaxWidth = 180;
+const double _settingsDropdownChromeWidth = kMinInteractiveDimension;
 
 Widget _settingsTitle(String text) {
   return Text(text, softWrap: true, overflow: TextOverflow.visible);
@@ -55,13 +55,30 @@ Widget _settingsDropdown<T>(
 }) {
   final mediaQuery = MediaQuery.of(context);
   final screenWidth = mediaQuery.size.width;
-  final textScale = mediaQuery.textScaler.scale(1);
-  final minWidth = screenWidth < 360 ? 112.0 : _settingsDropdownMinWidth;
   final maxWidth = (screenWidth * 0.52)
-      .clamp(minWidth, _settingsDropdownMaxWidth + 40)
+      .clamp(0, _settingsDropdownMaxWidth + 40)
       .toDouble();
-  final width = (screenWidth * (textScale >= 2 ? 0.48 : 0.4))
-      .clamp(minWidth, maxWidth)
+  final defaultTextStyle = DefaultTextStyle.of(context).style;
+  double? longestTextWidth = 0;
+  for (final item in items) {
+    final child = item.child;
+    if (child is! Text || child.data == null) {
+      longestTextWidth = null;
+      break;
+    }
+    final painter = TextPainter(
+      text: TextSpan(
+        text: child.data,
+        style: defaultTextStyle.merge(child.style),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: mediaQuery.textScaler,
+      maxLines: 1,
+    )..layout();
+    longestTextWidth = math.max(longestTextWidth!, painter.width);
+  }
+  final width = ((longestTextWidth ?? maxWidth) + _settingsDropdownChromeWidth)
+      .clamp(_settingsDropdownChromeWidth, maxWidth)
       .toDouble();
   return SizedBox(
     width: width,

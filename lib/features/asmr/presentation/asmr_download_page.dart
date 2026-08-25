@@ -201,6 +201,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
               destinationRoot: destination!,
               conflictPolicy: settings.asmrDownloadConflictPolicy,
               saveMetadata: settings.asmrDownloadSaveMetadata,
+              saveCover: settings.asmrDownloadSaveCover,
+              automaticFileRetryCount: settings.asmrDownloadRetryCount,
               folderNameFields: settings.asmrDownloadFolderNameFields,
             ),
           );
@@ -646,7 +648,7 @@ class _TaskCard extends ConsumerWidget {
                         ? _statusText(i18n, task.status)
                         : i18n.tr('asmr_download_status_retrying', {
                             'attempt': retryAttempt,
-                            'max': AsmrDownloadManager.maxAutomaticFileRetries,
+                            'max': task.automaticFileRetryCount,
                           }),
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       color: cs.onSurfaceVariant,

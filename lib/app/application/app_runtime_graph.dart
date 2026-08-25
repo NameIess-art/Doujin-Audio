@@ -11,6 +11,7 @@ import '../../features/player/application/playback_facade.dart';
 import '../../features/player/application/playback_subtitle_service.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../features/settings/application/settings_repository.dart';
+import '../../features/settings/application/settings_state.dart';
 import 'app_lifecycle_binding.dart';
 import 'app_persistence_coordinator.dart';
 import 'app_runtime_lifecycle.dart';
@@ -153,6 +154,14 @@ AppRuntimeGraph createAppRuntimeGraph({
       syncPlaybackState: syncPlaybackState,
     ),
   ];
+  if (asmrDownloads != null) {
+    bindings.add(
+      _AsmrDownloadSettingsBinding.attach(
+        downloads: asmrDownloads,
+        settings: settings,
+      ),
+    );
+  }
   if (!kIsWeb &&
       defaultTargetPlatform == TargetPlatform.android &&
       asmrDownloads != null) {
@@ -205,4 +214,27 @@ AppRuntimeGraph createAppRuntimeGraph({
     settings: settings,
     timer: timer,
   );
+}
+
+final class _AsmrDownloadSettingsBinding implements RuntimeBinding {
+  _AsmrDownloadSettingsBinding._(this._subscription);
+
+  factory _AsmrDownloadSettingsBinding.attach({
+    required AsmrDownloadManager downloads,
+    required SettingsRepository settings,
+  }) {
+    void syncConcurrency() {
+      downloads.setMaxConcurrentDownloads(settings.asmrDownloadThreadCount);
+    }
+
+    syncConcurrency();
+    return _AsmrDownloadSettingsBinding._(
+      settings.slice.stream.listen((_) => syncConcurrency()),
+    );
+  }
+
+  final StreamSubscription<SettingsState> _subscription;
+
+  @override
+  Future<void> dispose() => _subscription.cancel();
 }

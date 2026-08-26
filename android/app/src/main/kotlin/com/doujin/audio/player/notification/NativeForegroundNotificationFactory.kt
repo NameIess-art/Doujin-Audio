@@ -5,10 +5,13 @@ package com.doujin.audio.player.notification
 import com.doujin.audio.R
 
 import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
@@ -17,6 +20,19 @@ internal class NativeForegroundNotificationFactory(
     private val context: Context,
     private val channelId: String
 ) {
+    fun ensureChannel(name: String, description: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
+            ?: return
+        if (manager.getNotificationChannel(channelId) != null) return
+        manager.createNotificationChannel(
+            NotificationChannel(channelId, name, NotificationManager.IMPORTANCE_LOW).apply {
+                this.description = description
+                setShowBadge(false)
+            }
+        )
+    }
+
     fun buildPlaybackNotification(
         sessionId: String,
         title: String,

@@ -30,7 +30,7 @@ val releaseSigningConfigured = keystorePropertiesFile.exists() &&
 val parallelProfileInstall = providers
     .gradleProperty("parallelProfileInstall")
     .map(String::toBoolean)
-    .getOrElse(false)
+    .getOrElse(true)
 
 val validateReleaseSigning by tasks.registering {
     group = "verification"

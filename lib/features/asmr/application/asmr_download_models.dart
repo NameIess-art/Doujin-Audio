@@ -1,4 +1,10 @@
-part of 'asmr_download_manager.dart';
+import 'package:path/path.dart' as path;
+
+import '../../../core/immutable_collections.dart';
+import '../../../core/media/path_display.dart';
+import '../../../core/media/path_matcher.dart';
+import '../domain/asmr_download.dart';
+import '../domain/asmr_models.dart';
 
 enum AsmrDownloadTaskStatus {
   idle,

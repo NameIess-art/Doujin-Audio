@@ -7,6 +7,7 @@ typedef LibraryMaintenanceIdleWaiter =
 typedef LibraryPersistentImportCleanup =
     Future<void> Function(List<String> retainedPaths);
 typedef LibraryEntryMaintenance = Future<void> Function(int epoch);
+typedef LibraryDurationMaintenance = Future<void> Function();
 
 /// Coordinates deferred startup maintenance so it cannot race with restore or
 /// runtime disposal.
@@ -16,10 +17,12 @@ final class LibraryStartupMaintenanceCoordinator {
     required LibraryPersistentImportCleanup cleanupOrphanedImports,
     required LibraryEntryMaintenance ensureEntries,
     LibraryEntryMaintenance? migrateAudioDetails,
+    LibraryDurationMaintenance? backfillDurations,
   }) : _waitForUiIdle = waitForUiIdle,
        _cleanupOrphanedImports = cleanupOrphanedImports,
        _ensureEntries = ensureEntries,
-       _migrateAudioDetails = migrateAudioDetails;
+       _migrateAudioDetails = migrateAudioDetails,
+       _backfillDurations = backfillDurations;
 
   static const _quietWindow = Duration(seconds: 3);
 
@@ -27,6 +30,7 @@ final class LibraryStartupMaintenanceCoordinator {
   final LibraryPersistentImportCleanup _cleanupOrphanedImports;
   final LibraryEntryMaintenance _ensureEntries;
   final LibraryEntryMaintenance? _migrateAudioDetails;
+  final LibraryDurationMaintenance? _backfillDurations;
   Future<void>? _task;
   int _epoch = 0;
   bool _disposed = false;
@@ -71,6 +75,8 @@ final class LibraryStartupMaintenanceCoordinator {
           await _ensureEntries(epoch);
           if (!_isCurrent(epoch)) return;
           await _migrateAudioDetails?.call(epoch);
+          if (!_isCurrent(epoch)) return;
+          await _backfillDurations?.call();
         },
         details: <String, Object?>{'tracks': retainedPaths.length},
       );

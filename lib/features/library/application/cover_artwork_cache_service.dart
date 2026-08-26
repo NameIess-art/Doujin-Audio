@@ -104,6 +104,7 @@ class CoverArtworkCacheService {
   final Map<String, String?> _resolvedRemoteCovers = <String, String?>{};
   final Map<String, Future<String?>> _resolvedRemoteCoverFutures =
       <String, Future<String?>>{};
+  final Set<Future<void>> _pendingRemoteCoverTouches = <Future<void>>{};
   final Map<String, DateTime> _remoteCoverLastTouchedAt = <String, DateTime>{};
   final Map<String, _RemoteCoverFailure> _remoteCoverFailures = {};
   final Queue<Completer<void>> _remoteDownloadWaiters = Queue();
@@ -260,7 +261,7 @@ class CoverArtworkCacheService {
       final resolvedPath = _resolvedRemoteCovers[remoteKey];
       if (resolvedPath != null &&
           _isResolvedRemoteCoverPathPresent(resolvedPath)) {
-        unawaited(_touchResolvedRemoteCover(remoteKey, resolvedPath));
+        _scheduleResolvedRemoteCoverTouch(remoteKey, resolvedPath);
         return resolvedFuture;
       }
       _resolvedRemoteCovers.remove(remoteKey);
@@ -1354,6 +1355,16 @@ class CoverArtworkCacheService {
     }
   }
 
+  void _scheduleResolvedRemoteCoverTouch(String remoteKey, String coverPath) {
+    late final Future<void> operation;
+    operation = _touchResolvedRemoteCover(remoteKey, coverPath).whenComplete(
+      () {
+        _pendingRemoteCoverTouches.remove(operation);
+      },
+    );
+    _pendingRemoteCoverTouches.add(operation);
+  }
+
   bool _isResolvedRemoteCoverPathPresent(String coverPath) {
     if (PathMatcher.isContentUri(coverPath) ||
         PathMatcher.isRemoteUri(coverPath)) {
@@ -1462,14 +1473,20 @@ class CoverArtworkCacheService {
     }
   }
 
-  void dispose() {
-    if (_disposed) return;
+  Future<void> dispose() async {
+    if (_disposed) {
+      await Future.wait<void>(
+        List<Future<void>>.of(_pendingRemoteCoverTouches),
+      );
+      return;
+    }
     _disposed = true;
     _remoteHttpClient?.close(force: true);
     _remoteHttpClient = null;
     while (_remoteDownloadWaiters.isNotEmpty) {
       _remoteDownloadWaiters.removeFirst().complete();
     }
+    await Future.wait<void>(List<Future<void>>.of(_pendingRemoteCoverTouches));
     _remoteCoverFutures.clear();
     _resolvedRemoteCoverFutures.clear();
     _resolvedRemoteCovers.clear();

@@ -743,6 +743,13 @@ class LibraryService {
 
   MusicTrack? trackByPath(String trackPath) => libraryByPath[trackPath];
 
+  String? libraryRootForPath(String entityPath) {
+    for (final rootPath in <String>[...watchedLibraries, ...watchedFolders]) {
+      if (PathMatcher.isWithinOrEqual(entityPath, rootPath)) return rootPath;
+    }
+    return null;
+  }
+
   int compareTracks(MusicTrack first, MusicTrack second) {
     return organizer.compareTracks(first, second);
   }

@@ -182,7 +182,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   Timer? _startupRefreshIdleTimer;
   bool _startupRefreshStarted = false;
   bool _startupRefreshWaiting = false;
-  bool _startupLibraryRefreshCompleted = false;
   bool _initialLibraryContentReady = false;
   bool _refreshTriggeredInCurrentScroll = false;
   final Set<String> _expandedCardPaths = <String>{};
@@ -203,8 +202,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   final ScrollController _scrollController = ScrollController();
   int? _cardSnapshotRequestRevision;
-  int? _durationBackfillStructureRevision;
-  late final String _durationBackfillCommitKey;
   List<LibraryNode>? _sortedTreeCache;
   List<LibraryNode>? _sortedTreeSource;
   LibrarySortCriterion? _sortedTreeCriterion;
@@ -661,8 +658,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   @override
   void initState() {
     super.initState();
-    _durationBackfillCommitKey =
-        'library_duration_backfill:${identityHashCode(this)}';
     widget.activeTabIndexListenable?.addListener(_handleActiveTabChanged);
     widget.activeSectionListenable?.addListener(_handleActiveTabChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -722,16 +717,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   }
 
   Future<void> _finishStartupLibraryRefresh() async {
-    try {
-      await _scheduleWatchedFoldersRefresh(
-        silent: true,
-        importAudioDetails: false,
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _startupLibraryRefreshCompleted = true);
-      }
-    }
+    await _scheduleWatchedFoldersRefresh(
+      silent: true,
+      importAudioDetails: false,
+    );
   }
 
   void _ensureCardSnapshot({
@@ -754,33 +743,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
             _cardSnapshotRequestRevision = null;
           }
         }),
-      );
-    });
-  }
-
-  void _ensureMissingDurationBackfill({
-    required LibraryFacade libraryFacade,
-    required int structureRevision,
-    required bool canRun,
-  }) {
-    if (!canRun || _durationBackfillStructureRevision == structureRevision) {
-      return;
-    }
-    _durationBackfillStructureRevision = structureRevision;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _durationBackfillStructureRevision != structureRevision) {
-        return;
-      }
-      UiInteractionCoordinator.instance.scheduleCommit(
-        key: _durationBackfillCommitKey,
-        priority: 90,
-        commit: () {
-          if (!mounted ||
-              _durationBackfillStructureRevision != structureRevision) {
-            return;
-          }
-          unawaited(libraryFacade.backfillMissingLibraryDurations());
-        },
       );
     });
   }
@@ -833,7 +795,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     for (final timer in _cardExpansionMotionTimers.values) {
       timer.cancel();
     }
-    UiInteractionCoordinator.instance.cancelCommit(_durationBackfillCommitKey);
     disposeTabState();
     _scanCoordinator.dispose();
     _scrollController.dispose();
@@ -915,16 +876,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
         snapshotRevision: listStateStructureRevision,
       );
     }
-    _ensureMissingDurationBackfill(
-      libraryFacade: libraryFacade,
-      structureRevision: listStateStructureRevision,
-      canRun:
-          _isActive &&
-          listStateIsInitialized &&
-          _startupLibraryRefreshCompleted &&
-          !listStateIsScanning &&
-          !listStateIsBackgroundScanning,
-    );
     final tree = _sortTreeIfNeeded(
       rawTree: listStateRawTree,
       libraryFacade: libraryFacade,

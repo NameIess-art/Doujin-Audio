@@ -504,6 +504,7 @@ final class _ProfileAsmrController extends AsmrLibraryController {
     required this.works,
     required this.trackTree,
   }) : super(
+         persistenceRepository: fixture.persistenceRepository,
          preferencesStore: AsmrPreferencesStore(
            repository: fixture.persistenceRepository,
          ),

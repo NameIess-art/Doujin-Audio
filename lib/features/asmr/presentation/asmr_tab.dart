@@ -9,7 +9,7 @@ import '../../../app/localization/app_language_provider.dart';
 import '../domain/asmr_models.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
-import '../application/asmr_download_manager.dart';
+import '../application/asmr_download_models.dart';
 import '../application/asmr_api_service.dart';
 import '../application/asmr_library_controller.dart';
 import '../../../core/media/search_query_utils.dart';

@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/main.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
@@ -19,6 +20,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
+import 'package:doujin_audio/features/library/presentation/library_cover_ui_controller.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
 import 'package:doujin_audio/features/player/presentation/playlist_tab.dart';
 import 'package:doujin_audio/features/player/application/playback_session_snapshot.dart';
@@ -34,6 +36,7 @@ import 'package:doujin_audio/features/player/domain/playback_persistence_reposit
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/core/ui/warmup_scheduler.dart';
 import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/glass_refresh_indicator.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
@@ -755,6 +758,11 @@ void main() {
     );
     final fixture = AppRuntimeWidgetTestFixture();
     final asmrController = _QueuedEmptyAsmrLibraryController();
+    final coverScheduler = WarmupScheduler()..setPaused(true);
+    final coverUi = LibraryCoverUiController(
+      library: fixture.library,
+      scheduler: coverScheduler,
+    );
     final sectionIndex = ValueNotifier<int>(AudioLibraryPage.localSection);
     final activePageIndex = ValueNotifier<int>(0);
     addTearDown(fixture.dispose);
@@ -785,6 +793,7 @@ void main() {
         ),
         overrides: [
           asmrLibraryControllerProvider.overrideWithValue(asmrController),
+          libraryCoverUiControllerProvider.overrideWithValue(coverUi),
         ],
       ),
     );
@@ -820,6 +829,8 @@ void main() {
       tester.getTopLeft(asmrCard).dy,
       closeTo(tester.getTopLeft(localCard).dy, 0.01),
     );
+    await tester.pumpWidget(const SizedBox.shrink());
+    unawaited(coverUi.dispose());
   });
 
   testWidgets(

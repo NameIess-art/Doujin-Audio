@@ -249,6 +249,28 @@ void main() {
 
     expect(violations, isEmpty, reason: violations.join('\n'));
   });
+
+  test('ASMR task state is owned by a composable task store', () {
+    final manager = File(
+      'lib/features/asmr/application/asmr_download_manager.dart',
+    ).readAsStringSync();
+    final store = File(
+      'lib/features/asmr/application/asmr_download_task_store.dart',
+    ).readAsStringSync();
+
+    expect(store, contains('final class AsmrDownloadTaskStore'));
+    expect(store, isNot(contains('part of')));
+    expect(
+      RegExp(r'extension\s+\w+\s+on\s+AsmrDownloadManager').hasMatch(store),
+      isFalse,
+    );
+    expect(manager, contains('_store = AsmrDownloadTaskStore('));
+    expect(manager, isNot(contains("part 'asmr_download_task_store.dart'")));
+    expect(
+      manager,
+      isNot(contains('Map<int, AsmrDownloadTaskSnapshot> _tasks')),
+    );
+  });
 }
 
 Iterable<File> _dartFiles(Directory root) sync* {

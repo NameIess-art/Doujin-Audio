@@ -22,33 +22,32 @@ internal class NativeMediaSessionHost(
         handlePlayerCommandRequest = handlePlayerCommandRequest,
         logSecurityEvent = logSecurityEvent
     )
-    private var mediaSession: MediaSession? = null
-    private var dummyPlayer: ExoPlayer? = null
+    private val resources = NativeMediaSessionResourceLease<MediaSession, ExoPlayer>()
 
-    fun current(): MediaSession? = mediaSession
+    fun current(): MediaSession? = resources.currentSession
 
     fun ensureBootstrap() {
-        if (mediaSession != null) return
-        var player: ExoPlayer? = null
+        if (resources.currentSession != null) return
         try {
-            val createdPlayer = ExoPlayer.Builder(context).build()
-            player = createdPlayer
-            dummyPlayer = createdPlayer
-            mediaSession = MediaSession.Builder(context, createdPlayer)
-                .setId("Doujin Audio Bootstrap")
-                .setCallback(callback)
-                .build()
+            resources.installBootstrap(
+                createPlayer = { ExoPlayer.Builder(context).build() },
+                createSession = { player ->
+                    MediaSession.Builder(context, player)
+                        .setId("Doujin Audio Bootstrap")
+                        .setCallback(callback)
+                        .build()
+                },
+                releasePlayer = ExoPlayer::release
+            )
         } catch (error: Exception) {
-            player?.release()
-            if (dummyPlayer === player) dummyPlayer = null
             logWarn("ensure_media_session_for_bootstrap_failed", error)
         }
     }
 
     fun ensure(): MediaSession? {
         val playbackSession = candidate()
-        val player = playbackSession?.playerOrNull() ?: return mediaSession
-        mediaSession?.let { existing ->
+        val player = playbackSession?.playerOrNull() ?: return resources.currentSession
+        resources.currentSession?.let { existing ->
             attachPlayer(existing, player, playbackSession)
             return existing
         }
@@ -75,15 +74,14 @@ internal class NativeMediaSessionHost(
             .setId("Doujin Audio")
             .setCallback(callback)
         if (pendingIntent != null) builder.setSessionActivity(pendingIntent)
-        return builder.build().also {
-            mediaSession = it
+        return resources.installSession(builder::build).also {
             logInfo("media_session_create", playbackSession)
         }
     }
 
     fun update(hasSessions: Boolean) {
         val nextPlayer = candidate()?.playerOrNull()
-        val existing = mediaSession
+        val existing = resources.currentSession
         if (nextPlayer == null) {
             if (!hasSessions) release("no_media_session_candidate")
             return
@@ -103,17 +101,9 @@ internal class NativeMediaSessionHost(
     }
 
     fun release(reason: String) {
-        val existing = mediaSession
-        val bootstrapPlayer = dummyPlayer
-        if (existing == null && bootstrapPlayer == null) return
+        if (!resources.hasResources) return
         logInfo("media_session_release reason=$reason", null)
-        try {
-            existing?.release()
-        } finally {
-            mediaSession = null
-            bootstrapPlayer?.release()
-            dummyPlayer = null
-        }
+        resources.release(MediaSession::release, ExoPlayer::release)
     }
 
     private fun attachPlayer(
@@ -124,7 +114,6 @@ internal class NativeMediaSessionHost(
         if (target.player === player) return
         logInfo("media_session_switch_player", session)
         target.player = player
-        dummyPlayer?.release()
-        dummyPlayer = null
+        resources.onPlayerAttached(ExoPlayer::release)
     }
 }

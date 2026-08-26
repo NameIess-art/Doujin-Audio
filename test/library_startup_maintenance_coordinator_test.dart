@@ -88,4 +88,28 @@ void main() {
 
     await expectLater(coordinator.dispose(), completes);
   });
+
+  test(
+    'startup work repairs entries, imports details, then backfills',
+    () async {
+      final calls = <String>[];
+      final completed = Completer<void>();
+      final coordinator = LibraryStartupMaintenanceCoordinator(
+        waitForUiIdle: (_) async => true,
+        cleanupOrphanedImports: (_) async => calls.add('cleanup'),
+        ensureEntries: (_) async => calls.add('entries'),
+        migrateAudioDetails: (_) async => calls.add('details'),
+        backfillDurations: () async {
+          calls.add('durations');
+          completed.complete();
+        },
+      );
+
+      coordinator.schedule(const <String>['/music/track.mp3']);
+      await completed.future;
+      await coordinator.dispose();
+
+      expect(calls, <String>['cleanup', 'entries', 'details', 'durations']);
+    },
+  );
 }

@@ -136,7 +136,7 @@ final class AppLifecycleBinding implements RuntimeBinding, AppRuntimeLifecycle {
         await binding.dispose();
       }
     }
-    _asmrDownloads?.dispose();
+    await _asmrDownloads?.shutdown();
     await _library.dispose();
     await _playback.dispose();
     await _timer.dispose();

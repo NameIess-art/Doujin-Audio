@@ -13,7 +13,7 @@ internal class NativeAudioFocusController(
     private val logInfo: (String) -> Unit,
     private val logWarn: (String, Throwable) -> Unit,
     private val onFocusChange: (Int) -> Unit
-) {
+) : NativePlaybackAudioFocusAccess {
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
     private var focusRequest: AudioFocusRequest? = null
     private val focusChangeListener = AudioManager.OnAudioFocusChangeListener { change ->
@@ -27,10 +27,10 @@ internal class NativeAudioFocusController(
         onFocusChange(change)
     }
 
-    var isHeld: Boolean = false
+    override var isHeld: Boolean = false
         private set
 
-    fun requestIfNeeded(): Boolean {
+    override fun requestIfNeeded(): Boolean {
         if (isHeld) return true
         val manager = audioManager ?: run {
             logInfo("audio_focus_request_skip no_audio_manager")
@@ -72,7 +72,7 @@ internal class NativeAudioFocusController(
         return isHeld
     }
 
-    fun abandon(reason: String) {
+    override fun abandon(reason: String) {
         if (!isHeld && focusRequest == null) return
         val manager = audioManager ?: run {
             logInfo("audio_focus_abandon_skip no_audio_manager reason=$reason")

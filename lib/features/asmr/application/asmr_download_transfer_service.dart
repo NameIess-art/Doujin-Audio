@@ -258,9 +258,9 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
       }
 
       if (!targetExisted) _createdOutputPaths[workId]?.add(targetPath);
-      final currentTask = _tasks[workId];
+      final currentTask = _store[workId];
       if (currentTask != null) {
-        _tasks[workId] = currentTask.copyWith(coverOutputPath: targetPath);
+        _store[workId] = currentTask.copyWith(coverOutputPath: targetPath);
       }
       return const _WriteResult.success(bytesDownloaded: 0);
     } finally {
@@ -336,7 +336,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
         }
 
         final maxRetries =
-            _tasks[workId]?.automaticFileRetryCount ??
+            _store[workId]?.automaticFileRetryCount ??
             kMaxAsmrDownloadRetryCount;
         if (!result.retryable || attempt >= maxRetries) {
           if (result.error case final error?) {
@@ -395,14 +395,22 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
       }
       if (!allowResume && received > 0) {
         if (item.countsTowardByteProgress) {
-          _discardLivePartialProgress(workId, item.relativePath, received);
+          _store.discardLivePartialProgress(
+            workId,
+            item.relativePath,
+            received,
+          );
         }
         await _deleteFileIfPresent(stagingFile);
         received = 0;
       }
       if (item.size > 0 && received > item.size) {
         if (item.countsTowardByteProgress) {
-          _discardLivePartialProgress(workId, item.relativePath, received);
+          _store.discardLivePartialProgress(
+            workId,
+            item.relativePath,
+            received,
+          );
         }
         await _deleteFileIfPresent(stagingFile);
         received = 0;
@@ -434,7 +442,11 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
           // The retry uses a new response even if cancellation already won.
         }
         if (item.countsTowardByteProgress) {
-          _discardLivePartialProgress(workId, item.relativePath, received);
+          _store.discardLivePartialProgress(
+            workId,
+            item.relativePath,
+            received,
+          );
         }
         await _deleteFileIfPresent(stagingFile);
         return _downloadToTemporaryFileAttempt(
@@ -512,7 +524,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
         final discardedBytes = received;
         received = 0;
         if (item.countsTowardByteProgress) {
-          _discardLivePartialProgress(
+          _store.discardLivePartialProgress(
             workId,
             item.relativePath,
             discardedBytes,
@@ -535,7 +547,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
           sink.add(chunk);
 
           if (item.countsTowardByteProgress) {
-            _recordDownloadChunk(
+            _store.recordDownloadChunk(
               workId,
               item.relativePath,
               chunk.length,
@@ -592,7 +604,7 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
 
   void _setFileRetryAttempt(int workId, String relativePath, int? attempt) {
     if (_disposed) return;
-    final task = _tasks[workId];
+    final task = _store[workId];
     if (task == null) return;
     final attempts = Map<String, int>.from(task.fileRetryAttempts);
     if (attempt == null) {
@@ -601,8 +613,8 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
       if (attempts[relativePath] == attempt) return;
       attempts[relativePath] = attempt;
     }
-    _tasks[workId] = task.copyWith(fileRetryAttempts: attempts);
-    _notifyProgressChanged(workId);
+    _store[workId] = task.copyWith(fileRetryAttempts: attempts);
+    _store.notifyProgressChanged(workId);
   }
 
   Future<JsonDocumentWriteResult> _writeWorkDetailBackup(

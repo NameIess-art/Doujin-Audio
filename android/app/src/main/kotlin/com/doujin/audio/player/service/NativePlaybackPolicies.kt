@@ -1,6 +1,7 @@
 package com.doujin.audio.player.service
 
 import android.media.AudioManager
+import android.content.Intent
 import android.os.Bundle
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -83,6 +84,42 @@ internal data class NativeTimerResumeResult(
 
 @Suppress("DEPRECATION")
 internal fun Bundle.rawExtra(key: String): Any? = get(key)
+
+internal fun nativePlaybackStartDecision(
+    intent: Intent?,
+    expectedToken: String,
+    tokenExtra: String,
+    bootstrapExtra: String,
+    onUnreadableExtras: () -> Unit
+): NativePlaybackStartDecision {
+    if (intent == null) {
+        return evaluateNativePlaybackStart(
+            intentPresent = false,
+            action = null,
+            presentedToken = null,
+            expectedToken = expectedToken,
+            bootstrapExtraPresent = false,
+            bootstrapExtra = null
+        )
+    }
+    return try {
+        val extras = intent.extras
+        evaluateNativePlaybackStart(
+            intentPresent = true,
+            action = intent.action,
+            presentedToken = extras?.rawExtra(tokenExtra) as? String,
+            expectedToken = expectedToken,
+            bootstrapExtraPresent = extras?.containsKey(bootstrapExtra) == true,
+            bootstrapExtra = extras?.rawExtra(bootstrapExtra)
+        )
+    } catch (_: RuntimeException) {
+        onUnreadableExtras()
+        NativePlaybackStartDecision(
+            source = NativePlaybackStartSource.REJECTED,
+            rejectionReason = "unreadable_extras"
+        )
+    }
+}
 
 internal fun resolveNotificationSessionId(
     requestedSessionId: String,

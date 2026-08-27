@@ -53,7 +53,7 @@ class CoverArtworkCacheService {
     Duration requestTimeout = const Duration(seconds: 15),
     Duration downloadIdleTimeout = const Duration(seconds: 30),
     DateTime Function()? now,
-    Future<Directory> Function()? temporaryDirectory,
+    Future<Directory> Function()? persistentDirectory,
     bool Function(String coverSearchKey)? isActiveCoverKey,
     VoidCallback? onActiveCoverChanged,
     bool Function()? preferEmbeddedAudioCover,
@@ -67,7 +67,8 @@ class CoverArtworkCacheService {
        _requestTimeout = requestTimeout,
        _downloadIdleTimeout = downloadIdleTimeout,
        _now = now ?? DateTime.now,
-       _temporaryDirectory = temporaryDirectory ?? getTemporaryDirectory,
+       _persistentDirectory =
+           persistentDirectory ?? getApplicationSupportDirectory,
        _isActiveCoverKey = isActiveCoverKey,
        _onActiveCoverChanged = onActiveCoverChanged,
        _preferEmbeddedAudioCover = preferEmbeddedAudioCover;
@@ -82,7 +83,7 @@ class CoverArtworkCacheService {
   final Duration _requestTimeout;
   final Duration _downloadIdleTimeout;
   final DateTime Function() _now;
-  final Future<Directory> Function() _temporaryDirectory;
+  final Future<Directory> Function() _persistentDirectory;
   final bool Function(String coverSearchKey)? _isActiveCoverKey;
   final VoidCallback? _onActiveCoverChanged;
   final bool Function()? _preferEmbeddedAudioCover;
@@ -1397,9 +1398,9 @@ class CoverArtworkCacheService {
     IOSink? sink;
     HttpClientRequest? request;
     try {
-      final cacheRoot = await _temporaryDirectory();
+      final cacheRoot = await _persistentDirectory();
       final coverDirectory = Directory(
-        path.join(cacheRoot.path, 'notification_covers'),
+        path.join(cacheRoot.path, persistentRemoteCoverCacheDirectoryName),
       );
       await coverDirectory.create(recursive: true);
       final file = File(
@@ -1455,7 +1456,6 @@ class CoverArtworkCacheService {
       }
       await partial.rename(file.path);
       partial = null;
-      AppCacheService.scheduleEnforce();
       return file.path;
     } catch (error, stackTrace) {
       request?.abort(error, stackTrace);

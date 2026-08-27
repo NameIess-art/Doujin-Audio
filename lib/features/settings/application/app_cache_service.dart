@@ -7,6 +7,8 @@ import 'package:path_provider/path_provider.dart';
 
 import '../../../core/platform/file_cache_platform_gateway.dart';
 
+const String persistentRemoteCoverCacheDirectoryName = 'remote_covers';
+
 class AppCacheService {
   static const int defaultMaxCacheBytes = 300 * 1024 * 1024;
   static final FileCachePlatformGateway _fileCache =
@@ -79,7 +81,7 @@ class AppCacheService {
       _enforceAfterLeaseRelease = true;
     }
 
-    for (final directory in await _dartCacheRoots()) {
+    for (final directory in await _dartCacheRoots(includePersistent: true)) {
       deletedBytes += await _deleteDirectoryChildren(directory);
     }
     return deletedBytes;
@@ -87,7 +89,7 @@ class AppCacheService {
 
   static Future<int> estimateDartCacheBytes() async {
     var totalBytes = 0;
-    for (final root in await _dartCacheRoots()) {
+    for (final root in await _dartCacheRoots(includePersistent: true)) {
       if (!await root.exists()) continue;
       await for (final entity in root.list(
         recursive: true,
@@ -203,7 +205,9 @@ class AppCacheService {
     await _enforceDartCacheLimit(_maxCacheBytes);
   }
 
-  static Future<List<Directory>> _dartCacheRoots() async {
+  static Future<List<Directory>> _dartCacheRoots({
+    bool includePersistent = false,
+  }) async {
     final roots = <Directory>[];
     try {
       final tempDir = await getTemporaryDirectory();
@@ -216,6 +220,18 @@ class AppCacheService {
       roots.add(Directory(path.join(tempDir.path, 'exports')));
     } catch (_) {
       // Temporary cache roots are optional and may be unavailable on startup.
+    }
+    if (includePersistent) {
+      try {
+        final supportDir = await getApplicationSupportDirectory();
+        roots.add(
+          Directory(
+            path.join(supportDir.path, persistentRemoteCoverCacheDirectoryName),
+          ),
+        );
+      } catch (_) {
+        // Persistent cover cache may be unavailable during early startup.
+      }
     }
     roots.add(
       Directory(path.join(Directory.systemTemp.path, 'doujin_audio_imports')),

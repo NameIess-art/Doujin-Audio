@@ -170,4 +170,59 @@ void main() {
     expect(await oversized.exists(), isFalse);
     expect(await AppCacheService.estimateDartCacheBytes(), 0);
   });
+
+  test(
+    'persistent remote covers are only removed by explicit cache clearing',
+    () async {
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      final tempDirectory = await Directory.systemTemp.createTemp(
+        'persistent_cover_temp_',
+      );
+      final supportDirectory = await Directory.systemTemp.createTemp(
+        'persistent_cover_support_',
+      );
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'getTemporaryDirectory') {
+              return tempDirectory.path;
+            }
+            if (call.method == 'getApplicationSupportDirectory') {
+              return supportDirectory.path;
+            }
+            return null;
+          });
+      addTearDown(() async {
+        await AppCacheService.setMaxCacheBytes(
+          AppCacheService.defaultMaxCacheBytes,
+        );
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+        if (await tempDirectory.exists()) {
+          await tempDirectory.delete(recursive: true);
+        }
+        if (await supportDirectory.exists()) {
+          await supportDirectory.delete(recursive: true);
+        }
+      });
+      await AppCacheService.setMaxCacheBytes(5);
+      final coverDirectory = Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}'
+        '$persistentRemoteCoverCacheDirectoryName',
+      );
+      await coverDirectory.create(recursive: true);
+      final cover = File(
+        '${coverDirectory.path}${Platform.pathSeparator}cover.image',
+      );
+      await cover.writeAsBytes(List<int>.filled(12, 1));
+
+      await AppCacheService.enforceLimit();
+
+      expect(await cover.exists(), isTrue);
+      expect(await AppCacheService.estimateDartCacheBytes(), 12);
+
+      await AppCacheService.clearAllCaches();
+
+      expect(await cover.exists(), isFalse);
+    },
+  );
 }

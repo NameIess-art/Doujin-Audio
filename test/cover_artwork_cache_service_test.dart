@@ -297,7 +297,7 @@ void main() {
       });
       final cache = CoverArtworkCacheService(
         libraryService: LibraryService(),
-        temporaryDirectory: () async => directory,
+        persistentDirectory: () async => directory,
       );
       addTearDown(cache.dispose);
       String url(String path) =>
@@ -321,6 +321,45 @@ void main() {
       );
     },
   );
+
+  test('persistent remote cover survives cache service recreation', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'persistent_remote_cover_',
+    );
+    final pngBytes = base64Decode(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk'
+      '+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    );
+    var requests = 0;
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((request) async {
+      requests++;
+      request.response.add(pngBytes);
+      await request.response.close();
+    });
+    addTearDown(() async {
+      await server.close(force: true);
+      if (await directory.exists()) await directory.delete(recursive: true);
+    });
+    final url = 'http://${server.address.address}:${server.port}/cover.png';
+
+    final first = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      persistentDirectory: () async => directory,
+    );
+    final firstPath = await first.futureForRemoteCover(url);
+    await first.dispose();
+
+    final restored = CoverArtworkCacheService(
+      libraryService: LibraryService(),
+      persistentDirectory: () async => directory,
+    );
+    addTearDown(restored.dispose);
+    final restoredPath = await restored.futureForRemoteCover(url);
+
+    expect(restoredPath, firstPath);
+    expect(requests, 1);
+  });
 
   test('stalled remote covers release a slot for the next request', () async {
     final directory = await Directory.systemTemp.createTemp(
@@ -351,7 +390,7 @@ void main() {
     });
     final cache = CoverArtworkCacheService(
       libraryService: LibraryService(),
-      temporaryDirectory: () async => directory,
+      persistentDirectory: () async => directory,
       requestTimeout: const Duration(seconds: 1),
       downloadIdleTimeout: const Duration(milliseconds: 50),
     );

@@ -155,7 +155,7 @@ final class PlaybackFacade {
   /// precision no one can observe.
   static const int backgroundPositionBucketSeconds = 30;
 
-  static const double maxSessionVolume = 2.0;
+  static const double maxSessionVolume = 3.0;
   static const List<double> playbackSpeedOptions = <double>[
     0.5,
     0.75,
@@ -574,6 +574,23 @@ final class PlaybackFacade {
         position.inSeconds ~/ positionBucketSeconds;
     _onSessionPositionChanged?.call(session, position);
     await nativeRepository.seek(session.id, position);
+  }
+
+  Future<void> seekSessionByOffset(String sessionId, Duration offset) async {
+    final session = _service.sessions[sessionId];
+    if (session == null ||
+        session.isDisposed ||
+        !identical(_service.sessions[session.id], session)) {
+      return;
+    }
+    final target = session.position + offset;
+    final maxDuration = session.duration;
+    final clamped = maxDuration != null && maxDuration > Duration.zero
+        ? (target < Duration.zero
+              ? Duration.zero
+              : (target > maxDuration ? maxDuration : target))
+        : (target < Duration.zero ? Duration.zero : target);
+    await seekSession(sessionId, clamped);
   }
 
   Future<void> toggleSessionPlayPause(String sessionId) async {

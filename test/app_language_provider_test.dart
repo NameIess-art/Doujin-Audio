@@ -16,10 +16,11 @@ void main() {
       await provider.setLanguage(AppLanguage.zh);
       expect(provider.tr('background_transparency'), '背景透明度');
       expect(provider.tr('haptic_feedback_enabled'), '操作震动');
-      expect(provider.tr('volume_range_hint'), '0-200');
+      expect(provider.tr('volume_range_hint'), '0-150');
 
       await provider.setLanguage(AppLanguage.ja);
       expect(provider.tr('background_transparency'), '背景透明度');
+      expect(provider.tr('volume_range_hint'), '0-150');
       expect(
         provider.tr('volume_warning_message'),
         '音量ブーストはクリッピングや歪みの原因になることがあります。',
@@ -27,6 +28,7 @@ void main() {
 
       await provider.setLanguage(AppLanguage.en);
       expect(provider.tr('background_transparency'), 'Background transparency');
+      expect(provider.tr('volume_range_hint'), '0-150');
       expect(provider.tr('exact_alarm_permission_title'), 'Allow exact alarms');
     },
   );

@@ -58,7 +58,7 @@ internal object NativePlaybackCommandPayloads {
         val subtitle = raw.optionalString("subtitle")
         val artUri = raw.optionalString("artUri")?.also(::requireSupportedUri)
         val startPositionMs = raw.requiredLong("startPositionMs", minimum = 0L)
-        val volume = raw.requiredFiniteDouble("volume", 0.0..2.0).toFloat()
+        val volume = raw.requiredFiniteDouble("volume", 0.0..3.0).toFloat()
         val speed = raw.requiredFiniteDouble("speed", 0.5..2.0).toFloat()
         val audioEffects = parseAudioEffects(raw.requiredMap("audioEffects"))
         val queue = parseQueue(raw["queue"])

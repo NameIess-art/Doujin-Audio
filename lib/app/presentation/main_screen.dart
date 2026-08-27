@@ -3,7 +3,6 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -36,7 +35,9 @@ import '../../core/widgets/app_dialog.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/confirm_action_dialog.dart';
 import '../../core/widgets/mobile_overlay_inset.dart';
-import 'audio_library_page.dart';
+import '../../features/library/presentation/library_tab.dart';
+import '../../features/asmr/presentation/asmr_tab.dart';
+import '../../features/player/application/playback_session.dart';
 
 part 'main_screen_notifications.dart';
 part 'main_screen_layout.dart';
@@ -45,6 +46,61 @@ part 'main_screen_widgets.dart';
 @visibleForTesting
 bool shouldRunGlobalSubtitleOverlay({required bool appInForeground}) {
   return !appInForeground;
+}
+
+enum MainDestinationType {
+  library,
+  asmrOne,
+  playlist,
+  settings,
+}
+
+class _MainDestination {
+  const _MainDestination({
+    required this.type,
+    required this.icon,
+    required this.selectedIcon,
+    required this.labelKey,
+  });
+
+  final MainDestinationType type;
+  final IconData icon;
+  final IconData selectedIcon;
+  final String labelKey;
+}
+
+List<_MainDestination> _resolveMainDestinations({
+  required bool showLocalLibrary,
+  required bool showAsmrOne,
+}) {
+  return [
+    if (showAsmrOne)
+      const _MainDestination(
+        type: MainDestinationType.asmrOne,
+        icon: Icons.cloud_outlined,
+        selectedIcon: Icons.cloud_rounded,
+        labelKey: 'show_asmr_one',
+      ),
+    if (showLocalLibrary)
+      const _MainDestination(
+        type: MainDestinationType.library,
+        icon: Icons.library_music_outlined,
+        selectedIcon: Icons.library_music_rounded,
+        labelKey: 'music_library',
+      ),
+    const _MainDestination(
+      type: MainDestinationType.playlist,
+      icon: Icons.graphic_eq_outlined,
+      selectedIcon: Icons.graphic_eq_rounded,
+      labelKey: 'nav_sessions',
+    ),
+    const _MainDestination(
+      type: MainDestinationType.settings,
+      icon: Icons.tune_outlined,
+      selectedIcon: Icons.tune_rounded,
+      labelKey: 'nav_settings',
+    ),
+  ];
 }
 
 class MainScreen extends ConsumerStatefulWidget {
@@ -59,7 +115,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   static const double _desktopBreakpoint = 980;
   bool _isMenuCollapsed = false;
   late final ValueNotifier<int> _activePageIndex;
-  late final ValueNotifier<int> _audioLibrarySectionIndex;
   final Object _pageSwitchInteraction = Object();
   final GlobalKey _dockContentKey = GlobalKey();
   int _pageSwitchCoordinatorGeneration = 0;
@@ -98,24 +153,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
   String? _globalSubtitleOverlayTrackPath;
   String? _lastGlobalSubtitleOverlayText;
 
-  static const List<_MainDestination> _destinations = [
-    _MainDestination(
-      icon: Icons.library_music_outlined,
-      selectedIcon: Icons.library_music_rounded,
-      labelKey: 'nav_library',
-    ),
-    _MainDestination(
-      icon: Icons.graphic_eq_outlined,
-      selectedIcon: Icons.graphic_eq_rounded,
-      labelKey: 'nav_sessions',
-    ),
-    _MainDestination(
-      icon: Icons.tune_outlined,
-      selectedIcon: Icons.tune_rounded,
-      labelKey: 'nav_settings',
-    ),
-  ];
-
   @override
   void initState() {
     super.initState();
@@ -127,9 +164,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
       updateService: ref.read(appUpdateServiceProvider),
     );
     _activePageIndex = ValueNotifier<int>(0);
-    _audioLibrarySectionIndex = ValueNotifier<int>(
-      AudioLibraryPage.localSection,
-    );
     ref.listenManual<bool>(
       mainOverlayUiProvider.select((state) => state.startupReady),
       (_, startupReady) => _handleStartupReadyChanged(startupReady),
@@ -189,14 +223,31 @@ class _MainScreenState extends ConsumerState<MainScreen>
   void _handleStartupReadyChanged(bool startupReady) {
     if (!mounted || !startupReady) return;
     if (!_isDataReady) {
-      final startupPage =
-          ref.read(settingsStateProvider).value?.startupPage ??
-          StartupPage.library;
-      _audioLibrarySectionIndex.value = startupPage == StartupPage.asmrOne
-          ? AudioLibraryPage.asmrSection
-          : AudioLibraryPage.localSection;
-      final startupIndex = startupPage == StartupPage.playlist ? 1 : 0;
-      _activePageIndex.value = startupIndex;
+      final settings = ref.read(settingsStateProvider).value;
+      final showLocal = settings?.showLocalLibrary ?? true;
+      final showAsmr = settings?.showAsmrOne ?? true;
+      final destinations = _resolveMainDestinations(
+        showLocalLibrary: showLocal,
+        showAsmrOne: showAsmr,
+      );
+      final startupPage = settings?.startupPage ?? StartupPage.library;
+      final targetType = switch (startupPage) {
+        StartupPage.library => showLocal
+            ? MainDestinationType.library
+            : (showAsmr
+                ? MainDestinationType.asmrOne
+                : MainDestinationType.playlist),
+        StartupPage.asmrOne => showAsmr
+            ? MainDestinationType.asmrOne
+            : (showLocal
+                ? MainDestinationType.library
+                : MainDestinationType.playlist),
+        StartupPage.playlist => MainDestinationType.playlist,
+      };
+      final startupIndex = destinations.indexWhere(
+        (d) => d.type == targetType,
+      );
+      _activePageIndex.value = startupIndex >= 0 ? startupIndex : 0;
       setState(() => _isDataReady = true);
     }
     _queueAutoUpdateCheckIfReady();
@@ -286,7 +337,6 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _permissionActionController.dispose();
     _notificationFacade.setOpenSessionHandler(null);
     _activePageIndex.dispose();
-    _audioLibrarySectionIndex.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -377,11 +427,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
     });
   }
 
-  PlaybackSessionSnapshot? _globalSubtitleOverlaySession(
+  PlaybackSession? _globalSubtitleOverlaySession(
     PlaybackFacade playback,
     SubtitleSettingsState settings,
   ) {
-    final candidates = playback.state.activeSessions
+    final candidates = playback.activeSessions
         .where((session) {
           return settings.isShowEnabled(session.id) &&
               settings.isGlobalEnabled(session.id);
@@ -542,7 +592,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
     _updateGlobalSubtitleOverlayForSession(session);
   }
 
-  void _updateGlobalSubtitleOverlayForSession(PlaybackSessionSnapshot session) {
+  void _updateGlobalSubtitleOverlayForSession(PlaybackSession session) {
     final subtitles = ref.read(playbackSubtitleServiceProvider);
     if (_globalSubtitleOverlaySessionId != session.id) {
       _globalSubtitleOverlaySessionId = session.id;
@@ -573,6 +623,11 @@ class _MainScreenState extends ConsumerState<MainScreen>
     }
 
     final subtitleTrack = subtitles.trackSync(session.currentTrackPath);
+    if (subtitleTrack == null &&
+        !subtitles.isLoading(session.currentTrackPath) &&
+        !subtitles.hasResult(session.currentTrackPath)) {
+      unawaited(subtitles.load(session.currentTrackPath));
+    }
     final text =
         subtitles.textAt(
           session.currentTrackPath,
@@ -635,56 +690,72 @@ class _MainScreenState extends ConsumerState<MainScreen>
     coordinator.beginInteraction(_pageSwitchInteraction);
     _pageSwitchCoordinatorGeneration = coordinator.beginGeneration();
     _activePageIndex.value = index;
-    if (index == 0 &&
-        _audioLibrarySectionIndex.value == AudioLibraryPage.asmrSection) {
+    final destinations = _currentDestinations();
+    if (index >= 0 &&
+        index < destinations.length &&
+        destinations[index].type == MainDestinationType.asmrOne) {
       unawaited(_showAsmrOnlineNoticeOnce());
     }
+  }
+
+  List<_MainDestination> _currentDestinations() {
+    final settings = ref.read(settingsStateProvider).value;
+    final showLocal = settings?.showLocalLibrary ?? true;
+    final showAsmr = settings?.showAsmrOne ?? true;
+    return _resolveMainDestinations(
+      showLocalLibrary: showLocal,
+      showAsmrOne: showAsmr,
+    );
   }
 
   void _openLocalLibrary() {
-    _switchAudioLibrarySection(AudioLibraryPage.localSection);
-    _switchPage(0);
-  }
-
-  void _switchAudioLibrarySection(int index) {
-    if (_audioLibrarySectionIndex.value == index) return;
-    _pageSwitchCoordinatorGeneration = UiInteractionCoordinator.instance
-        .beginGeneration();
-    _audioLibrarySectionIndex.value = index;
-    if (index == AudioLibraryPage.asmrSection) {
-      unawaited(_showAsmrOnlineNoticeOnce());
-    }
-  }
-
-  Widget _buildMainPage(BuildContext context, int index) {
-    return switch (index) {
-      0 => AudioLibraryPage(
-        sectionIndex: _audioLibrarySectionIndex,
-        activePageIndex: _activePageIndex,
-        onSectionChanged: _switchAudioLibrarySection,
-      ),
-      1 => PlaylistTab(
-        onTimerTap: _openTimerFromPlaylist,
-        onOpenLibrary: _openLocalLibrary,
-        activeTabIndexListenable: _activePageIndex,
-      ),
-      2 => const SettingsTab(),
-      _ => const SizedBox.shrink(),
-    };
-  }
-
-  void _toggleAudioLibrarySectionFromNavigation() {
-    final nextSection =
-        _audioLibrarySectionIndex.value == AudioLibraryPage.localSection
-        ? AudioLibraryPage.asmrSection
-        : AudioLibraryPage.localSection;
-    unawaited(
-      AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
+    final destinations = _currentDestinations();
+    final localIndex = destinations.indexWhere(
+      (d) => d.type == MainDestinationType.library,
     );
-    _switchAudioLibrarySection(nextSection);
-    if (_activePageIndex.value != 0) {
-      _switchPage(0);
+    if (localIndex >= 0) {
+      _switchPage(localIndex);
+      return;
     }
+    final asmrIndex = destinations.indexWhere(
+      (d) => d.type == MainDestinationType.asmrOne,
+    );
+    if (asmrIndex >= 0) {
+      _switchPage(asmrIndex);
+    }
+  }
+
+  Widget _buildMainPage(
+    BuildContext context,
+    int index,
+    List<_MainDestination> destinations,
+  ) {
+    if (index < 0 || index >= destinations.length) {
+      return const SizedBox.shrink();
+    }
+    final dest = destinations[index];
+    return switch (dest.type) {
+      MainDestinationType.library => LibraryTab(
+          key: const ValueKey<String>('audio_library_local_page'),
+          tabIndex: index,
+          activeTabIndexListenable: _activePageIndex,
+        ),
+      MainDestinationType.asmrOne => AsmrTab(
+          key: const ValueKey<String>('audio_library_asmr_page'),
+          tabIndex: index,
+          activeTabIndexListenable: _activePageIndex,
+        ),
+      MainDestinationType.playlist => PlaylistTab(
+          tabIndex: index,
+          onTimerTap: _openTimerFromPlaylist,
+          onOpenLibrary: _openLocalLibrary,
+          activeTabIndexListenable: _activePageIndex,
+        ),
+      MainDestinationType.settings => SettingsTab(
+          tabIndex: index,
+          activeTabIndexListenable: _activePageIndex,
+        ),
+    };
   }
 
   void _handlePageTransitionCompleted(int index) {

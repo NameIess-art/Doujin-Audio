@@ -334,7 +334,7 @@ internal fun validatePlaybackArgumentsBeforeService(call: MethodCall) {
         }
         NativePlaybackMethods.SET_VOLUME -> {
             requireSessionId()
-            requireFiniteInRange("volume", 0.0..2.0)
+            requireFiniteInRange("volume", 0.0..3.0)
         }
         NativePlaybackMethods.SET_SPEED -> {
             requireSessionId()

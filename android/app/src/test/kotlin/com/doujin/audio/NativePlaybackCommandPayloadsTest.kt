@@ -28,6 +28,23 @@ class NativePlaybackCommandPayloadsTest {
                 )
             )
         )
+
+        validatePlaybackArgumentsBeforeService(
+            MethodCall(
+                NativePlaybackMethods.SET_VOLUME,
+                mapOf("sessionId" to "main", "volume" to 3.0)
+            )
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `simple playback commands reject volume above amplified range`() {
+        validatePlaybackArgumentsBeforeService(
+            MethodCall(
+                NativePlaybackMethods.SET_VOLUME,
+                mapOf("sessionId" to "main", "volume" to 3.01)
+            )
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -126,6 +143,22 @@ class NativePlaybackCommandPayloadsTest {
         assertEquals(0, parsed.queueStartIndex)
         assertEquals(1, parsed.queue.size)
         assertEquals(emptyList<String>(), parsed.candidateUris)
+    }
+
+    @Test
+    fun `prepare parser accepts maximum amplified volume`() {
+        val parsed = NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload().toMutableMap().apply { put("volume", 3.0) }
+        )
+
+        assertEquals(3.0f, parsed.volume)
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `prepare parser rejects volume above amplified range`() {
+        NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload().toMutableMap().apply { put("volume", 3.01) }
+        )
     }
 
     @Test

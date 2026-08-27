@@ -51,6 +51,7 @@ part 'asmr_search_page.dart';
 class AsmrTab extends ConsumerStatefulWidget {
   const AsmrTab({
     super.key,
+    this.tabIndex = 0,
     this.activeTabIndexListenable,
     this.activeSectionListenable,
     this.sectionIndex = 0,
@@ -58,6 +59,7 @@ class AsmrTab extends ConsumerStatefulWidget {
     this.onTitleSwipeRight,
   });
 
+  final int tabIndex;
   final ValueListenable<int>? activeTabIndexListenable;
   final ValueListenable<int>? activeSectionListenable;
   final int sectionIndex;
@@ -101,7 +103,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   bool get handlesScrollToTop => _isActive;
 
   @override
-  int get tabIndex => 0;
+  int get tabIndex => widget.tabIndex;
 
   @override
   double get headerControlsFullHeight => 0;

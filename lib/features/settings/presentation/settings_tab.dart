@@ -50,7 +50,14 @@ part 'settings_tab_update_section.dart';
 part 'settings_tab_widgets.dart';
 
 class SettingsTab extends ConsumerStatefulWidget {
-  const SettingsTab({super.key});
+  const SettingsTab({
+    super.key,
+    this.tabIndex = 3,
+    this.activeTabIndexListenable,
+  });
+
+  final int tabIndex;
+  final ValueListenable<int>? activeTabIndexListenable;
 
   @override
   ConsumerState<SettingsTab> createState() => _SettingsTabState();
@@ -75,7 +82,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   final ScrollController _scrollController = ScrollController();
 
   @override
-  int get tabIndex => 2;
+  int get tabIndex => widget.tabIndex;
 
   @override
   double get defaultHeaderHeight => AppPageHeaderMetrics.toolbarHeight;

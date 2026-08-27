@@ -38,6 +38,8 @@ class SettingsRepository {
   bool blurPlayerBackgroundEnabled = true;
   bool uiBlurEffectEnabled = true;
   bool hapticFeedbackEnabled = true;
+  bool showLocalLibrary = true;
+  bool showAsmrOne = true;
   StartupPage startupPage = StartupPage.library;
   bool portraitLockEnabled = false;
   BottomNavigationStyle bottomNavigationStyle = BottomNavigationStyle.capsule;
@@ -110,6 +112,11 @@ class SettingsRepository {
       uiBlurEffectEnabled = playback['uiBlurEffectEnabled'] as bool? ?? true;
       hapticFeedbackEnabled =
           playback['hapticFeedbackEnabled'] as bool? ?? true;
+      showLocalLibrary = playback['showLocalLibrary'] as bool? ?? true;
+      showAsmrOne = playback['showAsmrOne'] as bool? ?? true;
+      if (!showLocalLibrary && !showAsmrOne) {
+        showLocalLibrary = true;
+      }
       coverImageResolution = CoverImageResolution.values.firstWhere(
         (value) => value.name == playback['coverImageResolution'],
         orElse: () => CoverImageResolution.balanced,
@@ -233,6 +240,8 @@ class SettingsRepository {
       'blurPlayerBackgroundEnabled': blurPlayerBackgroundEnabled,
       'uiBlurEffectEnabled': uiBlurEffectEnabled,
       'hapticFeedbackEnabled': hapticFeedbackEnabled,
+      'showLocalLibrary': showLocalLibrary,
+      'showAsmrOne': showAsmrOne,
       'coverImageResolution': coverImageResolution.name,
       'coverImageDisplayMode': coverImageDisplayMode.name,
       'preferEmbeddedAudioCover': preferEmbeddedAudioCover,
@@ -437,6 +446,29 @@ class SettingsRepository {
     update: () => hapticFeedbackEnabled = enabled,
   );
 
+  Future<void> setShowLocalLibrary(bool enabled) async {
+    if (!enabled && !showAsmrOne) return;
+    if (showLocalLibrary == enabled) return;
+    showLocalLibrary = enabled;
+    if (!enabled && startupPage == StartupPage.library) {
+      startupPage = showAsmrOne ? StartupPage.asmrOne : StartupPage.playlist;
+    }
+    await persist();
+    syncSlice();
+  }
+
+  Future<void> setShowAsmrOne(bool enabled) async {
+    if (!enabled && !showLocalLibrary) return;
+    if (showAsmrOne == enabled) return;
+    showAsmrOne = enabled;
+    if (!enabled && startupPage == StartupPage.asmrOne) {
+      startupPage =
+          showLocalLibrary ? StartupPage.library : StartupPage.playlist;
+    }
+    await persist();
+    syncSlice();
+  }
+
   Future<void> setStartupPage(StartupPage page) => _setValue(
     unchanged: startupPage == page,
     update: () => startupPage = page,
@@ -597,6 +629,8 @@ class SettingsRepository {
     blurPlayerBackgroundEnabled = true;
     uiBlurEffectEnabled = true;
     hapticFeedbackEnabled = true;
+    showLocalLibrary = true;
+    showAsmrOne = true;
     startupPage = StartupPage.library;
     portraitLockEnabled = false;
     bottomNavigationStyle = BottomNavigationStyle.capsule;
@@ -660,6 +694,8 @@ class SettingsRepository {
         blurPlayerBackgroundEnabled: blurPlayerBackgroundEnabled,
         uiBlurEffectEnabled: uiBlurEffectEnabled,
         hapticFeedbackEnabled: hapticFeedbackEnabled,
+        showLocalLibrary: showLocalLibrary,
+        showAsmrOne: showAsmrOne,
         startupPage: startupPage,
         portraitLockEnabled: portraitLockEnabled,
         bottomNavigationStyle: bottomNavigationStyle,

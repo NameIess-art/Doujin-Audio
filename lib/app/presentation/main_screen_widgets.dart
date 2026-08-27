@@ -24,36 +24,21 @@ class _AmbientBackground extends StatelessWidget {
   }
 }
 
-class _MainDestination {
-  const _MainDestination({
-    required this.icon,
-    required this.selectedIcon,
-    required this.labelKey,
-  });
-
-  final IconData icon;
-  final IconData selectedIcon;
-  final String labelKey;
-}
 
 class _BottomDestinationInkResponse extends StatelessWidget {
   const _BottomDestinationInkResponse({
     required this.inkKey,
     required this.onTap,
     required this.child,
-    this.onLongPress,
-    this.onHorizontalSwipe,
   });
 
   final Key inkKey;
   final VoidCallback onTap;
-  final VoidCallback? onLongPress;
-  final VoidCallback? onHorizontalSwipe;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
-    final inkResponse = InkResponse(
+    return InkResponse(
       key: inkKey,
       onTap: onTap,
       containedInkWell: true,
@@ -61,40 +46,6 @@ class _BottomDestinationInkResponse extends StatelessWidget {
       highlightColor: Colors.transparent,
       splashColor: Colors.transparent,
       child: child,
-    );
-    if (onLongPress == null && onHorizontalSwipe == null) return inkResponse;
-    var horizontalDragDistance = 0.0;
-    return RawGestureDetector(
-      key: const ValueKey<String>('main_destination_library_long_press'),
-      behavior: HitTestBehavior.opaque,
-      gestures: <Type, GestureRecognizerFactory>{
-        if (onLongPress != null)
-          LongPressGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<LongPressGestureRecognizer>(
-                () => LongPressGestureRecognizer(
-                  duration: const Duration(milliseconds: 350),
-                ),
-                (recognizer) => recognizer.onLongPress = onLongPress,
-              ),
-        if (onHorizontalSwipe != null)
-          HorizontalDragGestureRecognizer:
-              GestureRecognizerFactoryWithHandlers<
-                HorizontalDragGestureRecognizer
-              >(HorizontalDragGestureRecognizer.new, (recognizer) {
-                recognizer.onStart = (_) {
-                  horizontalDragDistance = 0;
-                };
-                recognizer.onUpdate = (details) {
-                  horizontalDragDistance += details.primaryDelta ?? 0;
-                };
-                recognizer.onEnd = (_) {
-                  if (horizontalDragDistance.abs() >= 24) {
-                    onHorizontalSwipe?.call();
-                  }
-                };
-              }),
-      },
-      child: inkResponse,
     );
   }
 }

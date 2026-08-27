@@ -124,21 +124,30 @@ List<Widget> _buildSettingsGeneralSection({
       children: [
         Consumer(
           builder: (context, ref, _) {
-            final startupPage = ref.watch(
-              settingsStateProvider.select(
-                (state) => state.value?.startupPage ?? StartupPage.library,
-              ),
-            );
+            final settingsValue = ref.watch(settingsStateProvider).value;
+            final showLocal = settingsValue?.showLocalLibrary ?? true;
+            final showAsmr = settingsValue?.showAsmrOne ?? true;
+            final startupPage =
+                settingsValue?.startupPage ?? StartupPage.library;
+            final availablePages = StartupPage.values.where((page) {
+              if (page == StartupPage.library) return showLocal;
+              if (page == StartupPage.asmrOne) return showAsmr;
+              return true;
+            }).toList(growable: false);
+            final effectiveStartupPage =
+                availablePages.contains(startupPage)
+                    ? startupPage
+                    : availablePages.first;
             return ListTile(
               title: _settingsTitle(i18n.tr('startup_page')),
               leading: _settingsIcon(Icons.home_rounded, cs.onSurface),
               trailing: _settingsDropdown<StartupPage>(
                 context,
-                value: startupPage,
+                value: effectiveStartupPage,
                 onChanged: (value) {
                   if (value != null) settings.setStartupPage(value);
                 },
-                items: StartupPage.values
+                items: availablePages
                     .map(
                       (page) => DropdownMenuItem<StartupPage>(
                         value: page,

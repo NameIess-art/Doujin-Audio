@@ -127,6 +127,7 @@ class _VisibleLibraryItem {
 class LibraryTab extends ConsumerStatefulWidget {
   const LibraryTab({
     super.key,
+    this.tabIndex = 1,
     this.activeTabIndexListenable,
     this.activeSectionListenable,
     this.sectionIndex = 0,
@@ -134,6 +135,7 @@ class LibraryTab extends ConsumerStatefulWidget {
     this.onTitleSwipeRight,
   });
 
+  final int tabIndex;
   final ValueListenable<int>? activeTabIndexListenable;
   final ValueListenable<int>? activeSectionListenable;
   final int sectionIndex;
@@ -212,7 +214,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   int? _sortedTreeDetailRevision;
 
   @override
-  int get tabIndex => 0;
+  int get tabIndex => widget.tabIndex;
 
   @override
   double get headerControlsFullHeight => 0;

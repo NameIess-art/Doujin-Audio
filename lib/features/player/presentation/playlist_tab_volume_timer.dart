@@ -1,8 +1,5 @@
 part of 'playlist_tab.dart';
 
-const double _maxSessionVolume = 2.0;
-const int _maxSessionVolumePercent = 200;
-
 class _SessionVolumeButton extends StatefulWidget {
   const _SessionVolumeButton({required this.session, required this.playback});
 
@@ -200,17 +197,16 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final controller = TextEditingController(
-      text: '${((_dragVolume ?? widget.session.volume) * 100).round()}',
-    );
+    var inputValue =
+        '${(sessionVolumeDisplayValueFromGain(_dragVolume ?? widget.session.volume) * 100).round()}';
     unawaited(
       showAppDialog<void>(
         context: context,
         builder: (dialogContext) => AppDialog(
           title: i18n.tr('volume'),
           icon: Icons.volume_up_rounded,
-          content: TextField(
-            controller: controller,
+          content: TextFormField(
+            initialValue: inputValue,
             keyboardType: TextInputType.number,
             autofocus: true,
             decoration: InputDecoration(
@@ -219,9 +215,10 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                 borderRadius: BorderRadius.circular(16),
               ),
             ),
-            onSubmitted: (text) {
+            onFieldSubmitted: (text) {
               _applyVolumeInput(text, dialogContext);
             },
+            onChanged: (text) => inputValue = text,
           ),
           actions: AppDialogActions(
             children: [
@@ -231,36 +228,39 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
               ),
               AppPrimaryButton(
                 onPressed: () {
-                  _applyVolumeInput(controller.text, dialogContext);
+                  _applyVolumeInput(inputValue, dialogContext);
                 },
                 label: i18n.tr('confirm'),
               ),
             ],
           ),
         ),
-      ).whenComplete(controller.dispose),
+      ),
     );
   }
 
   void _applyVolumeInput(String text, BuildContext dialogContext) {
     final parsed = int.tryParse(text.trim());
-    if (parsed == null || parsed < 0 || parsed > _maxSessionVolumePercent) {
+    if (parsed == null ||
+        parsed < 0 ||
+        parsed > sessionVolumeDisplayMaximumPercent) {
       return;
     }
+    final volumeGain = sessionVolumeGainFromDisplayValue(parsed / 100);
     Navigator.of(dialogContext).pop();
     widget.onClose();
-    setState(() => _dragVolume = parsed / 100);
-    widget.playback.setSessionVolume(widget.session.id, parsed / 100);
+    setState(() => _dragVolume = volumeGain);
+    widget.playback.setSessionVolume(widget.session.id, volumeGain);
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    final volume = (_dragVolume ?? widget.session.volume).clamp(
-      0.0,
-      _maxSessionVolume,
-    );
-    final isBoosted = volume > 1.0;
+    final volumeGain = (_dragVolume ?? widget.session.volume)
+        .clamp(0.0, PlaybackFacade.maxSessionVolume)
+        .toDouble();
+    final displayVolume = sessionVolumeDisplayValueFromGain(volumeGain);
+    final isBoosted = volumeGain > 1.0;
 
     return ClipRRect(
       key: const ValueKey('session_volume_capsule'),
@@ -290,7 +290,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
               GestureDetector(
                 onTap: _showVolumeInputDialog,
                 child: Text(
-                  '${(volume * 100).round()}%',
+                  '${(displayVolume * 100).round()}%',
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     fontWeight: FontWeight.w900,
                     fontSize: 10,
@@ -320,12 +320,16 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                             activeTrackColor: isBoosted ? cs.primary : null,
                           ),
                           child: Slider(
-                            value: volume,
-                            max: _maxSessionVolume,
-                            onChanged: (v) {
-                              setState(() => _dragVolume = v);
+                            value: displayVolume,
+                            max: sessionVolumeDisplayMaximum,
+                            onChanged: (displayValue) {
+                              final volumeGain =
+                                  sessionVolumeGainFromDisplayValue(
+                                    displayValue,
+                                  );
+                              setState(() => _dragVolume = volumeGain);
                               AppInteractionFeedback.continuous(
-                                (v * 100).round(),
+                                (displayValue * 100).round(),
                               );
                               UiInteractionCoordinator.instance
                                   .scheduleThrottledCommit(
@@ -333,13 +337,17 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                                     commit: () =>
                                         widget.playback.setSessionVolume(
                                           widget.session.id,
-                                          v,
+                                          volumeGain,
                                           persist: false,
                                         ),
                                   );
                             },
-                            onChangeEnd: (v) {
-                              setState(() => _dragVolume = null);
+                            onChangeEnd: (displayValue) {
+                              final volumeGain =
+                                  sessionVolumeGainFromDisplayValue(
+                                    displayValue,
+                                  );
+                              setState(() => _dragVolume = volumeGain);
                               AppInteractionFeedback.resetContinuous();
                               UiInteractionCoordinator.instance
                                   .cancelThrottledCommit(
@@ -347,7 +355,7 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                                   );
                               widget.playback.setSessionVolume(
                                 widget.session.id,
-                                v,
+                                volumeGain,
                               );
                             },
                           ),
@@ -384,15 +392,15 @@ class _VerticalVolumeSliderState extends State<_VerticalVolumeSlider> {
                     );
                   },
                   child: Icon(
-                    volume == 0
+                    volumeGain == 0
                         ? Icons.volume_off_rounded
-                        : volume < 0.45
+                        : volumeGain < 0.45
                         ? Icons.volume_down_rounded
                         : Icons.volume_up_rounded,
                     key: ValueKey(
-                      volume == 0
+                      volumeGain == 0
                           ? Icons.volume_off_rounded
-                          : volume < 0.45
+                          : volumeGain < 0.45
                           ? Icons.volume_down_rounded
                           : Icons.volume_up_rounded,
                     ),

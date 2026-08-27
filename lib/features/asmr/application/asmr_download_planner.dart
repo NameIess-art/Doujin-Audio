@@ -12,18 +12,10 @@ extension AsmrDownloadPlanner on AsmrDownloadManager {
   _PlannedDownloadFile? _plannedCoverFile(AsmrWork work) {
     final url = work.preferredCoverUrl.trim();
     if (url.isEmpty) return null;
-    final rawStem = work.rjCode.trim().isEmpty
-        ? work.id.toString()
-        : work.rjCode.trim().toUpperCase();
-    final stem = PathDisplay.safeFileName(
-      rawStem,
-      replacement: '_',
-      fallback: work.id.toString(),
-    );
     return _PlannedDownloadFile.cover(
       url: url,
-      relativePath: 'Cover/$stem.cover',
-      coverFileStem: stem,
+      relativePath: 'cover/cover.cover',
+      coverFileStem: 'cover',
       maxBytes: AsmrDownloadManager._maxCoverBytes,
     );
   }

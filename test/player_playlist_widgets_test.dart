@@ -317,6 +317,30 @@ void main() {
     );
   });
 
+  test('session volume display scale preserves unity and compresses boost', () {
+    expect(sessionVolumeDisplayValueFromGain(0), 0);
+    expect(sessionVolumeDisplayValueFromGain(1), 1);
+    expect(sessionVolumeDisplayValueFromGain(2), 1.25);
+    expect(sessionVolumeDisplayValueFromGain(3), 1.5);
+    expect(sessionVolumeDisplayValueFromGain(4), 1.5);
+
+    expect(sessionVolumeGainFromDisplayValue(0), 0);
+    expect(sessionVolumeGainFromDisplayValue(1), 1);
+    expect(sessionVolumeGainFromDisplayValue(1.25), 2);
+    expect(sessionVolumeGainFromDisplayValue(1.5), 3);
+    expect(sessionVolumeGainFromDisplayValue(2), 3);
+
+    final gestureDisplayValue = sessionVideoVerticalGestureValue(
+      startValue: 1,
+      dragDy: -500,
+      viewportHeight: 500,
+      minimum: 0,
+      maximum: sessionVolumeDisplayMaximum,
+    );
+    expect(gestureDisplayValue, 1.5);
+    expect(sessionVolumeGainFromDisplayValue(gestureDisplayValue), 3);
+  });
+
   test('ASMR session switcher displays tracks in natural path order', () {
     MusicTrack asmrTrack(String title) {
       final relativePath = '01/$title.mp3';
@@ -722,6 +746,49 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 10));
+    },
+  );
+
+  testWidgets(
+    'session detail forward 5s and replay 5s seek relative to live position',
+    (WidgetTester tester) async {
+      final pumped = await _pumpSubtitleDetail(
+        tester: tester,
+        style: PlaybackDetailSubtitleStyle.compact,
+        initialPosition: const Duration(seconds: 30),
+        subtitleTrack: SubtitleTrack(
+          sourcePath: '/library/subtitles/track.vtt',
+          cues: const <SubtitleCue>[],
+        ),
+      );
+
+      final forwardButton = find.ancestor(
+        of: find.byIcon(Icons.forward_5_rounded),
+        matching: find.byType(IconButton),
+      );
+      final replayButton = find.ancestor(
+        of: find.byIcon(Icons.replay_5_rounded),
+        matching: find.byType(IconButton),
+      );
+      expect(forwardButton, findsOneWidget);
+      expect(replayButton, findsOneWidget);
+
+      await tester.tap(forwardButton);
+      await tester.pumpAndSettle();
+      expect(pumped.session.position, const Duration(seconds: 35));
+
+      await tester.tap(replayButton);
+      await tester.pumpAndSettle();
+      expect(pumped.session.position, const Duration(seconds: 30));
+
+      if (find.byType(SessionDetailPage).evaluate().isNotEmpty) {
+        Navigator.of(tester.element(find.byType(SessionDetailPage))).pop();
+        await tester.pumpAndSettle();
+      }
+      UiInteractionCoordinator.instance.resetForTest();
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 3));
     },
   );
 

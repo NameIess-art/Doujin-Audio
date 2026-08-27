@@ -147,6 +147,12 @@ void main() {
     expect(native.seekPositions, <Duration>[const Duration(seconds: 17)]);
     expect(positionChanges, <Duration>[const Duration(seconds: 17)]);
 
+    await playback.seekSessionByOffset(first.id, const Duration(seconds: 5));
+    expect(first.position, const Duration(seconds: 22));
+
+    await playback.seekSessionByOffset(first.id, const Duration(seconds: -5));
+    expect(first.position, const Duration(seconds: 17));
+
     await playback.setSessionVolume(first.id, 1.75, persist: false);
     await playback.setSessionVolume(first.id, 1.75);
     await playback.setSessionSpeed(first.id, 1.6, persist: false);
@@ -986,7 +992,8 @@ void main() {
     expect(trackSession.currentTrackPath, track.path);
     expect(trackSession.loopMode, SessionLoopMode.single);
     expect(trackSession.nonSingleLoopMode, SessionLoopMode.folderSequential);
-    expect(trackSession.volume, PlaybackFacade.maxSessionVolume);
+    expect(PlaybackFacade.maxSessionVolume, 3);
+    expect(trackSession.volume, 3);
     expect(trackSession.state.processingState, ProcessingState.idle);
     expect(trackSession.customQueueTracks, <MusicTrack>[track]);
     expect(queueSession.currentTrackPath, isEmpty);

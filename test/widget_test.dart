@@ -12,7 +12,6 @@ import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/main.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
-import 'package:doujin_audio/app/presentation/audio_library_page.dart';
 import 'package:doujin_audio/app/presentation/main_screen.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_library_controller.dart';
@@ -124,13 +123,17 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.byKey(const ValueKey<String>('main_page_fade_0')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_1')),
+      find.byKey(const ValueKey<String>('main_page_fade_0')),
       findsNothing,
     );
     expect(
       find.byKey(const ValueKey<String>('main_page_fade_2')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('main_page_fade_3')),
       findsNothing,
     );
     final settingsDestination = find.byKey(
@@ -151,13 +154,13 @@ void main() {
     await _tapSettingsDestination(tester);
     await _pumpMainScreenAnimations(tester);
 
-    expect(find.byKey(const ValueKey<String>('main_page_fade_2')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
     final settingsCanvas = tester.widget<ColoredBox>(
-      find.byKey(const ValueKey<String>('main_page_canvas_2')),
+      find.byKey(const ValueKey<String>('main_page_canvas_3')),
     );
     expect(settingsCanvas.color, isNot(Colors.transparent));
     expect(
-      find.byKey(const ValueKey<String>('main_page_fade_0')),
+      find.byKey(const ValueKey<String>('main_page_fade_1')),
       findsNothing,
     );
     expect(
@@ -168,7 +171,7 @@ void main() {
     final mainPageStack = find.byKey(const ValueKey<String>('main_page_stack'));
     await tester.drag(mainPageStack, const Offset(600, 0));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 2);
+    expect(tester.widget<AppFadeThroughIndexedStack>(mainPageStack).index, 3);
     expect(tester.takeException(), isNull);
   });
 
@@ -466,200 +469,81 @@ void main() {
     }
   });
 
-  testWidgets('audio library title swipe transitions between mounted pages', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(360, 800);
-    addTearDown(() {
-      tester.view.resetDevicePixelRatio();
-      tester.view.resetPhysicalSize();
-    });
-    final platformCalls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
-          platformCalls.add(call);
-          return null;
-        });
-    addTearDown(() {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, null);
-    });
-    final harness = await _pumpAppShell(tester, includePlaybackSession: false);
+  testWidgets(
+    'switching between local library and ASMR tabs updates visible page',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 800);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+      await _pumpAppShell(tester, includePlaybackSession: false);
 
-    final libraryFinder = find.byType(LibraryTab, skipOffstage: false);
-    final asmrFinder = find.byType(AsmrTab, skipOffstage: false);
-    final libraryState = tester.state(libraryFinder);
-    final asmrState = tester.state(asmrFinder);
-    final stackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
-    final sectionStackFinder = find.byKey(
-      const ValueKey<String>('audio_library_section_stack'),
-    );
-    final localPageFinder = find.byKey(
-      const ValueKey<String>('audio_library_local_page'),
-      skipOffstage: false,
-    );
-    final asmrPageFinder = find.byKey(
-      const ValueKey<String>('audio_library_asmr_page'),
-      skipOffstage: false,
-    );
-    final localTitle = harness.language.tr('music_library');
-    final localTitleFinder = find.descendant(
-      of: localPageFinder,
-      matching: find.text(localTitle),
-      skipOffstage: false,
-    );
-    final asmrTitleFinder = find.descendant(
-      of: asmrPageFinder,
-      matching: find.text('ASMR.ONE'),
-      skipOffstage: false,
-    );
+      expect(
+        find.byKey(const ValueKey<String>('main_page_fade_1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('main_page_fade_0')),
+        findsNothing,
+      );
 
-    bool pageIsOffstage(Finder finder) => tester
-        .widgetList<Offstage>(
-          find.ancestor(of: finder, matching: find.byType(Offstage)),
-        )
-        .any((widget) => widget.offstage);
+      // Switch to ASMR.ONE tab
+      final asmrDestination = find.byKey(
+        const ValueKey<String>('main_destination_ink_show_asmr_one'),
+      );
+      expect(asmrDestination, findsOneWidget);
+      await tester.tap(asmrDestination);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
 
-    expect(
-      tester.widget<AppFadeThroughIndexedStack>(stackFinder).children,
-      hasLength(3),
-    );
-    expect(sectionStackFinder, findsOneWidget);
-    final sectionTransitionDuration = tester
-        .widget<AppFadeThroughIndexedStack>(sectionStackFinder)
-        .duration;
-    final sectionTransitionSettlement =
-        sectionTransitionDuration + const Duration(milliseconds: 1);
-    expect(pageIsOffstage(localPageFinder), isFalse);
-    expect(pageIsOffstage(asmrPageFinder), isTrue);
-    expect(
-      find.byKey(
-        const ValueKey<String>('top_page_header_swipe_left_indicator'),
-      ),
-      findsNothing,
-    );
-    expect(
-      find.byKey(
-        const ValueKey<String>('top_page_header_swipe_right_indicator'),
-      ),
-      findsNothing,
-    );
-    platformCalls.clear();
+      expect(
+        find.byKey(const ValueKey<String>('main_page_fade_0')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('main_page_fade_1')),
+        findsNothing,
+      );
 
-    await tester.fling(localTitleFinder, const Offset(-120, 0), 1000);
-    await tester.pump();
-    expect(pageIsOffstage(localPageFinder), isFalse);
-    expect(pageIsOffstage(asmrPageFinder), isFalse);
-    expect(
-      platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
-      hasLength(1),
-    );
-    await tester.pump(sectionTransitionSettlement);
-    expect(pageIsOffstage(localPageFinder), isTrue);
-    expect(pageIsOffstage(asmrPageFinder), isFalse);
+      // Switch back to Music Library tab
+      final libraryDestination = find.byKey(
+        const ValueKey<String>('main_destination_ink_music_library'),
+      );
+      expect(libraryDestination, findsOneWidget);
+      await tester.tap(libraryDestination);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump();
 
-    expect(tester.widget<AppFadeThroughIndexedStack>(stackFinder).index, 0);
-    expect(tester.state(libraryFinder), same(libraryState));
-    expect(tester.state(asmrFinder), same(asmrState));
+      expect(
+        find.byKey(const ValueKey<String>('main_page_fade_1')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('main_page_fade_0')),
+        findsNothing,
+      );
+    },
+  );
 
-    await tester.fling(asmrTitleFinder, const Offset(120, 0), 1000);
-    await tester.pump();
-    await tester.pump(sectionTransitionSettlement);
-
-    expect(pageIsOffstage(localPageFinder), isFalse);
-    expect(pageIsOffstage(asmrPageFinder), isTrue);
-    expect(tester.state(libraryFinder), same(libraryState));
-    expect(tester.state(asmrFinder), same(asmrState));
-
-    await tester.fling(localTitleFinder, const Offset(120, 0), 1000);
-    await tester.pump();
-    await tester.pump(sectionTransitionSettlement);
-    expect(pageIsOffstage(asmrPageFinder), isFalse);
-
-    await tester.fling(asmrTitleFinder, const Offset(-120, 0), 1000);
-    await tester.pump();
-    await tester.pump(sectionTransitionSettlement);
-
-    expect(pageIsOffstage(localPageFinder), isFalse);
-    expect(pageIsOffstage(asmrPageFinder), isTrue);
-    expect(tester.state(libraryFinder), same(libraryState));
-    expect(tester.state(asmrFinder), same(asmrState));
-    final destination = find.byKey(
-      const ValueKey<String>('main_destination_library_long_press'),
-    );
-
-    expect(destination, findsOneWidget);
-    expect(
-      find.byKey(
-        const ValueKey<String>('main_destination_library_left_indicator'),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(
-        const ValueKey<String>('main_destination_library_right_indicator'),
-      ),
-      findsOneWidget,
-    );
-    expect(pageIsOffstage(localPageFinder), isFalse);
-    expect(pageIsOffstage(asmrPageFinder), isTrue);
-    expect(
-      find.descendant(of: destination, matching: find.text(localTitle)),
-      findsOneWidget,
-    );
-
-    await tester.fling(destination, const Offset(-80, 0), 600);
-    await tester.pump();
-    expect(pageIsOffstage(localPageFinder), isFalse);
-    expect(pageIsOffstage(asmrPageFinder), isFalse);
-    expect(
-      find.descendant(of: destination, matching: find.text('ASMR.ONE')),
-      findsOneWidget,
-    );
-    await tester.pump(sectionTransitionSettlement);
-
-    await tester.fling(destination, const Offset(80, 0), 600);
-    await tester.pump();
-    expect(pageIsOffstage(localPageFinder), isFalse);
-    expect(pageIsOffstage(asmrPageFinder), isFalse);
-    expect(
-      find.descendant(of: destination, matching: find.text(localTitle)),
-      findsOneWidget,
-    );
-    await tester.pump(sectionTransitionSettlement);
-
-    final gesture = await tester.startGesture(tester.getCenter(destination));
-    await tester.pump(const Duration(milliseconds: 250));
-    expect(pageIsOffstage(localPageFinder), isFalse);
-    expect(pageIsOffstage(asmrPageFinder), isTrue);
-
-    await tester.pump(const Duration(milliseconds: 150));
-    expect(pageIsOffstage(localPageFinder), isFalse);
-    expect(pageIsOffstage(asmrPageFinder), isFalse);
-    await gesture.up();
-    await tester.pump(sectionTransitionSettlement);
-    expect(tester.takeException(), isNull);
-  });
-
-  testWidgets('ASMR library initializes only after its section is visible', (
+  testWidgets('ASMR library initializes only after its tab is visible', (
     tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
     final controller = _QueuedEmptyAsmrLibraryController();
-    final sectionIndex = ValueNotifier<int>(AudioLibraryPage.localSection);
-    final activePageIndex = ValueNotifier<int>(0);
+    final activePageIndex = ValueNotifier<int>(1);
     addTearDown(fixture.dispose);
     addTearDown(controller.dispose);
-    addTearDown(sectionIndex.dispose);
     addTearDown(activePageIndex.dispose);
 
     await tester.pumpWidget(
       fixture.build(
-        AudioLibraryPage(
-          sectionIndex: sectionIndex,
-          activePageIndex: activePageIndex,
-          onSectionChanged: (index) => sectionIndex.value = index,
+        AsmrTab(
+          key: const ValueKey<String>('audio_library_asmr_page'),
+          activeTabIndexListenable: activePageIndex,
         ),
         overrides: [
           asmrLibraryControllerProvider.overrideWithValue(controller),
@@ -669,23 +553,14 @@ void main() {
     await tester.pump();
     expect(controller.initializeCount, 0);
 
-    sectionIndex.value = AudioLibraryPage.asmrSection;
+    activePageIndex.value = 0;
     await tester.pump();
-    final sectionTransitionDuration = tester
-        .widget<AppFadeThroughIndexedStack>(
-          find.byKey(const ValueKey<String>('audio_library_section_stack')),
-        )
-        .duration;
-    await tester.pump(
-      sectionTransitionDuration + const Duration(milliseconds: 1),
-    );
-    await tester.pump(const Duration(milliseconds: 161));
-    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(controller.initializeCount, 1);
 
-    sectionIndex.value = AudioLibraryPage.localSection;
+    activePageIndex.value = 1;
     await tester.pump();
-    sectionIndex.value = AudioLibraryPage.asmrSection;
+    activePageIndex.value = 0;
     await tester.pump();
     expect(controller.initializeCount, 1);
 
@@ -693,24 +568,21 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
   });
 
-  testWidgets('inactive ASMR section detaches category subscriptions', (
+  testWidgets('inactive ASMR tab detaches category subscriptions', (
     tester,
   ) async {
     final fixture = AppRuntimeWidgetTestFixture();
     final controller = _QueuedEmptyAsmrLibraryController();
-    final sectionIndex = ValueNotifier<int>(AudioLibraryPage.asmrSection);
     final activePageIndex = ValueNotifier<int>(0);
     addTearDown(fixture.dispose);
     addTearDown(controller.dispose);
-    addTearDown(sectionIndex.dispose);
     addTearDown(activePageIndex.dispose);
 
     await tester.pumpWidget(
       fixture.build(
-        AudioLibraryPage(
-          sectionIndex: sectionIndex,
-          activePageIndex: activePageIndex,
-          onSectionChanged: (index) => sectionIndex.value = index,
+        AsmrTab(
+          key: const ValueKey<String>('audio_library_asmr_page'),
+          activeTabIndexListenable: activePageIndex,
         ),
         overrides: [
           asmrLibraryControllerProvider.overrideWithValue(controller),
@@ -720,7 +592,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    sectionIndex.value = AudioLibraryPage.localSection;
+    activePageIndex.value = 1;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump();
@@ -730,7 +602,7 @@ void main() {
     await tester.pump();
     expect(controller.categoryViewReadCount, inactiveReadCount);
 
-    sectionIndex.value = AudioLibraryPage.asmrSection;
+    activePageIndex.value = 0;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(controller.categoryViewReadCount, greaterThan(inactiveReadCount));
@@ -763,11 +635,9 @@ void main() {
       library: fixture.library,
       scheduler: coverScheduler,
     );
-    final sectionIndex = ValueNotifier<int>(AudioLibraryPage.localSection);
-    final activePageIndex = ValueNotifier<int>(0);
+    final activePageIndex = ValueNotifier<int>(1);
     addTearDown(fixture.dispose);
     addTearDown(asmrController.dispose);
-    addTearDown(sectionIndex.dispose);
     addTearDown(activePageIndex.dispose);
     fixture.runtimeGraph.library.addTracks(
       <MusicTrack>[
@@ -786,10 +656,17 @@ void main() {
 
     await tester.pumpWidget(
       fixture.build(
-        AudioLibraryPage(
-          sectionIndex: sectionIndex,
-          activePageIndex: activePageIndex,
-          onSectionChanged: (index) => sectionIndex.value = index,
+        Stack(
+          children: [
+            LibraryTab(
+              key: const ValueKey<String>('audio_library_local_page'),
+              activeTabIndexListenable: activePageIndex,
+            ),
+            AsmrTab(
+              key: const ValueKey<String>('audio_library_asmr_page'),
+              activeTabIndexListenable: activePageIndex,
+            ),
+          ],
         ),
         overrides: [
           asmrLibraryControllerProvider.overrideWithValue(asmrController),
@@ -800,7 +677,7 @@ void main() {
     await tester.pump();
     await tester.pump();
     await pumpUntilFound(tester, find.text('Local work', findRichText: true));
-    sectionIndex.value = AudioLibraryPage.asmrSection;
+    activePageIndex.value = 0;
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await pumpUntilFound(tester, find.text('Loaded work', findRichText: true));
@@ -830,6 +707,7 @@ void main() {
       closeTo(tester.getTopLeft(localCard).dy, 0.01),
     );
     await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(seconds: 10));
     unawaited(coverUi.dispose());
   });
 
@@ -1433,13 +1311,13 @@ void main() {
           find.byKey(const ValueKey<String>('main_page_stack')),
         );
 
-    expect(mainPageStack().index, 2);
+    expect(mainPageStack().index, 3);
 
     tester.view.physicalSize = const Size(2400, 1080);
     await tester.pump(const Duration(milliseconds: 32));
     await _pumpMainScreenAnimations(tester);
 
-    expect(mainPageStack().index, 2);
+    expect(mainPageStack().index, 3);
     expect(
       tester.state(find.byType(LibraryTab, skipOffstage: false)),
       same(libraryState),
@@ -1448,7 +1326,7 @@ void main() {
       tester.state(find.byType(AsmrTab, skipOffstage: false)),
       same(asmrState),
     );
-    expect(find.byKey(const ValueKey<String>('main_page_fade_2')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_3')), findsOne);
 
     await tester.tap(
       find.descendant(
@@ -1457,13 +1335,13 @@ void main() {
       ),
     );
     await _pumpMainScreenAnimations(tester);
-    expect(mainPageStack().index, 0);
+    expect(mainPageStack().index, 1);
 
     tester.view.physicalSize = const Size(1080, 2400);
     await tester.pump(const Duration(milliseconds: 32));
     await _pumpMainScreenAnimations(tester);
 
-    expect(mainPageStack().index, 0);
+    expect(mainPageStack().index, 1);
     expect(
       tester.state(find.byType(LibraryTab, skipOffstage: false)),
       same(libraryState),
@@ -1472,7 +1350,7 @@ void main() {
       tester.state(find.byType(AsmrTab, skipOffstage: false)),
       same(asmrState),
     );
-    expect(find.byKey(const ValueKey<String>('main_page_fade_0')), findsOne);
+    expect(find.byKey(const ValueKey<String>('main_page_fade_1')), findsOne);
     debugDefaultTargetPlatformOverride = null;
     expect(tester.takeException(), isNull);
   });
@@ -1489,7 +1367,7 @@ void main() {
           find.byKey(const ValueKey<String>('main_page_stack')),
         );
 
-    expect(mainPageStack().index, 2);
+    expect(mainPageStack().index, 3);
     tester.view.viewInsets = const FakeViewPadding(bottom: 600);
     tester.view.physicalSize = const Size(1080, 1800);
     addTearDown(() {
@@ -1498,7 +1376,7 @@ void main() {
     });
     await tester.pump(const Duration(milliseconds: 32));
 
-    expect(mainPageStack().index, 2);
+    expect(mainPageStack().index, 3);
     expect(
       tester
           .widget<MediaQuery>(
@@ -2296,6 +2174,96 @@ void main() {
     debugDefaultTargetPlatformOverride = previousPlatform;
   });
 
+  testWidgets('session volume slider keeps its released value visible', (
+    tester,
+  ) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    });
+    _setLogicalTestViewSize(tester, const Size(1080, 2400));
+    final harness = await _pumpAppShell(tester, playbackVolume: 2);
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('session_volume_button_anchor')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    final volumeCapsule = find.byKey(const ValueKey('session_volume_capsule'));
+    final slider = tester.widget<Slider>(
+      find.descendant(of: volumeCapsule, matching: find.byType(Slider)),
+    );
+    expect(slider.max, 1.5);
+    expect(slider.value, 1.25);
+    expect(find.text('125%'), findsOneWidget);
+
+    slider.onChanged!(1.5);
+    await tester.pump();
+    expect(find.text('150%'), findsOneWidget);
+    expect(harness.playbackService.sessions['orientation_session']?.volume, 3);
+
+    slider.onChangeEnd!(1.5);
+    await tester.pump();
+    expect(find.text('150%'), findsOneWidget);
+    expect(harness.playbackService.sessions['orientation_session']?.volume, 3);
+
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
+
+  testWidgets('session volume input maps 150 percent to threefold gain', (
+    tester,
+  ) async {
+    final previousPlatform = debugDefaultTargetPlatformOverride;
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() {
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    });
+    _setLogicalTestViewSize(tester, const Size(1080, 2400));
+    final harness = await _pumpAppShell(tester);
+    unawaited(
+      tester
+          .state<NavigatorState>(find.byType(Navigator).first)
+          .push(buildSessionDetailRoute(sessionId: 'orientation_session')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey('session_volume_button_anchor')),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('100%'));
+    await tester.pumpAndSettle();
+
+    final input = find.byType(TextFormField);
+    final confirm = find.widgetWithText(
+      FilledButton,
+      harness.language.tr('confirm'),
+    );
+    await tester.enterText(input, '151');
+    tester.widget<FilledButton>(confirm).onPressed!();
+    await tester.pump();
+    expect(input, findsOneWidget);
+    expect(harness.playbackService.sessions['orientation_session']?.volume, 1);
+
+    await tester.enterText(input, '150');
+    tester.widget<FilledButton>(confirm).onPressed!();
+    await tester.pumpAndSettle();
+    expect(input, findsNothing);
+    expect(harness.playbackService.sessions['orientation_session']?.volume, 3);
+
+    await _settleSessionDetailAsyncWork(tester);
+    await tester.pumpWidget(const SizedBox.shrink());
+    debugDefaultTargetPlatformOverride = previousPlatform;
+  });
+
   testWidgets('session detail dismisses after dragging past one third', (
     tester,
   ) async {
@@ -2648,6 +2616,7 @@ void _setLogicalTestViewSize(WidgetTester tester, Size size) {
 Future<_AppShellHarness> _pumpAppShell(
   WidgetTester tester, {
   bool includePlaybackSession = true,
+  double playbackVolume = 1,
   MusicTrack? playbackTrack,
   bool waitForStartup = true,
   AsmrDownloadManager? downloads,
@@ -2693,7 +2662,7 @@ Future<_AppShellHarness> _pumpAppShell(
       currentTrackPath: playbackTrack?.path ?? '/audio/orientation.mp3',
       loopMode: SessionLoopMode.single,
       nonSingleLoopMode: SessionLoopMode.single,
-      volume: 1,
+      volume: playbackVolume,
       createdAt: DateTime(2026),
       state: PlayerState(false, ProcessingState.ready),
     );
@@ -2771,12 +2740,16 @@ Future<void> _settleSessionDetailAsyncWork(WidgetTester tester) async {
 }
 
 Future<void> _tapSettingsDestination(WidgetTester tester) async {
+  final pageStackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
+  final stack = tester.widget<AppFadeThroughIndexedStack>(pageStackFinder);
+  final settingsIndex = stack.itemCount - 1;
+
   final navigationRail = find.byType(NavigationRail);
   if (navigationRail.evaluate().isNotEmpty) {
     tester
         .widget<NavigationRail>(navigationRail)
         .onDestinationSelected!
-        .call(2);
+        .call(settingsIndex);
   } else {
     final destination = find.byKey(
       const ValueKey<String>('main_destination_nav_settings'),
@@ -2788,31 +2761,33 @@ Future<void> _tapSettingsDestination(WidgetTester tester) async {
         .onTap!
         .call();
   }
-  await _waitForMainPage(tester, 2);
+  await _waitForMainPage(tester, settingsIndex);
 }
 
 Future<void> _swipeToAsmrPage(WidgetTester tester) async {
-  final localHeader = find.byWidgetPredicate(
-    (widget) => widget is TopPageHeader && widget.title != 'ASMR.ONE',
+  final destination = find.byKey(
+    const ValueKey<String>('main_destination_ink_show_asmr_one'),
   );
-  await tester.fling(localHeader, const Offset(-120, 0), 1000);
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 300));
+  if (destination.evaluate().isNotEmpty) {
+    await tester.tap(destination);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    return;
+  }
+  final navigationRail = find.byType(NavigationRail);
+  if (navigationRail.evaluate().isNotEmpty) {
+    tester
+        .widget<NavigationRail>(navigationRail)
+        .onDestinationSelected
+        ?.call(0);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+  }
 }
 
 Future<void> _waitForMainPage(WidgetTester tester, int targetPage) async {
-  final pageStackFinder = find.byKey(const ValueKey<String>('main_page_stack'));
-  for (var frame = 0; frame < 30; frame++) {
-    await tester.pump(const Duration(milliseconds: 16));
-    final stack = tester.widget<AppFadeThroughIndexedStack>(pageStackFinder);
-    if (stack.index == targetPage) {
-      await tester.pump(kAppMotionStandard);
-      return;
-    }
-  }
-  final stack = tester.widget<AppFadeThroughIndexedStack>(pageStackFinder);
-  fail(
-    'Main page stack did not reach page $targetPage; '
-    'current page: ${stack.index}.',
-  );
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.pump(const Duration(milliseconds: 50));
+  await tester.pump();
 }

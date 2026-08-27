@@ -85,6 +85,30 @@ part 'playlist_tab_queue.dart';
 const double _sessionDetailCapsuleWidth = 52;
 const double _sessionDetailCapsuleHeight = 212;
 const double _sessionDetailCapsuleAnchorOffsetY = 26;
+const double sessionVolumeDisplayMaximum = 1.5;
+const int sessionVolumeDisplayMaximumPercent = 150;
+
+double sessionVolumeDisplayValueFromGain(double gain) {
+  final clampedGain = gain
+      .clamp(0.0, PlaybackFacade.maxSessionVolume)
+      .toDouble();
+  if (clampedGain <= 1) return clampedGain;
+  return 1 +
+      (clampedGain - 1) *
+          ((sessionVolumeDisplayMaximum - 1) /
+              (PlaybackFacade.maxSessionVolume - 1));
+}
+
+double sessionVolumeGainFromDisplayValue(double displayValue) {
+  final clampedDisplayValue = displayValue
+      .clamp(0.0, sessionVolumeDisplayMaximum)
+      .toDouble();
+  if (clampedDisplayValue <= 1) return clampedDisplayValue;
+  return 1 +
+      (clampedDisplayValue - 1) *
+          ((PlaybackFacade.maxSessionVolume - 1) /
+              (sessionVolumeDisplayMaximum - 1));
+}
 
 enum _SessionDetailForegroundLevel { strong, medium, muted }
 
@@ -412,11 +436,13 @@ class _SessionDetailRoute extends PageRoute<void> {
 class PlaylistTab extends ConsumerStatefulWidget {
   const PlaylistTab({
     super.key,
+    this.tabIndex = 2,
     this.onTimerTap,
     this.onOpenLibrary,
     this.activeTabIndexListenable,
   });
 
+  final int tabIndex;
   final VoidCallback? onTimerTap;
   final VoidCallback? onOpenLibrary;
   final ValueListenable<int>? activeTabIndexListenable;
@@ -511,7 +537,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
   }
 
   @override
-  int get tabIndex => 1;
+  int get tabIndex => widget.tabIndex;
 
   @override
   ScrollController get mainScrollController => _scrollController;

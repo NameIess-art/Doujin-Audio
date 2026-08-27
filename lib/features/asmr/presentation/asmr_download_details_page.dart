@@ -241,7 +241,10 @@ class _AsmrDownloadDetailsNodeTileState
         widget.node.size;
     final downloaded =
         widget.task.fileDownloadedBytes[widget.node.relativePath] ?? 0;
-    final retryAttempt = widget.task.isActive
+    final isFileCompleted =
+        widget.task.status == AsmrDownloadTaskStatus.completed ||
+        (total > 0 && downloaded >= total);
+    final retryAttempt = widget.task.isActive && !isFileCompleted
         ? widget.task.fileRetryAttempts[widget.node.relativePath]
         : null;
     double progress = 0.0;

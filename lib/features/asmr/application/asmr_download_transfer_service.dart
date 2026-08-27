@@ -188,8 +188,8 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
     final knownTargetPath = knownExtension == null
         ? task.coverOutputPath
         : _joinFolderPath(
-            task.destinationRoot,
-            'Cover/${item.coverFileStem!}$knownExtension',
+            task.workRootPath,
+            'cover/${item.coverFileStem!}$knownExtension',
           );
     if (knownTargetPath != null &&
         conflictPolicy == AsmrDownloadConflictPolicy.skip &&
@@ -197,15 +197,15 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
       return const _WriteResult.skipped(bytesDownloaded: 0);
     }
     if (!await _ensureFolderPath(
-      basePath: task.destinationRoot,
-      relativePath: 'Cover',
+      basePath: task.workRootPath,
+      relativePath: 'cover',
       overwrite: false,
     )) {
       return const _WriteResult.failure(bytesDownloaded: 0);
     }
 
     final stagingFile = await _persistentStagingFile(
-      task.destinationRoot,
+      task.workRootPath,
       item.relativePath,
     );
     final stagingExisted = await stagingFile.exists();
@@ -228,19 +228,19 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
         return const _WriteResult.failure(bytesDownloaded: 0);
       }
       final extension = _coverExtension(item.url, tempResult.mimeType);
-      final relativePath = 'Cover/${item.coverFileStem!}$extension';
-      final targetPath = _joinFolderPath(task.destinationRoot, relativePath);
-      final targetExisted = PathMatcher.isContentUri(task.destinationRoot)
+      final relativePath = 'cover/${item.coverFileStem!}$extension';
+      final targetPath = _joinFolderPath(task.workRootPath, relativePath);
+      final targetExisted = PathMatcher.isContentUri(task.workRootPath)
           ? await _fileCacheGateway.documentPathExists(targetPath)
           : await File(targetPath).exists();
       if (targetExisted && conflictPolicy == AsmrDownloadConflictPolicy.skip) {
         return const _WriteResult.skipped(bytesDownloaded: 0);
       }
 
-      if (PathMatcher.isContentUri(task.destinationRoot)) {
+      if (PathMatcher.isContentUri(task.workRootPath)) {
         final saved = await _fileCacheGateway.copyFileToFolder(
           sourcePath: tempResult.file.path,
-          folder: task.destinationRoot,
+          folder: task.workRootPath,
           relativePath: relativePath,
           overwrite: conflictPolicy == AsmrDownloadConflictPolicy.overwrite,
         );

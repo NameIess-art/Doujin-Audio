@@ -647,7 +647,7 @@ void main() {
     }
   });
 
-  test('saves the preferred cover in the shared Cover folder', () async {
+  test('saves the preferred cover inside the work cover folder', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_cover_',
     );
@@ -679,7 +679,8 @@ void main() {
       );
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
-      final cover = File(path.join(tempDir.path, 'Cover', 'RJ123456.png'));
+      final task = manager.getTask(1)!;
+      final cover = File(path.join(task.workRootPath, 'cover', 'cover.png'));
       expect(await cover.readAsBytes(), const <int>[1, 2, 3, 4]);
       expect(manager.getTask(1)?.totalFiles, 2);
       expect(manager.getTask(1)?.totalBytes, 3);
@@ -769,7 +770,7 @@ void main() {
         expect(coverRequests, 5);
         expect(
           await File(
-            path.join(tempDir.path, 'Cover', 'RJ123456.jpg'),
+            path.join(manager.getTask(1)!.workRootPath, 'cover', 'cover.jpg'),
           ).readAsBytes(),
           const <int>[8, 9],
         );
@@ -820,7 +821,9 @@ void main() {
 
       expect(manager.getTask(1)?.failedFiles, 1);
       expect(
-        await File(path.join(tempDir.path, 'Cover', 'RJ123456.jpg')).exists(),
+        await File(
+          path.join(manager.getTask(1)!.workRootPath, 'cover', 'cover.jpg'),
+        ).exists(),
         isFalse,
       );
     } finally {
@@ -904,7 +907,9 @@ void main() {
 
       expect(coverRequests, greaterThanOrEqualTo(2));
       expect(
-        await File(path.join(tempDir.path, 'Cover', 'RJ123456.jpg')).length(),
+        await File(
+          path.join(manager.getTask(1)!.workRootPath, 'cover', 'cover.jpg'),
+        ).length(),
         coverBytes,
       );
     } finally {
@@ -949,13 +954,13 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(gateway.copiedRelativePaths, contains('Track.mp3'));
-      expect(gateway.copiedRelativePaths, contains('Cover/RJ123456.png'));
-      expect(gateway.ensuredRelativePaths, contains('Cover'));
+      expect(gateway.copiedRelativePaths, contains('cover/cover.png'));
+      expect(gateway.ensuredRelativePaths, contains('cover'));
 
       await manager.deleteTask(1);
       expect(
-        gateway.deletedPaths,
-        contains('$destinationRoot::Cover/RJ123456.png'),
+        gateway.deletedPaths.any((p) => p.endsWith('cover/cover.png')),
+        isTrue,
       );
     } finally {
       manager.dispose();

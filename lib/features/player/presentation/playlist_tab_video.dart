@@ -93,7 +93,7 @@ class _SessionVideoFullscreenPageState
   SessionVideoVerticalGestureSide? _panVerticalSide;
   Duration _panStartPosition = Duration.zero;
   Duration? _panSeekTarget;
-  double _panStartVolume = 1;
+  double _panStartVolumeDisplayValue = 1;
   double _panStartBrightness = 0.5;
   Size _panViewportSize = Size.zero;
   Offset? _doubleTapPosition;
@@ -268,7 +268,9 @@ class _SessionVideoFullscreenPageState
         _initialSession?.position ??
         Duration.zero;
     _panSeekTarget = null;
-    _panStartVolume = _initialSession?.volume ?? 1;
+    _panStartVolumeDisplayValue = sessionVolumeDisplayValueFromGain(
+      _initialSession?.volume ?? 1,
+    );
     _panStartBrightness = _brightness;
     _panViewportSize = viewportSize;
   }
@@ -335,26 +337,27 @@ class _SessionVideoFullscreenPageState
         );
         break;
       case _FullscreenVideoPanMode.volume:
-        final next = sessionVideoVerticalGestureValue(
-          startValue: _panStartVolume,
+        final displayValue = sessionVideoVerticalGestureValue(
+          startValue: _panStartVolumeDisplayValue,
           dragDy: _panDelta.dy,
           viewportHeight: _panViewportSize.height,
           minimum: 0,
-          maximum: PlaybackFacade.maxSessionVolume,
+          maximum: sessionVolumeDisplayMaximum,
         );
-        _dragVolume.value = next;
-        AppInteractionFeedback.continuous((next * 100).round());
+        final volumeGain = sessionVolumeGainFromDisplayValue(displayValue);
+        _dragVolume.value = volumeGain;
+        AppInteractionFeedback.continuous((displayValue * 100).round());
         _setFeedback(
-          _volumeIcon(next),
+          _volumeIcon(volumeGain),
           '${ref.read(appLanguageProviderInstanceProvider).tr('volume')} '
-          '${(next * 100).round()}%',
+          '${(displayValue * 100).round()}%',
           persistent: true,
         );
         UiInteractionCoordinator.instance.scheduleThrottledCommit(
           key: 'video_volume:${widget.sessionId}',
           commit: () => _playback.setSessionVolume(
             widget.sessionId,
-            next,
+            volumeGain,
             persist: false,
           ),
         );
@@ -782,12 +785,15 @@ class _SessionVideoFullscreenPageState
                                   0)
                               .clamp(0, maxMs)
                               .toDouble();
-                      final volume =
+                      final volumeGain =
                           (_dragVolume.value ??
                                   detail?.volume ??
                                   session.volume)
                               .clamp(0.0, PlaybackFacade.maxSessionVolume)
                               .toDouble();
+                      final displayVolume = sessionVolumeDisplayValueFromGain(
+                        volumeGain,
+                      );
                       final hasPrevious = _playback.hasSessionAdjacentTrack(
                         widget.sessionId,
                         forward: false,
@@ -922,7 +928,7 @@ class _SessionVideoFullscreenPageState
                           ),
                           const SizedBox(width: 8),
                           Icon(
-                            _volumeIcon(volume),
+                            _volumeIcon(volumeGain),
                             color: Colors.white,
                             semanticLabel: i18n.tr('volume'),
                           ),
@@ -932,25 +938,34 @@ class _SessionVideoFullscreenPageState
                               key: const ValueKey<String>(
                                 'fullscreen_video_volume',
                               ),
-                              max: PlaybackFacade.maxSessionVolume,
-                              value: volume,
+                              max: sessionVolumeDisplayMaximum,
+                              value: displayVolume,
                               onChangeStart: (_) => _beginControlInteraction(),
-                              onChanged: (value) {
-                                _dragVolume.value = value;
+                              onChanged: (displayValue) {
+                                final volumeGain =
+                                    sessionVolumeGainFromDisplayValue(
+                                      displayValue,
+                                    );
+                                _dragVolume.value = volumeGain;
                                 AppInteractionFeedback.continuous(
-                                  (value * 100).round(),
+                                  (displayValue * 100).round(),
                                 );
                                 UiInteractionCoordinator.instance
                                     .scheduleThrottledCommit(
                                       key: 'video_volume:${widget.sessionId}',
                                       commit: () => _playback.setSessionVolume(
                                         widget.sessionId,
-                                        value,
+                                        volumeGain,
                                         persist: false,
                                       ),
                                     );
                               },
-                              onChangeEnd: _endVolumeInteraction,
+                              onChangeEnd: (displayValue) =>
+                                  _endVolumeInteraction(
+                                    sessionVolumeGainFromDisplayValue(
+                                      displayValue,
+                                    ),
+                                  ),
                             ),
                           ),
                         ],

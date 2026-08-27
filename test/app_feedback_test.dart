@@ -117,6 +117,44 @@ void main() {
     expect(find.text('Import failed'), findsNothing);
   });
 
+  testWidgets('top feedback can be dismissed by swiping right', (tester) async {
+    await tester.pumpWidget(
+      _feedbackApp(
+        blurEnabled: true,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () {
+                showAppSnackBar(
+                  context,
+                  'Saved successfully.',
+                  tone: AppFeedbackTone.success,
+                  duration: const Duration(seconds: 10),
+                );
+              },
+              child: const Text('Show'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Show'));
+    await tester.pump();
+
+    final dismissible = find.byType(Dismissible);
+    expect(dismissible, findsOneWidget);
+    expect(
+      tester.widget<Dismissible>(dismissible).direction,
+      DismissDirection.startToEnd,
+    );
+
+    await tester.drag(dismissible, const Offset(500, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved successfully.'), findsNothing);
+  });
+
   testWidgets('top feedback follows blur setting and keeps icon on the left', (
     tester,
   ) async {

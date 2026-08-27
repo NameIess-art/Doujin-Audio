@@ -23,8 +23,18 @@ extension _MainScreenLayout on _MainScreenState {
         : EdgeInsets.zero;
     final isLandscapeLayout =
         MediaQuery.orientationOf(context) == Orientation.landscape;
+    final settingsState = ref.watch(settingsStateProvider).value;
+    final showLocal = settingsState?.showLocalLibrary ?? true;
+    final showAsmr = settingsState?.showAsmrOne ?? true;
+    final destinations = _resolveMainDestinations(
+      showLocalLibrary: showLocal,
+      showAsmrOne: showAsmr,
+    );
+    if (_activePageIndex.value >= destinations.length) {
+      _activePageIndex.value = destinations.length - 1;
+    }
     Widget pageShell(BuildContext context, int actualIndex) {
-      final page = _buildMainPage(context, actualIndex);
+      final page = _buildMainPage(context, actualIndex, destinations);
 
       return KeyedSubtree(
         key: ValueKey<String>('main_page_fade_$actualIndex'),
@@ -102,7 +112,7 @@ extension _MainScreenLayout on _MainScreenState {
     return AppFadeThroughIndexedStack.lazy(
       key: const ValueKey<String>('main_page_stack'),
       indexListenable: _activePageIndex,
-      itemCount: _MainScreenState._destinations.length,
+      itemCount: destinations.length,
       itemBuilder: pageShell,
       onTransitionCompleted: _handlePageTransitionCompleted,
     );
@@ -129,19 +139,24 @@ extension _MainScreenLayout on _MainScreenState {
   }
 
   Widget _buildBottomBar(BuildContext context) {
+    final settingsState = ref.watch(settingsStateProvider).value;
+    final showLocal = settingsState?.showLocalLibrary ?? true;
+    final showAsmr = settingsState?.showAsmrOne ?? true;
+    final destinations = _resolveMainDestinations(
+      showLocalLibrary: showLocal,
+      showAsmrOne: showAsmr,
+    );
+
     return ValueListenableBuilder<int>(
       valueListenable: _activePageIndex,
-      builder: (context, selectedIndex, _) => ValueListenableBuilder<int>(
-        valueListenable: _audioLibrarySectionIndex,
-        builder: (context, sectionIndex, _) =>
-            _buildBottomBarContent(context, sectionIndex, selectedIndex),
-      ),
+      builder: (context, selectedIndex, _) =>
+          _buildBottomBarContent(context, destinations, selectedIndex),
     );
   }
 
   Widget _buildBottomBarContent(
     BuildContext context,
-    int sectionIndex,
+    List<_MainDestination> destinations,
     int selectedIndex,
   ) {
     final i18n = ProviderScope.containerOf(
@@ -150,14 +165,12 @@ extension _MainScreenLayout on _MainScreenState {
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
 
-    final items = _MainScreenState._destinations.asMap().entries.map((entry) {
+    final items = destinations.asMap().entries.map((entry) {
       final index = entry.key;
       final item = entry.value;
       final selected = index == selectedIndex;
-      final label = index == 0
-          ? sectionIndex == AudioLibraryPage.asmrSection
-                ? 'ASMR.ONE'
-                : i18n.tr('music_library')
+      final label = item.labelKey == 'show_asmr_one'
+          ? 'ASMR.ONE'
           : i18n.tr(item.labelKey);
       final inactive = cs.onSurfaceVariant.withValues(alpha: 0.6);
 
@@ -188,12 +201,6 @@ extension _MainScreenLayout on _MainScreenState {
             child: _BottomDestinationInkResponse(
               inkKey: ValueKey<String>('main_destination_ink_${item.labelKey}'),
               onTap: () => _switchPage(index),
-              onLongPress: index == 0
-                  ? _toggleAudioLibrarySectionFromNavigation
-                  : null,
-              onHorizontalSwipe: index == 0
-                  ? _toggleAudioLibrarySectionFromNavigation
-                  : null,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -239,33 +246,7 @@ extension _MainScreenLayout on _MainScreenState {
                     ],
                   ),
                   const SizedBox(height: 1),
-                  if (index == 0)
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.chevron_left_rounded,
-                          key: const ValueKey<String>(
-                            'main_destination_library_left_indicator',
-                          ),
-                          size: 12,
-                          color: activeColor,
-                        ),
-                        const SizedBox(width: 1),
-                        Flexible(child: labelText),
-                        const SizedBox(width: 1),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          key: const ValueKey<String>(
-                            'main_destination_library_right_indicator',
-                          ),
-                          size: 12,
-                          color: activeColor,
-                        ),
-                      ],
-                    )
-                  else
-                    labelText,
+                  labelText,
                 ],
               ),
             ),
@@ -539,281 +520,156 @@ extension _MainScreenLayout on _MainScreenState {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final settingsState = ref.watch(settingsStateProvider).value;
+                final showLocal = settingsState?.showLocalLibrary ?? true;
+                final showAsmr = settingsState?.showAsmrOne ?? true;
+                final destinations = _resolveMainDestinations(
+                  showLocalLibrary: showLocal,
+                  showAsmrOne: showAsmr,
+                );
+
                 final rail = ValueListenableBuilder<int>(
                   valueListenable: _activePageIndex,
-                  builder: (context, selectedIndex, _) => ValueListenableBuilder<int>(
-                    valueListenable: _audioLibrarySectionIndex,
-                    builder: (context, sectionIndex, _) => Theme(
-                      data: Theme.of(context).copyWith(
-                        splashFactory: NoSplash.splashFactory,
-                        navigationRailTheme: Theme.of(context)
-                            .navigationRailTheme
-                            .copyWith(
-                              indicatorShape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(
-                                  AppRadius.medium,
-                                ),
+                  builder: (context, selectedIndex, _) => Theme(
+                    data: Theme.of(context).copyWith(
+                      splashFactory: NoSplash.splashFactory,
+                      navigationRailTheme: Theme.of(context)
+                          .navigationRailTheme
+                          .copyWith(
+                            indicatorShape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(
+                                AppRadius.medium,
                               ),
-                              indicatorColor: isDark
-                                  ? cs.primary.withValues(alpha: 0.15)
-                                  : cs.primaryContainer.withValues(alpha: 0.6),
                             ),
-                      ),
-                      child: NavigationRail(
-                        backgroundColor: Colors.transparent,
-                        selectedIndex: selectedIndex,
-                        onDestinationSelected: _switchPage,
-                        extended: !_isMenuCollapsed,
-                        minWidth: 64,
-                        minExtendedWidth: isLandscapeLayout ? 212 : 236,
-                        useIndicator: true,
-                        groupAlignment: -1.0,
-                        leading: isLandscapeLayout
-                            ? Container(
-                                alignment: _isMenuCollapsed
-                                    ? Alignment.center
-                                    : Alignment.centerLeft,
-                                child: Padding(
-                                  padding: EdgeInsets.only(
-                                    left: _isMenuCollapsed ? 0 : 12,
-                                  ),
-                                  child: IconButton(
-                                    icon: Icon(
-                                      _isMenuCollapsed
-                                          ? Icons.menu_rounded
-                                          : Icons.menu_open_rounded,
-                                    ),
-                                    onPressed: _toggleMenuCollapsed,
-                                  ),
+                            indicatorColor: isDark
+                                ? cs.primary.withValues(alpha: 0.15)
+                                : cs.primaryContainer.withValues(alpha: 0.6),
+                          ),
+                    ),
+                    child: NavigationRail(
+                      backgroundColor: Colors.transparent,
+                      selectedIndex: selectedIndex < destinations.length
+                          ? selectedIndex
+                          : 0,
+                      onDestinationSelected: _switchPage,
+                      extended: !_isMenuCollapsed,
+                      minWidth: 64,
+                      minExtendedWidth: isLandscapeLayout ? 212 : 236,
+                      useIndicator: true,
+                      groupAlignment: -1.0,
+                      leading: isLandscapeLayout
+                          ? Container(
+                              alignment: _isMenuCollapsed
+                                  ? Alignment.center
+                                  : Alignment.centerLeft,
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  left: _isMenuCollapsed ? 0 : 12,
                                 ),
-                              )
-                            : Container(
-                                alignment: _isMenuCollapsed
-                                    ? Alignment.center
-                                    : Alignment.centerLeft,
-                                child: Padding(
-                                  padding: EdgeInsets.only(
-                                    left: _isMenuCollapsed ? 0 : 6,
+                                child: IconButton(
+                                  icon: Icon(
+                                    _isMenuCollapsed
+                                        ? Icons.menu_rounded
+                                        : Icons.menu_open_rounded,
                                   ),
-                                  child: _isMenuCollapsed
-                                      ? IconButton(
-                                          icon: const Icon(Icons.menu_rounded),
-                                          onPressed: _toggleMenuCollapsed,
-                                        )
-                                      : Row(
-                                          children: [
-                                            Container(
-                                              width: 38,
-                                              height: 38,
-                                              decoration: BoxDecoration(
-                                                color: cs.primaryContainer,
-                                                borderRadius:
-                                                    BorderRadius.circular(
-                                                      AppRadius.medium,
-                                                    ),
-                                              ),
-                                              child: Icon(
-                                                Icons.graphic_eq_rounded,
-                                                color: cs.onPrimaryContainer,
-                                              ),
-                                            ),
-                                            const SizedBox(
-                                              width: AppSpacing.sm,
-                                            ),
-                                            Expanded(
-                                              child: Text(
-                                                i18n.tr('asmr_player'),
-                                                maxLines: 1,
-                                                overflow: TextOverflow.ellipsis,
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .titleMedium
-                                                    ?.copyWith(
-                                                      fontWeight:
-                                                          FontWeight.w800,
-                                                    ),
-                                              ),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.menu_open_rounded,
-                                              ),
-                                              onPressed: _toggleMenuCollapsed,
-                                            ),
-                                          ],
-                                        ),
+                                  onPressed: _toggleMenuCollapsed,
                                 ),
                               ),
-                        destinations: _MainScreenState._destinations.asMap().entries.map((
-                          entry,
-                        ) {
-                          final index = entry.key;
-                          final item = entry.value;
-                          final isSelected = selectedIndex == index;
-                          final label = index == 0
-                              ? (sectionIndex == AudioLibraryPage.asmrSection
-                                    ? 'ASMR.ONE'
-                                    : i18n.tr('music_library'))
-                              : i18n.tr(item.labelKey);
-
-                          Widget labelWidget;
-                          if (index == 0) {
-                            final labelTextWidget = Text(
-                              label,
-                              style: isSelected
-                                  ? TextStyle(
-                                      color: cs.primary,
-                                      fontWeight: FontWeight.w700,
-                                    )
-                                  : null,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            );
-
-                            final labelContent = _isMenuCollapsed
-                                ? labelTextWidget
-                                : Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.chevron_left_rounded,
-                                        key: const ValueKey<String>(
-                                          'main_destination_library_left_indicator',
-                                        ),
-                                        size: 14,
-                                        color: isSelected
-                                            ? cs.primary
-                                            : cs.onSurfaceVariant.withValues(
-                                                alpha: 0.6,
-                                              ),
-                                      ),
-                                      const SizedBox(width: 2),
-                                      Flexible(child: labelTextWidget),
-                                      const SizedBox(width: 2),
-                                      Icon(
-                                        Icons.chevron_right_rounded,
-                                        key: const ValueKey<String>(
-                                          'main_destination_library_right_indicator',
-                                        ),
-                                        size: 14,
-                                        color: isSelected
-                                            ? cs.primary
-                                            : cs.onSurfaceVariant.withValues(
-                                                alpha: 0.6,
-                                              ),
-                                      ),
-                                    ],
-                                  );
-
-                            labelWidget = _isMenuCollapsed
-                                ? labelContent
-                                : _BottomDestinationInkResponse(
-                                    inkKey: ValueKey<String>(
-                                      'main_destination_ink_${item.labelKey}',
-                                    ),
-                                    onTap: () => _switchPage(index),
-                                    onLongPress:
-                                        _toggleAudioLibrarySectionFromNavigation,
-                                    onHorizontalSwipe:
-                                        _toggleAudioLibrarySectionFromNavigation,
-                                    child: labelContent,
-                                  );
-                          } else {
-                            labelWidget = Text(
-                              _isMenuCollapsed ? '' : label,
-                              style: isSelected
-                                  ? TextStyle(
-                                      color: cs.primary,
-                                      fontWeight: FontWeight.w700,
-                                    )
-                                  : null,
-                            );
-                          }
-
-                          Widget buildIconWidget(
-                            IconData iconData, {
-                            bool includeKey = false,
-                          }) {
-                            final rawIcon = Icon(
-                              iconData,
-                              key: includeKey
-                                  ? ValueKey<String>(
-                                      'main_destination_${item.labelKey}',
-                                    )
-                                  : null,
-                            );
-                            if (index == 0) {
-                              final paddedIcon = SizedBox(
-                                width: 56,
-                                height: 40,
-                                child: Center(child: rawIcon),
-                              );
-                              if (_isMenuCollapsed) {
-                                return _BottomDestinationInkResponse(
-                                  inkKey: ValueKey<String>(
-                                    'main_destination_ink_${item.labelKey}',
-                                  ),
-                                  onTap: () => _switchPage(index),
-                                  onLongPress:
-                                      _toggleAudioLibrarySectionFromNavigation,
-                                  onHorizontalSwipe:
-                                      _toggleAudioLibrarySectionFromNavigation,
-                                  child: paddedIcon,
-                                );
-                              } else {
-                                var horizontalDragDistance = 0.0;
-                                return RawGestureDetector(
-                                  behavior: HitTestBehavior.opaque,
-                                  gestures: <Type, GestureRecognizerFactory>{
-                                    LongPressGestureRecognizer:
-                                        GestureRecognizerFactoryWithHandlers<
-                                          LongPressGestureRecognizer
-                                        >(
-                                          () => LongPressGestureRecognizer(
-                                            duration: const Duration(
-                                              milliseconds: 350,
+                            )
+                          : Container(
+                              alignment: _isMenuCollapsed
+                                  ? Alignment.center
+                                  : Alignment.centerLeft,
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  left: _isMenuCollapsed ? 0 : 6,
+                                ),
+                                child: _isMenuCollapsed
+                                    ? IconButton(
+                                        icon: const Icon(Icons.menu_rounded),
+                                        onPressed: _toggleMenuCollapsed,
+                                      )
+                                    : Row(
+                                        children: [
+                                          Container(
+                                            width: 38,
+                                            height: 38,
+                                            decoration: BoxDecoration(
+                                              color: cs.primaryContainer,
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                    AppRadius.medium,
+                                                  ),
+                                            ),
+                                            child: Icon(
+                                              Icons.graphic_eq_rounded,
+                                              color: cs.onPrimaryContainer,
                                             ),
                                           ),
-                                          (
-                                            recognizer,
-                                          ) => recognizer.onLongPress =
-                                              _toggleAudioLibrarySectionFromNavigation,
-                                        ),
-                                    HorizontalDragGestureRecognizer:
-                                        GestureRecognizerFactoryWithHandlers<
-                                          HorizontalDragGestureRecognizer
-                                        >(HorizontalDragGestureRecognizer.new, (
-                                          recognizer,
-                                        ) {
-                                          recognizer.onStart = (_) {
-                                            horizontalDragDistance = 0;
-                                          };
-                                          recognizer.onUpdate = (details) {
-                                            horizontalDragDistance +=
-                                                details.primaryDelta ?? 0;
-                                          };
-                                          recognizer.onEnd = (_) {
-                                            if (horizontalDragDistance.abs() >=
-                                                24) {
-                                              _toggleAudioLibrarySectionFromNavigation();
-                                            }
-                                          };
-                                        }),
-                                  },
-                                  child: paddedIcon,
-                                );
-                              }
-                            }
-                            return rawIcon;
-                          }
+                                          const SizedBox(
+                                            width: AppSpacing.sm,
+                                          ),
+                                          Expanded(
+                                            child: Text(
+                                              i18n.tr('asmr_player'),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                              style: Theme.of(context)
+                                                  .textTheme
+                                                  .titleMedium
+                                                  ?.copyWith(
+                                                    fontWeight:
+                                                        FontWeight.w800,
+                                                  ),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(
+                                              Icons.menu_open_rounded,
+                                            ),
+                                            onPressed: _toggleMenuCollapsed,
+                                          ),
+                                        ],
+                                      ),
+                              ),
+                            ),
+                      destinations: destinations.asMap().entries.map((
+                        entry,
+                      ) {
+                        final index = entry.key;
+                        final item = entry.value;
+                        final isSelected = selectedIndex == index;
+                        final label = item.labelKey == 'show_asmr_one'
+                            ? 'ASMR.ONE'
+                            : i18n.tr(item.labelKey);
 
-                          return NavigationRailDestination(
-                            icon: buildIconWidget(item.icon, includeKey: true),
-                            selectedIcon: buildIconWidget(item.selectedIcon),
-                            label: labelWidget,
-                          );
-                        }).toList(),
-                      ),
+                        return NavigationRailDestination(
+                          icon: Icon(
+                            item.icon,
+                            key: ValueKey<String>(
+                              'main_destination_${item.labelKey}',
+                            ),
+                          ),
+                          selectedIcon: Icon(
+                            item.selectedIcon,
+                            key: ValueKey<String>(
+                              'main_destination_${item.labelKey}',
+                            ),
+                            color: cs.primary,
+                          ),
+                          label: Text(
+                            _isMenuCollapsed ? '' : label,
+                            style: isSelected
+                                ? TextStyle(
+                                    color: cs.primary,
+                                    fontWeight: FontWeight.w700,
+                                  )
+                                : null,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
                 );

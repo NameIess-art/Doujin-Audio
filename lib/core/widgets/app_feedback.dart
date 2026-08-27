@@ -126,6 +126,7 @@ void _showTopFeedback(
   _activeFeedbackTimer?.cancel();
   _activeFeedbackRemove?.call();
 
+  final dismissKey = Object();
   late final OverlayEntry entry;
   var removed = false;
   void removeEntry() {
@@ -148,32 +149,39 @@ void _showTopFeedback(
         top: topInset,
         left: 16,
         right: 16,
-        child: _FeedbackAnimationWrapper(
-          duration: duration,
-          transitionDuration: AppDesignTokens.of(overlayContext).motionStandard,
-          onRemove: removeEntry,
-          child: IgnorePointer(
-            ignoring: !hasAction,
-            child: Material(
-              color: Colors.transparent,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 420),
-                  child: AppFeedbackSurface(
-                    tone: tone,
-                    icon: resolvedIcon,
-                    iconColor: iconColor,
-                    title: title,
-                    message: message,
-                    trailing: hasAction
-                        ? TextButton(
-                            onPressed: () {
-                              removeEntry();
-                              onAction();
-                            },
-                            child: Text(actionLabel),
-                          )
-                        : null,
+        child: Dismissible(
+          key: ValueKey<Object>(dismissKey),
+          direction: DismissDirection.startToEnd,
+          onDismissed: (_) => removeEntry(),
+          child: _FeedbackAnimationWrapper(
+            duration: duration,
+            transitionDuration: AppDesignTokens.of(
+              overlayContext,
+            ).motionStandard,
+            onRemove: removeEntry,
+            child: IgnorePointer(
+              ignoring: !hasAction,
+              child: Material(
+                color: Colors.transparent,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: AppFeedbackSurface(
+                      tone: tone,
+                      icon: resolvedIcon,
+                      iconColor: iconColor,
+                      title: title,
+                      message: message,
+                      trailing: hasAction
+                          ? TextButton(
+                              onPressed: () {
+                                removeEntry();
+                                onAction();
+                              },
+                              child: Text(actionLabel),
+                            )
+                          : null,
+                    ),
                   ),
                 ),
               ),

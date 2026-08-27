@@ -55,6 +55,8 @@ class SettingsState {
     this.blurPlayerBackgroundEnabled = true,
     this.uiBlurEffectEnabled = true,
     this.hapticFeedbackEnabled = true,
+    this.showLocalLibrary = true,
+    this.showAsmrOne = true,
     this.startupPage = StartupPage.library,
     this.portraitLockEnabled = false,
     this.bottomNavigationStyle = BottomNavigationStyle.capsule,
@@ -107,6 +109,8 @@ class SettingsState {
   final bool blurPlayerBackgroundEnabled;
   final bool uiBlurEffectEnabled;
   final bool hapticFeedbackEnabled;
+  final bool showLocalLibrary;
+  final bool showAsmrOne;
   final StartupPage startupPage;
   final bool portraitLockEnabled;
   final BottomNavigationStyle bottomNavigationStyle;
@@ -156,6 +160,8 @@ class SettingsState {
         other.blurPlayerBackgroundEnabled == blurPlayerBackgroundEnabled &&
         other.uiBlurEffectEnabled == uiBlurEffectEnabled &&
         other.hapticFeedbackEnabled == hapticFeedbackEnabled &&
+        other.showLocalLibrary == showLocalLibrary &&
+        other.showAsmrOne == showAsmrOne &&
         other.startupPage == startupPage &&
         other.portraitLockEnabled == portraitLockEnabled &&
         other.bottomNavigationStyle == bottomNavigationStyle &&
@@ -210,6 +216,8 @@ class SettingsState {
     blurPlayerBackgroundEnabled,
     uiBlurEffectEnabled,
     hapticFeedbackEnabled,
+    showLocalLibrary,
+    showAsmrOne,
     startupPage,
     portraitLockEnabled,
     bottomNavigationStyle,

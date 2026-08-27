@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <item name="ic_launcher_warm_system" type="drawable">@drawable/ic_launcher_warm_dark</item>
-    <item name="ic_launcher_purple_system" type="drawable">@drawable/ic_launcher_purple_dark</item>
-    <item name="ic_launcher_blue_system" type="drawable">@drawable/ic_launcher_blue_dark</item>
-    <item name="ic_launcher_green_system" type="drawable">@drawable/ic_launcher_green_dark</item>
-    <item name="ic_launcher_sunset_system" type="drawable">@drawable/ic_launcher_sunset_dark</item>
-    <item name="ic_launcher_neutral_system" type="drawable">@drawable/ic_launcher_neutral_dark</item>
-</resources>

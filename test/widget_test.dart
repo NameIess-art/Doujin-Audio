@@ -1919,7 +1919,6 @@ void main() {
     final expectedAccent = AppDesignTokens.of(detailThemeContext).asmrAccent;
     expect(Theme.of(detailThemeContext).colorScheme.primary, expectedAccent);
     expect(artworkCover.duration, kCoverImageFadeDuration);
-    expect(artworkCover.deferCommitDuringInteraction, isTrue);
     await _settleSessionDetailAsyncWork(tester);
     await tester.pumpWidget(const SizedBox.shrink());
     debugDefaultTargetPlatformOverride = previousPlatform;

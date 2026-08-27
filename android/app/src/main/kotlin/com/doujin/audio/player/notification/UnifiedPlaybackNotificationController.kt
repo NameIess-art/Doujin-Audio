@@ -3,10 +3,6 @@
 package com.doujin.audio.player.notification
 
 import com.doujin.audio.*
-import com.doujin.audio.channel.ICON_GROUP_WARM
-import com.doujin.audio.channel.THEME_MODE_SYSTEM
-import com.doujin.audio.channel.appIconLauncherActivityName
-import com.doujin.audio.channel.launcherActivityNames
 import com.doujin.audio.player.service.*
 
 import android.app.NotificationChannel
@@ -14,7 +10,6 @@ import android.app.NotificationManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.Manifest
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -139,55 +134,15 @@ internal fun addNotificationTransportActions(
     }
 }
 
-internal fun notificationIconResourceForLauncher(activityName: String): Int {
-    return when {
-        activityName.contains("MainActivityPurple") ->
-            R.drawable.ic_launcher_purple_light_foreground
-        activityName.contains("MainActivityBlue") ->
-            R.drawable.ic_launcher_blue_light_foreground
-        activityName.contains("MainActivityGreen") ->
-            R.drawable.ic_launcher_green_light_foreground
-        activityName.contains("MainActivitySunset") ->
-            R.drawable.ic_launcher_sunset_light_foreground
-        activityName.contains("MainActivityNeutral") ->
-            R.drawable.ic_launcher_neutral_light_foreground
-        else -> R.drawable.ic_launcher_warm_light_foreground
-    }
-}
-
 internal data class NotificationIconSpec(
     val resourceId: Int,
     val color: Int
 )
 
-internal fun notificationIconSpecForLauncher(activityName: String): NotificationIconSpec {
-    val color = when {
-        activityName.contains("MainActivityPurple") -> 0xFFA867F1.toInt()
-        activityName.contains("MainActivityBlue") -> 0xFF4B78EF.toInt()
-        activityName.contains("MainActivityGreen") -> 0xFF63C636.toInt()
-        activityName.contains("MainActivitySunset") -> 0xFFFB833C.toInt()
-        activityName.contains("MainActivityNeutral") -> 0xFFA6B0BE.toInt()
-        else -> 0xFFFF5F5C.toInt()
-    }
+internal fun notificationIconSpec(): NotificationIconSpec {
     return NotificationIconSpec(
-        resourceId = notificationIconResourceForLauncher(activityName),
-        color = color
-    )
-}
-
-internal fun notificationIconSpec(context: Context): NotificationIconSpec {
-    return notificationIconSpecForLauncher(activeLauncherActivityName(context))
-}
-
-internal fun activeLauncherActivityName(context: Context): String {
-    val packageName = context.packageName
-    return launcherActivityNames().firstOrNull { activityName ->
-        context.packageManager.getComponentEnabledSetting(
-            ComponentName(packageName, activityName)
-        ) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
-    } ?: appIconLauncherActivityName(
-        mode = THEME_MODE_SYSTEM,
-        colorGroup = ICON_GROUP_WARM
+        resourceId = R.drawable.ic_launcher_foreground,
+        color = 0xFFFF5F5C.toInt()
     )
 }
 
@@ -277,22 +232,6 @@ internal object UnifiedPlaybackNotificationController {
 
     fun hasUnifiedNotifications(): Boolean {
         return activeNotificationCount > 0
-    }
-
-    @Synchronized
-    fun refreshThemeIcon(context: Context) {
-        if (dismissPending) return
-        latestSyncRequest?.let { request ->
-            // A theme change affects every notification's small icon, including
-            // multi-session children that may supply the system group header icon.
-            // Invalidate their stable-content cache so they are all rebuilt.
-            activeItemsById.clear()
-            lastSummarySignature = null
-            lastStyleVariant = null
-            lastNotifyTimestampsMs.clear()
-            render(context.applicationContext, request, forceArtworkPath = null)
-        }
-        NativePlaybackService.controller()?.refreshForegroundNotificationForTheme()
     }
 
     fun shouldRemoveForegroundNotification(removeNotification: Boolean): Boolean {
@@ -717,7 +656,7 @@ internal object UnifiedPlaybackNotificationController {
         notificationId: Int,
         ongoing: Boolean
     ): NotificationCompat.Builder {
-        val appIcon = notificationIconSpec(context)
+        val appIcon = notificationIconSpec()
         val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(appIcon.resourceId)
             .setColor(appIcon.color)
@@ -807,22 +746,21 @@ internal object UnifiedPlaybackNotificationController {
         context: Context,
         sessionId: String? = null
     ): PendingIntent? {
-        val launchIntent = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setComponent(ComponentName(context.packageName, activeLauncherActivityName(context)))
-            .apply {
-                addFlags(
-                    Intent.FLAG_ACTIVITY_NEW_TASK or
-                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                        Intent.FLAG_ACTIVITY_CLEAR_TOP
-                )
-                if (sessionId.isNullOrBlank()) {
-                    removeExtra(MainActivity.notificationSessionIdExtra)
-                } else {
-                    action = MainActivity.openSessionFromNotificationAction
-                    putExtra(MainActivity.notificationSessionIdExtra, sessionId)
-                }
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP
+            )
+            if (sessionId.isNullOrBlank()) {
+                removeExtra(MainActivity.notificationSessionIdExtra)
+            } else {
+                action = MainActivity.openSessionFromNotificationAction
+                putExtra(MainActivity.notificationSessionIdExtra, sessionId)
             }
+        }
         if (context.packageManager.resolveActivity(launchIntent, 0) == null) return null
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val requestCode = if (sessionId.isNullOrBlank()) {

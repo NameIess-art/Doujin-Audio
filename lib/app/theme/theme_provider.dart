@@ -1,11 +1,7 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import '../../core/persistence/persisted_state_reloader.dart';
 import '../../features/settings/application/app_preferences.dart';
-import '../../core/platform/app_icon_platform_service.dart';
-import '../../core/ui/app_icon_color_group.dart';
 import '../../core/widgets/app_transitions.dart';
 import 'app_design_tokens.dart';
 import 'app_styles.dart';
@@ -52,25 +48,6 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
   String get labelKey => switch (this) {
     ThemeAccentPreset.lightGreen => 'theme_color_light_green',
     _ => 'theme_color_$name',
-  };
-
-  AppIconColorGroup get iconColorGroup => switch (this) {
-    ThemeAccentPreset.coral ||
-    ThemeAccentPreset.rose ||
-    ThemeAccentPreset.pink => AppIconColorGroup.warm,
-    ThemeAccentPreset.lavender ||
-    ThemeAccentPreset.periwinkle => AppIconColorGroup.purple,
-    ThemeAccentPreset.blue ||
-    ThemeAccentPreset.sky ||
-    ThemeAccentPreset.cyan => AppIconColorGroup.blue,
-    ThemeAccentPreset.mint ||
-    ThemeAccentPreset.green ||
-    ThemeAccentPreset.lightGreen => AppIconColorGroup.green,
-    ThemeAccentPreset.lime ||
-    ThemeAccentPreset.amber ||
-    ThemeAccentPreset.orange ||
-    ThemeAccentPreset.peach => AppIconColorGroup.sunset,
-    ThemeAccentPreset.gray => AppIconColorGroup.neutral,
   };
 
   ColorScheme colorScheme(Brightness brightness) {
@@ -121,18 +98,12 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
   ThemeData get lightTheme => _lightTheme;
   ThemeData get darkTheme => _darkTheme;
 
-  ThemeProvider({
-    AppIconPlatformService? appIconPlatformService,
-    ThemePreferenceWriter? preferenceWriter,
-  }) : _appIconPlatformService =
-           appIconPlatformService ?? AppIconPlatformService(),
-       _preferenceWriter = preferenceWriter ?? _writePreference {
+  ThemeProvider({ThemePreferenceWriter? preferenceWriter})
+    : _preferenceWriter = preferenceWriter ?? _writePreference {
     _loadThemeSync();
     _rebuildThemes();
-    unawaited(_syncAppIconTheme());
   }
 
-  final AppIconPlatformService _appIconPlatformService;
   final ThemePreferenceWriter _preferenceWriter;
   Future<void> _preferenceWriteTail = Future<void>.value();
 
@@ -201,9 +172,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     final mutation = ++_themeModeMutation;
     _themeMode = value;
     notifyListeners();
-    final iconSync = _syncAppIconTheme();
     final persisted = await _writePreferenceInOrder(_themeModeKey, value.name);
-    await iconSync;
     if (persisted) {
       _persistedThemeMode = value;
       return true;
@@ -211,15 +180,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     if (mutation != _themeModeMutation) return false;
     _themeMode = _persistedThemeMode;
     notifyListeners();
-    await _syncAppIconTheme();
     return false;
-  }
-
-  Future<void> _syncAppIconTheme() {
-    return _appIconPlatformService.syncThemeMode(
-      _themeMode,
-      _appThemeColor.iconColorGroup,
-    );
   }
 
   Future<bool> setDifferentiateAsmrTheme(bool value) async {
@@ -249,12 +210,10 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _appThemeColor = value;
     _rebuildThemes();
     notifyListeners();
-    final iconSync = _syncAppIconTheme();
     final persisted = await _writePreferenceInOrder(
       _appThemeColorKey,
       value.name,
     );
-    await iconSync;
     if (persisted) {
       _persistedAppThemeColor = value;
       return true;
@@ -263,7 +222,6 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _appThemeColor = _persistedAppThemeColor;
     _rebuildThemes();
     notifyListeners();
-    await _syncAppIconTheme();
     return false;
   }
 
@@ -293,7 +251,6 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     _loadThemeSync();
     _rebuildThemes();
     notifyListeners();
-    await _syncAppIconTheme();
   }
 
   void _rebuildThemes() {
@@ -406,13 +363,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
     return ThemeData(
       useMaterial3: true,
       materialTapTargetSize: MaterialTapTargetSize.padded,
-      extensions: <ThemeExtension<dynamic>>[
-        tokens,
-        AppBrandIconTheme.forGroup(
-          _appThemeColor.iconColorGroup,
-          scheme.brightness,
-        ),
-      ],
+      extensions: <ThemeExtension<dynamic>>[tokens],
       visualDensity: VisualDensity.standard,
       colorScheme: scheme,
       textTheme: textTheme,

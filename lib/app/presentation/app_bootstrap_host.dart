@@ -6,7 +6,6 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import '../application/app_bootstrap_controller.dart';
 import '../localization/app_language_provider.dart';
 import '../theme/theme_provider.dart';
-import '../../core/ui/app_icon_color_group.dart';
 import 'app_error_view.dart';
 
 class AppBootstrapHost extends StatelessWidget {
@@ -32,13 +31,12 @@ class AppBootstrapHost extends StatelessWidget {
     final locale =
         this.locale ?? WidgetsBinding.instance.platformDispatcher.locale;
     final appThemeColor = ThemeProvider.readAppThemeColorSync();
-    final iconColorGroup = appThemeColor.iconColorGroup;
     final lightScheme = appThemeColor
         .colorScheme(Brightness.light)
-        .copyWith(surface: iconColorGroup.splashBackground(Brightness.light));
+        .copyWith(surface: const Color(0xFFFFF8F8));
     final darkScheme = appThemeColor
         .colorScheme(Brightness.dark)
-        .copyWith(surface: iconColorGroup.splashBackground(Brightness.dark));
+        .copyWith(surface: const Color(0xFF211A1B));
     Widget shell(Widget home) => MaterialApp(
       debugShowCheckedModeBanner: false,
       color: lightScheme.surface,
@@ -46,17 +44,11 @@ class AppBootstrapHost extends StatelessWidget {
         useMaterial3: true,
         colorScheme: lightScheme,
         scaffoldBackgroundColor: lightScheme.surface,
-        extensions: <ThemeExtension<dynamic>>[
-          AppBrandIconTheme.forGroup(iconColorGroup, Brightness.light),
-        ],
       ),
       darkTheme: ThemeData(
         useMaterial3: true,
         colorScheme: darkScheme,
         scaffoldBackgroundColor: darkScheme.surface,
-        extensions: <ThemeExtension<dynamic>>[
-          AppBrandIconTheme.forGroup(iconColorGroup, Brightness.dark),
-        ],
       ),
       themeMode: ThemeProvider.readThemeModeSync(),
       locale: locale,

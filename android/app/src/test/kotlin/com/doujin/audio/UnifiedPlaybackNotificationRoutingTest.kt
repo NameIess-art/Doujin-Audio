@@ -39,35 +39,11 @@ class UnifiedPlaybackNotificationRoutingTest {
     }
 
     @Test
-    fun `notification icon follows the active launcher icon variant`() {
-        assertEquals(
-            R.drawable.ic_launcher_blue_light_foreground,
-            notificationIconResourceForLauncher(
-                "com.doujin.audio.common.MainActivityBlueSystem"
-            )
-        )
-        assertEquals(
-            R.drawable.ic_launcher_neutral_light_foreground,
-            notificationIconResourceForLauncher(
-                "com.doujin.audio.common.MainActivityNeutralLight"
-            )
-        )
-        assertEquals(
-            R.drawable.ic_launcher_warm_light_foreground,
-            notificationIconResourceForLauncher("unknown")
-        )
-        assertEquals(
-            0xFF4B78EF.toInt(),
-            notificationIconSpecForLauncher(
-                "com.doujin.audio.common.MainActivityBlueDark"
-            ).color
-        )
-        assertEquals(
-            0xFFFF5F5C.toInt(),
-            notificationIconSpecForLauncher(
-                "com.doujin.audio.common.MainActivityWarmLight"
-            ).color
-        )
+    fun `notification icon stays fixed to the warm headphones`() {
+        val icon = notificationIconSpec()
+
+        assertEquals(R.drawable.ic_launcher_foreground, icon.resourceId)
+        assertEquals(0xFFFF5F5C.toInt(), icon.color)
     }
 
     @Test

@@ -11,7 +11,6 @@ class PlatformChannelsTest {
         val names = listOf(
             PlatformChannelNames.APP_LIFECYCLE,
             PlatformChannelNames.FILE_CACHE,
-            PlatformChannelNames.APP_ICON,
             PlatformChannelNames.NATIVE_PLAYBACK,
             PlatformChannelNames.NATIVE_PLAYBACK_EVENTS,
             PlatformChannelNames.NOTIFICATIONS,
@@ -76,7 +75,6 @@ class PlatformChannelsTest {
         )
         assertEquals("installApk", UpdateMethods.INSTALL_APK)
         assertEquals("openReleasePage", UpdateMethods.OPEN_RELEASE_PAGE)
-        assertEquals("syncThemeMode", AppIconMethods.SYNC_THEME_MODE)
         assertEquals(
             "terminateForPendingRestore",
             AppLifecycleMethods.TERMINATE_FOR_PENDING_RESTORE

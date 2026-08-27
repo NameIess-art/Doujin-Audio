@@ -19,6 +19,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 final class _ControlledImageProvider
     extends ImageProvider<_ControlledImageProvider> {
   final Completer<ImageInfo> _imageInfo = Completer<ImageInfo>();
+  int loadCount = 0;
 
   void complete(ui.Image image) {
     _imageInfo.complete(ImageInfo(image: image));
@@ -29,6 +30,7 @@ final class _ControlledImageProvider
     _ControlledImageProvider key,
     ImageDecoderCallback decode,
   ) {
+    loadCount += 1;
     return OneFrameImageStreamCompleter(_imageInfo.future);
   }
 
@@ -326,7 +328,6 @@ void main() {
           height: 90,
           child: AsyncCoverImage(
             future: completer.future,
-            deferCommitDuringInteraction: true,
             duration: Duration.zero,
             imageBuilder: (_, path) => Text('loaded:$path'),
             fallbackBuilder: (_) => const Text('fallback'),
@@ -407,6 +408,98 @@ void main() {
 
     expect(providerBuilds, 2);
   });
+
+  testWidgets(
+    'RetryingImage waits for idle before initial load and source changes',
+    (tester) async {
+      final interactionSource = Object();
+      final firstProvider = _ControlledImageProvider();
+      final secondProvider = _ControlledImageProvider();
+
+      Widget buildCover(String retryKey, _ControlledImageProvider provider) {
+        return MaterialApp(
+          home: SizedBox(
+            width: 120,
+            height: 90,
+            child: RetryingImage(
+              retryKey: retryKey,
+              imageProviderBuilder: () => provider,
+              fallbackBuilder: (_) => const Text('fallback'),
+              loadingBuilder: (_) => Text('loading:$retryKey'),
+            ),
+          ),
+        );
+      }
+
+      UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+      await tester.pumpWidget(buildCover('first', firstProvider));
+
+      expect(firstProvider.loadCount, 0);
+      expect(find.text('loading:first'), findsOneWidget);
+      expect(find.byType(Image), findsNothing);
+
+      UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
+      await tester.pump();
+
+      expect(firstProvider.loadCount, 1);
+      expect(find.byType(Image), findsOneWidget);
+
+      UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+      await tester.pumpWidget(buildCover('second', secondProvider));
+
+      expect(secondProvider.loadCount, 0);
+      expect(find.text('loading:second'), findsOneWidget);
+      expect(find.byType(Image), findsNothing);
+
+      UiInteractionCoordinator.instance.cancelInteraction(interactionSource);
+      await tester.pump();
+
+      expect(secondProvider.loadCount, 1);
+      expect(find.byType(Image), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'RetryingImage restores a cached cover while interaction is active',
+    (tester) async {
+      final interactionSource = Object();
+      final provider = _ControlledImageProvider();
+
+      Widget buildCover() {
+        return MaterialApp(
+          home: SizedBox(
+            width: 120,
+            height: 90,
+            child: RetryingImage(
+              retryKey: 'cached-cover',
+              imageProviderBuilder: () => provider,
+              fallbackBuilder: (_) => const Text('fallback'),
+              loadingBuilder: (_) => const Text('loading'),
+            ),
+          ),
+        );
+      }
+
+      await tester.pumpWidget(buildCover());
+      expect(provider.loadCount, 1);
+
+      final image = await _createTestImage();
+      addTearDown(provider.evict);
+      provider.complete(image);
+      await tester.pump();
+      await tester.pump();
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump();
+      UiInteractionCoordinator.instance.beginInteraction(interactionSource);
+      await tester.pumpWidget(buildCover());
+      await tester.pump();
+
+      expect(find.byType(Image), findsOneWidget);
+      expect(find.text('loading'), findsNothing);
+      expect(provider.loadCount, 1);
+    },
+  );
 
   testWidgets(
     'RetryingImage keeps placeholder until first frame then fades for 750ms',

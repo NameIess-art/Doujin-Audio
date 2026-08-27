@@ -1154,12 +1154,6 @@ class NativePlaybackService : MediaSessionService() {
         return response
     }
 
-    internal fun refreshForegroundNotificationForTheme() {
-        if (foregroundCoordinator.isStarted) {
-            foregroundCoordinator.startOrUpdate(forceRefresh = true)
-        }
-    }
-
     fun setPlaybackBehavior(
         pauseOnAudioDeviceDisconnect: Boolean,
         requestAudioFocus: Boolean,

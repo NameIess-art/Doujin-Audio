@@ -15,7 +15,7 @@ void main() {
     );
   });
 
-  test('Flutter tooling can launch alongside themed launcher activities', () {
+  test('Android exposes only the fixed main launcher activity', () {
     final manifest = File(
       'android/app/src/main/AndroidManifest.xml',
     ).readAsStringSync();
@@ -27,7 +27,11 @@ void main() {
       manifest,
       contains('android:scheme="\${applicationId}.integration-test"'),
     );
-    expect(manifest, contains('android:name=".common.MainActivityWarmSystem"'));
+    expect(
+      RegExp(r'android\.intent\.category\.LAUNCHER').allMatches(manifest),
+      hasLength(1),
+    );
+    expect(manifest, isNot(contains('android:name=".common.MainActivity')));
     expect(manifest, isNot(contains('<activity-alias')));
   });
 }

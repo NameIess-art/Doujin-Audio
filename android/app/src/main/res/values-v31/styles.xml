@@ -2,93 +2,9 @@
 <resources>
     <style name="LaunchTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowSplashScreenBackground">@color/launch_background</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_warm_light_foreground</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
         <item name="android:windowBackground">@drawable/launch_background</item>
         <item name="android:statusBarColor">@color/launch_background</item>
         <item name="android:navigationBarColor">@color/launch_background</item>
-    </style>
-    <style name="LaunchThemeWarmLight" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_warm_light</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_warm_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_warm_light</item>
-        <item name="android:statusBarColor">@color/launch_background_warm_light</item>
-        <item name="android:navigationBarColor">@color/launch_background_warm_light</item>
-    </style>
-    <style name="LaunchThemeWarmDark" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_warm_dark</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_warm_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_warm_dark</item>
-        <item name="android:statusBarColor">@color/launch_background_warm_dark</item>
-        <item name="android:navigationBarColor">@color/launch_background_warm_dark</item>
-    </style>
-    <style name="LaunchThemePurpleLight" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_purple_light</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_purple_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_purple_light</item>
-        <item name="android:statusBarColor">@color/launch_background_purple_light</item>
-        <item name="android:navigationBarColor">@color/launch_background_purple_light</item>
-    </style>
-    <style name="LaunchThemePurpleDark" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_purple_dark</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_purple_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_purple_dark</item>
-        <item name="android:statusBarColor">@color/launch_background_purple_dark</item>
-        <item name="android:navigationBarColor">@color/launch_background_purple_dark</item>
-    </style>
-    <style name="LaunchThemeBlueLight" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_blue_light</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_blue_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_blue_light</item>
-        <item name="android:statusBarColor">@color/launch_background_blue_light</item>
-        <item name="android:navigationBarColor">@color/launch_background_blue_light</item>
-    </style>
-    <style name="LaunchThemeBlueDark" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_blue_dark</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_blue_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_blue_dark</item>
-        <item name="android:statusBarColor">@color/launch_background_blue_dark</item>
-        <item name="android:navigationBarColor">@color/launch_background_blue_dark</item>
-    </style>
-    <style name="LaunchThemeGreenLight" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_green_light</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_green_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_green_light</item>
-        <item name="android:statusBarColor">@color/launch_background_green_light</item>
-        <item name="android:navigationBarColor">@color/launch_background_green_light</item>
-    </style>
-    <style name="LaunchThemeGreenDark" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_green_dark</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_green_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_green_dark</item>
-        <item name="android:statusBarColor">@color/launch_background_green_dark</item>
-        <item name="android:navigationBarColor">@color/launch_background_green_dark</item>
-    </style>
-    <style name="LaunchThemeSunsetLight" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_sunset_light</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_sunset_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_sunset_light</item>
-        <item name="android:statusBarColor">@color/launch_background_sunset_light</item>
-        <item name="android:navigationBarColor">@color/launch_background_sunset_light</item>
-    </style>
-    <style name="LaunchThemeSunsetDark" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_sunset_dark</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_sunset_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_sunset_dark</item>
-        <item name="android:statusBarColor">@color/launch_background_sunset_dark</item>
-        <item name="android:navigationBarColor">@color/launch_background_sunset_dark</item>
-    </style>
-    <style name="LaunchThemeNeutralLight" parent="@android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_neutral_light</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_neutral_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_neutral_light</item>
-        <item name="android:statusBarColor">@color/launch_background_neutral_light</item>
-        <item name="android:navigationBarColor">@color/launch_background_neutral_light</item>
-    </style>
-    <style name="LaunchThemeNeutralDark" parent="@android:style/Theme.Material.NoActionBar">
-        <item name="android:windowSplashScreenBackground">@color/launch_background_neutral_dark</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_neutral_light_foreground</item>
-        <item name="android:windowBackground">@color/launch_background_neutral_dark</item>
-        <item name="android:statusBarColor">@color/launch_background_neutral_dark</item>
-        <item name="android:navigationBarColor">@color/launch_background_neutral_dark</item>
     </style>
 </resources>

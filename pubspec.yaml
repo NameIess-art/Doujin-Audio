@@ -53,7 +53,6 @@ flutter:
   assets:
     - assets/lottie/empty_library.json
     - assets/icons/app_mark_light.png
-    - assets/icons/app_mark_dark.png
   fonts:
     - family: Outfit
       fonts:

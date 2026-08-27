@@ -1,12 +1,11 @@
 package com.doujin.audio.player.session
 
 import android.app.PendingIntent
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
-import com.doujin.audio.player.notification.activeLauncherActivityName
+import com.doujin.audio.MainActivity
 
 internal class NativeMediaSessionHost(
     private val context: Context,
@@ -51,17 +50,11 @@ internal class NativeMediaSessionHost(
             attachPlayer(existing, player, playbackSession)
             return existing
         }
-        val launchIntent = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setComponent(
-                ComponentName(
-                    context.packageName,
-                    activeLauncherActivityName(context)
-                )
-            )
-            .apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         val pendingIntent = if (context.packageManager.resolveActivity(launchIntent, 0) != null) {
             PendingIntent.getActivity(
                 context,

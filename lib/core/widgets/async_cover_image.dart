@@ -103,7 +103,6 @@ class AsyncCoverImage extends StatefulWidget {
     this.duration = kCoverImageFadeDuration,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
-    this.deferCommitDuringInteraction = false,
   });
 
   final Future<String?> future;
@@ -116,7 +115,6 @@ class AsyncCoverImage extends StatefulWidget {
   final Duration duration;
   final Duration retryDelay;
   final int maxRetryAttempts;
-  final bool deferCommitDuringInteraction;
 
   @override
   State<AsyncCoverImage> createState() => _AsyncCoverImageState();
@@ -200,7 +198,6 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
           UiInteractionCoordinator.instance.scheduleCommit(
             key: _commitKey,
             priority: 20,
-            allowDuringInteraction: !widget.deferCommitDuringInteraction,
             commit: () {
               if (!mounted || token != _token) return;
               final hasResolvedPath = path != null && path.isNotEmpty;
@@ -223,7 +220,6 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
           UiInteractionCoordinator.instance.scheduleCommit(
             key: _commitKey,
             priority: 20,
-            allowDuringInteraction: !widget.deferCommitDuringInteraction,
             commit: () {
               if (!mounted || token != _token) return;
               setState(() {
@@ -256,15 +252,11 @@ class _AsyncCoverImageState extends State<AsyncCoverImage> {
         _bindFuture(retryFutureBuilder(), keepState: true, resetRetry: false);
       }
 
-      if (widget.deferCommitDuringInteraction) {
-        UiInteractionCoordinator.instance.scheduleCommit(
-          key: _retryCommitKey,
-          priority: 20,
-          commit: retry,
-        );
-      } else {
-        retry();
-      }
+      UiInteractionCoordinator.instance.scheduleCommit(
+        key: _retryCommitKey,
+        priority: 20,
+        commit: retry,
+      );
     });
   }
 
@@ -333,7 +325,6 @@ class LocalCoverImage extends StatelessWidget {
     this.color,
     this.colorBlendMode,
     this.filterQuality = FilterQuality.medium,
-    this.deferRetryDuringInteraction = false,
     this.displayMode,
   });
 
@@ -351,7 +342,6 @@ class LocalCoverImage extends StatelessWidget {
   final Color? color;
   final BlendMode? colorBlendMode;
   final FilterQuality filterQuality;
-  final bool deferRetryDuringInteraction;
   final CoverImageDisplayMode? displayMode;
 
   Widget _fallback(BuildContext context, {bool? showIconOverride}) {
@@ -380,7 +370,6 @@ class LocalCoverImage extends StatelessWidget {
       color: color,
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
-      deferRetryDuringInteraction: deferRetryDuringInteraction,
       displayMode: displayMode,
       fallbackBuilder: (context) => _fallback(context),
     );
@@ -409,7 +398,6 @@ class AsyncLocalCoverImage extends StatelessWidget {
     this.filterQuality = FilterQuality.medium,
     this.hideIconWhileLoading = true,
     this.duration = kCoverImageFadeDuration,
-    this.deferCommitDuringInteraction = false,
     this.displayMode,
   });
 
@@ -432,7 +420,6 @@ class AsyncLocalCoverImage extends StatelessWidget {
   final FilterQuality filterQuality;
   final bool hideIconWhileLoading;
   final Duration duration;
-  final bool deferCommitDuringInteraction;
   final CoverImageDisplayMode? displayMode;
 
   Widget _cover(BuildContext context, String? path, {required bool loading}) {
@@ -451,7 +438,6 @@ class AsyncLocalCoverImage extends StatelessWidget {
       color: color,
       colorBlendMode: colorBlendMode,
       filterQuality: filterQuality,
-      deferRetryDuringInteraction: deferCommitDuringInteraction,
       displayMode: displayMode,
     );
   }
@@ -464,7 +450,6 @@ class AsyncLocalCoverImage extends StatelessWidget {
       initialPath: initialPath,
       retryFutureBuilder: retryFutureBuilder,
       duration: duration,
-      deferCommitDuringInteraction: deferCommitDuringInteraction,
       fallbackBuilder: (context) => _cover(context, null, loading: false),
       loadingBuilder: (context) => CoverLoadingArtwork(
         placeholder: _cover(context, null, loading: true),
@@ -653,7 +638,7 @@ class RetryingNetworkImage extends ConsumerWidget {
     );
     final displayMode = ref.watch(coverImageDisplayModeProvider);
     return RetryingImage(
-      retryKey: trimmedUrl,
+      retryKey: (trimmedUrl, effectiveCacheWidth, cacheHeight),
       imageProviderBuilder: () => ResizeImage.resizeIfNeeded(
         effectiveCacheWidth,
         cacheHeight,
@@ -765,7 +750,6 @@ class RetryingFileImage extends ConsumerWidget {
     this.gaplessPlayback = true,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
-    this.deferRetryDuringInteraction = false,
     this.displayMode,
   });
 
@@ -783,7 +767,6 @@ class RetryingFileImage extends ConsumerWidget {
   final bool gaplessPlayback;
   final Duration retryDelay;
   final int maxRetryAttempts;
-  final bool deferRetryDuringInteraction;
   final CoverImageDisplayMode? displayMode;
 
   @override
@@ -799,7 +782,7 @@ class RetryingFileImage extends ConsumerWidget {
     final CoverImageDisplayMode effectiveDisplayMode =
         displayMode ?? ref.watch(coverImageDisplayModeProvider);
     return RetryingImage(
-      retryKey: path,
+      retryKey: (path, effectiveCacheWidth, cacheHeight),
       imageProviderBuilder: () => resizeFileImageIfNeeded(
         path: path,
         cacheWidth: effectiveCacheWidth,
@@ -816,7 +799,6 @@ class RetryingFileImage extends ConsumerWidget {
       gaplessPlayback: gaplessPlayback,
       retryDelay: retryDelay,
       maxRetryAttempts: maxRetryAttempts,
-      deferRetryDuringInteraction: deferRetryDuringInteraction,
       displayMode: effectiveDisplayMode,
     );
   }
@@ -837,7 +819,6 @@ class RetryingImage extends StatefulWidget {
     this.gaplessPlayback = true,
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
-    this.deferRetryDuringInteraction = false,
     this.displayMode = CoverImageDisplayMode.fill,
   });
 
@@ -853,7 +834,6 @@ class RetryingImage extends StatefulWidget {
   final bool gaplessPlayback;
   final Duration retryDelay;
   final int maxRetryAttempts;
-  final bool deferRetryDuringInteraction;
   final CoverImageDisplayMode displayMode;
 
   @override
@@ -861,26 +841,80 @@ class RetryingImage extends StatefulWidget {
 }
 
 class _RetryingImageState extends State<RetryingImage> {
+  final UiInteractionCoordinator _interaction =
+      UiInteractionCoordinator.instance;
   int _retryAttempt = 0;
   Timer? _retryTimer;
+  late bool _loadEnabled;
+  Object? _cacheCheckKey;
   String get _retryCommitKey =>
       'retrying_image_${identityHashCode(this)}_retry';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEnabled = !_interaction.isInteracting;
+    _interaction.addListener(_handleInteractionChanged);
+  }
 
   @override
   void didUpdateWidget(covariant RetryingImage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.retryKey != widget.retryKey) {
       _retryTimer?.cancel();
-      UiInteractionCoordinator.instance.cancelCommit(_retryCommitKey);
+      _interaction.cancelCommit(_retryCommitKey);
       _retryAttempt = 0;
+      _loadEnabled = !_interaction.isInteracting;
+      _cacheCheckKey = null;
     }
   }
 
   @override
   void dispose() {
     _retryTimer?.cancel();
-    UiInteractionCoordinator.instance.cancelCommit(_retryCommitKey);
+    _interaction
+      ..removeListener(_handleInteractionChanged)
+      ..cancelCommit(_retryCommitKey);
     super.dispose();
+  }
+
+  void _handleInteractionChanged() {
+    if (!mounted || _interaction.isInteracting || _loadEnabled) return;
+    setState(() => _loadEnabled = true);
+  }
+
+  ImageProvider<Object>? _cachedProviderForBuild(BuildContext context) {
+    final checkKey = (widget.retryKey, _retryAttempt);
+    if (_cacheCheckKey == checkKey) return null;
+    _cacheCheckKey = checkKey;
+
+    final provider = widget.imageProviderBuilder();
+    final configuration = createLocalImageConfiguration(context);
+    var callbackIsSynchronous = true;
+    var cachedSynchronously = false;
+    unawaited(
+      provider.obtainKey(configuration).then<void>((key) {
+        final isTracked = PaintingBinding.instance.imageCache
+            .statusForKey(key)
+            .tracked;
+        if (callbackIsSynchronous) {
+          cachedSynchronously = isTracked;
+          return;
+        }
+        if (!isTracked ||
+            !mounted ||
+            _loadEnabled ||
+            _cacheCheckKey != checkKey) {
+          return;
+        }
+        setState(() => _loadEnabled = true);
+      }, onError: (Object error, StackTrace stackTrace) {}),
+    );
+    callbackIsSynchronous = false;
+    if (!cachedSynchronously) return null;
+
+    _loadEnabled = true;
+    return provider;
   }
 
   void _scheduleRetry(ImageProvider<Object> provider) {
@@ -899,27 +933,33 @@ class _RetryingImageState extends State<RetryingImage> {
         });
       }
 
-      if (widget.deferRetryDuringInteraction) {
-        UiInteractionCoordinator.instance.scheduleCommit(
-          key: _retryCommitKey,
-          priority: 20,
-          commit: retry,
-        );
-      } else {
-        retry();
-      }
+      _interaction.scheduleCommit(
+        key: _retryCommitKey,
+        priority: 20,
+        commit: retry,
+      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = widget.imageProviderBuilder();
+    ImageProvider<Object>? provider;
+    if (!_loadEnabled) {
+      provider = _cachedProviderForBuild(context);
+    }
+    if (!_loadEnabled) {
+      final loadingBuilder = widget.loadingBuilder;
+      return loadingBuilder != null
+          ? loadingBuilder(context)
+          : CoverLoadingArtwork(placeholder: widget.fallbackBuilder(context));
+    }
+    final imageProvider = provider ?? widget.imageProviderBuilder();
     Widget image({required BoxFit? fit, required bool primary}) {
       return Image(
         key: ValueKey(
           '${widget.retryKey}#$_retryAttempt${primary ? '' : '#backdrop'}',
         ),
-        image: provider,
+        image: imageProvider,
         fit: fit,
         alignment: widget.alignment,
         color: widget.color,
@@ -943,7 +983,7 @@ class _RetryingImageState extends State<RetryingImage> {
             : null,
         errorBuilder: primary
             ? (context, error, stackTrace) {
-                _scheduleRetry(provider);
+                _scheduleRetry(imageProvider);
                 return widget.fallbackBuilder(context);
               }
             : (context, error, stackTrace) => const SizedBox.expand(),

@@ -2,11 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:doujin_audio/core/platform/app_icon_platform_service.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
-import 'package:doujin_audio/core/ui/app_icon_color_group.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -76,81 +74,18 @@ void main() {
     expect(preferences.getString('themeMode'), 'light');
   });
 
-  test('theme changes synchronize the launcher icon mode', () async {
-    SharedPreferences.setMockInitialValues(const <String, Object>{});
-    await AppPreferences.init();
-    final appIconService = _RecordingAppIconPlatformService();
-    final provider = ThemeProvider(appIconPlatformService: appIconService);
-    appIconService.syncs.clear();
-
-    await provider.setThemeMode(ThemeMode.dark);
-
-    expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
-      (ThemeMode.dark, AppIconColorGroup.warm),
-    ]);
-  });
-
-  test(
-    'launcher icon synchronization starts before preference persistence',
-    () async {
-      SharedPreferences.setMockInitialValues(const <String, Object>{});
-      await AppPreferences.init();
-      final appIconService = _RecordingAppIconPlatformService();
-      final provider = ThemeProvider(appIconPlatformService: appIconService);
-      appIconService.syncs.clear();
-
-      final update = provider.setThemeMode(ThemeMode.dark);
-
-      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
-        (ThemeMode.dark, AppIconColorGroup.warm),
-      ]);
-      await update;
-    },
-  );
-
-  test(
-    'app theme color synchronizes its six-group launcher icon color',
-    () async {
-      SharedPreferences.setMockInitialValues(const <String, Object>{});
-      await AppPreferences.init();
-      final appIconService = _RecordingAppIconPlatformService();
-      final provider = ThemeProvider(appIconPlatformService: appIconService);
-      appIconService.syncs.clear();
-
-      await provider.setAppThemeColor(ThemeAccentPreset.cyan);
-
-      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
-        (ThemeMode.system, AppIconColorGroup.blue),
-      ]);
-    },
-  );
-
   test(
     'failed preference writes roll back all optimistic theme changes',
     () async {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       await AppPreferences.init();
-      final appIconService = _RecordingAppIconPlatformService();
-      final provider = ThemeProvider(
-        appIconPlatformService: appIconService,
-        preferenceWriter: (_, _) async => false,
-      );
-      appIconService.syncs.clear();
+      final provider = ThemeProvider(preferenceWriter: (_, _) async => false);
 
       expect(await provider.setThemeMode(ThemeMode.dark), isFalse);
       expect(provider.themeMode, ThemeMode.system);
-      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
-        (ThemeMode.dark, AppIconColorGroup.warm),
-        (ThemeMode.system, AppIconColorGroup.warm),
-      ]);
 
-      appIconService.syncs.clear();
       expect(await provider.setAppThemeColor(ThemeAccentPreset.mint), isFalse);
       expect(provider.appThemeColor, ThemeAccentPreset.rose);
-      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
-        (ThemeMode.system, AppIconColorGroup.green),
-        (ThemeMode.system, AppIconColorGroup.warm),
-      ]);
 
       expect(await provider.setDifferentiateAsmrTheme(false), isFalse);
       expect(provider.differentiateAsmrTheme, isTrue);
@@ -168,17 +103,13 @@ void main() {
       SharedPreferences.setMockInitialValues(const <String, Object>{});
       await AppPreferences.init();
       final writes = <Completer<bool>>[];
-      final appIconService = _RecordingAppIconPlatformService();
       final provider = ThemeProvider(
-        appIconPlatformService: appIconService,
         preferenceWriter: (_, _) {
           final write = Completer<bool>();
           writes.add(write);
           return write.future;
         },
       );
-      appIconService.syncs.clear();
-
       final older = provider.setThemeMode(ThemeMode.dark);
       final newer = provider.setThemeMode(ThemeMode.light);
 
@@ -194,10 +125,6 @@ void main() {
       writes.last.complete(true);
       expect(await newer, isTrue);
       expect(provider.themeMode, ThemeMode.light);
-      expect(appIconService.syncs, <(ThemeMode, AppIconColorGroup)>[
-        (ThemeMode.dark, AppIconColorGroup.warm),
-        (ThemeMode.light, AppIconColorGroup.warm),
-      ]);
     },
   );
 
@@ -397,21 +324,6 @@ void main() {
       expect(_contrastRatio(supportingColor, scheme.surface), greaterThan(4.5));
     }
   });
-}
-
-final class _RecordingAppIconPlatformService extends AppIconPlatformService {
-  _RecordingAppIconPlatformService() : super(isAndroidOverride: false);
-
-  final List<(ThemeMode, AppIconColorGroup)> syncs =
-      <(ThemeMode, AppIconColorGroup)>[];
-
-  @override
-  Future<void> syncThemeMode(
-    ThemeMode mode,
-    AppIconColorGroup colorGroup,
-  ) async {
-    syncs.add((mode, colorGroup));
-  }
 }
 
 double _contrastRatio(Color foreground, Color background) {

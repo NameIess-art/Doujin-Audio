@@ -40,9 +40,7 @@ void main() {
     expect(find.text('Download task not found'), findsNothing);
   });
 
-  testWidgets('download details shows and clears a file retry attempt', (
-    tester,
-  ) async {
+  testWidgets('completed file restores its size after a retry', (tester) async {
     SharedPreferences.setMockInitialValues(const <String, Object>{});
     final languageProvider = AppLanguageProvider();
     addTearDown(languageProvider.dispose);
@@ -65,7 +63,7 @@ void main() {
     await tester.pumpWidget(
       _downloadDetailsApp(
         languageProvider,
-        retryingTask.copyWith(status: AsmrDownloadTaskStatus.completed),
+        retryingTask.copyWith(completedFilePaths: const <String>{'Track.mp3'}),
       ),
     );
     await tester.pump();

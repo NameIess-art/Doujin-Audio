@@ -38,7 +38,6 @@ open class MainActivity : FlutterFragmentActivity() {
     private var fileExportCoordinator: FileExportCoordinator? = null
     private var fileCacheScanStreamHandler: FileCacheScanStreamHandler? = null
     private var audioPickerCoordinator: AudioPickerCoordinator? = null
-    private var appIconThemeMethodHandler: AppIconThemeMethodHandler? = null
     private var videoDisplayMethodChannel: MethodChannel? = null
     private var videoDisplayMethodHandler: VideoDisplayMethodHandler? = null
     private var pendingNotificationSessionId: String? = null
@@ -88,12 +87,6 @@ open class MainActivity : FlutterFragmentActivity() {
         ).also { it.setMethodCallHandler(videoDisplayMethodHandler) }
         MethodChannel(messenger, PlatformChannelNames.SUBTITLE_OVERLAY)
             .setMethodCallHandler(SubtitleOverlayMethodHandler(subtitleOverlayCoordinator))
-        val appIconThemeMethodHandler = AppIconThemeMethodHandler(applicationContext)
-        this.appIconThemeMethodHandler = appIconThemeMethodHandler
-        appIconThemeMethodHandler.syncSystemThemeIfNeeded()
-        MethodChannel(messenger, PlatformChannelNames.APP_ICON)
-            .setMethodCallHandler(appIconThemeMethodHandler)
-
         notificationsMethodChannel = MethodChannel(messenger, PlatformChannelNames.NOTIFICATIONS)
         capturePendingNotificationSession(intent)
         notificationsMethodChannel?.setMethodCallHandler(
@@ -156,11 +149,6 @@ open class MainActivity : FlutterFragmentActivity() {
         deliverNotificationSessionIntent(intent)
     }
 
-    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
-        super.onConfigurationChanged(newConfig)
-        appIconThemeMethodHandler?.syncSystemThemeIfNeeded()
-    }
-
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         disposeNativePlaybackBridge()
         disposeVideoDisplayChannel()
@@ -173,7 +161,6 @@ open class MainActivity : FlutterFragmentActivity() {
         notificationsMethodChannel = null
         appLifecycleMethodChannel?.setMethodCallHandler(null)
         appLifecycleMethodChannel = null
-        appIconThemeMethodHandler = null
         fileCacheMethodChannel?.setMethodCallHandler(null)
         fileCacheMethodChannel = null
         fileCacheMethodHandler?.shutdown()

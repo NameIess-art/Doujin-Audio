@@ -2,7 +2,6 @@ package com.doujin.audio.channel
 
 internal object PlatformChannelNames {
     const val APP_LIFECYCLE = "doujin_audio/app_lifecycle"
-    const val APP_ICON = "doujin_audio/app_icon"
     const val FILE_CACHE = "doujin_audio/file_cache"
     const val FILE_CACHE_SCAN_EVENTS = "doujin_audio/file_cache/scan_events"
     const val NATIVE_PLAYBACK = "doujin_audio/native_playback"
@@ -12,10 +11,6 @@ internal object PlatformChannelNames {
     const val SUBTITLE_OVERLAY = "doujin_audio/subtitle_overlay"
     const val UPDATE = "doujin_audio/update"
     const val VIDEO_DISPLAY = "doujin_audio/video_display"
-}
-
-internal object AppIconMethods {
-    const val SYNC_THEME_MODE = "syncThemeMode"
 }
 
 internal object NativePlaybackMethods {

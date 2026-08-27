@@ -17,11 +17,4 @@
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">@color/launch_background</item>
     </style>
-
-    <style name="LaunchThemeWarmSystem" parent="@style/LaunchThemeWarmDark" />
-    <style name="LaunchThemePurpleSystem" parent="@style/LaunchThemePurpleDark" />
-    <style name="LaunchThemeBlueSystem" parent="@style/LaunchThemeBlueDark" />
-    <style name="LaunchThemeGreenSystem" parent="@style/LaunchThemeGreenDark" />
-    <style name="LaunchThemeSunsetSystem" parent="@style/LaunchThemeSunsetDark" />
-    <style name="LaunchThemeNeutralSystem" parent="@style/LaunchThemeNeutralDark" />
 </resources>

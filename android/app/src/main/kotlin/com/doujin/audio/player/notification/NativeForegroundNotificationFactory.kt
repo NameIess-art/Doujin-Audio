@@ -3,12 +3,12 @@
 package com.doujin.audio.player.notification
 
 import com.doujin.audio.R
+import com.doujin.audio.MainActivity
 
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -117,7 +117,7 @@ internal class NativeForegroundNotificationFactory(
     }
 
     private fun baseBuilder(): NotificationCompat.Builder {
-        val appIcon = notificationIconSpec(context)
+        val appIcon = notificationIconSpec()
         return NotificationCompat.Builder(context, channelId)
             .setSmallIcon(appIcon.resourceId)
             .setColor(appIcon.color)
@@ -132,12 +132,11 @@ internal class NativeForegroundNotificationFactory(
     }
 
     private fun launchPendingIntent(): PendingIntent? {
-        val launchIntent = Intent(Intent.ACTION_MAIN)
-            .addCategory(Intent.CATEGORY_LAUNCHER)
-            .setComponent(ComponentName(context.packageName, activeLauncherActivityName(context)))
-            .apply {
-                flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            }
+        val launchIntent = Intent(context, MainActivity::class.java).apply {
+            action = Intent.ACTION_MAIN
+            addCategory(Intent.CATEGORY_LAUNCHER)
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
         return if (context.packageManager.resolveActivity(launchIntent, 0) != null) {
             PendingIntent.getActivity(
                 context,

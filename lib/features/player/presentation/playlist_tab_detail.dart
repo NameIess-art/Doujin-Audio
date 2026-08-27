@@ -738,7 +738,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                 future: coverPathFuture,
                                 requestKey: session.id,
                                 duration: Duration.zero,
-                                deferCommitDuringInteraction: true,
                                 initialPath: library
                                     .resolvedPlaybackCoverPathForTrack(track),
                                 retryFutureBuilder: () => _coverFutureForTrack(
@@ -762,7 +761,6 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                                         : FilterQuality.medium,
                                     color: cs.surface.withValues(alpha: 0.45),
                                     colorBlendMode: BlendMode.darken,
-                                    deferRetryDuringInteraction: true,
                                     fallbackBuilder: (_) =>
                                         CoverFallbackArtwork(
                                           seed:

@@ -50,6 +50,33 @@ extension ThemeAccentPresetValue on ThemeAccentPreset {
     _ => 'theme_color_$name',
   };
 
+  Color bootstrapSurfaceColor(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    return switch (this) {
+      ThemeAccentPreset.coral ||
+      ThemeAccentPreset.rose ||
+      ThemeAccentPreset.pink =>
+        dark ? const Color(0xFF211A1B) : const Color(0xFFFFF8F8),
+      ThemeAccentPreset.lavender || ThemeAccentPreset.periwinkle =>
+        dark ? const Color(0xFF1D1927) : const Color(0xFFFAF8FF),
+      ThemeAccentPreset.blue ||
+      ThemeAccentPreset.sky ||
+      ThemeAccentPreset.cyan =>
+        dark ? const Color(0xFF111D24) : const Color(0xFFF5FBFF),
+      ThemeAccentPreset.mint ||
+      ThemeAccentPreset.green ||
+      ThemeAccentPreset.lightGreen =>
+        dark ? const Color(0xFF12201C) : const Color(0xFFF5FFF9),
+      ThemeAccentPreset.lime ||
+      ThemeAccentPreset.amber ||
+      ThemeAccentPreset.orange ||
+      ThemeAccentPreset.peach =>
+        dark ? const Color(0xFF241D13) : const Color(0xFFFFF9F2),
+      ThemeAccentPreset.gray =>
+        dark ? const Color(0xFF1A1D21) : const Color(0xFFF7F8FA),
+    };
+  }
+
   ColorScheme colorScheme(Brightness brightness) {
     final generated = ColorScheme.fromSeed(
       seedColor: primaryColor,

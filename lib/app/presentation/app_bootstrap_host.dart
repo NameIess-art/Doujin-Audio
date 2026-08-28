@@ -33,10 +33,14 @@ class AppBootstrapHost extends StatelessWidget {
     final appThemeColor = ThemeProvider.readAppThemeColorSync();
     final lightScheme = appThemeColor
         .colorScheme(Brightness.light)
-        .copyWith(surface: const Color(0xFFFFF8F8));
+        .copyWith(
+          surface: appThemeColor.bootstrapSurfaceColor(Brightness.light),
+        );
     final darkScheme = appThemeColor
         .colorScheme(Brightness.dark)
-        .copyWith(surface: const Color(0xFF211A1B));
+        .copyWith(
+          surface: appThemeColor.bootstrapSurfaceColor(Brightness.dark),
+        );
     Widget shell(Widget home) => MaterialApp(
       debugShowCheckedModeBanner: false,
       color: lightScheme.surface,

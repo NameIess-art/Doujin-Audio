@@ -143,7 +143,7 @@ void _showTopFeedback(
 
   entry = OverlayEntry(
     builder: (overlayContext) {
-      final topInset = MediaQuery.of(overlayContext).padding.top + 10;
+      final topInset = MediaQuery.of(overlayContext).padding.top + 64;
 
       return Positioned(
         top: topInset,

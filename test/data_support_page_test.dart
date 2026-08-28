@@ -41,6 +41,7 @@ void main() {
         isAndroid: isAndroid ?? () => true,
       ),
       libraryTracks: libraryTracks ?? () => const <MusicTrack>[],
+      persistentCoverCacheBytes: () async => 0,
     );
   }
 

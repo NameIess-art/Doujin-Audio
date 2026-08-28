@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/cover_image_format.dart';
 export '../../../core/media/cover_image_format.dart'
     show coverArtworkStoreDirectoryName;
@@ -255,7 +256,16 @@ final class CoverArtworkStore {
 
   Future<T> _enqueue<T>(Future<T> Function() operation) {
     final result = _operations.then((_) => operation());
-    _operations = result.then<void>((_) {}, onError: (_, _) {});
+    _operations = result.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {
+        AppLogService.warning(
+          'cover_artwork_store_operation_failed',
+          error: error,
+          stackTrace: stackTrace,
+        );
+      },
+    );
     return result;
   }
 
@@ -346,7 +356,13 @@ final class CoverArtworkStore {
           path.basename(entity.path) != coverArtworkStoreIndexFileName) {
         try {
           total += await entity.length();
-        } catch (_) {}
+        } catch (error, stackTrace) {
+          AppLogService.warning(
+            'cover_artwork_store_size_read_failed path=${entity.path}',
+            error: error,
+            stackTrace: stackTrace,
+          );
+        }
       }
     }
     return total;

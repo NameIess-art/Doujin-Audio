@@ -43,9 +43,7 @@ enum LibraryRemovalKind {
   libraryAudioRecoverable,
 }
 
-/// Owns the library-side services used by the compatibility audio facade.
-///
-/// Mutable library state remains owned exclusively by [LibraryService].
+/// Coordinates library services while mutable state stays in [LibraryService].
 final class LibraryFacade implements LibraryCatalog {
   LibraryFacade({
     required this.databaseRepository,
@@ -242,9 +240,7 @@ final class LibraryFacade implements LibraryCatalog {
     _service.libraryBatchChanged = _service.library.isNotEmpty;
     await endLibraryBatch(notify: false, waitForPersistence: false);
     _service.syncGroupOrderFromLibrary();
-    // The startup batch already builds and caches the shallow card tree used
-    // by the library page. Build the nested tree lazily when a folder is
-    // expanded or a search actually needs it.
+    // Startup caches shallow cards; nested trees stay lazy until requested.
     _syncStateSlice(isInitialized: true);
   }
 

@@ -12,6 +12,7 @@ import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/presentation/app_presentation_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/core/media/path_matcher.dart';
 import 'package:doujin_audio/core/media/subtitle_parser.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/features/player/application/playback_subtitle_service.dart';
@@ -2631,14 +2632,14 @@ void main() {
 
       final track = testMusicTrack(
         name: 'Selection track',
-        path: '/library/selection/track.mp3',
-        groupKey: '/library/selection',
+        path: PathMatcher.normalize('/library/selection/track.mp3'),
+        groupKey: PathMatcher.normalize('/library/selection'),
         groupTitle: 'Selection work',
       );
       final queueTrack = testMusicTrack(
         name: 'Queue selection track',
-        path: '/library/selection/queue.mp3',
-        groupKey: '/library/selection/queue',
+        path: PathMatcher.normalize('/library/selection/queue.mp3'),
+        groupKey: PathMatcher.normalize('/library/selection/queue'),
         groupTitle: 'Queue selection work',
       );
       fixture.runtimeGraph.library.addTracks(
@@ -2675,7 +2676,7 @@ void main() {
       );
 
       await tester.pumpWidget(fixture.build(const PlaylistTab()));
-      final trackTitle = find.text('track');
+      final trackTitle = find.text(track.displayName);
       final queueTitle = find.text('Selection queue');
       await pumpUntilFound(tester, trackTitle);
       await pumpUntilFound(tester, queueTitle);

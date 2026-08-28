@@ -11,6 +11,12 @@ import java.io.FileOutputStream
 import java.util.ArrayDeque
 import java.util.Locale
 
+internal fun coverBridgeCacheKey(
+    sourceKey: String,
+    modifiedAtMs: Long?,
+    sizeBytes: Long?
+): String = "$sourceKey|${modifiedAtMs ?: 0L}|${sizeBytes ?: 0L}|v2"
+
 internal class CoverArtworkOperations(
     private val context: Context,
     private val storage: DocumentStorageOperations,
@@ -76,11 +82,33 @@ internal class CoverArtworkOperations(
     }
 
     internal fun cacheDocument(file: DocumentFile, cacheKey: String): String? =
-        cacheUri(file.uri, file.name.orEmpty(), cacheKey)
+        cacheUri(
+            file.uri,
+            file.name.orEmpty(),
+            cacheKey,
+            runCatching(file::lastModified).getOrNull(),
+            runCatching(file::length).getOrNull()
+        )
 
-    internal fun cacheUri(uri: Uri, name: String, cacheKey: String): String? {
+    internal fun cacheUri(
+        uri: Uri,
+        name: String,
+        cacheKey: String,
+        modifiedAtMs: Long? = null,
+        sizeBytes: Long? = null
+    ): String? {
         val extension = name.substringAfterLast('.', "").ifBlank { "img" }
-        val output = File(coverDirectory(), "cover_${kotlin.math.abs(cacheKey.hashCode())}.$extension")
+        val document = if (modifiedAtMs == null || sizeBytes == null) {
+            runCatching { DocumentFile.fromSingleUri(context, uri) }.getOrNull()
+        } else {
+            null
+        }
+        val versionedKey = coverBridgeCacheKey(
+            cacheKey,
+            modifiedAtMs ?: runCatching { document?.lastModified() }.getOrNull(),
+            sizeBytes ?: runCatching { document?.length() }.getOrNull()
+        )
+        val output = File(coverDirectory(), "cover_${kotlin.math.abs(versionedKey.hashCode())}.$extension")
         if (output.exists() && output.length() > 0L) {
             cachePolicy.touch(output)
             return output.absolutePath
@@ -104,7 +132,12 @@ internal class CoverArtworkOperations(
             .filter { it.isFile && isImage(it.name, null) }
             .minWithOrNull(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
             ?: return null
-        val output = File(coverDirectory(), "cover_${kotlin.math.abs(cacheKey.hashCode())}.jpg")
+        val versionedKey = coverBridgeCacheKey(
+            "$cacheKey|${candidate.absolutePath}",
+            candidate.lastModified(),
+            candidate.length()
+        )
+        val output = File(coverDirectory(), "cover_${kotlin.math.abs(versionedKey.hashCode())}.jpg")
         if (output.exists() && output.length() > 0L) {
             cachePolicy.touch(output)
             return output.absolutePath
@@ -132,7 +165,12 @@ internal class CoverArtworkOperations(
             .sortedWith(compareBy<File>({ priority(it.name) }, { it.absolutePath.lowercase(Locale.US) }))
             .mapNotNull { file ->
                 val relative = file.relativeToOrNull(root)?.invariantSeparatorsPath ?: file.name
-                val output = File(coverDirectory(), "cover_${kotlin.math.abs("$cacheKey|$relative".hashCode())}.jpg")
+                val versionedKey = coverBridgeCacheKey(
+                    "$cacheKey|$relative",
+                    file.lastModified(),
+                    file.length()
+                )
+                val output = File(coverDirectory(), "cover_${kotlin.math.abs(versionedKey.hashCode())}.jpg")
                 try {
                     if (!output.exists() || output.length() <= 0L) file.copyTo(output, overwrite = true)
                     cachePolicy.touch(output)

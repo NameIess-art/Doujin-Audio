@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/core/media/cover_image_format.dart';
 import 'package:doujin_audio/features/settings/application/app_cache_service.dart';
 
 void main() {
@@ -172,7 +173,7 @@ void main() {
   });
 
   test(
-    'persistent remote covers are only removed by explicit cache clearing',
+    'persistent covers are excluded from limits and removed by manual clear',
     () async {
       const channel = MethodChannel('plugins.flutter.io/path_provider');
       final tempDirectory = await Directory.systemTemp.createTemp(
@@ -207,22 +208,34 @@ void main() {
       await AppCacheService.setMaxCacheBytes(5);
       final coverDirectory = Directory(
         '${supportDirectory.path}${Platform.pathSeparator}'
-        '$persistentRemoteCoverCacheDirectoryName',
+        '$legacyRemoteCoverCacheDirectoryName',
       );
       await coverDirectory.create(recursive: true);
       final cover = File(
         '${coverDirectory.path}${Platform.pathSeparator}cover.image',
       );
       await cover.writeAsBytes(List<int>.filled(12, 1));
+      final storeDirectory = Directory(
+        '${supportDirectory.path}${Platform.pathSeparator}'
+        '$coverArtworkStoreDirectoryName${Platform.pathSeparator}generated',
+      );
+      await storeDirectory.create(recursive: true);
+      final persistedCover = File(
+        '${storeDirectory.path}${Platform.pathSeparator}cover.image',
+      );
+      await persistedCover.writeAsBytes(List<int>.filled(13, 1));
 
       await AppCacheService.enforceLimit();
 
       expect(await cover.exists(), isTrue);
-      expect(await AppCacheService.estimateDartCacheBytes(), 12);
+      expect(await persistedCover.exists(), isTrue);
+      expect(await AppCacheService.estimateDartCacheBytes(), 25);
+      expect(await AppCacheService.estimatePersistentCoverCacheBytes(), 13);
 
       await AppCacheService.clearAllCaches();
 
       expect(await cover.exists(), isFalse);
+      expect(await persistedCover.exists(), isFalse);
     },
   );
 }

@@ -570,7 +570,7 @@ const Map<String, String> appLanguageJa = {
       'このアプリが作成したキャッシュを削除します。ライブラリの元ファイルは削除されません。続行しますか？',
   'app_cache_cleaned': '{size} のキャッシュファイルを削除しました。',
   'app_cache_none': '削除できるアプリキャッシュはありません。',
-  'max_cache_size': 'キャッシュ上限',
+  'max_cache_size': '一時キャッシュ上限',
   'check': '確認',
   'check_updates': '更新を確認',
   'auto_check_updates': '更新を自動チェック',

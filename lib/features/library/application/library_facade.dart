@@ -163,6 +163,7 @@ final class LibraryFacade implements LibraryCatalog {
     waitForUiIdle: _waitForContinuousUiIdle,
     cleanupOrphanedImports: (retainedPaths) =>
         AppCacheService.cleanupOrphanedPersistentImports(retainedPaths),
+    migrateCoverCache: _migrateCoverCacheOnce,
     ensureEntries: _ensureEntriesForLoadedTracks,
     migrateAudioDetails: _importAudioDetailDocumentsOnce,
     backfillDurations: _metadataCoordinator.backfillMissingDurations,
@@ -170,6 +171,7 @@ final class LibraryFacade implements LibraryCatalog {
 
   static const _audioDetailDocumentImportKey =
       'audio_detail_document_read_only_import_v2';
+  static const _coverCacheMigrationKey = 'cover_artwork_cache_migration_v1';
 
   LibraryState get state => _service.slice.state;
   Stream<LibraryState> get states => _service.slice.stream;
@@ -1259,6 +1261,20 @@ final class LibraryFacade implements LibraryCatalog {
     await importAudioDetailBackups();
     if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
     await databaseRepository.saveAppSetting(_audioDetailDocumentImportKey, '1');
+  }
+
+  Future<void> _migrateCoverCacheOnce(int epoch) async {
+    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
+    final completed = await databaseRepository.loadAppSetting(
+      _coverCacheMigrationKey,
+    );
+    if (completed == '1') return;
+    await coverArtworkCacheService.migrateLegacyCaches(
+      shouldCancel: () =>
+          _disposed || !_startupMaintenanceCoordinator.isCurrent(epoch),
+    );
+    if (_disposed || !_startupMaintenanceCoordinator.isCurrent(epoch)) return;
+    await databaseRepository.saveAppSetting(_coverCacheMigrationKey, '1');
   }
 
   void _syncStateSlice({bool? isInitialized}) {

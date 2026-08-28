@@ -629,7 +629,7 @@ const Map<String, String> appLanguageEn = {
       'This clears cache files created by the app. Library source files will not be deleted. Continue?',
   'app_cache_cleaned': 'Cleared {size} of cached files.',
   'app_cache_none': 'No app cache to clear.',
-  'max_cache_size': 'Cache limit',
+  'max_cache_size': 'Temporary cache limit',
   'check': 'Check',
   'check_updates': 'Check for updates',
   'auto_check_updates': 'Auto-check updates',

@@ -559,7 +559,7 @@ const Map<String, String> appLanguageZh = {
   'clear_app_cache_confirm': '将清理当前应用产生的缓存文件，不会删除音乐库源文件。是否继续？',
   'app_cache_cleaned': '已清理 {size} 缓存。',
   'app_cache_none': '没有可清理的应用缓存。',
-  'max_cache_size': '缓存上限',
+  'max_cache_size': '临时缓存上限',
   'check': '检查',
   'check_updates': '检查更新',
   'auto_check_updates': '自动检查更新',

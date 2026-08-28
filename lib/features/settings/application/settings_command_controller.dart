@@ -1,3 +1,5 @@
+import 'package:flutter/painting.dart';
+
 import '../../library/application/cover_image_cache_policy.dart';
 import '../../library/application/library_facade.dart';
 import '../../player/application/notification_facade.dart';
@@ -14,15 +16,19 @@ final class SettingsCommandController {
     required PlaybackFacade playback,
     required NotificationFacade notifications,
     LibraryFacade? library,
+    Future<int> Function()? clearApplicationCacheFiles,
   }) : _settings = settings,
        _playback = playback,
        _notifications = notifications,
-       _library = library;
+       _library = library,
+       _clearApplicationCacheFiles =
+           clearApplicationCacheFiles ?? AppCacheService.clearAllCaches;
 
   final SettingsRepository _settings;
   final PlaybackFacade _playback;
   final NotificationFacade _notifications;
   final LibraryFacade? _library;
+  final Future<int> Function() _clearApplicationCacheFiles;
 
   SettingsRepository get settings => _settings;
 
@@ -53,6 +59,16 @@ final class SettingsCommandController {
     if (_settings.maxCacheBytes == normalized) return;
     await AppCacheService.setMaxCacheBytes(normalized);
     await _settings.setMaxCacheBytes(normalized);
+  }
+
+  Future<int> clearApplicationCache() async {
+    final deletedBytes = await _clearApplicationCacheFiles();
+    await _library?.coverArtworkCacheService.clearPersistentCache();
+    PaintingBinding.instance.imageCache
+      ..clear()
+      ..clearLiveImages();
+    _library?.invalidateCoverArtwork();
+    return deletedBytes;
   }
 
   Future<void> setAudioDeviceDisconnectBehavior(

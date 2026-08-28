@@ -1,6 +1,7 @@
 import 'package:mime/mime.dart';
 
 const int maxCoverFileBytes = 8 * 1024 * 1024;
+const String coverArtworkStoreDirectoryName = 'cover_artwork_v1';
 const Set<String> supportedCoverMimeTypes = <String>{
   'image/jpeg',
   'image/png',

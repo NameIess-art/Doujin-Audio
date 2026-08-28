@@ -6,8 +6,9 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/platform/file_cache_platform_gateway.dart';
+import '../../../core/media/cover_image_format.dart';
 
-const String persistentRemoteCoverCacheDirectoryName = 'remote_covers';
+const String legacyRemoteCoverCacheDirectoryName = 'remote_covers';
 
 class AppCacheService {
   static const int defaultMaxCacheBytes = 300 * 1024 * 1024;
@@ -104,6 +105,17 @@ class AppCacheService {
       }
     }
     return totalBytes;
+  }
+
+  static Future<int> estimatePersistentCoverCacheBytes() async {
+    try {
+      final supportDir = await getApplicationSupportDirectory();
+      return _directoryBytes(
+        Directory(path.join(supportDir.path, coverArtworkStoreDirectoryName)),
+      );
+    } catch (_) {
+      return 0;
+    }
   }
 
   static Future<int> cleanupOrphanedPersistentImports(
@@ -217,6 +229,7 @@ class AppCacheService {
       roots.add(Directory(path.join(tempDir.path, 'embedded_covers')));
       roots.add(Directory(path.join(tempDir.path, 'notification_covers')));
       roots.add(Directory(path.join(tempDir.path, 'video_frames')));
+      roots.add(Directory(path.join(tempDir.path, 'doujin_audio_covers')));
       roots.add(Directory(path.join(tempDir.path, 'exports')));
     } catch (_) {
       // Temporary cache roots are optional and may be unavailable on startup.
@@ -226,8 +239,11 @@ class AppCacheService {
         final supportDir = await getApplicationSupportDirectory();
         roots.add(
           Directory(
-            path.join(supportDir.path, persistentRemoteCoverCacheDirectoryName),
+            path.join(supportDir.path, legacyRemoteCoverCacheDirectoryName),
           ),
+        );
+        roots.add(
+          Directory(path.join(supportDir.path, coverArtworkStoreDirectoryName)),
         );
       } catch (_) {
         // Persistent cover cache may be unavailable during early startup.
@@ -246,6 +262,23 @@ class AppCacheService {
       deletedBytes += await _deleteEntity(entity);
     }
     return deletedBytes;
+  }
+
+  static Future<int> _directoryBytes(Directory directory) async {
+    if (!await directory.exists()) return 0;
+    var bytes = 0;
+    await for (final entity in directory.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (entity is! File) continue;
+      try {
+        bytes += await entity.length();
+      } catch (_) {
+        // Cache accounting is best effort when entries change mid-scan.
+      }
+    }
+    return bytes;
   }
 
   static Future<int> _deleteEntity(FileSystemEntity entity) async {

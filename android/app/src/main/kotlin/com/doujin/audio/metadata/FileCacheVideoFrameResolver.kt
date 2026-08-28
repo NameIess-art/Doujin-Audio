@@ -12,6 +12,9 @@ import kotlin.math.roundToInt
 
 internal const val VIDEO_FRAME_MAX_EDGE_PX = 1200
 
+internal fun videoFrameCacheKey(trackPath: String, modifiedAtMs: Long?): String =
+    "$trackPath|${modifiedAtMs ?: 0L}|v3"
+
 internal data class VideoFrameSize(
     val width: Int,
     val height: Int
@@ -56,14 +59,7 @@ internal class FileCacheVideoFrameResolver(
         if (!coverCacheDir.exists()) {
             coverCacheDir.mkdirs()
         }
-        val cacheKey = buildString {
-            append(trackPath)
-            if (modifiedAtMs != null) {
-                append('|')
-                append(modifiedAtMs)
-            }
-            append("|v3")
-        }
+        val cacheKey = videoFrameCacheKey(trackPath, modifiedAtMs)
         val outputFile = File(
             coverCacheDir,
             "video_frame_${abs(cacheKey.hashCode())}.jpg"

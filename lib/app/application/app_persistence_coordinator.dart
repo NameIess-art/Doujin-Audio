@@ -86,6 +86,7 @@ final class AppPersistenceCoordinator implements PersistedStateReloader {
       }
 
       await Future.wait<void>(<Future<void>>[
+        _library.coverArtworkCacheService.initialize(),
         _library.loadPersistedState(),
         _timer.loadPersistedState(),
       ]);

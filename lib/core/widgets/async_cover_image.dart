@@ -800,6 +800,8 @@ class RetryingFileImage extends ConsumerWidget {
       retryDelay: retryDelay,
       maxRetryAttempts: maxRetryAttempts,
       displayMode: effectiveDisplayMode,
+      deferLoadDuringInteraction: false,
+      showPlaceholderWhileDecoding: false,
     );
   }
 }
@@ -820,6 +822,8 @@ class RetryingImage extends StatefulWidget {
     this.retryDelay = const Duration(seconds: 2),
     this.maxRetryAttempts = 12,
     this.displayMode = CoverImageDisplayMode.fill,
+    this.deferLoadDuringInteraction = true,
+    this.showPlaceholderWhileDecoding = true,
   });
 
   final Object retryKey;
@@ -835,6 +839,8 @@ class RetryingImage extends StatefulWidget {
   final Duration retryDelay;
   final int maxRetryAttempts;
   final CoverImageDisplayMode displayMode;
+  final bool deferLoadDuringInteraction;
+  final bool showPlaceholderWhileDecoding;
 
   @override
   State<RetryingImage> createState() => _RetryingImageState();
@@ -853,7 +859,8 @@ class _RetryingImageState extends State<RetryingImage> {
   @override
   void initState() {
     super.initState();
-    _loadEnabled = !_interaction.isInteracting;
+    _loadEnabled =
+        !widget.deferLoadDuringInteraction || !_interaction.isInteracting;
     _interaction.addListener(_handleInteractionChanged);
   }
 
@@ -864,7 +871,8 @@ class _RetryingImageState extends State<RetryingImage> {
       _retryTimer?.cancel();
       _interaction.cancelCommit(_retryCommitKey);
       _retryAttempt = 0;
-      _loadEnabled = !_interaction.isInteracting;
+      _loadEnabled =
+          !widget.deferLoadDuringInteraction || !_interaction.isInteracting;
       _cacheCheckKey = null;
     }
   }
@@ -879,7 +887,12 @@ class _RetryingImageState extends State<RetryingImage> {
   }
 
   void _handleInteractionChanged() {
-    if (!mounted || _interaction.isInteracting || _loadEnabled) return;
+    if (!widget.deferLoadDuringInteraction ||
+        !mounted ||
+        _interaction.isInteracting ||
+        _loadEnabled) {
+      return;
+    }
     setState(() => _loadEnabled = true);
   }
 
@@ -968,7 +981,10 @@ class _RetryingImageState extends State<RetryingImage> {
         gaplessPlayback: widget.gaplessPlayback,
         frameBuilder: primary
             ? (context, child, frame, wasSynchronouslyLoaded) {
-                if (wasSynchronouslyLoaded) return child;
+                if (wasSynchronouslyLoaded ||
+                    !widget.showPlaceholderWhileDecoding) {
+                  return child;
+                }
                 final loadingBuilder = widget.loadingBuilder;
                 return PlaceholderContentTransition(
                   showPlaceholder: frame == null,

@@ -97,6 +97,7 @@ void main() {
       final coordinator = LibraryStartupMaintenanceCoordinator(
         waitForUiIdle: (_) async => true,
         cleanupOrphanedImports: (_) async => calls.add('cleanup'),
+        migrateCoverCache: (_) async => calls.add('covers'),
         ensureEntries: (_) async => calls.add('entries'),
         migrateAudioDetails: (_) async => calls.add('details'),
         backfillDurations: () async {
@@ -109,7 +110,13 @@ void main() {
       await completed.future;
       await coordinator.dispose();
 
-      expect(calls, <String>['cleanup', 'entries', 'details', 'durations']);
+      expect(calls, <String>[
+        'cleanup',
+        'covers',
+        'entries',
+        'details',
+        'durations',
+      ]);
     },
   );
 }

@@ -641,9 +641,11 @@ void main() {
       ),
     );
 
-    expect(
-      tester.widget<RetryingImage>(find.byType(RetryingImage)).displayMode,
-      CoverImageDisplayMode.fill,
+    final retryingImage = tester.widget<RetryingImage>(
+      find.byType(RetryingImage),
     );
+    expect(retryingImage.displayMode, CoverImageDisplayMode.fill);
+    expect(retryingImage.deferLoadDuringInteraction, isFalse);
+    expect(retryingImage.showPlaceholderWhileDecoding, isFalse);
   });
 }

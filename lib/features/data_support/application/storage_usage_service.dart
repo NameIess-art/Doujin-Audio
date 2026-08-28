@@ -1,6 +1,7 @@
 import '../../../core/media/music_track.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
+import '../../settings/application/app_cache_service.dart';
 
 class StorageUsageSnapshot {
   const StorageUsageSnapshot({
@@ -34,11 +35,16 @@ class StorageUsageService {
   const StorageUsageService({
     required FileCachePlatformGateway fileCacheGateway,
     required List<MusicTrack> Function() libraryTracks,
+    Future<int> Function()? persistentCoverCacheBytes,
   }) : _fileCacheGateway = fileCacheGateway,
-       _libraryTracks = libraryTracks;
+       _libraryTracks = libraryTracks,
+       _persistentCoverCacheBytes =
+           persistentCoverCacheBytes ??
+           AppCacheService.estimatePersistentCoverCacheBytes;
 
   final FileCachePlatformGateway _fileCacheGateway;
   final List<MusicTrack> Function() _libraryTracks;
+  final Future<int> Function() _persistentCoverCacheBytes;
 
   Future<StorageUsageSnapshot> load() async {
     final platformUsage = await _fileCacheGateway.readStorageUsage();
@@ -54,10 +60,12 @@ class StorageUsageService {
     final usedBytes = totalBytes - availableBytes;
     final audioLibraryBytes = _sumLocalAudioBytes().clamp(0, usedBytes);
     final remainingAfterAudio = usedBytes - audioLibraryBytes;
-    final applicationCacheBytes = platformUsage.cacheBytes.clamp(
-      0,
-      remainingAfterAudio,
-    );
+    final persistentCoverBytes = await _persistentCoverCacheBytes();
+    final applicationCacheBytes =
+        (platformUsage.cacheBytes + persistentCoverBytes).clamp(
+          0,
+          remainingAfterAudio,
+        );
     final otherUsedBytes =
         usedBytes - audioLibraryBytes - applicationCacheBytes;
 

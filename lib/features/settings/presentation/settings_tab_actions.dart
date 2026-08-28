@@ -20,7 +20,8 @@ extension _SettingsTabActions on _SettingsTabState {
     final deletedBytes = await _runSettingsOperation<int>(
       scope: UiOperationScope.settingsCache,
       labelKey: 'loading_dot',
-      task: (_) => AppCacheService.clearAllCaches(),
+      task: (_) =>
+          ref.read(settingsCommandControllerProvider).clearApplicationCache(),
     );
     if (!context.mounted) return;
     if (deletedBytes > 0) {

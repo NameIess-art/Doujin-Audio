@@ -439,57 +439,6 @@ void main() {
     expect(cache.resolvedForRemoteCover(url), replacementCover.path);
   });
 
-  test('remote cover cache hit refreshes file recency', () async {
-    final cover = await _temporaryCoverFile('remote_touch');
-    final oldModified = DateTime(2020);
-    var downloads = 0;
-    final cache = CoverArtworkCacheService(
-      libraryService: LibraryService(),
-      remoteCoverDownloader: (_) async {
-        downloads += 1;
-        return cover.path;
-      },
-    );
-    const url = 'https://example.com/touched-cover.jpg';
-
-    await cache.futureForRemoteCover(url);
-    await cover.setLastModified(oldModified);
-    await cache.futureForRemoteCover(url);
-
-    expect(downloads, 1);
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    expect((await cover.lastModified()).isAfter(oldModified), isTrue);
-  });
-
-  test('remote cover recency touch is throttled for five minutes', () async {
-    final cover = await _temporaryCoverFile('remote_touch_throttle');
-    final oldModified = DateTime(2020);
-    var now = DateTime(2026, 1, 1, 12);
-    final cache = CoverArtworkCacheService(
-      libraryService: LibraryService(),
-      now: () => now,
-      remoteCoverDownloader: (_) async => cover.path,
-    );
-    addTearDown(cache.dispose);
-    const url = 'https://example.com/throttled-cover.jpg';
-
-    await cache.futureForRemoteCover(url);
-    await cover.setLastModified(oldModified);
-    await cache.futureForRemoteCover(url);
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    expect((await cover.lastModified()).isAfter(oldModified), isTrue);
-
-    await cover.setLastModified(oldModified);
-    await cache.futureForRemoteCover(url);
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    expect(await cover.lastModified(), oldModified);
-
-    now = now.add(const Duration(minutes: 5));
-    await cache.futureForRemoteCover(url);
-    await Future<void>.delayed(const Duration(milliseconds: 100));
-    expect((await cover.lastModified()).isAfter(oldModified), isTrue);
-  });
-
   test('cache trim target reserves ten percent for new writes', () {
     expect(applicationCacheTrimTargetBytes(100), 90);
     expect(applicationCacheTrimTargetBytes(1), 1);

@@ -17,6 +17,8 @@ import 'package:doujin_audio/features/settings/application/settings_command_cont
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   test(
     'custom EQ preset is published and persisted by settings owner',
     () async {
@@ -130,6 +132,33 @@ void main() {
 
     expect(settings.audioFocusStrategy, AudioFocusStrategy.mixWithOthers);
     expect(native.requestAudioFocus, isFalse);
+  });
+
+  test('application cache clearing is coordinated by the controller', () async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final settings = SettingsRepository()..syncSlice(isInitialized: true);
+    final playback = PlaybackFacade.create(
+      databaseRepository: TestPersistenceRepository(),
+    );
+    final notifications = NotificationFacade.create(
+      service: PlaybackNotificationService(),
+    );
+    var clears = 0;
+    final controller = SettingsCommandController(
+      settings: settings,
+      playback: playback,
+      notifications: notifications,
+      clearApplicationCacheFiles: () async {
+        clears++;
+        return 17;
+      },
+    );
+    addTearDown(settings.dispose);
+    addTearDown(playback.dispose);
+    addTearDown(notifications.dispose);
+
+    expect(await controller.clearApplicationCache(), 17);
+    expect(clears, 1);
   });
 }
 

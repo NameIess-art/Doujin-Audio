@@ -8,6 +8,7 @@ typedef LibraryPersistentImportCleanup =
     Future<void> Function(List<String> retainedPaths);
 typedef LibraryEntryMaintenance = Future<void> Function(int epoch);
 typedef LibraryDurationMaintenance = Future<void> Function();
+typedef LibraryCoverCacheMigration = Future<void> Function(int epoch);
 
 /// Coordinates deferred startup maintenance so it cannot race with restore or
 /// runtime disposal.
@@ -16,11 +17,13 @@ final class LibraryStartupMaintenanceCoordinator {
     required LibraryMaintenanceIdleWaiter waitForUiIdle,
     required LibraryPersistentImportCleanup cleanupOrphanedImports,
     required LibraryEntryMaintenance ensureEntries,
+    LibraryCoverCacheMigration? migrateCoverCache,
     LibraryEntryMaintenance? migrateAudioDetails,
     LibraryDurationMaintenance? backfillDurations,
   }) : _waitForUiIdle = waitForUiIdle,
        _cleanupOrphanedImports = cleanupOrphanedImports,
        _ensureEntries = ensureEntries,
+       _migrateCoverCache = migrateCoverCache,
        _migrateAudioDetails = migrateAudioDetails,
        _backfillDurations = backfillDurations;
 
@@ -29,6 +32,7 @@ final class LibraryStartupMaintenanceCoordinator {
   final LibraryMaintenanceIdleWaiter _waitForUiIdle;
   final LibraryPersistentImportCleanup _cleanupOrphanedImports;
   final LibraryEntryMaintenance _ensureEntries;
+  final LibraryCoverCacheMigration? _migrateCoverCache;
   final LibraryEntryMaintenance? _migrateAudioDetails;
   final LibraryDurationMaintenance? _backfillDurations;
   Future<void>? _task;
@@ -71,6 +75,8 @@ final class LibraryStartupMaintenanceCoordinator {
         () async {
           if (!_isCurrent(epoch)) return;
           await _cleanupOrphanedImports(retainedPaths);
+          if (!_isCurrent(epoch)) return;
+          await _migrateCoverCache?.call(epoch);
           if (!_isCurrent(epoch)) return;
           await _ensureEntries(epoch);
           if (!_isCurrent(epoch)) return;

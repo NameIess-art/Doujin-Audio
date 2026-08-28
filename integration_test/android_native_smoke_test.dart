@@ -76,43 +76,52 @@ void main() {
                   const Duration(milliseconds: 300),
           'native playback did not advance',
         );
-        final session = playback.state.activeSessions.single;
+        final sessionId = playback.state.activeSessions.single.id;
 
-        await playback.toggleSessionPlayPause(session.id);
+        await playback.toggleSessionPlayPause(sessionId);
         await _waitFor(
           tester,
-          () => !session.effectivePlaying,
+          () =>
+              playback.state.activeSessions
+                  .where((s) => s.id == sessionId)
+                  .every((s) => !s.effectivePlaying),
           'native playback did not pause',
         );
-        var nativeSession = await _nativeSession(playback, session.id);
+        var nativeSession = await _nativeSession(playback, sessionId);
         expect(nativeSession.playWhenReady, isFalse);
 
         const seekPosition = Duration(seconds: 2);
-        await playback.seekSession(session.id, seekPosition);
-        nativeSession = await _nativeSession(playback, session.id);
+        await playback.seekSession(sessionId, seekPosition);
+        nativeSession = await _nativeSession(playback, sessionId);
         expect(
           nativeSession.position.inMilliseconds,
           inInclusiveRange(1500, 2500),
         );
 
-        await playback.toggleSessionPlayPause(session.id);
+        await playback.toggleSessionPlayPause(sessionId);
         await _waitFor(
           tester,
-          () => session.position > const Duration(milliseconds: 2300),
+          () =>
+              playback.state.activeSessions
+                  .where((s) => s.id == sessionId)
+                  .any((s) => s.position > const Duration(milliseconds: 2300)),
           'native playback did not resume after seek',
         );
 
-        final beforeBackground = await _nativeSession(playback, session.id);
+        final beforeBackground = await _nativeSession(playback, sessionId);
         _transitionToPaused(tester);
         await Future<void>.delayed(const Duration(milliseconds: 500));
-        nativeSession = await _nativeSession(playback, session.id);
+        nativeSession = await _nativeSession(playback, sessionId);
         expect(nativeSession.playWhenReady, isTrue);
         expect(nativeSession.position, greaterThan(beforeBackground.position));
 
         _transitionToResumed(tester);
         await _waitFor(
           tester,
-          () => session.position > nativeSession.position,
+          () =>
+              playback.state.activeSessions
+                  .where((s) => s.id == sessionId)
+                  .any((s) => s.position > nativeSession.position),
           'playback did not reconcile after foreground resume',
         );
       } finally {

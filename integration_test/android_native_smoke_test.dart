@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -72,11 +73,17 @@ void main() {
           tester,
           () =>
               playback.state.activeSessions.length == 1 &&
-              playback.state.activeSessions.single.position >
-                  const Duration(milliseconds: 300),
-          'native playback did not advance',
+              playback.state.activeSessions.single.effectivePlaying,
+          'native playback did not start',
         );
         final sessionId = playback.state.activeSessions.single.id;
+        await _waitFor(
+          tester,
+          () async =>
+              (await _nativeSession(playback, sessionId)).position >
+              const Duration(milliseconds: 300),
+          'native playback did not advance',
+        );
 
         await playback.toggleSessionPlayPause(sessionId);
         await _waitFor(
@@ -104,8 +111,15 @@ void main() {
           () =>
               playback.state.activeSessions
                   .where((s) => s.id == sessionId)
-                  .any((s) => s.position > const Duration(milliseconds: 2300)),
+                  .any((s) => s.effectivePlaying),
           'native playback did not resume after seek',
+        );
+        await _waitFor(
+          tester,
+          () async =>
+              (await _nativeSession(playback, sessionId)).position >
+              const Duration(milliseconds: 2300),
+          'native playback position did not advance after seek',
         );
 
         final beforeBackground = await _nativeSession(playback, sessionId);
@@ -141,19 +155,15 @@ void _transitionToPaused(WidgetTester tester) {
   switch (tester.binding.lifecycleState) {
     case AppLifecycleState.resumed:
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     case AppLifecycleState.inactive:
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
-    case AppLifecycleState.hidden:
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     case AppLifecycleState.paused:
+    case AppLifecycleState.hidden:
       return;
     case AppLifecycleState.detached:
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
-      _transitionToPaused(tester);
     case null:
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
   }
 }
@@ -161,9 +171,6 @@ void _transitionToPaused(WidgetTester tester) {
 void _transitionToResumed(WidgetTester tester) {
   switch (tester.binding.lifecycleState) {
     case AppLifecycleState.paused:
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
-      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     case AppLifecycleState.hidden:
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
@@ -179,15 +186,15 @@ void _transitionToResumed(WidgetTester tester) {
 
 Future<void> _waitFor(
   WidgetTester tester,
-  bool Function() condition,
+  FutureOr<bool> Function() condition,
   String failureMessage,
 ) async {
   final deadline = DateTime.now().add(const Duration(seconds: 20));
-  while (!condition() && DateTime.now().isBefore(deadline)) {
+  while (!await condition() && DateTime.now().isBefore(deadline)) {
     await Future<void>.delayed(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
   }
-  if (!condition()) throw TestFailure(failureMessage);
+  if (!await condition()) throw TestFailure(failureMessage);
 }
 
 Future<NativePlaybackSnapshot> _nativeSession(

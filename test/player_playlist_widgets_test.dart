@@ -2675,10 +2675,12 @@ void main() {
       );
 
       await tester.pumpWidget(fixture.build(const PlaylistTab()));
-      await tester.pumpAndSettle();
-
       final trackTitle = find.text('track');
       final queueTitle = find.text('Selection queue');
+      await pumpUntilFound(tester, trackTitle);
+      await pumpUntilFound(tester, queueTitle);
+      await tester.pumpAndSettle();
+
       final trackTitleX = tester.getTopLeft(trackTitle).dx;
       final queueTitleX = tester.getTopLeft(queueTitle).dx;
       const batchHeaderKey = ValueKey<String>(

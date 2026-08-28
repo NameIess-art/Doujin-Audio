@@ -1881,6 +1881,8 @@ void main() {
       );
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       const bytes = <int>[1, 2, 3, 4];
+      final retryResponseStarted = Completer<void>();
+      final releaseRetryResponse = Completer<void>();
       var retryRequests = 0;
       var siblingRequests = 0;
       unawaited(
@@ -1892,6 +1894,8 @@ void main() {
               await request.response.close();
               return;
             }
+            retryResponseStarted.complete();
+            await releaseRetryResponse.future;
           } else {
             siblingRequests++;
           }
@@ -1925,6 +1929,14 @@ void main() {
           destinationRoot: tempDir.path,
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
         );
+        await _waitForFileRetryAttempt(manager, 1, 'retry.mp3', 1);
+        await retryResponseStarted.future.timeout(const Duration(seconds: 5));
+
+        final retryingTask = manager.getTask(1);
+        expect(retryingTask?.status, AsmrDownloadTaskStatus.downloading);
+        expect(retryingTask?.fileRetryAttempts, isEmpty);
+
+        releaseRetryResponse.complete();
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
         expect(retryRequests, 2);
@@ -1940,6 +1952,7 @@ void main() {
           bytes,
         );
       } finally {
+        if (!releaseRetryResponse.isCompleted) releaseRetryResponse.complete();
         manager.dispose();
         await server.close(force: true);
         if (await tempDir.exists()) await tempDir.delete(recursive: true);

@@ -317,6 +317,9 @@ extension AsmrDownloadTransferService on AsmrDownloadManager {
     try {
       for (var attempt = 0; ; attempt++) {
         _throwIfCancelled(workId);
+        if (attempt > 0) {
+          _setFileRetryAttempt(workId, item.relativePath, null);
+        }
         final result = await _downloadToTemporaryFileAttempt(
           item,
           workId: workId,

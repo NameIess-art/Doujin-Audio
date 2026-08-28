@@ -451,6 +451,95 @@ class PlaylistTab extends ConsumerStatefulWidget {
   ConsumerState<PlaylistTab> createState() => _PlaylistTabState();
 }
 
+class _PlaylistHeaderTransition extends StatelessWidget {
+  const _PlaylistHeaderTransition({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : kAppMotionFast;
+    return AnimatedSwitcher(
+      duration: duration,
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      layoutBuilder: (currentChild, previousChildren) {
+        return Stack(
+          alignment: Alignment.topLeft,
+          children: [...previousChildren, ?currentChild],
+        );
+      },
+      transitionBuilder: (child, animation) => buildAppFadeTransition(
+        context: context,
+        animation: animation,
+        child: child,
+      ),
+      child: child,
+    );
+  }
+}
+
+class _AnimatedHeaderLeading extends StatelessWidget {
+  const _AnimatedHeaderLeading({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: const Duration(milliseconds: 360),
+      curve: Curves.easeOutBack,
+      builder: (context, value, _) {
+        final scale = 0.4 + (0.6 * value);
+        final turns = (1.0 - value) * -0.25;
+        return Opacity(
+          opacity: value.clamp(0.0, 1.0),
+          child: Transform.scale(
+            scale: scale,
+            child: Transform.rotate(
+              angle: turns * 2 * 3.141592653589793,
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AnimatedHeaderAction extends StatelessWidget {
+  const _AnimatedHeaderAction({required this.child, this.delayIndex = 0});
+
+  final Widget child;
+  final int delayIndex;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.disableAnimationsOf(context)) return child;
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: 320 + delayIndex * 45),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, _) {
+        final scale = 0.5 + (0.5 * value);
+        return Opacity(
+          opacity: value.clamp(0.0, 1.0),
+          child: Transform.scale(scale: scale, child: child),
+        );
+      },
+    );
+  }
+}
+
+extension on Widget {
+  Widget _withPlaylistHeaderTransition() =>
+      _PlaylistHeaderTransition(child: this);
+}
+
 class _PlaylistTabState extends ConsumerState<PlaylistTab>
     with AutomaticKeepAliveClientMixin, MainTabStateMixin<PlaylistTab> {
   final ScrollController _scrollController = ScrollController();
@@ -481,8 +570,25 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     setState(() {
       if (_selectedSessionIds.contains(sessionId)) {
         _selectedSessionIds.remove(sessionId);
+        if (_selectedSessionIds.isEmpty) {
+          _isSelectionMode = false;
+        }
       } else {
         _selectedSessionIds.add(sessionId);
+      }
+    });
+  }
+
+  void _reconcileSelection(PlaylistStructureState structureState) {
+    if (!_isSelectionMode) return;
+    final availableSessionIds = structureState.entries
+        .map((entry) => entry.sessionId)
+        .toSet();
+    if (_selectedSessionIds.every(availableSessionIds.contains)) return;
+    setState(() {
+      _selectedSessionIds.retainAll(availableSessionIds);
+      if (_selectedSessionIds.isEmpty) {
+        _isSelectionMode = false;
       }
     });
   }
@@ -696,6 +802,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     final library = ref.read(libraryFacadeProvider);
     final paths = ref.read(audioPathCoordinatorProvider);
     final playback = ref.read(playbackFacadeProvider);
+    ref.listen(playlistStructureUiProvider, (_, next) {
+      if (mounted) _reconcileSelection(next);
+    });
     final structureState = _isActive
         ? ref.watch(playlistStructureUiProvider)
         : ref.read(playlistStructureUiProvider);
@@ -884,13 +993,16 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
                   return TopPageHeader(
                     key: const ValueKey('playlist_batch_selection_header'),
-                    leading: IconButton(
-                      key: const ValueKey('exit_selection_button'),
-                      onPressed: _exitSelectionMode,
-                      icon: const Icon(Icons.close_rounded),
-                      tooltip: i18n.tr('cancel'),
+                    leading: _AnimatedHeaderLeading(
+                      child: IconButton(
+                        key: const ValueKey('exit_selection_button'),
+                        onPressed: _exitSelectionMode,
+                        icon: const Icon(Icons.close_rounded),
+                        tooltip: i18n.tr('cancel'),
+                      ),
                     ),
                     title: count.toString(),
+                    titleWidget: AppRollingNumber(number: count),
                     padding: AppPageHeaderMetrics.mainTabPadding,
                     trailing: SizedBox(
                       height: 44,
@@ -898,32 +1010,42 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.end,
                         children: [
-                          IconButton(
-                            key: const ValueKey('batch_pause_button'),
-                            onPressed: isPauseEnabled
-                                ? _handleBatchPause
-                                : null,
-                            icon: const Icon(Icons.pause_rounded),
-                            tooltip: i18n.tr('pause'),
+                          _AnimatedHeaderAction(
+                            child: IconButton(
+                              key: const ValueKey('batch_pause_button'),
+                              onPressed: isPlayEnabled
+                                  ? _handleBatchPlay
+                                  : null,
+                              icon: const Icon(Icons.pause_rounded),
+                              tooltip: i18n.tr('play'),
+                            ),
                           ),
-                          IconButton(
-                            key: const ValueKey('batch_play_button'),
-                            onPressed: isPlayEnabled ? _handleBatchPlay : null,
-                            icon: const Icon(Icons.play_arrow_rounded),
-                            tooltip: i18n.tr('play'),
+                          _AnimatedHeaderAction(
+                            delayIndex: 1,
+                            child: IconButton(
+                              key: const ValueKey('batch_play_button'),
+                              onPressed: isPauseEnabled
+                                  ? _handleBatchPause
+                                  : null,
+                              icon: const Icon(Icons.play_arrow_rounded),
+                              tooltip: i18n.tr('pause'),
+                            ),
                           ),
-                          IconButton(
-                            key: const ValueKey('batch_remove_button'),
-                            onPressed: isRemoveEnabled
-                                ? _handleBatchRemove
-                                : null,
-                            icon: const Icon(Icons.delete_outline_rounded),
-                            tooltip: i18n.tr('remove'),
+                          _AnimatedHeaderAction(
+                            delayIndex: 2,
+                            child: IconButton(
+                              key: const ValueKey('batch_remove_button'),
+                              onPressed: isRemoveEnabled
+                                  ? _handleBatchRemove
+                                  : null,
+                              icon: const Icon(Icons.delete_outline_rounded),
+                              tooltip: i18n.tr('remove'),
+                            ),
                           ),
                         ],
                       ),
                     ),
-                  );
+                  )._withPlaylistHeaderTransition();
                 }
 
                 return TopPageHeader(
@@ -937,95 +1059,102 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        if (headerState.hasTimer)
-                          _TimerCountdownCapsule(
-                            remaining:
-                                headerState.timerRemaining ??
-                                headerState.timerDuration ??
-                                Duration.zero,
-                            active: headerState.timerActive,
-                            autoResumeAt: headerState.autoResumeAt,
-                            onTap: widget.onTimerTap,
-                          )
-                        else
-                          IconButton(
-                            onPressed: widget.onTimerTap,
-                            icon: const Icon(Icons.alarm_rounded),
-                            tooltip: i18n.tr('timer'),
-                          ),
-                        IconButton(
-                          key: const ValueKey<String>('playlist_sort_button'),
-                          onPressed: _openSortOptions,
-                          icon: const Icon(Icons.sort_rounded),
-                          tooltip: i18n.tr('sort_by'),
-                        ),
-                        UnifiedPopupMenuButton<String>(
-                          icon: Icons.more_horiz_rounded,
-                          tooltip: i18n.tr('more_actions'),
-                          entries: [
-                            UnifiedMenuEntry<String>.action(
-                              value: 'add_playback_queue',
-                              icon: Icons.playlist_add_rounded,
-                              label: i18n.tr('add_playback_queue'),
-                            ),
-                            const UnifiedMenuEntry<String>.divider(),
-                            UnifiedMenuEntry<String>.action(
-                              value: 'pause_all',
-                              icon: Icons.pause_circle_outline_rounded,
-                              label: i18n.tr('pause_all_sessions'),
-                              enabled: structureState.hasSessions,
-                            ),
-                            UnifiedMenuEntry<String>.action(
-                              value: 'clear_all',
-                              icon: Icons.delete_sweep_rounded,
-                              label: i18n.tr('clear_all_sessions'),
-                              destructive: true,
-                              enabled: structureState.hasSessions,
-                            ),
-                          ],
-                          onSelected: (value) async {
-                            if (value == 'add_playback_queue') {
-                              final queueCount = structureState.entries
-                                  .where((entry) => entry.isPlaybackQueue)
-                                  .length;
-                              ref
-                                  .read(playbackFacadeProvider)
-                                  .createPlaybackQueue(
-                                    i18n.tr('default_playback_queue_name', {
-                                      'number': queueCount + 1,
-                                    }),
-                                  );
-                            } else if (value == 'pause_all') {
-                              final paused = await ref
-                                  .read(playbackFacadeProvider)
-                                  .pauseAllSessions();
-                              if (!context.mounted) return;
-                              showAppSnackBar(
-                                context,
-                                i18n.tr(
-                                  paused
-                                      ? 'all_paused'
-                                      : 'operation_failed_retry',
+                        _AnimatedHeaderAction(
+                          child: headerState.hasTimer
+                              ? _TimerCountdownCapsule(
+                                  remaining:
+                                      headerState.timerRemaining ??
+                                      headerState.timerDuration ??
+                                      Duration.zero,
+                                  active: headerState.timerActive,
+                                  autoResumeAt: headerState.autoResumeAt,
+                                  onTap: widget.onTimerTap,
+                                )
+                              : IconButton(
+                                  onPressed: widget.onTimerTap,
+                                  icon: const Icon(Icons.alarm_rounded),
+                                  tooltip: i18n.tr('timer'),
                                 ),
-                                tone: paused
-                                    ? AppFeedbackTone.warning
-                                    : AppFeedbackTone.destructive,
-                                icon: paused
-                                    ? Icons.pause_circle_outline_rounded
-                                    : Icons.error_outline_rounded,
-                              );
-                            } else if (value == 'clear_all') {
-                              await _confirmClearAll(
-                                context,
-                                ref.read(playbackFacadeProvider),
-                              );
-                            }
-                          },
+                        ),
+                        _AnimatedHeaderAction(
+                          delayIndex: 1,
+                          child: IconButton(
+                            key: const ValueKey<String>('playlist_sort_button'),
+                            onPressed: _openSortOptions,
+                            icon: const Icon(Icons.sort_rounded),
+                            tooltip: i18n.tr('sort_by'),
+                          ),
+                        ),
+                        _AnimatedHeaderAction(
+                          delayIndex: 2,
+                          child: UnifiedPopupMenuButton<String>(
+                            icon: Icons.more_horiz_rounded,
+                            tooltip: i18n.tr('more_actions'),
+                            entries: [
+                              UnifiedMenuEntry<String>.action(
+                                value: 'add_playback_queue',
+                                icon: Icons.playlist_add_rounded,
+                                label: i18n.tr('add_playback_queue'),
+                              ),
+                              const UnifiedMenuEntry<String>.divider(),
+                              UnifiedMenuEntry<String>.action(
+                                value: 'pause_all',
+                                icon: Icons.pause_circle_outline_rounded,
+                                label: i18n.tr('pause_all_sessions'),
+                                enabled: structureState.hasSessions,
+                              ),
+                              UnifiedMenuEntry<String>.action(
+                                value: 'clear_all',
+                                icon: Icons.delete_sweep_rounded,
+                                label: i18n.tr('clear_all_sessions'),
+                                destructive: true,
+                                enabled: structureState.hasSessions,
+                              ),
+                            ],
+                            onSelected: (value) async {
+                              if (value == 'add_playback_queue') {
+                                final queueCount = structureState.entries
+                                    .where((entry) => entry.isPlaybackQueue)
+                                    .length;
+                                ref
+                                    .read(playbackFacadeProvider)
+                                    .createPlaybackQueue(
+                                      i18n.tr('default_playback_queue_name', {
+                                        'number': queueCount + 1,
+                                      }),
+                                    );
+                              } else if (value == 'pause_all') {
+                                final paused = await ref
+                                    .read(playbackFacadeProvider)
+                                    .pauseAllSessions();
+                                if (!context.mounted) return;
+                                showAppSnackBar(
+                                  context,
+                                  i18n.tr(
+                                    paused
+                                        ? 'all_paused'
+                                        : 'operation_failed_retry',
+                                  ),
+                                  tone: paused
+                                      ? AppFeedbackTone.warning
+                                      : AppFeedbackTone.destructive,
+                                  icon: paused
+                                      ? Icons.pause_circle_outline_rounded
+                                      : Icons.error_outline_rounded,
+                                );
+                              } else if (value == 'clear_all') {
+                                await _confirmClearAll(
+                                  context,
+                                  ref.read(playbackFacadeProvider),
+                                );
+                              }
+                            },
+                          ),
                         ),
                       ],
                     ),
                   ),
-                );
+                )._withPlaylistHeaderTransition();
               },
             ),
           ),

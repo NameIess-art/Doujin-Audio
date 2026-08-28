@@ -111,16 +111,16 @@ void main() {
 
         expect(gateway.ensureFolderCount, 2);
         expect(gateway.ensuredRelativePaths.toSet(), hasLength(2));
-        expect(gateway.ensuredRelativePaths, contains(endsWith('[1]')));
-        expect(gateway.ensuredRelativePaths, contains(endsWith('[2]')));
-        expect(manager.getTask(2)?.workRootPath, endsWith('[2]'));
+        expect(gateway.ensuredRelativePaths, contains(endsWith('Work')));
+        expect(gateway.ensuredRelativePaths, contains(endsWith('Work 2')));
+        expect(manager.getTask(2)?.workRootPath, endsWith('Work 2'));
       } finally {
         manager.dispose();
       }
     },
   );
 
-  test('work folder name follows selected field order and appends work id', () {
+  test('work folder name strictly follows the selected field order', () {
     final work = AsmrWork(
       id: 1,
       title: 'Work',
@@ -148,20 +148,17 @@ void main() {
         AsmrDownloadFolderNameField.circleName,
         AsmrDownloadFolderNameField.workTitle,
       ]),
-      'RJ123456 - Voice A、Voice B - Circle - Work [1]',
+      'RJ123456 - Voice A、Voice B - Circle - Work',
     );
-    expect(
-      buildAsmrDownloadWorkFolderName(work, const []),
-      endsWith('Work [1]'),
-    );
+    expect(buildAsmrDownloadWorkFolderName(work, const []), 'Work');
   });
 
-  test('sanitized duplicate titles use distinct work folders', () {
+  test('sanitized folder names do not add fields outside settings', () {
     final first = _work(title: 'Same:Title');
     final second = _work(id: 2, title: 'Same/Title');
 
-    expect(buildAsmrDownloadWorkFolderName(first, const []), 'Same_Title [1]');
-    expect(buildAsmrDownloadWorkFolderName(second, const []), 'Same_Title [2]');
+    expect(buildAsmrDownloadWorkFolderName(first, const []), 'Same_Title');
+    expect(buildAsmrDownloadWorkFolderName(second, const []), 'Same_Title');
   });
 
   test('startDownload rejects a non-positive work id', () async {
@@ -1028,7 +1025,7 @@ void main() {
             File(
               path.join(
                 tempDir.path,
-                id == 1 ? 'Work [1]' : 'Work $id [$id]',
+                id == 1 ? 'Work' : 'Work $id',
                 'Track.mp3',
               ),
             ),
@@ -1143,10 +1140,10 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       expect(cacheDirectoryRequests, 0);
-      expect(manager.getTask(1)?.workFolderName, 'Work [1]');
+      expect(manager.getTask(1)?.workFolderName, 'Work');
       expect(
         await File(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}Track.mp3',
         ).length(),
         256,
@@ -1198,9 +1195,7 @@ void main() {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_skip_existing_',
       );
-      final workDir = Directory(
-        '${tempDir.path}${Platform.pathSeparator}Work [1]',
-      );
+      final workDir = Directory('${tempDir.path}${Platform.pathSeparator}Work');
       await workDir.create(recursive: true);
       final target = File('${workDir.path}${Platform.pathSeparator}Track.mp3');
       await target.writeAsBytes(<int>[1, 2, 3], flush: true);
@@ -1304,12 +1299,12 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       final backupPath =
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}doujin-audio.json';
       final detail = const AudioDetailJsonCodec().decode(
         File(backupPath).readAsBytesSync(),
         AudioDetailTarget.libraryRootFolder(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]',
+          '${tempDir.path}${Platform.pathSeparator}Work',
         ),
       );
       expect(detail.releaseDate, DateTime(2024, 5, 6));
@@ -1345,7 +1340,7 @@ void main() {
           final manager = _manager();
           try {
             final workFolder = Directory(
-              '${tempDir.path}${Platform.pathSeparator}Work [1]',
+              '${tempDir.path}${Platform.pathSeparator}Work',
             );
             await workFolder.create();
             final jsonFile = File(
@@ -1426,7 +1421,7 @@ void main() {
       await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
       final target = File(
-        '${tempDir.path}${Platform.pathSeparator}Work [1]'
+        '${tempDir.path}${Platform.pathSeparator}Work'
         '${Platform.pathSeparator}Metadata.JSON',
       );
       expect(await target.readAsString(), payload);
@@ -1549,7 +1544,7 @@ void main() {
         await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
 
         final task = manager.getTask(1)!;
-        expect(task.workFolderName, 'RJ123456 - Work [1]');
+        expect(task.workFolderName, 'RJ123456 - Work');
         expect(task.saveMetadata, isFalse);
         expect(task.totalFiles, 0);
         expect(task.completedFiles, 0);
@@ -1557,7 +1552,7 @@ void main() {
         expect(task.downloadedBytes, 0);
         expect(
           await File(
-            '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work [1]'
+            '${tempDir.path}${Platform.pathSeparator}RJ123456 - Work'
             '${Platform.pathSeparator}doujin-audio.json',
           ).exists(),
           isFalse,
@@ -1687,7 +1682,7 @@ void main() {
 
         expect(manager.getTask(1), isNull);
         final workDirectory = Directory(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]',
+          '${tempDir.path}${Platform.pathSeparator}Work',
         );
         expect(await workDirectory.exists(), isTrue);
         expect(await workDirectory.list().toList(), isEmpty);
@@ -1708,9 +1703,7 @@ void main() {
       final tempDir = await Directory.systemTemp.createTemp(
         'asmr_download_existing_',
       );
-      final workDir = Directory(
-        '${tempDir.path}${Platform.pathSeparator}Work [1]',
-      );
+      final workDir = Directory('${tempDir.path}${Platform.pathSeparator}Work');
       await workDir.create(recursive: true);
       final sentinel = File('${workDir.path}${Platform.pathSeparator}keep.txt');
       await sentinel.writeAsString('keep');
@@ -1826,7 +1819,7 @@ void main() {
         expect(requestCount, 2);
         expect(
           await File(
-            '${tempDir.path}${Platform.pathSeparator}Work [1]'
+            '${tempDir.path}${Platform.pathSeparator}Work'
             '${Platform.pathSeparator}Track.mp3',
           ).length(),
           1024 * 1024,
@@ -1870,7 +1863,7 @@ void main() {
 
       expect(
         await Directory(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]',
+          '${tempDir.path}${Platform.pathSeparator}Work',
         ).exists(),
         isFalse,
       );
@@ -1941,7 +1934,7 @@ void main() {
         expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
         expect(
           await File(
-            '${tempDir.path}${Platform.pathSeparator}Work [1]'
+            '${tempDir.path}${Platform.pathSeparator}Work'
             '${Platform.pathSeparator}retry.mp3',
           ).readAsBytes(),
           bytes,
@@ -2008,7 +2001,7 @@ void main() {
       );
       expect(
         await File(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}track.mp3',
         ).readAsBytes(),
         bytes,
@@ -2082,7 +2075,7 @@ void main() {
         expect(ifRanges, <String?>[null, null]);
         expect(
           await File(
-            '${tempDir.path}${Platform.pathSeparator}Work [1]'
+            '${tempDir.path}${Platform.pathSeparator}Work'
             '${Platform.pathSeparator}changed.mp3',
           ).readAsBytes(),
           <int>[...firstBytes.take(128), ...replacementBytes.skip(128)],
@@ -2142,7 +2135,7 @@ void main() {
       expect(ifRanges, <String?>[null, null]);
       expect(
         await File(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}range-200.mp3',
         ).readAsBytes(),
         currentBytes,
@@ -2206,7 +2199,7 @@ void main() {
       expect(ranges, <String?>[null, 'bytes=128-']);
       expect(
         await File(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}missing-validator.mp3',
         ).readAsBytes(),
         bytes,
@@ -2319,7 +2312,7 @@ void main() {
         expect(ranges, <String?>[null, 'bytes=128-']);
         expect(
           await File(
-            '${tempDir.path}${Platform.pathSeparator}Work [1]'
+            '${tempDir.path}${Platform.pathSeparator}Work'
             '${Platform.pathSeparator}no-validator.mp3',
           ).readAsBytes(),
           bytes,
@@ -2350,7 +2343,7 @@ void main() {
           await request.response.close();
         }),
       );
-      final workRoot = path.join(tempDir.path, 'Work [1]');
+      final workRoot = path.join(tempDir.path, 'Work');
       final staging = File(path.join(workRoot, 'Track.mp3.doujin.part'));
       await staging.parent.create(recursive: true);
       await staging.writeAsBytes(
@@ -2550,7 +2543,7 @@ void main() {
         );
 
         final output = File(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}track.mp3',
         );
         expect(await output.exists(), isFalse);
@@ -2672,7 +2665,7 @@ void main() {
         );
 
         final workDir = Directory(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]',
+          '${tempDir.path}${Platform.pathSeparator}Work',
         );
         final fastFile = File(
           '${workDir.path}${Platform.pathSeparator}Fast.mp3',
@@ -2917,7 +2910,7 @@ void main() {
       AsmrDownloadManager? restoredManager;
       try {
         final target = File(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}Track.mp3',
         );
         await target.parent.create(recursive: true);
@@ -2935,7 +2928,7 @@ void main() {
           conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
         );
         final part = File(
-          '${tempDir.path}${Platform.pathSeparator}Work [1]'
+          '${tempDir.path}${Platform.pathSeparator}Work'
           '${Platform.pathSeparator}Track.mp3.doujin.part',
         );
         final deadline = DateTime.now().add(const Duration(seconds: 5));
@@ -3118,7 +3111,7 @@ _downloadUnknownSizeResponse({
       allowFailure: expectedStatus == AsmrDownloadTaskStatus.failed,
     );
 
-    final output = File(path.join(tempDir.path, 'Work [1]', title));
+    final output = File(path.join(tempDir.path, 'Work', title));
     final outputExists = await output.exists();
     return (
       requests: requests,

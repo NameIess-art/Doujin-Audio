@@ -91,9 +91,6 @@ class _PlaybackQueueCard extends ConsumerWidget {
               color: isSelected
                   ? cs.primaryContainer.withValues(alpha: 0.15)
                   : null,
-              border: isSelected
-                  ? Border.all(color: cs.primary, width: 1.5)
-                  : null,
               borderRadius: const BorderRadius.all(
                 Radius.circular(LibraryLikeCardMetrics.cardRadius),
               ),
@@ -117,57 +114,66 @@ class _PlaybackQueueCard extends ConsumerWidget {
                 padding: _playlistRowPadding,
                 child: Row(
                   children: [
-                    if (isSelectionMode) ...[
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        margin: const EdgeInsets.only(left: 4, right: 8),
-                        child: Icon(
-                          isSelected
-                              ? Icons.check_circle_rounded
-                              : Icons.radio_button_unchecked_rounded,
-                          color: isSelected
-                              ? cs.primary
-                              : cs.onSurfaceVariant.withValues(alpha: 0.5),
-                          size: 22,
-                        ),
-                      ),
-                    ],
                     if (coverItems.isNotEmpty) ...[
-                      _QueueCoverGrid(
-                        items: coverItems,
-                        coverCacheWidth: coverCacheWidth,
-                      ),
-                      const SizedBox(width: AppSpacing.xs),
-                    ],
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                      Stack(
+                        clipBehavior: Clip.none,
                         children: [
-                          Text(
-                            queue.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  color: isPlaying ? activeColor : cs.onSurface,
-                                  fontSize: 14,
-                                ),
+                          _QueueCoverGrid(
+                            items: coverItems,
+                            coverCacheWidth: coverCacheWidth,
                           ),
-                          const SizedBox(height: 5),
-                          Text(
-                            currentTrack?.displayName ??
-                                i18n.tr('empty_playback_queue'),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 14,
-                                  height: 1.12,
-                                ),
+                          Positioned(
+                            left: 4,
+                            bottom: 4,
+                            child: _PlaylistSelectionIndicator(
+                              sessionId: session.id,
+                              isSelected: isSelected,
+                            ),
                           ),
                         ],
+                      ),
+                      const SizedBox(width: AppSpacing.xs),
+                    ] else ...[
+                      _PlaylistSelectionIndicatorAnchor(
+                        sessionId: session.id,
+                        isSelected: isSelected,
+                      ),
+                    ],
+                    Expanded(
+                      child: Semantics(
+                        selected: isSelectionMode ? isSelected : null,
+                        onTap: isSelectionMode ? onToggleSelect : onOpen,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              queue.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: isPlaying
+                                        ? activeColor
+                                        : cs.onSurface,
+                                    fontSize: 14,
+                                  ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              currentTrack?.displayName ??
+                                  i18n.tr('empty_playback_queue'),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 14,
+                                    height: 1.12,
+                                  ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     Row(

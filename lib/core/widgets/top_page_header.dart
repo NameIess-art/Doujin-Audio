@@ -56,6 +56,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
     super.key,
     this.icon,
     required this.title,
+    this.titleWidget,
     this.leading,
     this.trailing,
     this.titleSuffix,
@@ -87,6 +88,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
 
   final IconData? icon;
   final String title;
+  final Widget? titleWidget;
   final Widget? leading;
   final Widget? trailing;
   final Widget? titleSuffix;
@@ -308,7 +310,16 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                             widget.onTitleSwipeRight == null
                         ? null
                         : _handleTitleDragEnd,
-                    child: widget.marqueeTitle
+                    child: widget.titleWidget != null
+                        ? Semantics(
+                            header: true,
+                            label: resolvedTitle,
+                            child: DefaultTextStyle.merge(
+                              style: titleStyle,
+                              child: widget.titleWidget!,
+                            ),
+                          )
+                        : widget.marqueeTitle
                         ? SizedBox(
                             height: titleHeight,
                             child: MarqueeText(

@@ -650,3 +650,111 @@ PageRouteBuilder<T> buildAppPageRoute<T>({
     },
   );
 }
+
+class AppRollingNumber extends StatefulWidget {
+  const AppRollingNumber({
+    super.key,
+    required this.number,
+    this.style,
+    this.duration = const Duration(milliseconds: 280),
+    this.curve = Curves.easeOutCubic,
+  });
+
+  final int number;
+  final TextStyle? style;
+  final Duration duration;
+  final Curve curve;
+
+  @override
+  State<AppRollingNumber> createState() => _AppRollingNumberState();
+}
+
+class _AppRollingNumberState extends State<AppRollingNumber>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late int _currentNumber;
+  int? _previousNumber;
+  int _direction = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentNumber = widget.number;
+    _controller = AnimationController(
+      vsync: this,
+      duration: widget.duration,
+    );
+    _controller.value = 1.0;
+  }
+
+  @override
+  void didUpdateWidget(covariant AppRollingNumber oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.number != oldWidget.number) {
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _currentNumber = widget.number;
+        _previousNumber = null;
+        _controller.value = 1.0;
+        return;
+      }
+      _previousNumber = _currentNumber;
+      _currentNumber = widget.number;
+      _direction = _currentNumber >= (_previousNumber ?? 0) ? 1 : -1;
+      _controller.duration = widget.duration;
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final style = widget.style;
+    if (_previousNumber == null ||
+        _previousNumber == _currentNumber ||
+        MediaQuery.disableAnimationsOf(context)) {
+      return Text('$_currentNumber', style: style);
+    }
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final progress = widget.curve.transform(_controller.value);
+        if (progress >= 1.0) {
+          return Text('$_currentNumber', style: style);
+        }
+
+        final outgoingOffset = Offset(0, -_direction * progress);
+        final incomingOffset = Offset(0, _direction * (1.0 - progress));
+        final outgoingOpacity = (1.0 - progress).clamp(0.0, 1.0);
+        final incomingOpacity = progress.clamp(0.0, 1.0);
+
+        return ClipRect(
+          child: Stack(
+            alignment: Alignment.centerLeft,
+            children: [
+              FractionalTranslation(
+                translation: outgoingOffset,
+                child: Opacity(
+                  opacity: outgoingOpacity,
+                  child: Text('$_previousNumber', style: style),
+                ),
+              ),
+              FractionalTranslation(
+                translation: incomingOffset,
+                child: Opacity(
+                  opacity: incomingOpacity,
+                  child: Text('$_currentNumber', style: style),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}

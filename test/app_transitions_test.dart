@@ -330,6 +330,144 @@ void main() {
     expect(completed, isTrue);
     expect(find.text('second'), findsOneWidget);
   });
+
+  group('AppRollingNumber', () {
+    testWidgets('rolls upwards when number increments', (tester) async {
+      final numberNotifier = ValueNotifier<int>(1);
+      addTearDown(numberNotifier.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ValueListenableBuilder<int>(
+              valueListenable: numberNotifier,
+              builder: (context, value, _) => AppRollingNumber(number: value),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('1'), findsOneWidget);
+
+      numberNotifier.value = 2;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('1'), findsOneWidget);
+      expect(find.text('2'), findsOneWidget);
+
+      final translations1 = tester
+          .widgetList<FractionalTranslation>(
+            find.ancestor(
+              of: find.text('1'),
+              matching: find.byType(FractionalTranslation),
+            ),
+          )
+          .map((w) => w.translation)
+          .toList();
+      final translations2 = tester
+          .widgetList<FractionalTranslation>(
+            find.ancestor(
+              of: find.text('2'),
+              matching: find.byType(FractionalTranslation),
+            ),
+          )
+          .map((w) => w.translation)
+          .toList();
+
+      expect(translations1.any((t) => t.dy < 0), isTrue); // outgoing moves up
+      expect(translations2.any((t) => t.dy > 0), isTrue); // incoming from bottom
+
+      await tester.pumpAndSettle();
+      expect(find.text('2'), findsOneWidget);
+      expect(find.text('1'), findsNothing);
+    });
+
+    testWidgets('rolls downwards when number decrements', (tester) async {
+      final numberNotifier = ValueNotifier<int>(5);
+      addTearDown(numberNotifier.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ValueListenableBuilder<int>(
+              valueListenable: numberNotifier,
+              builder: (context, value, _) => AppRollingNumber(number: value),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('5'), findsOneWidget);
+
+      numberNotifier.value = 4;
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+
+      expect(find.text('5'), findsOneWidget);
+      expect(find.text('4'), findsOneWidget);
+
+      final translations5 = tester
+          .widgetList<FractionalTranslation>(
+            find.ancestor(
+              of: find.text('5'),
+              matching: find.byType(FractionalTranslation),
+            ),
+          )
+          .map((w) => w.translation)
+          .toList();
+      final translations4 = tester
+          .widgetList<FractionalTranslation>(
+            find.ancestor(
+              of: find.text('4'),
+              matching: find.byType(FractionalTranslation),
+            ),
+          )
+          .map((w) => w.translation)
+          .toList();
+
+      expect(translations5.any((t) => t.dy > 0), isTrue); // outgoing moves down
+      expect(translations4.any((t) => t.dy < 0), isTrue); // incoming from top
+
+      await tester.pumpAndSettle();
+      expect(find.text('4'), findsOneWidget);
+      expect(find.text('5'), findsNothing);
+    });
+
+    testWidgets('reduced motion updates number immediately', (tester) async {
+      final numberNotifier = ValueNotifier<int>(1);
+      addTearDown(numberNotifier.dispose);
+
+      await tester.pumpWidget(
+        MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
+          child: MaterialApp(
+            home: Scaffold(
+              body: ValueListenableBuilder<int>(
+                valueListenable: numberNotifier,
+                builder: (context, value, _) => AppRollingNumber(number: value),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('1'), findsOneWidget);
+
+      numberNotifier.value = 2;
+      await tester.pump();
+
+      expect(find.text('2'), findsOneWidget);
+      expect(find.text('1'), findsNothing);
+      expect(
+        find.descendant(
+          of: find.byType(AppRollingNumber),
+          matching: find.byType(FractionalTranslation),
+        ),
+        findsNothing,
+      );
+    });
+  });
 }
 
 Offset _translationFor(WidgetTester tester, String label) {

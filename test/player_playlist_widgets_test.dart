@@ -1898,7 +1898,12 @@ void main() {
     );
     expect(cardContent.padding, const EdgeInsets.all(8));
     final cardContentRow = cardContent.child! as Row;
-    expect((cardContentRow.children[1] as SizedBox).width, 8);
+    expect(
+      cardContentRow.children.whereType<SizedBox>().any(
+        (child) => child.width == 8,
+      ),
+      isTrue,
+    );
     expect(
       tester
           .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage))
@@ -2597,4 +2602,275 @@ void main() {
       hasLength(1),
     );
   });
+
+  testWidgets(
+    'playlist multiselect overlays indicators and swaps batch transport actions',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 1000);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final fixture = AppRuntimeWidgetTestFixture(
+        configureSettingsRepository: (settings) {
+          settings.multiThreadPlaybackEnabled = true;
+          settings.syncSlice(isInitialized: true);
+        },
+      );
+      addTearDown(fixture.dispose);
+      final nativeCalls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+            nativeCalls.add(call);
+            return <String, Object?>{'ok': true, 'value': null};
+          });
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, null);
+      });
+
+      final track = testMusicTrack(
+        name: 'Selection track',
+        path: '/library/selection/track.mp3',
+        groupKey: '/library/selection',
+        groupTitle: 'Selection work',
+      );
+      final queueTrack = testMusicTrack(
+        name: 'Queue selection track',
+        path: '/library/selection/queue.mp3',
+        groupKey: '/library/selection/queue',
+        groupTitle: 'Queue selection work',
+      );
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track, queueTrack],
+        notify: false,
+        persist: false,
+      );
+      final trackSession = fixture.runtimeGraph.playback.createTrackSession(
+        track,
+      )..state = PlayerState(false, ProcessingState.ready);
+      final queueSession =
+          fixture.runtimeGraph.playback.createPlaybackQueue('Selection queue')
+            ..currentTrackPath = queueTrack.path
+            ..state = PlayerState(true, ProcessingState.ready)
+            ..playbackQueue = PlaybackQueueDefinition(
+              name: 'Selection queue',
+              entries: <PlaybackQueueEntry>[
+                PlaybackQueueEntry(
+                  id: 'selection-queue-entry',
+                  kind: PlaybackQueueEntryKind.track,
+                  title: queueTrack.displayName,
+                  tracks: <MusicTrack>[queueTrack],
+                ),
+              ],
+            );
+      fixture.playbackService.markSessionStateDirty();
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[trackSession, queueSession],
+        playingSessionCount: 1,
+        focusedSessionId: queueSession.id,
+        multiThreadPlaybackEnabled: true,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+
+      final trackTitle = find.text('track');
+      final queueTitle = find.text('Selection queue');
+      final trackTitleX = tester.getTopLeft(trackTitle).dx;
+      final queueTitleX = tester.getTopLeft(queueTitle).dx;
+      const batchHeaderKey = ValueKey<String>(
+        'playlist_batch_selection_header',
+      );
+
+      await tester.longPress(trackTitle);
+
+      final batchHeader = find.byKey(batchHeaderKey);
+      expect(batchHeader, findsOneWidget);
+      final headerSwitcher = find.ancestor(
+        of: batchHeader,
+        matching: find.byType(AnimatedSwitcher),
+      );
+      expect(headerSwitcher, findsOneWidget);
+      expect(
+        tester.widget<AnimatedSwitcher>(headerSwitcher).duration,
+        kAppMotionFast,
+      );
+      expect(find.byType(TopPageHeader), findsNWidgets(2));
+
+      await tester.pumpAndSettle();
+
+      final trackIndicator = find.byKey(
+        ValueKey<String>('playlist_selection_indicator_${trackSession.id}'),
+      );
+      final queueIndicator = find.byKey(
+        ValueKey<String>('playlist_selection_indicator_${queueSession.id}'),
+      );
+      expect(trackIndicator, findsOneWidget);
+      expect(queueIndicator, findsNothing);
+      expect(find.byIcon(Icons.radio_button_unchecked_rounded), findsNothing);
+      expect(tester.getTopLeft(trackTitle).dx, trackTitleX);
+      expect(tester.getTopLeft(queueTitle).dx, queueTitleX);
+      final trackContent = find.byKey(
+        ValueKey<String>('playlist_card_content_${trackSession.id}'),
+      );
+      expect(
+        tester.getTopLeft(trackIndicator).dx,
+        tester.getTopLeft(trackContent).dx + 12,
+      );
+      expect(
+        tester.getBottomLeft(trackIndicator).dy,
+        tester.getBottomLeft(trackContent).dy - 12,
+      );
+      final indicatorContainer = tester.widget<Container>(trackIndicator);
+      final indicatorDecoration =
+          indicatorContainer.decoration as BoxDecoration;
+      expect(indicatorDecoration.color, const Color(0xFF4CAF50));
+      expect(indicatorDecoration.shape, BoxShape.circle);
+      final trackDecoration =
+          tester
+                  .widget<DecoratedBox>(
+                    find.byKey(
+                      ValueKey<String>(
+                        'playlist_card_highlight_${trackSession.id}',
+                      ),
+                    ),
+                  )
+                  .decoration
+              as BoxDecoration;
+      final colorScheme = Theme.of(
+        tester.element(find.byType(PlaylistTab)),
+      ).colorScheme;
+      expect(
+        trackDecoration.color,
+        colorScheme.primaryContainer.withValues(alpha: 0.15),
+      );
+      expect(trackDecoration.border, isNull);
+      final trackSemantics = tester
+          .widgetList<Semantics>(
+            find.ancestor(of: trackTitle, matching: find.byType(Semantics)),
+          )
+          .firstWhere((widget) => widget.properties.selected != null);
+      expect(trackSemantics.properties.selected, isTrue);
+      expect(trackSemantics.properties.onTap, isNotNull);
+
+      await tester.tap(queueTitle);
+      await tester.pumpAndSettle();
+
+      expect(trackIndicator, findsOneWidget);
+      expect(queueIndicator, findsOneWidget);
+      expect(tester.getTopLeft(trackTitle).dx, trackTitleX);
+      expect(tester.getTopLeft(queueTitle).dx, queueTitleX);
+      final queueDecoration =
+          tester
+                  .widget<DecoratedBox>(
+                    find.byKey(
+                      ValueKey<String>(
+                        'playback_queue_active_highlight_${queueSession.id}',
+                      ),
+                    ),
+                  )
+                  .decoration
+              as BoxDecoration;
+      expect(
+        queueDecoration.color,
+        colorScheme.primaryContainer.withValues(alpha: 0.15),
+      );
+      expect(queueDecoration.border, isNull);
+
+      final pauseIconButton = find.byKey(
+        const ValueKey<String>('batch_pause_button'),
+      );
+      final playIconButton = find.byKey(
+        const ValueKey<String>('batch_play_button'),
+      );
+      expect(
+        tester.widget<IconButton>(pauseIconButton).tooltip,
+        fixture.languageProvider.tr('play'),
+      );
+      expect(
+        find.descendant(
+          of: pauseIconButton,
+          matching: find.byIcon(Icons.pause_rounded),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<IconButton>(playIconButton).tooltip,
+        fixture.languageProvider.tr('pause'),
+      );
+      expect(
+        find.descendant(
+          of: playIconButton,
+          matching: find.byIcon(Icons.play_arrow_rounded),
+        ),
+        findsOneWidget,
+      );
+
+      nativeCalls.clear();
+      await tester.tap(pauseIconButton);
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(kAppMotionFast);
+      expect(
+        nativeCalls.where(
+          (call) =>
+              call.method == NativePlaybackMethod.play &&
+              (call.arguments as Map<Object?, Object?>)['sessionId'] ==
+                  trackSession.id,
+        ),
+        hasLength(1),
+      );
+      expect(batchHeader, findsOneWidget);
+
+      nativeCalls.clear();
+      await tester.tap(playIconButton);
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pump(kAppMotionFast);
+      expect(
+        nativeCalls.where(
+          (call) =>
+              call.method == NativePlaybackMethod.pause &&
+              (call.arguments as Map<Object?, Object?>)['sessionId'] ==
+                  queueSession.id,
+        ),
+        hasLength(1),
+      );
+      expect(batchHeader, findsOneWidget);
+
+      await tester.tap(trackTitle);
+      await tester.pumpAndSettle();
+      expect(trackIndicator, findsNothing);
+      expect(queueIndicator, findsOneWidget);
+      await tester.tap(queueTitle);
+      await tester.pump();
+      expect(find.byType(TopPageHeader), findsNWidgets(2));
+      await tester.pumpAndSettle();
+      expect(batchHeader, findsNothing);
+      expect(find.byType(TopPageHeader), findsOneWidget);
+
+      await tester.longPress(queueTitle);
+      await tester.pumpAndSettle();
+      expect(queueIndicator, findsOneWidget);
+      fixture.playbackService.removeSessions(<String>[queueSession.id]);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[trackSession],
+        playingSessionCount: trackSession.effectivePlaying ? 1 : 0,
+        focusedSessionId: trackSession.id,
+        multiThreadPlaybackEnabled: true,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+      await tester.pumpAndSettle();
+      expect(batchHeader, findsNothing);
+      expect(find.byType(TopPageHeader), findsOneWidget);
+    },
+  );
 }

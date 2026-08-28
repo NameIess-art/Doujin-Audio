@@ -72,7 +72,7 @@ String buildAsmrDownloadWorkFolderName(
     collapseWhitespace: false,
     fallback: 'ASMR_ONE',
   );
-  return '$safeName [${work.id}]';
+  return safeName;
 }
 
 String _joinVoiceActors(Iterable<String> voiceActors) {

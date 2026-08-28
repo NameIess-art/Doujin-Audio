@@ -10,6 +10,102 @@ const RoundedRectangleBorder _playlistRowShape = RoundedRectangleBorder(
   ),
 );
 
+const Color _playlistSelectionCheckmarkColor = Color(0xFF4CAF50);
+
+class _PlaylistSelectionIndicator extends StatelessWidget {
+  const _PlaylistSelectionIndicator({
+    required this.sessionId,
+    required this.isSelected,
+  });
+
+  final String sessionId;
+  final bool isSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context)
+        ? Duration.zero
+        : kAppMotionFast;
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: AnimatedSwitcher(
+          duration: duration,
+          switchInCurve: Curves.easeOutBack,
+          switchOutCurve: Curves.easeInCubic,
+          transitionBuilder: (child, animation) {
+            return FadeTransition(
+              opacity: animation,
+              child: ScaleTransition(
+                scale: Tween<double>(begin: 0.65, end: 1).animate(animation),
+                child: child,
+              ),
+            );
+          },
+          child: isSelected
+              ? Container(
+                  key: ValueKey<String>(
+                    'playlist_selection_indicator_$sessionId',
+                  ),
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _playlistSelectionCheckmarkColor,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.28),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.check_rounded,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                )
+              : const SizedBox.shrink(
+                  key: ValueKey<String>('playlist_selection_indicator_hidden'),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaylistSelectionIndicatorAnchor extends StatelessWidget {
+  const _PlaylistSelectionIndicatorAnchor({
+    required this.sessionId,
+    required this.isSelected,
+  });
+
+  final String sessionId;
+  final bool isSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 0,
+      height: _playlistCoverSize,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Positioned(
+            left: 4,
+            bottom: 4,
+            child: _PlaylistSelectionIndicator(
+              sessionId: sessionId,
+              isSelected: isSelected,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 LinearGradient _playlistActiveHighlightGradient(
   bool isPlaying,
   Color highlightColor,
@@ -387,6 +483,7 @@ class _SessionListCard extends ConsumerWidget {
             elevation: 0,
             shadowColor: Colors.transparent,
             child: DecoratedBox(
+              key: ValueKey<String>('playlist_card_highlight_$sessionId'),
               decoration: BoxDecoration(
                 gradient: _playlistActiveHighlightGradient(
                   isPlaying,
@@ -394,9 +491,6 @@ class _SessionListCard extends ConsumerWidget {
                 ),
                 color: isSelected
                     ? cs.primaryContainer.withValues(alpha: 0.15)
-                    : null,
-                border: isSelected
-                    ? Border.all(color: cs.primary, width: 1.5)
                     : null,
                 borderRadius: const BorderRadius.all(
                   Radius.circular(LibraryLikeCardMetrics.cardRadius),
@@ -426,38 +520,42 @@ class _SessionListCard extends ConsumerWidget {
                   padding: _playlistRowPadding,
                   child: Row(
                     children: [
-                      if (isSelectionMode) ...[
-                        AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          margin: const EdgeInsets.only(left: 4, right: 8),
-                          child: Icon(
-                            isSelected
-                                ? Icons.check_circle_rounded
-                                : Icons.radio_button_unchecked_rounded,
-                            color: isSelected
-                                ? cs.primary
-                                : cs.onSurfaceVariant.withValues(alpha: 0.5),
-                            size: 22,
-                          ),
-                        ),
-                      ],
                       if (showCover) ...[
-                        _SessionCoverThumbnail(
-                          sessionId: sessionId,
-                          track: track,
-                          coverPath: coverPath,
-                          coverGeneration: coverGeneration,
-                          coverCacheWidth: coverCacheWidth,
-                          duration: track?.duration,
-                          detailDuration: detailDuration,
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            _SessionCoverThumbnail(
+                              sessionId: sessionId,
+                              track: track,
+                              coverPath: coverPath,
+                              coverGeneration: coverGeneration,
+                              coverCacheWidth: coverCacheWidth,
+                              duration: track?.duration,
+                              detailDuration: detailDuration,
+                            ),
+                            Positioned(
+                              left: 4,
+                              bottom: 4,
+                              child: _PlaylistSelectionIndicator(
+                                sessionId: sessionId,
+                                isSelected: isSelected,
+                              ),
+                            ),
+                          ],
                         ),
                         const SizedBox(width: AppSpacing.xs),
+                      ] else ...[
+                        _PlaylistSelectionIndicatorAnchor(
+                          sessionId: sessionId,
+                          isSelected: isSelected,
+                        ),
                       ],
                       Expanded(
                         child: Semantics(
                           button: true,
+                          selected: isSelectionMode ? isSelected : null,
                           label: i18n.tr('open_playback_details'),
-                          onTap: onOpen,
+                          onTap: isSelectionMode ? onToggleSelect : onOpen,
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [

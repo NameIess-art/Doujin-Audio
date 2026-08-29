@@ -52,11 +52,12 @@ Widget _settingsDropdown<T>(
   required T value,
   required List<DropdownMenuItem<T>> items,
   required ValueChanged<T?>? onChanged,
+  double? maxWidth,
 }) {
   final mediaQuery = MediaQuery.of(context);
   final screenWidth = mediaQuery.size.width;
-  final maxWidth = (screenWidth * 0.52)
-      .clamp(0, _settingsDropdownMaxWidth + 40)
+  final resolvedMaxWidth = (screenWidth * 0.52)
+      .clamp(0, maxWidth ?? _settingsDropdownMaxWidth + 40)
       .toDouble();
   final defaultTextStyle = DefaultTextStyle.of(context).style;
   double? longestTextWidth = 0;
@@ -77,9 +78,10 @@ Widget _settingsDropdown<T>(
     )..layout();
     longestTextWidth = math.max(longestTextWidth!, painter.width);
   }
-  final width = ((longestTextWidth ?? maxWidth) + _settingsDropdownChromeWidth)
-      .clamp(_settingsDropdownChromeWidth, maxWidth)
-      .toDouble();
+  final width =
+      ((longestTextWidth ?? resolvedMaxWidth) + _settingsDropdownChromeWidth)
+          .clamp(_settingsDropdownChromeWidth, resolvedMaxWidth)
+          .toDouble();
   return SizedBox(
     width: width,
     child: UnifiedDropdownButton<T>(

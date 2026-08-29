@@ -1,5 +1,7 @@
 part of 'settings_tab.dart';
 
+const double _interfaceLanguageDropdownMaxWidth = 128;
+
 List<Widget> _buildSettingsLanguageSection({
   required BuildContext context,
   required AppLanguageProvider i18n,
@@ -15,6 +17,7 @@ List<Widget> _buildSettingsLanguageSection({
           trailing: _settingsDropdown<AppLanguagePreference>(
             context,
             value: i18n.preference,
+            maxWidth: _interfaceLanguageDropdownMaxWidth,
             onChanged: (value) {
               if (value != null) i18n.setLanguagePreference(value);
             },

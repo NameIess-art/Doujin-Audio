@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
-import 'package:doujin_audio/core/app_language.dart';
+import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'support/runtime_test_models.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
@@ -897,6 +897,33 @@ void main() {
     expect(optionText.maxLines, isNull);
     expect(optionText.softWrap, isTrue);
     expect(optionText.overflow, TextOverflow.visible);
+  });
+
+  testWidgets('interface language dropdown stays compact', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await harness.languageProvider.setLanguage(AppLanguage.zh);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pumpAndSettle();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_language')));
+    await tester.pumpAndSettle();
+
+    final interfaceLanguageTile = find.widgetWithText(
+      ListTile,
+      i18n.tr('interface_language'),
+    );
+    final dropdown = find.descendant(
+      of: interfaceLanguageTile,
+      matching: find.byType(DropdownButton<AppLanguagePreference>),
+    );
+
+    expect(dropdown, findsOneWidget);
+    expect(tester.getSize(dropdown).width, lessThanOrEqualTo(128));
   });
 
   testWidgets(

@@ -1,5 +1,11 @@
 part of 'library_tab.dart';
 
+const Size _libraryEditActionMinimumSize = Size(0, 36);
+const double _libraryEditChildFolderTileHeight = 48;
+const _libraryEditRootFolderShape = RoundedRectangleBorder(
+  borderRadius: BorderRadius.all(Radius.circular(10)),
+);
+
 final _libraryEditTrackViewStateProvider =
     Provider.family<_LibraryEditTrackViewState, _LibraryEditTrackKey>((
       ref,
@@ -1114,7 +1120,8 @@ class _LibraryEditFolderTreeTileState
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final libraryService = ref.read(libraryFacadeProvider);
-    final cs = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
     final editState = context.findAncestorStateOfType<_LibraryEditPageState>();
     final folderPath = widget.folder.folderPath;
     final explicitExcluded = libraryService.isLibraryFolderExplicitlyExcluded(
@@ -1134,7 +1141,14 @@ class _LibraryEditFolderTreeTileState
     final isRootFolder = widget.folder.depth == 0;
 
     final content = Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      data: theme.copyWith(
+        dividerColor: Colors.transparent,
+        listTileTheme: isRootFolder
+            ? theme.listTileTheme.copyWith(
+                shape: _libraryEditRootFolderShape,
+              )
+            : theme.listTileTheme.copyWith(minVerticalPadding: 0),
+      ),
       child: ExpansionTile(
         expansionAnimationStyle: appExpansionAnimationStyle(context),
         key: PageStorageKey<String>(
@@ -1142,11 +1156,19 @@ class _LibraryEditFolderTreeTileState
         ),
         controller: _expansionController,
         initiallyExpanded: widget.initiallyExpanded,
+        dense: !isRootFolder,
+        visualDensity: isRootFolder ? null : const VisualDensity(vertical: -4),
+        minTileHeight: isRootFolder ? null : _libraryEditChildFolderTileHeight,
         onExpansionChanged: (expanded) {
           if (_expanded == expanded) return;
           setState(() => _expanded = expanded);
         },
-        tilePadding: EdgeInsets.fromLTRB(isRootFolder ? 14 : 6, 3, 6, 3),
+        tilePadding: EdgeInsets.fromLTRB(
+          isRootFolder ? 14 : 6,
+          isRootFolder ? 3 : 0,
+          6,
+          isRootFolder ? 3 : 0,
+        ),
         childrenPadding: EdgeInsets.fromLTRB(isRootFolder ? 8 : 4, 0, 0, 6),
         leading: Icon(
           muted ? Icons.folder_off_rounded : Icons.folder_rounded,
@@ -1181,9 +1203,8 @@ class _LibraryEditFolderTreeTileState
                     horizontal: 6,
                     vertical: 4,
                   ),
-                  minimumSize: Size.zero,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  visualDensity: VisualDensity.compact,
+                  minimumSize: _libraryEditActionMinimumSize,
+                  tapTargetSize: MaterialTapTargetSize.padded,
                 ),
               ),
               child: TextButton.icon(
@@ -1264,7 +1285,7 @@ class _LibraryEditFolderTreeTileState
       color: muted
           ? cs.surfaceContainerHighest.withValues(alpha: 0.46)
           : cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: _libraryEditRootFolderShape,
       child: content,
     );
   }
@@ -1343,9 +1364,8 @@ class _LibraryEditTrackTile extends ConsumerWidget {
                   horizontal: 6,
                   vertical: 4,
                 ),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                visualDensity: VisualDensity.compact,
+                minimumSize: _libraryEditActionMinimumSize,
+                tapTargetSize: MaterialTapTargetSize.padded,
               ),
             ),
             child: TextButton.icon(

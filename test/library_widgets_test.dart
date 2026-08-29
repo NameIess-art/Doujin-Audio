@@ -1770,6 +1770,41 @@ void main() {
       findsOneWidget,
     );
 
+    final rootFolderTile = find.byKey(
+      const PageStorageKey<String>(
+        'library-edit-folder:$libraryRoot:$syntheticChildFolder',
+      ),
+    );
+    final rootFolderHeader = find
+        .descendant(of: rootFolderTile, matching: find.byType(ListTile))
+        .first;
+    final rootFolderHeaderHeight = tester.getSize(rootFolderHeader).height;
+    final rootFolderCard = find.ancestor(
+      of: rootFolderTile,
+      matching: find.byType(Card),
+    );
+    expect(rootFolderCard, findsOneWidget);
+    expect(
+      ListTileTheme.of(tester.element(rootFolderHeader)).shape,
+      tester.widget<Card>(rootFolderCard).shape,
+    );
+    final rootExcludeButton = find
+        .descendant(
+          of: rootFolderTile,
+          matching: find.widgetWithText(
+            TextButton,
+            languageProvider.tr('exclude'),
+          ),
+        )
+        .first;
+    expect(tester.getSize(rootExcludeButton).height, greaterThanOrEqualTo(44));
+    final rootButtonHighlight = find.descendant(
+      of: rootExcludeButton,
+      matching: find.byType(InkWell),
+    );
+    expect(rootButtonHighlight, findsOneWidget);
+    expect(tester.getSize(rootButtonHighlight).height, closeTo(36, 0.001));
+
     await tester.tap(
       find.widgetWithText(TextButton, languageProvider.tr('exclude')).first,
     );
@@ -1792,6 +1827,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('Disc1', findRichText: true), findsOneWidget);
+    final childFolderTile = find.byKey(
+      const PageStorageKey<String>(
+        'library-edit-folder:$libraryRoot:$nestedFolder',
+      ),
+    );
+    final childFolderHeader = find
+        .descendant(of: childFolderTile, matching: find.byType(ListTile))
+        .first;
+    final childFolderHeaderHeight = tester.getSize(childFolderHeader).height;
+    expect(childFolderHeaderHeight, lessThan(rootFolderHeaderHeight));
+    expect(childFolderHeaderHeight, closeTo(48, 0.001));
     final disabledChildActions = tester
         .widgetList<TextButton>(
           find.widgetWithText(TextButton, languageProvider.tr('exclude')),
@@ -2014,6 +2060,13 @@ void main() {
       expect(tester.widget<ListTile>(tileFinder).isThreeLine, isNot(isTrue));
       expect(tester.widget<ListTile>(tileFinder).subtitle, isNull);
       expect(tester.widget<TextButton>(restoreFinder).style, isNull);
+      expect(tester.getSize(restoreFinder).height, greaterThanOrEqualTo(44));
+      final restoreHighlight = find.descendant(
+        of: restoreFinder,
+        matching: find.byType(InkWell),
+      );
+      expect(restoreHighlight, findsOneWidget);
+      expect(tester.getSize(restoreHighlight).height, closeTo(36, 0.001));
 
       final path = title == firstTitle ? firstTrackPath : secondTrackPath;
       final surfaceFinder = find.byKey(

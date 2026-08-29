@@ -91,6 +91,18 @@ class NativePlaybackProgressHeartbeatCoordinatorTest {
         assertEquals(1, keepAlive.alarmEnsures)
     }
 
+    @Test
+    fun `keep alive heartbeat rearms alarm when recovery throws`() {
+        val host = FakeHeartbeatHost()
+        val environment = FakeHeartbeatEnvironment(screenInteractive = false)
+        val keepAlive = FakeKeepAliveHeartbeatHost(throwOnRecovery = true)
+        val coordinator = coordinator(host, environment, keepAlive)
+
+        runCatching { coordinator.onKeepAliveHeartbeat() }
+
+        assertEquals(1, keepAlive.alarmEnsures)
+    }
+
     private fun coordinator(
         host: FakeHeartbeatHost,
         environment: FakeHeartbeatEnvironment,
@@ -107,14 +119,18 @@ class NativePlaybackProgressHeartbeatCoordinatorTest {
 private class FakeKeepAliveHeartbeatHost(
     override var hasPlaybackToKeepAlive: Boolean = true,
     override var foregroundStarted: Boolean = true,
-    override var focusInterrupted: Boolean = false
+    override var focusInterrupted: Boolean = false,
+    private val throwOnRecovery: Boolean = false
 ) : NativePlaybackKeepAliveHeartbeatHost {
     var wakeLockRefreshes = 0
     val recoveryReasons = mutableListOf<String>()
     var foregroundSyncs = 0
     var alarmEnsures = 0
     override fun refreshWakeLock() { wakeLockRefreshes += 1 }
-    override fun triggerRecovery(reason: String) { recoveryReasons += reason }
+    override fun triggerRecovery(reason: String) {
+        recoveryReasons += reason
+        if (throwOnRecovery) error("recovery failed")
+    }
     override fun expireGraceIfOverdue(): Boolean = false
     override fun syncForeground() { foregroundSyncs += 1 }
     override fun cancelAlarm() = Unit

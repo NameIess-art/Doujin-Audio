@@ -7,13 +7,31 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
+
+internal const val PLAYBACK_CONTROL_DELIVERY_TIMEOUT_MS = 8_000L
+
+internal class PlaybackControlDeliveryCompletion(
+    private val onFinish: () -> Unit
+) {
+    private val finished = AtomicBoolean(false)
+
+    fun finish(beforeFinish: () -> Unit = {}): Boolean {
+        if (!finished.compareAndSet(false, true)) return false
+        try {
+            beforeFinish()
+        } finally {
+            onFinish()
+        }
+        return true
+    }
+}
 
 class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
     companion object {
         private const val dismissAction = "dismiss_all_playback_notifications"
         private const val dismissSettleDelayMs = 160L
-        private const val serviceDeliveryRetryDelayMs = 250L
-        private const val maxServiceDeliveryAttempts = 40
         private val mainHandler = Handler(Looper.getMainLooper())
         private val flushDismissRunnable = Runnable { flushPendingDismisses() }
 
@@ -37,45 +55,36 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
             context: Context,
             action: String,
             requestedSessionId: String,
-            attempt: Int,
             pendingResult: BroadcastReceiver.PendingResult
         ) {
-            val service = NativePlaybackService.ensureStarted(
-                context,
-                requireForegroundBootstrap = true
-            )
-            if (service == null) {
-                if (attempt >= maxServiceDeliveryAttempts) {
-                    finishControlDelivery(pendingResult)
-                    return
+            val ownerId = "notification-action-${UUID.randomUUID()}"
+            var timeout: Runnable? = null
+            val completion = PlaybackControlDeliveryCompletion {
+                NativePlaybackService.removeControllerListener(ownerId)
+                timeout?.let(mainHandler::removeCallbacks)
+                try {
+                    pendingResult.finish()
+                } finally {
+                    NativePlaybackService.endCommandDelivery()
                 }
-                mainHandler.postDelayed(
-                    {
-                        deliverControlAction(
-                            context = context,
-                            action = action,
-                            requestedSessionId = requestedSessionId,
-                            attempt = attempt + 1,
-                            pendingResult = pendingResult
-                        )
-                    },
-                    serviceDeliveryRetryDelayMs
-                )
-                return
             }
-
-            try {
-                service.executeNotificationAction(action, requestedSessionId)
-            } finally {
-                finishControlDelivery(pendingResult)
+            fun execute(service: NativePlaybackService) {
+                completion.finish {
+                    service.executeNotificationAction(action, requestedSessionId)
+                }
             }
-        }
-
-        private fun finishControlDelivery(pendingResult: BroadcastReceiver.PendingResult) {
+            timeout = Runnable { completion.finish() }
             try {
-                pendingResult.finish()
-            } finally {
-                NativePlaybackService.endCommandDelivery()
+                NativePlaybackService.addControllerListener(ownerId) { service ->
+                    if (service != null) mainHandler.post { execute(service) }
+                }
+                mainHandler.postDelayed(timeout, PLAYBACK_CONTROL_DELIVERY_TIMEOUT_MS)
+                NativePlaybackService.ensureStarted(
+                    context,
+                    requireForegroundBootstrap = true
+                )?.let(::execute)
+            } catch (_: RuntimeException) {
+                completion.finish()
             }
         }
     }
@@ -89,13 +98,13 @@ class UnifiedPlaybackActionReceiver : BroadcastReceiver() {
         
         if (!NotificationCommand.isPlaybackControl(action)) return
         val intentSessionId = intent.getStringExtra("sessionId") ?: return
+        val pendingResult = goAsync()
         NativePlaybackService.beginCommandDelivery()
         deliverControlAction(
             context = context.applicationContext,
             action = action,
             requestedSessionId = intentSessionId,
-            attempt = 0,
-            pendingResult = goAsync()
+            pendingResult = pendingResult
         )
     }
 }

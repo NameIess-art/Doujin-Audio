@@ -1,7 +1,6 @@
 package com.doujin.audio
 
-import com.doujin.audio.player.service.NativePlaybackRestoreCoordinator
-import com.doujin.audio.player.service.NativePlaybackRestoreEnvironment
+import com.doujin.audio.player.service.*
 import com.doujin.audio.player.session.StoredNativePlaybackSession
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -88,6 +87,35 @@ class NativePlaybackRestoreCoordinatorTest {
         assertEquals(0, environment.loadCount)
     }
 
+    @Test
+    fun `foreground bootstrap failure restores snapshot without autoplay or focus`() {
+        val environment = FakeRestoreEnvironment().apply {
+            sessions = listOf(storedSession("player"))
+        }
+        val autoPlayValues = mutableListOf<Boolean>()
+        var focusRequests = 0
+        val coordinator = coordinator(
+            environment = environment,
+            restore = { stored, autoPlay, _ ->
+                stored.map { session ->
+                    autoPlayValues += autoPlay(session)
+                    session.sessionId
+                }
+            },
+            requestAudioFocus = {
+                focusRequests += 1
+                true
+            },
+            startBootstrap = { NativePlaybackForegroundStartResult.FAILED }
+        )
+
+        coordinator.restoreAfterServiceRestart(startId = 1)
+        environment.runAll()
+
+        assertEquals(listOf(false), autoPlayValues)
+        assertEquals(0, focusRequests)
+    }
+
     private fun coordinator(
         environment: FakeRestoreEnvironment,
         restore: (
@@ -101,13 +129,17 @@ class NativePlaybackRestoreCoordinatorTest {
         stopIdleService: (Int, String) -> Unit = { _, _ -> },
         completeRestore: (List<String>, Boolean) -> Unit = { _, _ -> },
         onTimerSessionsRestored: (List<String>) -> Unit = {},
-        onNotificationSessionRestored: (String) -> Unit = {}
+        onNotificationSessionRestored: (String) -> Unit = {},
+        requestAudioFocus: () -> Boolean = { true },
+        startBootstrap: () -> NativePlaybackForegroundStartResult = {
+            NativePlaybackForegroundStartResult.STARTED
+        }
     ) = NativePlaybackRestoreCoordinator(
         environment = environment,
         restoreSessions = restore,
         resumePlaybackOnStartupRestore = { true },
-        requestAudioFocus = { true },
-        startBootstrap = {},
+        requestAudioFocus = requestAudioFocus,
+        startBootstrap = startBootstrap,
         resetRestoreState = {},
         completeRestore = completeRestore,
         hasSessions = { false },

@@ -602,19 +602,19 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
             context,
           ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(999),
             borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(999),
             borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(999),
             borderSide: BorderSide.none,
           ),
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
+            horizontal: 14,
             vertical: 7,
           ),
           isDense: true,

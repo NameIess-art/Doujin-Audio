@@ -14,12 +14,28 @@ class NativePlaybackForegroundCoordinatorTest {
         val host = FakeForegroundHost()
         val coordinator = coordinator(host, environment)
 
-        coordinator.startOrUpdate()
-        coordinator.startOrUpdate()
-        coordinator.startOrUpdate(forceRefresh = true)
+        assertTrue(coordinator.startOrUpdate().playbackAllowed)
+        assertTrue(coordinator.startOrUpdate().playbackAllowed)
+        assertTrue(coordinator.startOrUpdate(forceRefresh = true).playbackAllowed)
 
         assertEquals(2, host.playbackStarts)
         assertTrue(coordinator.isStarted)
+    }
+
+    @Test
+    fun `failed foreground start is reported and active resources are not acquired`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost(failPlaybackStart = true)
+        val coordinator = coordinator(host, environment)
+
+        val result = coordinator.startOrUpdate()
+        coordinator.sync()
+
+        assertEquals(NativePlaybackForegroundStartResult.FAILED, result)
+        assertFalse(result.playbackAllowed)
+        assertFalse(coordinator.isStarted)
+        assertEquals(0, host.activeSyncs)
+        assertFalse(environment.delays().contains(4_000L))
     }
 
     @Test
@@ -85,6 +101,21 @@ class NativePlaybackForegroundCoordinatorTest {
 
         assertEquals(1, host.idleGraceBegans)
         assertEquals(0, host.graceExpiries)
+    }
+
+    @Test
+    fun `notification suppression does not bypass the idle shutdown grace`() {
+        val environment = FakeForegroundEnvironment()
+        val host = FakeForegroundHost(
+            hasPlaybackToKeepAlive = false,
+            foregroundSuppressed = true
+        )
+        val coordinator = coordinator(host, environment)
+
+        coordinator.sync()
+
+        assertEquals(listOf(10_000L), environment.delays())
+        assertEquals(1, host.idleGraceBegans)
     }
 
     @Test
@@ -315,7 +346,8 @@ private class FakeForegroundHost(
     override var foregroundSuppressed: Boolean = false,
     var signature: String? = "session|playing",
     var removeForegroundNotification: Boolean = true,
-    var notificationPosted: Boolean? = true
+    var notificationPosted: Boolean? = true,
+    var failPlaybackStart: Boolean = false
 ) : NativePlaybackForegroundHost {
     var activeSyncs = 0
     var graceExpiries = 0
@@ -337,8 +369,6 @@ private class FakeForegroundHost(
 
     override fun isForegroundNotificationPosted(): Boolean? = notificationPosted
 
-    override fun onSuppressedIdle() = Unit
-
     override fun onGraceExpired() {
         graceExpiries += 1
     }
@@ -349,6 +379,7 @@ private class FakeForegroundHost(
 
     override fun startPlaybackForeground() {
         playbackStarts += 1
+        if (failPlaybackStart) error("foreground start failed")
     }
 
     override fun startBootstrapForeground() {

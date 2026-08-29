@@ -103,6 +103,7 @@ internal fun handleMediaSessionPlayerCommandRequest(
     command: Int,
     playWhenReady: Boolean,
     requestAudioFocus: () -> Boolean,
+    establishForegroundPlayback: () -> Boolean,
     markPlaybackIntended: () -> Unit,
     clearPlaybackIntent: () -> Unit
 ): Int {
@@ -115,11 +116,11 @@ internal fun handleMediaSessionPlayerCommandRequest(
     if (command != Player.COMMAND_PLAY_PAUSE) {
         return SessionResult.RESULT_SUCCESS
     }
-    if (!requestAudioFocus()) {
+    markPlaybackIntended()
+    if (!establishForegroundPlayback() || !requestAudioFocus()) {
         clearPlaybackIntent()
         return SessionResult.RESULT_ERROR_INVALID_STATE
     }
-    markPlaybackIntended()
     return SessionResult.RESULT_SUCCESS
 }
 

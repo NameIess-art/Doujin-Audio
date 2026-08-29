@@ -45,6 +45,7 @@ class NativeMediaSessionCommandPolicyTest {
             command = Player.COMMAND_PLAY_PAUSE,
             playWhenReady = false,
             requestAudioFocus = { true },
+            establishForegroundPlayback = { true },
             markPlaybackIntended = { marked += 1 },
             clearPlaybackIntent = { cleared += 1 }
         )
@@ -63,12 +64,35 @@ class NativeMediaSessionCommandPolicyTest {
             command = Player.COMMAND_PLAY_PAUSE,
             playWhenReady = false,
             requestAudioFocus = { false },
+            establishForegroundPlayback = { true },
             markPlaybackIntended = { marked += 1 },
             clearPlaybackIntent = { cleared += 1 }
         )
 
         assertEquals(SessionResult.RESULT_ERROR_INVALID_STATE, result)
-        assertEquals(0, marked)
+        assertEquals(1, marked)
+        assertEquals(1, cleared)
+    }
+
+    @Test
+    fun `external play is rejected before focus when foreground cannot be established`() {
+        var focusRequests = 0
+        var cleared = 0
+
+        val result = handleMediaSessionPlayerCommandRequest(
+            command = Player.COMMAND_PLAY_PAUSE,
+            playWhenReady = false,
+            requestAudioFocus = {
+                focusRequests += 1
+                true
+            },
+            establishForegroundPlayback = { false },
+            markPlaybackIntended = {},
+            clearPlaybackIntent = { cleared += 1 }
+        )
+
+        assertEquals(SessionResult.RESULT_ERROR_INVALID_STATE, result)
+        assertEquals(0, focusRequests)
         assertEquals(1, cleared)
     }
 
@@ -85,6 +109,7 @@ class NativeMediaSessionCommandPolicyTest {
             command = Player.COMMAND_PLAY_PAUSE,
             playWhenReady = true,
             requestAudioFocus = requestFocus,
+            establishForegroundPlayback = { true },
             markPlaybackIntended = {},
             clearPlaybackIntent = { cleared += 1 }
         )
@@ -92,6 +117,7 @@ class NativeMediaSessionCommandPolicyTest {
             command = Player.COMMAND_STOP,
             playWhenReady = true,
             requestAudioFocus = requestFocus,
+            establishForegroundPlayback = { true },
             markPlaybackIntended = {},
             clearPlaybackIntent = { cleared += 1 }
         )

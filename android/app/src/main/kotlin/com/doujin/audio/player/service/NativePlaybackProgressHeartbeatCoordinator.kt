@@ -132,20 +132,29 @@ internal class NativePlaybackProgressHeartbeatCoordinator(
             keepAlive.cancelAlarm()
             return
         }
-        keepAlive.logHeartbeat()
-        if (keepAlive.hasPlaybackToKeepAlive) {
-            keepAlive.refreshWakeLock()
-            restart()
-            if (!keepAlive.focusInterrupted) {
-                keepAlive.triggerRecovery("keep_alive_heartbeat")
+        var shouldRearm = true
+        try {
+            keepAlive.logHeartbeat()
+            if (keepAlive.hasPlaybackToKeepAlive) {
+                keepAlive.refreshWakeLock()
+                restart()
+                if (!keepAlive.focusInterrupted) {
+                    keepAlive.triggerRecovery("keep_alive_heartbeat")
+                }
+            }
+            if (keepAlive.expireGraceIfOverdue() && !keepAlive.hasPlaybackToKeepAlive) {
+                shouldRearm = false
+                keepAlive.cancelAlarm()
+                return
+            }
+            keepAlive.syncForeground()
+        } finally {
+            if (shouldRearm &&
+                (keepAlive.hasPlaybackToKeepAlive || keepAlive.foregroundStarted)
+            ) {
+                keepAlive.ensureAlarm()
             }
         }
-        if (keepAlive.expireGraceIfOverdue() && !keepAlive.hasPlaybackToKeepAlive) {
-            keepAlive.cancelAlarm()
-            return
-        }
-        keepAlive.syncForeground()
-        keepAlive.ensureAlarm()
     }
 
     fun shutdown() {

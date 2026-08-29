@@ -28,8 +28,10 @@ internal interface NativePlaybackRecoveryHost {
         captureNativePlaybackHealthSample(session, nowElapsedRealtimeMs)
     }
     fun requestAudioFocus(): Boolean
+    fun establishForegroundPlayback(sessionId: String): Boolean
     fun focusSession(sessionId: String)
     fun ensurePlayer(session: NativePlaybackSession): ExoPlayer
+    fun onRecoveryTimedOut(sessionId: String)
     fun publishSession(sessionId: String)
     fun publishAllSessions()
     fun persistNow()
@@ -285,7 +287,8 @@ internal class NativePlaybackRecoveryController(
     private val healthCheckIntervalMs: Long = 15_000L,
     private val readyStallThresholdMs: Long = 30_000L,
     private val bufferingStallThresholdMs: Long = 45_000L,
-    private val frozenPositionThresholdMs: Long = 30_000L
+    private val frozenPositionThresholdMs: Long = 30_000L,
+    private val maxRecoveryDurationMs: Long = 10 * 60 * 1000L
 ) {
     private val intended = linkedSetOf<String>()
     private val pending = linkedSetOf<String>()
@@ -461,13 +464,20 @@ internal class NativePlaybackRecoveryController(
     ) {
         retryTasks.remove(sessionId)?.let(environment::remove)
         val recoveryStarted = startedAt.getOrPut(sessionId, environment::elapsedRealtimeMs)
-        // Keep the first few retries close to the failure, then continue at a
-        // low frequency so a temporary overnight network outage does not turn
-        // into a permanent user pause.
+        val remainingMs = maxRecoveryDurationMs -
+            (environment.elapsedRealtimeMs() - recoveryStarted).coerceAtLeast(0L)
+        if (remainingMs <= 0L) {
+            timeOutRecovery(sessionId)
+            return
+        }
         val delayMs = if (immediate) {
             0L
         } else {
-            playbackRecoveryDelayMs(attempt, recoveryStarted, environment.elapsedRealtimeMs())
+            playbackRecoveryDelayMs(
+                attempt,
+                recoveryStarted,
+                environment.elapsedRealtimeMs()
+            ).coerceAtMost(remainingMs)
         }
         attempts[sessionId] = attempt + 1
         val generation = recoveryGenerations[sessionId] ?: 0L
@@ -498,6 +508,10 @@ internal class NativePlaybackRecoveryController(
             )
             return
         }
+        if (recoveryDurationExceeded(sessionId)) {
+            timeOutRecovery(sessionId)
+            return
+        }
         if (sessionId in recovering) {
             host.logInfo("playback_recovery_skip_in_flight sessionId=$sessionId trigger=$reason")
             return
@@ -521,6 +535,14 @@ internal class NativePlaybackRecoveryController(
                 "state=${currentHealth?.playbackState?.let(::playbackStateName)} " +
                 "suppression=${currentHealth?.playbackSuppressionReason}"
         )
+        if (!host.establishForegroundPlayback(sessionId)) {
+            clear(sessionId)
+            session.playerOrNull()?.pause()
+            host.publishSession(sessionId)
+            host.persistNow()
+            host.syncForeground()
+            return
+        }
         if (!host.requestAudioFocus()) {
             clear(sessionId)
             session.playerOrNull()?.pause()
@@ -571,6 +593,24 @@ internal class NativePlaybackRecoveryController(
         candidateFallbackPending -= sessionId
         retryTasks.remove(sessionId)?.let(environment::remove)
         if (pending.isEmpty()) stopListening()
+    }
+
+    private fun recoveryDurationExceeded(sessionId: String): Boolean {
+        val recoveryStarted = startedAt[sessionId] ?: return false
+        return environment.elapsedRealtimeMs() - recoveryStarted >= maxRecoveryDurationMs
+    }
+
+    private fun timeOutRecovery(sessionId: String) {
+        if (sessionId !in pending && sessionId !in intended) return
+        host.logInfo(
+            "playback_recovery_timed_out sessionId=$sessionId " +
+                "duration=${maxRecoveryDurationMs}ms"
+        )
+        intended -= sessionId
+        healthStates -= sessionId
+        clearRecovery(sessionId)
+        if (intended.isEmpty()) stopHealthCheck()
+        host.onRecoveryTimedOut(sessionId)
     }
 
     private fun recoverIntendedPlayback(reason: String) {

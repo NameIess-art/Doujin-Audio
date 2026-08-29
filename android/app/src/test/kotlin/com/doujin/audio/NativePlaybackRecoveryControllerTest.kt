@@ -74,7 +74,7 @@ class NativePlaybackRecoveryControllerTest {
     }
 
     @Test
-    fun recoverableErrorSchedulesRetryWithoutExpiry() {
+    fun recoverableErrorSchedulesRetryWithinBoundedWindow() {
         val environment = FakeRecoveryEnvironment()
         val host = FakeRecoveryHost(recoverySession(environment))
         val controller = NativePlaybackRecoveryController(host, environment)
@@ -95,17 +95,14 @@ class NativePlaybackRecoveryControllerTest {
         assertTrue(controller.shouldKeepAlive())
     }
 
-    /**
-     * Recoverable network errors remain eligible for the low-frequency retry
-     * schedule. They must not be converted into a permanent user pause by a
-     * fixed recovery window.
-     */
     @Test
-    fun `network playback errors remain pending for low frequency recovery`() {
+    fun `recoverable playback error times out and releases keep alive responsibility`() {
         val environment = FakeRecoveryEnvironment()
+        val host = FakeRecoveryHost(recoverySession(environment))
         val controller = NativePlaybackRecoveryController(
-            FakeRecoveryHost(recoverySession(environment)),
-            environment
+            host = host,
+            environment = environment,
+            maxRecoveryDurationMs = 10_000L
         )
         controller.markIntended("player")
         controller.onPlayerError(
@@ -116,11 +113,16 @@ class NativePlaybackRecoveryControllerTest {
             causeDescription = null
         )
 
-        assertTrue(controller.isIntended("player"))
-        assertTrue(controller.isPending("player"))
-        assertTrue(controller.shouldKeepAlive())
-        assertTrue(environment.listening)
-        assertFalse(environment.delays.contains(10 * 60 * 1000L))
+        environment.runFirst(2_000L)
+        environment.runFirst(6_000L)
+        environment.runFirst(2_000L)
+
+        assertFalse(controller.isIntended("player"))
+        assertFalse(controller.isPending("player"))
+        assertFalse(controller.shouldKeepAlive())
+        assertFalse(environment.listening)
+        assertEquals(listOf("player"), host.recoveryTimeouts)
+        assertTrue(environment.tasks.isEmpty())
     }
 
     @Test
@@ -142,6 +144,29 @@ class NativePlaybackRecoveryControllerTest {
         assertFalse(controller.isPending("player"))
         assertFalse(environment.listening)
         assertTrue(environment.tasks.isEmpty())
+    }
+
+    @Test
+    fun `scheduled recovery stops before focus when foreground cannot be established`() {
+        val environment = FakeRecoveryEnvironment()
+        val host = FakeRecoveryHost(recoverySession(environment)).apply {
+            foregroundPlaybackAllowed = false
+        }
+        val controller = NativePlaybackRecoveryController(host, environment)
+        controller.markIntended("player")
+        controller.onPlayerError(
+            sessionId = "player",
+            recoverable = true,
+            errorCodeName = "ERROR_CODE_IO_NETWORK_CONNECTION_FAILED",
+            errorMessage = "network",
+            causeDescription = null
+        )
+
+        environment.runFirst(2_000L)
+
+        assertEquals(0, host.requestAudioFocusCalls)
+        assertFalse(controller.isIntended("player"))
+        assertFalse(controller.isPending("player"))
     }
 
     @Test
@@ -313,6 +338,8 @@ private class FakeRecoveryHost(
     var requestAudioFocusCalls = 0
     var onRequestAudioFocus: () -> Unit = {}
     var onHealthSample: (String, Long) -> NativePlaybackHealthSample? = { _, _ -> null }
+    val recoveryTimeouts = mutableListOf<String>()
+    var foregroundPlaybackAllowed = true
 
     override fun session(sessionId: String): NativePlaybackSession? = playbackSessions[sessionId]
     override fun healthSample(
@@ -324,8 +351,13 @@ private class FakeRecoveryHost(
         onRequestAudioFocus()
         return true
     }
+    override fun establishForegroundPlayback(sessionId: String): Boolean =
+        foregroundPlaybackAllowed
     override fun focusSession(sessionId: String) = Unit
     override fun ensurePlayer(session: NativePlaybackSession): ExoPlayer = error("unused")
+    override fun onRecoveryTimedOut(sessionId: String) {
+        recoveryTimeouts += sessionId
+    }
     override fun publishSession(sessionId: String) = Unit
     override fun publishAllSessions() = Unit
     override fun persistNow() = Unit

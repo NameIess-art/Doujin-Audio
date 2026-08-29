@@ -1,5 +1,6 @@
 package com.doujin.audio
 
+import com.doujin.audio.player.notification.*
 import com.doujin.audio.player.service.*
 
 import org.junit.Assert.assertEquals
@@ -194,6 +195,19 @@ class NativePlaybackServiceStartPolicyTest {
         } finally {
             NativePlaybackService.removeControllerListener("test-listener")
         }
+    }
+
+    @Test
+    fun `notification delivery times out within broadcast budget and ignores late service`() {
+        var completions = 0
+        var executedActions = 0
+        val completion = PlaybackControlDeliveryCompletion { completions += 1 }
+
+        assertTrue(completion.finish())
+        assertFalse(completion.finish { executedActions += 1 })
+        assertEquals(8_000L, PLAYBACK_CONTROL_DELIVERY_TIMEOUT_MS)
+        assertEquals(1, completions)
+        assertEquals(0, executedActions)
     }
 
     @Test

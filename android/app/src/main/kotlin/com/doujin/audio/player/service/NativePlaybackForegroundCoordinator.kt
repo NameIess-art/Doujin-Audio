@@ -28,7 +28,6 @@ internal interface NativePlaybackForegroundHost {
      * now rather than at the end of the grace window.
      */
     fun onIdleGraceBegan()
-    fun onSuppressedIdle()
     fun onGraceExpired()
 
     /**
@@ -48,6 +47,15 @@ internal interface NativePlaybackForegroundHost {
     fun stopForeground(wasStarted: Boolean, removeNotification: Boolean)
     fun logInfo(message: String)
     fun logWarn(message: String, error: Throwable)
+}
+
+internal enum class NativePlaybackForegroundStartResult {
+    STARTED,
+    ALREADY_STARTED,
+    SKIPPED,
+    FAILED;
+
+    val playbackAllowed: Boolean get() = this == STARTED || this == ALREADY_STARTED
 }
 
 internal class NativePlaybackForegroundCoordinator(
@@ -83,13 +91,17 @@ internal class NativePlaybackForegroundCoordinator(
         override fun run() {
             if (!watchdogScheduled) return
             if (host.hasPlaybackToKeepAlive) {
-                host.onWatchdog()
                 // Only rebuild when the notification actually went missing.
                 // A blind forceRefresh re-posts ~180 times over a 12h session.
-                startOrUpdate(
+                val foregroundStart = startOrUpdate(
                     forceRefresh = host.isForegroundNotificationPosted() == false
                 )
-                environment.postDelayed(this, watchdogIntervalMs)
+                if (foregroundStart.playbackAllowed) {
+                    host.onWatchdog()
+                    environment.postDelayed(this, watchdogIntervalMs)
+                } else {
+                    stopWatchdog()
+                }
             } else {
                 stopWatchdog()
             }
@@ -99,61 +111,70 @@ internal class NativePlaybackForegroundCoordinator(
     fun sync(forceRefresh: Boolean = false) {
         if (host.hasPlaybackToKeepAlive) {
             cancelGrace()
-            host.onActiveSync()
-            startOrUpdate(forceRefresh = forceRefresh)
-            ensureWatchdog()
-        } else if (host.foregroundSuppressed) {
-            cancelGrace()
-            stopWatchdog()
-            host.onSuppressedIdle()
+            if (startOrUpdate(forceRefresh = forceRefresh).playbackAllowed) {
+                host.onActiveSync()
+                ensureWatchdog()
+            } else {
+                stopWatchdog()
+            }
         } else {
             scheduleGrace()
         }
     }
 
-    fun startOrUpdate(forceRefresh: Boolean = false) {
+    fun startOrUpdate(
+        forceRefresh: Boolean = false
+    ): NativePlaybackForegroundStartResult {
         if (host.playbackSuspended) {
             host.logInfo("start_foreground_skip playback_suspended forceRefresh=$forceRefresh")
-            return
+            return NativePlaybackForegroundStartResult.SKIPPED
         }
         if (host.foregroundSuppressed) {
             host.logInfo("start_foreground_minimal foreground_suppressed forceRefresh=$forceRefresh")
         }
         val nextSignature = host.playbackSignature() ?: run {
             host.logInfo("start_foreground_skip no_session")
-            return
+            return NativePlaybackForegroundStartResult.SKIPPED
         }
         if (!forceRefresh && isStarted && signature == nextSignature) {
             host.logInfo("start_foreground_skip unchanged signature=$nextSignature")
-            return
+            return NativePlaybackForegroundStartResult.ALREADY_STARTED
         }
-        try {
+        return try {
             host.startPlaybackForeground()
             isStarted = true
             signature = nextSignature
             host.logInfo(
                 "start_foreground_success forceRefresh=$forceRefresh signature=$nextSignature"
             )
+            NativePlaybackForegroundStartResult.STARTED
         } catch (error: Exception) {
             host.logWarn(
                 "start_foreground_failed forceRefresh=$forceRefresh signature=$nextSignature",
                 error
             )
+            if (isStarted) {
+                NativePlaybackForegroundStartResult.ALREADY_STARTED
+            } else {
+                NativePlaybackForegroundStartResult.FAILED
+            }
         }
     }
 
-    fun startBootstrap() {
+    fun startBootstrap(): NativePlaybackForegroundStartResult {
         if (isStarted) {
             host.logInfo("start_bootstrap_foreground_skip already_started")
-            return
+            return NativePlaybackForegroundStartResult.ALREADY_STARTED
         }
-        try {
+        return try {
             host.startBootstrapForeground()
             isStarted = true
             signature = BOOTSTRAP_SIGNATURE
             host.logInfo("start_bootstrap_foreground_success")
+            NativePlaybackForegroundStartResult.STARTED
         } catch (error: Exception) {
             host.logWarn("start_bootstrap_foreground_failed", error)
+            NativePlaybackForegroundStartResult.FAILED
         }
     }
 

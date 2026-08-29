@@ -7,18 +7,13 @@ Future<void> showLoopModeBottomSheet({
 }) {
   return AppBottomSheet.show<void>(
     context: context,
-    builder: (sheetContext) => _LoopModeSheet(
-      session: session,
-      playback: playback,
-    ),
+    builder: (sheetContext) =>
+        _LoopModeSheet(session: session, playback: playback),
   );
 }
 
 class _LoopModeSheet extends StatefulWidget {
-  const _LoopModeSheet({
-    required this.session,
-    required this.playback,
-  });
+  const _LoopModeSheet({required this.session, required this.playback});
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
@@ -153,31 +148,29 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
                                     },
                                     expandedInsets: EdgeInsets.zero,
                                   ),
-                                  const SizedBox(height: 12),
-                                  SegmentedButton<bool>(
-                                    key: const ValueKey('loop_mode_scope_row'),
-                                    segments: [
-                                      ButtonSegment<bool>(
-                                        value: false,
-                                        label: Text(
-                                          i18n.tr('current_folder'),
+                                  if (!widget.session.isPlaybackQueue) ...[
+                                    const SizedBox(height: 12),
+                                    SegmentedButton<bool>(
+                                      key: const ValueKey('loop_mode_scope_row'),
+                                      segments: [
+                                        ButtonSegment<bool>(
+                                          value: false,
+                                          label: Text(i18n.tr('current_folder')),
                                         ),
-                                      ),
-                                      ButtonSegment<bool>(
-                                        value: true,
-                                        label: Text(
-                                          i18n.tr('cross_folder'),
+                                        ButtonSegment<bool>(
+                                          value: true,
+                                          label: Text(i18n.tr('cross_folder')),
                                         ),
-                                      ),
-                                    ],
-                                    selected: {_crossFolder},
-                                    onSelectionChanged: (selected) {
-                                      setState(() {
-                                        _crossFolder = selected.first;
-                                      });
-                                    },
-                                    expandedInsets: EdgeInsets.zero,
-                                  ),
+                                      ],
+                                      selected: {_crossFolder},
+                                      onSelectionChanged: (selected) {
+                                        setState(() {
+                                          _crossFolder = selected.first;
+                                        });
+                                      },
+                                      expandedInsets: EdgeInsets.zero,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),
@@ -202,17 +195,24 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
                         TextButton(
                           key: const ValueKey('loop_mode_confirm'),
                           onPressed: () async {
-                            final targetNonSingleMode = _pauseAfterPlay
-                                ? (_crossFolder
-                                    ? SessionLoopMode.crossOnce
-                                    : SessionLoopMode.folderOnce)
-                                : (_crossFolder
-                                    ? (_shuffle
-                                        ? SessionLoopMode.crossRandom
-                                        : SessionLoopMode.crossSequential)
-                                    : (_shuffle
-                                        ? SessionLoopMode.folderRandom
-                                        : SessionLoopMode.folderSequential));
+                            final effectiveCrossFolder =
+                                _crossFolder && !widget.session.isPlaybackQueue;
+                            final targetNonSingleMode = effectiveCrossFolder
+                                ? (_pauseAfterPlay
+                                      ? (_shuffle
+                                            ? SessionLoopMode.crossRandomOnce
+                                            : SessionLoopMode.crossOnce)
+                                      : (_shuffle
+                                            ? SessionLoopMode.crossRandom
+                                            : SessionLoopMode.crossSequential))
+                                : (_pauseAfterPlay
+                                      ? (_shuffle
+                                            ? SessionLoopMode.folderRandomOnce
+                                            : SessionLoopMode.folderOnce)
+                                      : (_shuffle
+                                            ? SessionLoopMode.folderRandom
+                                            : SessionLoopMode
+                                                  .folderSequential));
 
                             if (_single) {
                               await widget.playback.setSessionLoopMode(
@@ -249,19 +249,15 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
 }
 
 class _SessionLoopModeButton extends StatelessWidget {
-  const _SessionLoopModeButton({
-    required this.session,
-    required this.playback,
-  });
+  const _SessionLoopModeButton({required this.session, required this.playback});
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
   IconData get _orderIcon {
+    if (session.loopMode.isShuffle) return Icons.shuffle_rounded;
     if (session.loopMode.isOneShot) return Icons.play_arrow_rounded;
-    return session.loopMode.isShuffle
-        ? Icons.shuffle_rounded
-        : Icons.repeat_rounded;
+    return Icons.repeat_rounded;
   }
 
   IconData get _scopeIcon => session.loopMode.isCrossFolder
@@ -279,6 +275,14 @@ class _SessionLoopModeButton extends StatelessWidget {
           cs,
           _SessionDetailForegroundLevel.muted,
         ),
+      );
+    }
+    if (session.isPlaybackQueue) {
+      return Icon(
+        _orderIcon,
+        key: ValueKey<String>('queue_order_${_orderIcon.codePoint}'),
+        size: 20,
+        color: cs.onSurfaceVariant,
       );
     }
     return SizedBox(

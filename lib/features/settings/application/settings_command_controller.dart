@@ -152,21 +152,33 @@ final class SettingsCommandController {
     await _settings.persist();
   }
 
-  Future<void> deleteCustomEqPreset(
-    String presetId, {
-    String? sessionId,
-  }) async {
-    _settings.customEqPresets = List<EqPreset>.unmodifiable(
-      _settings.customEqPresets.where((preset) => preset.id != presetId),
-    );
-    _settings.syncSlice(isInitialized: _settings.slice.state.isInitialized);
-    await _settings.persist();
-    if (sessionId != null) {
-      final session = _playback.sessionSnapshotById(sessionId);
-      if (session != null && session.audioEffects.eqPresetId == presetId) {
-        final flat = builtInEqPresets.first;
-        await _playback.applySessionEqPreset(sessionId, flat);
-      }
+  Future<void> deleteCustomEqPreset(String presetId) async {
+    final previousPresets = _settings.customEqPresets;
+    if (!previousPresets.any((preset) => preset.id == presetId)) return;
+
+    final referencingSessionIds = _playback.sessions.values
+        .where((session) => session.audioEffects.eqPresetId == presetId)
+        .map((session) => session.id)
+        .toList(growable: false);
+    final flat = builtInEqPresets.first;
+    for (final sessionId in referencingSessionIds) {
+      await _playback.applySessionEqPreset(sessionId, flat);
     }
+
+    final stillReferenced = _playback.sessions.values.any(
+      (session) => session.audioEffects.eqPresetId == presetId,
+    );
+    if (stillReferenced) return;
+
+    _settings.customEqPresets = List<EqPreset>.unmodifiable(
+      previousPresets.where((preset) => preset.id != presetId),
+    );
+    try {
+      await _settings.persist();
+    } catch (_) {
+      _settings.customEqPresets = previousPresets;
+      rethrow;
+    }
+    _settings.syncSlice(isInitialized: _settings.slice.state.isInitialized);
   }
 }

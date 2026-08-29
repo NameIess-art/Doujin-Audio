@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:doujin_audio/core/errors/native_result.dart';
 import 'package:doujin_audio/features/player/application/native_playback_repository.dart';
+import 'package:doujin_audio/features/player/application/native_playback_bridge.dart';
 import 'package:doujin_audio/features/settings/application/settings_repository.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 import 'support/test_persistence_repository.dart';
@@ -79,6 +80,90 @@ void main() {
               )
               as Map<String, dynamic>;
       expect((saved['customEqPresets'] as List<dynamic>), hasLength(1));
+    },
+  );
+
+  test(
+    'deleting a custom EQ preset resets every referencing session',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final preset = EqPreset(
+        id: 'custom_shared',
+        labelKey: 'Shared preset',
+        bandLevels: const <int, double>{60: 2.5},
+      );
+      final settings = SettingsRepository()
+        ..customEqPresets = <EqPreset>[preset]
+        ..syncSlice(isInitialized: true);
+      final playback = PlaybackFacade.create(
+        databaseRepository: TestPersistenceRepository(),
+        nativeRepository: _AudioEffectsRepository(),
+      )..configurePersistence(enabled: false);
+      final notifications = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      final controller = SettingsCommandController(
+        settings: settings,
+        playback: playback,
+        notifications: notifications,
+      );
+      addTearDown(settings.dispose);
+      addTearDown(playback.dispose);
+      addTearDown(notifications.dispose);
+
+      final sessions = <PlaybackSession>[
+        _sessionUsingPreset('session-1', preset),
+        _sessionUsingPreset('session-2', preset),
+      ];
+      for (final session in sessions) {
+        addTearDown(session.shutdown);
+        playback.registerSession(session);
+      }
+
+      await controller.deleteCustomEqPreset(preset.id);
+
+      expect(settings.customEqPresets, isEmpty);
+      for (final session in sessions) {
+        expect(session.audioEffects.eqPresetId, builtInEqPresets.first.id);
+      }
+    },
+  );
+
+  test(
+    'custom EQ preset is preserved when a referencing session cannot reset',
+    () async {
+      SharedPreferences.setMockInitialValues(const <String, Object>{});
+      final preset = EqPreset(
+        id: 'custom_in_use',
+        labelKey: 'In-use preset',
+        bandLevels: const <int, double>{60: 2.5},
+      );
+      final settings = SettingsRepository()
+        ..customEqPresets = <EqPreset>[preset]
+        ..syncSlice(isInitialized: true);
+      final playback = PlaybackFacade.create(
+        databaseRepository: TestPersistenceRepository(),
+        nativeRepository: _AudioEffectsRepository(fail: true),
+      )..configurePersistence(enabled: false);
+      final notifications = NotificationFacade.create(
+        service: PlaybackNotificationService(),
+      );
+      final controller = SettingsCommandController(
+        settings: settings,
+        playback: playback,
+        notifications: notifications,
+      );
+      final session = _sessionUsingPreset('session-1', preset);
+      playback.registerSession(session);
+      addTearDown(session.shutdown);
+      addTearDown(settings.dispose);
+      addTearDown(playback.dispose);
+      addTearDown(notifications.dispose);
+
+      await controller.deleteCustomEqPreset(preset.id);
+
+      expect(settings.customEqPresets, <EqPreset>[preset]);
+      expect(session.audioEffects.eqPresetId, preset.id);
     },
   );
 
@@ -186,6 +271,45 @@ final class _CapturingPlaybackBehaviorRepository
   }) async {
     this.requestAudioFocus = requestAudioFocus;
     return const NativeSuccess<void>();
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+PlaybackSession _sessionUsingPreset(String id, EqPreset preset) {
+  final path = '/audio/$id.mp3';
+  return PlaybackSession(
+      id: id,
+      currentTrackPath: path,
+      loopMode: SessionLoopMode.folderSequential,
+      nonSingleLoopMode: SessionLoopMode.folderSequential,
+      volume: 1,
+      createdAt: DateTime(2026),
+      state: PlayerState(false, ProcessingState.ready),
+    )
+    ..loadedPath = path
+    ..audioEffects = AudioEffectsState(
+      eqEnabled: true,
+      eqPresetId: preset.id,
+      eqBandLevels: preset.bandLevels,
+    );
+}
+
+final class _AudioEffectsRepository extends NativePlaybackRepository {
+  _AudioEffectsRepository({this.fail = false});
+
+  final bool fail;
+
+  @override
+  Future<NativeResult<NativePlaybackSnapshot>> setAudioEffects(
+    String sessionId,
+    NativeAudioEffects effects,
+  ) async {
+    if (fail) {
+      return const NativeFailure<NativePlaybackSnapshot>('effects failed');
+    }
+    return const NativeSuccess<NativePlaybackSnapshot>();
   }
 
   @override

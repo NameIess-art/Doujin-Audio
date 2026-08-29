@@ -507,8 +507,9 @@ class _PlaybackSecondaryControlsState
                   value: displayVolume,
                   max: sessionVolumeDisplayMaximum,
                   onChanged: (displayValue) {
-                    final newGain =
-                        sessionVolumeGainFromDisplayValue(displayValue);
+                    final newGain = sessionVolumeGainFromDisplayValue(
+                      displayValue,
+                    );
                     setState(() => _dragVolume = newGain);
                     AppInteractionFeedback.continuous(
                       (displayValue * 100).round(),
@@ -523,8 +524,9 @@ class _PlaybackSecondaryControlsState
                     );
                   },
                   onChangeEnd: (displayValue) {
-                    final newGain =
-                        sessionVolumeGainFromDisplayValue(displayValue);
+                    final newGain = sessionVolumeGainFromDisplayValue(
+                      displayValue,
+                    );
                     setState(() => _dragVolume = newGain);
                     AppInteractionFeedback.resetContinuous();
                     UiInteractionCoordinator.instance.cancelThrottledCommit(
@@ -565,9 +567,7 @@ class _PlaybackSecondaryControlsState
       return LayoutBuilder(
         key: const ValueKey('playback_buttons_row'),
         builder: (context, constraints) => SingleChildScrollView(
-          key: const ValueKey(
-            'playback_secondary_controls_horizontal_scroll',
-          ),
+          key: const ValueKey('playback_secondary_controls_horizontal_scroll'),
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: ConstrainedBox(

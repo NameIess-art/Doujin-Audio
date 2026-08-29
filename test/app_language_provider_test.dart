@@ -127,6 +127,44 @@ void main() {
     );
   });
 
+  testWidgets('follow system reacts to locale changes', (tester) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('en'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    final provider = AppLanguageProvider();
+    addTearDown(provider.dispose);
+    await tester.pump();
+    expect(provider.language, AppLanguage.en);
+
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('zh'),
+    ];
+    await tester.pump();
+    expect(provider.language, AppLanguage.zh);
+  });
+
+  testWidgets('stored explicit interface language remains compatible', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{
+      'app_language': 'en',
+    });
+    tester.binding.platformDispatcher.localesTestValue = const <Locale>[
+      Locale('ja'),
+    ];
+    addTearDown(tester.binding.platformDispatcher.clearLocalesTestValue);
+
+    final provider = AppLanguageProvider();
+    addTearDown(provider.dispose);
+    await tester.pump();
+
+    expect(provider.preference, AppLanguagePreference.en);
+    expect(provider.language, AppLanguage.en);
+  });
+
   test('content language preference follows or overrides page language', () {
     expect(
       ContentLanguagePreference.followPage.resolve(AppLanguage.ja),

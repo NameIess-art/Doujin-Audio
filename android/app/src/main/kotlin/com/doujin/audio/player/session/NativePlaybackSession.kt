@@ -2,6 +2,8 @@
 
 package com.doujin.audio.player.session
 
+import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MAX
+import com.doujin.audio.player.common.NATIVE_PLAYBACK_SPEED_MIN
 import com.doujin.audio.player.common.nativePlaybackWakeModeForUris
 import com.doujin.audio.player.effects.*
 
@@ -765,7 +767,10 @@ internal fun publishNativePlaybackSessionState(
     return snapshot
 }
 
-private fun normalizeSpeed(speed: Float): Float = speed.coerceIn(0.25f, 3.0f)
+private fun normalizeSpeed(speed: Float): Float = speed.coerceIn(
+    NATIVE_PLAYBACK_SPEED_MIN.toFloat(),
+    NATIVE_PLAYBACK_SPEED_MAX.toFloat()
+)
 
 internal fun shouldCreatePlayerForConfiguration(
     deferPlayerCreation: Boolean,

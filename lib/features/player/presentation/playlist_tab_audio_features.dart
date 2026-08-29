@@ -95,35 +95,60 @@ class _FeatureSwitchTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
+    return SizedBox(
+      height: 66,
+      child: Material(
         color: cs.surfaceContainerHighest.withValues(alpha: 0.18),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: cs.outlineVariant.withValues(alpha: 0.35)),
-      ),
-      child: SwitchListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14),
-        value: value,
-        onChanged: onChanged,
-        secondary: Icon(
-          icon,
-          color: value ? cs.primary : cs.onSurfaceVariant,
-          size: 22,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.35)),
         ),
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Text(
-            subtitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              color: cs.onSurfaceVariant,
-              height: 1.2,
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => onChanged(!value),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              children: [
+                Icon(
+                  icon,
+                  color: value ? cs.primary : cs.onSurfaceVariant,
+                  size: 22,
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: cs.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Switch(
+                  value: value,
+                  onChanged: onChanged,
+                ),
+              ],
             ),
           ),
         ),
@@ -408,23 +433,22 @@ class _EqualizerPage extends ConsumerWidget {
                   style: _sessionDetailResetButtonStyle(context),
                   onPressed: isCustomPresetSelected && selectedPresetId != null
                       ? () {
-                          final commands =
-                              ref.read(settingsCommandControllerProvider);
+                          final commands = ref.read(
+                            settingsCommandControllerProvider,
+                          );
                           unawaited(
-                            commands.deleteCustomEqPreset(
-                              selectedPresetId,
-                              sessionId: session.id,
-                            ),
+                            commands.deleteCustomEqPreset(selectedPresetId),
                           );
                         }
                       : (hasAdjustedEqBands
-                          ? () => _showSavePresetDialog(
-                              context,
-                              commands:
-                                  ref.read(settingsCommandControllerProvider),
-                              session: session,
-                            )
-                          : null),
+                            ? () => _showSavePresetDialog(
+                                context,
+                                commands: ref.read(
+                                  settingsCommandControllerProvider,
+                                ),
+                                session: session,
+                              )
+                            : null),
                   child: Text(
                     i18n.tr(
                       isCustomPresetSelected

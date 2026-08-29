@@ -999,7 +999,9 @@ void main() {
     expect(panelDecoration.borderRadius, BorderRadius.circular(16));
     expect(panelDecoration.boxShadow, isNotEmpty);
 
-    await tester.tap(find.byIcon(Icons.close_rounded));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('close_console_panel')),
+    );
     await tester.pumpAndSettle();
     expect(artwork, findsOneWidget);
     expect(find.byKey(expandedPanel), findsNothing);
@@ -1078,7 +1080,9 @@ void main() {
     runtimeGraph.settings.syncSlice();
     await tester.pumpAndSettle();
     final customPreset = runtimeGraph.settings.customEqPresets.first;
-    unawaited(runtimeGraph.playback.applySessionEqPreset(session.id, customPreset));
+    unawaited(
+      runtimeGraph.playback.applySessionEqPreset(session.id, customPreset),
+    );
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );
@@ -1143,22 +1147,39 @@ void main() {
         groupKey: '/library/segments',
         groupTitle: 'Segments',
       );
-      final session = PlaybackSession(
-        id: 'segment-live-position-session',
-        currentTrackPath: track.path,
-        loopMode: SessionLoopMode.single,
-        nonSingleLoopMode: SessionLoopMode.single,
-        volume: 1,
-        createdAt: DateTime(2026),
-        state: PlayerState(false, ProcessingState.ready),
-      )
-        ..setOptimisticPosition(const Duration(seconds: 2))
-        ..setOptimisticDuration(const Duration(minutes: 2));
+      final session =
+          PlaybackSession(
+              id: 'segment-live-position-session',
+              currentTrackPath: track.path,
+              loopMode: SessionLoopMode.single,
+              nonSingleLoopMode: SessionLoopMode.single,
+              volume: 1,
+              createdAt: DateTime(2026),
+              state: PlayerState(false, ProcessingState.ready),
+            )
+            ..setOptimisticPosition(const Duration(seconds: 2))
+            ..setOptimisticDuration(const Duration(minutes: 2));
       addTearDown(session.shutdown);
       fixture.runtimeGraph.library.addTracks(
         <MusicTrack>[track],
         notify: false,
         persist: false,
+      );
+      final trackKey = TimeSegmentLabel.trackKeyFor(track);
+      final existingTimestamp = DateTime(2026);
+      await tester.runAsync(
+        () => fixture.persistenceRepository.upsertTimeSegmentLabel(
+          TimeSegmentLabel(
+            id: 'existing-segment',
+            trackKey: trackKey,
+            name: '标签2',
+            start: const Duration(seconds: 5),
+            end: const Duration(seconds: 10),
+            colorValue: kTimeSegmentLabelPalette.first,
+            createdAt: existingTimestamp,
+            updatedAt: existingTimestamp,
+          ),
+        ),
       );
       fixture.playbackService.registerSession(session);
       fixture.playbackService.syncSlice(
@@ -1193,7 +1214,7 @@ void main() {
 
       expect(
         tester.widget<TextField>(find.byType(TextField)).controller?.text,
-        '标签1',
+        '标签3',
       );
 
       session.setOptimisticPosition(const Duration(seconds: 18));
@@ -1202,10 +1223,12 @@ void main() {
         find.widgetWithText(FilledButton, i18n.tr('segment_start')),
       );
       await tester.pump();
-      final startRow = find.ancestor(
-        of: find.widgetWithText(FilledButton, i18n.tr('segment_start')),
-        matching: find.byType(Row),
-      ).first;
+      final startRow = find
+          .ancestor(
+            of: find.widgetWithText(FilledButton, i18n.tr('segment_start')),
+            matching: find.byType(Row),
+          )
+          .first;
       expect(
         find.descendant(of: startRow, matching: find.text('00:18')),
         findsOneWidget,
@@ -1213,35 +1236,49 @@ void main() {
 
       session.setOptimisticPosition(const Duration(seconds: 42));
       await tester.pump();
+      final firstSaveGate = Completer<void>();
+      addTearDown(() {
+        if (!firstSaveGate.isCompleted) firstSaveGate.complete();
+      });
+      fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = () =>
+          firstSaveGate.future;
       await tester.tap(
         find.widgetWithText(FilledButton, i18n.tr('segment_end')),
       );
       await tester.pump();
-      final endRow = find.ancestor(
-        of: find.widgetWithText(FilledButton, i18n.tr('segment_end')),
-        matching: find.byType(Row),
-      ).first;
+      final endRow = find
+          .ancestor(
+            of: find.widgetWithText(FilledButton, i18n.tr('segment_end')),
+            matching: find.byType(Row),
+          )
+          .first;
       expect(
         find.descendant(of: endRow, matching: find.text('00:42')),
         findsOneWidget,
       );
 
-      final labelsAfterFirst = await tester.runAsync(
-        () => fixture.persistenceRepository.loadTimeSegmentLabels(
-          TimeSegmentLabel.trackKeyFor(track),
-        ),
-      );
-      expect(labelsAfterFirst, hasLength(1));
-      expect(labelsAfterFirst!.single.name, '标签1');
-      expect(labelsAfterFirst.single.start, const Duration(seconds: 18));
-      expect(labelsAfterFirst.single.end, const Duration(seconds: 42));
-
       await tester.tap(find.byTooltip(i18n.tr('segment_add')));
       await tester.pump();
       expect(
         tester.widget<TextField>(find.byType(TextField)).controller?.text,
-        '标签2',
+        '标签4',
       );
+      fixture.persistenceRepository.beforeTimeSegmentLabelUpsert = null;
+      firstSaveGate.complete();
+      await tester.pump();
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+
+      final labelsAfterFirst = await tester.runAsync(
+        () => fixture.persistenceRepository.loadTimeSegmentLabels(trackKey),
+      );
+      expect(labelsAfterFirst, hasLength(2));
+      expect(labelsAfterFirst![0].name, '标签2');
+      expect(labelsAfterFirst[1].name, '标签3');
+      expect(labelsAfterFirst[1].start, const Duration(seconds: 18));
+      expect(labelsAfterFirst[1].end, const Duration(seconds: 42));
 
       session.setOptimisticPosition(const Duration(seconds: 80));
       await tester.pump();
@@ -1266,17 +1303,16 @@ void main() {
       );
 
       final labelsAfterSecond = await tester.runAsync(
-        () => fixture.persistenceRepository.loadTimeSegmentLabels(
-          TimeSegmentLabel.trackKeyFor(track),
-        ),
+        () => fixture.persistenceRepository.loadTimeSegmentLabels(trackKey),
       );
-      expect(labelsAfterSecond, hasLength(2));
-      expect(labelsAfterSecond![0].name, '标签1');
-      expect(labelsAfterSecond[0].start, const Duration(seconds: 18));
-      expect(labelsAfterSecond[0].end, const Duration(seconds: 42));
-      expect(labelsAfterSecond[1].name, '标签2');
-      expect(labelsAfterSecond[1].start, const Duration(seconds: 50));
-      expect(labelsAfterSecond[1].end, const Duration(seconds: 80));
+      expect(labelsAfterSecond, hasLength(3));
+      expect(labelsAfterSecond![0].name, '标签2');
+      expect(labelsAfterSecond[1].name, '标签3');
+      expect(labelsAfterSecond[1].start, const Duration(seconds: 18));
+      expect(labelsAfterSecond[1].end, const Duration(seconds: 42));
+      expect(labelsAfterSecond[2].name, '标签4');
+      expect(labelsAfterSecond[2].start, const Duration(seconds: 50));
+      expect(labelsAfterSecond[2].end, const Duration(seconds: 80));
 
       final sliderFinder = find.byType(Slider);
       expect(sliderFinder, findsOneWidget);

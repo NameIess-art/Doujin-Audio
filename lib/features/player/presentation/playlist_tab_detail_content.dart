@@ -52,6 +52,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   bool _savingSegment = false;
   bool _segmentSaveQueued = false;
   int _segmentDraftGeneration = 0;
+  final Set<(String, String)> _pendingNewSegmentNames = <(String, String)>{};
 
   PlaybackFacade get _playback => ref.read(playbackFacadeProvider);
   AudioPathCoordinator get _paths => ref.read(audioPathCoordinatorProvider);
@@ -219,10 +220,16 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
 
   String _nextSegmentDefaultName() {
     final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final trackKey = _segmentTrackKey;
+    final pendingNames = _pendingNewSegmentNames
+        .where((entry) => entry.$1 == trackKey)
+        .map((entry) => entry.$2)
+        .toSet();
     final usedNames = _segmentLabels
         .map((label) => label.name.trim())
+        .followedBy(pendingNames)
         .toSet();
-    var index = 1;
+    var index = _segmentLabels.length + pendingNames.length + 1;
     while (true) {
       final name = i18n.tr('segment_default_name', {'index': index});
       if (!usedNames.contains(name)) {
@@ -309,12 +316,17 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
       return;
     }
     _savingSegment = true;
+    (String, String)? pendingReservation;
     try {
       final existing = _selectedSegmentId == null
           ? null
           : _segmentLabels
                 .where((label) => label.id == _selectedSegmentId)
                 .firstOrNull;
+      if (existing == null) {
+        pendingReservation = (trackKey, name);
+        _pendingNewSegmentNames.add(pendingReservation);
+      }
       final label = _timeSegments.buildLabel(
         trackKey: trackKey,
         name: name,
@@ -345,6 +357,9 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
             });
       });
     } finally {
+      if (pendingReservation != null) {
+        _pendingNewSegmentNames.remove(pendingReservation);
+      }
       _savingSegment = false;
       if (_segmentSaveQueued && mounted) {
         _segmentSaveQueued = false;

@@ -3,6 +3,11 @@ package com.doujin.audio.player.common
 import com.doujin.audio.player.session.*
 import java.net.URI
 
+internal const val NATIVE_PLAYBACK_SPEED_MIN = 0.25
+internal const val NATIVE_PLAYBACK_SPEED_MAX = 3.0
+internal val NATIVE_PLAYBACK_SPEED_RANGE =
+    NATIVE_PLAYBACK_SPEED_MIN..NATIVE_PLAYBACK_SPEED_MAX
+
 internal data class NativePrepareSessionArguments(
     val sessionId: String,
     val uri: String,
@@ -59,7 +64,7 @@ internal object NativePlaybackCommandPayloads {
         val artUri = raw.optionalString("artUri")?.also(::requireSupportedUri)
         val startPositionMs = raw.requiredLong("startPositionMs", minimum = 0L)
         val volume = raw.requiredFiniteDouble("volume", 0.0..3.0).toFloat()
-        val speed = raw.requiredFiniteDouble("speed", 0.5..2.0).toFloat()
+        val speed = raw.requiredFiniteDouble("speed", NATIVE_PLAYBACK_SPEED_RANGE).toFloat()
         val audioEffects = parseAudioEffects(raw.requiredMap("audioEffects"))
         val queue = parseQueue(raw["queue"])
         val queueStartIndex = raw.optionalInt("queueStartIndex") ?: 0

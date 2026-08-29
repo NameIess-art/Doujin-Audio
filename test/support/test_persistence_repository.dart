@@ -21,6 +21,7 @@ class TestPersistenceRepository extends SqliteLibraryRepository
 
   final SqlitePlaybackRepository _playback;
   final SqliteAsmrRepository _asmr;
+  Future<void> Function()? beforeTimeSegmentLabelUpsert;
 
   @override
   Future<List<PersistedPlaybackSession>> loadAllSessions() =>
@@ -43,8 +44,11 @@ class TestPersistenceRepository extends SqliteLibraryRepository
   Future<List<TimeSegmentLabel>> loadTimeSegmentLabels(String trackKey) =>
       _playback.loadTimeSegmentLabels(trackKey);
   @override
-  Future<void> upsertTimeSegmentLabel(TimeSegmentLabel label) =>
-      _playback.upsertTimeSegmentLabel(label);
+  Future<void> upsertTimeSegmentLabel(TimeSegmentLabel label) async {
+    await beforeTimeSegmentLabelUpsert?.call();
+    await _playback.upsertTimeSegmentLabel(label);
+  }
+
   @override
   Future<void> deleteTimeSegmentLabel(String id) =>
       _playback.deleteTimeSegmentLabel(id);

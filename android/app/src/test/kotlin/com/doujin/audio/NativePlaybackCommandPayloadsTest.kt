@@ -35,6 +35,20 @@ class NativePlaybackCommandPayloadsTest {
                 mapOf("sessionId" to "main", "volume" to 3.0)
             )
         )
+
+        validatePlaybackArgumentsBeforeService(
+            MethodCall(
+                NativePlaybackMethods.SET_SPEED,
+                mapOf("sessionId" to "main", "speed" to 0.25)
+            )
+        )
+
+        validatePlaybackArgumentsBeforeService(
+            MethodCall(
+                NativePlaybackMethods.SET_TEMPORARY_SPEED,
+                mapOf("sessionId" to "main", "speed" to 3.0)
+            )
+        )
     }
 
     @Test(expected = IllegalArgumentException::class)
@@ -152,6 +166,19 @@ class NativePlaybackCommandPayloadsTest {
         )
 
         assertEquals(3.0f, parsed.volume)
+    }
+
+    @Test
+    fun `prepare parser accepts expanded playback speed boundaries`() {
+        val slow = NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload().toMutableMap().apply { put("speed", 0.25) }
+        )
+        val fast = NativePlaybackCommandPayloads.parsePrepareSession(
+            validPreparePayload().toMutableMap().apply { put("speed", 3.0) }
+        )
+
+        assertEquals(0.25f, slow.speed)
+        assertEquals(3.0f, fast.speed)
     }
 
     @Test(expected = IllegalArgumentException::class)

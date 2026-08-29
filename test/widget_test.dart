@@ -2118,9 +2118,14 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byKey(const ValueKey('session_loop_button_anchor')));
+      await tester.tap(
+        find.byKey(const ValueKey('session_loop_button_anchor')),
+      );
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('loop_mode_single_row')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('loop_mode_single_row')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const ValueKey('loop_mode_pause_after_playback_row')),
         findsOneWidget,
@@ -2129,12 +2134,14 @@ void main() {
       expect(find.byKey(const ValueKey('loop_mode_scope_row')), findsOneWidget);
 
       final ignorePointer = tester.widget<IgnorePointer>(
-        find.descendant(
-          of: find.byType(Column),
-          matching: find.byWidgetPredicate(
-            (w) => w is IgnorePointer && w.ignoring == true,
-          ),
-        ).first,
+        find
+            .descendant(
+              of: find.byType(Column),
+              matching: find.byWidgetPredicate(
+                (w) => w is IgnorePointer && w.ignoring == true,
+              ),
+            )
+            .first,
       );
       expect(ignorePointer.ignoring, isTrue);
 
@@ -2149,38 +2156,83 @@ void main() {
         SessionLoopMode.folderOnce,
       );
 
-    await tester.tap(
-      find.byKey(const ValueKey('session_volume_button_anchor')),
-    );
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('session_volume_exit_button')), findsOneWidget);
-    expect(find.byKey(const ValueKey('session_volume_mute_button')), findsOneWidget);
-    expect(find.byKey(const ValueKey('session_volume_slider')), findsOneWidget);
-    expect(find.byKey(const ValueKey('session_volume_percent_text')), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('session_loop_button_anchor')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(harness.language.tr('shuffle_playback')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('loop_mode_confirm')));
+      await tester.pumpAndSettle();
+      expect(
+        harness.playbackService.sessions['orientation_session']?.loopMode,
+        SessionLoopMode.folderRandomOnce,
+      );
 
-    final initialVol = harness.playbackService.sessions['orientation_session']?.volume ?? 1.0;
-    expect(initialVol, greaterThan(0.0));
+      await tester.tap(
+        find.byKey(const ValueKey('session_volume_button_anchor')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('session_volume_exit_button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('session_volume_mute_button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('session_volume_slider')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('session_volume_percent_text')),
+        findsOneWidget,
+      );
 
-    await tester.tap(find.byKey(const ValueKey('session_volume_mute_button')));
-    await tester.pumpAndSettle();
-    expect(harness.playbackService.sessions['orientation_session']?.volume, 0.0);
+      final initialVol =
+          harness.playbackService.sessions['orientation_session']?.volume ??
+          1.0;
+      expect(initialVol, greaterThan(0.0));
 
-    await tester.tap(find.byKey(const ValueKey('session_volume_mute_button')));
-    await tester.pumpAndSettle();
-    expect(
-      (harness.playbackService.sessions['orientation_session']?.volume ?? 0.0) - initialVol,
-      closeTo(0.0, 0.01),
-    );
+      await tester.tap(
+        find.byKey(const ValueKey('session_volume_mute_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        harness.playbackService.sessions['orientation_session']?.volume,
+        0.0,
+      );
 
-    await tester.tap(find.byKey(const ValueKey('session_volume_exit_button')));
-    await tester.pumpAndSettle();
-    expect(find.byKey(const ValueKey('session_volume_exit_button')), findsNothing);
-    expect(find.byKey(const ValueKey('session_volume_button_anchor')), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey('session_volume_mute_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        (harness.playbackService.sessions['orientation_session']?.volume ??
+                0.0) -
+            initialVol,
+        closeTo(0.0, 0.01),
+      );
 
-    await _settleSessionDetailAsyncWork(tester);
-    await tester.pumpWidget(const SizedBox.shrink());
-    debugDefaultTargetPlatformOverride = previousPlatform;
-  });
+      await tester.tap(
+        find.byKey(const ValueKey('session_volume_exit_button')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('session_volume_exit_button')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('session_volume_button_anchor')),
+        findsOneWidget,
+      );
+
+      await _settleSessionDetailAsyncWork(tester);
+      await tester.pumpWidget(const SizedBox.shrink());
+      debugDefaultTargetPlatformOverride = previousPlatform;
+    },
+  );
 
   testWidgets('session volume slider keeps its released value visible', (
     tester,

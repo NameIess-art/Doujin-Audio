@@ -128,8 +128,10 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
             child: ListWheelScrollView.useDelegate(
               key: const ValueKey('playback_speed_wheel'),
               controller: _controller,
-              itemExtent: 44,
-              diameterRatio: 1.35,
+              itemExtent: 52,
+              diameterRatio: 1.5,
+              useMagnifier: true,
+              magnification: 1.08,
               physics: const FixedExtentScrollPhysics(),
               onSelectedItemChanged: (index) {
                 _setSpeedIndex(index, persist: false);
@@ -153,15 +155,28 @@ class _SpeedWheelPageState extends ConsumerState<_SpeedWheelPage> {
                     },
                     child: Center(
                       child: AnimatedDefaultTextStyle(
-                        duration: const Duration(milliseconds: 120),
+                        duration: const Duration(milliseconds: 140),
                         curve: Curves.easeOutCubic,
-                        style: Theme.of(context).textTheme.titleLarge!.copyWith(
-                          color: selected ? cs.primary : cs.onSurfaceVariant,
-                          fontWeight: selected
-                              ? FontWeight.w900
-                              : FontWeight.w700,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
+                        style: selected
+                            ? Theme.of(context).textTheme.headlineMedium!.copyWith(
+                                color: cs.primary,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 28,
+                                letterSpacing: -0.5,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              )
+                            : Theme.of(context).textTheme.titleMedium!.copyWith(
+                                color: cs.onSurfaceVariant.withValues(
+                                  alpha: 0.45,
+                                ),
+                                fontWeight: FontWeight.w600,
+                                fontSize: 17,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
                         child: Text(_formatSpeedValue(speed)),
                       ),
                     ),

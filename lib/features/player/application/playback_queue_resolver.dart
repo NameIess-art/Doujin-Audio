@@ -99,9 +99,7 @@ class PlaybackQueueResolver {
   }) {
     final paths = scope.paths;
     if (paths.isEmpty) return null;
-    final effectiveLoopMode = scope.isPlaybackQueue
-        ? SessionLoopMode.folderSequential
-        : loopMode;
+    final effectiveLoopMode = loopMode;
     if (effectiveLoopMode == SessionLoopMode.single || paths.length == 1) {
       return PlaybackAdvanceResult(
         path: paths[scope.currentIndex.clamp(0, paths.length - 1)],
@@ -214,24 +212,17 @@ class PlaybackQueueResolver {
   }) {
     if (currentTrack == null) return const <String>[];
     if (currentTrack.isSingle) return <String>[currentPath];
-    switch (loopMode) {
-      case SessionLoopMode.single:
-        return <String>[currentPath];
-      case SessionLoopMode.crossSequential:
-      case SessionLoopMode.crossRandom:
-      case SessionLoopMode.crossOnce:
-        return sortedLibraryTrackPaths.isEmpty
-            ? <String>[currentPath]
-            : sortedLibraryTrackPaths;
-      case SessionLoopMode.folderSequential:
-      case SessionLoopMode.folderRandom:
-      case SessionLoopMode.folderOnce:
-        final scope =
-            tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[];
-        return scope.isEmpty
-            ? <String>[currentPath]
-            : scope.map(trackPath).toList(growable: false);
+    if (loopMode == SessionLoopMode.single) return <String>[currentPath];
+    if (loopMode.isCrossFolder) {
+      return sortedLibraryTrackPaths.isEmpty
+          ? <String>[currentPath]
+          : sortedLibraryTrackPaths;
     }
+    final scope =
+        tracksByGroup[currentTrack.groupKey] ?? const <MusicTrack>[];
+    return scope.isEmpty
+        ? <String>[currentPath]
+        : scope.map(trackPath).toList(growable: false);
   }
 
   int _currentIndexForPaths({

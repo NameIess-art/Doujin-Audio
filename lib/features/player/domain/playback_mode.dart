@@ -6,6 +6,8 @@ enum SessionLoopMode {
   folderRandom,
   folderOnce,
   crossOnce,
+  folderRandomOnce,
+  crossRandomOnce,
 }
 
 enum TimerMode { manual, trigger }
@@ -13,39 +15,58 @@ enum TimerMode { manual, trigger }
 extension SessionLoopModeExtension on SessionLoopMode {
   bool get isShuffle =>
       this == SessionLoopMode.crossRandom ||
-      this == SessionLoopMode.folderRandom;
+      this == SessionLoopMode.folderRandom ||
+      this == SessionLoopMode.folderRandomOnce ||
+      this == SessionLoopMode.crossRandomOnce;
 
   bool get isOneShot =>
-      this == SessionLoopMode.folderOnce || this == SessionLoopMode.crossOnce;
+      this == SessionLoopMode.folderOnce ||
+      this == SessionLoopMode.crossOnce ||
+      this == SessionLoopMode.folderRandomOnce ||
+      this == SessionLoopMode.crossRandomOnce;
 
   bool get isCrossFolder =>
       this == SessionLoopMode.crossRandom ||
       this == SessionLoopMode.crossSequential ||
-      this == SessionLoopMode.crossOnce;
+      this == SessionLoopMode.crossOnce ||
+      this == SessionLoopMode.crossRandomOnce;
 
   SessionLoopMode get nextOrderMode {
     if (isShuffle) {
+      if (isOneShot) {
+        return isCrossFolder
+            ? SessionLoopMode.crossOnce
+            : SessionLoopMode.folderOnce;
+      }
       return isCrossFolder
           ? SessionLoopMode.crossSequential
           : SessionLoopMode.folderSequential;
     }
     if (isOneShot) {
       return isCrossFolder
-          ? SessionLoopMode.crossRandom
-          : SessionLoopMode.folderRandom;
+          ? SessionLoopMode.crossRandomOnce
+          : SessionLoopMode.folderRandomOnce;
     }
     return isCrossFolder
-        ? SessionLoopMode.crossOnce
-        : SessionLoopMode.folderOnce;
+        ? SessionLoopMode.crossRandom
+        : SessionLoopMode.folderRandom;
   }
 
   SessionLoopMode get toggledScopeMode {
     if (isCrossFolder) {
-      if (isShuffle) return SessionLoopMode.folderRandom;
+      if (isShuffle) {
+        return isOneShot
+            ? SessionLoopMode.folderRandomOnce
+            : SessionLoopMode.folderRandom;
+      }
       if (isOneShot) return SessionLoopMode.folderOnce;
       return SessionLoopMode.folderSequential;
     }
-    if (isShuffle) return SessionLoopMode.crossRandom;
+    if (isShuffle) {
+      return isOneShot
+          ? SessionLoopMode.crossRandomOnce
+          : SessionLoopMode.crossRandom;
+    }
     if (isOneShot) return SessionLoopMode.crossOnce;
     return SessionLoopMode.crossSequential;
   }
@@ -66,6 +87,10 @@ extension SessionLoopModeExtension on SessionLoopMode {
         return 'Sequential play (current folder)';
       case SessionLoopMode.crossOnce:
         return 'Sequential play (cross-folder)';
+      case SessionLoopMode.folderRandomOnce:
+        return 'Shuffle play (current folder)';
+      case SessionLoopMode.crossRandomOnce:
+        return 'Shuffle play (cross-folder)';
     }
   }
 }

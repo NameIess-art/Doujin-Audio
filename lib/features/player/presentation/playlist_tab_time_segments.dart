@@ -131,13 +131,14 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
                 Positioned(
                   right: -10,
                   child: IconButton(
+                    key: const ValueKey<String>('close_console_panel'),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints.tightFor(
                       width: 40,
                       height: 40,
                     ),
-                    iconSize: 20,
-                    icon: const Icon(Icons.close_rounded),
+                    iconSize: 24,
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
                     onPressed: widget.onClose,
                   ),
                 ),

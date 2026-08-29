@@ -338,11 +338,11 @@ internal fun validatePlaybackArgumentsBeforeService(call: MethodCall) {
         }
         NativePlaybackMethods.SET_SPEED -> {
             requireSessionId()
-            requireFiniteInRange("speed", 0.5..2.0)
+            requireFiniteInRange("speed", NATIVE_PLAYBACK_SPEED_RANGE)
         }
         NativePlaybackMethods.SET_TEMPORARY_SPEED -> {
             requireSessionId()
-            arguments.requiredNullableDouble("speed", 0.5..2.0)
+            arguments.requiredNullableDouble("speed", NATIVE_PLAYBACK_SPEED_RANGE)
         }
         NativePlaybackMethods.SET_FADE_MULTIPLIER -> {
             requireSessionId()

@@ -249,6 +249,40 @@ void main() {
     );
   });
 
+  test('playback queue advances randomly in shuffle mode', () {
+    final t1 = track('q1', 'g', 'Queue');
+    final t2 = track('q2', 'g', 'Queue');
+    final t3 = track('q3', 'g', 'Queue');
+    final scope = resolver.resolveScope(
+      currentPath: t1.path,
+      currentTrack: t1,
+      loopMode: SessionLoopMode.folderRandom,
+      sortedLibraryTrackPaths: const <String>[],
+      tracksByGroup: const <String, List<MusicTrack>>{},
+      customQueueTracks: <MusicTrack>[t1, t2, t3],
+      isPlaybackQueue: true,
+    );
+
+    final next = resolver.resolveAdvance(
+      scope: scope,
+      forward: true,
+      loopMode: SessionLoopMode.folderRandom,
+      nextInt: (_) => 2,
+    );
+
+    expect(next?.path, t3.path);
+    expect(next?.queueIndex, 2);
+  });
+
+  test('random once modes are one shot and shuffle', () {
+    expect(SessionLoopMode.folderRandomOnce.isOneShot, isTrue);
+    expect(SessionLoopMode.folderRandomOnce.isShuffle, isTrue);
+    expect(SessionLoopMode.folderRandomOnce.isCrossFolder, isFalse);
+    expect(SessionLoopMode.crossRandomOnce.isOneShot, isTrue);
+    expect(SessionLoopMode.crossRandomOnce.isShuffle, isTrue);
+    expect(SessionLoopMode.crossRandomOnce.isCrossFolder, isTrue);
+  });
+
   test('playback queue recovers from a stale native queue index', () {
     final first = MusicTrack(
       path: 'first',

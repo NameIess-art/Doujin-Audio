@@ -999,7 +999,7 @@ void main() {
     expect(panelDecoration.borderRadius, BorderRadius.circular(16));
     expect(panelDecoration.boxShadow, isNotEmpty);
 
-    await tester.tap(find.byTooltip(languageProvider.tr('audio_features')));
+    await tester.tap(find.byIcon(Icons.close_rounded));
     await tester.pumpAndSettle();
     expect(artwork, findsOneWidget);
     expect(find.byKey(expandedPanel), findsNothing);
@@ -1014,6 +1014,7 @@ void main() {
     tester.view.physicalSize = const Size(430, 900);
     await tester.pumpAndSettle();
 
+    expect(find.text('1.00x'), findsNWidgets(2));
     final speedRestoreButton = find.byKey(
       const ValueKey<String>('restore_playback_speed'),
     );
@@ -1066,6 +1067,37 @@ void main() {
       isNull,
     );
 
+    // Save and delete a custom EQ preset
+    runtimeGraph.settings.customEqPresets = [
+      EqPreset(
+        id: 'custom_test_1',
+        labelKey: 'MyCustomPreset',
+        bandLevels: const <int, double>{60: 2.0},
+      ),
+    ];
+    runtimeGraph.settings.syncSlice();
+    await tester.pumpAndSettle();
+    final customPreset = runtimeGraph.settings.customEqPresets.first;
+    unawaited(runtimeGraph.playback.applySessionEqPreset(session.id, customPreset));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pumpAndSettle();
+
+    final deleteEqualizerPresetButton = find.byKey(
+      const ValueKey<String>('delete_equalizer_preset'),
+    );
+    expect(deleteEqualizerPresetButton, findsOneWidget);
+    expect(find.text(languageProvider.tr('eq_delete_preset')), findsOneWidget);
+
+    await tester.tap(deleteEqualizerPresetButton);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('delete_equalizer_preset')), findsNothing);
+    expect(find.byKey(const ValueKey('save_equalizer_preset')), findsOneWidget);
+
     await tester.tap(find.text(languageProvider.tr('volume_balance')));
     await tester.pumpAndSettle();
 
@@ -1084,6 +1116,178 @@ void main() {
     expect(session.audioEffects.panning, 0.0);
     expect(tester.widget<FilledButton>(restoreButton).onPressed, isNull);
   });
+
+  testWidgets(
+    'time segment endpoints use live position and save localized default label',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(430, 900);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      const nativePlaybackChannel = MethodChannel(NativePlaybackChannel.name);
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            nativePlaybackChannel,
+            (_) async => <String, Object?>{'ok': true, 'value': null},
+          );
+      addTearDown(() {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, null);
+      });
+
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track = testMusicTrack(
+        name: 'Segment track',
+        path: '/library/segments/live-position.mp3',
+        groupKey: '/library/segments',
+        groupTitle: 'Segments',
+      );
+      final session = PlaybackSession(
+        id: 'segment-live-position-session',
+        currentTrackPath: track.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: PlayerState(false, ProcessingState.ready),
+      )
+        ..setOptimisticPosition(const Duration(seconds: 2))
+        ..setOptimisticDuration(const Duration(minutes: 2));
+      addTearDown(session.shutdown);
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track],
+        notify: false,
+        persist: false,
+      );
+      fixture.playbackService.registerSession(session);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[session],
+        playingSessionCount: 0,
+        focusedSessionId: session.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(fixture.build(const PlaylistTab()));
+      await tester.pumpAndSettle();
+      unawaited(
+        Navigator.of(
+          tester.element(find.byType(PlaylistTab)),
+        ).push(buildSessionDetailRoute(sessionId: session.id)),
+      );
+      await tester.pumpAndSettle();
+
+      final i18n = fixture.languageProvider;
+      await tester.tap(find.byTooltip(i18n.tr('audio_features')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(i18n.tr('audio_detail_tags')));
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip(i18n.tr('segment_add')));
+      await tester.pump();
+
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller?.text,
+        '标签1',
+      );
+
+      session.setOptimisticPosition(const Duration(seconds: 18));
+      await tester.pump();
+      await tester.tap(
+        find.widgetWithText(FilledButton, i18n.tr('segment_start')),
+      );
+      await tester.pump();
+      final startRow = find.ancestor(
+        of: find.widgetWithText(FilledButton, i18n.tr('segment_start')),
+        matching: find.byType(Row),
+      ).first;
+      expect(
+        find.descendant(of: startRow, matching: find.text('00:18')),
+        findsOneWidget,
+      );
+
+      session.setOptimisticPosition(const Duration(seconds: 42));
+      await tester.pump();
+      await tester.tap(
+        find.widgetWithText(FilledButton, i18n.tr('segment_end')),
+      );
+      await tester.pump();
+      final endRow = find.ancestor(
+        of: find.widgetWithText(FilledButton, i18n.tr('segment_end')),
+        matching: find.byType(Row),
+      ).first;
+      expect(
+        find.descendant(of: endRow, matching: find.text('00:42')),
+        findsOneWidget,
+      );
+
+      final labelsAfterFirst = await tester.runAsync(
+        () => fixture.persistenceRepository.loadTimeSegmentLabels(
+          TimeSegmentLabel.trackKeyFor(track),
+        ),
+      );
+      expect(labelsAfterFirst, hasLength(1));
+      expect(labelsAfterFirst!.single.name, '标签1');
+      expect(labelsAfterFirst.single.start, const Duration(seconds: 18));
+      expect(labelsAfterFirst.single.end, const Duration(seconds: 42));
+
+      await tester.tap(find.byTooltip(i18n.tr('segment_add')));
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller?.text,
+        '标签2',
+      );
+
+      session.setOptimisticPosition(const Duration(seconds: 80));
+      await tester.pump();
+      await tester.tap(
+        find.widgetWithText(FilledButton, i18n.tr('segment_end')),
+      );
+      await tester.pump();
+      expect(
+        find.descendant(of: endRow, matching: find.text('01:20')),
+        findsOneWidget,
+      );
+
+      session.setOptimisticPosition(const Duration(seconds: 50));
+      await tester.pump();
+      await tester.tap(
+        find.widgetWithText(FilledButton, i18n.tr('segment_start')),
+      );
+      await tester.pump();
+      expect(
+        find.descendant(of: startRow, matching: find.text('00:50')),
+        findsOneWidget,
+      );
+
+      final labelsAfterSecond = await tester.runAsync(
+        () => fixture.persistenceRepository.loadTimeSegmentLabels(
+          TimeSegmentLabel.trackKeyFor(track),
+        ),
+      );
+      expect(labelsAfterSecond, hasLength(2));
+      expect(labelsAfterSecond![0].name, '标签1');
+      expect(labelsAfterSecond[0].start, const Duration(seconds: 18));
+      expect(labelsAfterSecond[0].end, const Duration(seconds: 42));
+      expect(labelsAfterSecond[1].name, '标签2');
+      expect(labelsAfterSecond[1].start, const Duration(seconds: 50));
+      expect(labelsAfterSecond[1].end, const Duration(seconds: 80));
+
+      final sliderFinder = find.byType(Slider);
+      expect(sliderFinder, findsOneWidget);
+      final sliderCenter = tester.getCenter(sliderFinder);
+      final gesture = await tester.startGesture(sliderCenter);
+      await tester.pump();
+      expect(find.byType(OverlayPortal), findsWidgets);
+      await gesture.up();
+      await tester.pump(const Duration(seconds: 1));
+    },
+  );
 
   testWidgets('playlist cards keep track and single-file durations separate', (
     WidgetTester tester,
@@ -2112,12 +2316,12 @@ void main() {
           buttonCenters.length - 1,
           (index) => buttonCenters[index + 1] - buttonCenters[index],
         ),
-        <double>[46, 50, 52, 52],
+        <double>[52, 52, 52, 52],
       );
       expect(
         tester.getTopRight(secondaryControls).dx -
             tester.getTopRight(secondaryButtons.last).dx,
-        greaterThan(100),
+        greaterThanOrEqualTo(100),
       );
       expect(
         find.byKey(const ValueKey('session_detail_background_blur')),

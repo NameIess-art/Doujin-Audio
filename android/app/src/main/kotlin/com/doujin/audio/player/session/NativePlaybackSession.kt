@@ -765,7 +765,7 @@ internal fun publishNativePlaybackSessionState(
     return snapshot
 }
 
-private fun normalizeSpeed(speed: Float): Float = speed.coerceIn(0.5f, 2.0f)
+private fun normalizeSpeed(speed: Float): Float = speed.coerceIn(0.25f, 3.0f)
 
 internal fun shouldCreatePlayerForConfiguration(
     deferPlayerCreation: Boolean,

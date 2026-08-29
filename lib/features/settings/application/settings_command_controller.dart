@@ -151,4 +151,22 @@ final class SettingsCommandController {
     _settings.syncSlice(isInitialized: _settings.slice.state.isInitialized);
     await _settings.persist();
   }
+
+  Future<void> deleteCustomEqPreset(
+    String presetId, {
+    String? sessionId,
+  }) async {
+    _settings.customEqPresets = List<EqPreset>.unmodifiable(
+      _settings.customEqPresets.where((preset) => preset.id != presetId),
+    );
+    _settings.syncSlice(isInitialized: _settings.slice.state.isInitialized);
+    await _settings.persist();
+    if (sessionId != null) {
+      final session = _playback.sessionSnapshotById(sessionId);
+      if (session != null && session.audioEffects.eqPresetId == presetId) {
+        final flat = builtInEqPresets.first;
+        await _playback.applySessionEqPreset(sessionId, flat);
+      }
+    }
+  }
 }

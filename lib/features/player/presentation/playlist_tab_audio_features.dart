@@ -268,6 +268,10 @@ class _EqualizerPage extends ConsumerWidget {
       (gainDb) => gainDb.abs() >= 0.001,
     );
 
+    final isCustomPresetSelected = customPresets.any(
+      (preset) => preset.id == selectedPresetId,
+    );
+
     return ListView(
       padding: const EdgeInsets.only(top: 2),
       children: [
@@ -396,16 +400,38 @@ class _EqualizerPage extends ConsumerWidget {
             Expanded(
               child: Center(
                 child: FilledButton.tonal(
-                  key: const ValueKey<String>('save_equalizer_preset'),
+                  key: ValueKey<String>(
+                    isCustomPresetSelected
+                        ? 'delete_equalizer_preset'
+                        : 'save_equalizer_preset',
+                  ),
                   style: _sessionDetailResetButtonStyle(context),
-                  onPressed: hasAdjustedEqBands
-                      ? () => _showSavePresetDialog(
-                          context,
-                          commands: ref.read(settingsCommandControllerProvider),
-                          session: session,
-                        )
-                      : null,
-                  child: Text(i18n.tr('eq_save_preset')),
+                  onPressed: isCustomPresetSelected && selectedPresetId != null
+                      ? () {
+                          final commands =
+                              ref.read(settingsCommandControllerProvider);
+                          unawaited(
+                            commands.deleteCustomEqPreset(
+                              selectedPresetId,
+                              sessionId: session.id,
+                            ),
+                          );
+                        }
+                      : (hasAdjustedEqBands
+                          ? () => _showSavePresetDialog(
+                              context,
+                              commands:
+                                  ref.read(settingsCommandControllerProvider),
+                              session: session,
+                            )
+                          : null),
+                  child: Text(
+                    i18n.tr(
+                      isCustomPresetSelected
+                          ? 'eq_delete_preset'
+                          : 'eq_save_preset',
+                    ),
+                  ),
                 ),
               ),
             ),

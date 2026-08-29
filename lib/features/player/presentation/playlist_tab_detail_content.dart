@@ -204,16 +204,32 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   }
 
   void _startNewSegment() {
+    final defaultName = _nextSegmentDefaultName();
     setState(() {
       _segmentDraftGeneration++;
       _selectedSegmentId = null;
       _draftStart = null;
       _draftEnd = null;
       _draftColorValue = _timeSegments.nextColor(_segmentLabels);
-      _setSegmentNameText('');
+      _setSegmentNameText(defaultName);
       _segmentPanelExpanded = true;
       _segmentEditorVisible = true;
     });
+  }
+
+  String _nextSegmentDefaultName() {
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final usedNames = _segmentLabels
+        .map((label) => label.name.trim())
+        .toSet();
+    var index = 1;
+    while (true) {
+      final name = i18n.tr('segment_default_name', {'index': index});
+      if (!usedNames.contains(name)) {
+        return name;
+      }
+      index++;
+    }
   }
 
   void _toggleSelectedSegmentLoop() {
@@ -229,7 +245,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
 
   void _setDraftStartToCurrent() {
     setState(() {
-      _draftStart = _clampToDuration(widget.session.position);
+      _draftStart = _clampToDuration(_currentSessionPosition);
       _draftColorValue ??= _timeSegments.nextColor(_segmentLabels);
     });
     unawaited(_trySaveSegmentDraft());
@@ -237,14 +253,22 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
 
   void _setDraftEndToCurrent() {
     setState(() {
-      _draftEnd = _clampToDuration(widget.session.position);
+      _draftEnd = _clampToDuration(_currentSessionPosition);
       _draftColorValue ??= _timeSegments.nextColor(_segmentLabels);
     });
     unawaited(_trySaveSegmentDraft());
   }
 
+  Duration get _currentSessionPosition =>
+      _playback.sessionById(widget.session.id)?.position ??
+      widget.session.position;
+
+  Duration? get _currentSessionDuration =>
+      _playback.sessionById(widget.session.id)?.duration ??
+      widget.session.duration;
+
   Duration _clampToDuration(Duration value) {
-    final duration = widget.session.duration;
+    final duration = _currentSessionDuration;
     if (duration != null && duration > Duration.zero && value >= duration) {
       return duration;
     }

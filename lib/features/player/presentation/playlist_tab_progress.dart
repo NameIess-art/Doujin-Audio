@@ -379,7 +379,7 @@ class _ProgressSliderAndTimecodesState
   }
 }
 
-class _ProgressSliderFrame extends StatelessWidget {
+class _ProgressSliderFrame extends StatefulWidget {
   const _ProgressSliderFrame({
     required this.sliderValue,
     required this.timecodeValue,
@@ -405,38 +405,108 @@ class _ProgressSliderFrame extends StatelessWidget {
   final ValueChanged<double> onChangeEnd;
 
   @override
+  State<_ProgressSliderFrame> createState() => _ProgressSliderFrameState();
+}
+
+class _ProgressSliderFrameState extends State<_ProgressSliderFrame> {
+  final OverlayPortalController _tooltipPortalController =
+      OverlayPortalController();
+  final LayerLink _layerLink = LayerLink();
+
+  @override
+  void initState() {
+    super.initState();
+    widget.tooltipValue.addListener(_handleTooltipChanged);
+    _syncTooltipState();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProgressSliderFrame oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.tooltipValue != widget.tooltipValue) {
+      oldWidget.tooltipValue.removeListener(_handleTooltipChanged);
+      widget.tooltipValue.addListener(_handleTooltipChanged);
+      _syncTooltipState();
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.tooltipValue.removeListener(_handleTooltipChanged);
+    super.dispose();
+  }
+
+  void _handleTooltipChanged() {
+    _syncTooltipState();
+  }
+
+  void _syncTooltipState() {
+    final state = widget.tooltipValue.value;
+    final shouldShow = state != null && state.labels.isNotEmpty;
+    if (shouldShow && !_tooltipPortalController.isShowing) {
+      _tooltipPortalController.show();
+    } else if (!shouldShow && _tooltipPortalController.isShowing) {
+      _tooltipPortalController.hide();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Column(
+    return CompositedTransformTarget(
+      link: _layerLink,
+      child: OverlayPortal(
+        controller: _tooltipPortalController,
+        overlayChildBuilder: (context) {
+          return ValueListenableBuilder<_ProgressTooltipState?>(
+            valueListenable: widget.tooltipValue,
+            builder: (context, value, child) {
+              if (value == null || value.labels.isEmpty) {
+                return const SizedBox.shrink();
+              }
+              return Align(
+                alignment: Alignment.topLeft,
+                child: CompositedTransformFollower(
+                  link: _layerLink,
+                  showWhenUnlinked: false,
+                  offset: Offset(value.left, 44),
+                  child: _TimeSegmentDragTooltip(labels: value.labels),
+                ),
+              );
+            },
+          );
+        },
+        child: Column(
           children: [
             GestureDetector(
               behavior: HitTestBehavior.translucent,
               onLongPressStart: (details) =>
-                  onLongPressMove(details.localPosition),
+                  widget.onLongPressMove(details.localPosition),
               onLongPressMoveUpdate: (details) =>
-                  onLongPressMove(details.localPosition),
-              onLongPressEnd: (_) => onLongPressEnd(),
-              onLongPressCancel: onLongPressEnd,
+                  widget.onLongPressMove(details.localPosition),
+              onLongPressEnd: (_) => widget.onLongPressEnd(),
+              onLongPressCancel: widget.onLongPressEnd,
               child: SizedBox(
                 height: 34,
                 child: Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    Positioned.fill(child: staticLayer),
+                    Positioned.fill(child: widget.staticLayer),
                     _ProgressSliderTheme(
-                      primaryColor: primaryColor,
+                      primaryColor: widget.primaryColor,
                       child: ValueListenableBuilder<_ProgressSliderValue>(
-                        valueListenable: sliderValue,
+                        valueListenable: widget.sliderValue,
                         builder: (context, value, child) {
                           return Slider(
                             max: value.maxMillis,
                             value: value.sliderValue,
                             secondaryTrackValue: value.bufferedValue,
-                            onChangeStart: value.canSeek ? onChangeStart : null,
-                            onChanged: value.canSeek ? onChanged : null,
-                            onChangeEnd: value.canSeek ? onChangeEnd : null,
+                            onChangeStart: value.canSeek
+                                ? widget.onChangeStart
+                                : null,
+                            onChanged: value.canSeek ? widget.onChanged : null,
+                            onChangeEnd: value.canSeek
+                                ? widget.onChangeEnd
+                                : null,
                             semanticFormatterCallback: (rawValue) {
                               final position = Duration(
                                 milliseconds: rawValue.round(),
@@ -453,27 +523,14 @@ class _ProgressSliderFrame extends StatelessWidget {
               ),
             ),
             ValueListenableBuilder<_ProgressTimecodeValue>(
-              valueListenable: timecodeValue,
+              valueListenable: widget.timecodeValue,
               builder: (context, value, child) {
                 return _ProgressTimecodeRow(value: value);
               },
             ),
           ],
         ),
-        ValueListenableBuilder<_ProgressTooltipState?>(
-          valueListenable: tooltipValue,
-          builder: (context, value, child) {
-            if (value == null || value.labels.isEmpty) {
-              return const SizedBox.shrink();
-            }
-            return Positioned(
-              left: value.left,
-              top: 44,
-              child: _TimeSegmentDragTooltip(labels: value.labels),
-            );
-          },
-        ),
-      ],
+      ),
     );
   }
 }

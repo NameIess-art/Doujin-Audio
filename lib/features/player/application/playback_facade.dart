@@ -157,6 +157,7 @@ final class PlaybackFacade {
 
   static const double maxSessionVolume = 3.0;
   static const List<double> playbackSpeedOptions = <double>[
+    0.25,
     0.5,
     0.75,
     1.0,
@@ -164,6 +165,8 @@ final class PlaybackFacade {
     1.5,
     1.75,
     2.0,
+    2.5,
+    3.0,
   ];
 
   Stream<String> get sessionActivations => _sessionActivations.stream;
@@ -894,7 +897,7 @@ final class PlaybackFacade {
         !identical(_service.sessions[session.id], session)) {
       return false;
     }
-    final normalizedSpeed = speed?.clamp(0.5, 2.0).toDouble();
+    final normalizedSpeed = speed?.clamp(0.25, 3.0).toDouble();
     final response = await nativeRepository.setTemporarySpeed(
       session.id,
       normalizedSpeed,

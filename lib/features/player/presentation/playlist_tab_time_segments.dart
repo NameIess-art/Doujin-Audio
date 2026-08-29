@@ -99,37 +99,42 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
     );
     final loopActive = selected != null && selected.id == widget.loopSegmentId;
     final mediaHeight = MediaQuery.sizeOf(context).height;
-    final targetHeight = max(360.0, mediaHeight * 0.5 - 130.0);
     final isPortrait =
         MediaQuery.orientationOf(context) == Orientation.portrait;
+    final targetHeight = isPortrait
+        ? max(420.0, min(560.0, mediaHeight * 0.54))
+        : max(360.0, mediaHeight * 0.5 - 130.0);
 
     final content = Padding(
-      padding: EdgeInsets.fromLTRB(0, isPortrait ? 14 : 6, 0, 16),
+      padding: EdgeInsets.fromLTRB(0, isPortrait ? 12 : 6, 0, 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Stack(
             alignment: Alignment.center,
             children: [
-              _SegmentPanelPageHeader(
-                pageIndex: _pageIndex,
-                onSelected: _animateToPanelPage,
-                labels: [
-                  i18n.tr('equalizer'),
-                  i18n.tr('audio_features'),
-                  i18n.tr('playback_speed'),
-                  i18n.tr('audio_detail_tags'),
-                  i18n.tr('volume_balance'),
-                ],
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 28),
+                child: _SegmentPanelPageHeader(
+                  pageIndex: _pageIndex,
+                  onSelected: _animateToPanelPage,
+                  labels: [
+                    i18n.tr('equalizer'),
+                    i18n.tr('audio_features'),
+                    i18n.tr('playback_speed'),
+                    i18n.tr('audio_detail_tags'),
+                    i18n.tr('volume_balance'),
+                  ],
+                ),
               ),
               if (widget.onClose != null)
                 Positioned(
-                  right: 0,
+                  right: -10,
                   child: IconButton(
-                    padding: const EdgeInsets.all(4),
+                    padding: EdgeInsets.zero,
                     constraints: const BoxConstraints.tightFor(
-                      width: 44,
-                      height: 44,
+                      width: 40,
+                      height: 40,
                     ),
                     iconSize: 20,
                     icon: const Icon(Icons.close_rounded),
@@ -613,10 +618,7 @@ String _formatSegmentTime(Duration value) {
 }
 
 String _formatSpeedValue(double value) {
-  if ((value - value.roundToDouble()).abs() < 0.001) {
-    return '${value.toStringAsFixed(1)}x';
-  }
-  return '${value.toStringAsFixed(2).replaceFirst(RegExp(r'0$'), '')}x';
+  return '${value.toStringAsFixed(2)}x';
 }
 
 String _formatFrequency(int frequencyHz) {

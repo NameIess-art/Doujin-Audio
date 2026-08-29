@@ -106,32 +106,33 @@ class _PlaybackControlPanel extends StatelessWidget {
           showPauseIcon: showPauseIcon,
           isLoading: isLoading,
         ),
-        AnimatedSwitcher(
-          duration: kAppMotionSlow,
-          reverseDuration: kAppMotionStandard,
-          transitionBuilder: (child, animation) => buildAppFadeTransition(
-            context: context,
-            animation: animation,
-            child: child,
-          ),
-          child: KeyedSubtree(
-            key: ValueKey('secondary_${session.id}'),
-            child: _PlaybackSecondaryControls(
-              session: session,
-              playback: playback,
-              hasSiblings: hasSiblings,
-              segmentPanelExpanded: segmentPanelExpanded,
-              hasSubtitle: hasSubtitle,
-              subtitleEnabled: subtitleEnabled,
-              subtitleGlobalEnabled: subtitleGlobalEnabled,
-              onShowTrackSwitcher: onShowTrackSwitcher,
-              onToggleSegments: onToggleSegments,
-              onToggleSubtitle: onToggleSubtitle,
-              onToggleGlobalSubtitle: onToggleGlobalSubtitle,
-              onShowAudioDetail: onShowAudioDetail,
+        if (!segmentPanelExpanded)
+          AnimatedSwitcher(
+            duration: kAppMotionSlow,
+            reverseDuration: kAppMotionStandard,
+            transitionBuilder: (child, animation) => buildAppFadeTransition(
+              context: context,
+              animation: animation,
+              child: child,
+            ),
+            child: KeyedSubtree(
+              key: ValueKey('secondary_${session.id}'),
+              child: _PlaybackSecondaryControls(
+                session: session,
+                playback: playback,
+                hasSiblings: hasSiblings,
+                segmentPanelExpanded: segmentPanelExpanded,
+                hasSubtitle: hasSubtitle,
+                subtitleEnabled: subtitleEnabled,
+                subtitleGlobalEnabled: subtitleGlobalEnabled,
+                onShowTrackSwitcher: onShowTrackSwitcher,
+                onToggleSegments: onToggleSegments,
+                onToggleSubtitle: onToggleSubtitle,
+                onToggleGlobalSubtitle: onToggleGlobalSubtitle,
+                onShowAudioDetail: onShowAudioDetail,
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -301,7 +302,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
   }
 }
 
-class _PlaybackSecondaryControls extends StatelessWidget {
+class _PlaybackSecondaryControls extends StatefulWidget {
   const _PlaybackSecondaryControls({
     required this.session,
     required this.playback,
@@ -331,12 +332,311 @@ class _PlaybackSecondaryControls extends StatelessWidget {
   final VoidCallback? onShowAudioDetail;
 
   @override
+  State<_PlaybackSecondaryControls> createState() =>
+      _PlaybackSecondaryControlsState();
+}
+
+class _PlaybackSecondaryControlsState
+    extends State<_PlaybackSecondaryControls> {
+  bool _volumeMode = false;
+  double? _dragVolume;
+  double? _preMuteVolume;
+
+  IconData _getIconForVolume(double volume) {
+    return volume == 0
+        ? Icons.volume_off_rounded
+        : volume < 0.45
+        ? Icons.volume_down_rounded
+        : Icons.volume_up_rounded;
+  }
+
+  void _toggleMute() {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    final currentVolume = (_dragVolume ?? widget.session.volume)
+        .clamp(0.0, PlaybackFacade.maxSessionVolume)
+        .toDouble();
+    if (currentVolume > 0.001) {
+      _preMuteVolume = currentVolume;
+      setState(() => _dragVolume = 0.0);
+      widget.playback.setSessionVolume(widget.session.id, 0.0);
+    } else {
+      final restored = (_preMuteVolume != null && _preMuteVolume! > 0.001)
+          ? _preMuteVolume!
+          : 1.0;
+      _preMuteVolume = null;
+      setState(() => _dragVolume = restored);
+      widget.playback.setSessionVolume(widget.session.id, restored);
+    }
+  }
+
+  void _showVolumeInputDialog(BuildContext context) {
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    var inputValue =
+        '${(sessionVolumeDisplayValueFromGain(_dragVolume ?? widget.session.volume) * 100).round()}';
+    unawaited(
+      showAppDialog<void>(
+        context: context,
+        builder: (dialogContext) => AppDialog(
+          title: i18n.tr('volume'),
+          icon: Icons.volume_up_rounded,
+          content: TextFormField(
+            initialValue: inputValue,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            decoration: InputDecoration(
+              hintText: i18n.tr('volume_range_hint'),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
+            onFieldSubmitted: (text) {
+              _applyVolumeInput(text, dialogContext);
+            },
+            onChanged: (text) => inputValue = text,
+          ),
+          actions: AppDialogActions(
+            children: [
+              AppSecondaryButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                label: i18n.tr('cancel'),
+              ),
+              AppPrimaryButton(
+                onPressed: () {
+                  _applyVolumeInput(inputValue, dialogContext);
+                },
+                label: i18n.tr('confirm'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _applyVolumeInput(String text, BuildContext dialogContext) {
+    final parsed = int.tryParse(text.trim());
+    if (parsed == null ||
+        parsed < 0 ||
+        parsed > sessionVolumeDisplayMaximumPercent) {
+      return;
+    }
+    final volumeGain = sessionVolumeGainFromDisplayValue(parsed / 100);
+    Navigator.of(dialogContext).pop();
+    setState(() => _dragVolume = volumeGain);
+    widget.playback.setSessionVolume(widget.session.id, volumeGain);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
+
+    final volumeGain = (_dragVolume ?? widget.session.volume)
+        .clamp(0.0, PlaybackFacade.maxSessionVolume)
+        .toDouble();
+    final displayVolume = sessionVolumeDisplayValueFromGain(volumeGain);
+    final isBoosted = volumeGain > 1.0;
+
+    Widget buildVolumeBar() {
+      return Padding(
+        key: const ValueKey('playback_volume_controls_row'),
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Row(
+          children: [
+            IconButton(
+              key: const ValueKey('session_volume_exit_button'),
+              constraints: const BoxConstraints.tightFor(width: 44, height: 44),
+              padding: EdgeInsets.zero,
+              tooltip: i18n.tr('close'),
+              icon: Icon(
+                Icons.close_rounded,
+                size: 20,
+                color: _sessionDetailForeground(
+                  cs,
+                  _SessionDetailForegroundLevel.muted,
+                ),
+              ),
+              onPressed: () {
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                );
+                setState(() {
+                  _volumeMode = false;
+                  _dragVolume = null;
+                });
+              },
+            ),
+            IconButton(
+              key: const ValueKey('session_volume_mute_button'),
+              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
+              padding: EdgeInsets.zero,
+              tooltip: volumeGain == 0 ? i18n.tr('unmute') : i18n.tr('mute'),
+              icon: Icon(
+                _getIconForVolume(volumeGain),
+                key: ValueKey(_getIconForVolume(volumeGain)),
+                size: 18,
+                color: isBoosted
+                    ? cs.primary
+                    : _sessionDetailForeground(
+                        cs,
+                        _SessionDetailForegroundLevel.muted,
+                      ),
+              ),
+              onPressed: _toggleMute,
+            ),
+            Expanded(
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 6,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 6,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 14,
+                  ),
+                  activeTrackColor: isBoosted ? cs.primary : null,
+                ),
+                child: Slider(
+                  key: const ValueKey('session_volume_slider'),
+                  value: displayVolume,
+                  max: sessionVolumeDisplayMaximum,
+                  onChanged: (displayValue) {
+                    final newGain =
+                        sessionVolumeGainFromDisplayValue(displayValue);
+                    setState(() => _dragVolume = newGain);
+                    AppInteractionFeedback.continuous(
+                      (displayValue * 100).round(),
+                    );
+                    UiInteractionCoordinator.instance.scheduleThrottledCommit(
+                      key: 'session_volume:${widget.session.id}',
+                      commit: () => widget.playback.setSessionVolume(
+                        widget.session.id,
+                        newGain,
+                        persist: false,
+                      ),
+                    );
+                  },
+                  onChangeEnd: (displayValue) {
+                    final newGain =
+                        sessionVolumeGainFromDisplayValue(displayValue);
+                    setState(() => _dragVolume = newGain);
+                    AppInteractionFeedback.resetContinuous();
+                    UiInteractionCoordinator.instance.cancelThrottledCommit(
+                      'session_volume:${widget.session.id}',
+                    );
+                    widget.playback.setSessionVolume(
+                      widget.session.id,
+                      newGain,
+                    );
+                  },
+                ),
+              ),
+            ),
+            GestureDetector(
+              key: const ValueKey('session_volume_percent_text'),
+              onTap: () => _showVolumeInputDialog(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  '${(displayVolume * 100).round()}%',
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 11,
+                    color: isBoosted ? cs.primary : null,
+                    decoration: TextDecoration.underline,
+                    decorationColor: (isBoosted ? cs.primary : cs.onSurface)
+                        .withValues(alpha: 0.3),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    Widget buildButtonsRow() {
+      return LayoutBuilder(
+        key: const ValueKey('playback_buttons_row'),
+        builder: (context, constraints) => SingleChildScrollView(
+          key: const ValueKey(
+            'playback_secondary_controls_horizontal_scroll',
+          ),
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: max(0.0, constraints.maxWidth - 16),
+            ),
+            child: Row(
+              children: [
+                _SessionLoopModeButton(
+                  session: widget.session,
+                  playback: widget.playback,
+                ),
+                _SecondaryControlButton(
+                  key: const ValueKey('session_volume_button_anchor'),
+                  icon: _getIconForVolume(widget.session.volume),
+                  tooltip: i18n.tr('volume'),
+                  onPressed: () {
+                    setState(() => _volumeMode = true);
+                  },
+                ),
+                if (widget.hasSubtitle)
+                  _SecondaryControlButton(
+                    icon: widget.subtitleEnabled
+                        ? Icons.subtitles_rounded
+                        : Icons.subtitles_off_rounded,
+                    tooltip: widget.subtitleEnabled
+                        ? i18n.tr('turn_off_subtitle')
+                        : i18n.tr('turn_on_subtitle'),
+                    active: widget.subtitleEnabled,
+                    onPressed: widget.onToggleSubtitle,
+                  ),
+                if (widget.hasSubtitle)
+                  _SecondaryControlButton(
+                    icon: widget.subtitleGlobalEnabled
+                        ? Icons.check_rounded
+                        : Icons.layers_rounded,
+                    tooltip: i18n.tr('subtitle_global_display'),
+                    active: widget.subtitleGlobalEnabled,
+                    onPressed: widget.onToggleGlobalSubtitle,
+                  ),
+                _SecondaryControlButton(
+                  icon: Icons.tune_rounded,
+                  tooltip: i18n.tr('audio_features'),
+                  active: widget.segmentPanelExpanded,
+                  onPressed: widget.onToggleSegments,
+                ),
+                _SecondaryControlButton(
+                  icon: Icons.queue_music_rounded,
+                  tooltip: i18n.tr('switch_audio'),
+                  onPressed: widget.hasSiblings
+                      ? () {
+                          AppInteractionFeedback.trigger(
+                            AppInteractionFeedbackType.selection,
+                          );
+                          widget.onShowTrackSwitcher();
+                        }
+                      : null,
+                ),
+                _SecondaryControlButton(
+                  icon: Icons.info_outline_rounded,
+                  tooltip: i18n.tr('audio_detail'),
+                  onPressed: widget.onShowAudioDetail,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
@@ -350,71 +650,9 @@ class _PlaybackSecondaryControls extends StatelessWidget {
             color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: LayoutBuilder(
-            builder: (context, constraints) => SingleChildScrollView(
-              key: const ValueKey(
-                'playback_secondary_controls_horizontal_scroll',
-              ),
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  minWidth: max(0.0, constraints.maxWidth - 16),
-                ),
-                child: Row(
-                  children: [
-                    _ExpandableLoopOptions(
-                      session: session,
-                      playback: playback,
-                    ),
-                    _SessionVolumeButton(session: session, playback: playback),
-                    if (hasSubtitle)
-                      _SecondaryControlButton(
-                        icon: subtitleEnabled
-                            ? Icons.subtitles_rounded
-                            : Icons.subtitles_off_rounded,
-                        tooltip: subtitleEnabled
-                            ? i18n.tr('turn_off_subtitle')
-                            : i18n.tr('turn_on_subtitle'),
-                        active: subtitleEnabled,
-                        onPressed: onToggleSubtitle,
-                      ),
-                    if (hasSubtitle)
-                      _SecondaryControlButton(
-                        icon: subtitleGlobalEnabled
-                            ? Icons.check_rounded
-                            : Icons.layers_rounded,
-                        tooltip: i18n.tr('subtitle_global_display'),
-                        active: subtitleGlobalEnabled,
-                        onPressed: onToggleGlobalSubtitle,
-                      ),
-                    _SecondaryControlButton(
-                      icon: Icons.tune_rounded,
-                      tooltip: i18n.tr('audio_features'),
-                      active: segmentPanelExpanded,
-                      onPressed: onToggleSegments,
-                    ),
-                    _SecondaryControlButton(
-                      icon: Icons.queue_music_rounded,
-                      tooltip: i18n.tr('switch_audio'),
-                      onPressed: hasSiblings
-                          ? () {
-                              AppInteractionFeedback.trigger(
-                                AppInteractionFeedbackType.selection,
-                              );
-                              onShowTrackSwitcher();
-                            }
-                          : null,
-                    ),
-                    _SecondaryControlButton(
-                      icon: Icons.info_outline_rounded,
-                      tooltip: i18n.tr('audio_detail'),
-                      onPressed: onShowAudioDetail,
-                    ),
-                  ],
-                ),
-              ),
-            ),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
           ),
         ),
       ),
@@ -462,6 +700,7 @@ class _PrimaryTransportButton extends StatelessWidget {
 
 class _SecondaryControlButton extends StatelessWidget {
   const _SecondaryControlButton({
+    super.key,
     required this.icon,
     required this.tooltip,
     this.active = false,

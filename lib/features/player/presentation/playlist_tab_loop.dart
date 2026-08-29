@@ -1,57 +1,286 @@
 part of 'playlist_tab.dart';
 
-class _ExpandableLoopOptions extends StatefulWidget {
-  const _ExpandableLoopOptions({required this.session, required this.playback});
+Future<void> showLoopModeBottomSheet({
+  required BuildContext context,
+  required PlaybackSessionSnapshot session,
+  required PlaybackFacade playback,
+}) {
+  return AppBottomSheet.show<void>(
+    context: context,
+    builder: (sheetContext) => _LoopModeSheet(
+      session: session,
+      playback: playback,
+    ),
+  );
+}
+
+class _LoopModeSheet extends StatefulWidget {
+  const _LoopModeSheet({
+    required this.session,
+    required this.playback,
+  });
 
   final PlaybackSessionSnapshot session;
   final PlaybackFacade playback;
 
   @override
-  State<_ExpandableLoopOptions> createState() => _ExpandableLoopOptionsState();
+  State<_LoopModeSheet> createState() => _LoopModeSheetState();
 }
 
-class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
-    with SingleTickerProviderStateMixin {
-  final LayerLink _anchorLink = LayerLink();
-  OverlayEntry? _overlayEntry;
-  late final AnimationController _expandController;
-  late SessionLoopMode _loopMode;
-  late SessionLoopMode _nonSingleLoopMode;
+class _LoopModeSheetState extends State<_LoopModeSheet> {
+  late bool _single;
+  late bool _pauseAfterPlay;
+  late bool _shuffle;
+  late bool _crossFolder;
 
-  bool get _expanded => _overlayEntry != null;
-
-  bool _isCross(SessionLoopMode mode) {
-    return mode.isCrossFolder;
+  @override
+  void initState() {
+    super.initState();
+    final loopMode = widget.session.loopMode;
+    final nonSingleMode = widget.session.nonSingleLoopMode;
+    _single = loopMode == SessionLoopMode.single;
+    final baseMode = _single ? nonSingleMode : loopMode;
+    _pauseAfterPlay = baseMode.isOneShot;
+    _shuffle = baseMode.isShuffle;
+    _crossFolder = baseMode.isCrossFolder;
   }
 
-  bool _isShuffle(SessionLoopMode mode) {
-    return mode.isShuffle;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+            child: SizedBox(
+              width: constraints.maxWidth,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            i18n.tr('loop_mode_title'),
+                            style: theme.textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          SegmentedButton<bool>(
+                            key: const ValueKey('loop_mode_single_row'),
+                            segments: [
+                              ButtonSegment<bool>(
+                                value: true,
+                                label: Text(i18n.tr('single_loop')),
+                              ),
+                            ],
+                            emptySelectionAllowed: true,
+                            selected: _single
+                                ? const <bool>{true}
+                                : const <bool>{},
+                            onSelectionChanged: (selected) {
+                              setState(() {
+                                _single = selected.isNotEmpty;
+                              });
+                            },
+                            expandedInsets: EdgeInsets.zero,
+                          ),
+                          AnimatedOpacity(
+                            duration: const Duration(milliseconds: 200),
+                            opacity: _single ? 0.38 : 1.0,
+                            child: IgnorePointer(
+                              ignoring: _single,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  const SizedBox(height: 12),
+                                  SegmentedButton<bool>(
+                                    key: const ValueKey(
+                                      'loop_mode_pause_after_playback_row',
+                                    ),
+                                    segments: [
+                                      ButtonSegment<bool>(
+                                        value: true,
+                                        label: Text(
+                                          i18n.tr('pause_after_playback'),
+                                        ),
+                                      ),
+                                    ],
+                                    emptySelectionAllowed: true,
+                                    selected: _pauseAfterPlay
+                                        ? const <bool>{true}
+                                        : const <bool>{},
+                                    onSelectionChanged: (selected) {
+                                      setState(() {
+                                        _pauseAfterPlay = selected.isNotEmpty;
+                                      });
+                                    },
+                                    expandedInsets: EdgeInsets.zero,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SegmentedButton<bool>(
+                                    key: const ValueKey('loop_mode_order_row'),
+                                    segments: [
+                                      ButtonSegment<bool>(
+                                        value: false,
+                                        label: Text(
+                                          i18n.tr('sequential_playback'),
+                                        ),
+                                      ),
+                                      ButtonSegment<bool>(
+                                        value: true,
+                                        label: Text(
+                                          i18n.tr('shuffle_playback'),
+                                        ),
+                                      ),
+                                    ],
+                                    selected: {_shuffle},
+                                    onSelectionChanged: (selected) {
+                                      setState(() {
+                                        _shuffle = selected.first;
+                                      });
+                                    },
+                                    expandedInsets: EdgeInsets.zero,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SegmentedButton<bool>(
+                                    key: const ValueKey('loop_mode_scope_row'),
+                                    segments: [
+                                      ButtonSegment<bool>(
+                                        value: false,
+                                        label: Text(
+                                          i18n.tr('current_folder'),
+                                        ),
+                                      ),
+                                      ButtonSegment<bool>(
+                                        value: true,
+                                        label: Text(
+                                          i18n.tr('cross_folder'),
+                                        ),
+                                      ),
+                                    ],
+                                    selected: {_crossFolder},
+                                    onSelectionChanged: (selected) {
+                                      setState(() {
+                                        _crossFolder = selected.first;
+                                      });
+                                    },
+                                    expandedInsets: EdgeInsets.zero,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  SizedBox(
+                    key: const ValueKey('loop_mode_actions'),
+                    width: double.infinity,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TextButton(
+                          key: const ValueKey('loop_mode_cancel'),
+                          onPressed: () => Navigator.of(context).pop(),
+                          child: Text(i18n.tr('cancel')),
+                        ),
+                        const SizedBox(width: 8),
+                        TextButton(
+                          key: const ValueKey('loop_mode_confirm'),
+                          onPressed: () async {
+                            final targetNonSingleMode = _pauseAfterPlay
+                                ? (_crossFolder
+                                    ? SessionLoopMode.crossOnce
+                                    : SessionLoopMode.folderOnce)
+                                : (_crossFolder
+                                    ? (_shuffle
+                                        ? SessionLoopMode.crossRandom
+                                        : SessionLoopMode.crossSequential)
+                                    : (_shuffle
+                                        ? SessionLoopMode.folderRandom
+                                        : SessionLoopMode.folderSequential));
+
+                            if (_single) {
+                              await widget.playback.setSessionLoopMode(
+                                widget.session.id,
+                                targetNonSingleMode,
+                              );
+                              await widget.playback.setSessionLoopMode(
+                                widget.session.id,
+                                SessionLoopMode.single,
+                              );
+                            } else {
+                              await widget.playback.setSessionLoopMode(
+                                widget.session.id,
+                                targetNonSingleMode,
+                              );
+                            }
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                            }
+                          },
+                          child: Text(i18n.tr('confirm')),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
+}
 
-  SessionLoopMode get _effectiveNonSingleMode {
-    if (_loopMode == SessionLoopMode.single) {
-      return _nonSingleLoopMode;
-    }
-    return _loopMode;
-  }
+class _SessionLoopModeButton extends StatelessWidget {
+  const _SessionLoopModeButton({
+    required this.session,
+    required this.playback,
+  });
 
-  bool get _singleActive => _loopMode == SessionLoopMode.single;
-  bool get _shuffleActive => _isShuffle(_effectiveNonSingleMode);
-  bool get _crossFolderActive => _isCross(_effectiveNonSingleMode);
-
-  bool get _shuffleButtonHighlighted => !_singleActive;
-  bool get _scopeButtonHighlighted => !_singleActive;
+  final PlaybackSessionSnapshot session;
+  final PlaybackFacade playback;
 
   IconData get _orderIcon {
-    if (_effectiveNonSingleMode.isOneShot) return Icons.play_arrow_rounded;
-    return _shuffleActive ? Icons.shuffle_rounded : Icons.repeat_rounded;
+    if (session.loopMode.isOneShot) return Icons.play_arrow_rounded;
+    return session.loopMode.isShuffle
+        ? Icons.shuffle_rounded
+        : Icons.repeat_rounded;
   }
 
-  IconData get _scopeIcon =>
-      _crossFolderActive ? Icons.folder_copy_rounded : Icons.folder_rounded;
+  IconData get _scopeIcon => session.loopMode.isCrossFolder
+      ? Icons.folder_copy_rounded
+      : Icons.folder_rounded;
 
-  Widget _collapsedCompositeIcon(BuildContext context) {
+  Widget _buildIcon(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    if (session.loopMode == SessionLoopMode.single) {
+      return Icon(
+        Icons.repeat_one_rounded,
+        key: const ValueKey<String>('single_main'),
+        size: 20,
+        color: _sessionDetailForeground(
+          cs,
+          _SessionDetailForegroundLevel.muted,
+        ),
+      );
+    }
     return SizedBox(
       key: ValueKey<String>(
         'composite_${_orderIcon.codePoint}_${_scopeIcon.codePoint}',
@@ -74,280 +303,35 @@ class _ExpandableLoopOptionsState extends State<_ExpandableLoopOptions>
   }
 
   @override
-  void initState() {
-    super.initState();
-    _loopMode = widget.session.loopMode;
-    _nonSingleLoopMode = widget.session.nonSingleLoopMode;
-    _expandController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 360),
-      reverseDuration: const Duration(milliseconds: 260),
-    );
-  }
-
-  @override
-  void didUpdateWidget(covariant _ExpandableLoopOptions oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (oldWidget.session.loopMode != widget.session.loopMode ||
-        oldWidget.session.nonSingleLoopMode !=
-            widget.session.nonSingleLoopMode) {
-      _loopMode = widget.session.loopMode;
-      _nonSingleLoopMode = widget.session.nonSingleLoopMode;
-    }
-  }
-
-  Future<void> _toggleExpanded() async {
-    if (_expanded) {
-      await _hideOverlay();
-    } else {
-      _showOverlay();
-    }
-  }
-
-  void _showOverlay() {
-    if (_overlayEntry != null) return;
-    final overlay = Overlay.of(context);
-    _overlayEntry = OverlayEntry(builder: _buildOverlay);
-    overlay.insert(_overlayEntry!);
-    _expandController.forward(from: 0);
-    setState(() {});
-  }
-
-  Future<void> _hideOverlay() async {
-    if (_overlayEntry == null) return;
-    await _expandController.reverse();
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  Future<void> _refreshImmediately(Future<void> future) async {
-    _overlayEntry?.markNeedsBuild();
-    if (mounted) {
-      setState(() {});
-    }
-    await future;
-    _overlayEntry?.markNeedsBuild();
-    if (mounted) {
-      setState(() {});
-    }
-  }
-
-  Future<void> _toggleSingleLoop() async {
-    if (_loopMode == SessionLoopMode.single) {
-      _loopMode = _nonSingleLoopMode;
-    } else {
-      _nonSingleLoopMode = _loopMode;
-      _loopMode = SessionLoopMode.single;
-    }
-    await _refreshImmediately(
-      widget.playback.toggleSessionSingleLoop(widget.session.id),
-    );
-  }
-
-  Future<void> _toggleShuffleLoop() async {
-    final current = _effectiveNonSingleMode;
-    final nextMode = current.nextOrderMode;
-    _loopMode = nextMode;
-    _nonSingleLoopMode = nextMode;
-    await _refreshImmediately(
-      widget.playback.setSessionLoopMode(widget.session.id, nextMode),
-    );
-  }
-
-  Future<void> _toggleCrossFolderLoop() async {
-    final current = _effectiveNonSingleMode;
-    final nextMode = current.toggledScopeMode;
-    _loopMode = nextMode;
-    _nonSingleLoopMode = nextMode;
-    await _refreshImmediately(
-      widget.playback.setSessionLoopMode(widget.session.id, nextMode),
-    );
-  }
-
-  Widget _buildOverlay(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () {
-              _hideOverlay();
-            },
-          ),
-        ),
-        CompositedTransformFollower(
-          link: _anchorLink,
-          showWhenUnlinked: false,
-          targetAnchor: Alignment.center,
-          followerAnchor: Alignment.bottomCenter,
-          // The capsule bottom sits slightly below the button center so the
-          // bottom action button stays locked to the collapsed position.
-          offset: const Offset(0, _sessionDetailCapsuleAnchorOffsetY),
-          child: Material(
-            color: Colors.transparent,
-            child: AnimatedBuilder(
-              animation: _expandController,
-              builder: (context, _) {
-                final containerProgress = Curves.easeOutCubic
-                    .transform(_expandController.value)
-                    .clamp(0.0, 1.0);
-
-                Widget animatedBubble({
-                  required IconData icon,
-                  required bool active,
-                  required VoidCallback onPressed,
-                  required double start,
-                  required double end,
-                }) {
-                  final progress = Interval(
-                    start,
-                    end,
-                    curve: Curves.easeOutCubic,
-                  ).transform(_expandController.value).clamp(0.0, 1.0);
-                  return Opacity(
-                    opacity: progress,
-                    child: Transform.translate(
-                      offset: Offset(0, (1 - progress) * 18),
-                      child: Transform.scale(
-                        scale: 0.82 + (progress * 0.18),
-                        child: _LoopModeButton(
-                          icon: icon,
-                          active: active,
-                          onPressed: onPressed,
-                        ),
-                      ),
-                    ),
-                  );
-                }
-
-                return Opacity(
-                  opacity: 0.4 + (containerProgress * 0.6),
-                  child: ClipRRect(
-                    key: const ValueKey('session_loop_capsule'),
-                    borderRadius: BorderRadius.circular(999),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: cs.surfaceContainerHigh.withValues(
-                            alpha: 0.38,
-                          ),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: cs.outlineVariant.withValues(alpha: 0.92),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: cs.shadow.withValues(alpha: 0.18),
-                              blurRadius: 16,
-                              offset: const Offset(0, 10),
-                            ),
-                          ],
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 2,
-                            vertical: 4,
-                          ),
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              animatedBubble(
-                                icon: Icons.repeat_one_rounded,
-                                active: _singleActive,
-                                onPressed: _toggleSingleLoop,
-                                start: 0.16,
-                                end: 0.58,
-                              ),
-                              const SizedBox(height: 4),
-                              animatedBubble(
-                                icon: _orderIcon,
-                                active: _shuffleButtonHighlighted,
-                                onPressed: _toggleShuffleLoop,
-                                start: 0.28,
-                                end: 0.74,
-                              ),
-                              const SizedBox(height: 4),
-                              animatedBubble(
-                                icon: _scopeIcon,
-                                active: _scopeButtonHighlighted,
-                                onPressed: _toggleCrossFolderLoop,
-                                start: 0.4,
-                                end: 0.9,
-                              ),
-                              const SizedBox(height: 4),
-                              _LoopModeButton(
-                                iconWidget: _singleActive
-                                    ? Icon(
-                                        Icons.repeat_one_rounded,
-                                        key: const ValueKey<String>(
-                                          'single_main',
-                                        ),
-                                        size: 18,
-                                        color: cs.primary,
-                                      )
-                                    : _collapsedCompositeIcon(context),
-                                active: true,
-                                onPressed: _toggleExpanded,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  @override
-  void dispose() {
-    _overlayEntry?.remove();
-    _overlayEntry = null;
-    _expandController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: _anchorLink,
-      child: SizedBox(
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      child: IconButton(
         key: const ValueKey('session_loop_button_anchor'),
-        width: 44,
-        height: 46,
-        child: IgnorePointer(
-          ignoring: _expanded,
-          child: Visibility(
-            visible: !_expanded,
-            maintainAnimation: true,
-            maintainState: true,
-            child: Align(
-              child: _LoopModeButton(
-                iconWidget: _singleActive
-                    ? Icon(
-                        Icons.repeat_one_rounded,
-                        key: const ValueKey<String>('single_main_collapsed'),
-                        size: 18,
-                        color: Theme.of(context).colorScheme.primary,
-                      )
-                    : _collapsedCompositeIcon(context),
-                active: true,
-                onPressed: _toggleExpanded,
-              ),
-            ),
+        constraints: const BoxConstraints.tightFor(width: 46, height: 46),
+        padding: EdgeInsets.zero,
+        tooltip: i18n.tr('loop_mode_title'),
+        style: IconButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          foregroundColor: _sessionDetailForeground(
+            Theme.of(context).colorScheme,
+            _SessionDetailForegroundLevel.muted,
           ),
         ),
+        onPressed: () {
+          AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+          showLoopModeBottomSheet(
+            context: context,
+            session: session,
+            playback: playback,
+          );
+        },
+        icon: _buildIcon(context),
       ),
     );
   }

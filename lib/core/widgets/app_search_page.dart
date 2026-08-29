@@ -71,8 +71,12 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
         key: const ValueKey<String>('app_search_stack'),
         fit: StackFit.expand,
         children: [
-          KeyedSubtree(
+          Positioned(
             key: const ValueKey<String>('app_search_body_layer'),
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: MediaQuery.viewInsetsOf(context).bottom,
             child: body,
           ),
           Positioned(
@@ -221,12 +225,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
         ],
       ),
     );
-    return MediaQuery.removeViewInsets(
-      key: const ValueKey<String>('app_search_keyboard_inset_boundary'),
-      context: context,
-      removeBottom: true,
-      child: content,
-    );
+    return content;
   }
 }
 

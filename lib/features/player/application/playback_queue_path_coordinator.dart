@@ -287,7 +287,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     await savePersistedState();
   }
 
-  Future<void> launchQueue(
+  Future<bool> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,
     required SessionLoopMode loopMode,
@@ -299,11 +299,11 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     );
   }
 
-  Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) async {
+  Future<bool> spawnSession(MusicTrack track, {bool? autoPlay}) async {
     final matchingSessionIds = _matchingWorkSessionIds(track);
     if (matchingSessionIds.isNotEmpty) {
       final removed = await removeSessions(matchingSessionIds);
-      if (!removed) return;
+      if (!removed) return false;
     }
     final session = createTrackSession(track);
     final shouldAutoPlay = autoPlay ?? _autoPlayAddedSessions();
@@ -311,21 +311,22 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       unawaited(_enqueueSessionPreparation(session, nextPath: track.path));
     }
     publishSessionActivated(session.id);
+    return true;
   }
 
-  Future<void> spawnSessionWithQueue(
+  Future<bool> spawnSessionWithQueue(
     List<MusicTrack> tracks, {
     int startIndex = 0,
     bool? autoPlay,
     SessionLoopMode loopMode = SessionLoopMode.folderSequential,
   }) async {
-    if (tracks.isEmpty) return;
+    if (tracks.isEmpty) return false;
     final clampedStartIndex = startIndex.clamp(0, tracks.length - 1);
     final startTrack = tracks[clampedStartIndex];
     final matchingSessionIds = _matchingWorkSessionIds(startTrack);
     if (matchingSessionIds.isNotEmpty) {
       final removed = await removeSessions(matchingSessionIds);
-      if (!removed) return;
+      if (!removed) return false;
     }
     final session = createTrackSession(
       startTrack,
@@ -337,6 +338,7 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
       unawaited(_enqueueSessionPreparation(session, nextPath: startTrack.path));
     }
     publishSessionActivated(session.id);
+    return true;
   }
 
   List<String> _matchingWorkSessionIds(MusicTrack incomingTrack) {

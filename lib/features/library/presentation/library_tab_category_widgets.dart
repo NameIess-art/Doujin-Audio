@@ -690,22 +690,34 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     }
   }
 
-  void _play(BuildContext context, PlaybackFacade playback) {
+  Future<void> _play(BuildContext context, PlaybackFacade playback) async {
     final track = entry.firstTrack;
     if (track == null) return;
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    AppInteractionFeedback.trigger(
-      AppInteractionFeedbackType.tap,
-      context: context,
+    unawaited(
+      AppInteractionFeedback.trigger(
+        AppInteractionFeedbackType.tap,
+        context: context,
+      ),
     );
-    unawaited(playback.spawnSession(track, autoPlay: true));
-    _showSessionCreatedSnack(
-      context,
-      i18n.tr('session_created', {'name': track.displayName}),
-    );
+    final created = await playback.spawnSession(track, autoPlay: true);
+    if (!context.mounted) return;
+    if (created) {
+      _showSessionCreatedSnack(
+        context,
+        i18n.tr('session_created', {'name': track.displayName}),
+      );
+    } else {
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+    }
   }
 
   @override
@@ -802,7 +814,9 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           detailLoading: false,
           expanded: false,
           hasChildren: false,
-          onPlay: firstTrack == null ? () {} : () => _play(context, playback),
+          onPlay: firstTrack == null
+              ? () {}
+              : () => unawaited(_play(context, playback)),
         ),
       );
     }
@@ -817,7 +831,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             title: entry.title,
             detail: entry.detail,
             detailLoading: false,
-            onPlay: () => _play(context, playback),
+            onPlay: () => unawaited(_play(context, playback)),
           ),
         );
       }
@@ -836,7 +850,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
             IconButton(
               onPressed: firstTrack == null
                   ? null
-                  : () => _play(context, playback),
+                  : () => unawaited(_play(context, playback)),
               style: IconButton.styleFrom(
                 foregroundColor: Theme.of(context).colorScheme.primary,
                 minimumSize: const Size(40, 44),

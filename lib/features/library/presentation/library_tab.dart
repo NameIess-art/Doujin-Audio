@@ -116,12 +116,16 @@ class _VisibleLibraryItem {
     required this.depth,
     this.revealed = true,
     this.animateInitialReveal = false,
+    this.isFolderError = false,
+    this.errorFolderPath,
   });
 
   final LibraryNode node;
   final int depth;
   final bool revealed;
   final bool animateInitialReveal;
+  final bool isFolderError;
+  final String? errorFolderPath;
 }
 
 class LibraryTab extends ConsumerStatefulWidget {
@@ -187,6 +191,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
   bool _initialLibraryContentReady = false;
   bool _refreshTriggeredInCurrentScroll = false;
   final Set<String> _expandedCardPaths = <String>{};
+  final Set<String> _folderTreeErrorPaths = <String>{};
   final Map<String, bool> _cardExpansionMotions = <String, bool>{};
   final Map<String, Timer> _cardExpansionMotionTimers = <String, Timer>{};
   final Map<String, _LoadedLibraryFolder> _loadedFolderTrees =
@@ -328,23 +333,47 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       return;
     }
     _loadingFolderTreeRevisions[normalizedPath] = revision;
-    final folder = await libraryFacade.loadLibraryFolderTree(folderPath);
-    if (!mounted) return;
-    if (_loadingFolderTreeRevisions[normalizedPath] == revision) {
-      _loadingFolderTreeRevisions.remove(normalizedPath);
-    }
-    if (folder == null || libraryFacade.structureRevision != revision) return;
-    setState(() {
-      final previousFolder = _loadedFolderTrees[normalizedPath]?.folder;
-      _loadedFolderTrees[normalizedPath] = _LoadedLibraryFolder(
-        folder: folder,
-        revision: revision,
-      );
-      if (previousFolder != null) {
-        _removeMissingExpandedFolderPaths(previousFolder, folder);
+    try {
+      final folder = await libraryFacade.loadLibraryFolderTree(folderPath);
+      if (!mounted) return;
+      if (folder == null || libraryFacade.structureRevision != revision) {
+        if (_folderTreeErrorPaths.add(normalizedPath)) {
+          setState(() {
+            _visibleItemsVersion++;
+          });
+        }
+        return;
       }
-      _visibleItemsVersion++;
-    });
+      _folderTreeErrorPaths.remove(normalizedPath);
+      setState(() {
+        final previousFolder = _loadedFolderTrees[normalizedPath]?.folder;
+        _loadedFolderTrees[normalizedPath] = _LoadedLibraryFolder(
+          folder: folder,
+          revision: revision,
+        );
+        if (previousFolder != null) {
+          _removeMissingExpandedFolderPaths(previousFolder, folder);
+        }
+        _visibleItemsVersion++;
+      });
+    } catch (e, st) {
+      AppLogService.warning(
+        'Failed to load expanded folder tree: $folderPath',
+        error: e,
+        stackTrace: st,
+      );
+      if (mounted) {
+        if (_folderTreeErrorPaths.add(normalizedPath)) {
+          setState(() {
+            _visibleItemsVersion++;
+          });
+        }
+      }
+    } finally {
+      if (_loadingFolderTreeRevisions[normalizedPath] == revision) {
+        _loadingFolderTreeRevisions.remove(normalizedPath);
+      }
+    }
   }
 
   List<_VisibleLibraryItem> _visibleLibraryItems({
@@ -384,13 +413,27 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       final revealChildren = revealed && expanded;
       final animateChildren =
           animateInitialReveal || (revealChildren && motion == true);
-      for (final child in (expandedFolder ?? node).children) {
-        addNode(
-          child,
-          depth + 1,
-          revealed: revealChildren,
-          animateInitialReveal: animateChildren,
+      final children = (expandedFolder ?? node).children;
+      if (expanded && children.isEmpty && _folderTreeErrorPaths.contains(normalizedPath)) {
+        result.add(
+          _VisibleLibraryItem(
+            node: node,
+            depth: depth + 1,
+            revealed: revealChildren,
+            animateInitialReveal: animateChildren,
+            isFolderError: true,
+            errorFolderPath: node.path,
+          ),
         );
+      } else {
+        for (final child in children) {
+          addNode(
+            child,
+            depth + 1,
+            revealed: revealChildren,
+            animateInitialReveal: animateChildren,
+          );
+        }
       }
     }
 
@@ -404,7 +447,8 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       addNode(node, 0, expandedFolder: loaded?.folder);
       if (_expandedCardPaths.contains(normalizedPath) &&
           loaded?.revision != structureRevision &&
-          _loadingFolderTreeRevisions[normalizedPath] != structureRevision) {
+          _loadingFolderTreeRevisions[normalizedPath] != structureRevision &&
+          !_folderTreeErrorPaths.contains(normalizedPath)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) unawaited(_loadExpandedFolderTree(node.path));
         });
@@ -436,6 +480,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       changed = changed || remove;
       return remove;
     });
+    _folderTreeErrorPaths.removeWhere((path) => !rootPaths.contains(path));
 
     final previousExpandedCount = _expandedCardPaths.length;
     _retainCurrentExpandedFolderPaths(rootPaths: rootPaths);
@@ -925,6 +970,29 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       }
       final item = visibleItems[index];
       final node = item.node;
+      if (item.isFolderError) {
+        final folderPath = item.errorFolderPath ?? node.path;
+        final errorBanner = Padding(
+          padding: EdgeInsets.only(left: item.depth * 8.0, top: 4, bottom: 8),
+          child: OperationStatusBanner(
+            key: ValueKey<String>('library_folder_error:$folderPath'),
+            label: i18n.tr('operation_failed_retry'),
+            onRetry: () => unawaited(_loadExpandedFolderTree(folderPath)),
+            retryTooltip: i18n.tr('retry'),
+          ),
+        );
+        return KeyedSubtree(
+          key: ValueKey<String>('library_folder_error_subtree:$folderPath'),
+          child: item.depth == 0
+              ? errorBanner
+              : AnimatedTreeReveal(
+                  key: ValueKey<String>('library-tree-reveal:error:$folderPath'),
+                  visible: item.revealed,
+                  animateInitial: item.animateInitialReveal,
+                  child: errorBanner,
+                ),
+        );
+      }
       final treeItem = Padding(
         padding: EdgeInsets.only(left: item.depth * 8.0),
         child: RepaintBoundary(

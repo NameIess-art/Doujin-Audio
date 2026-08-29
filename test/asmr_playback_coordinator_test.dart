@@ -168,7 +168,7 @@ class _RecordingPlaybackSessionLauncher implements PlaybackSessionLauncher {
   SessionLoopMode? loopMode;
 
   @override
-  Future<void> launchQueue(
+  Future<bool> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,
     required SessionLoopMode loopMode,
@@ -177,5 +177,6 @@ class _RecordingPlaybackSessionLauncher implements PlaybackSessionLauncher {
     this.tracks = tracks;
     this.autoPlay = autoPlay;
     this.loopMode = loopMode;
+    return true;
   }
 }

@@ -73,6 +73,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   late bool _expanded = widget.initiallyExpanded;
   FolderNode? _loadedFolder;
   bool _isLoadingChildren = false;
+  bool _hasLoadError = false;
 
   @override
   void initState() {
@@ -101,6 +102,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         _loadedFolder = null;
       }
       _isLoadingChildren = false;
+      _hasLoadError = false;
       if (widget.renderChildrenInline &&
           _expanded &&
           widget.folder.children.isEmpty) {
@@ -140,20 +142,39 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     if (keepCurrentChildrenVisible) {
       _isLoadingChildren = true;
     } else {
-      setState(() => _isLoadingChildren = true);
+      setState(() {
+        _isLoadingChildren = true;
+        _hasLoadError = false;
+      });
     }
-    final folder = await ref
-        .read(libraryFacadeProvider)
-        .loadLibraryFolderTree(requestedPath);
-    if (!mounted ||
-        !identical(widget.folder, requestedCard) ||
-        !PathMatcher.equalsNormalized(widget.folder.path, requestedPath)) {
-      return;
+    try {
+      final folder = await ref
+          .read(libraryFacadeProvider)
+          .loadLibraryFolderTree(requestedPath);
+      if (!mounted ||
+          !identical(widget.folder, requestedCard) ||
+          !PathMatcher.equalsNormalized(widget.folder.path, requestedPath)) {
+        return;
+      }
+      setState(() {
+        _loadedFolder = folder;
+        _hasLoadError = folder == null;
+        _isLoadingChildren = false;
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _hasLoadError = true;
+          _isLoadingChildren = false;
+        });
+      }
+    } finally {
+      if (mounted && _isLoadingChildren) {
+        setState(() => _isLoadingChildren = false);
+      } else {
+        _isLoadingChildren = false;
+      }
     }
-    setState(() {
-      _loadedFolder = folder;
-      _isLoadingChildren = false;
-    });
   }
 
   Future<void> _removeFolder(
@@ -166,22 +187,34 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     }
   }
 
-  void _playFolder(BuildContext context, PlaybackFacade playback) {
+  Future<void> _playFolder(BuildContext context, PlaybackFacade playback) async {
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final firstTrack = widget.folder.firstTrack;
     if (firstTrack == null) return;
-    AppInteractionFeedback.trigger(
-      AppInteractionFeedbackType.tap,
-      context: context,
+    unawaited(
+      AppInteractionFeedback.trigger(
+        AppInteractionFeedbackType.tap,
+        context: context,
+      ),
     );
-    unawaited(playback.spawnSession(firstTrack));
-    _showSessionCreatedSnack(
-      context,
-      i18n.tr('session_created', {'name': firstTrack.displayName}),
-    );
+    final created = await playback.spawnSession(firstTrack);
+    if (!context.mounted) return;
+    if (created) {
+      _showSessionCreatedSnack(
+        context,
+        i18n.tr('session_created', {'name': firstTrack.displayName}),
+      );
+    } else {
+      showAppSnackBar(
+        context,
+        i18n.tr('operation_failed_retry'),
+        tone: AppFeedbackTone.destructive,
+        icon: Icons.error_outline_rounded,
+      );
+    }
   }
 
   @override
@@ -256,7 +289,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 detailLoading: isRootDetailLoading,
                 expanded: _expanded,
                 hasChildren: hasChildren,
-                onPlay: () => _playFolder(context, playback),
+                onPlay: () => unawaited(_playFolder(context, playback)),
                 index: widget.index,
               )
             : Row(
@@ -304,7 +337,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     IconButton(
-                      onPressed: () => _playFolder(context, playback),
+                      onPressed: () => unawaited(_playFolder(context, playback)),
                       visualDensity: VisualDensity.compact,
                       tooltip: i18n.tr('play'),
                       style: IconButton.styleFrom(
@@ -343,6 +376,21 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
                     child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_hasLoadError)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 6,
+                    ),
+                    child: OperationStatusBanner(
+                      key: ValueKey<String>(
+                        'folder_children_error:${folder.path}',
+                      ),
+                      label: i18n.tr('operation_failed_retry'),
+                      onRetry: () => unawaited(_loadChildren(refresh: true)),
+                      retryTooltip: i18n.tr('retry'),
+                    ),
                   )
                 else
                   ...folder.children.map(
@@ -452,18 +500,31 @@ class _TrackNodeWidget extends ConsumerWidget {
     final useFeaturedSingleCard =
         track.isVideo || hasDisplayableCoverArtwork(track, resolvedCoverPath);
 
-    void playSingleTrack() {
-      AppInteractionFeedback.trigger(
-        AppInteractionFeedbackType.tap,
-        context: context,
-      );
+    Future<void> playSingleTrack() async {
       unawaited(
-        playback.spawnSession(track, autoPlay: track.isVideo ? true : null),
+        AppInteractionFeedback.trigger(
+          AppInteractionFeedbackType.tap,
+          context: context,
+        ),
       );
-      _showSessionCreatedSnack(
-        context,
-        i18n.tr('session_created', {'name': track.displayName}),
+      final created = await playback.spawnSession(
+        track,
+        autoPlay: track.isVideo ? true : null,
       );
+      if (!context.mounted) return;
+      if (created) {
+        _showSessionCreatedSnack(
+          context,
+          i18n.tr('session_created', {'name': track.displayName}),
+        );
+      } else {
+        showAppSnackBar(
+          context,
+          i18n.tr('operation_failed_retry'),
+          tone: AppFeedbackTone.destructive,
+          icon: Icons.error_outline_rounded,
+        );
+      }
     }
 
     Widget buildSingleTrackCard(bool useFeaturedCard) {
@@ -505,7 +566,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                     detail: singleDetail,
                     detailLoading: isSingleDetailLoading,
                     index: index,
-                    onPlay: playSingleTrack,
+                    onPlay: () => unawaited(playSingleTrack()),
                   ),
                 )
               : Padding(
@@ -520,7 +581,7 @@ class _TrackNodeWidget extends ConsumerWidget {
                         ),
                       ),
                       IconButton(
-                        onPressed: playSingleTrack,
+                        onPressed: () => unawaited(playSingleTrack()),
                         style: IconButton.styleFrom(
                           foregroundColor: cs.primary,
                           minimumSize: const Size(40, 44),
@@ -575,16 +636,28 @@ class _TrackNodeWidget extends ConsumerWidget {
                   ),
                 ),
                 IconButton(
-                  onPressed: () {
-                    AppInteractionFeedback.trigger(
-                      AppInteractionFeedbackType.tap,
-                      context: context,
+                  onPressed: () async {
+                    unawaited(
+                      AppInteractionFeedback.trigger(
+                        AppInteractionFeedbackType.tap,
+                        context: context,
+                      ),
                     );
-                    unawaited(playback.spawnSession(track));
-                    _showSessionCreatedSnack(
-                      context,
-                      i18n.tr('session_created', {'name': track.displayName}),
-                    );
+                    final created = await playback.spawnSession(track);
+                    if (!context.mounted) return;
+                    if (created) {
+                      _showSessionCreatedSnack(
+                        context,
+                        i18n.tr('session_created', {'name': track.displayName}),
+                      );
+                    } else {
+                      showAppSnackBar(
+                        context,
+                        i18n.tr('operation_failed_retry'),
+                        tone: AppFeedbackTone.destructive,
+                        icon: Icons.error_outline_rounded,
+                      );
+                    }
                   },
                   style: IconButton.styleFrom(
                     foregroundColor: cs.primary,

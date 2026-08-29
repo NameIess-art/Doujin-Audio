@@ -49,4 +49,66 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text(language.tr('privacy_summary_title')), findsOneWidget);
   });
+
+  testWidgets('onboarding handles landscape and 200% text scale without overflow', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(640, 360);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
+
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    await AppPreferences.init();
+    final language = AppLanguageProvider();
+    var completed = false;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(language),
+        ],
+        child: MaterialApp(
+          home: MediaQuery(
+            data: MediaQueryData.fromView(tester.view).copyWith(
+              textScaler: const TextScaler.linear(2.0),
+            ),
+            child: OnboardingPage(
+              onComplete: () async {
+                completed = true;
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SingleChildScrollView), findsOneWidget);
+
+    final startButton = find.text(language.tr('onboarding_start'));
+    await tester.scrollUntilVisible(
+      startButton,
+      100,
+      scrollable: find.byType(Scrollable),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(startButton);
+    await tester.pump();
+    expect(completed, isTrue);
+
+    final privacyAction = find.text(language.tr('privacy_summary_action'));
+    await tester.scrollUntilVisible(
+      privacyAction,
+      100,
+      scrollable: find.byType(Scrollable),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(privacyAction);
+    await tester.pumpAndSettle();
+    expect(find.text(language.tr('privacy_summary_title')), findsOneWidget);
+  });
 }

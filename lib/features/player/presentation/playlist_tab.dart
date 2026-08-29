@@ -1012,22 +1012,22 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         children: [
                           _AnimatedHeaderAction(
                             child: IconButton(
-                              key: const ValueKey('batch_pause_button'),
+                              key: const ValueKey('batch_play_button'),
                               onPressed: isPlayEnabled
                                   ? _handleBatchPlay
                                   : null,
-                              icon: const Icon(Icons.pause_rounded),
+                              icon: const Icon(Icons.play_arrow_rounded),
                               tooltip: i18n.tr('play'),
                             ),
                           ),
                           _AnimatedHeaderAction(
                             delayIndex: 1,
                             child: IconButton(
-                              key: const ValueKey('batch_play_button'),
+                              key: const ValueKey('batch_pause_button'),
                               onPressed: isPauseEnabled
                                   ? _handleBatchPause
                                   : null,
-                              icon: const Icon(Icons.play_arrow_rounded),
+                              icon: const Icon(Icons.pause_rounded),
                               tooltip: i18n.tr('pause'),
                             ),
                           ),

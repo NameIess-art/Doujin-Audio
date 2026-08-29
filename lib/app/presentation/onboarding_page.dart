@@ -90,71 +90,86 @@ class OnboardingPage extends ConsumerWidget {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 560),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Spacer(),
-                  Container(
-                    width: 72,
-                    height: 72,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: cs.primaryContainer,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Icon(
-                      Icons.graphic_eq_rounded,
-                      size: 38,
-                      color: cs.onPrimaryContainer,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Semantics(
-                    header: true,
-                    child: Text(
-                      i18n.tr('onboarding_title'),
-                      style: Theme.of(context).textTheme.headlineMedium,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    i18n.tr('onboarding_subtitle'),
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodyLarge?.copyWith(color: cs.onSurfaceVariant),
-                  ),
-                  const SizedBox(height: 32),
-                  _TrustPoint(
-                    icon: Icons.folder_copy_outlined,
-                    text: i18n.tr('onboarding_local'),
-                  ),
-                  _TrustPoint(
-                    icon: Icons.cloud_outlined,
-                    text: i18n.tr('onboarding_online_optional'),
-                  ),
-                  _TrustPoint(
-                    icon: Icons.admin_panel_settings_outlined,
-                    text: i18n.tr('onboarding_permissions'),
-                  ),
-                  const Spacer(flex: 2),
-                  FilledButton(
-                    onPressed: onComplete,
-                    child: Text(i18n.tr('onboarding_start')),
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: () => Navigator.of(context).push(
-                      buildAppPageRoute<void>(
-                        context: context,
-                        child: const PrivacySummaryPage(),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: (constraints.maxHeight - 48).clamp(
+                        0.0,
+                        double.infinity,
                       ),
                     ),
-                    child: Text(i18n.tr('privacy_summary_action')),
+                    child: IntrinsicHeight(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const Spacer(),
+                          Container(
+                            width: 72,
+                            height: 72,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: cs.primaryContainer,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Icon(
+                              Icons.graphic_eq_rounded,
+                              size: 38,
+                              color: cs.onPrimaryContainer,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Semantics(
+                            header: true,
+                            child: Text(
+                              i18n.tr('onboarding_title'),
+                              style: Theme.of(context).textTheme.headlineMedium,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            i18n.tr('onboarding_subtitle'),
+                            style: Theme.of(context).textTheme.bodyLarge
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                          const SizedBox(height: 24),
+                          _TrustPoint(
+                            icon: Icons.folder_copy_outlined,
+                            text: i18n.tr('onboarding_local'),
+                          ),
+                          _TrustPoint(
+                            icon: Icons.cloud_outlined,
+                            text: i18n.tr('onboarding_online_optional'),
+                          ),
+                          _TrustPoint(
+                            icon: Icons.admin_panel_settings_outlined,
+                            text: i18n.tr('onboarding_permissions'),
+                          ),
+                          const Spacer(flex: 2),
+                          const SizedBox(height: 16),
+                          FilledButton(
+                            onPressed: onComplete,
+                            child: Text(i18n.tr('onboarding_start')),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: () => Navigator.of(context).push(
+                              buildAppPageRoute<void>(
+                                context: context,
+                                child: const PrivacySummaryPage(),
+                              ),
+                            ),
+                            child: Text(i18n.tr('privacy_summary_action')),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ),

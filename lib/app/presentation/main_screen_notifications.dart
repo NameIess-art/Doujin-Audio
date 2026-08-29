@@ -226,7 +226,13 @@ extension _MainScreenNotifications on _MainScreenState {
     _pendingNotificationSessionRetryCount = 0;
     _lastOpenedNotificationSessionId = sessionId;
     _lastOpenedNotificationAt = DateTime.now();
-    _switchPage(1);
+    final destinations = _currentDestinations();
+    final playlistIndex = destinations.indexWhere(
+      (d) => d.type == MainDestinationType.playlist,
+    );
+    if (playlistIndex >= 0) {
+      _switchPage(playlistIndex);
+    }
     Navigator.of(context).push(buildSessionDetailRoute(sessionId: sessionId));
   }
 }

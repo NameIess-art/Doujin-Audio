@@ -2790,19 +2790,8 @@ void main() {
         const ValueKey<String>('batch_play_button'),
       );
       expect(
-        tester.widget<IconButton>(pauseIconButton).tooltip,
-        fixture.languageProvider.tr('play'),
-      );
-      expect(
-        find.descendant(
-          of: pauseIconButton,
-          matching: find.byIcon(Icons.pause_rounded),
-        ),
-        findsOneWidget,
-      );
-      expect(
         tester.widget<IconButton>(playIconButton).tooltip,
-        fixture.languageProvider.tr('pause'),
+        fixture.languageProvider.tr('play'),
       );
       expect(
         find.descendant(
@@ -2811,9 +2800,20 @@ void main() {
         ),
         findsOneWidget,
       );
+      expect(
+        tester.widget<IconButton>(pauseIconButton).tooltip,
+        fixture.languageProvider.tr('pause'),
+      );
+      expect(
+        find.descendant(
+          of: pauseIconButton,
+          matching: find.byIcon(Icons.pause_rounded),
+        ),
+        findsOneWidget,
+      );
 
       nativeCalls.clear();
-      await tester.tap(pauseIconButton);
+      await tester.tap(playIconButton);
       await tester.pump();
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 20)),
@@ -2831,7 +2831,7 @@ void main() {
       expect(batchHeader, findsOneWidget);
 
       nativeCalls.clear();
-      await tester.tap(playIconButton);
+      await tester.tap(pauseIconButton);
       await tester.pump();
       await tester.runAsync(
         () => Future<void>.delayed(const Duration(milliseconds: 20)),

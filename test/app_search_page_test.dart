@@ -239,63 +239,91 @@ void main() {
     );
   });
 
-  testWidgets('keyboard insets do not relayout the search result tree', (
-    tester,
-  ) async {
-    tester.view.devicePixelRatio = 1;
-    tester.view.physicalSize = const Size(400, 800);
-    addTearDown(() {
-      tester.view.resetDevicePixelRatio();
-      tester.view.resetPhysicalSize();
-      tester.view.resetViewInsets();
-    });
+  testWidgets(
+    'search body layer adjusts for keyboard insets allowing results to scroll above keyboard',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(400, 800);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+        tester.view.resetViewInsets();
+      });
 
-    final controller = TextEditingController();
-    final focusNode = FocusNode();
-    addTearDown(controller.dispose);
-    addTearDown(focusNode.dispose);
-    var bodyBuildCount = 0;
+      final controller = TextEditingController();
+      final focusNode = FocusNode();
+      final scrollController = ScrollController();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      addTearDown(scrollController.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: AppSearchPageScaffold<int>(
-          controller: controller,
-          focusNode: focusNode,
-          hintText: 'Search audio',
-          categories: const <AppSearchCategory<int>>[
-            AppSearchCategory(value: 0, label: 'All'),
-          ],
-          selectedCategory: 0,
-          onCategorySelected: (_) {},
-          onChanged: (_) {},
-          onSubmitted: (_) {},
-          onCloseOrClear: () {},
-          blurEnabled: true,
-          body: Builder(
-            builder: (context) {
-              bodyBuildCount++;
-              return Text(
-                '${MediaQuery.viewInsetsOf(context).bottom}',
-                key: const ValueKey<String>('search_body_keyboard_inset'),
-              );
-            },
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppSearchPageScaffold<int>(
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Search audio',
+            categories: const <AppSearchCategory<int>>[
+              AppSearchCategory(value: 0, label: 'All'),
+            ],
+            selectedCategory: 0,
+            onCategorySelected: (_) {},
+            onChanged: (_) {},
+            onSubmitted: (_) {},
+            onCloseOrClear: () {},
+            blurEnabled: true,
+            body: ListView.builder(
+              controller: scrollController,
+              itemCount: 20,
+              itemBuilder: (context, index) => SizedBox(
+                height: 60,
+                child: Text(
+                  'Item $index',
+                  key: ValueKey<String>('search_result_item_$index'),
+                ),
+              ),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    expect(find.text('0.0'), findsOneWidget);
-    final initialBuildCount = bodyBuildCount;
+      expect(
+        tester
+            .getSize(
+              find.byKey(const ValueKey<String>('app_search_body_layer')),
+            )
+            .height,
+        800,
+      );
 
-    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
-    await tester.pump();
+      tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+      await tester.pump();
 
-    expect(find.text('0.0'), findsOneWidget);
-    expect(bodyBuildCount, initialBuildCount);
-    expect(
-      tester.widget<Scaffold>(find.byType(Scaffold)).resizeToAvoidBottomInset,
-      isFalse,
-    );
-  });
+      expect(
+        tester
+            .getSize(
+              find.byKey(const ValueKey<String>('app_search_body_layer')),
+            )
+            .height,
+        480,
+      );
+      expect(
+        tester.widget<Scaffold>(find.byType(Scaffold)).resizeToAvoidBottomInset,
+        isFalse,
+      );
+
+      // Scroll to bottom item and verify it is placed above the keyboard (within the 480px visible body area)
+      scrollController.jumpTo(scrollController.position.maxScrollExtent);
+      await tester.pump();
+
+      final lastItemFinder = find.byKey(
+        const ValueKey<String>('search_result_item_19'),
+      );
+      expect(lastItemFinder, findsOneWidget);
+      final lastItemBottom =
+          tester.getBottomLeft(lastItemFinder).dy;
+      expect(lastItemBottom, lessThanOrEqualTo(480));
+    },
+  );
 }

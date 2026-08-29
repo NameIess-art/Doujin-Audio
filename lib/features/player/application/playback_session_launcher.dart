@@ -3,7 +3,7 @@ import '../domain/playback_mode.dart';
 import 'playback_facade.dart';
 
 abstract interface class PlaybackSessionLauncher {
-  Future<void> launchQueue(
+  Future<bool> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,
     required SessionLoopMode loopMode,
@@ -16,7 +16,7 @@ final class PlaybackFacadeSessionLauncher implements PlaybackSessionLauncher {
   final PlaybackFacade _facade;
 
   @override
-  Future<void> launchQueue(
+  Future<bool> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,
     required SessionLoopMode loopMode,

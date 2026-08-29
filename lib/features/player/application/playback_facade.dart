@@ -1111,18 +1111,18 @@ final class PlaybackFacade {
       PlaybackQueuePathCoordinator(this).clearRetargetedPaths();
   Future<void> retargetPath(String oldPath, String newPath) =>
       PlaybackQueuePathCoordinator(this).retargetPath(oldPath, newPath);
-  Future<void> launchQueue(
+  Future<bool> launchQueue(
     List<MusicTrack> tracks, {
     bool? autoPlay,
     required SessionLoopMode loopMode,
   }) => PlaybackQueuePathCoordinator(
     this,
   ).launchQueue(tracks, autoPlay: autoPlay, loopMode: loopMode);
-  Future<void> spawnSession(MusicTrack track, {bool? autoPlay}) =>
+  Future<bool> spawnSession(MusicTrack track, {bool? autoPlay}) =>
       PlaybackQueuePathCoordinator(
         this,
       ).spawnSession(track, autoPlay: autoPlay);
-  Future<void> spawnSessionWithQueue(
+  Future<bool> spawnSessionWithQueue(
     List<MusicTrack> tracks, {
     int startIndex = 0,
     bool? autoPlay,

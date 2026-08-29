@@ -35,21 +35,21 @@ extension SessionLoopModeExtension on SessionLoopMode {
     if (isShuffle) {
       if (isOneShot) {
         return isCrossFolder
-            ? SessionLoopMode.crossOnce
-            : SessionLoopMode.folderOnce;
+            ? SessionLoopMode.crossSequential
+            : SessionLoopMode.folderSequential;
       }
-      return isCrossFolder
-          ? SessionLoopMode.crossSequential
-          : SessionLoopMode.folderSequential;
-    }
-    if (isOneShot) {
       return isCrossFolder
           ? SessionLoopMode.crossRandomOnce
           : SessionLoopMode.folderRandomOnce;
     }
+    if (isOneShot) {
+      return isCrossFolder
+          ? SessionLoopMode.crossRandom
+          : SessionLoopMode.folderRandom;
+    }
     return isCrossFolder
-        ? SessionLoopMode.crossRandom
-        : SessionLoopMode.folderRandom;
+        ? SessionLoopMode.crossOnce
+        : SessionLoopMode.folderOnce;
   }
 
   SessionLoopMode get toggledScopeMode {

@@ -99,7 +99,11 @@ class PlaybackQueueResolver {
   }) {
     final paths = scope.paths;
     if (paths.isEmpty) return null;
-    final effectiveLoopMode = loopMode;
+    final effectiveLoopMode = scope.isPlaybackQueue
+        ? (loopMode == SessionLoopMode.single
+            ? SessionLoopMode.folderSequential
+            : loopMode)
+        : loopMode;
     if (effectiveLoopMode == SessionLoopMode.single || paths.length == 1) {
       return PlaybackAdvanceResult(
         path: paths[scope.currentIndex.clamp(0, paths.length - 1)],

@@ -110,7 +110,7 @@ class LibraryManagementPage extends ConsumerWidget {
             ListView.builder(
               padding: EdgeInsets.fromLTRB(
                 16,
-                MediaQuery.paddingOf(context).top + 92,
+                MediaQuery.paddingOf(context).top + 60,
                 16,
                 24,
               ),
@@ -118,11 +118,11 @@ class LibraryManagementPage extends ConsumerWidget {
               itemBuilder: (context, index) {
                 final libraryPath = libraries[index];
                 return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
+                  margin: const EdgeInsets.only(bottom: 6),
                   elevation: 0,
                   color: cs.surfaceContainerHigh,
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
@@ -454,7 +454,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
           ListView.builder(
             padding: EdgeInsets.fromLTRB(
               16,
-              MediaQuery.paddingOf(context).top + 92,
+              MediaQuery.paddingOf(context).top + 60,
               16,
               24,
             ),
@@ -466,7 +466,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
             itemBuilder: (context, index) {
               if (index == 0) {
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.only(bottom: 6),
                   child: _buildSearchBar(i18n),
                 );
               }
@@ -602,21 +602,15 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
             context,
           ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-              AppDesignTokens.of(context).radiusCard,
-            ),
+            borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-              AppDesignTokens.of(context).radiusCard,
-            ),
+            borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide.none,
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(
-              AppDesignTokens.of(context).radiusCard,
-            ),
+            borderRadius: BorderRadius.circular(10),
             borderSide: BorderSide.none,
           ),
           contentPadding: const EdgeInsets.symmetric(
@@ -1211,7 +1205,7 @@ class _LibraryEditFolderTreeTileState
                 style: explicitExcluded
                     ? null
                     : TextButton.styleFrom(
-                        foregroundColor: const Color(0xFFFF4D6D),
+                        foregroundColor: cs.error,
                       ),
                 icon: Icon(
                   explicitExcluded
@@ -1258,19 +1252,19 @@ class _LibraryEditFolderTreeTileState
 
     if (!isRootFolder) {
       return Padding(
-        padding: const EdgeInsets.only(left: 8, bottom: 4),
+        padding: const EdgeInsets.only(left: 8, bottom: 2),
         child: content,
       );
     }
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 6),
       clipBehavior: Clip.antiAlias,
       elevation: 0,
       color: muted
           ? cs.surfaceContainerHighest.withValues(alpha: 0.46)
           : cs.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: content,
     );
   }
@@ -1300,11 +1294,11 @@ class _LibraryEditTrackTile extends ConsumerWidget {
     final cs = Theme.of(context).colorScheme;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 2, 8, 2),
+      padding: const EdgeInsets.fromLTRB(6, 1, 6, 1),
       child: Material(
         key: ValueKey('library-edit-track-surface:$trackPath'),
         color: cs.surfaceContainerHigh.withValues(alpha: 0.4),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         clipBehavior: Clip.antiAlias,
         child: ListTile(
           dense: true,
@@ -1320,7 +1314,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
               color: viewState.muted
                   ? cs.onSurfaceVariant.withValues(alpha: 0.12)
                   : cs.primary.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
               viewState.muted
@@ -1367,7 +1361,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
               style: viewState.explicitExcluded
                   ? null
                   : TextButton.styleFrom(
-                      foregroundColor: const Color(0xFFFF4D6D),
+                      foregroundColor: cs.error,
                     ),
               icon: Icon(
                 viewState.explicitExcluded

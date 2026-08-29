@@ -149,13 +149,18 @@ final class CoverArtworkStore {
       final stat = await source.stat();
       final stem =
           fileStem ??
-          (namespace == CoverArtworkNamespace.embedded
-              ? await sha256.bind(source.openRead()).first
-              : sha256.convert(
-                  utf8.encode(
-                    '$logicalKey|${stat.size}|${stat.modified.millisecondsSinceEpoch}',
-                  ),
-                ));
+          switch (namespace) {
+            CoverArtworkNamespace.embedded =>
+              await sha256.bind(source.openRead()).first,
+            CoverArtworkNamespace.generated => sha256.convert(
+              utf8.encode(logicalKey),
+            ),
+            _ => sha256.convert(
+              utf8.encode(
+                '$logicalKey|${stat.size}|${stat.modified.millisecondsSinceEpoch}',
+              ),
+            ),
+          };
       final output = _artifactFile(namespace, '$stem.image');
       if (!_isUsableFileSync(output.path)) await _copyFile(source, output);
       _bindings[logicalKey] = _storedValue(output.path);

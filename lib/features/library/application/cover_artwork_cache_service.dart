@@ -1547,7 +1547,7 @@ class CoverArtworkCacheService {
         return await _persistBridgeCover(
           logicalKey:
               'video:${PathMatcher.normalize(track.path)}:'
-              '${track.modifiedAt?.millisecondsSinceEpoch ?? 0}',
+              '${track.modifiedAt?.millisecondsSinceEpoch ?? 0}:v3',
           sourcePath: nativeFrame,
           namespace: CoverArtworkNamespace.generated,
         );

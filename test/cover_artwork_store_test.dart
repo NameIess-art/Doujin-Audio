@@ -196,4 +196,27 @@ void main() {
       expect(await File(saved!).exists(), isTrue);
     },
   );
+
+  test('generated artifact ignores temporary bridge touch time', () async {
+    final bridge = File(
+      path.join(temporaryDirectory.path, 'video-frame.image'),
+    );
+    await bridge.writeAsBytes(<int>[1, 2, 3]);
+    final store = CoverArtworkStore(
+      persistentDirectory: () async => supportDirectory,
+      temporaryDirectory: () async => temporaryDirectory,
+    );
+
+    final first = await store.putFile(
+      logicalKey: 'video:/media/work.mp4:100:v3',
+      sourcePath: bridge.path,
+    );
+    await bridge.setLastModified(DateTime(2030));
+    final second = await store.putFile(
+      logicalKey: 'video:/media/work.mp4:100:v3',
+      sourcePath: bridge.path,
+    );
+
+    expect(second, first);
+  });
 }

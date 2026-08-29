@@ -1315,6 +1315,55 @@ void main() {
   );
 
   test(
+    'video frame remains selectable after the bridge file is touched',
+    () async {
+      final directory = await Directory.systemTemp.createTemp(
+        'video_frame_selection_',
+      );
+      final supportDirectory = Directory('${directory.path}/support');
+      final temporaryDirectory = Directory('${directory.path}/temporary');
+      await supportDirectory.create();
+      await temporaryDirectory.create();
+      addTearDown(() async {
+        if (await directory.exists()) await directory.delete(recursive: true);
+      });
+      final videoPath = '${directory.path}/work.mp4';
+      final bridge = File('${temporaryDirectory.path}/video-frame.image');
+      await File(videoPath).writeAsBytes(<int>[1]);
+      await bridge.writeAsBytes(<int>[1, 2, 3]);
+      final track = _track(
+        path: videoPath,
+        groupKey: directory.path,
+        isVideo: true,
+      );
+      final library = LibraryService()..library.add(track);
+      final cache = CoverArtworkCacheService(
+        libraryService: library,
+        fileCacheGateway: _FakeFileCachePlatformGateway(
+          coversByPath: const <String, String>{},
+          videoFramesByPath: <String, String>{videoPath: bridge.path},
+        ),
+        persistentDirectory: () async => supportDirectory,
+        temporaryDirectory: () async => temporaryDirectory,
+      );
+      addTearDown(cache.dispose);
+      await cache.initialize();
+
+      final candidates = await cache.discoverCoverCandidatesInFolder(
+        directory.path,
+      );
+      final generatedCover = candidates.single;
+      await bridge.setLastModified(DateTime(2030));
+
+      expect(
+        await cache.setFolderCoverSelection(directory.path, generatedCover),
+        generatedCover,
+      );
+      expect(cache.resolvedForFolder(directory.path), generatedCover);
+    },
+  );
+
+  test(
     'folder detail cover resolution uses four workers and keeps track order',
     () async {
       final directory = await Directory.systemTemp.createTemp(

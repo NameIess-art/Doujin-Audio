@@ -13,25 +13,38 @@ class AppEdgeFadeMask extends StatelessWidget {
     final theme = Theme.of(context);
     final baseColor = color ?? theme.colorScheme.surface;
     final isDark = theme.brightness == Brightness.dark;
-    final bottomColors = <Color>[
-      baseColor.withValues(alpha: 0),
-      baseColor.withValues(alpha: isDark ? 0.12 : 0.08),
-      baseColor.withValues(alpha: isDark ? 0.50 : 0.38),
-      baseColor.withValues(alpha: isDark ? 0.90 : 0.82),
-    ];
     final towardBottom = direction == AppEdgeFadeDirection.towardBottom;
+    final peakAlpha = isDark ? 0.86 : 0.82;
+    final midHighAlpha = isDark ? 0.76 : 0.70;
+    final lowAlpha = isDark ? 0.28 : 0.22;
+    final colors = towardBottom
+        ? <Color>[
+            baseColor.withValues(alpha: 0),
+            baseColor.withValues(alpha: lowAlpha),
+            baseColor.withValues(alpha: midHighAlpha),
+            baseColor.withValues(alpha: peakAlpha),
+            baseColor.withValues(alpha: peakAlpha),
+          ]
+        : <Color>[
+            baseColor.withValues(alpha: peakAlpha),
+            baseColor.withValues(alpha: peakAlpha),
+            baseColor.withValues(alpha: midHighAlpha),
+            baseColor.withValues(alpha: lowAlpha),
+            baseColor.withValues(alpha: 0),
+          ];
+
+    final stops = towardBottom
+        ? const <double>[0.0, 0.18, 0.42, 0.65, 1.0]
+        : const <double>[0.0, 0.35, 0.58, 0.82, 1.0];
+
     return IgnorePointer(
       child: DecoratedBox(
         decoration: BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: towardBottom
-                ? bottomColors
-                : bottomColors.reversed.toList(growable: false),
-            stops: towardBottom
-                ? const <double>[0, 0.28, 0.68, 1]
-                : const <double>[0, 0.32, 0.72, 1],
+            colors: colors,
+            stops: stops,
           ),
         ),
       ),

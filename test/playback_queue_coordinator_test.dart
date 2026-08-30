@@ -221,6 +221,76 @@ void main() {
     });
 
     test(
+      'removing another audio from queue preserves currently playing track and state',
+      () async {
+        final preparedPaths = <String>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                final arguments = call.arguments as Map<Object?, Object?>;
+                preparedPaths.add(arguments['path'] as String);
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        final trackA = MusicTrack(
+          path: '/library/work/01.mp3',
+          displayName: '01',
+          groupKey: '/library/work',
+          groupTitle: 'Work',
+          groupSubtitle: 'Work',
+          isSingle: false,
+        );
+        final trackB = MusicTrack(
+          path: '/library/work/02.mp3',
+          displayName: '02',
+          groupKey: '/library/work',
+          groupTitle: 'Work',
+          groupSubtitle: 'Work',
+          isSingle: false,
+        );
+        final trackC = MusicTrack(
+          path: '/library/work/03.mp3',
+          displayName: '03',
+          groupKey: '/library/work',
+          groupTitle: 'Work',
+          groupSubtitle: 'Work',
+          isSingle: false,
+        );
+        runtimeGraph.library.addTracks(
+          <MusicTrack>[trackA, trackB, trackC],
+          notify: false,
+          persist: false,
+        );
+
+        final queueSession = runtimeGraph.playback.createPlaybackQueue('Queue 1');
+        await runtimeGraph.playback.addTrackToPlaybackQueue(queueSession.id, trackA);
+        await runtimeGraph.playback.addTrackToPlaybackQueue(queueSession.id, trackB);
+        await runtimeGraph.playback.addTrackToPlaybackQueue(queueSession.id, trackC);
+
+        // Switch to Track B (index 1)
+        await runtimeGraph.playback.seekSessionToNext(queueSession.id);
+
+        final session = runtimeGraph.playback.sessionById(queueSession.id)!;
+        expect(PathMatcher.equalsNormalized(session.currentTrackPath, trackB.path), isTrue);
+        expect(session.currentQueueIndex, 1);
+        final prepareCountBefore = preparedPaths.length;
+
+        // Now remove Track A (index 0) from the queue
+        final entryAId = session.playbackQueue!.entries[0].id;
+        await runtimeGraph.playback.removePlaybackQueueEntry(queueSession.id, entryAId);
+
+        final afterSession = runtimeGraph.playback.sessionById(queueSession.id)!;
+        expect(afterSession.playbackQueue?.entries, hasLength(2));
+        // Current track must still be Track B!
+        expect(PathMatcher.equalsNormalized(afterSession.currentTrackPath, trackB.path), isTrue);
+        // Its queue index is now 0 (was 1)
+        expect(afterSession.currentQueueIndex, 0);
+        // No redundant prepareSession was triggered
+        expect(preparedPaths.length, prepareCountBefore);
+      },
+    );
+
+    test(
       'single files cannot expand into an imported-files work entry',
       () async {
         final selected = MusicTrack(

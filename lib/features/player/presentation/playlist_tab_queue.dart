@@ -1,5 +1,27 @@
 part of 'playlist_tab.dart';
 
+Future<void> _stagePlaybackQueueEntryRemoval(
+  BuildContext context,
+  WidgetRef ref, {
+  required String sessionId,
+  required String entryId,
+}) async {
+  final playback = ref.read(playbackFacadeProvider);
+  final service = ref.read(undoableRemovalServiceProvider);
+  final staged = await service.stage(
+    UndoableRemovalAction(
+      key: _playbackQueueEntryRemovalKey(sessionId, entryId),
+      commit: () => playback.removePlaybackQueueEntry(sessionId, entryId),
+      undo: () {},
+    ),
+  );
+  if (staged && context.mounted) {
+    _showPlaybackRemovalFeedback(context, service);
+  } else if (staged) {
+    await service.commitPending();
+  }
+}
+
 class _PlaybackQueueCard extends ConsumerWidget {
   const _PlaybackQueueCard({
     required this.session,
@@ -27,6 +49,11 @@ class _PlaybackQueueCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(
+      isUndoableRemovalHiddenProvider(_playbackSessionRemovalKey(session.id)),
+    )) {
+      return const SizedBox.shrink();
+    }
     final cardState = ref.watch(playlistSessionCardStateProvider(session.id));
     if (cardState == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
@@ -64,7 +91,16 @@ class _PlaybackQueueCard extends ConsumerWidget {
         .toList(growable: false);
     final currentTrack = tracks.isEmpty
         ? null
-        : tracks[session.currentQueueIndex.clamp(0, tracks.length - 1)];
+        : (tracks
+                .where(
+                  (track) => PathMatcher.equalsNormalized(
+                    track.path,
+                    session.currentTrackPath,
+                  ),
+                )
+                .firstOrNull ??
+            library.trackByPath(session.currentTrackPath) ??
+            tracks[session.currentQueueIndex.clamp(0, tracks.length - 1)]);
     return SwipeRevealCard(
       key: ValueKey(session.id),
       shape: _playlistRowShape,
@@ -490,7 +526,7 @@ class PlaybackQueueEditPage extends ConsumerWidget {
                     context,
                     Icons.delete_outline_rounded,
                     i18n.tr('remove_queue'),
-                    () => _removeQueue(context, playback),
+                    () => _removeQueue(context, ref),
                     destructive: true,
                   ),
                 ],
@@ -603,35 +639,11 @@ class PlaybackQueueEditPage extends ConsumerWidget {
     }
   }
 
-  Future<void> _removeQueue(
-    BuildContext context,
-    PlaybackFacade playback,
-  ) async {
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('remove_queue'),
-      message: i18n.tr('remove_queue_confirm'),
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('remove_queue'),
-      icon: Icons.delete_outline_rounded,
-    );
-    if (!confirmed || !context.mounted) return;
-    final removed = await playback.removeSession(sessionId);
-    if (!context.mounted) return;
-    if (removed) {
+  Future<void> _removeQueue(BuildContext context, WidgetRef ref) async {
+    if (await _stagePlaybackSessionRemovals(context, ref, [sessionId]) &&
+        context.mounted) {
       Navigator.of(context).pop();
-      return;
     }
-    showAppSnackBar(
-      context,
-      i18n.tr('operation_failed_retry'),
-      tone: AppFeedbackTone.destructive,
-      icon: Icons.error_outline_rounded,
-    );
   }
 }
 
@@ -677,7 +689,14 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
               builder: (context, constraints) {
                 final isLandscape =
                     constraints.maxWidth > constraints.maxHeight;
-                final queueEntries = queue.entries.toList();
+                final removalState = ref.watch(undoableRemovalStateProvider);
+                final queueEntries = queue.entries
+                    .where(
+                      (entry) => !removalState.isHidden(
+                        _playbackQueueEntryRemovalKey(sessionId, entry.id),
+                      ),
+                    )
+                    .toList(growable: false);
 
                 final addedToQueueSection = Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -723,9 +742,11 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                             final entry = queueEntries[index];
                             return _AnimatedQueueEntryCard(
                               key: ValueKey(entry.id),
-                              onRemove: () => playback.removePlaybackQueueEntry(
-                                sessionId,
-                                entry.id,
+                              onRemove: () => _stagePlaybackQueueEntryRemoval(
+                                context,
+                                ref,
+                                sessionId: sessionId,
+                                entryId: entry.id,
                               ),
                               builder: (context, triggerRemove) {
                                 return _QueueAudioEditCard(

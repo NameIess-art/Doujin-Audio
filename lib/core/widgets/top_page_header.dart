@@ -74,7 +74,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
     this.onTitleSwipeLeft,
     this.onTitleSwipeRight,
     this.collapseController,
-    this.collapseDistance = 76,
+    this.collapseDistance = 56,
     this.floatingReveal = false,
     this.floatingRevealDistance = 64,
     this.floatingRevealTriggerDistance = 124,
@@ -86,6 +86,11 @@ class TopPageHeader extends ConsumerStatefulWidget {
     ),
     this.collapsedBottomSpacing = AppSpacing.xs,
     this.floating = false,
+    this.topCapsuleTitle,
+    this.topCapsuleData,
+    this.topCapsuleLeading,
+    this.topCapsuleTrailing,
+    this.topCapsuleChild,
   });
 
   final IconData? icon;
@@ -114,6 +119,11 @@ class TopPageHeader extends ConsumerStatefulWidget {
   final EdgeInsetsGeometry collapsedPadding;
   final double collapsedBottomSpacing;
   final bool floating;
+  final String? topCapsuleTitle;
+  final String? topCapsuleData;
+  final Widget? topCapsuleLeading;
+  final Widget? topCapsuleTrailing;
+  final Widget? topCapsuleChild;
 
   @override
   ConsumerState<TopPageHeader> createState() => _TopPageHeaderState();
@@ -247,8 +257,17 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
     final resolvedTitle = widget.title;
 
     Widget buildHeaderContent(double collapseT) {
-      final titleCollapseT = Curves.easeOutCubic.transform(collapseT);
-      final auxiliaryCollapseT = Curves.easeInOutCubic.transform(collapseT);
+      final hasTopCapsule =
+          widget.topCapsuleTitle != null || widget.topCapsuleChild != null;
+      final hasMainRow =
+          widget.title.isNotEmpty ||
+          widget.titleWidget != null ||
+          widget.leading != null ||
+          widget.trailing != null;
+
+      final mainCollapseT = hasTopCapsule ? 0.0 : collapseT;
+      final titleCollapseT = Curves.easeOutCubic.transform(mainCollapseT);
+      final auxiliaryCollapseT = Curves.easeInOutCubic.transform(mainCollapseT);
       final expandedTitleStyle = Theme.of(context).textTheme.headlineMedium
           ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0);
       final collapsedTitleStyle = Theme.of(context).textTheme.titleMedium
@@ -278,157 +297,195 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
       final prefersExpandedText =
           MediaQuery.textScalerOf(context).scale(1) > 1.3;
 
+      final topCapsuleFactor =
+          (1.0 - Curves.easeOutCubic.transform(collapseT)).clamp(0.0, 1.0);
+      final topCapsuleWidget = widget.topCapsuleChild ??
+          (widget.topCapsuleTitle != null
+              ? HeaderTopCapsule(
+                  title: widget.topCapsuleTitle!,
+                  data: widget.topCapsuleData,
+                  leading: widget.topCapsuleLeading,
+                  trailing: widget.topCapsuleTrailing,
+                )
+              : null);
+
+      Widget buildTopCapsule() {
+        if (topCapsuleWidget == null) return const SizedBox.shrink();
+        final isMainTabPadded =
+            widget.padding is EdgeInsets &&
+            (widget.padding as EdgeInsets).right < 12;
+        return ClipRect(
+          child: Align(
+            alignment: Alignment.topCenter,
+            heightFactor: topCapsuleFactor,
+            child: Opacity(
+              opacity: topCapsuleFactor,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  right: isMainTabPadded ? 8.0 : 0.0,
+                  bottom: hasMainRow ? (6.0 * topCapsuleFactor) : 0.0,
+                ),
+                child: topCapsuleWidget,
+              ),
+            ),
+          ),
+        );
+      }
+
       return Padding(
         padding: resolvedPadding,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                SizedBox(
-                  height: AppPageHeaderMetrics.contentHeight * trailingFactor,
-                ),
-                if (widget.leading != null) ...[
-                  SizedBox.square(
-                    dimension: AppPageHeaderMetrics.contentHeight,
-                    child: widget.leading!,
+            if (hasTopCapsule) buildTopCapsule(),
+            if (hasMainRow) ...[
+              Row(
+                children: [
+                  SizedBox(
+                    height: AppPageHeaderMetrics.contentHeight * trailingFactor,
                   ),
-                  const SizedBox(width: AppSpacing.xs),
-                ],
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Builder(
-                      builder: (context) {
-                        final hasSwipe =
-                            widget.titleWidget == null &&
-                            (widget.onTitleSwipeLeft != null ||
-                                widget.onTitleSwipeRight != null);
-                        return GestureDetector(
-                          behavior: hasSwipe
-                              ? HitTestBehavior.opaque
-                              : HitTestBehavior.deferToChild,
-                          onHorizontalDragStart: hasSwipe
-                              ? _handleTitleDragStart
-                              : null,
-                          onHorizontalDragUpdate: hasSwipe
-                              ? _handleTitleDragUpdate
-                              : null,
-                          onHorizontalDragEnd: hasSwipe
-                              ? _handleTitleDragEnd
-                              : null,
-                          child: widget.titleWidget != null
-                              ? Semantics(
-                                  header: true,
-                                  label: resolvedTitle,
-                                  child: DefaultTextStyle.merge(
-                                    style: titleStyle,
-                                    child: widget.titleWidget!,
-                                  ),
-                                )
-                              : widget.marqueeTitle
-                              ? SizedBox(
-                                  height: titleHeight,
-                                  child: MarqueeText(
-                                    text: resolvedTitle,
-                                    style: titleStyle,
-                                    scrollSpeed: 24,
-                                    edgePadding: 2,
-                                    forceMarquee: widget.forceMarqueeTitle,
-                                  ),
-                                )
-                              : Semantics(
-                                  header: true,
-                                  child: Text(
-                                    resolvedTitle,
-                                    maxLines: prefersExpandedText ? 2 : 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: titleStyle,
-                                  ),
-                                ),
-                        );
-                      },
+                  if (widget.leading != null) ...[
+                    SizedBox.square(
+                      dimension: AppPageHeaderMetrics.contentHeight,
+                      child: widget.leading!,
                     ),
-                  ),
-                ),
-                if (widget.titleSuffix != null) ...[
-                  const SizedBox(width: AppSpacing.xs),
-                  widget.titleSuffix!,
-                ],
-                if (widget.trailing != null) ...[
-                  SizedBox(width: AppSpacing.sm * trailingFactor),
-                  ClipRect(
+                    const SizedBox(width: AppSpacing.xs),
+                  ],
+                  Expanded(
                     child: Align(
-                      widthFactor: trailingFactor,
-                      heightFactor: trailingFactor,
-                      alignment: Alignment.centerRight,
-                      child: Opacity(
-                        opacity: trailingFactor,
-                        child: Transform.translate(
-                          offset: Offset(trailingOffset, 0),
-                          child: IgnorePointer(
-                            ignoring: trailingFactor < 0.05,
-                            child: ExcludeSemantics(
-                              excluding: trailingFactor < 0.05,
-                              child: widget.trailing!,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-            if (widget.subtitle != null)
-              ClipRect(
-                child: Align(
-                  heightFactor: subtitleFactor,
-                  alignment: Alignment.topLeft,
-                  child: Opacity(
-                    opacity: subtitleFactor,
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: AppSpacing.xxs),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final style = Theme.of(context).textTheme.bodySmall
-                              ?.copyWith(
-                                fontSize: widget.subtitleFontSize ?? 11,
-                                height: 1.16,
-                                color: cs.onSurfaceVariant,
-                                fontWeight: FontWeight.w600,
-                              );
-                          final text = Text(
-                            widget.subtitle!,
-                            maxLines: widget.subtitleMaxLines,
-                            softWrap: prefersExpandedText,
-                            overflow: TextOverflow.ellipsis,
-                            style: style,
-                          );
-                          if (!widget.fitSubtitleToWidth ||
-                              prefersExpandedText) {
-                            return text;
-                          }
-                          return SizedBox(
-                            width: constraints.maxWidth,
-                            height: (widget.subtitleFontSize ?? 11) * 1.18,
-                            child: FittedBox(
-                              fit: BoxFit.scaleDown,
-                              alignment: Alignment.centerLeft,
-                              child: Text(
-                                widget.subtitle!,
-                                maxLines: 1,
-                                softWrap: false,
-                                style: style,
-                              ),
-                            ),
+                      alignment: Alignment.centerLeft,
+                      child: Builder(
+                        builder: (context) {
+                          final hasSwipe =
+                              widget.titleWidget == null &&
+                              (widget.onTitleSwipeLeft != null ||
+                                  widget.onTitleSwipeRight != null);
+                          return GestureDetector(
+                            behavior: hasSwipe
+                                ? HitTestBehavior.opaque
+                                : HitTestBehavior.deferToChild,
+                            onHorizontalDragStart: hasSwipe
+                                ? _handleTitleDragStart
+                                : null,
+                            onHorizontalDragUpdate: hasSwipe
+                                ? _handleTitleDragUpdate
+                                : null,
+                            onHorizontalDragEnd: hasSwipe
+                                ? _handleTitleDragEnd
+                                : null,
+                            child: widget.titleWidget != null
+                                ? Semantics(
+                                    header: true,
+                                    label: resolvedTitle,
+                                    child: DefaultTextStyle.merge(
+                                      style: titleStyle,
+                                      child: widget.titleWidget!,
+                                    ),
+                                  )
+                                : widget.marqueeTitle
+                                ? SizedBox(
+                                    height: titleHeight,
+                                    child: MarqueeText(
+                                      text: resolvedTitle,
+                                      style: titleStyle,
+                                      scrollSpeed: 24,
+                                      edgePadding: 2,
+                                      forceMarquee: widget.forceMarqueeTitle,
+                                    ),
+                                  )
+                                : Semantics(
+                                    header: true,
+                                    child: Text(
+                                      resolvedTitle,
+                                      maxLines: prefersExpandedText ? 2 : 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: titleStyle,
+                                    ),
+                                  ),
                           );
                         },
                       ),
                     ),
                   ),
-                ),
+                  if (widget.titleSuffix != null) ...[
+                    const SizedBox(width: AppSpacing.xs),
+                    widget.titleSuffix!,
+                  ],
+                  if (widget.trailing != null) ...[
+                    SizedBox(width: AppSpacing.sm * trailingFactor),
+                    ClipRect(
+                      child: Align(
+                        widthFactor: trailingFactor,
+                        heightFactor: trailingFactor,
+                        alignment: Alignment.centerRight,
+                        child: Opacity(
+                          opacity: trailingFactor,
+                          child: Transform.translate(
+                            offset: Offset(trailingOffset, 0),
+                            child: IgnorePointer(
+                              ignoring: trailingFactor < 0.05,
+                              child: ExcludeSemantics(
+                                excluding: trailingFactor < 0.05,
+                                child: widget.trailing!,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
+              if (widget.subtitle != null)
+                ClipRect(
+                  child: Align(
+                    heightFactor: subtitleFactor,
+                    alignment: Alignment.topLeft,
+                    child: Opacity(
+                      opacity: subtitleFactor,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: AppSpacing.xxs),
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final style = Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  fontSize: widget.subtitleFontSize ?? 11,
+                                  height: 1.16,
+                                  color: cs.onSurfaceVariant,
+                                  fontWeight: FontWeight.w600,
+                                );
+                            final text = Text(
+                              widget.subtitle!,
+                              maxLines: widget.subtitleMaxLines,
+                              softWrap: prefersExpandedText,
+                              overflow: TextOverflow.ellipsis,
+                              style: style,
+                            );
+                            if (!widget.fitSubtitleToWidth ||
+                                prefersExpandedText) {
+                              return text;
+                            }
+                            return SizedBox(
+                              width: constraints.maxWidth,
+                              height: (widget.subtitleFontSize ?? 11) * 1.18,
+                              child: FittedBox(
+                                fit: BoxFit.scaleDown,
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  widget.subtitle!,
+                                  maxLines: 1,
+                                  softWrap: false,
+                                  style: style,
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
             SizedBox(height: resolvedBottomSpacing),
           ],
         ),
@@ -507,7 +564,7 @@ class _AppHeaderGlassSurface extends ConsumerWidget {
     final surface = DecoratedBox(
       decoration: BoxDecoration(
         color: cs.surface.withValues(
-          alpha: blurEnabled ? (isDark ? 0.82 : 0.88) : 1.0,
+          alpha: blurEnabled ? (isDark ? 0.72 : 0.78) : 1.0,
         ),
         border: Border(
           bottom: BorderSide(
@@ -561,7 +618,7 @@ class HeaderFloatingSurface extends ConsumerWidget {
     final surface = DecoratedBox(
       decoration: BoxDecoration(
         color: background.withValues(
-          alpha: blurEnabled ? (isDark ? 0.80 : 0.86) : 1.0,
+          alpha: blurEnabled ? (isDark ? 0.70 : 0.75) : 1.0,
         ),
         borderRadius: borderRadius,
         border: Border.all(
@@ -723,3 +780,68 @@ class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
     );
   }
 }
+
+class HeaderTopCapsule extends StatelessWidget {
+  const HeaderTopCapsule({
+    super.key,
+    required this.title,
+    this.data,
+    this.leading,
+    this.trailing,
+    this.height = 36,
+  });
+
+  final String title;
+  final String? data;
+  final Widget? leading;
+  final Widget? trailing;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return HeaderFloatingSurface(
+      height: height,
+      radius: height / 2,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (leading != null) ...[
+                leading!,
+                const SizedBox(width: 6),
+              ],
+              Text(
+                title,
+                style: textTheme.titleSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: cs.onSurface,
+                  fontSize: 13.5,
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ],
+          ),
+          if (trailing != null)
+            trailing!
+          else if (data != null && data!.isNotEmpty)
+            Text(
+              data!,
+              style: textTheme.bodySmall?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: cs.onSurfaceVariant.withValues(alpha: 0.85),
+                fontSize: 11.5,
+                letterSpacing: 0,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+

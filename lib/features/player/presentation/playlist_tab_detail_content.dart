@@ -373,29 +373,39 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
         .where((label) => label.id == _selectedSegmentId)
         .firstOrNull;
     if (selected == null) return;
-    final i18n = ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('segment_delete_title'),
-      message: i18n.tr('segment_delete_confirm', {'name': selected.name}),
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('segment_delete_title'),
-      icon: Icons.sell_rounded,
+    final service = ref.read(undoableRemovalServiceProvider);
+    final staged = await service.stage(
+      UndoableRemovalAction(
+        key: _timeSegmentRemovalKey(selected.id),
+        undo: () {},
+        commit: () async {
+          await _timeSegments.deleteLabel(selected.id);
+          if (!mounted) return;
+          setState(() {
+            _segmentLabels = _segmentLabels
+                .where((label) => label.id != selected.id)
+                .toList(growable: false);
+          });
+        },
+      ),
     );
-    if (!confirmed || !mounted) return;
-    await _timeSegments.deleteLabel(selected.id);
-    if (!mounted) return;
-    final trackKey = _segmentTrackKey;
-    if (trackKey == null) return;
+    if (!staged) return;
+    if (!mounted) {
+      await service.commitPending();
+      return;
+    }
     setState(_clearSegmentDraft);
-    await _loadSegmentLabels(trackKey);
+    _showPlaybackRemovalFeedback(context, service, icon: Icons.sell_rounded);
   }
 
   @override
   Widget build(BuildContext context) {
+    final removalState = ref.watch(undoableRemovalStateProvider);
+    final visibleSegmentLabels = _segmentLabels
+        .where(
+          (label) => !removalState.isHidden(_timeSegmentRemovalKey(label.id)),
+        )
+        .toList(growable: false);
     final cs = Theme.of(context).colorScheme;
     final session = widget.session;
     final playback = _playback;
@@ -434,7 +444,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
         session: session,
         playback: playback,
         paths: paths,
-        timeSegmentLabels: _segmentLabels,
+        timeSegmentLabels: visibleSegmentLabels,
         selectedSegmentId: selectedSegmentId,
         onManualSeek: _handleSegmentManualSeek,
       );
@@ -549,6 +559,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                   ? _buildSegmentPanel(
                       playback: playback,
                       session: session,
+                      labels: visibleSegmentLabels,
                       key: const ValueKey('segments'),
                     )
                   : const SizedBox.shrink(key: ValueKey('segments_closed')),
@@ -606,7 +617,7 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
                                         ),
                                         session: session,
                                         playback: playback,
-                                        labels: _segmentLabels,
+                                        labels: visibleSegmentLabels,
                                         selectedId: _selectedSegmentId,
                                         showEditor: _segmentEditorVisible,
                                         loading: _segmentLoading,
@@ -678,13 +689,14 @@ class _SessionDetailContentState extends ConsumerState<_SessionDetailContent> {
   Widget _buildSegmentPanel({
     required PlaybackFacade playback,
     required PlaybackSessionSnapshot session,
+    required List<TimeSegmentLabel> labels,
     required Key key,
   }) {
     return _TimeSegmentPanel(
       key: key,
       session: session,
       playback: playback,
-      labels: _segmentLabels,
+      labels: labels,
       selectedId: _selectedSegmentId,
       showEditor: _segmentEditorVisible,
       loading: _segmentLoading,

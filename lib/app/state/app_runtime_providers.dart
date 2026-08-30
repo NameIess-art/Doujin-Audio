@@ -20,6 +20,7 @@ import '../../features/player/application/playback_time_segment_service.dart';
 import '../../features/player/application/subtitle_overlay_controller.dart';
 import '../../features/player/application/timer_facade.dart';
 import '../../core/ui/ui_operation_service.dart';
+import '../../core/ui/undoable_removal_service.dart';
 import '../theme/theme_provider.dart';
 import '../localization/app_language_provider.dart';
 import '../../features/settings/application/app_update_service.dart';
@@ -344,6 +345,26 @@ final uiOperationServiceProvider = Provider<UiOperationService>((ref) {
   );
 });
 
+final undoableRemovalServiceProvider = Provider<UndoableRemovalService>((ref) {
+  return UndoableRemovalService.instance;
+});
+
+final _undoableRemovalChangesProvider = StreamProvider<UndoableRemovalState>((
+  ref,
+) {
+  return ref.watch(undoableRemovalServiceProvider).changes;
+});
+
+final undoableRemovalStateProvider = Provider<UndoableRemovalState>((ref) {
+  ref.watch(_undoableRemovalChangesProvider);
+  return ref.watch(undoableRemovalServiceProvider).state;
+});
+
+final isUndoableRemovalHiddenProvider = Provider.autoDispose
+    .family<bool, UndoableRemovalKey>((ref, key) {
+      return ref.watch(undoableRemovalStateProvider).isHidden(key);
+    });
+
 final _uiOperationScopeStateChangesProvider = StreamProvider.autoDispose
     .family<UiOperationState, UiOperationScope>((ref, scope) {
       final service = ref.watch(uiOperationServiceProvider);
@@ -393,6 +414,7 @@ List<Override> createAppRuntimeOverrides({
   required NotificationFacade notifications,
   required SettingsRepository settings,
   UiOperationService? uiOperationService,
+  UndoableRemovalService? undoableRemovalService,
 }) {
   return <Override>[
     appPersistenceCoordinatorProvider.overrideWithValue(persistence),
@@ -408,6 +430,9 @@ List<Override> createAppRuntimeOverrides({
     settingsRepositoryProvider.overrideWithValue(settings),
     uiOperationServiceProvider.overrideWithValue(
       uiOperationService ?? UiOperationService.instance,
+    ),
+    undoableRemovalServiceProvider.overrideWithValue(
+      undoableRemovalService ?? UndoableRemovalService.instance,
     ),
   ];
 }

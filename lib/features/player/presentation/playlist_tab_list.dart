@@ -373,28 +373,6 @@ class _SessionListCard extends ConsumerWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onToggleSelect;
 
-  Future<void> _confirmRemoveSession(BuildContext context) async {
-    final removed = await playback.removeSession(sessionId);
-    if (!context.mounted) return;
-    if (!removed) {
-      final i18n = ProviderScope.containerOf(
-        context,
-        listen: false,
-      ).read(appLanguageProviderInstanceProvider);
-      showAppSnackBar(
-        context,
-        i18n.tr('operation_failed_retry'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.error_outline_rounded,
-      );
-      return;
-    }
-    ProviderScope.containerOf(
-      context,
-      listen: false,
-    ).read(subtitleSettingsProvider.notifier).resetForSession(sessionId);
-  }
-
   String _loopModeSummary(BuildContext context, SessionLoopMode mode) {
     final i18n = ProviderScope.containerOf(
       context,
@@ -415,6 +393,11 @@ class _SessionListCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(
+      isUndoableRemovalHiddenProvider(_playbackSessionRemovalKey(sessionId)),
+    )) {
+      return const SizedBox.shrink();
+    }
     final cardState = ref.watch(playlistSessionCardStateProvider(sessionId));
     if (cardState == null) return const SizedBox.shrink();
     final i18n = ProviderScope.containerOf(
@@ -465,7 +448,7 @@ class _SessionListCard extends ConsumerWidget {
       enabled: !isSelectionMode,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
-      onRemove: () => _confirmRemoveSession(context),
+      onRemove: () => _stagePlaybackSessionRemovals(context, ref, [sessionId]),
       child: ConstrainedBox(
         constraints: const BoxConstraints(minHeight: _playlistRowHeight),
         child: Material(

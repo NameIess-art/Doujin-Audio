@@ -125,7 +125,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   double _minimumExpandedHeaderHeight(BuildContext context) {
-    return AppPageHeaderMetrics.toolbarHeight +
+    return AppPageHeaderMetrics.expandedToolbarHeight +
         MediaQuery.paddingOf(context).top;
   }
 
@@ -509,6 +509,19 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         : _minimumExpandedHeaderHeight(context);
     final headerContentHeight = effectiveHeaderHeight + 4.0;
     final globalInitialized = globalState?.initialized ?? false;
+    final categoryState = ref.watch(
+      asmrCategoryStateProvider((
+        category: _selectedCategory,
+        searchQuery: '',
+      )),
+    ).value;
+    final totalWorks = (categoryState?.totalCount ?? 0) > 0
+        ? categoryState!.totalCount
+        : (categoryState?.works.length ?? 0);
+    final asmrStatsText = i18n.tr(
+      'asmr_header_stats',
+      {'count': totalWorks.toString()},
+    );
 
     return Stack(
       clipBehavior: Clip.none,
@@ -552,6 +565,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           child: TopPageHeader(
             key: _headerKey,
             floating: true,
+            collapseController: _scrollController,
+            topCapsuleTitle: 'ASMR.ONE',
+            topCapsuleData: asmrStatsText,
             title: 'ASMR.ONE',
             titleWidget: _buildCategorySwitcher(i18n),
             padding: AppPageHeaderMetrics.mainTabPadding,

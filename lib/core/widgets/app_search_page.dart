@@ -83,7 +83,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
             top: 0,
             left: 0,
             right: 0,
-            height: MediaQuery.paddingOf(context).top + 98,
+            height: MediaQuery.paddingOf(context).top + 112,
             child: const AppEdgeFadeMask(
               key: ValueKey<String>('app_search_top_fade_mask'),
               direction: AppEdgeFadeDirection.towardTop,
@@ -249,7 +249,7 @@ class _SearchFloatingCapsule extends StatelessWidget {
     final capsuleSurface = DecoratedBox(
       decoration: BoxDecoration(
         color: background.withValues(
-          alpha: blurEnabled ? (isDark ? 0.80 : 0.86) : 1,
+          alpha: blurEnabled ? (isDark ? 0.70 : 0.75) : 1,
         ),
         borderRadius: borderRadius,
         border: Border.all(

@@ -9,6 +9,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dar
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
+import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -23,6 +24,8 @@ void main() {
       persistTasks: false,
     );
     addTearDown(manager.dispose);
+    final removalService = UndoableRemovalService();
+    addTearDown(removalService.dispose);
     manager.debugSetCurrentTaskForTesting(_failedTask());
 
     await tester.pumpWidget(
@@ -32,6 +35,7 @@ void main() {
             languageProvider,
           ),
           asmrDownloadManagerProvider.overrideWithValue(manager),
+          undoableRemovalServiceProvider.overrideWithValue(removalService),
         ],
         child: const MaterialApp(home: AsmrDownloadTaskPage()),
       ),
@@ -51,7 +55,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(manager.getTask(1), isNull);
+    expect(manager.getTask(1), isNotNull);
+    expect(find.text('Work'), findsNothing);
+    expect(find.text('Undo'), findsOneWidget);
+
+    await tester.tap(find.text('Undo'));
+    await tester.pumpAndSettle();
+
+    expect(manager.getTask(1), isNotNull);
+    expect(find.text('Work'), findsOneWidget);
   });
 
   testWidgets('task uses its retry maximum and clears terminal retry status', (
@@ -67,6 +79,8 @@ void main() {
       persistTasks: false,
     );
     addTearDown(manager.dispose);
+    final removalService = UndoableRemovalService();
+    addTearDown(removalService.dispose);
     manager.debugSetCurrentTaskForTesting(
       _failedTask(
         status: AsmrDownloadTaskStatus.downloading,
@@ -81,6 +95,7 @@ void main() {
             languageProvider,
           ),
           asmrDownloadManagerProvider.overrideWithValue(manager),
+          undoableRemovalServiceProvider.overrideWithValue(removalService),
         ],
         child: const MaterialApp(home: AsmrDownloadTaskPage()),
       ),

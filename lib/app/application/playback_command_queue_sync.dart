@@ -31,20 +31,53 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
       var nextIndex = selectFirst
           ? 0
           : previousIndex.clamp(0, tracks.length - 1);
-      if (!selectFirst &&
-          nextIndex < tracks.length &&
-          !PathMatcher.equalsNormalized(tracks[nextIndex].path, previousPath)) {
+      if (!selectFirst && previousPath.isNotEmpty) {
         final matchingIndex = tracks.indexWhere(
           (track) => PathMatcher.equalsNormalized(track.path, previousPath),
         );
-        nextIndex = matchingIndex < 0 ? 0 : matchingIndex;
+        if (matchingIndex >= 0) {
+          nextIndex = matchingIndex;
+        } else {
+          nextIndex = previousIndex.clamp(0, tracks.length - 1);
+        }
       }
-      await _prepareAndPlay(
-        session,
-        nextPath: tracks[nextIndex].path,
-        autoPlay: wasPlaying,
-        targetQueueIndex: nextIndex,
-      );
+      if (!selectFirst &&
+          previousPath.isNotEmpty &&
+          session.loadedPath != null &&
+          PathMatcher.equalsNormalized(
+            session.loadedPath!,
+            _playbackFacade.resolveRetargetedPath(previousPath),
+          ) &&
+          PathMatcher.equalsNormalized(tracks[nextIndex].path, previousPath)) {
+        session.currentQueueIndex = nextIndex;
+        session.currentTrackPath = tracks[nextIndex].path;
+        final nativeQueue = nativePlaybackQueueFor(
+          session,
+          currentPath: session.currentTrackPath,
+        );
+        final loopMode = session.loopMode;
+        await _nativePlaybackRepository.setRepeatOne(
+          session.id,
+          loopMode == SessionLoopMode.single,
+          queue: nativeQueue,
+          queueStartIndex: nativePlaybackQueueStartIndexFor(
+            session,
+            currentPath: session.currentTrackPath,
+          ),
+          repeatAll: loopMode != SessionLoopMode.single && !loopMode.isOneShot,
+          shuffle: loopMode.isShuffle,
+        );
+        _syncNotificationState();
+        _playbackFacade.scheduleSessionStatePersistence();
+        _notifyPlaybackChanged();
+      } else {
+        await _prepareAndPlay(
+          session,
+          nextPath: tracks[nextIndex].path,
+          autoPlay: wasPlaying,
+          targetQueueIndex: nextIndex,
+        );
+      }
     }
   }
 }

@@ -9,6 +9,7 @@ import '../domain/asmr_models.dart';
 import '../application/asmr_download_models.dart';
 import '../application/asmr_download_selection.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/undoable_removal_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -382,10 +383,16 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(asmrDownloadTaskIdsProvider).value;
+    final removalState = ref.watch(undoableRemovalStateProvider);
     final taskIds =
-        state ??
-        ref.read(asmrDownloadManagerProvider)?.taskIds ??
-        const <int>[];
+        (state ??
+                ref.read(asmrDownloadManagerProvider)?.taskIds ??
+                const <int>[])
+            .where(
+              (workId) =>
+                  !removalState.isHidden(_asmrDownloadTaskRemovalKey(workId)),
+            )
+            .toList(growable: false);
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
@@ -433,6 +440,59 @@ class AsmrDownloadTaskPage extends ConsumerWidget {
 }
 
 enum _TaskRemovalAction { removeEntry, deleteDownloaded }
+
+UndoableRemovalKey _asmrDownloadTaskRemovalKey(int workId) =>
+    UndoableRemovalKey('asmr-download-task', '$workId');
+
+Future<void> _stageAsmrDownloadTaskRemoval(
+  BuildContext context,
+  WidgetRef ref, {
+  required AsmrDownloadTaskSnapshot task,
+  required _TaskRemovalAction removalAction,
+}) async {
+  final manager = ref.read(asmrDownloadManagerProvider);
+  if (manager == null) return;
+  final service = ref.read(undoableRemovalServiceProvider);
+  final wasRunning =
+      task.status == AsmrDownloadTaskStatus.idle || task.isActive;
+  await showUndoableRemovalFeedback(
+    context,
+    service: service,
+    action: UndoableRemovalAction(
+      key: _asmrDownloadTaskRemovalKey(task.work.id),
+      prepare: () async {
+        if (wasRunning) await manager.pauseTask(task.work.id);
+        return manager.getTask(task.work.id) != null;
+      },
+      undo: () async {
+        if (wasRunning && manager.getTask(task.work.id) != null) {
+          await manager.resumeTask(task.work.id);
+        }
+      },
+      commit: () => removalAction == _TaskRemovalAction.removeEntry
+          ? manager.cancelTask(task.work.id, deleteDownloaded: false)
+          : manager.deleteTask(task.work.id),
+    ),
+    message: ref
+        .read(appLanguageProviderInstanceProvider)
+        .tr(
+          removalAction == _TaskRemovalAction.removeEntry
+              ? 'asmr_download_task_removed'
+              : 'asmr_download_task_removed_and_deleted',
+        ),
+    batchMessage: (count) => ref.read(appLanguageProviderInstanceProvider).tr(
+      'items_removed_count',
+      {'count': count},
+    ),
+    undoLabel: ref.read(appLanguageProviderInstanceProvider).tr('undo'),
+    failureMessage: ref
+        .read(appLanguageProviderInstanceProvider)
+        .tr('removal_failed'),
+    icon: removalAction == _TaskRemovalAction.removeEntry
+        ? Icons.remove_circle_outline_rounded
+        : Icons.delete_sweep_rounded,
+  );
+}
 
 Future<_TaskRemovalAction?> _showTaskRemovalMenu(
   BuildContext context, {
@@ -602,27 +662,11 @@ class _TaskCard extends ConsumerWidget {
                           ),
                         );
                         if (!context.mounted || action == null) return;
-                        if (action == _TaskRemovalAction.removeEntry) {
-                          await manager.cancelTask(
-                            task.work.id,
-                            deleteDownloaded: false,
-                          );
-                        } else {
-                          await manager.deleteTask(task.work.id);
-                        }
-                        if (!context.mounted) return;
-                        showAppSnackBar(
+                        await _stageAsmrDownloadTaskRemoval(
                           context,
-                          i18n.tr(
-                            action == _TaskRemovalAction.removeEntry
-                                ? 'asmr_download_task_removed'
-                                : 'asmr_download_task_removed_and_deleted',
-                          ),
-                          tone: AppFeedbackTone.warning,
-                          icon: action == _TaskRemovalAction.removeEntry
-                              ? Icons.remove_circle_outline_rounded
-                              : Icons.delete_sweep_rounded,
-                          iconColor: asmrBlue,
+                          ref,
+                          task: task,
+                          removalAction: action,
                         );
                       },
                     ),

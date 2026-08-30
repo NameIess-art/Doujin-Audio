@@ -6,6 +6,7 @@ import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
 import 'package:doujin_audio/core/widgets/app_feedback.dart';
 import 'package:doujin_audio/core/widgets/confirm_action_dialog.dart';
+import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
 Widget _feedbackApp({required bool blurEnabled, required Widget home}) {
@@ -115,6 +116,215 @@ void main() {
 
     expect(actionCount, 1);
     expect(find.text('Import failed'), findsNothing);
+  });
+
+  testWidgets('undoable removal merges, resets its window, and commits', (
+    tester,
+  ) async {
+    final service = UndoableRemovalService();
+    addTearDown(service.dispose);
+    final committed = <String>[];
+
+    await tester.pumpWidget(
+      _feedbackApp(
+        blurEnabled: true,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Column(
+              children: [
+                const SizedBox(height: 140),
+                TextButton(
+                  onPressed: () => showUndoableRemovalFeedback(
+                    context,
+                    service: service,
+                    action: UndoableRemovalAction(
+                      key: const UndoableRemovalKey('test', 'one'),
+                      commit: () => committed.add('one'),
+                      undo: () {},
+                    ),
+                    message: 'Removed one',
+                    batchMessage: (count) => 'Removed $count',
+                    undoLabel: 'Undo',
+                    failureMessage: 'Failed',
+                  ),
+                  child: const Text('Remove one'),
+                ),
+                TextButton(
+                  onPressed: () => showUndoableRemovalFeedback(
+                    context,
+                    service: service,
+                    action: UndoableRemovalAction(
+                      key: const UndoableRemovalKey('test', 'two'),
+                      commit: () => committed.add('two'),
+                      undo: () {},
+                    ),
+                    message: 'Removed two',
+                    batchMessage: (count) => 'Removed $count',
+                    undoLabel: 'Undo',
+                    failureMessage: 'Failed',
+                  ),
+                  child: const Text('Remove two'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Remove one'));
+    await tester.pump();
+    expect(find.text('Undo'), findsOneWidget);
+    expect(find.text('Removed one (4s)'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2));
+    await tester.tap(find.text('Remove two'));
+    await tester.pump();
+    expect(find.text('Removed 2 (4s)'), findsOneWidget);
+    for (var i = 0; i < 35; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(committed, isEmpty);
+    for (var i = 0; i < 6; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+    expect(committed, <String>['one', 'two']);
+  });
+
+  testWidgets('undo action restores pending removals without committing', (
+    tester,
+  ) async {
+    final service = UndoableRemovalService();
+    addTearDown(service.dispose);
+    var commits = 0;
+    var undos = 0;
+    await tester.pumpWidget(
+      _feedbackApp(
+        blurEnabled: true,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showUndoableRemovalFeedback(
+                context,
+                service: service,
+                action: UndoableRemovalAction(
+                  key: const UndoableRemovalKey('test', 'one'),
+                  commit: () => commits++,
+                  undo: () => undos++,
+                ),
+                message: 'Removed',
+                batchMessage: (count) => 'Removed $count',
+                undoLabel: 'Undo',
+                failureMessage: 'Failed',
+              ),
+              child: const Text('Remove'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Remove'));
+    await tester.pump();
+    await tester.tap(find.text('Undo'));
+    await tester.pump();
+
+    expect(undos, 1);
+    expect(commits, 0);
+    expect(service.state.hiddenKeys, isEmpty);
+  });
+
+  testWidgets('swiping undoable feedback commits the pending removal', (
+    tester,
+  ) async {
+    final service = UndoableRemovalService();
+    addTearDown(service.dispose);
+    var commits = 0;
+    await tester.pumpWidget(
+      _feedbackApp(
+        blurEnabled: true,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showUndoableRemovalFeedback(
+                context,
+                service: service,
+                action: UndoableRemovalAction(
+                  key: const UndoableRemovalKey('test', 'swipe'),
+                  commit: () => commits++,
+                  undo: () {},
+                ),
+                message: 'Removed',
+                batchMessage: (count) => 'Removed $count',
+                undoLabel: 'Undo',
+                failureMessage: 'Failed',
+              ),
+              child: const Text('Remove'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Remove'));
+    await tester.pump();
+    await tester.drag(find.byType(Dismissible), const Offset(-500, 0));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+
+    expect(commits, 1);
+    expect(service.state.hasPending, isFalse);
+  });
+
+  testWidgets('ordinary feedback replacement commits pending removals', (
+    tester,
+  ) async {
+    final service = UndoableRemovalService();
+    addTearDown(service.dispose);
+    var commits = 0;
+    await tester.pumpWidget(
+      _feedbackApp(
+        blurEnabled: true,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Column(
+              children: [
+                const SizedBox(height: 140),
+                TextButton(
+                  onPressed: () => showUndoableRemovalFeedback(
+                    context,
+                    service: service,
+                    action: UndoableRemovalAction(
+                      key: const UndoableRemovalKey('test', 'replace'),
+                      commit: () => commits++,
+                      undo: () {},
+                    ),
+                    message: 'Removed',
+                    batchMessage: (count) => 'Removed $count',
+                    undoLabel: 'Undo',
+                    failureMessage: 'Failed',
+                  ),
+                  child: const Text('Remove'),
+                ),
+                TextButton(
+                  onPressed: () => showAppSnackBar(context, 'Ordinary'),
+                  child: const Text('Replace'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Remove'));
+    await tester.pump();
+    await tester.tap(find.text('Replace'));
+    await tester.pump();
+    await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+
+    expect(commits, 1);
+    expect(find.text('Ordinary'), findsOneWidget);
   });
 
   testWidgets('top feedback can be dismissed by swiping horizontally', (
@@ -241,59 +451,60 @@ void main() {
     expect(opaqueDecoration.color!.a, 1);
   });
 
-  testWidgets('top feedback positions close to header and avoids landscape menu bar', (
-    tester,
-  ) async {
-    tester.view.physicalSize = const Size(1280, 800);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
+  testWidgets(
+    'top feedback positions close to header and avoids landscape menu bar',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(
-      _feedbackApp(
-        blurEnabled: true,
-        home: Scaffold(
-          body: Row(
-            children: [
-              const SizedBox(width: 260, child: Text('NavigationMenu')),
-              Expanded(
-                child: KeyedSubtree(
-                  key: const ValueKey<String>('main_page_canvas_0'),
-                  child: Builder(
-                    builder: (context) => TextButton(
-                      onPressed: () {
-                        showAppSnackBar(
-                          context,
-                          'Landscape feedback message',
-                          duration: const Duration(seconds: 10),
-                        );
-                      },
-                      child: const Text('Trigger'),
+      await tester.pumpWidget(
+        _feedbackApp(
+          blurEnabled: true,
+          home: Scaffold(
+            body: Row(
+              children: [
+                const SizedBox(width: 260, child: Text('NavigationMenu')),
+                Expanded(
+                  child: KeyedSubtree(
+                    key: const ValueKey<String>('main_page_canvas_0'),
+                    child: Builder(
+                      builder: (context) => TextButton(
+                        onPressed: () {
+                          showAppSnackBar(
+                            context,
+                            'Landscape feedback message',
+                            duration: const Duration(seconds: 10),
+                          );
+                        },
+                        child: const Text('Trigger'),
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    await tester.tap(find.text('Trigger'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('Trigger'));
+      await tester.pumpAndSettle();
 
-    final surfaceFinder = find.byType(AppFeedbackSurface);
-    expect(surfaceFinder, findsOneWidget);
+      final surfaceFinder = find.byType(AppFeedbackSurface);
+      expect(surfaceFinder, findsOneWidget);
 
-    final topLeft = tester.getTopLeft(surfaceFinder);
-    final topRight = tester.getTopRight(surfaceFinder);
+      final topLeft = tester.getTopLeft(surfaceFinder);
+      final topRight = tester.getTopRight(surfaceFinder);
 
-    // Should be positioned below the header button area (~54px)
-    expect(topLeft.dy, closeTo(54.0, 10.0));
-    // In landscape with a 260px menu, left edge should start at 260 + 16 = 276
-    expect(topLeft.dx, closeTo(276.0, 5.0));
-    // Right edge should align with title bar right button (screen width - 4 = 1276)
-    expect(topRight.dx, closeTo(1276.0, 5.0));
-  });
+      // Should be positioned below the header button area (~54px)
+      expect(topLeft.dy, closeTo(54.0, 10.0));
+      // In landscape with a 260px menu, left edge should start at 260 + 16 = 276
+      expect(topLeft.dx, closeTo(276.0, 5.0));
+      // Right edge should align with title bar right button (screen width - 4 = 1276)
+      expect(topRight.dx, closeTo(1276.0, 5.0));
+    },
+  );
 
   testWidgets('non-destructive confirmation uses the requested action', (
     tester,
@@ -330,4 +541,43 @@ void main() {
     await tester.pumpAndSettle();
     expect(result, isTrue);
   });
+
+  testWidgets('destructive removal prompt displays and updates countdown', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _feedbackApp(
+        blurEnabled: false,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () {
+                showAppSnackBar(
+                  context,
+                  'Item deleted',
+                  tone: AppFeedbackTone.destructive,
+                );
+              },
+              child: const Text('Delete'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Delete'));
+    await tester.pump();
+
+    expect(find.text('Item deleted (4s)'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1050));
+    expect(find.text('Item deleted (3s)'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1000));
+    expect(find.text('Item deleted (2s)'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1000));
+    expect(find.text('Item deleted (1s)'), findsOneWidget);
+  });
 }
+

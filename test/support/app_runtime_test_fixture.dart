@@ -18,6 +18,7 @@ import 'package:doujin_audio/core/platform/power_platform_service.dart';
 import 'package:doujin_audio/core/platform/platform_channels.dart';
 import 'package:doujin_audio/core/ui/ui_interaction_coordinator.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
+import 'package:doujin_audio/core/ui/undoable_removal_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_metadata_service.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/application/asmr_playback_cache_service.dart';
@@ -218,6 +219,7 @@ Widget buildAppRuntimeTestApp({
   required AppLanguageProvider languageProvider,
   PlaybackSubtitleService? subtitleService,
   UiOperationService? uiOperationService,
+  UndoableRemovalService? undoableRemovalService,
   ThemeProvider? themeProvider,
   List<NavigatorObserver> navigatorObservers = const <NavigatorObserver>[],
   List<Override> overrides = const <Override>[],
@@ -239,6 +241,7 @@ Widget buildAppRuntimeTestApp({
         notifications: runtimeGraph.notifications,
         settings: runtimeGraph.settings,
         uiOperationService: uiOperationService,
+        undoableRemovalService: undoableRemovalService,
       ),
       appUpdateServiceProvider.overrideWithValue(AppUpdateService()),
       themeProviderInstanceProvider.overrideWithValue(resolvedThemeProvider),
@@ -279,6 +282,7 @@ final class AppRuntimeWidgetTestFixture {
        notificationCoordinatorService = NotificationCoordinatorService(),
        settingsRepository = providedSettingsRepository ?? SettingsRepository(),
        uiOperationService = UiOperationService(),
+       undoableRemovalService = UndoableRemovalService(),
        languageProvider = AppLanguageProvider() {
     configureSettingsRepository?.call(settingsRepository);
     final detailCache = AudioDetailCacheService(
@@ -336,6 +340,7 @@ final class AppRuntimeWidgetTestFixture {
   final NotificationCoordinatorService notificationCoordinatorService;
   final SettingsRepository settingsRepository;
   final UiOperationService uiOperationService;
+  final UndoableRemovalService undoableRemovalService;
   final AppLanguageProvider languageProvider;
   late final LibraryFacade library;
   late final PlaybackFacade playback;
@@ -362,6 +367,7 @@ final class AppRuntimeWidgetTestFixture {
     notificationCoordinatorService: notificationCoordinatorService,
     settingsRepository: settingsRepository,
     uiOperationService: uiOperationService,
+    undoableRemovalService: undoableRemovalService,
     languageProvider: languageProvider,
     subtitleService: subtitleService,
     themeProvider: themeProvider,
@@ -372,6 +378,7 @@ final class AppRuntimeWidgetTestFixture {
 
   void dispose() {
     languageProvider.dispose();
+    unawaited(undoableRemovalService.dispose());
     unawaited(runtimeGraph.runtime.dispose());
   }
 

@@ -177,17 +177,19 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
     }
   }
 
-  Future<void> _removeFolder(
-    BuildContext context,
-    LibraryFacade library,
-  ) async {
-    final result = await library.removeFolder(widget.folder.path);
-    if (context.mounted && result != null) {
-      _showLibraryRemovalFeedback(context, result);
-    }
+  Future<void> _removeFolder(BuildContext context) async {
+    await _stageLibraryRemoval(
+      context,
+      ref,
+      targetPath: widget.folder.path,
+      target: _LibraryRemovalTarget.folder,
+    );
   }
 
-  Future<void> _playFolder(BuildContext context, PlaybackFacade playback) async {
+  Future<void> _playFolder(
+    BuildContext context,
+    PlaybackFacade playback,
+  ) async {
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -219,11 +221,15 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
 
   @override
   Widget build(BuildContext context) {
+    if (ref.watch(
+      isUndoableRemovalHiddenProvider(_libraryRemovalKey(widget.folder.path)),
+    )) {
+      return const SizedBox.shrink();
+    }
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    final library = ref.read(libraryFacadeProvider);
     final playback = ref.read(playbackFacadeProvider);
     final cs = Theme.of(context).colorScheme;
     final folder = _loadedFolder ?? widget.folder;
@@ -337,7 +343,8 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
                     IconButton(
-                      onPressed: () => unawaited(_playFolder(context, playback)),
+                      onPressed: () =>
+                          unawaited(_playFolder(context, playback)),
                       visualDensity: VisualDensity.compact,
                       tooltip: i18n.tr('play'),
                       style: IconButton.styleFrom(
@@ -433,7 +440,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
           AudioDetailTarget.libraryRootFolder(widget.folder.path),
         ),
       ),
-      onRemove: () => _removeFolder(context, library),
+      onRemove: () => _removeFolder(context),
       onWillReveal: _expansionController.collapse,
       child: Card(
         margin: EdgeInsets.zero,
@@ -462,17 +469,24 @@ class _TrackNodeWidget extends ConsumerWidget {
 
   Future<void> _removeTrack(
     BuildContext context,
-    LibraryFacade library,
+    WidgetRef ref,
     MusicTrack track,
   ) async {
-    final result = await library.removeTrack(track.path);
-    if (context.mounted && result != null) {
-      _showLibraryRemovalFeedback(context, result);
-    }
+    await _stageLibraryRemoval(
+      context,
+      ref,
+      targetPath: track.path,
+      target: _LibraryRemovalTarget.track,
+    );
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(
+      isUndoableRemovalHiddenProvider(_libraryRemovalKey(trackNode.track.path)),
+    )) {
+      return const SizedBox.shrink();
+    }
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -542,7 +556,7 @@ class _TrackNodeWidget extends ConsumerWidget {
             AudioDetailTarget.singleAudioFile(track.path),
           ),
         ),
-        onRemove: () => _removeTrack(context, library, track),
+        onRemove: () => _removeTrack(context, ref, track),
         child: Card(
           margin: EdgeInsets.zero,
           clipBehavior: Clip.antiAlias,
@@ -606,7 +620,7 @@ class _TrackNodeWidget extends ConsumerWidget {
       shape: cardShape,
       actionLabel: i18n.tr('remove'),
       removeTooltip: i18n.tr('remove_audio'),
-      onRemove: () => _removeTrack(context, library, track),
+      onRemove: () => _removeTrack(context, ref, track),
       child: ColoredBox(
         color: Colors.transparent,
         child: SizedBox(

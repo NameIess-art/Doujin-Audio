@@ -77,9 +77,9 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
     AudioLibraryCategorySnapshot snapshot,
   ) {
     final selectedTerms = _selectedTermsForCurrentCategory;
-    final queryTerms = extractSearchTerms(_effectiveSearchQuery)
-        .map((term) => term.toLowerCase())
-        .toList(growable: false);
+    final queryTerms = extractSearchTerms(
+      _effectiveSearchQuery,
+    ).map((term) => term.toLowerCase()).toList(growable: false);
     final termKeywords = _termSearchKeywords;
     final normalizedSelectedTerms =
         selectedTerms.map((term) => term.toLowerCase()).toList(growable: false)
@@ -600,17 +600,17 @@ class _LibraryCategoryTermBoxState extends State<_LibraryCategoryTermBox> {
                                             terms: extractSearchTerms(
                                               _localSearchQuery,
                                             ),
-                                            style: Theme.of(context)
-                                                    .textTheme
-                                                    .labelSmall
-                                                    ?.copyWith(
-                                                      color: selected
-                                                          ? cs.onSecondaryContainer
-                                                          : cs.onSurfaceVariant,
-                                                      fontWeight: selected
-                                                          ? FontWeight.w800
-                                                          : FontWeight.w600,
-                                                    ) ??
+                                            style:
+                                                Theme.of(
+                                                  context,
+                                                ).textTheme.labelSmall?.copyWith(
+                                                  color: selected
+                                                      ? cs.onSecondaryContainer
+                                                      : cs.onSurfaceVariant,
+                                                  fontWeight: selected
+                                                      ? FontWeight.w800
+                                                      : FontWeight.w600,
+                                                ) ??
                                                 const TextStyle(),
                                           )
                                         : Text(term),
@@ -681,13 +681,15 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
   final IconData secondaryIcon;
   final String secondaryText;
 
-  Future<void> _remove(BuildContext context, LibraryFacade library) async {
-    final result = entry.isFolder
-        ? await library.removeFolder(entry.path)
-        : await library.removeTrack(entry.path);
-    if (context.mounted && result != null) {
-      _showLibraryRemovalFeedback(context, result);
-    }
+  Future<void> _remove(BuildContext context, WidgetRef ref) async {
+    await _stageLibraryRemoval(
+      context,
+      ref,
+      targetPath: entry.path,
+      target: entry.isFolder
+          ? _LibraryRemovalTarget.folder
+          : _LibraryRemovalTarget.track,
+    );
   }
 
   Future<void> _play(BuildContext context, PlaybackFacade playback) async {
@@ -722,6 +724,11 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (ref.watch(
+      isUndoableRemovalHiddenProvider(_libraryRemovalKey(entry.path)),
+    )) {
+      return const SizedBox.shrink();
+    }
     final i18n = ProviderScope.containerOf(
       context,
       listen: false,
@@ -758,7 +765,7 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         verticalActions: useFeaturedCard,
         onSecondaryAction: () =>
             unawaited(showAudioDetailSheet(context, entry.target)),
-        onRemove: () => _remove(context, library),
+        onRemove: () => _remove(context, ref),
         child: Card(
           margin: EdgeInsets.zero,
           clipBehavior: Clip.antiAlias,

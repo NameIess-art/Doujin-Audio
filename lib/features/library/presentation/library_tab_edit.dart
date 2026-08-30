@@ -98,11 +98,18 @@ class LibraryManagementPage extends ConsumerWidget {
     final libraries = ref.watch(
       libraryListUiProvider.select((state) => state.watchedLibraries),
     );
+    final removalState = ref.watch(undoableRemovalStateProvider);
+    final visibleLibraries = libraries
+        .where(
+          (libraryPath) =>
+              !removalState.isHidden(_libraryRemovalKey(libraryPath)),
+        )
+        .toList(growable: false);
     return Scaffold(
       backgroundColor: cs.surface,
       body: Stack(
         children: [
-          if (libraries.isEmpty)
+          if (visibleLibraries.isEmpty)
             Center(
               child: Text(
                 i18n.tr('library_manage_empty'),
@@ -120,9 +127,9 @@ class LibraryManagementPage extends ConsumerWidget {
                 16,
                 24,
               ),
-              itemCount: libraries.length,
+              itemCount: visibleLibraries.length,
               itemBuilder: (context, index) {
-                final libraryPath = libraries[index];
+                final libraryPath = visibleLibraries[index];
                 return Card(
                   margin: const EdgeInsets.only(bottom: 6),
                   elevation: 0,
@@ -161,7 +168,7 @@ class LibraryManagementPage extends ConsumerWidget {
                         ),
                         trailing: IconButton(
                           tooltip: i18n.tr('remove_library'),
-                          onPressed: () => _confirmRemoveWatchedLibrary(
+                          onPressed: () => _removeWatchedLibraryWithUndo(
                             context,
                             ref,
                             libraryPath,
@@ -197,32 +204,17 @@ class LibraryManagementPage extends ConsumerWidget {
   }
 }
 
-Future<bool> _confirmRemoveWatchedLibrary(
+Future<bool> _removeWatchedLibraryWithUndo(
   BuildContext context,
   WidgetRef ref,
   String libraryPath,
 ) async {
-  final i18n = ProviderScope.containerOf(
+  return _stageLibraryRemoval(
     context,
-    listen: false,
-  ).read(appLanguageProviderInstanceProvider);
-  final confirmed = await showConfirmActionDialog(
-    context: context,
-    title: i18n.tr('remove_library'),
-    message: i18n.tr('remove_library_confirm', {
-      'name': _displaySourceName(libraryPath),
-    }),
-    cancelLabel: i18n.tr('cancel'),
-    confirmLabel: i18n.tr('remove_library'),
-    icon: Icons.library_music_rounded,
+    ref,
+    targetPath: libraryPath,
+    target: _LibraryRemovalTarget.library,
   );
-  if (!confirmed || !context.mounted) return false;
-  final result = await ref
-      .read(libraryFacadeProvider)
-      .removeFolder(libraryPath);
-  if (!context.mounted || result == null) return result != null;
-  _showLibraryRemovalFeedback(context, result);
-  return result == LibraryRemovalKind.libraryPermanent;
 }
 
 class LibraryEditPage extends ConsumerStatefulWidget {
@@ -354,7 +346,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
   }
 
   Future<void> _confirmRemoveLibrary(BuildContext context) async {
-    final removed = await _confirmRemoveWatchedLibrary(
+    final removed = await _removeWatchedLibraryWithUndo(
       context,
       ref,
       widget.libraryPath,
@@ -1144,9 +1136,7 @@ class _LibraryEditFolderTreeTileState
       data: theme.copyWith(
         dividerColor: Colors.transparent,
         listTileTheme: isRootFolder
-            ? theme.listTileTheme.copyWith(
-                shape: _libraryEditRootFolderShape,
-              )
+            ? theme.listTileTheme.copyWith(shape: _libraryEditRootFolderShape)
             : theme.listTileTheme.copyWith(minVerticalPadding: 0),
       ),
       child: ExpansionTile(
@@ -1225,9 +1215,7 @@ class _LibraryEditFolderTreeTileState
                       },
                 style: explicitExcluded
                     ? null
-                    : TextButton.styleFrom(
-                        foregroundColor: cs.error,
-                      ),
+                    : TextButton.styleFrom(foregroundColor: cs.error),
                 icon: Icon(
                   explicitExcluded
                       ? Icons.restore_rounded
@@ -1341,9 +1329,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
               viewState.muted
                   ? Icons.music_off_rounded
                   : Icons.audio_file_rounded,
-              color: viewState.muted
-                  ? cs.onSurfaceVariant
-                  : cs.primary,
+              color: viewState.muted ? cs.onSurfaceVariant : cs.primary,
               size: 16,
             ),
           ),
@@ -1360,10 +1346,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
           trailing: TextButtonTheme(
             data: TextButtonThemeData(
               style: TextButton.styleFrom(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 6,
-                  vertical: 4,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 minimumSize: _libraryEditActionMinimumSize,
                 tapTargetSize: MaterialTapTargetSize.padded,
               ),
@@ -1380,9 +1363,7 @@ class _LibraryEditTrackTile extends ConsumerWidget {
                     },
               style: viewState.explicitExcluded
                   ? null
-                  : TextButton.styleFrom(
-                      foregroundColor: cs.error,
-                    ),
+                  : TextButton.styleFrom(foregroundColor: cs.error),
               icon: Icon(
                 viewState.explicitExcluded
                     ? Icons.restore_rounded

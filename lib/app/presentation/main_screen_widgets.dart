@@ -165,7 +165,7 @@ class _FloatingGlassPanel extends ConsumerWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
         color: bgColor.withValues(
-          alpha: useBlur ? (isDark ? 0.82 : 0.88) : 1.0,
+          alpha: useBlur ? (isDark ? 0.72 : 0.78) : 1.0,
         ),
         border: Border.all(
           color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),

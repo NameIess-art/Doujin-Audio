@@ -25,10 +25,11 @@ import '../../../core/media/path_display.dart';
 import '../../../core/media/path_matcher.dart';
 import '../../../core/media/music_track.dart';
 import '../../../core/media/natural_sort.dart';
-import '../../../core/ui/permission_action_controller.dart';
 import '../../../core/media/subtitle_parser.dart';
 import '../../../core/media/time_text_formatters.dart';
+import '../../../core/ui/permission_action_controller.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
+import '../../../core/ui/undoable_removal_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/widgets/app_buttons.dart';
@@ -36,7 +37,6 @@ import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/async_cover_image.dart';
-import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/marquee_text.dart';
@@ -82,6 +82,90 @@ part 'playlist_tab_queue.dart';
 
 const double sessionVolumeDisplayMaximum = 1.5;
 const int sessionVolumeDisplayMaximumPercent = 150;
+
+UndoableRemovalKey _playbackSessionRemovalKey(String sessionId) =>
+    UndoableRemovalKey('playback-session', sessionId);
+
+UndoableRemovalKey _playbackQueueEntryRemovalKey(
+  String sessionId,
+  String entryId,
+) => UndoableRemovalKey('playback-queue-entry', '$sessionId:$entryId');
+
+UndoableRemovalKey _timeSegmentRemovalKey(String labelId) =>
+    UndoableRemovalKey('time-segment', labelId);
+
+UndoableRemovalKey _equalizerPresetRemovalKey(String presetId) =>
+    UndoableRemovalKey('equalizer-preset', presetId);
+
+void _showPlaybackRemovalFeedback(
+  BuildContext context,
+  UndoableRemovalService service, {
+  IconData icon = Icons.delete_outline_rounded,
+}) {
+  final i18n = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appLanguageProviderInstanceProvider);
+  showPendingUndoableRemovalFeedback(
+    context,
+    service: service,
+    message: i18n.tr('items_removed_count', {'count': 1}),
+    batchMessage: (count) => i18n.tr('items_removed_count', {'count': count}),
+    undoLabel: i18n.tr('undo'),
+    failureMessage: i18n.tr('removal_failed'),
+    icon: icon,
+  );
+}
+
+UndoableRemovalAction _playbackSessionRemovalAction(
+  WidgetRef ref,
+  String sessionId,
+) {
+  final playback = ref.read(playbackFacadeProvider);
+  final subtitles = ref.read(subtitleSettingsProvider.notifier);
+  final wasPlaying =
+      playback.sessionSnapshotById(sessionId)?.effectivePlaying ?? false;
+  return UndoableRemovalAction(
+    key: _playbackSessionRemovalKey(sessionId),
+    prepare: () async {
+      if (wasPlaying) await playback.toggleSessionPlayPause(sessionId);
+      return playback.hasSession(sessionId);
+    },
+    undo: () async {
+      final snapshot = playback.sessionSnapshotById(sessionId);
+      if (wasPlaying && snapshot != null && !snapshot.effectivePlaying) {
+        await playback.toggleSessionPlayPause(sessionId);
+      }
+    },
+    commit: () async {
+      if (!await playback.removeSession(sessionId)) {
+        throw StateError('Failed to remove playback session $sessionId');
+      }
+      subtitles.resetForSession(sessionId);
+    },
+  );
+}
+
+Future<bool> _stagePlaybackSessionRemovals(
+  BuildContext context,
+  WidgetRef ref,
+  Iterable<String> sessionIds, {
+  IconData icon = Icons.delete_outline_rounded,
+}) async {
+  final service = ref.read(undoableRemovalServiceProvider);
+  var stagedAny = false;
+  for (final sessionId in sessionIds.toSet()) {
+    stagedAny =
+        await service.stage(_playbackSessionRemovalAction(ref, sessionId)) ||
+        stagedAny;
+  }
+  if (stagedAny && context.mounted) {
+    _showPlaybackRemovalFeedback(context, service, icon: icon);
+  } else if (stagedAny) {
+    await service.commitPending();
+  }
+  return stagedAny;
+}
 
 double sessionVolumeDisplayValueFromGain(double gain) {
   final clampedGain = gain
@@ -625,16 +709,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   Future<void> _handleBatchRemove() async {
     if (_selectedSessionIds.isEmpty) return;
-    final playback = ref.read(playbackFacadeProvider);
     unawaited(
       AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection),
     );
     final toRemove = _selectedSessionIds.toList();
     _exitSelectionMode();
-    await playback.removeSessions(toRemove);
-    for (final id in toRemove) {
-      ref.read(subtitleSettingsProvider.notifier).resetForSession(id);
-    }
+    await _stagePlaybackSessionRemovals(context, ref, toRemove);
   }
 
   @override
@@ -642,6 +722,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
   @override
   ScrollController get mainScrollController => _scrollController;
+
+  @override
+  double get defaultHeaderHeight => AppPageHeaderMetrics.expandedToolbarHeight;
 
   @override
   bool get wantKeepAlive => true;
@@ -680,38 +763,14 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     initTabState(ref.read(mainScreenControllerProvider).scrollToTopTab);
   }
 
-  Future<void> _confirmClearAll(
+  Future<void> _clearAllWithUndo(
     BuildContext context,
     PlaybackFacade playbackFacade,
   ) async {
-    final i18n = ProviderScope.containerOf(
+    await _stagePlaybackSessionRemovals(
       context,
-      listen: false,
-    ).read(appLanguageProviderInstanceProvider);
-    final confirmed = await showConfirmActionDialog(
-      context: context,
-      title: i18n.tr('clear_all_sessions'),
-      message: i18n.tr('stop_remove_all_sessions'),
-      cancelLabel: i18n.tr('cancel'),
-      confirmLabel: i18n.tr('clear_all_sessions'),
-      icon: Icons.delete_sweep_rounded,
-    );
-    if (!confirmed || !mounted) return;
-    final cleared = await playbackFacade.clearAllSessions();
-    if (!mounted || !context.mounted) return;
-    if (!cleared) {
-      showAppSnackBar(
-        context,
-        i18n.tr('operation_failed_retry'),
-        tone: AppFeedbackTone.destructive,
-        icon: Icons.error_outline_rounded,
-      );
-      return;
-    }
-    showAppSnackBar(
-      context,
-      i18n.tr('all_sessions_cleared'),
-      tone: AppFeedbackTone.destructive,
+      ref,
+      playbackFacade.sessions.keys.toList(growable: false),
       icon: Icons.delete_sweep_rounded,
     );
   }
@@ -1046,6 +1105,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                 return TopPageHeader(
                   key: headerKey,
                   floating: true,
+                  collapseController: _scrollController,
+                  topCapsuleTitle: i18n.tr('playback_sessions'),
+                  topCapsuleData: i18n.tr('playlist_header_stats', {
+                    'sessions': headerState.sessionCount.toString(),
+                    'playing': headerState.playingCount.toString(),
+                  }),
                   title: i18n.tr('playback_sessions'),
                   titleWidget: _buildHeaderLeftActions(
                     context,
@@ -1089,7 +1154,9 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                           delayIndex: 1,
                           child: HeaderFloatingButton(
                             child: IconButton(
-                              key: const ValueKey<String>('playlist_sort_button'),
+                              key: const ValueKey<String>(
+                                'playlist_sort_button',
+                              ),
                               onPressed: _openSortOptions,
                               icon: const Icon(Icons.sort_rounded),
                               tooltip: i18n.tr('sort_by'),
@@ -1131,9 +1198,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                   if (!context.mounted) return;
                   showAppSnackBar(
                     context,
-                    i18n.tr(
-                      paused ? 'all_paused' : 'operation_failed_retry',
-                    ),
+                    i18n.tr(paused ? 'all_paused' : 'operation_failed_retry'),
                     tone: paused
                         ? AppFeedbackTone.warning
                         : AppFeedbackTone.destructive,
@@ -1152,10 +1217,8 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
         IconButton(
           key: const ValueKey<String>('playlist_clear_all_button'),
           onPressed: structureState.hasSessions
-              ? () => _confirmClearAll(
-                  context,
-                  ref.read(playbackFacadeProvider),
-                )
+              ? () =>
+                    _clearAllWithUndo(context, ref.read(playbackFacadeProvider))
               : null,
           icon: const Icon(Icons.delete_sweep_rounded),
           tooltip: i18n.tr('clear_all_sessions'),

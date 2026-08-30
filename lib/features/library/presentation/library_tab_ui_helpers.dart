@@ -1,46 +1,44 @@
 part of 'library_tab.dart';
 
-void _showLibraryRemovalFeedback(
+enum _LibraryRemovalTarget { track, folder, library }
+
+UndoableRemovalKey _libraryRemovalKey(String targetPath) =>
+    UndoableRemovalKey('library', PathMatcher.normalize(targetPath));
+
+Future<bool> _stageLibraryRemoval(
   BuildContext context,
-  LibraryRemovalKind kind,
-) {
+  WidgetRef ref, {
+  required String targetPath,
+  required _LibraryRemovalTarget target,
+}) async {
   final i18n = ProviderScope.containerOf(
     context,
     listen: false,
   ).read(appLanguageProviderInstanceProvider);
-  final (messageKey, tone, icon) = switch (kind) {
-    LibraryRemovalKind.standaloneAudioPermanent => (
-      'audio_removed',
-      AppFeedbackTone.destructive,
-      Icons.delete_outline_rounded,
-    ),
-    LibraryRemovalKind.standaloneFolderPermanent => (
-      'folder_removed',
-      AppFeedbackTone.destructive,
-      Icons.delete_outline_rounded,
-    ),
-    LibraryRemovalKind.folderAudioPermanent => (
-      'folder_audio_removed',
-      AppFeedbackTone.destructive,
-      Icons.delete_outline_rounded,
-    ),
-    LibraryRemovalKind.libraryPermanent => (
-      'library_removed',
-      AppFeedbackTone.destructive,
-      Icons.delete_outline_rounded,
-    ),
-    LibraryRemovalKind.libraryFolderRecoverable => (
-      'folder_excluded',
-      AppFeedbackTone.warning,
-      Icons.block_rounded,
-    ),
-    LibraryRemovalKind.libraryAudioRecoverable => (
-      'audio_excluded',
-      AppFeedbackTone.warning,
-      Icons.block_rounded,
-    ),
+  final messageKey = switch (target) {
+    _LibraryRemovalTarget.track => 'audio_removed',
+    _LibraryRemovalTarget.folder => 'folder_removed',
+    _LibraryRemovalTarget.library => 'library_removed',
   };
-  showAppSnackBar(context, i18n.tr(messageKey), tone: tone, icon: icon);
+  final library = ref.read(libraryFacadeProvider);
+  return showUndoableRemovalFeedback(
+    context,
+    service: ref.read(undoableRemovalServiceProvider),
+    action: UndoableRemovalAction(
+      key: _libraryRemovalKey(targetPath),
+      commit: () async {
+        final result = target == _LibraryRemovalTarget.track
+            ? await library.removeTrack(targetPath)
+            : await library.removeFolder(targetPath);
+        if (result == null) throw StateError('Library removal failed.');
+      },
+      undo: () {},
+    ),
+    message: i18n.tr(messageKey),
+    batchMessage: (count) => i18n.tr('items_removed_count', {'count': count}),
+    undoLabel: i18n.tr('undo'),
+    failureMessage: i18n.tr('removal_failed'),
+  );
 }
 
 extension _LibraryTabUiHelpers on _LibraryTabState {

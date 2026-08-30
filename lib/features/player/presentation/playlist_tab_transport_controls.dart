@@ -302,7 +302,7 @@ class _PlaybackPrimaryControls extends StatelessWidget {
   }
 }
 
-class _PlaybackSecondaryControls extends StatefulWidget {
+class _PlaybackSecondaryControls extends ConsumerStatefulWidget {
   const _PlaybackSecondaryControls({
     required this.session,
     required this.playback,
@@ -332,12 +332,12 @@ class _PlaybackSecondaryControls extends StatefulWidget {
   final VoidCallback? onShowAudioDetail;
 
   @override
-  State<_PlaybackSecondaryControls> createState() =>
+  ConsumerState<_PlaybackSecondaryControls> createState() =>
       _PlaybackSecondaryControlsState();
 }
 
 class _PlaybackSecondaryControlsState
-    extends State<_PlaybackSecondaryControls> {
+    extends ConsumerState<_PlaybackSecondaryControls> {
   bool _volumeMode = false;
   double? _dragVolume;
   double? _preMuteVolume;
@@ -638,23 +638,54 @@ class _PlaybackSecondaryControlsState
       );
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
+    );
+    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    const double capsuleHeight = 52;
+    final borderRadius = BorderRadius.circular(capsuleHeight / 2);
+
+    final capsuleSurface = DecoratedBox(
+      decoration: BoxDecoration(
+        color: background.withValues(
+          alpha: blurEnabled ? (isDark ? 0.70 : 0.75) : 1.0,
+        ),
+        borderRadius: borderRadius,
+        border: Border.all(
+          color: cs.outlineVariant.withValues(
+            alpha: blurEnabled
+                ? (isDark ? 0.28 : 0.42)
+                : (isDark ? 0.35 : 0.55),
+          ),
+          width: 0.5,
+        ),
+      ),
+      child: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 200),
+        child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
+      ),
+    );
+
+    final Widget styledCapsule = blurEnabled
+        ? RepaintBoundary(
+            child: ClipRRect(
+              borderRadius: borderRadius,
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: capsuleSurface,
+              ),
+            ),
+          )
+        : capsuleSurface;
+
     return Padding(
       padding: const EdgeInsets.only(top: 8, left: 4, right: 4),
       child: SizedBox(
         key: const ValueKey('playback_secondary_controls'),
         width: _kPlaybackSecondaryControlsWidth,
-        height: 56,
-        child: Container(
-          clipBehavior: Clip.antiAlias,
-          decoration: BoxDecoration(
-            color: cs.surfaceContainerHighest.withValues(alpha: 0.3),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 200),
-            child: _volumeMode ? buildVolumeBar() : buildButtonsRow(),
-          ),
-        ),
+        height: capsuleHeight,
+        child: styledCapsule,
       ),
     );
   }
@@ -719,10 +750,11 @@ class _SecondaryControlButton extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: IconButton(
-        constraints: const BoxConstraints.tightFor(width: 46, height: 46),
+        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
         padding: EdgeInsets.zero,
         tooltip: tooltip,
         style: IconButton.styleFrom(
+          shape: const CircleBorder(),
           backgroundColor: active
               ? cs.primaryContainer.withValues(alpha: 0.65)
               : Colors.transparent,

@@ -316,6 +316,7 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
   late AnimationController _scaleController;
   late Animation<double> _positionFactor;
   late Animation<double> _scaleFactor;
+  late Animation<double> _dragOpacity;
   late Animation<double> _value;
   late Animation<Color?> _valueColor;
 
@@ -341,12 +342,26 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     end: 0.0,
   );
 
+  static final Animatable<double> _dragOpacityTween = Tween<double>(
+    begin: 0.0,
+    end: 1.0,
+  ).chain(
+    CurveTween(
+      curve: const Interval(
+        0.0,
+        1.0 / _kDragSizeFactorLimit,
+        curve: Curves.easeOut,
+      ),
+    ),
+  );
+
   @protected
   @override
   void initState() {
     super.initState();
     _positionController = AnimationController(vsync: this);
     _positionFactor = _positionController.drive(_kDragSizeFactorLimitTween);
+    _dragOpacity = _positionController.drive(_dragOpacityTween);
 
     // The "value" of the circular progress indicator during a drag.
     _value = _positionController.drive(_threeQuarterTween);
@@ -383,22 +398,7 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
     // Reset the current value color.
     _effectiveValueColor =
         widget.color ?? Theme.of(context).colorScheme.primary;
-    final Color color = _effectiveValueColor;
-    final int colorAlpha = (color.a * 255.0).round().clamp(0, 255);
-    if (colorAlpha == 0) {
-      // Set an always stopped animation instead of a driven tween.
-      _valueColor = AlwaysStoppedAnimation<Color>(color);
-    } else {
-      // Respect the alpha of the given color.
-      _valueColor = _positionController.drive(
-        ColorTween(
-          begin: color.withAlpha(0),
-          end: color.withAlpha(colorAlpha),
-        ).chain(
-          CurveTween(curve: const Interval(0.0, 1.0 / _kDragSizeFactorLimit)),
-        ),
-      );
-    }
+    _valueColor = AlwaysStoppedAnimation<Color>(_effectiveValueColor);
   }
 
   bool _shouldStart(ScrollNotification notification) {
@@ -537,16 +537,8 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
       0.0,
       1.0,
     ); // This triggers various rebuilds.
-    final int currentAlpha = (_valueColor.value!.a * 255.0).round().clamp(
-      0,
-      255,
-    );
-    final int effectiveAlpha = (_effectiveValueColor.a * 255.0).round().clamp(
-      0,
-      255,
-    );
     if (_status == GlassGlassRefreshIndicatorStatus.drag &&
-        currentAlpha == effectiveAlpha) {
+        _positionController.value >= 1.0 / _kDragSizeFactorLimit) {
       _status = GlassGlassRefreshIndicatorStatus.armed;
       widget.onStatusChange?.call(_status);
     }
@@ -690,79 +682,83 @@ class GlassRefreshIndicatorState extends State<GlassRefreshIndicator>
             bottom: !_isIndicatorAtTop! ? widget.edgeOffset : null,
             left: 0.0,
             right: 0.0,
-            child: SizeTransition(
-              axisAlignment: _isIndicatorAtTop! ? 1.0 : -1.0,
-              sizeFactor: _positionFactor, // This is what brings it down.
-              child: Padding(
-                padding: _isIndicatorAtTop!
-                    ? EdgeInsets.only(top: widget.displacement)
-                    : EdgeInsets.only(bottom: widget.displacement),
-                child: Align(
-                  alignment: _isIndicatorAtTop!
-                      ? Alignment.topCenter
-                      : Alignment.bottomCenter,
-                  child: ScaleTransition(
-                    scale: _scaleFactor,
-                    child: AnimatedBuilder(
-                      animation: _positionController,
-                      builder: (BuildContext context, Widget? child) {
-                        final cs = Theme.of(context).colorScheme;
-                        final Widget innerIndicator = RefreshProgressIndicator(
-                          semanticsLabel:
-                              widget.semanticsLabel ??
-                              MaterialLocalizations.of(
-                                context,
-                              ).refreshIndicatorSemanticLabel,
-                          semanticsValue: widget.semanticsValue,
-                          value: showIndeterminateIndicator
-                              ? null
-                              : _value.value,
-                          valueColor: _valueColor,
-                          backgroundColor: Colors.transparent,
-                          strokeWidth: widget.strokeWidth,
-                          elevation: 0.0,
-                        );
+            child: Align(
+              alignment: _isIndicatorAtTop!
+                  ? Alignment.topCenter
+                  : Alignment.bottomCenter,
+              child: AnimatedBuilder(
+                animation: Listenable.merge(<Listenable>[
+                  _positionController,
+                  _scaleController,
+                ]),
+                builder: (BuildContext context, Widget? child) {
+                  final cs = Theme.of(context).colorScheme;
+                  final Widget innerIndicator = RefreshProgressIndicator(
+                    semanticsLabel:
+                        widget.semanticsLabel ??
+                        MaterialLocalizations.of(
+                          context,
+                        ).refreshIndicatorSemanticLabel,
+                    semanticsValue: widget.semanticsValue,
+                    value: showIndeterminateIndicator
+                        ? null
+                        : _value.value,
+                    valueColor: _valueColor,
+                    backgroundColor: Colors.transparent,
+                    strokeWidth: widget.strokeWidth,
+                    elevation: 0.0,
+                  );
 
-                        final Widget materialIndicator = RepaintBoundary(
-                          child: ClipOval(
-                            child: BackdropFilter(
-                              filter: ui.ImageFilter.blur(
-                                sigmaX: 12,
-                                sigmaY: 12,
+                  final Widget materialIndicator = RepaintBoundary(
+                    child: ClipOval(
+                      child: BackdropFilter(
+                        filter: ui.ImageFilter.blur(
+                          sigmaX: 12,
+                          sigmaY: 12,
+                        ),
+                        child: Container(
+                          color:
+                              widget.backgroundColor ??
+                              cs.surfaceContainerHigh.withValues(
+                                alpha: 0.6,
                               ),
-                              child: Container(
-                                color:
-                                    widget.backgroundColor ??
-                                    cs.surfaceContainerHigh.withValues(
-                                      alpha: 0.6,
-                                    ),
-                                child: innerIndicator,
-                              ),
-                            ),
-                          ),
-                        );
-
-                        final Widget cupertinoIndicator =
-                            CupertinoActivityIndicator(color: widget.color);
-
-                        switch (widget._indicatorType) {
-                          case _IndicatorType.material:
-                            return materialIndicator;
-
-                          case _IndicatorType.adaptive:
-                            final ThemeData theme = Theme.of(context);
-                            return theme.platform == TargetPlatform.iOS ||
-                                    theme.platform == TargetPlatform.macOS
-                                ? cupertinoIndicator
-                                : materialIndicator;
-
-                          case _IndicatorType.noSpinner:
-                            return Container();
-                        }
-                      },
+                          child: innerIndicator,
+                        ),
+                      ),
                     ),
-                  ),
-                ),
+                  );
+
+                  final Widget cupertinoIndicator =
+                      CupertinoActivityIndicator(color: widget.color);
+
+                  final Widget indicatorWidget = switch (widget._indicatorType) {
+                    _IndicatorType.material => materialIndicator,
+                    _IndicatorType.adaptive =>
+                      (Theme.of(context).platform == TargetPlatform.iOS ||
+                              Theme.of(context).platform == TargetPlatform.macOS)
+                          ? cupertinoIndicator
+                          : materialIndicator,
+                    _IndicatorType.noSpinner => const SizedBox.shrink(),
+                  };
+
+                  final double translationY =
+                      (_isIndicatorAtTop! ? 1.0 : -1.0) *
+                      (_positionFactor.value * widget.displacement);
+
+                  return Transform.translate(
+                    offset: Offset(0.0, translationY),
+                    child: FadeTransition(
+                      opacity: _scaleFactor,
+                      child: FadeTransition(
+                        opacity: _dragOpacity,
+                        child: ScaleTransition(
+                          scale: _scaleFactor,
+                          child: indicatorWidget,
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),

@@ -1,5 +1,46 @@
 part of 'playlist_tab.dart';
 
+Future<void> _stageEqualizerPresetRemoval(
+  BuildContext context,
+  WidgetRef ref,
+  EqPreset preset,
+) async {
+  final playback = ref.read(playbackFacadeProvider);
+  final commands = ref.read(settingsCommandControllerProvider);
+  final service = ref.read(undoableRemovalServiceProvider);
+  final referencingSessionIds = playback.sessions.values
+      .where((session) => session.audioEffects.eqPresetId == preset.id)
+      .map((session) => session.id)
+      .toList(growable: false);
+  final flat = builtInEqPresets.first;
+  final staged = await service.stage(
+    UndoableRemovalAction(
+      key: _equalizerPresetRemovalKey(preset.id),
+      prepare: () async {
+        for (final sessionId in referencingSessionIds) {
+          if (playback.hasSession(sessionId)) {
+            await playback.applySessionEqPreset(sessionId, flat);
+          }
+        }
+        return true;
+      },
+      undo: () async {
+        for (final sessionId in referencingSessionIds) {
+          if (playback.hasSession(sessionId)) {
+            await playback.applySessionEqPreset(sessionId, preset);
+          }
+        }
+      },
+      commit: () => commands.deleteCustomEqPreset(preset.id),
+    ),
+  );
+  if (staged && context.mounted) {
+    _showPlaybackRemovalFeedback(context, service, icon: Icons.tune_rounded);
+  } else if (staged) {
+    await service.commitPending();
+  }
+}
+
 class _AudioFeaturesPage extends ConsumerWidget {
   const _AudioFeaturesPage({required this.session, required this.playback});
 
@@ -144,10 +185,7 @@ class _FeatureSwitchTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Switch(
-                  value: value,
-                  onChanged: onChanged,
-                ),
+                Switch(value: value, onChanged: onChanged),
               ],
             ),
           ),
@@ -284,9 +322,15 @@ class _EqualizerPage extends ConsumerWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
+    final removalState = ref.watch(undoableRemovalStateProvider);
     final customPresets =
-        ref.watch(settingsStateProvider).value?.customEqPresets ??
-        ref.read(settingsRepositoryProvider).customEqPresets;
+        (ref.watch(settingsStateProvider).value?.customEqPresets ??
+                ref.read(settingsRepositoryProvider).customEqPresets)
+            .where(
+              (preset) =>
+                  !removalState.isHidden(_equalizerPresetRemovalKey(preset.id)),
+            )
+            .toList(growable: false);
     final presets = <EqPreset>[...builtInEqPresets, ...customPresets];
     final selectedPresetId = effects.eqPresetId;
     final hasAdjustedEqBands = effects.eqBandLevels.values.any(
@@ -433,12 +477,18 @@ class _EqualizerPage extends ConsumerWidget {
                   style: _sessionDetailResetButtonStyle(context),
                   onPressed: isCustomPresetSelected && selectedPresetId != null
                       ? () {
-                          final commands = ref.read(
-                            settingsCommandControllerProvider,
-                          );
-                          unawaited(
-                            commands.deleteCustomEqPreset(selectedPresetId),
-                          );
+                          final selectedPreset = customPresets
+                              .where((preset) => preset.id == selectedPresetId)
+                              .firstOrNull;
+                          if (selectedPreset != null) {
+                            unawaited(
+                              _stageEqualizerPresetRemoval(
+                                context,
+                                ref,
+                                selectedPreset,
+                              ),
+                            );
+                          }
                         }
                       : (hasAdjustedEqBands
                             ? () => _showSavePresetDialog(

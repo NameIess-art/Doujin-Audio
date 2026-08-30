@@ -834,7 +834,7 @@ void main() {
       tester
           .widget<TopPageHeader>(find.byType(TopPageHeader))
           .collapseController,
-      isNull,
+      isNotNull,
     );
     expect(find.byKey(placeholderKey), findsOneWidget);
     expect(find.byKey(contentKey), findsNothing);
@@ -1132,6 +1132,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('delete_equalizer_preset')), findsNothing);
     expect(find.byKey(const ValueKey('save_equalizer_preset')), findsOneWidget);
+    expect(runtimeGraph.settings.customEqPresets, contains(customPreset));
+
+    await tester.tap(find.text(languageProvider.tr('undo')));
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 200)),
+    );
+    await tester.pumpAndSettle();
+    expect(runtimeGraph.settings.customEqPresets, contains(customPreset));
 
     await tester.tap(find.text(languageProvider.tr('volume_balance')));
     await tester.pumpAndSettle();
@@ -1691,9 +1699,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(
-      find.byTooltip(languageProvider.tr('add_playback_queue')),
-    );
+    await tester.tap(find.byTooltip(languageProvider.tr('add_playback_queue')));
     await tester.pumpAndSettle();
 
     expect(
@@ -1980,8 +1986,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 800));
     expect(
       platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
-      hasLength(2),
+      hasLength(3),
     );
+    await tester.tap(find.text(fixture.languageProvider.tr('undo')));
+    await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
 

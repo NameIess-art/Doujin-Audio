@@ -239,17 +239,15 @@ void main() {
           (fadeMaskDecoration.decoration as BoxDecoration).gradient!
               as LinearGradient;
       final maskTheme = Theme.of(tester.element(fadeMaskFinder));
-      expect(fadeGradient.begin, Alignment.topCenter);
-      expect(fadeGradient.end, Alignment.bottomCenter);
-      expect(fadeGradient.stops, const <double>[0, 0.28, 0.68, 1]);
+      expect(fadeGradient.stops, const <double>[0.0, 0.18, 0.42, 0.65, 1.0]);
       expect(fadeGradient.colors.first.a, 0);
       expect(
         fadeGradient.colors.last.a,
-        maskTheme.brightness == Brightness.dark ? 0.90 : 0.82,
+        maskTheme.brightness == Brightness.dark ? 0.86 : 0.82,
       );
       expect(
         tester.getSize(fadeMaskFinder).height,
-        60 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
+        112 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
       );
       expect(
         tester

@@ -156,7 +156,6 @@ void main() {
                 icon: const Icon(Icons.more_horiz),
               ),
               collapseController: controller,
-              collapseDistance: 56,
               floatingReveal: true,
               floatingRevealDistance: 40,
               floatingRevealTriggerDistance: 40,
@@ -206,6 +205,82 @@ void main() {
 
     expect(beforeThresholdHeight, collapsedHeight);
     expect(revealedHeight, greaterThan(collapsedHeight));
+  });
+
+  testWidgets('top page header with topCapsule only hides capsule on scroll', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      buildAppRuntimeTestApp(
+        runtimeGraph: fixture.runtimeGraph,
+        persistenceRepository: fixture.persistenceRepository,
+        nativePlaybackRepository: fixture.nativePlaybackRepository,
+        playbackCommandRunner: AppRuntimeWidgetTestFixture.playbackCommandRunner,
+        libraryService: fixture.libraryService,
+        playbackService: fixture.playbackService,
+        timerService: fixture.timerService,
+        notificationCoordinatorService: fixture.notificationCoordinatorService,
+        settingsRepository: fixture.settings,
+        languageProvider: fixture.languageProvider,
+        child: Stack(
+          children: [
+            ListView.builder(
+              controller: controller,
+              itemCount: 80,
+              itemBuilder: (context, index) => const SizedBox(height: 48),
+            ),
+            TopPageHeader(
+              topCapsuleTitle: 'Library',
+              topCapsuleData: '10 works  20 tracks',
+              title: 'Library Title',
+              trailing: IconButton(
+                key: const ValueKey('top_page_header_trailing'),
+                onPressed: () {},
+                icon: const Icon(Icons.more_horiz),
+              ),
+              collapseController: controller,
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final initialHeaderHeight =
+        tester.getSize(find.byType(TopPageHeader)).height;
+    expect(find.byType(HeaderTopCapsule), findsOneWidget);
+    expect(find.text('Library Title'), findsOneWidget);
+    final trailingBeforeScroll = tester.getRect(
+      find.byKey(const ValueKey('top_page_header_trailing')),
+    );
+
+    controller.jumpTo(100);
+    await tester.pump();
+
+    final scrolledHeaderHeight =
+        tester.getSize(find.byType(TopPageHeader)).height;
+    expect(scrolledHeaderHeight, lessThan(initialHeaderHeight));
+
+    final capsuleAlign = tester.widget<Align>(
+      find
+          .ancestor(
+            of: find.byType(HeaderTopCapsule),
+            matching: find.byType(Align),
+          )
+          .first,
+    );
+    expect(capsuleAlign.heightFactor, 0.0);
+
+    expect(find.text('Library Title'), findsOneWidget);
+    final trailingAfterScroll = tester.getRect(
+      find.byKey(const ValueKey('top_page_header_trailing')),
+    );
+    expect(trailingAfterScroll.size, trailingBeforeScroll.size);
   });
 
   testWidgets('unloaded library reuses ASMR-style skeleton cards', (
@@ -848,7 +923,14 @@ void main() {
       }
       expect(removalCompleted, isTrue);
 
-      await pumpUntilFound(tester, find.text('已移除文件夹下该音频'));
+      await pumpUntilFound(
+        tester,
+        find.textContaining(fixture.languageProvider.tr('audio_removed')),
+      );
+      expect(find.text('撤销'), findsOneWidget);
+
+      await tester.tap(find.text('撤销'));
+      await pumpUntilFound(tester, removedTrackFinder);
 
       expect(find.text('Keep this track', findRichText: true), findsOneWidget);
       expect(
@@ -935,10 +1017,22 @@ void main() {
       }
 
       expect(removalCompleted, isTrue);
-      await pumpUntilFound(
-        tester,
-        find.text(fixture.languageProvider.tr('audio_excluded')),
+      expect(find.text(fixture.languageProvider.tr('undo')), findsOneWidget);
+      expect(
+        runtimeGraph.library.excludedTracksForLibrary(libraryPath),
+        isEmpty,
       );
+      for (var i = 0; i < 45; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 5)),
+        );
+        if (runtimeGraph.library
+            .excludedTracksForLibrary(libraryPath)
+            .isNotEmpty) {
+          break;
+        }
+      }
       expect(
         runtimeGraph.library.excludedTracksForLibrary(libraryPath),
         <String>[PathMatcher.normalize(removedTrack.path)],
@@ -1144,12 +1238,24 @@ void main() {
 
     await pumpUntilFound(
       tester,
-      find.text(fixture.languageProvider.tr('audio_excluded')),
+      find.text(fixture.languageProvider.tr('undo')),
     );
     await pumpUntilNotFound(
       tester,
       find.text('Tagged library audio', findRichText: true),
     );
+    expect(runtimeGraph.library.excludedTracksForLibrary(libraryPath), isEmpty);
+    for (var i = 0; i < 45; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 5)),
+      );
+      if (runtimeGraph.library
+          .excludedTracksForLibrary(libraryPath)
+          .isNotEmpty) {
+        break;
+      }
+    }
     expect(runtimeGraph.library.excludedTracksForLibrary(libraryPath), <String>[
       PathMatcher.normalize(trackPath),
     ]);
@@ -1667,10 +1773,7 @@ void main() {
       settingsRepository.librarySortCriterion,
       LibrarySortCriterion.duration,
     );
-    expect(
-      find.byTooltip(languageProvider.tr('edit_library')),
-      findsOneWidget,
-    );
+    expect(find.byTooltip(languageProvider.tr('edit_library')), findsOneWidget);
     expect(
       find.byTooltip(languageProvider.tr('batch_metadata')),
       findsOneWidget,

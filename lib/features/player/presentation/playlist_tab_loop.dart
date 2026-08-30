@@ -317,10 +317,11 @@ class _SessionLoopModeButton extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: IconButton(
         key: const ValueKey('session_loop_button_anchor'),
-        constraints: const BoxConstraints.tightFor(width: 46, height: 46),
+        constraints: const BoxConstraints.tightFor(width: 44, height: 44),
         padding: EdgeInsets.zero,
         tooltip: i18n.tr('loop_mode_title'),
         style: IconButton.styleFrom(
+          shape: const CircleBorder(),
           backgroundColor: Colors.transparent,
           foregroundColor: _sessionDetailForeground(
             Theme.of(context).colorScheme,

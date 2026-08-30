@@ -29,6 +29,7 @@ import '../../../core/media/path_matcher.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/ui/ui_interaction_coordinator.dart';
 import '../../../core/ui/ui_operation_service.dart';
+import '../../../core/ui/undoable_removal_service.dart';
 import '../../../app/theme/app_design_tokens.dart';
 import '../application/library_scanner_service.dart';
 import '../application/library_catalog.dart';
@@ -39,7 +40,6 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/app_search_page.dart';
 import '../../../core/widgets/app_scroll_physics.dart';
-import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/library_like_cards.dart';
 import '../../../core/widgets/duration_overlay.dart';
 import '../../../core/widgets/mobile_overlay_inset.dart';
@@ -94,11 +94,7 @@ Future<String?> _deferLibraryCardCoverLookup({
   return completer.future;
 }
 
-enum _LibraryAddAction {
-  importFolder,
-  importFiles,
-  addLibrary,
-}
+enum _LibraryAddAction { importFolder, importFiles, addLibrary }
 
 class _LoadedLibraryFolder {
   const _LoadedLibraryFolder({required this.folder, required this.revision});
@@ -153,6 +149,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
 
   @override
   bool get wantKeepAlive => true;
+
+  @override
+  double get defaultHeaderHeight => AppPageHeaderMetrics.expandedToolbarHeight;
 
   bool get _isActive =>
       (widget.activeTabIndexListenable == null ||
@@ -411,7 +410,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       final animateChildren =
           animateInitialReveal || (revealChildren && motion == true);
       final children = (expandedFolder ?? node).children;
-      if (expanded && children.isEmpty && _folderTreeErrorPaths.contains(normalizedPath)) {
+      if (expanded &&
+          children.isEmpty &&
+          _folderTreeErrorPaths.contains(normalizedPath)) {
         result.add(
           _VisibleLibraryItem(
             node: node,
@@ -983,7 +984,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           child: item.depth == 0
               ? errorBanner
               : AnimatedTreeReveal(
-                  key: ValueKey<String>('library-tree-reveal:error:$folderPath'),
+                  key: ValueKey<String>(
+                    'library-tree-reveal:error:$folderPath',
+                  ),
                   visible: item.revealed,
                   animateInitial: item.animateInitialReveal,
                   child: errorBanner,
@@ -1160,6 +1163,12 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               child: TopPageHeader(
                 key: headerKey,
                 floating: true,
+                collapseController: _scrollController,
+                topCapsuleTitle: i18n.tr('music_library'),
+                topCapsuleData: i18n.tr('library_header_stats', {
+                  'works': tree.length.toString(),
+                  'sessions': libraryHeaderAudioCount.toString(),
+                }),
                 title: i18n.tr('music_library'),
                 titleWidget: _buildHeaderLeftActions(i18n, libraryRefreshBusy),
                 padding: AppPageHeaderMetrics.mainTabPadding,
@@ -1216,7 +1225,9 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                       HeaderFloatingButton(
                         child: IconButton(
                           key: const ValueKey<String>('library_sort_button'),
-                          onPressed: libraryRefreshBusy ? null : _openSortOptions,
+                          onPressed: libraryRefreshBusy
+                              ? null
+                              : _openSortOptions,
                           icon: const Icon(Icons.sort_rounded),
                           tooltip: i18n.tr('sort_by'),
                           iconSize: 20,

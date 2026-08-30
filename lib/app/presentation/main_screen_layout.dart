@@ -327,7 +327,7 @@ extension _MainScreenLayout on _MainScreenState {
             left: 0,
             right: 0,
             bottom: 0,
-            height: 60 + systemBottom,
+            height: 112 + systemBottom,
             child: const AppEdgeFadeMask(
               key: ValueKey<String>('mobile_bottom_capsule_fade_mask'),
               direction: AppEdgeFadeDirection.towardBottom,
@@ -419,7 +419,7 @@ extension _MainScreenLayout on _MainScreenState {
     Widget buildBar(bool useBlur) => DecoratedBox(
       decoration: BoxDecoration(
         color: bgColor.withValues(
-          alpha: useBlur ? (isDark ? 0.82 : 0.88) : 1.0,
+          alpha: useBlur ? (isDark ? 0.72 : 0.78) : 1.0,
         ),
         border: Border(
           top: BorderSide(

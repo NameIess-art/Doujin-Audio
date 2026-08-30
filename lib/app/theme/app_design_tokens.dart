@@ -38,6 +38,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     this.radiusCard = 12,
     this.radiusSection = 16,
     this.radiusOverlay = 20,
+    this.radiusCapsule = 999,
     this.iconContainerSize = 36,
     this.motionFast = const Duration(milliseconds: 180),
     this.motionStandard = const Duration(milliseconds: 220),
@@ -119,6 +120,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
   final double radiusCard;
   final double radiusSection;
   final double radiusOverlay;
+  final double radiusCapsule;
   final double iconContainerSize;
   final Duration motionFast;
   final Duration motionStandard;
@@ -159,6 +161,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
     double? radiusCard,
     double? radiusSection,
     double? radiusOverlay,
+    double? radiusCapsule,
     double? iconContainerSize,
     Duration? motionFast,
     Duration? motionStandard,
@@ -201,6 +204,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
       radiusCard: radiusCard ?? this.radiusCard,
       radiusSection: radiusSection ?? this.radiusSection,
       radiusOverlay: radiusOverlay ?? this.radiusOverlay,
+      radiusCapsule: radiusCapsule ?? this.radiusCapsule,
       iconContainerSize: iconContainerSize ?? this.iconContainerSize,
       motionFast: motionFast ?? this.motionFast,
       motionStandard: motionStandard ?? this.motionStandard,
@@ -285,6 +289,7 @@ class AppDesignTokens extends ThemeExtension<AppDesignTokens> {
       radiusCard: lerpDouble(radiusCard, other.radiusCard, t)!,
       radiusSection: lerpDouble(radiusSection, other.radiusSection, t)!,
       radiusOverlay: lerpDouble(radiusOverlay, other.radiusOverlay, t)!,
+      radiusCapsule: lerpDouble(radiusCapsule, other.radiusCapsule, t)!,
       iconContainerSize: lerpDouble(
         iconContainerSize,
         other.iconContainerSize,

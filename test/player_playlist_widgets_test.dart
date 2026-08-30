@@ -1678,16 +1678,22 @@ void main() {
       PlaylistSortCriterion.releaseDate,
     );
 
-    await tester.tap(find.byTooltip(languageProvider.tr('more_actions')));
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 250));
-
     expect(
-      find.text(languageProvider.tr('add_playback_queue')),
+      find.byTooltip(languageProvider.tr('pause_all_sessions')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(languageProvider.tr('clear_all_sessions')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(languageProvider.tr('add_playback_queue')),
       findsOneWidget,
     );
 
-    await tester.tap(find.text(languageProvider.tr('add_playback_queue')));
+    await tester.tap(
+      find.byTooltip(languageProvider.tr('add_playback_queue')),
+    );
     await tester.pumpAndSettle();
 
     expect(

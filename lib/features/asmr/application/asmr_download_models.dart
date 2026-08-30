@@ -40,11 +40,15 @@ class AsmrDownloadTaskSnapshot {
     Map<String, int> fileTotalBytes = const {},
     Map<String, int> fileRetryAttempts = const {},
     Set<String> completedFilePaths = const {},
+    Set<String> failedFilePaths = const {},
+    Set<String> manuallyRetryingFilePaths = const {},
     List<AsmrTrackFile> selectedRoots = const [],
   }) : fileDownloadedBytes = immutableMap(fileDownloadedBytes),
        fileTotalBytes = immutableMap(fileTotalBytes),
        fileRetryAttempts = immutableMap(fileRetryAttempts),
        completedFilePaths = immutableSet(completedFilePaths),
+       failedFilePaths = immutableSet(failedFilePaths),
+       manuallyRetryingFilePaths = immutableSet(manuallyRetryingFilePaths),
        selectedRoots = immutableList(selectedRoots);
 
   final AsmrWork work;
@@ -70,6 +74,8 @@ class AsmrDownloadTaskSnapshot {
   final Map<String, int> fileTotalBytes;
   final Map<String, int> fileRetryAttempts;
   final Set<String> completedFilePaths;
+  final Set<String> failedFilePaths;
+  final Set<String> manuallyRetryingFilePaths;
   final List<AsmrTrackFile> selectedRoots;
 
   String get workRootPath {
@@ -116,6 +122,8 @@ class AsmrDownloadTaskSnapshot {
     Map<String, int>? fileTotalBytes,
     Map<String, int>? fileRetryAttempts,
     Set<String>? completedFilePaths,
+    Set<String>? failedFilePaths,
+    Set<String>? manuallyRetryingFilePaths,
     List<AsmrTrackFile>? selectedRoots,
   }) {
     return AsmrDownloadTaskSnapshot(
@@ -142,6 +150,9 @@ class AsmrDownloadTaskSnapshot {
       fileTotalBytes: fileTotalBytes ?? this.fileTotalBytes,
       fileRetryAttempts: fileRetryAttempts ?? this.fileRetryAttempts,
       completedFilePaths: completedFilePaths ?? this.completedFilePaths,
+      failedFilePaths: failedFilePaths ?? this.failedFilePaths,
+      manuallyRetryingFilePaths:
+          manuallyRetryingFilePaths ?? this.manuallyRetryingFilePaths,
       selectedRoots: selectedRoots ?? this.selectedRoots,
     );
   }

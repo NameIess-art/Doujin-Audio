@@ -1,7 +1,7 @@
 part of 'main_screen.dart';
 
 extension _MainScreenLayout on _MainScreenState {
-  Widget _buildAnimatedBody({required bool isDesktop}) {
+  Widget _buildBody({required bool isDesktop}) {
     final cs = Theme.of(context).colorScheme;
     final layoutSize = _layoutViewSize();
     final width = layoutSize.width;
@@ -114,6 +114,8 @@ extension _MainScreenLayout on _MainScreenState {
       indexListenable: _activePageIndex,
       itemCount: destinations.length,
       itemBuilder: pageShell,
+      style: AppIndexedStackTransitionStyle.none,
+      duration: Duration.zero,
       onTransitionCompleted: _handlePageTransitionCompleted,
     );
   }

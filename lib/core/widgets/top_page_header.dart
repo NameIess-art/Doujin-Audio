@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
+import 'app_edge_fade_mask.dart';
 import 'marquee_text.dart';
 
 class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
@@ -84,6 +85,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
       0,
     ),
     this.collapsedBottomSpacing = AppSpacing.xs,
+    this.floating = false,
   });
 
   final IconData? icon;
@@ -111,6 +113,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
   final double floatingRevealTriggerDistance;
   final EdgeInsetsGeometry collapsedPadding;
   final double collapsedBottomSpacing;
+  final bool floating;
 
   @override
   ConsumerState<TopPageHeader> createState() => _TopPageHeaderState();
@@ -293,52 +296,59 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
                   const SizedBox(width: AppSpacing.xs),
                 ],
                 Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onHorizontalDragStart:
-                        widget.onTitleSwipeLeft == null &&
-                            widget.onTitleSwipeRight == null
-                        ? null
-                        : _handleTitleDragStart,
-                    onHorizontalDragUpdate:
-                        widget.onTitleSwipeLeft == null &&
-                            widget.onTitleSwipeRight == null
-                        ? null
-                        : _handleTitleDragUpdate,
-                    onHorizontalDragEnd:
-                        widget.onTitleSwipeLeft == null &&
-                            widget.onTitleSwipeRight == null
-                        ? null
-                        : _handleTitleDragEnd,
-                    child: widget.titleWidget != null
-                        ? Semantics(
-                            header: true,
-                            label: resolvedTitle,
-                            child: DefaultTextStyle.merge(
-                              style: titleStyle,
-                              child: widget.titleWidget!,
-                            ),
-                          )
-                        : widget.marqueeTitle
-                        ? SizedBox(
-                            height: titleHeight,
-                            child: MarqueeText(
-                              text: resolvedTitle,
-                              style: titleStyle,
-                              scrollSpeed: 24,
-                              edgePadding: 2,
-                              forceMarquee: widget.forceMarqueeTitle,
-                            ),
-                          )
-                        : Semantics(
-                            header: true,
-                            child: Text(
-                              resolvedTitle,
-                              maxLines: prefersExpandedText ? 2 : 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: titleStyle,
-                            ),
-                          ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Builder(
+                      builder: (context) {
+                        final hasSwipe =
+                            widget.titleWidget == null &&
+                            (widget.onTitleSwipeLeft != null ||
+                                widget.onTitleSwipeRight != null);
+                        return GestureDetector(
+                          behavior: hasSwipe
+                              ? HitTestBehavior.opaque
+                              : HitTestBehavior.deferToChild,
+                          onHorizontalDragStart: hasSwipe
+                              ? _handleTitleDragStart
+                              : null,
+                          onHorizontalDragUpdate: hasSwipe
+                              ? _handleTitleDragUpdate
+                              : null,
+                          onHorizontalDragEnd: hasSwipe
+                              ? _handleTitleDragEnd
+                              : null,
+                          child: widget.titleWidget != null
+                              ? Semantics(
+                                  header: true,
+                                  label: resolvedTitle,
+                                  child: DefaultTextStyle.merge(
+                                    style: titleStyle,
+                                    child: widget.titleWidget!,
+                                  ),
+                                )
+                              : widget.marqueeTitle
+                              ? SizedBox(
+                                  height: titleHeight,
+                                  child: MarqueeText(
+                                    text: resolvedTitle,
+                                    style: titleStyle,
+                                    scrollSpeed: 24,
+                                    edgePadding: 2,
+                                    forceMarquee: widget.forceMarqueeTitle,
+                                  ),
+                                )
+                              : Semantics(
+                                  header: true,
+                                  child: Text(
+                                    resolvedTitle,
+                                    maxLines: prefersExpandedText ? 2 : 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: titleStyle,
+                                  ),
+                                ),
+                        );
+                      },
+                    ),
                   ),
                 ),
                 if (widget.titleSuffix != null) ...[
@@ -457,17 +467,37 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
         },
       ),
     );
-    return _AppHeaderGlassSurface(child: headerContent);
+    return _AppHeaderGlassSurface(
+      floating: widget.floating,
+      child: headerContent,
+    );
   }
 }
 
 class _AppHeaderGlassSurface extends ConsumerWidget {
-  const _AppHeaderGlassSurface({required this.child});
+  const _AppHeaderGlassSurface({
+    required this.child,
+    this.floating = false,
+  });
 
   final Widget child;
+  final bool floating;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (floating) {
+      return Stack(
+        fit: StackFit.passthrough,
+        children: [
+          const Positioned.fill(
+            child: AppEdgeFadeMask(
+              direction: AppEdgeFadeDirection.towardTop,
+            ),
+          ),
+          child,
+        ],
+      );
+    }
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -497,6 +527,197 @@ class _AppHeaderGlassSurface extends ConsumerWidget {
           key: const ValueKey<String>('app_page_header_blur'),
           filter: dart_ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
           child: surface,
+        ),
+      ),
+    );
+  }
+}
+
+class HeaderFloatingSurface extends ConsumerWidget {
+  const HeaderFloatingSurface({
+    super.key,
+    required this.child,
+    this.radius = 19,
+    this.height = 38,
+    this.width,
+    this.padding,
+  });
+
+  final Widget child;
+  final double radius;
+  final double? height;
+  final double? width;
+  final EdgeInsetsGeometry? padding;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final blurEnabled = ref.watch(
+      settingsStateProvider.select((s) => s.value?.uiBlurEffectEnabled ?? true),
+    );
+    final background = isDark ? cs.surfaceBright : cs.surfaceContainerHigh;
+    final borderRadius = BorderRadius.circular(radius);
+    final surface = DecoratedBox(
+      decoration: BoxDecoration(
+        color: background.withValues(
+          alpha: blurEnabled ? (isDark ? 0.80 : 0.86) : 1.0,
+        ),
+        borderRadius: borderRadius,
+        border: Border.all(
+          color: cs.outlineVariant.withValues(alpha: isDark ? 0.24 : 0.42),
+        ),
+      ),
+      child: padding != null ? Padding(padding: padding!, child: child) : child,
+    );
+
+    final content = DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: borderRadius,
+        boxShadow: [
+          BoxShadow(
+            color: cs.shadow.withValues(alpha: 0.14),
+            blurRadius: 18,
+            spreadRadius: -5,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: borderRadius,
+        child: blurEnabled
+            ? BackdropFilter(
+                filter: dart_ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: surface,
+              )
+            : surface,
+      ),
+    );
+
+    if (width != null || height != null) {
+      return SizedBox(
+        width: width,
+        height: height,
+        child: content,
+      );
+    }
+    return content;
+  }
+}
+
+class HeaderFloatingButton extends StatelessWidget {
+  const HeaderFloatingButton({
+    super.key,
+    required this.child,
+    this.size = 38,
+  });
+
+  final Widget child;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return HeaderFloatingSurface(
+      width: size,
+      height: size,
+      radius: size / 2,
+      child: Center(child: child),
+    );
+  }
+}
+
+class HeaderActionPill extends StatelessWidget {
+  const HeaderActionPill({
+    super.key,
+    required this.children,
+    this.padding = const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+  });
+
+  final List<Widget> children;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: HeaderFloatingSurface(
+        padding: padding,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: children,
+        ),
+      ),
+    );
+  }
+}
+
+class HeaderSegmentedCategoryBar<T> extends StatelessWidget {
+  const HeaderSegmentedCategoryBar({
+    super.key,
+    required this.items,
+    required this.selected,
+    required this.onSelected,
+    required this.labelBuilder,
+  });
+
+  final List<T> items;
+  final T selected;
+  final ValueChanged<T> onSelected;
+  final String Function(T item) labelBuilder;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: HeaderFloatingSurface(
+        padding: const EdgeInsets.all(3),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: items.map((item) {
+              final isSelected = item == selected;
+              final label = labelBuilder(item);
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                child: Material(
+                  color: isSelected
+                      ? cs.primary.withValues(alpha: 0.16)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(15),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(15),
+                    onTap: () => onSelected(item),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8.5,
+                        vertical: 4,
+                      ),
+                      child: Center(
+                        child: Text(
+                          label,
+                          style: textTheme.labelMedium?.copyWith(
+                            color: isSelected
+                                ? cs.primary
+                                : cs.onSurfaceVariant.withValues(alpha: 0.85),
+                            fontWeight: isSelected
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            fontSize: 12.5,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }).toList(growable: false),
+          ),
         ),
       ),
     );

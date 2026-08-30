@@ -1571,7 +1571,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byTooltip(languageProvider.tr('more_actions')), findsOneWidget);
+    expect(find.byTooltip(languageProvider.tr('add')), findsOneWidget);
     expect(find.byTooltip(languageProvider.tr('sort_by')), findsOneWidget);
     await tester.tap(find.byTooltip(languageProvider.tr('sort_by')));
     await tester.pump();
@@ -1667,25 +1667,34 @@ void main() {
       settingsRepository.librarySortCriterion,
       LibrarySortCriterion.duration,
     );
-    expect(find.byTooltip(languageProvider.tr('import_audio')), findsNothing);
-    expect(find.byTooltip(languageProvider.tr('edit_library')), findsNothing);
-    final dividerCountBeforeOpeningMenu = find
-        .byType(Divider)
-        .evaluate()
-        .length;
-    await tester.tap(find.byTooltip(languageProvider.tr('more_actions')));
+    expect(
+      find.byTooltip(languageProvider.tr('edit_library')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(languageProvider.tr('batch_metadata')),
+      findsOneWidget,
+    );
+    expect(
+      find.byTooltip(languageProvider.tr('video_to_audio')),
+      findsOneWidget,
+    );
+    await tester.tap(find.byTooltip(languageProvider.tr('add')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 250));
 
     expect(find.text(languageProvider.tr('import_folder')), findsOneWidget);
-    expect(find.text(languageProvider.tr('edit_library')), findsOneWidget);
-    expect(find.text(languageProvider.tr('batch_metadata')), findsOneWidget);
-    expect(
-      find.byType(Divider).evaluate().length,
-      dividerCountBeforeOpeningMenu + 1,
-    );
-    await tester.tap(find.text(languageProvider.tr('edit_library')));
-    await tester.pumpAndSettle();
+    expect(find.text(languageProvider.tr('import_file')), findsOneWidget);
+    expect(find.text(languageProvider.tr('choose_library')), findsOneWidget);
+
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    await tester.tap(find.byTooltip(languageProvider.tr('edit_library')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('root'), findsOneWidget);
     expect(find.text('standalone'), findsNothing);

@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
-import 'package:doujin_audio/features/asmr/application/asmr_download_models.dart';
+import 'package:doujin_audio/features/asmr/application/asmr_download_manager.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_download.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_details_page.dart';
@@ -71,16 +71,112 @@ void main() {
     expect(find.text('Retrying (1/7)'), findsNothing);
     expect(find.text('128 B / 1.0 KB'), findsNWidgets(2));
   });
+
+  testWidgets('failed file exposes a manual retry action and progress state', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final languageProvider = AppLanguageProvider();
+    final manager = _RecordingDownloadManager();
+    addTearDown(languageProvider.dispose);
+    addTearDown(manager.dispose);
+    await languageProvider.setLanguage(AppLanguage.en);
+    final failedTask = _downloadTask(
+      status: AsmrDownloadTaskStatus.failed,
+      failedFilePaths: const <String>{'Track.mp3'},
+      failedFiles: 1,
+    );
+
+    await tester.pumpWidget(
+      _downloadDetailsApp(languageProvider, failedTask, manager: manager),
+    );
+    await tester.pump();
+
+    final retryButton = find.byKey(
+      const ValueKey<String>('asmr_download_manual_retry_Track.mp3'),
+    );
+    expect(retryButton, findsOneWidget);
+    expect(tester.getSize(retryButton), const Size.square(44));
+    expect(find.byTooltip('Retry'), findsOneWidget);
+    await tester.tap(retryButton);
+    expect(manager.retriedPaths, <String>['Track.mp3']);
+
+    await tester.pumpWidget(
+      _downloadDetailsApp(
+        languageProvider,
+        failedTask.copyWith(
+          status: AsmrDownloadTaskStatus.downloading,
+          manuallyRetryingFilePaths: const <String>{'Track.mp3'},
+        ),
+        manager: manager,
+      ),
+    );
+    await tester.pump();
+
+    expect(retryButton, findsNothing);
+    expect(
+      find.byKey(
+        const ValueKey<String>('asmr_download_manual_retry_progress_Track.mp3'),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pumpWidget(
+      _downloadDetailsApp(
+        languageProvider,
+        failedTask.copyWith(
+          status: AsmrDownloadTaskStatus.completed,
+          failedFiles: 0,
+          failedFilePaths: const <String>{},
+          manuallyRetryingFilePaths: const <String>{},
+          completedFilePaths: const <String>{'Track.mp3'},
+        ),
+        manager: manager,
+      ),
+    );
+    await tester.pump();
+
+    expect(retryButton, findsNothing);
+  });
+
+  testWidgets('paused failed file keeps its manual retry action disabled', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final languageProvider = AppLanguageProvider();
+    final manager = _RecordingDownloadManager();
+    addTearDown(languageProvider.dispose);
+    addTearDown(manager.dispose);
+    final pausedTask = _downloadTask(
+      status: AsmrDownloadTaskStatus.paused,
+      failedFilePaths: const <String>{'Track.mp3'},
+      failedFiles: 1,
+    );
+
+    await tester.pumpWidget(
+      _downloadDetailsApp(languageProvider, pausedTask, manager: manager),
+    );
+    await tester.pump();
+
+    final retryButton = find.byKey(
+      const ValueKey<String>('asmr_download_manual_retry_Track.mp3'),
+    );
+    expect(retryButton, findsOneWidget);
+    expect(tester.widget<IconButton>(retryButton).onPressed, isNull);
+  });
 }
 
 Widget _downloadDetailsApp(
   AppLanguageProvider languageProvider,
-  AsmrDownloadTaskSnapshot task,
-) {
+  AsmrDownloadTaskSnapshot task, {
+  AsmrDownloadManager? manager,
+}) {
   return ProviderScope(
     overrides: [
       appLanguageProviderInstanceProvider.overrideWithValue(languageProvider),
       asmrDownloadTaskProvider(1).overrideWithValue(task),
+      if (manager != null)
+        asmrDownloadManagerProvider.overrideWithValue(manager),
     ],
     child: const MaterialApp(home: AsmrDownloadDetailsPage(workId: 1)),
   );
@@ -88,6 +184,9 @@ Widget _downloadDetailsApp(
 
 AsmrDownloadTaskSnapshot _downloadTask({
   Map<String, int> fileRetryAttempts = const <String, int>{},
+  AsmrDownloadTaskStatus status = AsmrDownloadTaskStatus.downloading,
+  Set<String> failedFilePaths = const <String>{},
+  int failedFiles = 0,
 }) {
   final work = AsmrWork(
     id: 1,
@@ -129,17 +228,30 @@ AsmrDownloadTaskSnapshot _downloadTask({
     workFolderName: 'Work',
     conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
     automaticFileRetryCount: 7,
-    status: AsmrDownloadTaskStatus.downloading,
+    status: status,
     totalFiles: 1,
     completedFiles: 0,
     skippedFiles: 0,
-    failedFiles: 0,
+    failedFiles: failedFiles,
     totalBytes: 1024,
     downloadedBytes: 128,
     startedAt: DateTime(2026),
     fileDownloadedBytes: const <String, int>{'Track.mp3': 128},
     fileTotalBytes: const <String, int>{'Track.mp3': 1024},
     fileRetryAttempts: fileRetryAttempts,
+    failedFilePaths: failedFilePaths,
     selectedRoots: <AsmrTrackFile>[track],
   );
+}
+
+final class _RecordingDownloadManager extends AsmrDownloadManager {
+  _RecordingDownloadManager() : super(persistTasks: false);
+
+  final List<String> retriedPaths = <String>[];
+
+  @override
+  Future<bool> retryFailedFile(int workId, String relativePath) async {
+    retriedPaths.add(relativePath);
+    return true;
+  }
 }

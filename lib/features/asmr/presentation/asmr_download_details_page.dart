@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -19,6 +21,7 @@ class AsmrDownloadDetailsPage extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final task = ref.watch(asmrDownloadTaskProvider(workId));
+    final downloadManager = ref.read(asmrDownloadManagerProvider);
     final headerHeight = MediaQuery.paddingOf(context).top + 56;
     final cs = Theme.of(context).colorScheme;
 
@@ -107,6 +110,12 @@ class AsmrDownloadDetailsPage extends ConsumerWidget {
                         depth: 0,
                         task: task,
                         i18n: i18n,
+                        onRetryFile: downloadManager == null
+                            ? null
+                            : (relativePath) => downloadManager.retryFailedFile(
+                                workId,
+                                relativePath,
+                              ),
                       );
                     },
                   ),
@@ -146,12 +155,14 @@ class _AsmrDownloadDetailsNodeTile extends StatefulWidget {
     required this.depth,
     required this.task,
     required this.i18n,
+    required this.onRetryFile,
   });
 
   final AsmrTrackFile node;
   final int depth;
   final AsmrDownloadTaskSnapshot task;
   final AppLanguageProvider i18n;
+  final Future<bool> Function(String relativePath)? onRetryFile;
 
   @override
   State<_AsmrDownloadDetailsNodeTile> createState() =>
@@ -215,6 +226,7 @@ class _AsmrDownloadDetailsNodeTileState
                       depth: widget.depth + 1,
                       task: widget.task,
                       i18n: widget.i18n,
+                      onRetryFile: widget.onRetryFile,
                     ),
                 ]
               : [
@@ -248,6 +260,16 @@ class _AsmrDownloadDetailsNodeTileState
     final retryAttempt = widget.task.isActive && !isFileCompleted
         ? widget.task.fileRetryAttempts[widget.node.relativePath]
         : null;
+    final isFileFailed = widget.task.failedFilePaths.contains(
+      widget.node.relativePath,
+    );
+    final isManualRetrying = widget.task.manuallyRetryingFilePaths.contains(
+      widget.node.relativePath,
+    );
+    final canRetryFile =
+        widget.onRetryFile != null &&
+        (widget.task.status == AsmrDownloadTaskStatus.downloading ||
+            widget.task.status == AsmrDownloadTaskStatus.failed);
     double progress = 0.0;
     if (total > 0) {
       progress = (downloaded / total).clamp(0.0, 1.0);
@@ -329,6 +351,42 @@ class _AsmrDownloadDetailsNodeTileState
                 ],
               ),
             ),
+            if (isFileFailed || isManualRetrying) ...[
+              const SizedBox(width: 4),
+              SizedBox.square(
+                dimension: 44,
+                child: isManualRetrying
+                    ? Center(
+                        child: SizedBox.square(
+                          key: ValueKey<String>(
+                            'asmr_download_manual_retry_progress_'
+                            '${widget.node.relativePath}',
+                          ),
+                          dimension: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2.2,
+                            color: asmrBlue,
+                          ),
+                        ),
+                      )
+                    : IconButton(
+                        key: ValueKey<String>(
+                          'asmr_download_manual_retry_'
+                          '${widget.node.relativePath}',
+                        ),
+                        padding: EdgeInsets.zero,
+                        icon: const Icon(Icons.refresh_rounded),
+                        iconSize: 22,
+                        color: asmrBlue,
+                        tooltip: widget.i18n.tr('retry'),
+                        onPressed: canRetryFile
+                            ? () => unawaited(
+                                widget.onRetryFile!(widget.node.relativePath),
+                              )
+                            : null,
+                      ),
+              ),
+            ],
           ],
         ),
       ),

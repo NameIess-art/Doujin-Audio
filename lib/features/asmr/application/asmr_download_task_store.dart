@@ -322,6 +322,7 @@ final class AsmrDownloadTaskStore {
         this[workId] = task.copyWith(
           status: AsmrDownloadTaskStatus.paused,
           fileRetryAttempts: const {},
+          manuallyRetryingFilePaths: const {},
           message: 'paused',
         );
       }

@@ -9,6 +9,21 @@ extension AsmrDownloadPlanner on AsmrDownloadManager {
     return result;
   }
 
+  _PlannedDownloadFile? _findPlannedFile(
+    AsmrDownloadTaskSnapshot task,
+    String relativePath,
+  ) {
+    final files = _collectPlannedFiles(task.selectedRoots);
+    if (task.saveCover) {
+      final coverFile = _plannedCoverFile(task.work);
+      if (coverFile != null) files.add(coverFile);
+    }
+    for (final file in files) {
+      if (file.relativePath == relativePath) return file;
+    }
+    return null;
+  }
+
   _PlannedDownloadFile? _plannedCoverFile(AsmrWork work) {
     final url = work.preferredCoverUrl.trim();
     if (url.isEmpty) return null;

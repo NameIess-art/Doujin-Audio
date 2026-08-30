@@ -94,13 +94,10 @@ Future<String?> _deferLibraryCardCoverLookup({
   return completer.future;
 }
 
-enum _LibraryMoreAction {
+enum _LibraryAddAction {
   importFolder,
   importFiles,
   addLibrary,
-  videoToAudio,
-  manageLibraries,
-  batchMetadata,
 }
 
 class _LoadedLibraryFolder {
@@ -1162,105 +1159,73 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               right: 0,
               child: TopPageHeader(
                 key: headerKey,
-                icon: Icons.library_music_rounded,
+                floating: true,
                 title: i18n.tr('music_library'),
+                titleWidget: _buildHeaderLeftActions(i18n, libraryRefreshBusy),
                 padding: AppPageHeaderMetrics.mainTabPadding,
                 onTitleSwipeLeft: widget.onTitleSwipeLeft,
                 onTitleSwipeRight: widget.onTitleSwipeRight,
                 trailing: SizedBox(
-                  width: 144 + (isLandscape ? 52 : 0),
                   height: 44,
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      IconButton(
-                        key: const ValueKey<String>('library_search_button'),
-                        onPressed: _openSearchPage,
-                        icon: const Icon(Icons.search_rounded),
-                        tooltip: i18n.tr('search'),
-                      ),
-                      if (isLandscape)
-                        IconButton(
-                          onPressed: canPullRefresh && !libraryRefreshBusy
-                              ? () => unawaited(
-                                  _runLibraryPullRefresh(showSnackbar: true),
-                                )
-                              : null,
-                          icon: libraryRefreshBusy
-                              ? const SizedBox.square(
-                                  dimension: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.2,
-                                  ),
-                                )
-                              : const Icon(Icons.refresh_rounded),
-                          tooltip: i18n.tr('refresh_watched_folder'),
+                      HeaderFloatingButton(
+                        child: IconButton(
+                          key: const ValueKey<String>('library_search_button'),
+                          onPressed: _openSearchPage,
+                          icon: const Icon(Icons.search_rounded),
+                          tooltip: i18n.tr('search'),
+                          iconSize: 20,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 38,
+                            height: 38,
+                          ),
                         ),
-                      IconButton(
-                        key: const ValueKey<String>('library_sort_button'),
-                        onPressed: libraryRefreshBusy ? null : _openSortOptions,
-                        icon: const Icon(Icons.sort_rounded),
-                        tooltip: i18n.tr('sort_by'),
                       ),
-                      UnifiedPopupMenuButton<_LibraryMoreAction>(
-                        enabled: !libraryRefreshBusy,
-                        icon: Icons.more_horiz_rounded,
-                        tooltip: i18n.tr('more_actions'),
-                        entries: [
-                          UnifiedMenuEntry<_LibraryMoreAction>.action(
-                            value: _LibraryMoreAction.importFolder,
-                            icon: Icons.create_new_folder_rounded,
-                            label: i18n.tr('import_folder'),
+                      if (isLandscape) ...[
+                        const SizedBox(width: 8),
+                        HeaderFloatingButton(
+                          child: IconButton(
+                            onPressed: canPullRefresh && !libraryRefreshBusy
+                                ? () => unawaited(
+                                    _runLibraryPullRefresh(showSnackbar: true),
+                                  )
+                                : null,
+                            icon: libraryRefreshBusy
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2.2,
+                                    ),
+                                  )
+                                : const Icon(Icons.refresh_rounded),
+                            tooltip: i18n.tr('refresh_watched_folder'),
+                            iconSize: 20,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 38,
+                              height: 38,
+                            ),
                           ),
-                          UnifiedMenuEntry<_LibraryMoreAction>.action(
-                            value: _LibraryMoreAction.importFiles,
-                            icon: Icons.upload_file_rounded,
-                            label: i18n.tr('import_file'),
+                        ),
+                      ],
+                      const SizedBox(width: 8),
+                      HeaderFloatingButton(
+                        child: IconButton(
+                          key: const ValueKey<String>('library_sort_button'),
+                          onPressed: libraryRefreshBusy ? null : _openSortOptions,
+                          icon: const Icon(Icons.sort_rounded),
+                          tooltip: i18n.tr('sort_by'),
+                          iconSize: 20,
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints.tightFor(
+                            width: 38,
+                            height: 38,
                           ),
-                          UnifiedMenuEntry<_LibraryMoreAction>.action(
-                            value: _LibraryMoreAction.addLibrary,
-                            icon: Icons.library_add_rounded,
-                            label: i18n.tr('choose_library'),
-                          ),
-                          const UnifiedMenuEntry<_LibraryMoreAction>.divider(),
-                          UnifiedMenuEntry<_LibraryMoreAction>.action(
-                            value: _LibraryMoreAction.videoToAudio,
-                            icon: Icons.video_library_rounded,
-                            label: i18n.tr('video_to_audio'),
-                          ),
-                          UnifiedMenuEntry<_LibraryMoreAction>.action(
-                            value: _LibraryMoreAction.manageLibraries,
-                            icon: Icons.edit_note_rounded,
-                            label: i18n.tr('edit_library'),
-                          ),
-                          UnifiedMenuEntry<_LibraryMoreAction>.action(
-                            value: _LibraryMoreAction.batchMetadata,
-                            icon: Icons.library_add_check_rounded,
-                            label: i18n.tr('batch_metadata'),
-                          ),
-                        ],
-                        onSelected: (value) {
-                          switch (value) {
-                            case _LibraryMoreAction.importFolder:
-                              _addFolder();
-                              break;
-                            case _LibraryMoreAction.importFiles:
-                              _addFiles();
-                              break;
-                            case _LibraryMoreAction.addLibrary:
-                              _addLibrary();
-                              break;
-                            case _LibraryMoreAction.videoToAudio:
-                              _openVideoConverterPage();
-                              break;
-                            case _LibraryMoreAction.manageLibraries:
-                              _openLibraryManagementPage();
-                              break;
-                            case _LibraryMoreAction.batchMetadata:
-                              _openBatchMetadataPage();
-                              break;
-                          }
-                        },
+                        ),
                       ),
                     ],
                   ),
@@ -1270,6 +1235,81 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHeaderLeftActions(
+    AppLanguageProvider i18n,
+    bool libraryRefreshBusy,
+  ) {
+    return HeaderActionPill(
+      children: [
+        UnifiedPopupMenuButton<_LibraryAddAction>(
+          enabled: !libraryRefreshBusy,
+          icon: Icons.add_rounded,
+          tooltip: i18n.tr('add'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          entries: [
+            UnifiedMenuEntry<_LibraryAddAction>.action(
+              value: _LibraryAddAction.importFolder,
+              icon: Icons.create_new_folder_rounded,
+              label: i18n.tr('import_folder'),
+            ),
+            UnifiedMenuEntry<_LibraryAddAction>.action(
+              value: _LibraryAddAction.importFiles,
+              icon: Icons.upload_file_rounded,
+              label: i18n.tr('import_file'),
+            ),
+            UnifiedMenuEntry<_LibraryAddAction>.action(
+              value: _LibraryAddAction.addLibrary,
+              icon: Icons.library_add_rounded,
+              label: i18n.tr('choose_library'),
+            ),
+          ],
+          onSelected: (value) {
+            switch (value) {
+              case _LibraryAddAction.importFolder:
+                _addFolder();
+                break;
+              case _LibraryAddAction.importFiles:
+                _addFiles();
+                break;
+              case _LibraryAddAction.addLibrary:
+                _addLibrary();
+                break;
+            }
+          },
+        ),
+        IconButton(
+          key: const ValueKey<String>('library_edit_button'),
+          onPressed: libraryRefreshBusy ? null : _openLibraryManagementPage,
+          icon: const Icon(Icons.edit_note_rounded),
+          tooltip: i18n.tr('edit_library'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        ),
+        IconButton(
+          key: const ValueKey<String>('library_batch_metadata_button'),
+          onPressed: libraryRefreshBusy ? null : _openBatchMetadataPage,
+          icon: const Icon(Icons.library_add_check_rounded),
+          tooltip: i18n.tr('batch_metadata'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        ),
+        IconButton(
+          key: const ValueKey<String>('library_video_to_audio_button'),
+          onPressed: libraryRefreshBusy ? null : _openVideoConverterPage,
+          icon: const Icon(Icons.video_library_rounded),
+          tooltip: i18n.tr('video_to_audio'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        ),
+      ],
     );
   }
 }

@@ -195,7 +195,7 @@ void main() {
     );
     expect(
       clip.borderRadius,
-      BorderRadius.circular(AppDesignTokens.dark.radiusCard),
+      BorderRadius.circular(AppDesignTokens.dark.radiusCapsule),
     );
     expect(
       find.descendant(of: surface, matching: find.byType(BackdropFilter)),
@@ -239,6 +239,60 @@ void main() {
                 .decoration
             as BoxDecoration;
     expect(opaqueDecoration.color!.a, 1);
+  });
+
+  testWidgets('top feedback positions close to header and avoids landscape menu bar', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(
+      _feedbackApp(
+        blurEnabled: true,
+        home: Scaffold(
+          body: Row(
+            children: [
+              const SizedBox(width: 260, child: Text('NavigationMenu')),
+              Expanded(
+                child: KeyedSubtree(
+                  key: const ValueKey<String>('main_page_canvas_0'),
+                  child: Builder(
+                    builder: (context) => TextButton(
+                      onPressed: () {
+                        showAppSnackBar(
+                          context,
+                          'Landscape feedback message',
+                          duration: const Duration(seconds: 10),
+                        );
+                      },
+                      child: const Text('Trigger'),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Trigger'));
+    await tester.pumpAndSettle();
+
+    final surfaceFinder = find.byType(AppFeedbackSurface);
+    expect(surfaceFinder, findsOneWidget);
+
+    final topLeft = tester.getTopLeft(surfaceFinder);
+    final topRight = tester.getTopRight(surfaceFinder);
+
+    // Should be positioned below the header button area (~54px)
+    expect(topLeft.dy, closeTo(54.0, 10.0));
+    // In landscape with a 260px menu, left edge should start at 260 + 16 = 276
+    expect(topLeft.dx, closeTo(276.0, 5.0));
+    // Right edge should align with title bar right button (screen width - 4 = 1276)
+    expect(topRight.dx, closeTo(1276.0, 5.0));
   });
 
   testWidgets('non-destructive confirmation uses the requested action', (

@@ -891,7 +891,7 @@ class _MainScreenState extends ConsumerState<MainScreen>
                           Expanded(
                             child: MobileOverlayInset(
                               bottomInset: mobileContentInset,
-                              child: _buildAnimatedBody(isDesktop: isDesktop),
+                              child: _buildBody(isDesktop: isDesktop),
                             ),
                           ),
                         ],

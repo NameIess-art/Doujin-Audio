@@ -49,6 +49,8 @@ class UnifiedPopupMenuButton<T> extends StatefulWidget {
     this.menuWidth = 236,
     this.enabled = true,
     this.selectAfterDismiss = true,
+    this.padding,
+    this.constraints,
   });
 
   final IconData icon;
@@ -60,6 +62,8 @@ class UnifiedPopupMenuButton<T> extends StatefulWidget {
   final double menuWidth;
   final bool enabled;
   final bool selectAfterDismiss;
+  final EdgeInsetsGeometry? padding;
+  final BoxConstraints? constraints;
 
   @override
   State<UnifiedPopupMenuButton<T>> createState() =>
@@ -173,6 +177,8 @@ class _UnifiedPopupMenuButtonState<T> extends State<UnifiedPopupMenuButton<T>>
         tooltip: widget.tooltip,
         onPressed: widget.enabled ? _toggle : null,
         icon: Icon(widget.icon, size: widget.iconSize),
+        padding: widget.padding,
+        constraints: widget.constraints,
       ),
     );
   }

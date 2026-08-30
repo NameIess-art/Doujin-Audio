@@ -2440,6 +2440,151 @@ void main() {
     },
   );
 
+  test(
+    'manual file retry resets attempts and retries only the failed file',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_manual_file_retry_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      var requests = 0;
+      var manualRetryStarted = false;
+      unawaited(
+        server.forEach((request) async {
+          requests++;
+          if (!manualRetryStarted || requests == 5) {
+            request.response.statusCode = HttpStatus.serviceUnavailable;
+          } else {
+            request.response.contentLength = 1;
+            request.response.add(const <int>[7]);
+          }
+          await request.response.close();
+        }),
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/track.mp3',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+          automaticFileRetryCount: 1,
+        );
+        await _waitForTaskStatus(
+          manager,
+          1,
+          AsmrDownloadTaskStatus.failed,
+          allowFailure: true,
+        );
+
+        expect(requests, 4);
+        expect(manager.getTask(1)?.failedFilePaths, <String>{'Track.mp3'});
+        manualRetryStarted = true;
+        expect(await manager.retryFailedFile(1, 'Track.mp3'), isTrue);
+        expect(await manager.retryFailedFile(1, 'Track.mp3'), isFalse);
+        await _waitForFileRetryAttempt(manager, 1, 'Track.mp3', 1);
+        expect(
+          manager.getTask(1)?.manuallyRetryingFilePaths,
+          contains('Track.mp3'),
+        );
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+
+        final completed = manager.getTask(1);
+        expect(requests, 6);
+        expect(completed?.failedFiles, 0);
+        expect(completed?.failedFilePaths, isEmpty);
+        expect(completed?.manuallyRetryingFilePaths, isEmpty);
+        expect(completed?.completedFilePaths, contains('Track.mp3'));
+      } finally {
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'manual file retry starts while a sibling is still downloading',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'asmr_download_manual_retry_active_',
+      );
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final retryStarted = Completer<void>();
+      final releaseRetry = Completer<void>();
+      final releaseSlow = Completer<void>();
+      var failedRequests = 0;
+      unawaited(
+        server.forEach((request) async {
+          if (request.uri.path.endsWith('failed.mp3')) {
+            failedRequests++;
+            if (failedRequests == 1) {
+              request.response.statusCode = HttpStatus.notFound;
+            } else {
+              retryStarted.complete();
+              await releaseRetry.future;
+              request.response.contentLength = 1;
+              request.response.add(const <int>[1]);
+            }
+          } else {
+            await releaseSlow.future;
+            request.response.contentLength = 1;
+            request.response.add(const <int>[2]);
+          }
+          await request.response.close();
+        }),
+      );
+      final manager = _manager();
+      try {
+        await manager.startDownload(
+          work: _work(),
+          selectedRoots: <AsmrTrackFile>[
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/failed.mp3',
+              title: 'Failed.mp3',
+            ),
+            _file(
+              downloadUrl:
+                  'http://${server.address.host}:${server.port}/slow.mp3',
+              title: 'Slow.mp3',
+            ),
+          ],
+          destinationRoot: tempDir.path,
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+        );
+        await _waitForFailedFilePath(manager, 1, 'Failed.mp3');
+
+        expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.downloading);
+        expect(await manager.retryFailedFile(1, 'Failed.mp3'), isTrue);
+        await retryStarted.future.timeout(const Duration(seconds: 5));
+        expect(releaseSlow.isCompleted, isFalse);
+        expect(
+          manager.getTask(1)?.manuallyRetryingFilePaths,
+          contains('Failed.mp3'),
+        );
+
+        releaseRetry.complete();
+        releaseSlow.complete();
+        await _waitForTaskStatus(manager, 1, AsmrDownloadTaskStatus.completed);
+        expect(failedRequests, 2);
+      } finally {
+        if (!releaseRetry.isCompleted) releaseRetry.complete();
+        if (!releaseSlow.isCompleted) releaseSlow.complete();
+        manager.dispose();
+        await server.close(force: true);
+        if (await tempDir.exists()) await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
   test('a permanent HTTP failure is not retried', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'asmr_download_no_retry_',
@@ -3315,6 +3460,22 @@ Future<void> _waitForFileRetryAttempt(
     'status=${task?.status} retries=${task?.fileRetryAttempts} '
     'message=${task?.message} error=${task?.error}',
   );
+}
+
+Future<void> _waitForFailedFilePath(
+  AsmrDownloadManager manager,
+  int workId,
+  String relativePath,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    if (manager.getTask(workId)?.failedFilePaths.contains(relativePath) ==
+        true) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail('Timed out waiting for failed download path $relativePath.');
 }
 
 Future<void> _waitForTaskStatus(

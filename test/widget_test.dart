@@ -398,7 +398,19 @@ void main() {
 
     expect(
       find.text(harness.language.tr('asmr_category_collected')),
-      findsNothing,
+      findsOneWidget,
+    );
+    expect(
+      find.text(harness.language.tr('asmr_category_recommendation')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(harness.language.tr('asmr_category_favorites')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(harness.language.tr('asmr_category_history')),
+      findsOneWidget,
     );
     expect(find.byType(TextField), findsNothing);
     expect(

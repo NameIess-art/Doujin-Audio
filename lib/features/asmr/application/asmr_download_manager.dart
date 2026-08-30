@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 
@@ -85,6 +86,9 @@ class AsmrDownloadManager {
   final Set<int> _activeTasks = {};
   final Set<int> _resumingTasks = {};
   final Map<int, List<_PlannedDownloadFile>> _plannedFilesMap = {};
+  final Map<int, Set<String>> _manualRetryOnlyPaths = {};
+  final Map<int, void Function(_PlannedDownloadFile)>
+  _activeFileRetryDispatchers = {};
 
   final Map<int, bool> _cancelRequested = {};
   final Map<int, bool> _deleteDownloadedOnCancel = {};
@@ -197,6 +201,7 @@ class AsmrDownloadManager {
               _store[task.work.id] = task.copyWith(
                 status: AsmrDownloadTaskStatus.paused,
                 fileRetryAttempts: const <String, int>{},
+                manuallyRetryingFilePaths: const <String>{},
                 message: 'paused',
               );
               _createdOutputPaths[task.work.id] = restored.createdOutputPaths;
@@ -265,6 +270,8 @@ class AsmrDownloadManager {
     if (_queue.contains(workId)) {
       _queue.remove(workId);
       _resumingTasks.remove(workId);
+      _manualRetryOnlyPaths.remove(workId);
+      _plannedFilesMap.remove(workId);
       _createdOutputPaths.remove(workId);
       _createdJsonDocuments.remove(workId);
       _store.remove(workId);
@@ -299,6 +306,8 @@ class AsmrDownloadManager {
     _createdOutputPaths.remove(workId);
     _createdJsonDocuments.remove(workId);
     _resumingTasks.remove(workId);
+    _manualRetryOnlyPaths.remove(workId);
+    _plannedFilesMap.remove(workId);
     _store.remove(workId);
     _store.notifyTaskChanged();
     await flushPersistence();
@@ -323,6 +332,8 @@ class AsmrDownloadManager {
     _createdOutputPaths.remove(workId);
     _createdJsonDocuments.remove(workId);
     _resumingTasks.remove(workId);
+    _manualRetryOnlyPaths.remove(workId);
+    _plannedFilesMap.remove(workId);
   }
 
   Future<void> pauseTask(int workId) async {
@@ -340,6 +351,7 @@ class AsmrDownloadManager {
       _store[workId] = task.copyWith(
         status: AsmrDownloadTaskStatus.paused,
         fileRetryAttempts: const <String, int>{},
+        manuallyRetryingFilePaths: const <String>{},
         message: 'paused',
       );
       _store.notifyTaskChanged();
@@ -360,6 +372,7 @@ class AsmrDownloadManager {
       _store[workId] = task.copyWith(
         status: AsmrDownloadTaskStatus.paused,
         fileRetryAttempts: const <String, int>{},
+        manuallyRetryingFilePaths: const <String>{},
         message: 'paused',
       );
     }
@@ -391,6 +404,49 @@ class AsmrDownloadManager {
       return;
     }
     _enqueueExistingTask(task);
+  }
+
+  Future<bool> retryFailedFile(int workId, String relativePath) async {
+    if (_disposed) return false;
+    await initialize();
+    if (_disposed) return false;
+    final task = _store[workId];
+    final normalizedPath = relativePath.trim();
+    if (task == null ||
+        normalizedPath.isEmpty ||
+        !task.failedFilePaths.contains(normalizedPath) ||
+        task.manuallyRetryingFilePaths.contains(normalizedPath)) {
+      return false;
+    }
+    final plannedFile = _findPlannedFile(task, normalizedPath);
+    if (plannedFile == null) return false;
+
+    final activeDispatcher = _activeFileRetryDispatchers[workId];
+    final canStartFailedTask =
+        task.status == AsmrDownloadTaskStatus.failed &&
+        !_activeTasks.contains(workId) &&
+        !_queue.contains(workId);
+    if (activeDispatcher == null && !canStartFailedTask) return false;
+
+    final retryAttempts = Map<String, int>.from(task.fileRetryAttempts)
+      ..remove(normalizedPath);
+    final retryingPaths = Set<String>.from(task.manuallyRetryingFilePaths)
+      ..add(normalizedPath);
+    final retryingTask = task.copyWith(
+      fileRetryAttempts: retryAttempts,
+      manuallyRetryingFilePaths: retryingPaths,
+    );
+    _store[workId] = retryingTask;
+    _store.notifyTaskChanged(changedWorkIds: <int>{workId});
+
+    if (activeDispatcher != null) {
+      activeDispatcher(plannedFile);
+    } else {
+      _manualRetryOnlyPaths[workId] = <String>{normalizedPath};
+      _plannedFilesMap[workId] = <_PlannedDownloadFile>[plannedFile];
+      _enqueueExistingTask(retryingTask);
+    }
+    return true;
   }
 
   void _enqueueExistingTask(AsmrDownloadTaskSnapshot task) {
@@ -544,6 +600,8 @@ class AsmrDownloadManager {
       _processQueue();
       return;
     }
+    final manualRetryPaths = _manualRetryOnlyPaths.remove(workId);
+    final isManualRetryRun = manualRetryPaths?.isNotEmpty ?? false;
 
     _downloadCompletions[workId] = Completer<void>();
     _cancelRequested[workId] = false;
@@ -560,7 +618,7 @@ class AsmrDownloadManager {
     final workRootPath = taskSnapshot.workRootPath;
     final conflictPolicy = taskSnapshot.conflictPolicy;
 
-    final saveMetadata = taskSnapshot.saveMetadata;
+    final saveMetadata = taskSnapshot.saveMetadata && !isManualRetryRun;
     final backup = saveMetadata ? _buildBackupDetail(work, workRootPath) : null;
     final backupBytes = backup == null
         ? 0
@@ -600,7 +658,7 @@ class AsmrDownloadManager {
       final resumedTask = _store[workId]!;
       var completed = resumedTask.completedFiles;
       var skipped = resumedTask.skippedFiles;
-      var failed = 0;
+      var failed = isManualRetryRun ? resumedTask.failedFiles : 0;
       var downloadedBytes = resumedTask.downloadedBytes;
       if (saveMetadata && completed == 0) {
         if (metadataCreated) {
@@ -616,12 +674,20 @@ class AsmrDownloadManager {
       final completedFilePaths = Set<String>.from(
         resumedTask.completedFilePaths,
       );
+      final failedFilePaths = isManualRetryRun
+          ? Set<String>.from(resumedTask.failedFilePaths)
+          : <String>{};
+      final manuallyRetryingFilePaths = isManualRetryRun
+          ? Set<String>.from(resumedTask.manuallyRetryingFilePaths)
+          : <String>{};
 
       _store[workId] = resumedTask.copyWith(
         status: AsmrDownloadTaskStatus.downloading,
         completedFiles: completed,
-        failedFiles: 0,
+        failedFiles: failed,
         downloadedBytes: downloadedBytes,
+        failedFilePaths: failedFilePaths,
+        manuallyRetryingFilePaths: manuallyRetryingFilePaths,
         message: saveMetadata ? 'downloading_work_detail' : 'downloading',
       );
       _store.notifyTaskChanged();
@@ -655,105 +721,138 @@ class AsmrDownloadManager {
           ..maxConnectionsPerHost = _maxConcurrentFilesPerTask
           ..connectionTimeout = const Duration(seconds: 15);
         _activeHttpClients[workId] = client;
-        var nextFileIndex = 0;
-        var stopWorkers = false;
+        final pendingFiles = ListQueue<_PlannedDownloadFile>.of(plannedFiles);
+        final activeTransfers = <Future<void>>{};
+        final transfersDone = Completer<void>();
+        var transfersStopped = false;
 
-        Future<void> downloadNextFiles() async {
-          try {
-            while (!stopWorkers) {
-              _throwIfCancelled(workId);
-              final fileIndex = nextFileIndex;
-              if (fileIndex >= plannedFiles!.length) return;
-              nextFileIndex++;
-              final item = plannedFiles[fileIndex];
-              final previousFileBytes =
-                  fileDownloadedBytes[item.relativePath] ?? 0;
-              final wasAlreadyAccounted = completedFilePaths.contains(
-                item.relativePath,
-              );
-              _store[workId] = _store[workId]!.copyWith(
-                currentItemPath: item.relativePath,
-                message: item.relativePath,
-              );
-              _store.notifyProgressChanged(workId);
+        Future<void> downloadOneFile(_PlannedDownloadFile item) async {
+          _throwIfCancelled(workId);
+          final previousFileBytes = fileDownloadedBytes[item.relativePath] ?? 0;
+          final wasAlreadyAccounted = completedFilePaths.contains(
+            item.relativePath,
+          );
+          final wasFailed = failedFilePaths.contains(item.relativePath);
+          final wasManualRetry = manuallyRetryingFilePaths.contains(
+            item.relativePath,
+          );
+          _store[workId] = _store[workId]!.copyWith(
+            currentItemPath: item.relativePath,
+            message: item.relativePath,
+          );
+          _store.notifyProgressChanged(workId);
 
-              final result = await _downloadItem(
-                item,
-                workId: workId,
-                task: taskSnapshot,
-                workRootPath: workRootPath,
-                conflictPolicy: wasAlreadyAccounted
-                    ? AsmrDownloadConflictPolicy.skip
-                    : conflictPolicy,
-                client: client,
-              );
+          final result = await _downloadItem(
+            item,
+            workId: workId,
+            task: taskSnapshot,
+            workRootPath: workRootPath,
+            conflictPolicy: wasAlreadyAccounted
+                ? AsmrDownloadConflictPolicy.skip
+                : conflictPolicy,
+            client: client,
+          );
 
-              if (result.saved && !wasAlreadyAccounted) {
+          if (result.saved || result.skipped) {
+            if (!wasAlreadyAccounted) {
+              if (result.saved) {
                 completed++;
-              } else if (result.skipped && !wasAlreadyAccounted) {
-                skipped++;
               } else {
-                if (!result.saved && !result.skipped) failed++;
+                skipped++;
               }
-              // Chunks are accounted for eagerly in the task store.
-              // A completed/skipped file may not have emitted chunks (for
-              // example when resuming an already complete staging file), so
-              // only apply the difference that is not already represented by
-              // the live per-file counter. Never replace the aggregate with
-              // the local value: another worker may still be downloading.
-              final liveFileProgress = _store.liveFileDownloadedBytes(
-                workId,
-                fallback: fileDownloadedBytes,
-              );
-              final liveFileBytes =
-                  liveFileProgress[item.relativePath] ?? previousFileBytes;
-              final unaccountedBytes = result.bytesDownloaded - liveFileBytes;
-              if (unaccountedBytes != 0) {
-                final liveBytes =
-                    _store.liveDownloadedBytes(workId) ?? downloadedBytes;
-                _store.setLiveDownloadedBytes(
-                  workId,
-                  liveBytes + unaccountedBytes,
-                );
-              }
-              downloadedBytes =
-                  _store.liveDownloadedBytes(workId) ?? downloadedBytes;
-              liveFileProgress[item.relativePath] = result.bytesDownloaded;
-              fileDownloadedBytes[item.relativePath] = result.bytesDownloaded;
-              if (result.saved || result.skipped) {
-                completedFilePaths.add(item.relativePath);
-              }
-
-              _store[workId] = _store[workId]!.copyWith(
-                completedFiles: completed,
-                skippedFiles: skipped,
-                failedFiles: failed,
-                downloadedBytes:
-                    _store.liveDownloadedBytes(workId) ?? downloadedBytes,
-                fileDownloadedBytes: fileDownloadedBytes,
-                completedFilePaths: completedFilePaths,
-              );
-              _store.notifyProgressChanged(workId);
             }
-          } catch (_) {
-            stopWorkers = true;
-            client.close(force: true);
-            rethrow;
+            completedFilePaths.add(item.relativePath);
+            if (wasFailed && failedFilePaths.remove(item.relativePath)) {
+              if (failed > 0) failed--;
+            }
+          } else if (!wasFailed && failedFilePaths.add(item.relativePath)) {
+            failed++;
           }
+          if (wasManualRetry) {
+            manuallyRetryingFilePaths.remove(item.relativePath);
+          }
+
+          // Chunks are accounted for eagerly in the task store. Apply only
+          // the difference not already represented by the live counter.
+          final liveFileProgress = _store.liveFileDownloadedBytes(
+            workId,
+            fallback: fileDownloadedBytes,
+          );
+          final liveFileBytes =
+              liveFileProgress[item.relativePath] ?? previousFileBytes;
+          final unaccountedBytes = result.bytesDownloaded - liveFileBytes;
+          if (unaccountedBytes != 0) {
+            final liveBytes =
+                _store.liveDownloadedBytes(workId) ?? downloadedBytes;
+            _store.setLiveDownloadedBytes(workId, liveBytes + unaccountedBytes);
+          }
+          downloadedBytes =
+              _store.liveDownloadedBytes(workId) ?? downloadedBytes;
+          liveFileProgress[item.relativePath] = result.bytesDownloaded;
+          fileDownloadedBytes[item.relativePath] = result.bytesDownloaded;
+
+          _store[workId] = _store[workId]!.copyWith(
+            completedFiles: completed,
+            skippedFiles: skipped,
+            failedFiles: failed,
+            downloadedBytes:
+                _store.liveDownloadedBytes(workId) ?? downloadedBytes,
+            fileDownloadedBytes: fileDownloadedBytes,
+            completedFilePaths: completedFilePaths,
+            failedFilePaths: failedFilePaths,
+            manuallyRetryingFilePaths: manuallyRetryingFilePaths,
+          );
+          _store.notifyProgressChanged(workId);
         }
 
+        late void Function() pumpTransfers;
+        void enqueueManualRetry(_PlannedDownloadFile item) {
+          if (transfersStopped || transfersDone.isCompleted) return;
+          manuallyRetryingFilePaths.add(item.relativePath);
+          pendingFiles.add(item);
+          pumpTransfers();
+        }
+
+        pumpTransfers = () {
+          while (!transfersStopped &&
+              pendingFiles.isNotEmpty &&
+              activeTransfers.length < _maxConcurrentFilesPerTask) {
+            final item = pendingFiles.removeFirst();
+            late final Future<void> transfer;
+            transfer = downloadOneFile(item);
+            activeTransfers.add(transfer);
+            unawaited(
+              transfer.then<void>(
+                (_) {
+                  activeTransfers.remove(transfer);
+                  pumpTransfers();
+                },
+                onError: (Object error, StackTrace stackTrace) {
+                  activeTransfers.remove(transfer);
+                  transfersStopped = true;
+                  pendingFiles.clear();
+                  client.close(force: true);
+                  if (!transfersDone.isCompleted) {
+                    transfersDone.completeError(error, stackTrace);
+                  }
+                },
+              ),
+            );
+          }
+          if (!transfersStopped &&
+              pendingFiles.isEmpty &&
+              activeTransfers.isEmpty &&
+              !transfersDone.isCompleted) {
+            transfersDone.complete();
+          }
+        };
+
         try {
-          final workerCount = plannedFiles.length.clamp(
-            1,
-            _maxConcurrentFilesPerTask,
-          );
-          await Future.wait<void>(
-            List<Future<void>>.generate(
-              workerCount,
-              (_) => downloadNextFiles(),
-            ),
-          );
+          _activeFileRetryDispatchers[workId] = enqueueManualRetry;
+          pumpTransfers();
+          await transfersDone.future;
         } finally {
+          _activeFileRetryDispatchers.remove(workId);
           if (identical(_activeHttpClients[workId], client)) {
             _activeHttpClients.remove(workId);
           }
@@ -777,6 +876,8 @@ class AsmrDownloadManager {
         downloadedBytes: finalDownloadedBytes,
         fileDownloadedBytes: fileDownloadedBytes,
         fileRetryAttempts: const <String, int>{},
+        failedFilePaths: failedFilePaths,
+        manuallyRetryingFilePaths: const <String>{},
         message: failed > 0 ? 'completed_with_failures' : 'completed',
       );
       if (failed == 0) {
@@ -791,12 +892,14 @@ class AsmrDownloadManager {
           _store[workId] = currentTask.copyWith(
             status: AsmrDownloadTaskStatus.paused,
             fileRetryAttempts: const <String, int>{},
+            manuallyRetryingFilePaths: const <String>{},
             message: 'paused',
           );
         } else {
           _store[workId] = currentTask.copyWith(
             status: AsmrDownloadTaskStatus.failed,
             fileRetryAttempts: const <String, int>{},
+            manuallyRetryingFilePaths: const <String>{},
             message: 'cancelled',
           );
         }
@@ -815,12 +918,15 @@ class AsmrDownloadManager {
         _store[workId] = currentTask.copyWith(
           status: AsmrDownloadTaskStatus.failed,
           fileRetryAttempts: const <String, int>{},
+          manuallyRetryingFilePaths: const <String>{},
           error: error.toString(),
           message: 'failed',
         );
         _store.notifyTaskChanged();
       }
     } finally {
+      _activeFileRetryDispatchers.remove(workId);
+      _manualRetryOnlyPaths.remove(workId);
       _plannedFilesMap.remove(workId);
       if (!_disposed &&
           _cancelRequested[workId] == true &&
@@ -876,6 +982,8 @@ class AsmrDownloadManager {
   void debugRemoveTaskForTesting(int workId) {
     _store.remove(workId);
     _queue.remove(workId);
+    _manualRetryOnlyPaths.remove(workId);
+    _plannedFilesMap.remove(workId);
     _store.notifyTaskChanged(changedWorkIds: <int>{workId});
   }
 
@@ -904,6 +1012,8 @@ class AsmrDownloadManager {
     _disposed = true;
     _queue.clear();
     _resumingTasks.clear();
+    _manualRetryOnlyPaths.clear();
+    _activeFileRetryDispatchers.clear();
     for (final workId in _activeTasks) {
       _cancelRequested[workId] = true;
     }

@@ -18,6 +18,48 @@ class _StateProbeState extends State<_StateProbe> {
 }
 
 void main() {
+  testWidgets('none style switches immediately without motion transitions', (
+    tester,
+  ) async {
+    final index = ValueNotifier<int>(0);
+    addTearDown(index.dispose);
+    var completedIndex = -1;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AppFadeThroughIndexedStack(
+            indexListenable: index,
+            style: AppIndexedStackTransitionStyle.none,
+            duration: Duration.zero,
+            onTransitionCompleted: (value) => completedIndex = value,
+            children: const [
+              _StateProbe(label: 'first'),
+              _StateProbe(label: 'second'),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('first'), findsOneWidget);
+    expect(find.text('second'), findsNothing);
+
+    index.value = 1;
+    await tester.pump();
+
+    expect(find.text('first'), findsNothing);
+    expect(find.text('second'), findsOneWidget);
+    expect(completedIndex, 1);
+    expect(
+      find.descendant(
+        of: find.byType(AppFadeThroughIndexedStack),
+        matching: find.byType(FractionalTranslation),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'slides in index order, keeps page states, and completes latest switch',
     (tester) async {

@@ -28,49 +28,48 @@ class _TimerCountdownCapsule extends StatelessWidget {
             : remaining;
         final hasRemaining = displayDuration > Duration.zero;
 
-        return Material(
-          color: cs.primaryContainer.withValues(alpha: 0.85),
-          borderRadius: BorderRadius.circular(999),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(999),
-            onTap: () {
-              AppInteractionFeedback.trigger(
-                AppInteractionFeedbackType.selection,
-              );
-              onTap?.call();
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: cs.primary.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    showAutoResume
-                        ? Icons.alarm_rounded
-                        : active
-                        ? Icons.timer_rounded
-                        : hasRemaining
-                        ? Icons.timer_rounded
-                        : Icons.alarm_off_rounded,
-                    size: 14,
-                    color: cs.onPrimaryContainer,
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    hasRemaining
-                        ? formatDurationCompact(displayDuration)
-                        : '00:00',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: cs.onPrimaryContainer,
-                      fontWeight: FontWeight.w800,
-                      fontFeatures: const [FontFeature.tabularFigures()],
+        return HeaderFloatingSurface(
+          padding: EdgeInsets.zero,
+          child: Material(
+            color: cs.primary.withValues(alpha: 0.14),
+            borderRadius: BorderRadius.circular(19),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(19),
+              onTap: () {
+                AppInteractionFeedback.trigger(
+                  AppInteractionFeedbackType.selection,
+                );
+                onTap?.call();
+              },
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      showAutoResume
+                          ? Icons.alarm_rounded
+                          : active
+                          ? Icons.timer_rounded
+                          : hasRemaining
+                          ? Icons.timer_rounded
+                          : Icons.alarm_off_rounded,
+                      size: 14,
+                      color: cs.primary,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 5),
+                    Text(
+                      hasRemaining
+                          ? formatDurationCompact(displayDuration)
+                          : '00:00',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: cs.primary,
+                        fontWeight: FontWeight.w800,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

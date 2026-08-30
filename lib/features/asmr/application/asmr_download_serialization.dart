@@ -26,6 +26,7 @@ Map<String, Object?> _downloadTaskToJson(
   'fileDownloadedBytes': task.fileDownloadedBytes,
   'fileTotalBytes': task.fileTotalBytes,
   'completedFilePaths': task.completedFilePaths.toList(growable: false),
+  'failedFilePaths': task.failedFilePaths.toList(growable: false),
   'selectedRoots': task.selectedRoots.map(_downloadTrackToJson).toList(),
   'createdOutputPaths': createdOutputPaths.toList(growable: false),
   'createdJsonDocuments': <String, Object?>{
@@ -84,6 +85,9 @@ _PersistedDownloadTask _downloadTaskFromJson(Map<String, dynamic> json) {
           (json['completedFilePaths'] as List? ?? const <Object>[])
               .whereType<String>()
               .toSet(),
+      failedFilePaths: (json['failedFilePaths'] as List? ?? const <Object>[])
+          .whereType<String>()
+          .toSet(),
       selectedRoots: selectedRoots,
     ),
     createdOutputPaths: (json['createdOutputPaths'] as List? ?? const [])

@@ -72,7 +72,14 @@ class AsmrTab extends ConsumerStatefulWidget {
 
 class _AsmrTabState extends ConsumerState<AsmrTab>
     with AutomaticKeepAliveClientMixin, MainTabStateMixin<AsmrTab> {
-  static const AsmrCategoryType _mainCategory = AsmrCategoryType.collected;
+  static const _headerCategories = <AsmrCategoryType>[
+    AsmrCategoryType.collected,
+    AsmrCategoryType.recommendation,
+    AsmrCategoryType.favorites,
+    AsmrCategoryType.history,
+  ];
+
+  AsmrCategoryType _selectedCategory = AsmrCategoryType.collected;
   final ScrollController _scrollController = ScrollController();
   final GlobalKey _headerKey = GlobalKey();
   double _headerHeight = 0;
@@ -215,7 +222,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         defaultLanguage: defaultLanguage,
       );
       if (!mounted || !_isActive) return;
-      await _ensureCollectedLoaded();
+      await _ensureCategoryLoaded(_selectedCategory);
       if (!mounted || !_isActive) return;
       setState(() => _activationCompleted = true);
       _scheduleAccountHydration(controller, generation);
@@ -305,9 +312,12 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
   }
 
-  bool _collectedNeedsRefresh(AsmrLibraryController controller) {
-    return controller.worksFor(_mainCategory).isEmpty ||
-        controller.activeQueryFor(_mainCategory).isNotEmpty;
+  bool _categoryNeedsRefresh(
+    AsmrLibraryController controller,
+    AsmrCategoryType category,
+  ) {
+    return controller.worksFor(category).isEmpty ||
+        controller.activeQueryFor(category).isNotEmpty;
   }
 
   void _scheduleHeaderMeasurement({bool force = false}) {
@@ -335,29 +345,58 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
   }
 
-  Future<void> _ensureCollectedLoaded() async {
+  Future<void> _ensureCategoryLoaded(AsmrCategoryType category) async {
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
-    if (!_collectedNeedsRefresh(controller)) return;
-    await _runCollectedRefresh();
+    if (!_categoryNeedsRefresh(controller, category)) return;
+    await _runCategoryRefresh(category);
   }
 
-  Future<void> _runCollectedRefresh() {
+  Future<void> _runCategoryRefresh(AsmrCategoryType category) {
     return _runAsmrOperation<void>(
       scope: UiOperationScope.asmrCategory(
         AsmrOperationKind.refresh,
-        _mainCategory.name,
+        category.name,
       ),
       labelKey: 'loading_dot',
       task: () =>
           ref
               .read(asmrLibraryControllerProvider)
-              ?.refreshCategory(_mainCategory) ??
+              ?.refreshCategory(category) ??
           Future<void>.value(),
     );
   }
 
-  Future<void> _refreshCollectedWithFeedback({
+  void _selectCategory(AsmrCategoryType category) {
+    if (_selectedCategory == category) return;
+    setState(() {
+      _selectedCategory = category;
+    });
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller != null && controller.worksFor(category).isEmpty) {
+      unawaited(
+        _runAsmrOperation<void>(
+          scope: UiOperationScope.asmrCategory(
+            AsmrOperationKind.refresh,
+            category.name,
+          ),
+          labelKey: 'loading_dot',
+          task: () => controller.refreshCategory(category),
+        ),
+      );
+    }
+  }
+
+  Widget _buildCategorySwitcher(AppLanguageProvider i18n) {
+    return HeaderSegmentedCategoryBar<AsmrCategoryType>(
+      items: _headerCategories,
+      selected: _selectedCategory,
+      onSelected: _selectCategory,
+      labelBuilder: (category) => i18n.tr(_asmrCategoryLabelKey(category)),
+    );
+  }
+
+  Future<void> _refreshCategoryWithFeedback({
     bool showSnackbar = false,
   }) async {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
@@ -365,7 +404,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     if (controller == null) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final beforeIds = controller
-        .filteredWorksFor(_mainCategory)
+        .filteredWorksFor(_selectedCategory)
         .map((work) => work.id)
         .toList(growable: false);
 
@@ -378,13 +417,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       );
     }
 
-    await _runCollectedRefresh();
+    await _runCategoryRefresh(_selectedCategory);
 
     if (!mounted) {
       return;
     }
 
-    if (controller.categoryViewState(_mainCategory).operationError != null) {
+    if (controller.categoryViewState(_selectedCategory).operationError !=
+        null) {
       showAppSnackBar(
         context,
         i18n.tr('asmr_refresh_failed'),
@@ -396,7 +436,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
 
     final afterIds = controller
-        .filteredWorksFor(_mainCategory)
+        .filteredWorksFor(_selectedCategory)
         .map((work) => work.id)
         .toList(growable: false);
     final hasUpdates = !listEquals(beforeIds, afterIds);
@@ -468,52 +508,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         ? _headerHeight
         : _minimumExpandedHeaderHeight(context);
     final headerContentHeight = effectiveHeaderHeight + 4.0;
-
-    if (globalState == null) {
-      return Stack(
-        clipBehavior: Clip.none,
-        children: [
-          Positioned.fill(
-            child: ColoredBox(color: Theme.of(context).colorScheme.surface),
-          ),
-          RepaintBoundary(
-            child: ListView(
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.fromLTRB(
-                LibraryLikeCardMetrics.listHorizontalPadding,
-                headerContentHeight,
-                LibraryLikeCardMetrics.listHorizontalPadding,
-                bottomInset + 24,
-              ),
-              children: [
-                for (int i = 0; i < 5; i++) const LibraryLikeSkeletonCard(),
-              ],
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              key: _headerKey,
-              title: 'ASMR.ONE',
-              padding: AppPageHeaderMetrics.mainTabPadding,
-              onTitleSwipeLeft: widget.onTitleSwipeLeft,
-              onTitleSwipeRight: widget.onTitleSwipeRight,
-              trailing: SizedBox(
-                height: 44,
-                child: IconButton(
-                  key: const ValueKey<String>('asmr_search_button'),
-                  onPressed: _openSearchPage,
-                  icon: const Icon(Icons.search_rounded),
-                  tooltip: i18n.tr('search'),
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
+    final globalInitialized = globalState?.initialized ?? false;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -523,7 +518,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         ),
         RepaintBoundary(
           child: PlaceholderContentTransition(
-            showPlaceholder: !globalState.initialized,
+            showPlaceholder: !globalInitialized,
             placeholder: ListView(
               key: const ValueKey('asmr_initial_placeholder'),
               physics: const NeverScrollableScrollPhysics(),
@@ -538,15 +533,15 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               ],
             ),
             content: _AsmrCategoryList(
-              key: const ValueKey(_mainCategory),
+              key: ValueKey(_selectedCategory),
               isActive: _isActive,
-              category: _mainCategory,
+              category: _selectedCategory,
               isLoadPending: !_activationCompleted,
               scrollController: _scrollController,
               searchQuery: '',
               topInset: headerContentHeight,
               bottomInset: bottomInset,
-              onRefresh: _refreshCollectedWithFeedback,
+              onRefresh: _refreshCategoryWithFeedback,
             ),
           ),
         ),
@@ -556,7 +551,9 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           right: 0,
           child: TopPageHeader(
             key: _headerKey,
+            floating: true,
             title: 'ASMR.ONE',
+            titleWidget: _buildCategorySwitcher(i18n),
             padding: AppPageHeaderMetrics.mainTabPadding,
             onTitleSwipeLeft: widget.onTitleSwipeLeft,
             onTitleSwipeRight: widget.onTitleSwipeRight,
@@ -566,25 +563,46 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  IconButton(
-                    key: const ValueKey<String>('asmr_search_button'),
-                    onPressed: _openSearchPage,
-                    icon: const Icon(Icons.search_rounded),
-                    tooltip: i18n.tr('search'),
-                  ),
-                  if (isLandscape)
-                    IconButton(
-                      onPressed: globalState.initialized
-                          ? () => unawaited(
-                              _refreshCollectedWithFeedback(showSnackbar: true),
-                            )
-                          : null,
-                      icon: const Icon(Icons.refresh_rounded),
-                      tooltip: i18n.tr('refresh'),
+                  HeaderFloatingButton(
+                    child: IconButton(
+                      key: const ValueKey<String>('asmr_search_button'),
+                      onPressed: _openSearchPage,
+                      icon: const Icon(Icons.search_rounded),
+                      tooltip: i18n.tr('search'),
+                      iconSize: 20,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints.tightFor(
+                        width: 38,
+                        height: 38,
+                      ),
                     ),
+                  ),
+                  if (isLandscape) ...[
+                    const SizedBox(width: 8),
+                    HeaderFloatingButton(
+                      child: IconButton(
+                        onPressed: globalInitialized
+                            ? () => unawaited(
+                                _refreshCategoryWithFeedback(showSnackbar: true),
+                              )
+                            : null,
+                        icon: const Icon(Icons.refresh_rounded),
+                        tooltip: i18n.tr('refresh'),
+                        iconSize: 20,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 38,
+                          height: 38,
+                        ),
+                      ),
+                    ),
+                  ],
                   if (hasDownloadManager)
                     const _AsmrDownloadProgressInlineButton(),
-                  _AsmrAccountButton(onPressed: _showAccountDialog),
+                  const SizedBox(width: 8),
+                  HeaderFloatingButton(
+                    child: _AsmrAccountButton(onPressed: _showAccountDialog),
+                  ),
                 ],
               ),
             ),
@@ -608,7 +626,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       _pendingPageLanguageSync = null;
       final changed = controller.setPageLanguage(language);
       if (changed && mounted) {
-        await _runCollectedRefresh();
+        await _runCategoryRefresh(_selectedCategory);
       }
     });
   }

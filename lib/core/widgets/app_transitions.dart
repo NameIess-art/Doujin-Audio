@@ -10,7 +10,7 @@ const kAppMotionSlow = Duration(milliseconds: 300);
 
 enum AppPageTransitionStyle { fadeThrough, sharedAxisX, sharedAxisZ }
 
-enum AppIndexedStackTransitionStyle { directional, crossFade }
+enum AppIndexedStackTransitionStyle { none, directional, crossFade }
 
 class PlaceholderContentTransition extends StatefulWidget {
   const PlaceholderContentTransition({
@@ -50,6 +50,9 @@ class _PlaceholderContentTransitionState
     );
     _contentOpacity = crossFade;
     _placeholderOpacity = ReverseAnimation(crossFade);
+    if (!widget.showPlaceholder) {
+      _controller.value = 1;
+    }
   }
 
   void _handleAnimationStatus(AnimationStatus status) {
@@ -65,8 +68,13 @@ class _PlaceholderContentTransitionState
   void didUpdateWidget(covariant PlaceholderContentTransition oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.showPlaceholder && !widget.showPlaceholder) {
-      _fadingPlaceholder = true;
-      _controller.forward(from: 0);
+      if (MediaQuery.disableAnimationsOf(context)) {
+        _fadingPlaceholder = false;
+        _controller.value = 1;
+      } else {
+        _fadingPlaceholder = true;
+        _controller.forward(from: 0);
+      }
     } else if (!oldWidget.showPlaceholder && widget.showPlaceholder) {
       _fadingPlaceholder = false;
       _controller.reset();
@@ -81,22 +89,25 @@ class _PlaceholderContentTransitionState
 
   @override
   Widget build(BuildContext context) {
-    if (widget.showPlaceholder) return widget.placeholder;
-    if (!_fadingPlaceholder) return widget.content;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      return widget.showPlaceholder ? widget.placeholder : widget.content;
+    }
+    if (widget.showPlaceholder && !_fadingPlaceholder) {
+      return widget.placeholder;
+    }
     return Stack(
       fit: StackFit.expand,
       children: [
-        IgnorePointer(
-          child: FadeTransition(
-            opacity: _contentOpacity,
-            child: widget.content,
+        if (_fadingPlaceholder)
+          IgnorePointer(
+            child: FadeTransition(
+              opacity: _placeholderOpacity,
+              child: widget.placeholder,
+            ),
           ),
-        ),
-        IgnorePointer(
-          child: FadeTransition(
-            opacity: _placeholderOpacity,
-            child: widget.placeholder,
-          ),
+        FadeTransition(
+          opacity: _contentOpacity,
+          child: widget.content,
         ),
       ],
     );
@@ -412,7 +423,9 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     UiInteractionCoordinator.instance.beginInteraction(
       _lazyTransitionInteraction,
     );
-    if (MediaQuery.disableAnimationsOf(context)) {
+    if (widget.style == AppIndexedStackTransitionStyle.none ||
+        widget.duration == Duration.zero ||
+        MediaQuery.disableAnimationsOf(context)) {
       setState(() {
         _currentIndex = nextIndex;
         _targetIndex = nextIndex;
@@ -539,6 +552,13 @@ class _AppFadeThroughIndexedStackState extends State<AppFadeThroughIndexedStack>
     final visible =
         outgoing || incoming || (!_isAnimating && index == _currentIndex);
     final page = _pageHost(child: _childAt(index), visible: visible);
+    if (widget.style == AppIndexedStackTransitionStyle.none ||
+        widget.duration == Duration.zero) {
+      return KeyedSubtree(
+        key: ValueKey<String>('app_indexed_page_$index'),
+        child: RepaintBoundary(child: page),
+      );
+    }
     return AnimatedBuilder(
       key: ValueKey<String>('app_indexed_page_$index'),
       animation: outgoing || incoming

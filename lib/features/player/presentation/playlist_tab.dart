@@ -51,7 +51,6 @@ import '../../../core/widgets/shimmer_loading.dart';
 import '../../../core/widgets/swipe_reveal_card.dart';
 import '../../../core/widgets/target_countdown_builder.dart';
 import '../../../core/widgets/top_page_header.dart';
-import '../../../core/widgets/unified_popup_menu.dart';
 import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../asmr/domain/asmr_models.dart';
@@ -1046,8 +1045,13 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
                 return TopPageHeader(
                   key: headerKey,
-                  icon: Icons.graphic_eq_rounded,
+                  floating: true,
                   title: i18n.tr('playback_sessions'),
+                  titleWidget: _buildHeaderLeftActions(
+                    context,
+                    i18n,
+                    structureState,
+                  ),
                   padding: AppPageHeaderMetrics.mainTabPadding,
                   trailing: SizedBox(
                     height: 44,
@@ -1066,85 +1070,36 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                   autoResumeAt: headerState.autoResumeAt,
                                   onTap: widget.onTimerTap,
                                 )
-                              : IconButton(
-                                  onPressed: widget.onTimerTap,
-                                  icon: const Icon(Icons.alarm_rounded),
-                                  tooltip: i18n.tr('timer'),
+                              : HeaderFloatingButton(
+                                  child: IconButton(
+                                    onPressed: widget.onTimerTap,
+                                    icon: const Icon(Icons.alarm_rounded),
+                                    tooltip: i18n.tr('timer'),
+                                    iconSize: 20,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints.tightFor(
+                                      width: 38,
+                                      height: 38,
+                                    ),
+                                  ),
                                 ),
                         ),
+                        const SizedBox(width: 8),
                         _AnimatedHeaderAction(
                           delayIndex: 1,
-                          child: IconButton(
-                            key: const ValueKey<String>('playlist_sort_button'),
-                            onPressed: _openSortOptions,
-                            icon: const Icon(Icons.sort_rounded),
-                            tooltip: i18n.tr('sort_by'),
-                          ),
-                        ),
-                        _AnimatedHeaderAction(
-                          delayIndex: 2,
-                          child: UnifiedPopupMenuButton<String>(
-                            icon: Icons.more_horiz_rounded,
-                            tooltip: i18n.tr('more_actions'),
-                            entries: [
-                              UnifiedMenuEntry<String>.action(
-                                value: 'add_playback_queue',
-                                icon: Icons.playlist_add_rounded,
-                                label: i18n.tr('add_playback_queue'),
+                          child: HeaderFloatingButton(
+                            child: IconButton(
+                              key: const ValueKey<String>('playlist_sort_button'),
+                              onPressed: _openSortOptions,
+                              icon: const Icon(Icons.sort_rounded),
+                              tooltip: i18n.tr('sort_by'),
+                              iconSize: 20,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 38,
+                                height: 38,
                               ),
-                              const UnifiedMenuEntry<String>.divider(),
-                              UnifiedMenuEntry<String>.action(
-                                value: 'pause_all',
-                                icon: Icons.pause_circle_outline_rounded,
-                                label: i18n.tr('pause_all_sessions'),
-                                enabled: structureState.hasSessions,
-                              ),
-                              UnifiedMenuEntry<String>.action(
-                                value: 'clear_all',
-                                icon: Icons.delete_sweep_rounded,
-                                label: i18n.tr('clear_all_sessions'),
-                                destructive: true,
-                                enabled: structureState.hasSessions,
-                              ),
-                            ],
-                            onSelected: (value) async {
-                              if (value == 'add_playback_queue') {
-                                final queueCount = structureState.entries
-                                    .where((entry) => entry.isPlaybackQueue)
-                                    .length;
-                                ref
-                                    .read(playbackFacadeProvider)
-                                    .createPlaybackQueue(
-                                      i18n.tr('default_playback_queue_name', {
-                                        'number': queueCount + 1,
-                                      }),
-                                    );
-                              } else if (value == 'pause_all') {
-                                final paused = await ref
-                                    .read(playbackFacadeProvider)
-                                    .pauseAllSessions();
-                                if (!context.mounted) return;
-                                showAppSnackBar(
-                                  context,
-                                  i18n.tr(
-                                    paused
-                                        ? 'all_paused'
-                                        : 'operation_failed_retry',
-                                  ),
-                                  tone: paused
-                                      ? AppFeedbackTone.warning
-                                      : AppFeedbackTone.destructive,
-                                  icon: paused
-                                      ? Icons.pause_circle_outline_rounded
-                                      : Icons.error_outline_rounded,
-                                );
-                              } else if (value == 'clear_all') {
-                                await _confirmClearAll(
-                                  context,
-                                  ref.read(playbackFacadeProvider),
-                                );
-                              }
-                            },
+                            ),
                           ),
                         ),
                       ],
@@ -1156,6 +1111,79 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildHeaderLeftActions(
+    BuildContext context,
+    AppLanguageProvider i18n,
+    PlaylistStructureState structureState,
+  ) {
+    return HeaderActionPill(
+      children: [
+        IconButton(
+          key: const ValueKey<String>('playlist_pause_all_button'),
+          onPressed: structureState.hasSessions
+              ? () async {
+                  final paused = await ref
+                      .read(playbackFacadeProvider)
+                      .pauseAllSessions();
+                  if (!context.mounted) return;
+                  showAppSnackBar(
+                    context,
+                    i18n.tr(
+                      paused ? 'all_paused' : 'operation_failed_retry',
+                    ),
+                    tone: paused
+                        ? AppFeedbackTone.warning
+                        : AppFeedbackTone.destructive,
+                    icon: paused
+                        ? Icons.pause_circle_outline_rounded
+                        : Icons.error_outline_rounded,
+                  );
+                }
+              : null,
+          icon: const Icon(Icons.pause_circle_outline_rounded),
+          tooltip: i18n.tr('pause_all_sessions'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        ),
+        IconButton(
+          key: const ValueKey<String>('playlist_clear_all_button'),
+          onPressed: structureState.hasSessions
+              ? () => _confirmClearAll(
+                  context,
+                  ref.read(playbackFacadeProvider),
+                )
+              : null,
+          icon: const Icon(Icons.delete_sweep_rounded),
+          tooltip: i18n.tr('clear_all_sessions'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        ),
+        IconButton(
+          key: const ValueKey<String>('playlist_add_queue_button'),
+          onPressed: () {
+            final queueCount = structureState.entries
+                .where((entry) => entry.isPlaybackQueue)
+                .length;
+            ref
+                .read(playbackFacadeProvider)
+                .createPlaybackQueue(
+                  i18n.tr('default_playback_queue_name', {
+                    'number': queueCount + 1,
+                  }),
+                );
+          },
+          icon: const Icon(Icons.playlist_add_rounded),
+          tooltip: i18n.tr('add_playback_queue'),
+          iconSize: 20,
+          padding: EdgeInsets.zero,
+          constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+        ),
+      ],
     );
   }
 }

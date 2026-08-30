@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
+import '../../app/theme/app_styles.dart';
 import '../ui/app_interaction_feedback_settings.dart';
 import '../ui/ui_operation_service.dart';
 import '../logging/app_log_service.dart';
@@ -143,46 +144,90 @@ void _showTopFeedback(
 
   entry = OverlayEntry(
     builder: (overlayContext) {
-      final topInset = MediaQuery.of(overlayContext).padding.top + 64;
+      final mediaQuery = MediaQuery.of(overlayContext);
+      final isLandscape =
+          mediaQuery.orientation == Orientation.landscape ||
+          mediaQuery.size.width >= 980;
+      final topInset =
+          mediaQuery.padding.top +
+          AppPageHeaderMetrics.mainTabPadding.top +
+          AppPageHeaderMetrics.contentHeight +
+          4;
+
+      double leftInset = 16.0;
+      if (isLandscape) {
+        double derivedLeft = 0;
+        if (context.mounted) {
+          RenderBox? targetBox;
+          context.visitAncestorElements((element) {
+            final key = element.widget.key;
+            if (key is ValueKey<String>) {
+              final keyStr = key.value;
+              if (keyStr.startsWith('main_page_canvas_') ||
+                  keyStr.startsWith('audio_library_') ||
+                  keyStr.startsWith('main_destination_')) {
+                final box = element.findRenderObject() as RenderBox?;
+                if (box != null && box.hasSize) {
+                  targetBox = box;
+                  return false;
+                }
+              }
+            }
+            return true;
+          });
+          targetBox ??= context.findRenderObject() as RenderBox?;
+          if (targetBox != null && targetBox!.hasSize) {
+            final origin = targetBox!.localToGlobal(Offset.zero);
+            if (origin.dx > 40 && origin.dx < mediaQuery.size.width * 0.7) {
+              derivedLeft = origin.dx;
+            }
+          }
+        }
+        if (derivedLeft <= 0) {
+          derivedLeft = mediaQuery.size.width >= 980 ? 292 : 260;
+        }
+        leftInset = derivedLeft + 16.0;
+      }
 
       return Positioned(
         top: topInset,
-        left: 16,
-        right: 16,
-        child: Dismissible(
-          key: ValueKey<Object>(dismissKey),
-          onDismissed: (_) => removeEntry(),
-          child: _FeedbackAnimationWrapper(
-            duration: duration,
-            transitionDuration: AppDesignTokens.of(
-              overlayContext,
-            ).motionStandard,
-            onRemove: removeEntry,
-            child: IgnorePointer(
-              ignoring: !hasAction,
-              child: Material(
-                color: Colors.transparent,
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 420),
-                    child: AppFeedbackSurface(
-                      tone: tone,
-                      icon: resolvedIcon,
-                      iconColor: iconColor,
-                      title: title,
-                      message: message,
-                      trailing: hasAction
-                          ? TextButton(
-                              onPressed: () {
-                                removeEntry();
-                                onAction();
-                              },
-                              child: Text(actionLabel),
-                            )
-                          : null,
-                    ),
-                  ),
-                ),
+        left: leftInset,
+        right: AppPageHeaderMetrics.mainTabPadding.right,
+        child: _FeedbackAnimationWrapper(
+          duration: duration,
+          transitionDuration: AppDesignTokens.of(
+            overlayContext,
+          ).motionStandard,
+          onRemove: removeEntry,
+          child: Dismissible(
+            key: ValueKey<Object>(dismissKey),
+            onDismissed: (_) => removeEntry(),
+            child: Material(
+              color: Colors.transparent,
+              child: AppFeedbackSurface(
+                tone: tone,
+                icon: resolvedIcon,
+                iconColor: iconColor,
+                title: title,
+                message: message,
+                trailing: hasAction
+                    ? TextButton(
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 4,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: const StadiumBorder(),
+                        ),
+                        onPressed: () {
+                          removeEntry();
+                          onAction();
+                        },
+                        child: Text(actionLabel),
+                      )
+                    : null,
               ),
             ),
           ),
@@ -230,7 +275,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     );
     _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     _offset = Tween<Offset>(
-      begin: const Offset(0, -0.08),
+      begin: const Offset(0, -0.30),
       end: Offset.zero,
     ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
@@ -273,7 +318,7 @@ class AppFeedbackSurface extends ConsumerWidget {
     required this.message,
     this.title,
     this.trailing,
-    this.padding = const EdgeInsets.fromLTRB(16, 14, 16, 14),
+    this.padding = const EdgeInsets.fromLTRB(10, 8, 14, 8),
     this.borderRadius,
     this.iconColor,
   });
@@ -298,15 +343,15 @@ class AppFeedbackSurface extends ConsumerWidget {
       ),
     );
     final accent = iconColor ?? _accentColor(context, tone);
-    final chipBackground = accent.withValues(alpha: 0.12);
-    final resolvedBorderRadius = borderRadius ?? tokens.radiusCard;
+    final chipBackground = accent.withValues(alpha: 0.14);
+    final resolvedBorderRadius = borderRadius ?? tokens.radiusCapsule;
 
     final isDark = theme.brightness == Brightness.dark;
     final baseSurfaceColor = isDark
-        ? cs.surfaceContainerHighest
+        ? cs.surfaceBright
         : cs.surfaceContainerHigh;
     final surfaceColor = blurEnabled
-        ? baseSurfaceColor.withValues(alpha: isDark ? 0.80 : 0.86)
+        ? baseSurfaceColor.withValues(alpha: isDark ? 0.82 : 0.88)
         : baseSurfaceColor;
 
     final surface = DecoratedBox(
@@ -314,18 +359,16 @@ class AppFeedbackSurface extends ConsumerWidget {
         color: surfaceColor,
         borderRadius: BorderRadius.circular(resolvedBorderRadius),
         border: Border.all(
-          color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
+          color: cs.outlineVariant.withValues(
+            alpha: isDark ? 0.24 : 0.42,
+          ),
         ),
         boxShadow: [
           BoxShadow(
-            color: cs.shadow.withValues(alpha: 0.12),
-            blurRadius: 24,
-            offset: const Offset(0, 12),
-          ),
-          BoxShadow(
-            color: cs.shadow.withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: cs.shadow.withValues(alpha: 0.14),
+            blurRadius: 18,
+            spreadRadius: -5,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -334,15 +377,17 @@ class AppFeedbackSurface extends ConsumerWidget {
         child: Row(
           children: [
             Container(
-              width: tokens.iconContainerSize,
-              height: tokens.iconContainerSize,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: chipBackground,
-                borderRadius: BorderRadius.circular(tokens.radiusSmall),
+                shape: BoxShape.circle,
               ),
-              child: Icon(icon, size: 18, color: accent),
+              child: Center(
+                child: Icon(icon, size: 16, color: accent),
+              ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Expanded(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -353,35 +398,37 @@ class AppFeedbackSurface extends ConsumerWidget {
                       title!,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelLarge?.copyWith(
+                      style: theme.textTheme.labelMedium?.copyWith(
                         color: cs.onSurface,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 2),
+                    const SizedBox(height: 1),
                   ],
                   Text(
                     message,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style:
-                        (title != null
-                                ? theme.textTheme.bodyMedium
-                                : theme.textTheme.titleSmall)
-                            ?.copyWith(
-                              color: title != null
-                                  ? cs.onSurfaceVariant
-                                  : cs.onSurface,
-                              fontWeight: title != null
-                                  ? FontWeight.w600
-                                  : FontWeight.w800,
-                              height: 1.25,
-                            ),
+                    style: (title != null
+                            ? theme.textTheme.bodySmall
+                            : theme.textTheme.labelLarge)
+                        ?.copyWith(
+                          color: title != null
+                              ? cs.onSurfaceVariant
+                              : cs.onSurface,
+                          fontWeight: title != null
+                              ? FontWeight.w600
+                              : FontWeight.w700,
+                          height: 1.25,
+                        ),
                   ),
                 ],
               ),
             ),
-            if (trailing != null) ...[const SizedBox(width: 12), trailing!],
+            if (trailing != null) ...[
+              const SizedBox(width: 8),
+              trailing!,
+            ],
           ],
         ),
       ),

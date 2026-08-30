@@ -21,6 +21,10 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
     if (session != null &&
         previousTrackPath != null &&
         application.trackChanged) {
+      final leftDetachedPlaybackQueueTrack = _isDetachedPlaybackQueuePath(
+        session,
+        previousTrackPath,
+      );
       _ensureSubtitleTrackLoaded(session.currentTrackPath);
       _refreshNotificationSubtitleForSession(
         session,
@@ -33,6 +37,9 @@ extension PlaybackCommandNativeMapper on PlaybackCommandCoordinator {
         delay: const Duration(milliseconds: 800),
       );
       _notifyPlaybackChanged();
+      if (leftDetachedPlaybackQueueTrack) {
+        unawaited(_syncPlaybackQueueSession(session));
+      }
     }
     final trackPath = session?.currentTrackPath;
     if (trackPath != null && normalizedSnapshot.duration != null) {

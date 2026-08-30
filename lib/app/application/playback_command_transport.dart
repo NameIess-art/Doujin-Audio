@@ -245,6 +245,10 @@ extension PlaybackCommandTransport on PlaybackCommandCoordinator {
     PlaybackSession session, {
     required bool forward,
   }) {
+    if (_hasDetachedPlaybackQueueCurrent(session) &&
+        session.playbackQueue!.expandedTracks.isEmpty) {
+      return null;
+    }
     return _playbackQueueResolver.resolveAdvance(
       scope: _playbackQueueScopeFor(
         session,

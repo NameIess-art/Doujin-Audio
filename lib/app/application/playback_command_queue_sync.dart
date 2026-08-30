@@ -5,11 +5,27 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
     PlaybackSession session, {
     bool selectFirst = false,
   }) async {
-    final tracks =
+    final queueTracks =
         session.playbackQueue?.expandedTracks ?? const <MusicTrack>[];
     final previousPath = session.currentTrackPath;
     final previousIndex = session.currentQueueIndex;
     final wasPlaying = session.state.playing;
+    final previousRuntimeTracks = session.customQueueTracks;
+    final queueContainsCurrent = queueTracks.any(
+      (track) => PathMatcher.equalsNormalized(track.path, previousPath),
+    );
+    MusicTrack? retainedCurrentTrack;
+    if (!selectFirst && previousPath.isNotEmpty && !queueContainsCurrent) {
+      for (final track in previousRuntimeTracks ?? const <MusicTrack>[]) {
+        if (PathMatcher.equalsNormalized(track.path, previousPath)) {
+          retainedCurrentTrack = track;
+          break;
+        }
+      }
+    }
+    final tracks = retainedCurrentTrack == null
+        ? queueTracks
+        : <MusicTrack>[retainedCurrentTrack, ...queueTracks];
     session.customQueueTracks = List<MusicTrack>.unmodifiable(tracks);
 
     if (tracks.isEmpty) {
@@ -28,7 +44,9 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
         _playbackFacade.forgetNativeSessionRetainedContentUris(session.id);
       }
     } else {
-      var nextIndex = selectFirst
+      var nextIndex = retainedCurrentTrack != null
+          ? 0
+          : selectFirst
           ? 0
           : previousIndex.clamp(0, tracks.length - 1);
       if (!selectFirst && previousPath.isNotEmpty) {
@@ -43,11 +61,12 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
       }
       if (!selectFirst &&
           previousPath.isNotEmpty &&
-          session.loadedPath != null &&
-          PathMatcher.equalsNormalized(
-            session.loadedPath!,
-            _playbackFacade.resolveRetargetedPath(previousPath),
-          ) &&
+          (retainedCurrentTrack != null ||
+              (session.loadedPath != null &&
+                  PathMatcher.equalsNormalized(
+                    session.loadedPath!,
+                    _playbackFacade.resolveRetargetedPath(previousPath),
+                  ))) &&
           PathMatcher.equalsNormalized(tracks[nextIndex].path, previousPath)) {
         session.currentQueueIndex = nextIndex;
         session.currentTrackPath = tracks[nextIndex].path;
@@ -64,7 +83,10 @@ extension PlaybackCommandQueueSync on PlaybackCommandCoordinator {
             session,
             currentPath: session.currentTrackPath,
           ),
-          repeatAll: loopMode != SessionLoopMode.single && !loopMode.isOneShot,
+          repeatAll:
+              retainedCurrentTrack == null &&
+              loopMode != SessionLoopMode.single &&
+              !loopMode.isOneShot,
           shuffle: loopMode.isShuffle,
         );
         _syncNotificationState();

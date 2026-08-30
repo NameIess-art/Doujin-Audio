@@ -59,6 +59,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     int? targetQueueIndex,
   }) async {
     if (!_isRegisteredSession(session)) return false;
+    final hadDetachedPlaybackQueueCurrent = _hasDetachedPlaybackQueueCurrent(
+      session,
+    );
 
     session.loadGeneration++;
     final generation = session.loadGeneration;
@@ -205,6 +208,12 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       return false;
     }
 
+    if (prepared &&
+        hadDetachedPlaybackQueueCurrent &&
+        !_hasDetachedPlaybackQueueCurrent(session)) {
+      await _syncPlaybackQueueSession(session);
+    }
+
     if (autoPlay && prepared && session.playbackRequested) {
       return _startSessionPlayback(session, shouldStartTriggerCountdown: true);
     } else {
@@ -345,6 +354,7 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
               currentPath: target.resolvedPath,
             ),
         repeatAll:
+            !_hasDetachedPlaybackQueueCurrent(session) &&
             session.loopMode != SessionLoopMode.single &&
             !session.loopMode.isOneShot,
         shuffle: session.loopMode.isShuffle,
@@ -556,7 +566,9 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
     final currentTrack = trackByPath(resolvedCurrentPath);
     final sessionTrack = _sessionTrackForPath(session, resolvedCurrentPath);
     final queueTracks = session.isPlaybackQueue
-        ? session.playbackQueue!.expandedTracks
+        ? (_hasDetachedPlaybackQueueCurrent(session)
+              ? session.customQueueTracks
+              : session.playbackQueue!.expandedTracks)
         : session.customQueueTracks;
     final scopeTrack = queueTracks?.isNotEmpty == true
         ? sessionTrack
@@ -576,6 +588,22 @@ extension PlaybackCommandPreparation on PlaybackCommandCoordinator {
       trackPath: (track) => _playbackFacade.resolveRetargetedPath(track.path),
       folderKeyForTrack: _folderKeyForTrack,
     );
+  }
+
+  bool _hasDetachedPlaybackQueueCurrent(PlaybackSession session) {
+    return _isDetachedPlaybackQueuePath(session, session.currentTrackPath);
+  }
+
+  bool _isDetachedPlaybackQueuePath(PlaybackSession session, String path) {
+    if (!session.isPlaybackQueue || path.isEmpty) return false;
+    final queueContainsPath = session.playbackQueue!.expandedTracks.any(
+      (track) => PathMatcher.equalsNormalized(track.path, path),
+    );
+    if (queueContainsPath) return false;
+    return session.customQueueTracks?.any(
+          (track) => PathMatcher.equalsNormalized(track.path, path),
+        ) ==
+        true;
   }
 
   Map<String, Object?> _nativePlaybackQueueItemForPath(String trackPath) {

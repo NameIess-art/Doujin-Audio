@@ -291,6 +291,85 @@ void main() {
     );
 
     test(
+      'removing the current queue audio keeps it playing until advancing',
+      () async {
+        final preparedPaths = <String>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(nativePlaybackChannel, (call) async {
+              if (call.method == NativePlaybackMethod.prepareSession) {
+                final arguments = call.arguments as Map<Object?, Object?>;
+                preparedPaths.add(arguments['path'] as String);
+              }
+              return <String, Object?>{'ok': true, 'value': null};
+            });
+        final tracks = List<MusicTrack>.generate(
+          3,
+          (index) => MusicTrack(
+            path: '/library/work/0${index + 1}.mp3',
+            displayName: '0${index + 1}',
+            groupKey: '/library/work',
+            groupTitle: 'Work',
+            groupSubtitle: 'Work',
+            isSingle: false,
+          ),
+        );
+        runtimeGraph.library.addTracks(tracks, notify: false, persist: false);
+
+        final queueSession = runtimeGraph.playback.createPlaybackQueue(
+          'Queue 1',
+        );
+        for (final track in tracks) {
+          await runtimeGraph.playback.addTrackToPlaybackQueue(
+            queueSession.id,
+            track,
+          );
+        }
+        await runtimeGraph.playback.seekSessionToNext(queueSession.id);
+
+        final session = runtimeGraph.playback.sessionById(queueSession.id)!;
+        final currentPath = session.currentTrackPath;
+        final currentEntryId = session.playbackQueue!.entries[1].id;
+        final prepareCountBefore = preparedPaths.length;
+        final wasPlaying = session.state.playing;
+
+        await runtimeGraph.playback.removePlaybackQueueEntry(
+          queueSession.id,
+          currentEntryId,
+        );
+
+        final afterRemoval = runtimeGraph.playback.sessionById(
+          queueSession.id,
+        )!;
+        expect(afterRemoval.playbackQueue?.expandedTracks, <MusicTrack>[
+          tracks[0],
+          tracks[2],
+        ]);
+        expect(
+          PathMatcher.equalsNormalized(
+            afterRemoval.currentTrackPath,
+            currentPath,
+          ),
+          isTrue,
+        );
+        expect(afterRemoval.state.playing, wasPlaying);
+        expect(preparedPaths.length, prepareCountBefore);
+        expect(
+          afterRemoval.customQueueTracks?.map((track) => track.path),
+          <String>[tracks[1].path, tracks[0].path, tracks[2].path],
+        );
+
+        await runtimeGraph.playback.seekSessionToNext(queueSession.id);
+        final afterAdvance = runtimeGraph.playback.sessionById(queueSession.id)!;
+        expect(
+          PathMatcher.equalsNormalized(afterAdvance.currentTrackPath, tracks[0].path),
+          isTrue,
+        );
+        expect(afterAdvance.currentQueueIndex, 0);
+        expect(afterAdvance.customQueueTracks, <MusicTrack>[tracks[0], tracks[2]]);
+      },
+    );
+
+    test(
       'single files cannot expand into an imported-files work entry',
       () async {
         final selected = MusicTrack(

@@ -601,7 +601,7 @@ class ThemeProvider with ChangeNotifier implements PersistedStateReloader {
         trackColor: WidgetStateProperty.all(Colors.transparent),
         crossAxisMargin: 4,
         mainAxisMargin: 4,
-        radius: const Radius.circular(8),
+        radius: const Radius.circular(AppRadius.small),
       ),
     );
   }

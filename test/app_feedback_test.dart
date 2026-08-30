@@ -117,7 +117,9 @@ void main() {
     expect(find.text('Import failed'), findsNothing);
   });
 
-  testWidgets('top feedback can be dismissed by swiping right', (tester) async {
+  testWidgets('top feedback can be dismissed by swiping horizontally', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       _feedbackApp(
         blurEnabled: true,
@@ -146,9 +148,16 @@ void main() {
     expect(dismissible, findsOneWidget);
     expect(
       tester.widget<Dismissible>(dismissible).direction,
-      DismissDirection.startToEnd,
+      DismissDirection.horizontal,
     );
 
+    await tester.drag(dismissible, const Offset(-500, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Saved successfully.'), findsNothing);
+
+    await tester.tap(find.text('Show'));
+    await tester.pump();
     await tester.drag(dismissible, const Offset(500, 0));
     await tester.pumpAndSettle();
 

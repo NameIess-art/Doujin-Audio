@@ -1,5 +1,7 @@
 part of 'playlist_tab.dart';
 
+const _kSegmentPanelCollapseDragThreshold = 120.0;
+
 class _TimeSegmentPanel extends StatefulWidget {
   const _TimeSegmentPanel({
     super.key,
@@ -53,6 +55,49 @@ class _TimeSegmentPanel extends StatefulWidget {
 class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
   late final PageController _pageController;
   int _pageIndex = 2;
+  int? _dismissPointer;
+  Offset? _dismissOrigin;
+  Offset? _dismissPosition;
+
+  void _handleDismissPointerDown(PointerDownEvent event) {
+    if (widget.onClose == null) return;
+    _dismissPointer = event.pointer;
+    _dismissOrigin = event.position;
+    _dismissPosition = event.position;
+  }
+
+  void _handleDismissPointerMove(PointerMoveEvent event) {
+    if (_dismissPointer == event.pointer) _dismissPosition = event.position;
+  }
+
+  void _handleDismissPointerUp(PointerUpEvent event) {
+    if (_dismissPointer != event.pointer) return;
+    final origin = _dismissOrigin;
+    final position = _dismissPosition ?? event.position;
+    _clearDismissPointer();
+    if (origin == null) return;
+    final delta = position - origin;
+    if (delta.dy > _kSegmentPanelCollapseDragThreshold &&
+        delta.dy.abs() > delta.dx.abs()) {
+      widget.onClose?.call();
+    }
+  }
+
+  void _clearDismissPointer() {
+    _dismissPointer = null;
+    _dismissOrigin = null;
+    _dismissPosition = null;
+  }
+
+  Widget _buildDismissRegion(Widget child) {
+    return Listener(
+      onPointerDown: _handleDismissPointerDown,
+      onPointerMove: _handleDismissPointerMove,
+      onPointerUp: _handleDismissPointerUp,
+      onPointerCancel: (_) => _clearDismissPointer(),
+      child: child,
+    );
+  }
 
   @override
   void initState() {
@@ -182,8 +227,12 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
         ],
       ),
     );
-    if (!isPortrait) return SizedBox(height: targetHeight, child: content);
-    return Container(
+    if (!isPortrait) {
+      return _buildDismissRegion(
+        SizedBox(height: targetHeight, child: content),
+      );
+    }
+    final panel = Container(
       key: const ValueKey<String>('playback_expanded_control_panel'),
       height: targetHeight,
       clipBehavior: Clip.antiAlias,
@@ -202,6 +251,7 @@ class _TimeSegmentPanelState extends State<_TimeSegmentPanel> {
       ),
       child: content,
     );
+    return _buildDismissRegion(panel);
   }
 
   Widget _buildSegmentPage(

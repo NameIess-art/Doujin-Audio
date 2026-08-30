@@ -362,7 +362,8 @@ void main() {
     expect(LibraryLikeCardMetrics.infoVerticalOffset, -4);
     expect(LibraryLikeCardMetrics.titleBlockHeight, 38);
     expect(LibraryLikeCardMetrics.actionButtonSize, 40);
-    expect(LibraryLikeCardMetrics.coverRadius, 12);
+    expect(LibraryLikeCardMetrics.coverRadius, 8);
+    expect(LibraryLikeCardMetrics.cardRadius, 10);
     expect(LibraryLikeCardMetrics.coverAspectRatio, kStandardCoverAspectRatio);
 
     expect(

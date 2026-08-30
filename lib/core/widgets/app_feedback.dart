@@ -151,7 +151,6 @@ void _showTopFeedback(
         right: 16,
         child: Dismissible(
           key: ValueKey<Object>(dismissKey),
-          direction: DismissDirection.startToEnd,
           onDismissed: (_) => removeEntry(),
           child: _FeedbackAnimationWrapper(
             duration: duration,

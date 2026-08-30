@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/features/settings/application/app_preferences.dart';
 import 'package:doujin_audio/app/theme/app_design_tokens.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/app/theme/theme_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -150,13 +151,35 @@ void main() {
       lightTokens.onAsmrAccent,
       ThemeAccentPreset.blue.colorScheme(Brightness.light).onPrimary,
     );
+    expect(
+      <double>[
+        lightTokens.radiusSmall,
+        lightTokens.radiusControl,
+        lightTokens.radiusCard,
+        lightTokens.radiusSection,
+        lightTokens.radiusOverlay,
+      ],
+      <double>[8, 10, 12, 16, 20],
+    );
     expect(lightTokens.radiusCard, darkTokens.radiusCard);
-    expect(lightTokens.radiusOverlay, 24);
     expect(lightTokens.spaceXxs, 4);
     expect(lightTokens.spaceXxl, 32);
     expect(lightTokens.minimumTapTarget, 48);
     expect(lightTokens.success, isNot(darkTokens.success));
     expect(lightTokens.warning, isNot(darkTokens.warning));
+  });
+
+  test('shared legacy radii use the compact corner scale', () {
+    expect(
+      <double>[
+        AppRadius.small,
+        AppRadius.medium,
+        AppRadius.card,
+        AppRadius.section,
+        AppRadius.dialog,
+      ],
+      <double>[6, 10, 12, 16, 20],
+    );
   });
 
   test('disabled ASMR colors follow the normal app color scheme', () async {
@@ -263,6 +286,7 @@ void main() {
       BorderRadius.vertical(top: Radius.circular(tokens.radiusOverlay)),
     );
     expect(menuShape.borderRadius, BorderRadius.circular(tokens.radiusCard));
+    expect(theme.scrollbarTheme.radius, const Radius.circular(AppRadius.small));
   });
 
   test('interactive component themes keep the minimum tap target', () async {

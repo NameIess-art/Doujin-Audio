@@ -287,9 +287,7 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
                 showPlaceholder: showPlaceholder,
                 placeholder: ListView.builder(
                   key: const ValueKey('loading'),
-                  physics: const AlwaysScrollableScrollPhysics(
-                    parent: RefreshTopScrollPhysics(),
-                  ),
+                  physics: const NeverScrollableScrollPhysics(),
                   padding: EdgeInsets.fromLTRB(
                     LibraryLikeCardMetrics.listHorizontalPadding,
                     widget.topInset,

@@ -21,11 +21,11 @@ class AppSpacing {
 class AppRadius {
   AppRadius._();
 
-  static const double small = 8.0;
-  static const double medium = 12.0;
-  static const double card = 16.0;
-  static const double section = 20.0;
-  static const double dialog = 24.0;
+  static const double small = 6.0;
+  static const double medium = 10.0;
+  static const double card = 12.0;
+  static const double section = 16.0;
+  static const double dialog = 20.0;
   static const double pill = 999.0;
 
   static const BorderRadius borderSmall = BorderRadius.all(

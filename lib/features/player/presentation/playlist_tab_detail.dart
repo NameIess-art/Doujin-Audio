@@ -497,6 +497,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
   AppDesignTokens? _cachedDesignTokens;
   ThemeData? _cachedAsmrTheme;
   double _segmentPanelDragDelta = 0;
+  bool _isSegmentPanelGesture = false;
   bool _isDismissGesture = false;
 
   ThemeData _detailThemeForTrack(BuildContext context, MusicTrack? track) {
@@ -641,7 +642,11 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
           onHorizontalDragEnd: onHorizontalDragEnd,
           onHorizontalDragCancel: onHorizontalDragCancel,
           onVerticalDragStart: (details) {
-            _isDismissGesture = widget.dismissAnimation.value > 0.01;
+            final detailState = _detailContentKey.currentState;
+            _isSegmentPanelGesture =
+                detailState?.isSegmentPanelExpanded ?? false;
+            _isDismissGesture =
+                !_isSegmentPanelGesture && widget.dismissAnimation.value > 0.01;
             _segmentPanelDragDelta = 0;
           },
           onVerticalDragUpdate: (details) {
@@ -649,6 +654,11 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             final detailState = _detailContentKey.currentState;
             final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
             final detailFullyOpen = widget.dismissAnimation.value <= 0.01;
+
+            if (_isSegmentPanelGesture) {
+              _segmentPanelDragDelta += delta;
+              return;
+            }
 
             if (!_isDismissGesture &&
                 delta > 0 &&
@@ -664,8 +674,7 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
               return;
             }
 
-            if ((panelExpanded && delta > 0) ||
-                (!panelExpanded && delta < 0 && detailFullyOpen)) {
+            if (!panelExpanded && delta < 0 && detailFullyOpen) {
               _segmentPanelDragDelta += delta;
               return;
             }
@@ -676,6 +685,17 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
             final velocity = details.primaryVelocity ?? 0;
             final detailState = _detailContentKey.currentState;
             final panelExpanded = detailState?.isSegmentPanelExpanded ?? false;
+            if (_isSegmentPanelGesture) {
+              _isSegmentPanelGesture = false;
+              final shouldCollapse =
+                  panelExpanded &&
+                  (_segmentPanelDragDelta >
+                          _kSegmentPanelCollapseDragThreshold ||
+                      velocity > 800);
+              _segmentPanelDragDelta = 0;
+              if (shouldCollapse) detailState?.collapseSegmentPanel();
+              return;
+            }
             if (_isDismissGesture) {
               _isDismissGesture = false;
               _segmentPanelDragDelta = 0;
@@ -686,23 +706,19 @@ class _SessionDetailScaffoldState extends ConsumerState<_SessionDetailScaffold>
                 !panelExpanded &&
                 widget.dismissAnimation.value <= 0.01 &&
                 (_segmentPanelDragDelta < -120 || velocity < -800);
-            final shouldCollapse =
-                panelExpanded &&
-                (_segmentPanelDragDelta > 120 || velocity > 800);
             _segmentPanelDragDelta = 0;
             if (shouldExpand) {
               detailState?.expandSegmentPanel();
               return;
             }
-            if (shouldCollapse) {
-              detailState?.collapseSegmentPanel();
-              return;
-            }
             onVerticalDragEnd?.call(details);
           },
           onVerticalDragCancel: () {
+            final wasSegmentPanelGesture = _isSegmentPanelGesture;
+            _isSegmentPanelGesture = false;
             _isDismissGesture = false;
             _segmentPanelDragDelta = 0;
+            if (wasSegmentPanelGesture) return;
             onVerticalDragCancel?.call();
           },
           child: Stack(

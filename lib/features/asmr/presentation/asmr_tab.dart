@@ -217,7 +217,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       if (!mounted || !_isActive) return;
       await _ensureCollectedLoaded();
       if (!mounted || !_isActive) return;
-      _activationCompleted = true;
+      setState(() => _activationCompleted = true);
       _scheduleAccountHydration(controller, generation);
     } catch (error, stackTrace) {
       AppLogService.warning(
@@ -541,7 +541,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               key: const ValueKey(_mainCategory),
               isActive: _isActive,
               category: _mainCategory,
-              isLoadPending: false,
+              isLoadPending: !_activationCompleted,
               scrollController: _scrollController,
               searchQuery: '',
               topInset: headerContentHeight,

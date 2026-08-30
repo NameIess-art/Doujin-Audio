@@ -898,6 +898,39 @@ void main() {
     expect(find.byKey(contentKey), findsOneWidget);
   });
 
+  testWidgets('expanded console consumes the downward detail dismiss gesture', (
+    tester,
+  ) async {
+    final pumped = await _pumpSubtitleDetail(
+      tester: tester,
+      style: PlaybackDetailSubtitleStyle.compact,
+      subtitleTrack: SubtitleTrack(
+        sourcePath: '/library/subtitles/track.vtt',
+        cues: <SubtitleCue>[],
+      ),
+      initialPosition: Duration.zero,
+      physicalSize: const Size(1290, 2700),
+    );
+
+    await tester.tap(
+      find.byTooltip(pumped.fixture.languageProvider.tr('audio_features')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('playback_expanded_control_panel')),
+      findsOneWidget,
+    );
+
+    await tester.drag(find.byType(SessionDetailPage), const Offset(0, 220));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('playback_expanded_control_panel')),
+      findsNothing,
+    );
+    expect(find.byType(SessionDetailPage), findsOneWidget);
+  });
+
   testWidgets('session reset actions share style and disable at defaults', (
     WidgetTester tester,
   ) async {
@@ -999,9 +1032,7 @@ void main() {
     expect(panelDecoration.borderRadius, BorderRadius.circular(16));
     expect(panelDecoration.boxShadow, isNotEmpty);
 
-    await tester.tap(
-      find.byKey(const ValueKey<String>('close_console_panel')),
-    );
+    await tester.tap(find.byKey(const ValueKey<String>('close_console_panel')));
     await tester.pumpAndSettle();
     expect(artwork, findsOneWidget);
     expect(find.byKey(expandedPanel), findsNothing);

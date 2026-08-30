@@ -115,7 +115,7 @@ class ShimmerContainer extends StatelessWidget {
     super.key,
     this.width,
     this.height,
-    this.borderRadius = 8.0,
+    this.borderRadius = 6.0,
   });
 
   final double? width;

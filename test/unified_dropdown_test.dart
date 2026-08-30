@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/unified_dropdown.dart';
 
 void main() {
@@ -33,6 +34,6 @@ void main() {
     );
     expect(button.dropdownColor, menuColor);
     expect(button.dropdownColor!.a, 1);
-    expect(button.borderRadius, BorderRadius.circular(12));
+    expect(button.borderRadius, AppRadius.borderMedium);
   });
 }

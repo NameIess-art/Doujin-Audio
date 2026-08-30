@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-const double _dropdownRadius = 12;
+import '../../app/theme/app_styles.dart';
 
 List<DropdownMenuItem<T>> _alignItems<T>(
   List<DropdownMenuItem<T>> items,
@@ -64,7 +64,7 @@ class UnifiedDropdownButton<T> extends StatelessWidget {
         menuMaxHeight: menuMaxHeight,
         itemHeight: multilineItems ? null : kMinInteractiveDimension,
         dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-        borderRadius: BorderRadius.circular(_dropdownRadius),
+        borderRadius: AppRadius.borderMedium,
       ),
     );
   }
@@ -101,7 +101,7 @@ class UnifiedDropdownButtonFormField<T> extends StatelessWidget {
       menuMaxHeight: menuMaxHeight,
       itemHeight: multilineItems ? null : kMinInteractiveDimension,
       dropdownColor: Theme.of(context).colorScheme.surfaceContainerHigh,
-      borderRadius: BorderRadius.circular(_dropdownRadius),
+      borderRadius: AppRadius.borderMedium,
     );
   }
 }

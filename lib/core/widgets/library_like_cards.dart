@@ -21,8 +21,8 @@ class LibraryLikeCardMetrics {
   static const double infoVerticalOffset = -4;
   static const double titleBlockHeight = 38;
   static const double coverAspectRatio = kStandardCoverAspectRatio;
-  static const double coverRadius = 12;
-  static const double cardRadius = 14;
+  static const double coverRadius = 8;
+  static const double cardRadius = 10;
   static const double actionButtonSize = 40;
   static const double listHorizontalPadding = AppSpacing.xs;
   static const EdgeInsets rootTilePadding = EdgeInsets.symmetric(

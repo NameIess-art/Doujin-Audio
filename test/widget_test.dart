@@ -444,6 +444,50 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'first ASMR activation keeps an immobile skeleton until load completes',
+    (tester) async {
+      final activePageIndex = ValueNotifier<int>(0);
+      final controller = _QueuedEmptyAsmrLibraryController(
+        emptyCollectedOnInitialLoad: true,
+        delayInitialCollectedRefresh: true,
+      );
+      final harness = AppRuntimeWidgetTestFixture();
+      addTearDown(activePageIndex.dispose);
+      addTearDown(controller.dispose);
+      addTearDown(harness.dispose);
+
+      await tester.pumpWidget(
+        harness.build(
+          AsmrTab(activeTabIndexListenable: activePageIndex),
+          overrides: [
+            asmrLibraryControllerProvider.overrideWithValue(controller),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
+      expect(
+        find.text(harness.languageProvider.tr('asmr_empty_category')),
+        findsNothing,
+      );
+      final loadingList = tester.widget<ListView>(
+        find.byKey(const ValueKey<String>('loading')),
+      );
+      expect(loadingList.physics, isA<NeverScrollableScrollPhysics>());
+
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(controller.collectedRefreshCount, 1);
+      expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
+
+      controller.completeInitialCollectedRefresh();
+      await tester.pump();
+      await tester.pump();
+    },
+  );
+
   testWidgets('main page header actions use the compact trailing inset', (
     tester,
   ) async {
@@ -2427,6 +2471,8 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     this.collectedHasMore = false,
     this.needsRetry = false,
     this.delayCollectedSearch = false,
+    this.emptyCollectedOnInitialLoad = false,
+    this.delayInitialCollectedRefresh = false,
     this.trackTree,
   }) : super(
          preferencesStore: AsmrPreferencesStore(
@@ -2439,15 +2485,20 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
 
   final Completer<void> _recommendationRefresh = Completer<void>();
   final List<Completer<void>> _collectedSearchRefreshes = <Completer<void>>[];
+  final Completer<void> _initialCollectedRefresh = Completer<void>();
   final bool collectedHasMore;
   final bool delayCollectedSearch;
+  final bool emptyCollectedOnInitialLoad;
+  final bool delayInitialCollectedRefresh;
   final List<AsmrTrackFile>? trackTree;
   bool needsRetry;
   bool _recommendationLoading = false;
+  bool _collectedLoading = false;
   bool _isLoadingMore = false;
   int _revision = 0;
   int recommendationRefreshCount = 0;
   int collectedSearchRefreshCount = 0;
+  int collectedRefreshCount = 0;
   int loadMoreCount = 0;
   int initializeCount = 0;
   int categoryViewReadCount = 0;
@@ -2545,7 +2596,9 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   @override
   List<AsmrWork> worksFor(AsmrCategoryType category) =>
       category == AsmrCategoryType.collected
-      ? <AsmrWork>[_collectedWork, _secondCollectedWork]
+      ? emptyCollectedOnInitialLoad
+            ? const <AsmrWork>[]
+            : <AsmrWork>[_collectedWork, _secondCollectedWork]
       : const <AsmrWork>[];
 
   @override
@@ -2562,7 +2615,9 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     categoryViewReadCount++;
     final works = worksFor(category);
     final isLoading =
-        category == AsmrCategoryType.recommendation && _recommendationLoading;
+        (category == AsmrCategoryType.recommendation &&
+            _recommendationLoading) ||
+        (category == AsmrCategoryType.collected && _collectedLoading);
     final isPaginated =
         category == AsmrCategoryType.collected && collectedHasMore;
     return AsmrCategoryViewState(
@@ -2606,6 +2661,18 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     String searchQuery = '',
   }) async {
     if (category == AsmrCategoryType.collected &&
+        searchQuery.isEmpty &&
+        delayInitialCollectedRefresh) {
+      collectedRefreshCount++;
+      _collectedLoading = true;
+      notifyListeners();
+      await _initialCollectedRefresh.future;
+      _collectedLoading = false;
+      _revision++;
+      notifyListeners();
+      return;
+    }
+    if (category == AsmrCategoryType.collected &&
         searchQuery.isNotEmpty &&
         delayCollectedSearch) {
       collectedSearchRefreshCount++;
@@ -2629,6 +2696,12 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
   void completeRecommendationRefresh() {
     if (!_recommendationRefresh.isCompleted) {
       _recommendationRefresh.complete();
+    }
+  }
+
+  void completeInitialCollectedRefresh() {
+    if (!_initialCollectedRefresh.isCompleted) {
+      _initialCollectedRefresh.complete();
     }
   }
 

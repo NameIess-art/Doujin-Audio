@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../app/theme/app_styles.dart';
+
 class AppBottomSheet {
   /// Shows a standardized bottom sheet with a drag handle and rounded top corners.
   static Future<T?> show<T>({
@@ -40,7 +42,9 @@ class AppBottomSheet {
       clipBehavior: clipBehavior,
       constraints: BoxConstraints(maxHeight: maxHeight),
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        borderRadius: BorderRadius.vertical(
+          top: Radius.circular(AppRadius.dialog),
+        ),
       ),
       builder: (ctx) => RepaintBoundary(child: builder(ctx)),
     );

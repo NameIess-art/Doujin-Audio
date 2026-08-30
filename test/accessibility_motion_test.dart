@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:doujin_audio/app/theme/app_styles.dart';
 import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/app_bottom_sheet.dart';
 import 'package:doujin_audio/core/widgets/unified_popup_menu.dart';
@@ -44,12 +45,36 @@ void main() {
     await tester.tap(find.text('Open'));
     await tester.pump();
 
-    final controller = tester
-        .widget<BottomSheet>(find.byType(BottomSheet))
-        .animationController;
+    final sheet = tester.widget<BottomSheet>(find.byType(BottomSheet));
+    final controller = sheet.animationController;
     expect(controller?.duration, Duration.zero);
     expect(controller?.value, 1);
+    expect(
+      (sheet.shape! as RoundedRectangleBorder).borderRadius,
+      const BorderRadius.vertical(top: Radius.circular(AppRadius.dialog)),
+    );
     expect(find.text('Sheet content'), findsOneWidget);
+  });
+
+  testWidgets('shared shimmer placeholder uses the compact corner radius', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: ShimmerContainer(width: 40, height: 20)),
+      ),
+    );
+
+    final container = tester.widget<Container>(
+      find.descendant(
+        of: find.byType(ShimmerContainer),
+        matching: find.byType(Container),
+      ),
+    );
+    expect(
+      (container.decoration! as BoxDecoration).borderRadius,
+      BorderRadius.circular(AppRadius.small),
+    );
   });
 
   testWidgets('bottom sheets size to content below the height limit', (

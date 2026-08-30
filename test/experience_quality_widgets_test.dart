@@ -13,6 +13,7 @@ import 'package:doujin_audio/core/widgets/async_cover_image.dart';
 import 'package:doujin_audio/core/widgets/library_like_cards.dart';
 import 'package:doujin_audio/core/widgets/marquee_text.dart';
 import 'package:doujin_audio/core/widgets/scroll_activity_gate.dart';
+import 'package:doujin_audio/core/widgets/shimmer_loading.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/settings/application/settings_state.dart';
 
@@ -405,6 +406,57 @@ void main() {
     expect(card.surfaceTintColor, Colors.transparent);
     expect((card.shape as RoundedRectangleBorder).side, BorderSide.none);
   });
+
+  testWidgets(
+    'library-like skeleton actions align with rendered card actions',
+    (tester) async {
+      const coverKey = ValueKey('alignment-cover');
+
+      await tester.pumpWidget(
+        _buildSurface(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const LibraryLikeSkeletonCard(),
+              ExpansionTile(
+                minTileHeight: LibraryLikeCardMetrics.rootTileHeight,
+                showTrailingIcon: false,
+                tilePadding: LibraryLikeCardMetrics.rootTilePadding,
+                title: _buildFeaturedCard(
+                  title: 'Work',
+                  coverKey: coverKey,
+                  lines: const <LibraryLikeInfoLineData>[],
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+
+      final skeletonAdd = find.byWidgetPredicate(
+        (widget) =>
+            widget is ShimmerContainer &&
+            widget.width == 25 &&
+            widget.height == 25,
+      );
+      final skeletonExpand = find.byWidgetPredicate(
+        (widget) =>
+            widget is ShimmerContainer &&
+            widget.width == 16 &&
+            widget.height == 16,
+      );
+
+      expect(skeletonAdd, findsOneWidget);
+      expect(skeletonExpand, findsOneWidget);
+      final addDelta =
+          tester.getCenter(skeletonAdd).dx -
+          tester.getCenter(find.byIcon(Icons.add_circle_rounded)).dx;
+      final expandDelta =
+          tester.getCenter(skeletonExpand).dx -
+          tester.getCenter(find.byIcon(Icons.expand_more_rounded)).dx;
+      expect(<double>[addDelta, expandDelta], everyElement(closeTo(0, 0.1)));
+    },
+  );
 
   testWidgets('library-like card content keeps compact equal edge insets', (
     tester,

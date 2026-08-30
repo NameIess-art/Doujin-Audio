@@ -24,6 +24,7 @@ class LibraryLikeCardMetrics {
   static const double coverRadius = 8;
   static const double cardRadius = 10;
   static const double actionButtonSize = 40;
+  static const double compactActionButtonLayoutSize = 32;
   static const double listHorizontalPadding = AppSpacing.xs;
   static const EdgeInsets rootTilePadding = EdgeInsets.symmetric(
     horizontal: AppSpacing.xs,
@@ -114,7 +115,8 @@ class LibraryLikeSkeletonCard extends StatelessWidget {
                       ),
                       SizedBox(width: 8),
                       SizedBox(
-                        width: LibraryLikeCardMetrics.actionButtonSize,
+                        width: LibraryLikeCardMetrics
+                            .compactActionButtonLayoutSize,
                         height: titleBlockHeight,
                         child: Center(
                           child: ShimmerContainer(

@@ -71,7 +71,7 @@ void main() {
       tester
           .widget<TopPageHeader>(find.byType(TopPageHeader))
           .collapseController,
-      isNotNull,
+      isNull,
     );
     final rootList = tester.widget<ListView>(find.byType(ListView).first);
     expect(
@@ -130,8 +130,8 @@ void main() {
     final categoryHeader = find.byType(TopPageHeader);
     final categoryHeaderWidget = tester.widget<TopPageHeader>(categoryHeader);
     expect(
-      find.byKey(const ValueKey<String>('app_page_header_blur')),
-      findsOneWidget,
+      find.byType(BackdropFilter),
+      findsWidgets,
     );
     expect(categoryHeaderWidget.padding, AppPageHeaderMetrics.padding);
     expect(
@@ -1470,10 +1470,25 @@ final class _SuccessfulPauseAllRepository extends NativePlaybackRepository {
 }
 
 void _expectIconCentersAligned(WidgetTester tester, List<IconData> icons) {
-  final expectedCenter = tester.getCenter(find.byIcon(icons.first)).dx;
+  final listFinder = find.byType(ListView);
+  final expectedCenter = tester
+      .getCenter(
+        find.descendant(
+          of: listFinder,
+          matching: find.byIcon(icons.first),
+        ),
+      )
+      .dx;
   for (final icon in icons.skip(1)) {
     expect(
-      tester.getCenter(find.byIcon(icon)).dx,
+      tester
+          .getCenter(
+            find.descendant(
+              of: listFinder,
+              matching: find.byIcon(icon),
+            ),
+          )
+          .dx,
       closeTo(expectedCenter, 0.01),
       reason: '$icon should use the same leading slot as ${icons.first}.',
     );

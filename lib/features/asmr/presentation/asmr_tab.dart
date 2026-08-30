@@ -564,13 +564,11 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           right: 0,
           child: TopPageHeader(
             key: _headerKey,
-            floating: true,
             collapseController: _scrollController,
             topCapsuleTitle: 'ASMR.ONE',
             topCapsuleData: asmrStatsText,
             title: 'ASMR.ONE',
             titleWidget: _buildCategorySwitcher(i18n),
-            padding: AppPageHeaderMetrics.mainTabPadding,
             onTitleSwipeLeft: widget.onTitleSwipeLeft,
             onTitleSwipeRight: widget.onTitleSwipeRight,
             trailing: SizedBox(

@@ -1162,7 +1162,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               right: 0,
               child: TopPageHeader(
                 key: headerKey,
-                floating: true,
                 collapseController: _scrollController,
                 topCapsuleTitle: i18n.tr('music_library'),
                 topCapsuleData: i18n.tr('library_header_stats', {
@@ -1171,7 +1170,6 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 }),
                 title: i18n.tr('music_library'),
                 titleWidget: _buildHeaderLeftActions(i18n, libraryRefreshBusy),
-                padding: AppPageHeaderMetrics.mainTabPadding,
                 onTitleSwipeLeft: widget.onTitleSwipeLeft,
                 onTitleSwipeRight: widget.onTitleSwipeRight,
                 trailing: SizedBox(

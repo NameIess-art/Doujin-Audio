@@ -94,7 +94,7 @@ void main() {
               find.byKey(const ValueKey<String>('app_search_field_shell')),
             )
             .height,
-        44,
+        36,
       );
       expect(
         tester
@@ -102,7 +102,7 @@ void main() {
               find.byKey(const ValueKey<String>('app_search_category_shell')),
             )
             .height,
-        40,
+        36,
       );
       expect(
         find.byKey(const ValueKey<String>('direct_search_content')),
@@ -125,7 +125,7 @@ void main() {
       );
       final fadeMask = tester.widget<AppEdgeFadeMask>(fadeMaskFinder);
       expect(fadeMask.direction, AppEdgeFadeDirection.towardTop);
-      expect(tester.getSize(fadeMaskFinder).height, 122);
+      expect(tester.getSize(fadeMaskFinder).height, 128);
       final fadeDecoration = tester.widget<DecoratedBox>(
         find.descendant(
           of: fadeMaskFinder,
@@ -137,7 +137,7 @@ void main() {
               as LinearGradient;
       expect(fadeGradient.begin, Alignment.topCenter);
       expect(fadeGradient.end, Alignment.bottomCenter);
-      expect(fadeGradient.stops, const <double>[0, 0.32, 0.72, 1]);
+      expect(fadeGradient.stops, const <double>[0, 0.35, 0.58, 0.82, 1]);
       expect(fadeGradient.colors.first.a, 0.82);
       expect(fadeGradient.colors.last.a, 0);
       expect(
@@ -166,7 +166,7 @@ void main() {
               find.byKey(const ValueKey<String>('app_search_field_shell')),
             )
             .dy,
-        32,
+        30,
       );
       expect(
         stack.children.first.key,
@@ -181,7 +181,7 @@ void main() {
           of: find.byKey(const ValueKey<String>('app_search_controls_overlay')),
           matching: find.byType(BackdropFilter),
         ),
-        findsNWidgets(2),
+        findsNWidgets(3),
       );
       final inputDecorator = tester.widget<InputDecorator>(
         find.descendant(
@@ -194,7 +194,10 @@ void main() {
         find.byKey(const ValueKey<String>('app_search_field')),
       );
       expect(searchField.textAlignVertical, TextAlignVertical.center);
-      expect(searchField.decoration?.contentPadding, EdgeInsets.zero);
+      expect(
+        searchField.decoration?.contentPadding,
+        const EdgeInsets.only(right: 10),
+      );
       expect(tester.takeException(), isNull);
 
       await tester.tap(find.byKey(const ValueKey<String>('app_search_close')));

@@ -256,11 +256,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
             right: 0,
             child: TopPageHeader(
               key: headerKey,
-              floating: true,
-              collapseController: _scrollController,
               topCapsuleTitle: i18n.tr('settings'),
               title: '',
-              padding: AppPageHeaderMetrics.mainTabPadding,
             ),
           ),
         ],

@@ -318,6 +318,8 @@ extension _MainScreenLayout on _MainScreenState {
     bool isCurrent = true,
   }) {
     final systemBottom = MediaQuery.paddingOf(context).bottom;
+    final maskHeight =
+        (overlaySessions.isNotEmpty ? 112.0 : 54.0) + systemBottom;
     return Stack(
       key: key,
       fit: StackFit.expand,
@@ -327,7 +329,7 @@ extension _MainScreenLayout on _MainScreenState {
             left: 0,
             right: 0,
             bottom: 0,
-            height: 112 + systemBottom,
+            height: maskHeight,
             child: const AppEdgeFadeMask(
               key: ValueKey<String>('mobile_bottom_capsule_fade_mask'),
               direction: AppEdgeFadeDirection.towardBottom,

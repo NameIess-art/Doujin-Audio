@@ -272,15 +272,23 @@ void main() {
       final menuPanel = find.byKey(
         const ValueKey<String>('mobile_bottom_capsule_panel'),
       );
-      final pageViewWidth = tester.getSize(find.byType(PageView)).width;
-      final menuWidth = tester.getSize(menuPanel).width;
+      final expectedMenuWidth = (360.0 - AppSpacing.sm * 2).clamp(0.0, 430.0);
+      final expectedCardWidth = expectedMenuWidth * 0.96;
+      final expectedViewportFraction = ((expectedCardWidth + 4) / 360.0).clamp(
+        0.1,
+        1.0,
+      );
       expect(
         playbackCarouselPageView.controller!.viewportFraction,
-        closeTo((menuWidth + 4) / pageViewWidth, 0.001),
+        closeTo(expectedViewportFraction, 0.001),
       );
       expect(
         tester.getSize(playbackCard).width,
-        closeTo(tester.getSize(menuPanel).width, 0.1),
+        closeTo(expectedCardWidth, 0.1),
+      );
+      expect(
+        tester.getSize(menuPanel).width,
+        closeTo(expectedMenuWidth * 0.96, 0.1),
       );
       expect(tester.getTopLeft(find.byType(PageView)).dx, 0);
       expect(
@@ -289,6 +297,28 @@ void main() {
           tester.view.physicalSize.width / tester.view.devicePixelRatio,
           0.1,
         ),
+      );
+    },
+  );
+
+  testWidgets(
+    'capsule dock reduces bottom fade mask height when playback card is hidden',
+    (tester) async {
+      tester.view.devicePixelRatio = 3;
+      tester.view.physicalSize = const Size(1080, 2400);
+      addTearDown(() {
+        tester.view.resetDevicePixelRatio();
+        tester.view.resetPhysicalSize();
+      });
+
+      await _pumpAppShell(tester, includePlaybackSession: false);
+
+      final fadeMaskFinder = find.byKey(
+        const ValueKey<String>('mobile_bottom_capsule_fade_mask'),
+      );
+      expect(
+        tester.getSize(fadeMaskFinder).height,
+        54 + MediaQuery.paddingOf(tester.element(fadeMaskFinder)).bottom,
       );
     },
   );

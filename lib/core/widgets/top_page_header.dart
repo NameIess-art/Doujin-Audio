@@ -85,7 +85,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
       0,
     ),
     this.collapsedBottomSpacing = AppSpacing.xs,
-    this.floating = false,
+    this.floating = true,
     this.topCapsuleTitle,
     this.topCapsuleData,
     this.topCapsuleLeading,
@@ -265,6 +265,92 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
           widget.leading != null ||
           widget.trailing != null;
 
+      Widget buildSecondaryCapsuleRow() {
+        Widget wrapButton(Widget button) {
+          if (button is HeaderFloatingButton || button is HeaderActionPill) {
+            return button;
+          }
+          return HeaderFloatingButton(
+            child: button,
+          );
+        }
+
+        final titleCapsule = HeaderFloatingSurface(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            children: [
+              if (widget.icon != null) ...[
+                Icon(widget.icon, size: 18, color: cs.primary),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: widget.titleWidget ??
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            resolvedTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: cs.onSurface,
+                              fontSize: 14,
+                              letterSpacing: 0.1,
+                            ),
+                          ),
+                          if (widget.subtitle != null &&
+                              widget.subtitle!.isNotEmpty)
+                            Text(
+                              widget.subtitle!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: cs.onSurfaceVariant.withValues(
+                                  alpha: 0.85,
+                                ),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                        ],
+                      ),
+                ),
+              ),
+              if (widget.titleSuffix != null) ...[
+                const SizedBox(width: 6),
+                widget.titleSuffix!,
+              ],
+            ],
+          ),
+        );
+
+        return Row(
+          children: [
+            if (widget.leading != null) ...[
+              wrapButton(widget.leading!),
+              const SizedBox(width: 8),
+            ],
+            Expanded(child: titleCapsule),
+            if (widget.trailing != null) ...[
+              const SizedBox(width: 8),
+              wrapButton(widget.trailing!),
+            ],
+          ],
+        );
+      }
+
+      if (!hasTopCapsule) {
+        return Padding(
+          padding: widget.padding,
+          child: buildSecondaryCapsuleRow(),
+        );
+      }
+
       final mainCollapseT = hasTopCapsule ? 0.0 : collapseT;
       final titleCollapseT = Curves.easeOutCubic.transform(mainCollapseT);
       final auxiliaryCollapseT = Curves.easeInOutCubic.transform(mainCollapseT);
@@ -311,9 +397,6 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
 
       Widget buildTopCapsule() {
         if (topCapsuleWidget == null) return const SizedBox.shrink();
-        final isMainTabPadded =
-            widget.padding is EdgeInsets &&
-            (widget.padding as EdgeInsets).right < 12;
         return ClipRect(
           child: Align(
             alignment: Alignment.topCenter,
@@ -322,7 +405,6 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
               opacity: topCapsuleFactor,
               child: Padding(
                 padding: EdgeInsets.only(
-                  right: isMainTabPadded ? 8.0 : 0.0,
                   bottom: hasMainRow ? (6.0 * topCapsuleFactor) : 0.0,
                 ),
                 child: topCapsuleWidget,
@@ -534,7 +616,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
 class _AppHeaderGlassSurface extends ConsumerWidget {
   const _AppHeaderGlassSurface({
     required this.child,
-    this.floating = false,
+    this.floating = true,
   });
 
   final Widget child;
@@ -678,7 +760,24 @@ class HeaderFloatingButton extends StatelessWidget {
       width: size,
       height: size,
       radius: size / 2,
-      child: Center(child: child),
+      child: IconButtonTheme(
+        data: IconButtonThemeData(
+          style: IconButton.styleFrom(
+            minimumSize: Size(size, size),
+            maximumSize: Size(size, size),
+            padding: EdgeInsets.zero,
+            iconSize: 20,
+            visualDensity: VisualDensity.compact,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ),
+        child: Center(
+          child: IconTheme.merge(
+            data: const IconThemeData(size: 20),
+            child: child,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -809,34 +908,46 @@ class HeaderTopCapsule extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (leading != null) ...[
-                leading!,
-                const SizedBox(width: 6),
-              ],
-              Text(
-                title,
-                style: textTheme.titleSmall?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  color: cs.onSurface,
-                  fontSize: 13.5,
-                  letterSpacing: 0.1,
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (leading != null) ...[
+                  leading!,
+                  const SizedBox(width: 6),
+                ],
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      color: cs.onSurface,
+                      fontSize: 13.5,
+                      letterSpacing: 0.1,
+                    ),
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
+          const SizedBox(width: 8),
           if (trailing != null)
             trailing!
           else if (data != null && data!.isNotEmpty)
-            Text(
-              data!,
-              style: textTheme.bodySmall?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: cs.onSurfaceVariant.withValues(alpha: 0.85),
-                fontSize: 11.5,
-                letterSpacing: 0,
+            Flexible(
+              child: Text(
+                data!,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
+                style: textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: cs.onSurfaceVariant.withValues(alpha: 0.85),
+                  fontSize: 11.5,
+                  letterSpacing: 0,
+                ),
               ),
             ),
         ],

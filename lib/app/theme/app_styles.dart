@@ -61,7 +61,7 @@ abstract final class AppPageHeaderMetrics {
   static const EdgeInsets mainTabPadding = EdgeInsets.fromLTRB(
     AppSpacing.md,
     6,
-    AppSpacing.xs,
+    AppSpacing.md,
     0,
   );
   static const double firstContentSpacing = AppSpacing.xxs;

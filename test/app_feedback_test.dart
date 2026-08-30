@@ -497,12 +497,12 @@ void main() {
       final topLeft = tester.getTopLeft(surfaceFinder);
       final topRight = tester.getTopRight(surfaceFinder);
 
-      // Should be positioned below the header button area (~54px)
-      expect(topLeft.dy, closeTo(54.0, 10.0));
+      // Should be positioned at the second row capsule area (~48px)
+      expect(topLeft.dy, closeTo(48.0, 5.0));
       // In landscape with a 260px menu, left edge should start at 260 + 16 = 276
       expect(topLeft.dx, closeTo(276.0, 5.0));
-      // Right edge should align with title bar right button (screen width - 4 = 1276)
-      expect(topRight.dx, closeTo(1276.0, 5.0));
+      // Right edge should align with standard 16px right margin (screen width - 16 = 1264)
+      expect(topRight.dx, closeTo(1264.0, 5.0));
     },
   );
 

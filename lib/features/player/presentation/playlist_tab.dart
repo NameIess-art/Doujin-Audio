@@ -1057,54 +1057,47 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     ),
                     title: count.toString(),
                     titleWidget: AppRollingNumber(number: count),
-                    padding: AppPageHeaderMetrics.mainTabPadding,
-                    trailing: SizedBox(
-                      height: 44,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          _AnimatedHeaderAction(
-                            child: IconButton(
-                              key: const ValueKey('batch_play_button'),
-                              onPressed: isPlayEnabled
-                                  ? _handleBatchPlay
-                                  : null,
-                              icon: const Icon(Icons.play_arrow_rounded),
-                              tooltip: i18n.tr('play'),
-                            ),
+                    trailing: HeaderActionPill(
+                      children: [
+                        _AnimatedHeaderAction(
+                          child: IconButton(
+                            key: const ValueKey('batch_play_button'),
+                            onPressed: isPlayEnabled
+                                ? _handleBatchPlay
+                                : null,
+                            icon: const Icon(Icons.play_arrow_rounded),
+                            tooltip: i18n.tr('play'),
                           ),
-                          _AnimatedHeaderAction(
-                            delayIndex: 1,
-                            child: IconButton(
-                              key: const ValueKey('batch_pause_button'),
-                              onPressed: isPauseEnabled
-                                  ? _handleBatchPause
-                                  : null,
-                              icon: const Icon(Icons.pause_rounded),
-                              tooltip: i18n.tr('pause'),
-                            ),
+                        ),
+                        _AnimatedHeaderAction(
+                          delayIndex: 1,
+                          child: IconButton(
+                            key: const ValueKey('batch_pause_button'),
+                            onPressed: isPauseEnabled
+                                ? _handleBatchPause
+                                : null,
+                            icon: const Icon(Icons.pause_rounded),
+                            tooltip: i18n.tr('pause'),
                           ),
-                          _AnimatedHeaderAction(
-                            delayIndex: 2,
-                            child: IconButton(
-                              key: const ValueKey('batch_remove_button'),
-                              onPressed: isRemoveEnabled
-                                  ? _handleBatchRemove
-                                  : null,
-                              icon: const Icon(Icons.delete_outline_rounded),
-                              tooltip: i18n.tr('remove'),
-                            ),
+                        ),
+                        _AnimatedHeaderAction(
+                          delayIndex: 2,
+                          child: IconButton(
+                            key: const ValueKey('batch_remove_button'),
+                            onPressed: isRemoveEnabled
+                                ? _handleBatchRemove
+                                : null,
+                            icon: const Icon(Icons.delete_outline_rounded),
+                            tooltip: i18n.tr('remove'),
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   )._withPlaylistHeaderTransition();
                 }
 
                 return TopPageHeader(
                   key: headerKey,
-                  floating: true,
                   collapseController: _scrollController,
                   topCapsuleTitle: i18n.tr('playback_sessions'),
                   topCapsuleData: i18n.tr('playlist_header_stats', {
@@ -1117,7 +1110,6 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     i18n,
                     structureState,
                   ),
-                  padding: AppPageHeaderMetrics.mainTabPadding,
                   trailing: SizedBox(
                     height: 44,
                     child: Row(

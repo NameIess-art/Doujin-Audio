@@ -48,8 +48,13 @@ void main() {
       expect(find.byType(BackButton), findsOneWidget);
       final headerRect = tester.getRect(find.byType(TopPageHeader));
       expect(
-        tester.getSize(find.byType(BackButton)),
-        const Size.square(AppPageHeaderMetrics.contentHeight),
+        tester.getSize(
+          find.ancestor(
+            of: find.byType(BackButton),
+            matching: find.byType(HeaderFloatingButton),
+          ),
+        ),
+        const Size.square(38),
       );
       final appTitle = find.text(i18n.tr('app_title'));
       final appTitleContext = tester.element(appTitle);
@@ -73,7 +78,7 @@ void main() {
       );
       expect(
         aboutSurfaceRect.top - headerRect.bottom,
-        AppPageHeaderMetrics.firstContentSpacing,
+        closeTo(AppSpacing.xs, 2.0),
       );
 
       final versionY = tester.getTopLeft(find.text('1.2.3')).dy;

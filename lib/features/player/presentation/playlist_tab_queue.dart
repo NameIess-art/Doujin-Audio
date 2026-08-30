@@ -672,21 +672,21 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
 
     final cs = Theme.of(context).colorScheme;
 
+    final headerHeight =
+        MediaQuery.paddingOf(context).top +
+        AppPageHeaderMetrics.padding.top +
+        38 +
+        AppPageHeaderMetrics.bottomSpacing;
+
     return Scaffold(
       backgroundColor: cs.surface,
-      body: Column(
+      body: Stack(
         children: [
-          TopPageHeader(
-            leading: IconButton(
-              tooltip: i18n.tr('close'),
-              onPressed: () => Navigator.of(context).maybePop(),
-              icon: const Icon(Icons.arrow_back_rounded),
-            ),
-            title: i18n.tr('edit_queue_audio'),
-          ),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
+          Positioned.fill(
+            child: Padding(
+              padding: EdgeInsets.only(top: headerHeight),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
                 final isLandscape =
                     constraints.maxWidth > constraints.maxHeight;
                 final removalState = ref.watch(undoableRemovalStateProvider);
@@ -864,6 +864,20 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                   );
                 }
               },
+            ),
+          ),
+        ),
+        Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              leading: IconButton(
+                tooltip: i18n.tr('close'),
+                onPressed: () => Navigator.of(context).maybePop(),
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+              title: i18n.tr('edit_queue_audio'),
             ),
           ),
         ],

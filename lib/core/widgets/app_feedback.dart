@@ -253,8 +253,8 @@ void _showTopFeedback(
       final topInset =
           mediaQuery.padding.top +
           AppPageHeaderMetrics.mainTabPadding.top +
-          AppPageHeaderMetrics.contentHeight +
-          4;
+          36.0 +
+          6.0;
 
       double leftInset = 16.0;
       var availableWidth = mediaQuery.size.width;
@@ -295,8 +295,7 @@ void _showTopFeedback(
       if (availableWidth < 600) {
         leftInset = 16.0;
       } else {
-        final maximumLeftInset =
-            availableWidth - AppPageHeaderMetrics.mainTabPadding.right - 240;
+        final maximumLeftInset = availableWidth - 16.0 - 240;
         if (leftInset > maximumLeftInset) {
           leftInset = maximumLeftInset.clamp(16.0, leftInset);
         }
@@ -305,7 +304,7 @@ void _showTopFeedback(
       return Positioned(
         top: topInset,
         left: leftInset,
-        right: AppPageHeaderMetrics.mainTabPadding.right,
+        right: 16.0,
         child: _FeedbackAnimationWrapper(
           duration: duration,
           transitionDuration: AppDesignTokens.of(overlayContext).motionStandard,

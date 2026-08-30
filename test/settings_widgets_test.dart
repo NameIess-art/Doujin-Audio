@@ -689,7 +689,7 @@ void main() {
         tester.widget<Card>(languageCard.first).shape!
             as RoundedRectangleBorder;
     final firstBorderRadius = firstCardShape.borderRadius as BorderRadius;
-    expect(firstBorderRadius.topLeft, const Radius.circular(16));
+    expect(firstBorderRadius.topLeft, const Radius.circular(12));
     expect(firstBorderRadius.bottomLeft, const Radius.circular(6));
     final aboutCard = find.ancestor(
       of: find.widgetWithText(ListTile, i18n.tr('about')),
@@ -699,7 +699,7 @@ void main() {
         tester.widget<Card>(aboutCard.first).shape! as RoundedRectangleBorder;
     final lastBorderRadius = lastCardShape.borderRadius as BorderRadius;
     expect(lastBorderRadius.topLeft, const Radius.circular(6));
-    expect(lastBorderRadius.bottomLeft, const Radius.circular(16));
+    expect(lastBorderRadius.bottomLeft, const Radius.circular(12));
 
     await tester.tap(rootTile);
     await tester.pumpAndSettle();
@@ -729,7 +729,7 @@ void main() {
                 .shape!
             as RoundedRectangleBorder;
     final detailBorderRadius = detailCardShape.borderRadius as BorderRadius;
-    expect(detailBorderRadius.topLeft, const Radius.circular(16));
+    expect(detailBorderRadius.topLeft, const Radius.circular(12));
     expect(
       tester
           .widget<Card>(

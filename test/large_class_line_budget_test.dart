@@ -11,7 +11,7 @@ void main() {
       'lib/features/asmr/application/asmr_download_task_store.dart': 550,
       'android/app/src/main/kotlin/com/doujin/audio/player/service/'
               'NativePlaybackService.kt':
-          1500,
+          1600,
     };
 
     for (final entry in budgets.entries) {

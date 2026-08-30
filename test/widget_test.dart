@@ -1560,7 +1560,10 @@ void main() {
             ),
           )
           .borderRadius,
-      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+      BorderRadius.circular(
+        LibraryLikeCardMetrics.coverRadius +
+            (playbackCoverRect.left - playbackCardRect.left),
+      ),
     );
     expect(
       tester
@@ -1573,7 +1576,7 @@ void main() {
             ),
           )
           .borderRadius,
-      BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+      BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
     );
 
     await settingsRepository.setBottomNavigationStyle(

@@ -395,73 +395,10 @@ class AsmrDownloadManager {
     await flushPersistence();
   }
 
-  Future<void> resumeTask(int workId) async {
-    if (_disposed) return;
-    final task = _store[workId];
-    if (task == null ||
-        (task.status != AsmrDownloadTaskStatus.paused &&
-            task.status != AsmrDownloadTaskStatus.failed)) {
-      return;
-    }
-    _enqueueExistingTask(task);
-  }
+  Future<void> resumeTask(int workId) => _resumeTask(workId);
 
-  Future<bool> retryFailedFile(int workId, String relativePath) async {
-    if (_disposed) return false;
-    await initialize();
-    if (_disposed) return false;
-    final task = _store[workId];
-    final normalizedPath = relativePath.trim();
-    if (task == null ||
-        normalizedPath.isEmpty ||
-        !task.failedFilePaths.contains(normalizedPath) ||
-        task.manuallyRetryingFilePaths.contains(normalizedPath)) {
-      return false;
-    }
-    final plannedFile = _findPlannedFile(task, normalizedPath);
-    if (plannedFile == null) return false;
-
-    final activeDispatcher = _activeFileRetryDispatchers[workId];
-    final canStartFailedTask =
-        task.status == AsmrDownloadTaskStatus.failed &&
-        !_activeTasks.contains(workId) &&
-        !_queue.contains(workId);
-    if (activeDispatcher == null && !canStartFailedTask) return false;
-
-    final retryAttempts = Map<String, int>.from(task.fileRetryAttempts)
-      ..remove(normalizedPath);
-    final retryingPaths = Set<String>.from(task.manuallyRetryingFilePaths)
-      ..add(normalizedPath);
-    final retryingTask = task.copyWith(
-      fileRetryAttempts: retryAttempts,
-      manuallyRetryingFilePaths: retryingPaths,
-    );
-    _store[workId] = retryingTask;
-    _store.notifyTaskChanged(changedWorkIds: <int>{workId});
-
-    if (activeDispatcher != null) {
-      activeDispatcher(plannedFile);
-    } else {
-      _manualRetryOnlyPaths[workId] = <String>{normalizedPath};
-      _plannedFilesMap[workId] = <_PlannedDownloadFile>[plannedFile];
-      _enqueueExistingTask(retryingTask);
-    }
-    return true;
-  }
-
-  void _enqueueExistingTask(AsmrDownloadTaskSnapshot task) {
-    final workId = task.work.id;
-    _resumingTasks.add(workId);
-    _store[workId] = task.copyWith(
-      status: AsmrDownloadTaskStatus.idle,
-      message: 'queued',
-    );
-    if (!_queue.contains(workId)) {
-      _queue.add(workId);
-    }
-    _store.notifyTaskChanged();
-    _processQueue();
-  }
+  Future<bool> retryFailedFile(int workId, String relativePath) =>
+      _retryFailedFile(workId, relativePath);
 
   Future<void> startDownload({
     required AsmrWork work,

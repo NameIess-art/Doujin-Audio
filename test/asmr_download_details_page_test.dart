@@ -137,6 +137,13 @@ void main() {
     await tester.pump();
 
     expect(retryButton, findsNothing);
+
+    await tester.pumpWidget(
+      _downloadDetailsApp(languageProvider, failedTask, manager: manager),
+    );
+    await tester.pump();
+
+    expect(retryButton, findsOneWidget);
   });
 
   testWidgets('paused failed file keeps its manual retry action disabled', (

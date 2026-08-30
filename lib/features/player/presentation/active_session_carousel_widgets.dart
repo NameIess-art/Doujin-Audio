@@ -27,11 +27,14 @@ class _ActiveSessionCard extends ConsumerWidget {
       ),
     );
     final isBar = style == BottomNavigationStyle.bar;
-    final cardRadius = isBar ? 0.0 : LibraryLikeCardMetrics.cardRadius;
+    const coverRadius = LibraryLikeCardMetrics.coverRadius;
     final coverDimension = isBar ? 66.0 : 72.0;
     final contentPadding = isBar
         ? const EdgeInsets.fromLTRB(4, 3, 8, 4)
         : const EdgeInsets.fromLTRB(7, 3, 8, 3);
+    const cardBorderWidth = 1.0;
+    final coverDistance = contentPadding.left + (isBar ? 0.0 : cardBorderWidth);
+    final cardRadius = isBar ? 0.0 : (coverRadius + coverDistance);
 
     final view = ref.watch(
       playbackStateProvider.select((value) {
@@ -678,7 +681,7 @@ class _ActiveSessionCover extends ConsumerWidget {
       dimension: dimension,
       child: Material(
         type: MaterialType.transparency,
-        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.cardRadius),
+        borderRadius: BorderRadius.circular(LibraryLikeCardMetrics.coverRadius),
         clipBehavior: Clip.antiAlias,
         child: AsyncLocalCoverImage(
           future: coverPathFuture,

@@ -2431,6 +2431,7 @@ void main() {
         expect(requests, 4);
         expect(manager.getTask(1)?.automaticFileRetryCount, 3);
         expect(manager.getTask(1)?.failedFiles, 1);
+        expect(manager.getTask(1)?.failedFilePaths, <String>{'Track.mp3'});
         expect(manager.getTask(1)?.fileRetryAttempts, isEmpty);
       } finally {
         manager.dispose();
@@ -2584,6 +2585,80 @@ void main() {
       }
     },
   );
+
+  test('manual file retry leaves unrelated failures untouched', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'asmr_download_manual_retry_selected_only_',
+    );
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var retryFirstFile = false;
+    var firstRequests = 0;
+    var secondRequests = 0;
+    unawaited(
+      server.forEach((request) async {
+        if (request.uri.path.endsWith('first.mp3')) {
+          firstRequests++;
+          if (retryFirstFile) {
+            request.response.contentLength = 1;
+            request.response.add(const <int>[1]);
+          } else {
+            request.response.statusCode = HttpStatus.notFound;
+          }
+        } else {
+          secondRequests++;
+          request.response.statusCode = HttpStatus.notFound;
+        }
+        await request.response.close();
+      }),
+    );
+    final manager = _manager();
+    try {
+      await manager.startDownload(
+        work: _work(),
+        selectedRoots: <AsmrTrackFile>[
+          _file(
+            downloadUrl:
+                'http://${server.address.host}:${server.port}/first.mp3',
+            title: 'First.mp3',
+          ),
+          _file(
+            downloadUrl:
+                'http://${server.address.host}:${server.port}/second.mp3',
+            title: 'Second.mp3',
+          ),
+        ],
+        destinationRoot: tempDir.path,
+        conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+        saveMetadata: false,
+      );
+      await _waitForTaskStatus(
+        manager,
+        1,
+        AsmrDownloadTaskStatus.failed,
+        allowFailure: true,
+      );
+      expect(manager.getTask(1)?.failedFilePaths, <String>{
+        'First.mp3',
+        'Second.mp3',
+      });
+
+      retryFirstFile = true;
+      expect(await manager.retryFailedFile(1, 'First.mp3'), isTrue);
+      await _waitForFailedFilePaths(manager, 1, <String>{'Second.mp3'});
+
+      final task = manager.getTask(1);
+      expect(firstRequests, 2);
+      expect(secondRequests, 1);
+      expect(task?.status, AsmrDownloadTaskStatus.failed);
+      expect(task?.failedFiles, 1);
+      expect(task?.completedFilePaths, contains('First.mp3'));
+      expect(task?.manuallyRetryingFilePaths, isEmpty);
+    } finally {
+      manager.dispose();
+      await server.close(force: true);
+      if (await tempDir.exists()) await tempDir.delete(recursive: true);
+    }
+  });
 
   test('a permanent HTTP failure is not retried', () async {
     final tempDir = await Directory.systemTemp.createTemp(
@@ -2984,6 +3059,7 @@ void main() {
       expect(manager.getTask(1)?.status, AsmrDownloadTaskStatus.paused);
       expect(manager.getTask(1)?.workFolderName, 'Work');
       expect(manager.getTask(1)?.saveCover, isFalse);
+      expect(manager.getTask(1)?.failedFilePaths, isEmpty);
       expect(
         manager.getTask(1)?.automaticFileRetryCount,
         kMaxAsmrDownloadRetryCount,
@@ -3008,6 +3084,63 @@ void main() {
       );
     } finally {
       manager.dispose();
+      await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey);
+    }
+  });
+
+  test('failed file paths persist while manual retry state does not', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await AppPreferences.init();
+    final selectedRoots = <AsmrTrackFile>[
+      _file(downloadUrl: 'https://example.invalid/track.mp3'),
+    ];
+    final manager = AsmrDownloadManager();
+    AsmrDownloadManager? restoredManager;
+    try {
+      await manager.initialize();
+      manager.debugSetCurrentTaskForTesting(
+        AsmrDownloadTaskSnapshot(
+          work: _work(),
+          destinationRoot: Directory.systemTemp.path,
+          workFolderName: 'Work',
+          conflictPolicy: AsmrDownloadConflictPolicy.overwrite,
+          saveMetadata: false,
+          status: AsmrDownloadTaskStatus.failed,
+          totalFiles: 1,
+          completedFiles: 0,
+          skippedFiles: 0,
+          failedFiles: 1,
+          totalBytes: 1,
+          downloadedBytes: 0,
+          startedAt: DateTime(2026),
+          failedFilePaths: const <String>{'Track.mp3'},
+          manuallyRetryingFilePaths: const <String>{'Track.mp3'},
+          selectedRoots: selectedRoots,
+        ),
+      );
+      await manager.flushPersistence();
+
+      final persisted =
+          jsonDecode(
+                (await AppPreferences.getString(
+                  AppPreferences.asmrDownloadTasksKey,
+                ))!,
+              )
+              as Map<String, dynamic>;
+      final persistedTask = (persisted['tasks'] as List).single as Map;
+      expect(persistedTask['failedFilePaths'], <String>['Track.mp3']);
+      expect(persistedTask.containsKey('manuallyRetryingFilePaths'), isFalse);
+
+      await manager.shutdown();
+      restoredManager = AsmrDownloadManager();
+      await restoredManager.initialize();
+      expect(restoredManager.getTask(1)?.failedFilePaths, <String>{
+        'Track.mp3',
+      });
+      expect(restoredManager.getTask(1)?.manuallyRetryingFilePaths, isEmpty);
+    } finally {
+      await restoredManager?.shutdown();
+      await manager.shutdown();
       await AppPreferences.remove(AppPreferences.asmrDownloadTasksKey);
     }
   });
@@ -3476,6 +3609,27 @@ Future<void> _waitForFailedFilePath(
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
   fail('Timed out waiting for failed download path $relativePath.');
+}
+
+Future<void> _waitForFailedFilePaths(
+  AsmrDownloadManager manager,
+  int workId,
+  Set<String> expectedPaths,
+) async {
+  final deadline = DateTime.now().add(const Duration(seconds: 5));
+  while (DateTime.now().isBefore(deadline)) {
+    final actualPaths = manager.getTask(workId)?.failedFilePaths;
+    if (actualPaths != null &&
+        actualPaths.length == expectedPaths.length &&
+        actualPaths.containsAll(expectedPaths)) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  fail(
+    'Timed out waiting for failed download paths $expectedPaths; '
+    'actual=${manager.getTask(workId)?.failedFilePaths}.',
+  );
 }
 
 Future<void> _waitForTaskStatus(

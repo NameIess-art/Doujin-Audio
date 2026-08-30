@@ -1549,7 +1549,7 @@ class _TimelineSubtitleViewState extends State<_TimelineSubtitleView> {
                                   ),
                                 ),
                               ),
-                              if (isFocused && !isPlaybackSubtitle)
+                              if (_isBrowsing && isFocused && !isPlaybackSubtitle)
                                 Align(
                                   alignment: Alignment.centerRight,
                                   child: SizedBox(

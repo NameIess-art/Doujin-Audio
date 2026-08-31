@@ -29,7 +29,8 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
     _scrollToTopListenable = listenable;
     _scrollToTopListenable?.addListener(handleScrollToTopSignal);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) measureHeader();
+      if (!mounted) return;
+      measureHeader();
     });
   }
 
@@ -48,8 +49,6 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   void jumpToTop() {
     final controller = mainScrollController;
     if (!controller.hasClients) return;
-    final scrollHold = controller.position.hold(() {});
-    scrollHold.cancel();
     const fakeAnimationStartOffset = 360.0;
     final animationStartOffset =
         controller.position.maxScrollExtent < fakeAnimationStartOffset

@@ -3076,6 +3076,16 @@ void main() {
 
       final batchHeader = find.byKey(batchHeaderKey);
       expect(batchHeader, findsOneWidget);
+      expect(
+        find.text(fixture.languageProvider.tr('multi_select')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          fixture.languageProvider.tr('selected_count', {'count': '1'}),
+        ),
+        findsOneWidget,
+      );
       final headerSwitcher = find.ancestor(
         of: batchHeader,
         matching: find.byType(AnimatedSwitcher),
@@ -3088,6 +3098,30 @@ void main() {
       expect(find.byType(TopPageHeader), findsNWidgets(2));
 
       await tester.pumpAndSettle();
+
+      final batchActions = find.descendant(
+        of: batchHeader,
+        matching: find.byType(HeaderActionPill),
+      );
+      final exitSelectionButton = find.byKey(
+        const ValueKey<String>('exit_selection_button'),
+      );
+      expect(batchActions, findsOneWidget);
+      expect(exitSelectionButton, findsOneWidget);
+      expect(
+        tester.getTopLeft(batchActions).dy,
+        greaterThan(
+          tester
+              .getTopLeft(
+                find.text(fixture.languageProvider.tr('multi_select')),
+              )
+              .dy,
+        ),
+      );
+      expect(
+        tester.getTopLeft(exitSelectionButton).dx,
+        greaterThan(tester.getTopLeft(batchActions).dx),
+      );
 
       final trackIndicator = find.byKey(
         ValueKey<String>('playlist_selection_indicator_${trackSession.id}'),
@@ -3173,6 +3207,9 @@ void main() {
       final playIconButton = find.byKey(
         const ValueKey<String>('batch_play_button'),
       );
+      final removeIconButton = find.byKey(
+        const ValueKey<String>('batch_remove_button'),
+      );
       expect(
         tester.widget<IconButton>(playIconButton).tooltip,
         fixture.languageProvider.tr('play'),
@@ -3184,6 +3221,17 @@ void main() {
         ),
         findsOneWidget,
       );
+      for (final actionButton in <Finder>[
+        playIconButton,
+        pauseIconButton,
+        removeIconButton,
+      ]) {
+        expect(tester.widget<IconButton>(actionButton).iconSize, 18);
+        expect(
+          tester.widget<IconButton>(actionButton).constraints,
+          const BoxConstraints.tightFor(width: 32, height: 32),
+        );
+      }
       expect(
         tester.widget<IconButton>(pauseIconButton).tooltip,
         fixture.languageProvider.tr('pause'),

@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
+import '../../../app/theme/app_styles.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../settings/application/settings_repository.dart';
 import '../../settings/application/settings_state.dart';
@@ -20,6 +21,22 @@ import '../../../core/widgets/unified_dropdown.dart';
 
 part 'video_converter_tab_widgets.dart';
 
+String formatVideoConverterOutputDirectoryPath(String directoryPath) {
+  const primaryStoragePrefix = '/storage/emulated/0/';
+  final normalizedPath = directoryPath.replaceAll('\\', '/');
+  return normalizedPath.startsWith(primaryStoragePrefix)
+      ? normalizedPath.substring(primaryStoragePrefix.length)
+      : directoryPath;
+}
+
+double _videoConverterHeaderContentTopInset(BuildContext context) {
+  return MediaQuery.paddingOf(context).top +
+      AppPageHeaderMetrics.padding.vertical +
+      AppPageHeaderMetrics.contentHeight +
+      AppPageHeaderMetrics.bottomSpacing +
+      AppPageHeaderMetrics.firstContentSpacing;
+}
+
 class VideoConverterTab extends ConsumerStatefulWidget {
   const VideoConverterTab({super.key});
 
@@ -29,7 +46,6 @@ class VideoConverterTab extends ConsumerStatefulWidget {
 
 class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   String? _selectedVideoPath;
-  String? _outputDirectoryPath;
   bool _isConverting = false;
   bool _isCanceling = false;
   double _progress = 0.0;
@@ -79,9 +95,9 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
       _successResetTimer?.cancel();
       _successResetTimer = null;
       _conversionGeneration++;
-      setState(() {
-        _outputDirectoryPath = result;
-      });
+      await ref
+          .read(settingsRepositoryProvider)
+          .setConverterOutputDirectoryPath(result);
     }
   }
 
@@ -104,7 +120,8 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
   Future<void> _startConversion(SettingsRepository settings) async {
     if (_isConverting) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    if (_selectedVideoPath == null || _outputDirectoryPath == null) {
+    final outputDirectoryPath = settings.converterOutputDirectoryPath;
+    if (_selectedVideoPath == null || outputDirectoryPath == null) {
       showAppSnackBar(
         context,
         i18n.tr('select_video_and_output'),
@@ -118,7 +135,6 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     _successResetTimer = null;
     final generation = ++_conversionGeneration;
     final inputPath = _selectedVideoPath!;
-    final outputDirectoryPath = _outputDirectoryPath!;
     final durationMs = _videoDurationMs;
     setState(() {
       _isConverting = true;
@@ -271,6 +287,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
     );
     final selectedFormat = settingsState.converterFormat;
     final selectedBitrate = settingsState.converterBitrate;
+    final outputDirectoryPath = settingsState.converterOutputDirectoryPath;
     final bitrateEnabled = selectedFormat != 'wav' && selectedFormat != 'flac';
     final descStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       fontSize: 11,
@@ -278,15 +295,17 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
       color: Theme.of(context).colorScheme.onSurfaceVariant,
     );
 
-    final topPadding = MediaQuery.paddingOf(context).top;
-    final topTotalHeight = 82 + topPadding; // 82 is roughly the header height
-
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: Stack(
         children: [
           ListView(
-            padding: EdgeInsets.fromLTRB(16, topTotalHeight + 4, 16, 24),
+            padding: EdgeInsets.fromLTRB(
+              16,
+              _videoConverterHeaderContentTopInset(context),
+              16,
+              24,
+            ),
             children: [
               Card(
                 margin: EdgeInsets.zero,
@@ -299,7 +318,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                 child: Column(
                   children: [
                     _PathPickerCard(
-                      icon: Icons.video_library_rounded,
+                      icon: Icons.video_file_rounded,
                       title: i18n.tr('source_video_file'),
                       placeholder: i18n.tr('tap_select_video_file'),
                       value: _selectedVideoPath,
@@ -317,7 +336,11 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                       icon: Icons.create_new_folder_rounded,
                       title: i18n.tr('output_directory'),
                       placeholder: i18n.tr('tap_select_output_dir'),
-                      value: _outputDirectoryPath,
+                      value: outputDirectoryPath == null
+                          ? null
+                          : formatVideoConverterOutputDirectoryPath(
+                              outputDirectoryPath,
+                            ),
                       onTap: _isConverting || pickOperation.isBusy
                           ? null
                           : _pickOutputDirectory,
@@ -511,7 +534,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
               else
                 FilledButton.icon(
                   onPressed:
-                      _selectedVideoPath != null && _outputDirectoryPath != null
+                      _selectedVideoPath != null && outputDirectoryPath != null
                       ? () => _startConversion(settings)
                       : null,
                   icon: const Icon(Icons.transform_rounded),
@@ -528,13 +551,11 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
             left: 0,
             right: 0,
             child: TopPageHeader(
-              icon: Icons.sync_rounded,
+              icon: Icons.video_library_rounded,
               title: i18n.tr('video_to_audio'),
-              trailing: Semantics(
-                button: true,
-                label: i18n.tr('close'),
+              leading: HeaderFloatingButton(
                 child: IconButton(
-                  icon: const Icon(Icons.close_rounded),
+                  icon: const Icon(Icons.arrow_back_rounded),
                   tooltip: i18n.tr('close'),
                   onPressed: () => Navigator.of(context).maybePop(),
                 ),

@@ -16,6 +16,7 @@ class SettingsRepository {
   static const converterBitrates = <String>['128k', '192k', '256k', '320k'];
   String converterFormat = 'mp3';
   String converterBitrate = '320k';
+  String? converterOutputDirectoryPath;
   bool multiThreadPlaybackEnabled = false;
   bool notificationsEnabled = true;
   bool showPlaybackCard = true;
@@ -208,6 +209,9 @@ class SettingsRepository {
     );
     final savedFormat = converter?['format'];
     final savedBitrate = converter?['bitrate'];
+    converterOutputDirectoryPath = _optionalString(
+      converter?['outputDirectoryPath'],
+    );
     if (savedFormat is String && converterFormats.contains(savedFormat)) {
       converterFormat = savedFormat;
     }
@@ -297,10 +301,22 @@ class SettingsRepository {
     await _persistConverterSettings();
   }
 
+  Future<void> setConverterOutputDirectoryPath(String directoryPath) async {
+    final normalized = _optionalString(directoryPath);
+    if (normalized == null || normalized == converterOutputDirectoryPath) {
+      return;
+    }
+    converterOutputDirectoryPath = normalized;
+    syncSlice(isInitialized: slice.state.isInitialized);
+    await _persistConverterSettings();
+  }
+
   Future<void> _persistConverterSettings() async {
     await AppPreferences.writeJson(_converterSettingsKey, <String, Object?>{
       'format': converterFormat,
       'bitrate': converterBitrate,
+      if (converterOutputDirectoryPath != null)
+        'outputDirectoryPath': converterOutputDirectoryPath,
     });
   }
 
@@ -608,6 +624,7 @@ class SettingsRepository {
   void _resetValues() {
     converterFormat = 'mp3';
     converterBitrate = '320k';
+    converterOutputDirectoryPath = null;
     multiThreadPlaybackEnabled = false;
     notificationsEnabled = true;
     showPlaybackCard = true;
@@ -673,6 +690,7 @@ class SettingsRepository {
       SettingsState(
         converterFormat: converterFormat,
         converterBitrate: converterBitrate,
+        converterOutputDirectoryPath: converterOutputDirectoryPath,
         multiThreadPlaybackEnabled: multiThreadPlaybackEnabled,
         notificationsEnabled: notificationsEnabled,
         showPlaybackCard: showPlaybackCard,

@@ -86,10 +86,12 @@ class _SelectField extends StatelessWidget {
       decoration: InputDecoration(
         labelText: label,
         enabled: enabled,
+        isDense: true,
         contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       ),
       child: UnifiedDropdownButton<String>(
         isExpanded: true,
+        isDense: true,
         value: value,
         menuMaxHeight: 320,
         onChanged: enabled ? onChanged : null,

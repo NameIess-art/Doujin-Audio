@@ -47,6 +47,7 @@ class SettingsState {
   SettingsState({
     this.converterFormat = 'mp3',
     this.converterBitrate = '320k',
+    this.converterOutputDirectoryPath,
     this.multiThreadPlaybackEnabled = false,
     this.notificationsEnabled = true,
     this.showPlaybackCard = true,
@@ -101,6 +102,7 @@ class SettingsState {
 
   final String converterFormat;
   final String converterBitrate;
+  final String? converterOutputDirectoryPath;
   final bool multiThreadPlaybackEnabled;
   final bool notificationsEnabled;
   final bool showPlaybackCard;
@@ -152,6 +154,7 @@ class SettingsState {
     return other is SettingsState &&
         other.converterFormat == converterFormat &&
         other.converterBitrate == converterBitrate &&
+        other.converterOutputDirectoryPath == converterOutputDirectoryPath &&
         other.multiThreadPlaybackEnabled == multiThreadPlaybackEnabled &&
         other.notificationsEnabled == notificationsEnabled &&
         other.showPlaybackCard == showPlaybackCard &&
@@ -208,6 +211,7 @@ class SettingsState {
   int get hashCode => Object.hashAll(<Object?>[
     converterFormat,
     converterBitrate,
+    converterOutputDirectoryPath,
     multiThreadPlaybackEnabled,
     notificationsEnabled,
     showPlaybackCard,

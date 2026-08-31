@@ -1430,7 +1430,7 @@ void main() {
     );
     final settingsNavigationIcon = find.descendant(
       of: navigationRail,
-      matching: find.byIcon(Icons.tune_outlined),
+      matching: find.byIcon(Icons.settings_outlined),
     );
     expect(settingsNavigationIcon, findsOneWidget);
     expect(tester.widget<Icon>(settingsNavigationIcon).size, isNull);

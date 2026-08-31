@@ -106,7 +106,11 @@ void main() {
       );
       await preferences.setString(
         'converter_settings_v1',
-        json.encode(<String, Object?>{'format': 'flac', 'bitrate': '192k'}),
+        json.encode(<String, Object?>{
+          'format': 'flac',
+          'bitrate': '192k',
+          'outputDirectoryPath': '/storage/emulated/0/Music/Converted',
+        }),
       );
       final repository = SettingsRepository();
       addTearDown(repository.dispose);
@@ -157,6 +161,10 @@ void main() {
       expect(repository.playlistGroupByLibrary, isTrue);
       expect(repository.converterFormat, 'flac');
       expect(repository.converterBitrate, '192k');
+      expect(
+        repository.converterOutputDirectoryPath,
+        '/storage/emulated/0/Music/Converted',
+      );
     });
 
     test('syncSlice publishes settings from the owning repository', () {
@@ -671,6 +679,38 @@ void main() {
               as Map<String, dynamic>;
       expect(saved, <String, dynamic>{'format': 'flac', 'bitrate': '192k'});
     });
+
+    test(
+      'converter output directory persists and publishes to settings state',
+      () async {
+        final repository = SettingsRepository();
+        addTearDown(repository.dispose);
+
+        await repository.setConverterOutputDirectoryPath(
+          '/storage/emulated/0/Music/Converted',
+        );
+
+        expect(
+          repository.converterOutputDirectoryPath,
+          '/storage/emulated/0/Music/Converted',
+        );
+        expect(
+          repository.slice.state.converterOutputDirectoryPath,
+          '/storage/emulated/0/Music/Converted',
+        );
+        final saved =
+            json.decode(
+                  (await SharedPreferences.getInstance()).getString(
+                    'converter_settings_v1',
+                  )!,
+                )
+                as Map<String, dynamic>;
+        expect(
+          saved['outputDirectoryPath'],
+          '/storage/emulated/0/Music/Converted',
+        );
+      },
+    );
 
     test('card info fields normalize, publish, and persist', () async {
       final repository = SettingsRepository();

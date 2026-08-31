@@ -1052,17 +1052,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
 
                   return TopPageHeader(
                     key: const ValueKey('playlist_batch_selection_header'),
-                    leading: _AnimatedHeaderLeading(
-                      child: IconButton(
-                        key: const ValueKey('exit_selection_button'),
-                        onPressed: _exitSelectionMode,
-                        icon: const Icon(Icons.close_rounded),
-                        tooltip: i18n.tr('cancel'),
-                      ),
-                    ),
-                    title: count.toString(),
-                    titleWidget: AppRollingNumber(number: count),
-                    trailing: HeaderActionPill(
+                    topCapsuleTitle: i18n.tr('multi_select'),
+                    topCapsuleData: i18n.tr('selected_count', {
+                      'count': count.toString(),
+                    }),
+                    titleWidget: const SizedBox.shrink(),
+                    leading: HeaderActionPill(
                       children: [
                         _AnimatedHeaderAction(
                           child: IconButton(
@@ -1070,6 +1065,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                             onPressed: isPlayEnabled ? _handleBatchPlay : null,
                             icon: const Icon(Icons.play_arrow_rounded),
                             tooltip: i18n.tr('play'),
+                            iconSize: 18,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
                           ),
                         ),
                         _AnimatedHeaderAction(
@@ -1081,6 +1082,12 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 : null,
                             icon: const Icon(Icons.pause_rounded),
                             tooltip: i18n.tr('pause'),
+                            iconSize: 18,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
                           ),
                         ),
                         _AnimatedHeaderAction(
@@ -1092,9 +1099,25 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                                 : null,
                             icon: const Icon(Icons.delete_outline_rounded),
                             tooltip: i18n.tr('remove'),
+                            iconSize: 18,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
                           ),
                         ),
                       ],
+                    ),
+                    trailing: _AnimatedHeaderLeading(
+                      child: HeaderFloatingButton(
+                        child: IconButton(
+                          key: const ValueKey('exit_selection_button'),
+                          onPressed: _exitSelectionMode,
+                          icon: const Icon(Icons.close_rounded),
+                          tooltip: i18n.tr('cancel'),
+                        ),
+                      ),
                     ),
                   )._withPlaylistHeaderTransition();
                 }

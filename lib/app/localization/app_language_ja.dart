@@ -781,5 +781,6 @@ const Map<String, String> appLanguageJa = {
   'queue_add_audio_first': '先に音声をキューへ追加してください',
   'edit': '編集',
   'save': '保存',
+  'multi_select': '複数選択',
   'selected_count': '{count}件 選択中',
 };

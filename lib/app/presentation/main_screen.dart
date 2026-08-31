@@ -96,8 +96,8 @@ List<_MainDestination> _resolveMainDestinations({
     ),
     const _MainDestination(
       type: MainDestinationType.settings,
-      icon: Icons.tune_outlined,
-      selectedIcon: Icons.tune_rounded,
+      icon: Icons.settings_outlined,
+      selectedIcon: Icons.settings_rounded,
       labelKey: 'nav_settings',
     ),
   ];

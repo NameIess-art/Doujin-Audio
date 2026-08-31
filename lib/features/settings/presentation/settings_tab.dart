@@ -85,12 +85,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   int get tabIndex => widget.tabIndex;
 
   @override
-  double get defaultHeaderHeight =>
-      AppPageHeaderMetrics.mainTabPadding.top +
-      36.0 +
-      AppPageHeaderMetrics.mainTabPadding.bottom;
-
-  @override
   ScrollController get mainScrollController => _scrollController;
 
   @override
@@ -209,6 +203,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     final bottomInset = MobileOverlayInset.of(context);
+    final contentTopInset =
+        MediaQuery.paddingOf(context).top +
+        AppPageHeaderMetrics.padding.vertical +
+        AppPageHeaderMetrics.contentHeight +
+        AppPageHeaderMetrics.bottomSpacing +
+        AppPageHeaderMetrics.firstContentSpacing;
 
     return ScrollActivityGate(
       child: Stack(
@@ -218,7 +218,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
               controller: _scrollController,
               padding: EdgeInsets.fromLTRB(
                 16,
-                headerHeight + AppPageHeaderMetrics.firstContentSpacing,
+                contentTopInset,
                 16,
                 bottomInset + AppSpacing.sm,
               ),
@@ -253,7 +253,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
             right: 0,
             child: TopPageHeader(
               key: headerKey,
-              icon: Icons.tune_rounded,
+              icon: Icons.settings_rounded,
               topCapsuleTitle: i18n.tr('settings'),
             ),
           ),

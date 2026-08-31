@@ -854,5 +854,6 @@ const Map<String, String> appLanguageEn = {
   'queue_add_audio_first': 'Add audio to the queue first',
   'edit': 'Edit',
   'save': 'Save',
+  'multi_select': 'Multi-select',
   'selected_count': '{count} selected',
 };

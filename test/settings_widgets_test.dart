@@ -654,6 +654,13 @@ void main() {
     await tester.pump();
 
     final i18n = harness.languageProvider;
+    final headerCapsule = find.byType(HeaderTopCapsule);
+    expect(headerCapsule, findsOneWidget);
+    expect(find.byIcon(Icons.settings_rounded), findsOneWidget);
+    final firstTile = find.widgetWithText(
+      ListTile,
+      i18n.tr('section_language'),
+    );
     final rootTile = find.widgetWithText(ListTile, i18n.tr('section_common'));
     final rootContext = tester.element(rootTile);
     final rootIcon = tester.widget<Icon>(
@@ -663,6 +670,21 @@ void main() {
     expect(tester.widget<ListTile>(rootTile).trailing, isNull);
     final rootCard = tester.widget<Card>(
       find.ancestor(of: rootTile, matching: find.byType(Card)).first,
+    );
+    final firstCardFinder = find
+        .ancestor(of: firstTile, matching: find.byType(Card))
+        .first;
+    final headerWidget = tester.widget<HeaderTopCapsule>(headerCapsule);
+    expect(
+      tester.getTopLeft(firstCardFinder).dy -
+          tester.getBottomLeft(headerCapsule).dy,
+      closeTo(
+        AppPageHeaderMetrics.contentHeight -
+            headerWidget.height +
+            AppPageHeaderMetrics.bottomSpacing +
+            AppPageHeaderMetrics.firstContentSpacing,
+        0.001,
+      ),
     );
     expect(
       rootCard.color,

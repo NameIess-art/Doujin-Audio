@@ -817,6 +817,10 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
           value: PlaylistSortCriterion.addedAt,
           label: i18n.tr('sort_added_date'),
         ),
+        SortOption(
+          value: PlaylistSortCriterion.playbackTime,
+          label: i18n.tr('sort_playback_time'),
+        ),
       ],
       selectedCriterion:
           settingsState?.playlistSortCriterion ?? PlaylistSortCriterion.name,
@@ -1063,9 +1067,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         _AnimatedHeaderAction(
                           child: IconButton(
                             key: const ValueKey('batch_play_button'),
-                            onPressed: isPlayEnabled
-                                ? _handleBatchPlay
-                                : null,
+                            onPressed: isPlayEnabled ? _handleBatchPlay : null,
                             icon: const Icon(Icons.play_arrow_rounded),
                             tooltip: i18n.tr('play'),
                           ),

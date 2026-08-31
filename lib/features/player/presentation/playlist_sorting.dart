@@ -49,6 +49,7 @@ class PlaylistSortValue {
     required this.voiceActor,
     required this.releaseDate,
     required this.addedAt,
+    required this.lastPlayedAt,
   });
 
   final String name;
@@ -56,6 +57,7 @@ class PlaylistSortValue {
   final String? voiceActor;
   final DateTime? releaseDate;
   final DateTime addedAt;
+  final DateTime? lastPlayedAt;
 }
 
 PlaylistSortValue _playlistSortValue(
@@ -67,6 +69,14 @@ PlaylistSortValue _playlistSortValue(
   final currentTrack = trackForSession(session);
   final queueTrack = queue?.expandedTracks.firstOrNull;
   final track = currentTrack ?? queueTrack;
+  final lastPlayedAt = <MusicTrack>[?currentTrack, ...?queue?.expandedTracks]
+      .fold<DateTime?>(null, (latest, track) {
+        final value = track.lastPlayedAt;
+        if (value != null && (latest == null || value.isAfter(latest))) {
+          return value;
+        }
+        return latest;
+      });
   final detail = track == null ? null : _detailForTrack(track, library);
   final voiceActors =
       detail?.voiceActors ??
@@ -81,6 +91,7 @@ PlaylistSortValue _playlistSortValue(
         detail?.releaseDate ??
         dateTimeFromSortMetadata(track?.remoteMetadata?['releaseDate']),
     addedAt: session.createdAt,
+    lastPlayedAt: lastPlayedAt,
   );
 }
 
@@ -108,6 +119,12 @@ int comparePlaylistSortValues(
       (a, b) => a.compareTo(b),
     ),
     PlaylistSortCriterion.addedAt => left.addedAt.compareTo(right.addedAt),
+    PlaylistSortCriterion.playbackTime => comparePlaybackTimeSortValues(
+      left.lastPlayedAt,
+      right.lastPlayedAt,
+      leftAddedAt: left.addedAt,
+      rightAddedAt: right.addedAt,
+    ),
   };
   return ascending ? result : -result;
 }

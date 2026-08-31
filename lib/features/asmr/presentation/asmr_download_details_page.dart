@@ -11,18 +11,27 @@ import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../core/widgets/top_page_header.dart';
 
-class AsmrDownloadDetailsPage extends ConsumerWidget {
+class AsmrDownloadDetailsPage extends ConsumerStatefulWidget {
   const AsmrDownloadDetailsPage({super.key, required this.workId});
 
   final int workId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AsmrDownloadDetailsPage> createState() =>
+      _AsmrDownloadDetailsPageState();
+}
+
+class _AsmrDownloadDetailsPageState
+    extends ConsumerState<AsmrDownloadDetailsPage> {
+  final GlobalKey _headerKey = GlobalKey();
+  double _headerHeight = 0;
+
+  @override
+  Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
-    final task = ref.watch(asmrDownloadTaskProvider(workId));
+    final task = ref.watch(asmrDownloadTaskProvider(widget.workId));
     final downloadManager = ref.read(asmrDownloadManagerProvider);
-    final headerHeight = MediaQuery.paddingOf(context).top + 56;
     final cs = Theme.of(context).colorScheme;
 
     if (task == null) {
@@ -47,43 +56,111 @@ class AsmrDownloadDetailsPage extends ConsumerWidget {
 
     final tracks = task.selectedRoots;
 
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box != null) {
+        final h = box.size.height;
+        if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
+          setState(() => _headerHeight = h);
+        }
+      }
+    });
+
+    final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 140.0;
+    final effectiveHeaderHeight =
+        _headerHeight > 0 ? _headerHeight : defaultHeaderHeight;
+    final listTopPadding = effectiveHeaderHeight + 8;
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       body: Stack(
         children: [
-          CustomScrollView(
-            physics: const ClampingScrollPhysics(),
-            slivers: [
-              SliverPadding(
-                padding: EdgeInsets.fromLTRB(16, headerHeight + 16, 16, 16),
-                sliver: SliverToBoxAdapter(
+          Positioned.fill(
+            child: CustomScrollView(
+              physics: const ClampingScrollPhysics(),
+              slivers: [
+                if (tracks.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(
+                      child: Text(i18n.tr('asmr_download_no_files_selected')),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: EdgeInsets.fromLTRB(
+                      16,
+                      listTopPadding,
+                      16,
+                      MediaQuery.paddingOf(context).bottom + 16,
+                    ),
+                    sliver: SliverList.builder(
+                      itemCount: tracks.length,
+                      itemBuilder: (context, index) {
+                        return _AsmrDownloadDetailsNodeTile(
+                          node: tracks[index],
+                          depth: 0,
+                          task: task,
+                          i18n: i18n,
+                          onRetryFile: downloadManager == null
+                              ? null
+                              : (relativePath) => downloadManager
+                                    .retryFailedFile(widget.workId, relativePath),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              key: _headerKey,
+              icon: Icons.info_outline_rounded,
+              leading: const BackButton(),
+              title: i18n.tr('asmr_download_details_title'),
+              additionalChild: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                child: HeaderFloatingSurface(
+                  key: const ValueKey<String>('asmr_download_work_title'),
+                  height: null,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 9,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         task.work.title,
-                        style: Theme.of(context).textTheme.headlineSmall
-                            ?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              height: 1.3,
-                            ),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: cs.onSurface,
+                          fontWeight: FontWeight.w700,
+                          height: 1.25,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       Row(
                         children: [
                           Icon(
                             Icons.sd_storage_rounded,
-                            size: 16,
+                            size: 15,
                             color: cs.onSurfaceVariant,
                           ),
                           const SizedBox(width: 6),
                           Text(
                             '${_formatBytes(task.downloadedBytes)} / ${_formatBytes(task.totalBytes)}',
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ],
                       ),
@@ -91,46 +168,6 @@ class AsmrDownloadDetailsPage extends ConsumerWidget {
                   ),
                 ),
               ),
-              if (tracks.isEmpty)
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: Center(
-                    child: Text(i18n.tr('asmr_download_no_files_selected')),
-                  ),
-                )
-              else
-                SliverPadding(
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.paddingOf(context).bottom + 16,
-                  ),
-                  sliver: SliverList.builder(
-                    itemCount: tracks.length,
-                    itemBuilder: (context, index) {
-                      return _AsmrDownloadDetailsNodeTile(
-                        node: tracks[index],
-                        depth: 0,
-                        task: task,
-                        i18n: i18n,
-                        onRetryFile: downloadManager == null
-                            ? null
-                            : (relativePath) => downloadManager.retryFailedFile(
-                                workId,
-                                relativePath,
-                              ),
-                      );
-                    },
-                  ),
-                ),
-            ],
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              icon: Icons.info_outline_rounded,
-              leading: const BackButton(),
-              title: i18n.tr('asmr_download_details_title'),
             ),
           ),
         ],

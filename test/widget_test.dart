@@ -18,6 +18,7 @@ import 'package:doujin_audio/features/asmr/application/asmr_library_controller.d
 import 'package:doujin_audio/features/asmr/application/asmr_preferences.dart';
 import 'package:doujin_audio/infrastructure/sqlite/sqlite_asmr_repository.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
+import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_tab.dart';
 import 'package:doujin_audio/features/library/presentation/library_cover_ui_controller.dart';
 import 'package:doujin_audio/features/library/presentation/library_tab.dart';
@@ -549,7 +550,6 @@ void main() {
     expect(mainHeaders, hasLength(3));
     for (final header in mainHeaders) {
       expect(header.padding, AppPageHeaderMetrics.mainTabPadding);
-      expect((header.padding as EdgeInsets).right, 8);
     }
   });
 
@@ -1127,6 +1127,80 @@ void main() {
     );
   });
 
+  testWidgets('ASMR download summary stays above content with a long title', (
+    WidgetTester tester,
+  ) async {
+    _setLogicalTestViewSize(tester, const Size(390, 800));
+    final work = AsmrWork(
+      id: 42,
+      title:
+          'A deliberately long ASMR work title that wraps across all three supported lines without covering the file list below',
+      circleName: 'Circle',
+      sourceId: 'RJ000042',
+      sourceType: 'DLSITE',
+      sourceUrl: '',
+      coverUrl: '',
+      thumbnailUrl: '',
+      mainCoverUrl: '',
+      releaseDate: null,
+      createDate: null,
+      duration: Duration.zero,
+      dlCount: 0,
+      reviewCount: 0,
+      rating: 0,
+      voiceActors: const <String>[],
+      tags: const <String>[],
+    );
+    final track = AsmrTrackFile(
+      hash: 'track',
+      title: 'Track.mp3',
+      type: 'audio',
+      streamUrl: 'https://example.invalid/track.mp3',
+      downloadUrl: 'https://example.invalid/track.mp3',
+      lowQualityUrl: null,
+      duration: const Duration(minutes: 1),
+      size: 1024,
+      children: const <AsmrTrackFile>[],
+      workId: work.id,
+      workTitle: work.title,
+      sourceId: work.sourceId,
+      relativePath: 'Track.mp3',
+    );
+    final controller = _QueuedEmptyAsmrLibraryController(
+      trackTree: <AsmrTrackFile>[track],
+    );
+    final downloads = AsmrDownloadManager(persistTasks: false);
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(controller.dispose);
+    addTearDown(downloads.dispose);
+    addTearDown(harness.dispose);
+    await harness.languageProvider.setLanguage(AppLanguage.zh);
+
+    await tester.pumpWidget(
+      harness.build(
+        AsmrDownloadPage(work: work),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+          asmrDownloadManagerProvider.overrideWithValue(downloads),
+        ],
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final summary = find.byKey(const ValueKey<String>('asmr_download_summary'));
+    final fileList = find.byKey(
+      const ValueKey<String>('asmr_download_file_list'),
+    );
+    expect(summary, findsOneWidget);
+    expect(fileList, findsOneWidget);
+    expect(tester.getSize(summary).height, greaterThan(100));
+    expect(
+      tester.getRect(find.text('Track.mp3')).top -
+          tester.getRect(summary).bottom,
+      greaterThanOrEqualTo(8),
+    );
+  });
+
   testWidgets('ASMR pagination shows progress without a pull-up hint', (
     tester,
   ) async {
@@ -1563,7 +1637,7 @@ void main() {
       tester.getSize(
         find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
       ),
-      const Size.square(72),
+      const Size.square(48),
     );
     final playbackCardRect = tester.getRect(
       find.byKey(const ValueKey('active_session_card_asmr_error_session')),
@@ -1571,9 +1645,9 @@ void main() {
     final playbackCoverRect = tester.getRect(
       find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
     );
-    expect(playbackCoverRect.left - playbackCardRect.left, 8);
-    expect(playbackCoverRect.top - playbackCardRect.top, 8);
-    expect(playbackCardRect.bottom - playbackCoverRect.bottom, 8);
+    expect(playbackCoverRect.left - playbackCardRect.left, 4);
+    expect(playbackCoverRect.top - playbackCardRect.top, 4);
+    expect(playbackCardRect.bottom - playbackCoverRect.bottom, 4);
     expect(
       tester
           .widget<AsyncLocalCoverImage>(find.byType(AsyncLocalCoverImage))
@@ -1589,8 +1663,7 @@ void main() {
           )
           .borderRadius,
       BorderRadius.circular(
-        LibraryLikeCardMetrics.coverRadius +
-            (playbackCoverRect.left - playbackCardRect.left),
+        LibraryLikeCardMetrics.coverRadius + 4,
       ),
     );
     expect(
@@ -1617,7 +1690,7 @@ void main() {
     final barCoverRect = tester.getRect(
       find.byKey(const ValueKey('active_session_cover_asmr_error_session')),
     );
-    expect(barCoverRect.size, const Size.square(66));
+    expect(barCoverRect.size, const Size.square(48));
     expect(barCoverRect.left - barCardRect.left, 4);
     expect(barCoverRect.top - barCardRect.top, 4);
     expect(barCardRect.bottom - barCoverRect.bottom, 4);
@@ -1901,7 +1974,7 @@ void main() {
     }
     expect(find.byType(ActiveSessionCarousel), findsOneWidget);
     final withCard = currentInset();
-    expect(withCard, greaterThan(withoutCard + 80));
+    expect(withCard, greaterThan(withoutCard + 56));
 
     harness.playbackService.syncSlice(
       activeSessions: const <PlaybackSession>[],
@@ -2213,12 +2286,19 @@ void main() {
         find.byKey(const ValueKey('loop_mode_single_row')),
         findsOneWidget,
       );
+      expect(find.byKey(const ValueKey('loop_mode_scope_row')), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('loop_mode_pause_after_playback_row')),
+        find.byKey(const ValueKey('loop_mode_playback_row')),
         findsOneWidget,
       );
-      expect(find.byKey(const ValueKey('loop_mode_order_row')), findsOneWidget);
-      expect(find.byKey(const ValueKey('loop_mode_scope_row')), findsOneWidget);
+      final scopeRect = tester.getRect(
+        find.byKey(const ValueKey('loop_mode_scope_row')),
+      );
+      final playbackRect = tester.getRect(
+        find.byKey(const ValueKey('loop_mode_playback_row')),
+      );
+      expect(scopeRect.bottom, lessThan(playbackRect.top));
+      expect(find.text(harness.language.tr('loop_playback')), findsOneWidget);
 
       final ignorePointer = tester.widget<IgnorePointer>(
         find
@@ -2254,6 +2334,19 @@ void main() {
       expect(
         harness.playbackService.sessions['orientation_session']?.loopMode,
         SessionLoopMode.folderRandomOnce,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('session_loop_button_anchor')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(harness.language.tr('loop_playback')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('loop_mode_confirm')));
+      await tester.pumpAndSettle();
+      expect(
+        harness.playbackService.sessions['orientation_session']?.loopMode,
+        SessionLoopMode.folderOnce,
       );
 
       await tester.tap(
@@ -2565,6 +2658,15 @@ final class _QueuedEmptyAsmrLibraryController extends AsmrLibraryController {
     voiceActors: const <String>[],
     tags: const <String>[],
   );
+
+  @override
+  Future<List<AsmrTrackFile>> ensureTrackTree(AsmrWork work) {
+    final resolvedTree = trackTree;
+    if (resolvedTree != null) {
+      return SynchronousFuture<List<AsmrTrackFile>>(resolvedTree);
+    }
+    return super.ensureTrackTree(work);
+  }
 
   static final AsmrWork _secondCollectedWork = AsmrWork(
     id: 2,

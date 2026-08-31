@@ -28,6 +28,8 @@ class AsmrDownloadPage extends ConsumerStatefulWidget {
 }
 
 class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
+  final GlobalKey _headerKey = GlobalKey();
+  double _headerHeight = 0;
   AsmrDownloadSelectionModel? _selection;
   String? _destinationRoot;
   bool _loading = true;
@@ -77,8 +79,8 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
       final workTitle = widget.work.title.trim().isNotEmpty
           ? widget.work.title.trim()
           : (widget.work.sourceId.trim().isNotEmpty
-              ? widget.work.sourceId.trim()
-              : widget.work.id.toString());
+                ? widget.work.sourceId.trim()
+                : widget.work.id.toString());
       final workRootFolder = AsmrTrackFile(
         hash: 'work_root_${widget.work.id}',
         title: workTitle,
@@ -271,8 +273,23 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
     final onAsmrBlue = tokens.onAsmrAccent;
     final hasDestination = (_destinationRoot?.trim().isNotEmpty ?? false);
     final bottomInset = MediaQuery.of(context).viewPadding.bottom;
-    final listTopPadding = MediaQuery.paddingOf(context).top + 144;
     final listBottomPadding = 76 + bottomInset;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box != null) {
+        final h = box.size.height;
+        if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
+          setState(() => _headerHeight = h);
+        }
+      }
+    });
+
+    final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 140.0;
+    final effectiveHeaderHeight =
+        _headerHeight > 0 ? _headerHeight : defaultHeaderHeight;
+    final listTopPadding = effectiveHeaderHeight + 8;
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -313,6 +330,9 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                     ),
                   )
                 : ListView.builder(
+                    key: const ValueKey<String>(
+                      'asmr_download_file_list',
+                    ),
                     padding: EdgeInsets.fromLTRB(
                       16,
                       listTopPadding,
@@ -398,14 +418,18 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                                   color: onAsmrBlue,
                                 ),
                               const SizedBox(width: 6),
-                              Text(
-                                _starting
-                                    ? i18n.tr('asmr_download_starting')
-                                    : i18n.tr('asmr_download_confirm'),
-                                style: TextStyle(
-                                  color: onAsmrBlue,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
+                              Flexible(
+                                child: Text(
+                                  _starting
+                                      ? i18n.tr('asmr_download_starting')
+                                      : i18n.tr('asmr_download_confirm'),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: onAsmrBlue,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ],
@@ -423,6 +447,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
             left: 0,
             right: 0,
             child: TopPageHeader(
+              key: _headerKey,
               icon: Icons.download_rounded,
               leading: const BackButton(),
               title: i18n.tr('asmr_download_title'),
@@ -435,11 +460,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(
-                          Icons.folder_outlined,
-                          size: 16,
-                          color: asmrBlue,
-                        ),
+                        Icon(Icons.folder_outlined, size: 16, color: asmrBlue),
                         const SizedBox(width: 4),
                         Text(
                           i18n.tr(
@@ -459,7 +480,7 @@ class _AsmrDownloadPageState extends ConsumerState<AsmrDownloadPage> {
                 ),
               ),
               additionalChild: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 12),
                 child: _DownloadSummaryCard(
                   work: widget.work,
                   selectedLeafCount: selectedLeafCount,
@@ -833,6 +854,7 @@ class _DownloadSummaryCard extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     return HeaderFloatingSurface(
+      key: const ValueKey<String>('asmr_download_summary'),
       height: null,
       radius: 16,
       padding: const EdgeInsets.all(16),
@@ -842,7 +864,7 @@ class _DownloadSummaryCard extends ConsumerWidget {
         children: [
           Text(
             work.title,
-            maxLines: 2,
+            maxLines: 3,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(
               context,

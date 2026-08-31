@@ -48,6 +48,7 @@ class LibrarySortValue {
     required this.duration,
     required this.releaseDate,
     required this.addedAt,
+    required this.lastPlayedAt,
   });
 
   final String name;
@@ -56,6 +57,7 @@ class LibrarySortValue {
   final Duration? duration;
   final DateTime? releaseDate;
   final DateTime? addedAt;
+  final DateTime? lastPlayedAt;
 }
 
 LibrarySortValue _librarySortValue(LibraryNode node, LibraryFacade library) {
@@ -81,6 +83,13 @@ LibrarySortValue _librarySortValue(LibraryNode node, LibraryFacade library) {
         if (oldest == null || value.isBefore(oldest)) return value;
         return oldest;
       });
+  final lastPlayedAt = tracks
+      .map((track) => track.lastPlayedAt)
+      .whereType<DateTime>()
+      .fold<DateTime?>(null, (latest, value) {
+        if (latest == null || value.isAfter(latest)) return value;
+        return latest;
+      });
   return LibrarySortValue(
     name: node.name,
     libraryKey: library.libraryRootForPath(node.path),
@@ -90,6 +99,7 @@ LibrarySortValue _librarySortValue(LibraryNode node, LibraryFacade library) {
         detail?.releaseDate ??
         dateTimeFromSortMetadata(firstTrack?.remoteMetadata?['releaseDate']),
     addedAt: addedAt,
+    lastPlayedAt: lastPlayedAt,
   );
 }
 
@@ -129,6 +139,12 @@ int compareLibrarySortValues(
       left.addedAt,
       right.addedAt,
       (a, b) => a.compareTo(b),
+    ),
+    LibrarySortCriterion.playbackTime => comparePlaybackTimeSortValues(
+      left.lastPlayedAt,
+      right.lastPlayedAt,
+      leftAddedAt: left.addedAt,
+      rightAddedAt: right.addedAt,
     ),
   };
   return ascending ? result : -result;

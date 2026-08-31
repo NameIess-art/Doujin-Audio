@@ -7,6 +7,7 @@ import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
 import '../../../core/media/audio_detail.dart';
 import '../../../core/media/dlsite_metadata.dart';
+import '../../../core/media/path_display.dart';
 import '../../../core/media/time_text_formatters.dart';
 import '../../../core/ui/ui_operation_service.dart';
 import '../../../core/widgets/app_feedback.dart';
@@ -60,6 +61,8 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
 
 class _DlsiteMetadataReviewPageState
     extends ConsumerState<DlsiteMetadataReviewPage> {
+  final GlobalKey _headerKey = GlobalKey();
+  double _headerHeight = 0;
   final _titleController = TextEditingController();
   final _circleController = TextEditingController();
   final _voiceActorsController = TextEditingController();
@@ -276,145 +279,288 @@ class _DlsiteMetadataReviewPageState
       ref.watch(coverImageResolutionProvider),
     );
 
+    final bottomInset = MediaQuery.paddingOf(context).bottom + 78;
+    final cs = Theme.of(context).colorScheme;
+    final reviewTitle = widget.batchIndex == null || widget.batchTotal == null
+        ? i18n.tr('dlsite_review_title')
+        : '${i18n.tr('dlsite_review_title')} · ${i18n.tr('batch_metadata_progress', {'current': widget.batchIndex, 'total': widget.batchTotal})}';
+    final targetName = PathDisplay.fileName(widget.detail.target.targetPath);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
+      if (box != null) {
+        final h = box.size.height;
+        if (h > 0 && (_headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
+          setState(() => _headerHeight = h);
+        }
+      }
+    });
+
+    final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 110.0;
+    final effectiveHeaderHeight =
+        _headerHeight > 0 ? _headerHeight : defaultHeaderHeight;
+    final listTopPadding = effectiveHeaderHeight + 8;
+
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
-      appBar: AppPageAppBar(
-        icon: Icons.rate_review_rounded,
-        title: Text(
-          widget.batchIndex == null || widget.batchTotal == null
-              ? i18n.tr('dlsite_review_title')
-              : '${i18n.tr('dlsite_review_title')} · ${i18n.tr('batch_metadata_progress', {'current': widget.batchIndex, 'total': widget.batchTotal})}',
-        ),
-        actions: [
-          if (widget.allowSkip)
-            TextButton(
-              onPressed: _saving ? null : _skip,
-              child: Text(i18n.tr('skip')),
-            ),
-          if (_candidates.length > 1 && !_loading)
-            IconButton(
-              onPressed: _candidateIndex <= 0 || _saving
-                  ? null
-                  : () => _showCandidate(_candidateIndex - 1),
-              tooltip: i18n.tr('previous'),
-              icon: const Icon(Icons.chevron_left_rounded),
-            ),
-          if (_candidates.length > 1 && !_loading)
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                child: Text('${_candidateIndex + 1}/${_candidates.length}'),
-              ),
-            ),
-          if (_candidates.length > 1 && !_loading)
-            IconButton(
-              onPressed: _candidateIndex >= _candidates.length - 1 || _saving
-                  ? null
-                  : () => _showCandidate(_candidateIndex + 1),
-              tooltip: i18n.tr('next'),
-              icon: const Icon(Icons.chevron_right_rounded),
-            ),
-        ],
-      ),
-      body: SafeArea(
-        child: _loading
-            ? const SingleChildScrollView(
-                padding: EdgeInsets.fromLTRB(20, 12, 20, 24),
-                child: OperationSkeletonList(itemCount: 7),
-              )
-            : _error != null
-            ? _DlsiteErrorView(
-                onRetry: _fetch,
-                onSkip: widget.allowSkip ? _skip : null,
-              )
-            : ListView(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                children: [
-                  if (coverUrl != null) ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: AspectRatio(
-                        aspectRatio: kStandardCoverAspectRatio,
-                        child: RetryingNetworkImage(
-                          url: coverUrl,
-                          fit: BoxFit.cover,
-                          cacheWidth: coverCacheWidth,
-                          useDefaultCacheWidth: coverCacheWidth != null,
-                          loadingBuilder: (_) => CoverLoadingArtwork(
-                            placeholder: CoverFallbackArtwork(seed: coverUrl),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: _loading
+                ? SingleChildScrollView(
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      listTopPadding,
+                      20,
+                      bottomInset,
+                    ),
+                    child: const OperationSkeletonList(itemCount: 7),
+                  )
+                : _error != null
+                ? Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      listTopPadding,
+                      20,
+                      bottomInset,
+                    ),
+                    child: _DlsiteErrorView(
+                      onRetry: _fetch,
+                      onSkip: widget.allowSkip ? _skip : null,
+                    ),
+                  )
+                : ListView(
+                    padding: EdgeInsets.fromLTRB(
+                      20,
+                      listTopPadding,
+                      20,
+                      bottomInset,
+                    ),
+                    children: [
+                      if (coverUrl != null) ...[
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: AspectRatio(
+                            aspectRatio: kStandardCoverAspectRatio,
+                            child: RetryingNetworkImage(
+                              url: coverUrl,
+                              fit: BoxFit.cover,
+                              cacheWidth: coverCacheWidth,
+                              useDefaultCacheWidth: coverCacheWidth != null,
+                              loadingBuilder: (_) => CoverLoadingArtwork(
+                                placeholder: CoverFallbackArtwork(
+                                  seed: coverUrl,
+                                ),
+                              ),
+                              fallbackBuilder: (_) =>
+                                  CoverFallbackArtwork(seed: coverUrl),
+                            ),
                           ),
-                          fallbackBuilder: (_) =>
-                              CoverFallbackArtwork(seed: coverUrl),
                         ),
+                        SwitchListTile(
+                          value: _saveCover,
+                          onChanged: (value) => setState(() {
+                            _saveCover = value;
+                          }),
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(i18n.tr('dlsite_save_cover')),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      _ReviewTextField(
+                        controller: _titleController,
+                        label: i18n.tr('audio_detail_work_title'),
+                      ),
+                      if ((metadata?.rjCode.trim().isNotEmpty ?? false)) ...[
+                        _ReviewInfoLine(
+                          label: i18n.tr('audio_detail_rj_code'),
+                          value: metadata!.rjCode.trim(),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      _ReviewTextField(
+                        controller: _circleController,
+                        label: i18n.tr('audio_detail_circle_name'),
+                      ),
+                      _ReviewTextField(
+                        controller: _voiceActorsController,
+                        label: i18n.tr('audio_detail_voice_actors'),
+                        hint: i18n.tr('audio_detail_multi_hint'),
+                      ),
+                      _ReviewTextField(
+                        controller: _tagsController,
+                        label: i18n.tr('audio_detail_tags'),
+                        hint: i18n.tr('audio_detail_multi_hint'),
+                      ),
+                      _ReviewTextField(
+                        controller: _releaseDateController,
+                        label: i18n.tr('audio_detail_release_date'),
+                        hint: 'YYYY-MM-DD',
+                      ),
+                      _ReviewTextField(
+                        controller: _durationController,
+                        label: i18n.tr('card_info_duration'),
+                        hint: 'HH:MM:SS',
+                      ),
+                      _ReviewTextField(
+                        controller: _salesController,
+                        label: i18n.tr('audio_detail_sales_count'),
+                      ),
+                      _ReviewTextField(
+                        controller: _ratingController,
+                        label: i18n.tr('audio_detail_rating'),
+                      ),
+                    ],
+                  ),
+          ),
+          if (_metadata != null)
+            Positioned(
+              right: 16,
+              bottom: 16 + MediaQuery.paddingOf(context).bottom,
+              child: HeaderFloatingSurface(
+                key: const ValueKey<String>('dlsite_review_confirm'),
+                height: 46,
+                radius: 23,
+                padding: EdgeInsets.zero,
+                child: Material(
+                  color: cs.primary,
+                  borderRadius: BorderRadius.circular(23),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(23),
+                    onTap: _saving ? null : _apply,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (_saving)
+                            SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: cs.onPrimary,
+                              ),
+                            )
+                          else
+                            Icon(
+                              Icons.check_rounded,
+                              size: 18,
+                              color: cs.onPrimary,
+                            ),
+                          const SizedBox(width: 6),
+                          Text(
+                            i18n.tr('confirm'),
+                            style: TextStyle(
+                              color: cs.onPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    SwitchListTile(
-                      value: _saveCover,
-                      onChanged: (value) => setState(() {
-                        _saveCover = value;
-                      }),
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(i18n.tr('dlsite_save_cover')),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  _ReviewTextField(
-                    controller: _titleController,
-                    label: i18n.tr('audio_detail_work_title'),
                   ),
-                  if ((metadata?.rjCode.trim().isNotEmpty ?? false)) ...[
-                    _ReviewInfoLine(
-                      label: i18n.tr('audio_detail_rj_code'),
-                      value: metadata!.rjCode.trim(),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                  _ReviewTextField(
-                    controller: _circleController,
-                    label: i18n.tr('audio_detail_circle_name'),
-                  ),
-                  _ReviewTextField(
-                    controller: _voiceActorsController,
-                    label: i18n.tr('audio_detail_voice_actors'),
-                    hint: i18n.tr('audio_detail_multi_hint'),
-                  ),
-                  _ReviewTextField(
-                    controller: _tagsController,
-                    label: i18n.tr('audio_detail_tags'),
-                    hint: i18n.tr('audio_detail_multi_hint'),
-                  ),
-                  _ReviewTextField(
-                    controller: _releaseDateController,
-                    label: i18n.tr('audio_detail_release_date'),
-                    hint: 'YYYY-MM-DD',
-                  ),
-                  _ReviewTextField(
-                    controller: _durationController,
-                    label: i18n.tr('card_info_duration'),
-                    hint: 'HH:MM:SS',
-                  ),
-                  _ReviewTextField(
-                    controller: _salesController,
-                    label: i18n.tr('audio_detail_sales_count'),
-                  ),
-                  _ReviewTextField(
-                    controller: _ratingController,
-                    label: i18n.tr('audio_detail_rating'),
-                  ),
-                  const SizedBox(height: 18),
-                  FilledButton.icon(
-                    onPressed: _saving ? null : _apply,
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.check_rounded),
-                    label: Text(i18n.tr('confirm')),
-                  ),
-                ],
+                ),
               ),
+            ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: KeyedSubtree(
+              key: const ValueKey<String>('dlsite_review_header'),
+              child: TopPageHeader(
+                key: _headerKey,
+                icon: Icons.rate_review_rounded,
+                leading: const BackButton(),
+                title: reviewTitle,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (widget.allowSkip) ...[
+                      HeaderFloatingSurface(
+                        height: 38,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(19),
+                          onTap: _saving ? null : _skip,
+                          child: Center(
+                            child: Text(
+                              i18n.tr('skip'),
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: cs.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      if (_candidates.length > 1 && !_loading)
+                        const SizedBox(width: 8),
+                    ],
+                    if (_candidates.length > 1 && !_loading)
+                      HeaderActionPill(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        children: [
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 20,
+                            onPressed: _candidateIndex <= 0 || _saving
+                                ? null
+                                : () => _showCandidate(_candidateIndex - 1),
+                            tooltip: i18n.tr('previous'),
+                            icon: const Icon(Icons.chevron_left_rounded),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              '${_candidateIndex + 1}/${_candidates.length}',
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                          IconButton(
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 20,
+                            onPressed:
+                                _candidateIndex >= _candidates.length - 1 ||
+                                        _saving
+                                    ? null
+                                    : () => _showCandidate(_candidateIndex + 1),
+                            tooltip: i18n.tr('next'),
+                            icon: const Icon(Icons.chevron_right_rounded),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+                additionalChild: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+                  child: HeaderFloatingSurface(
+                    key: const ValueKey<String>('dlsite_review_target_name'),
+                    height: null,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
+                    child: Text(
+                      targetName,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                        color: Theme.of(context).colorScheme.onSurface,
+                        fontWeight: FontWeight.w700,
+                        height: 1.25,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -389,7 +389,6 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _opacity;
-  late final Animation<Offset> _offset;
   Timer? _dismissTimer;
   Timer? _countdownTimer;
   late int _remainingSeconds;
@@ -402,10 +401,6 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
       duration: widget.transitionDuration,
     );
     _opacity = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
-    _offset = Tween<Offset>(
-      begin: const Offset(0, -0.30),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
 
     _controller.forward();
 
@@ -454,10 +449,7 @@ class _FeedbackAnimationWrapperState extends State<_FeedbackAnimationWrapper>
       widget.showCountdown ? _remainingSeconds : null,
     );
     if (MediaQuery.disableAnimationsOf(context)) return content;
-    return FadeTransition(
-      opacity: _opacity,
-      child: SlideTransition(position: _offset, child: content),
-    );
+    return FadeTransition(opacity: _opacity, child: content);
   }
 }
 

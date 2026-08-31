@@ -72,6 +72,35 @@ void main() {
     expect(find.text('128 B / 1.0 KB'), findsNWidgets(2));
   });
 
+  testWidgets('download work title supports up to three lines', (tester) async {
+    SharedPreferences.setMockInitialValues(const <String, Object>{});
+    final languageProvider = AppLanguageProvider();
+    addTearDown(languageProvider.dispose);
+    const title = 'A long work title that may span several lines';
+    final task = _downloadTask(title: title);
+
+    await tester.pumpWidget(_downloadDetailsApp(languageProvider, task));
+    await tester.pump();
+
+    final titleText = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('asmr_download_work_title')),
+        matching: find.text(title),
+      ),
+    );
+    expect(titleText.maxLines, 3);
+    expect(titleText.overflow, TextOverflow.ellipsis);
+    expect(
+      tester.getRect(find.text('Track.mp3')).top -
+          tester
+              .getRect(
+                find.byKey(const ValueKey<String>('asmr_download_work_title')),
+              )
+              .bottom,
+      greaterThanOrEqualTo(8),
+    );
+  });
+
   testWidgets('failed file exposes a manual retry action and progress state', (
     tester,
   ) async {
@@ -190,6 +219,7 @@ Widget _downloadDetailsApp(
 }
 
 AsmrDownloadTaskSnapshot _downloadTask({
+  String title = 'Work',
   Map<String, int> fileRetryAttempts = const <String, int>{},
   AsmrDownloadTaskStatus status = AsmrDownloadTaskStatus.downloading,
   Set<String> failedFilePaths = const <String>{},
@@ -197,7 +227,7 @@ AsmrDownloadTaskSnapshot _downloadTask({
 }) {
   final work = AsmrWork(
     id: 1,
-    title: 'Work',
+    title: title,
     circleName: 'Circle',
     sourceId: 'RJ123456',
     sourceType: 'asmr',

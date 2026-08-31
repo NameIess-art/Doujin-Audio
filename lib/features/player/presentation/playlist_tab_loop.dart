@@ -28,6 +28,21 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
   late bool _shuffle;
   late bool _crossFolder;
 
+  Set<_PlaybackOption> get _playbackOptions => <_PlaybackOption>{
+    if (_pauseAfterPlay) _PlaybackOption.pauseAfterPlayback,
+    _shuffle ? _PlaybackOption.shuffle : _PlaybackOption.loop,
+  };
+
+  void _selectPlaybackOptions(Set<_PlaybackOption> selected) {
+    final loopSelected = selected.contains(_PlaybackOption.loop);
+    final shuffleSelected = selected.contains(_PlaybackOption.shuffle);
+    if (!loopSelected && !shuffleSelected) return;
+    setState(() {
+      _pauseAfterPlay = selected.contains(_PlaybackOption.pauseAfterPlayback);
+      _shuffle = loopSelected && shuffleSelected ? !_shuffle : shuffleSelected;
+    });
+  }
+
   @override
   void initState() {
     super.initState();
@@ -100,62 +115,17 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   const SizedBox(height: 12),
-                                  SegmentedButton<bool>(
-                                    key: const ValueKey(
-                                      'loop_mode_pause_after_playback_row',
-                                    ),
-                                    segments: [
-                                      ButtonSegment<bool>(
-                                        value: true,
-                                        label: Text(
-                                          i18n.tr('pause_after_playback'),
-                                        ),
-                                      ),
-                                    ],
-                                    emptySelectionAllowed: true,
-                                    selected: _pauseAfterPlay
-                                        ? const <bool>{true}
-                                        : const <bool>{},
-                                    onSelectionChanged: (selected) {
-                                      setState(() {
-                                        _pauseAfterPlay = selected.isNotEmpty;
-                                      });
-                                    },
-                                    expandedInsets: EdgeInsets.zero,
-                                  ),
-                                  const SizedBox(height: 12),
-                                  SegmentedButton<bool>(
-                                    key: const ValueKey('loop_mode_order_row'),
-                                    segments: [
-                                      ButtonSegment<bool>(
-                                        value: false,
-                                        label: Text(
-                                          i18n.tr('sequential_playback'),
-                                        ),
-                                      ),
-                                      ButtonSegment<bool>(
-                                        value: true,
-                                        label: Text(
-                                          i18n.tr('shuffle_playback'),
-                                        ),
-                                      ),
-                                    ],
-                                    selected: {_shuffle},
-                                    onSelectionChanged: (selected) {
-                                      setState(() {
-                                        _shuffle = selected.first;
-                                      });
-                                    },
-                                    expandedInsets: EdgeInsets.zero,
-                                  ),
                                   if (!widget.session.isPlaybackQueue) ...[
-                                    const SizedBox(height: 12),
                                     SegmentedButton<bool>(
-                                      key: const ValueKey('loop_mode_scope_row'),
+                                      key: const ValueKey(
+                                        'loop_mode_scope_row',
+                                      ),
                                       segments: [
                                         ButtonSegment<bool>(
                                           value: false,
-                                          label: Text(i18n.tr('current_folder')),
+                                          label: Text(
+                                            i18n.tr('current_folder'),
+                                          ),
                                         ),
                                         ButtonSegment<bool>(
                                           value: true,
@@ -171,6 +141,43 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
                                       expandedInsets: EdgeInsets.zero,
                                     ),
                                   ],
+                                  const SizedBox(height: 12),
+                                  SegmentedButton<_PlaybackOption>(
+                                    key: const ValueKey(
+                                      'loop_mode_playback_row',
+                                    ),
+                                    segments: [
+                                      ButtonSegment<_PlaybackOption>(
+                                        value:
+                                            _PlaybackOption.pauseAfterPlayback,
+                                        label: Text(
+                                          i18n.tr('pause_after_playback'),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      ButtonSegment<_PlaybackOption>(
+                                        value: _PlaybackOption.loop,
+                                        label: Text(
+                                          i18n.tr('loop_playback'),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                      ButtonSegment<_PlaybackOption>(
+                                        value: _PlaybackOption.shuffle,
+                                        label: Text(
+                                          i18n.tr('shuffle_playback'),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                    multiSelectionEnabled: true,
+                                    selected: _playbackOptions,
+                                    onSelectionChanged: _selectPlaybackOptions,
+                                    expandedInsets: EdgeInsets.zero,
+                                  ),
                                 ],
                               ),
                             ),
@@ -247,6 +254,8 @@ class _LoopModeSheetState extends State<_LoopModeSheet> {
     );
   }
 }
+
+enum _PlaybackOption { pauseAfterPlayback, loop, shuffle }
 
 class _SessionLoopModeButton extends StatelessWidget {
   const _SessionLoopModeButton({required this.session, required this.playback});

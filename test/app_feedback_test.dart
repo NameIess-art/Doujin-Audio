@@ -452,6 +452,47 @@ void main() {
     expect(opaqueDecoration.color!.a, 1);
   });
 
+  testWidgets('blurred top feedback fades without moving its backdrop filter', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _feedbackApp(
+        blurEnabled: true,
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showAppSnackBar(
+                context,
+                'Added to playlist',
+                tone: AppFeedbackTone.success,
+                duration: const Duration(seconds: 10),
+              ),
+              child: const Text('Add'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('Add'));
+    await tester.pump();
+
+    final surface = find.byType(AppFeedbackSurface);
+    expect(
+      find.ancestor(of: surface, matching: find.byType(FadeTransition)),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: surface, matching: find.byType(BackdropFilter)),
+      findsOneWidget,
+    );
+
+    final initialTopLeft = tester.getTopLeft(surface);
+    await tester.pump(const Duration(milliseconds: 110));
+    expect(tester.getTopLeft(surface), initialTopLeft);
+  });
+
   testWidgets(
     'top feedback positions close to header and avoids landscape menu bar',
     (tester) async {

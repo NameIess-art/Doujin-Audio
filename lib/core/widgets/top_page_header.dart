@@ -281,7 +281,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
           widget.onTitleSwipeLeft != null || widget.onTitleSwipeRight != null;
 
       Widget wrapButton(Widget button) {
-        if (button is IconButton) {
+        if (button is IconButton || button is BackButton) {
           return HeaderFloatingButton(
             child: button,
           );

@@ -27,14 +27,14 @@ class _ActiveSessionCard extends ConsumerWidget {
       ),
     );
     final isBar = style == BottomNavigationStyle.bar;
+    const cardHeight = 56.0;
+    const coverDistance = 4.0;
+    const coverDimension = cardHeight - 2 * coverDistance;
     const coverRadius = LibraryLikeCardMetrics.coverRadius;
-    final coverDimension = isBar ? 66.0 : 72.0;
-    final contentPadding = isBar
-        ? const EdgeInsets.fromLTRB(4, 3, 8, 4)
-        : const EdgeInsets.fromLTRB(7, 3, 8, 3);
-    const cardBorderWidth = 1.0;
-    final coverDistance = contentPadding.left + (isBar ? 0.0 : cardBorderWidth);
     final cardRadius = isBar ? 0.0 : (coverRadius + coverDistance);
+    final contentPadding = isBar
+        ? const EdgeInsets.fromLTRB(4, 3, 6, 4)
+        : const EdgeInsets.fromLTRB(3, 3, 6, 3);
 
     final view = ref.watch(
       playbackStateProvider.select((value) {
@@ -89,7 +89,7 @@ class _ActiveSessionCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(cardRadius),
         onTap: onOpen,
         child: Ink(
-          height: 74,
+          height: cardHeight,
           decoration: BoxDecoration(
             color: (isDark ? cs.surfaceContainer : cs.surfaceContainerHigh)
                 .withValues(alpha: useBlur ? (isDark ? 0.72 : 0.78) : 1.0),
@@ -112,19 +112,19 @@ class _ActiveSessionCard extends ConsumerWidget {
                 : [
                     BoxShadow(
                       color: cs.shadow.withValues(
-                        alpha: isPlaying ? 0.18 : 0.12,
+                        alpha: isPlaying ? 0.16 : 0.10,
                       ),
-                      blurRadius: isPlaying ? 28 : 22,
-                      spreadRadius: -7,
-                      offset: const Offset(0, 14),
+                      blurRadius: isPlaying ? 16 : 12,
+                      spreadRadius: -4,
+                      offset: const Offset(0, 6),
                     ),
                     BoxShadow(
                       color: cs.primary.withValues(
-                        alpha: isPlaying ? 0.06 : 0.03,
+                        alpha: isPlaying ? 0.05 : 0.02,
                       ),
-                      blurRadius: 14,
-                      spreadRadius: -10,
-                      offset: const Offset(0, 8),
+                      blurRadius: 10,
+                      spreadRadius: -6,
+                      offset: const Offset(0, 4),
                     ),
                   ],
           ),
@@ -148,7 +148,12 @@ class _ActiveSessionCard extends ConsumerWidget {
                         i18n: i18n,
                         showCover: false,
                         coverDimension: coverDimension,
-                        contentPadding: contentPadding,
+                        contentPadding: EdgeInsets.fromLTRB(
+                          14,
+                          coverDistance,
+                          6,
+                          coverDistance,
+                        ),
                       ))
               : _buildCardContent(
                   context,
@@ -160,7 +165,14 @@ class _ActiveSessionCard extends ConsumerWidget {
                   i18n: i18n,
                   showCover: showCover,
                   coverDimension: coverDimension,
-                  contentPadding: contentPadding,
+                  contentPadding: showCover
+                      ? contentPadding
+                      : EdgeInsets.fromLTRB(
+                          14,
+                          coverDistance,
+                          6,
+                          coverDistance,
+                        ),
                 ),
         ),
       ),
@@ -230,7 +242,7 @@ class _ActiveSessionCard extends ConsumerWidget {
                       coverPathFuture: coverPathFuture,
                       dimension: coverDimension,
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 10),
                   ],
                   Expanded(
                     child: Column(
@@ -257,7 +269,7 @@ class _ActiveSessionCard extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 4),
           Column(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -322,13 +334,13 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
       child: Tooltip(
         message: semanticLabel,
         child: SizedBox.square(
-          dimension: 48,
+          dimension: 40,
           child: Material(
             color: Colors.transparent,
             child: InkResponse(
               onTap: enabled ? onPressed : null,
               containedInkWell: true,
-              radius: 24,
+              radius: 20,
               customBorder: const CircleBorder(),
               child: Center(
                 child: AnimatedSwitcher(
@@ -349,10 +361,10 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
                   child: isLoading
                       ? SizedBox(
                           key: const ValueKey('loading'),
-                          width: 26,
-                          height: 26,
+                          width: 22,
+                          height: 22,
                           child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
+                            strokeWidth: 2.2,
                             color: activeColor,
                           ),
                         )
@@ -361,7 +373,7 @@ class _ActiveSessionPlayPauseButton extends StatelessWidget {
                               ? Icons.pause_rounded
                               : Icons.play_arrow_rounded,
                           key: ValueKey(showPauseIcon),
-                          size: 38,
+                          size: 30,
                           color: showPauseIcon ? activeColor : cs.onSurface,
                         ),
                 ),
@@ -494,13 +506,13 @@ class _ActiveSessionTitleSubtitleState
         Theme.of(context).platform == TargetPlatform.android
             ? Text(
                 widget.displayName,
-                maxLines: 2,
+                maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style:
                     Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      height: 1.08,
+                      fontSize: 13.5,
+                      height: 1.12,
                     ) ??
                     const TextStyle(),
               )
@@ -509,23 +521,23 @@ class _ActiveSessionTitleSubtitleState
                 style:
                     Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w800,
-                      fontSize: 14,
-                      height: 1.08,
+                      fontSize: 13.5,
+                      height: 1.12,
                     ) ??
                     const TextStyle(),
               ),
         if (secondaryText != null) ...[
-          const SizedBox(height: 2),
+          const SizedBox(height: 1.5),
           Text(
             secondaryText,
-            maxLines: 2,
+            maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: widget.playbackError == null
                   ? cs.onSurfaceVariant
                   : cs.error,
               fontWeight: FontWeight.w600,
-              fontSize: 10.2,
+              fontSize: 10.5,
               height: 1.15,
             ),
           ),
@@ -597,15 +609,15 @@ class _ActiveSessionProgressStripState
     final snapshot = _positionGate.value;
     final duration = snapshot.duration;
     if (duration == null || duration.inMilliseconds <= 0) {
-      return const SizedBox(height: 3);
+      return const SizedBox(height: 2.5);
     }
     final fraction = snapshot.position.inMilliseconds / duration.inMilliseconds;
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.only(top: 4),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(3),
+        borderRadius: BorderRadius.circular(2.5),
         child: SizedBox(
-          height: 3,
+          height: 2.5,
           child: LayoutBuilder(
             builder: (context, constraints) {
               final barWidth = constraints.maxWidth;

@@ -218,6 +218,12 @@ void main() {
   testWidgets('metadata review batch mode shows progress and skip action', (
     WidgetTester tester,
   ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(390, 800);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+    });
     final fixture = AppRuntimeWidgetTestFixture(
       dlsiteMetadataService: _FakeDlsiteMetadataService(),
       asmrMetadataService: _FakeAsmrMetadataService(),
@@ -252,7 +258,8 @@ void main() {
           detail: AudioDetail.empty(
             const AudioDetailTarget(
               targetType: AudioDetailTargetType.libraryRootFolder,
-              targetPath: '/library/Work',
+              targetPath:
+                  '/library/A very long folder name that wraps across multiple lines so the floating title surface must size itself before the metadata content begins below it',
             ),
           ),
           rjCode: 'RJ123456',
@@ -273,8 +280,51 @@ void main() {
     );
     expect(find.text(languageProvider.tr('skip')), findsOneWidget);
     expect(
+      find.byKey(const ValueKey<String>('dlsite_review_header')),
+      findsOneWidget,
+    );
+    final confirm = find.byKey(const ValueKey<String>('dlsite_review_confirm'));
+    expect(confirm, findsOneWidget);
+    expect(
+      find.descendant(of: find.byType(ListView), matching: confirm),
+      findsNothing,
+    );
+    final targetName = tester.widget<Text>(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('dlsite_review_target_name')),
+        matching: find.byType(Text),
+      ),
+    );
+    expect(targetName.maxLines, 3);
+    expect(
+      tester
+          .getSize(
+            find.byKey(const ValueKey<String>('dlsite_review_target_name')),
+          )
+          .height,
+      greaterThan(44),
+    );
+    expect(
+      tester
+              .getRect(
+                find.text(languageProvider.tr('audio_detail_work_title')),
+              )
+              .top -
+          tester
+              .getRect(
+                find.byKey(const ValueKey<String>('dlsite_review_target_name')),
+              )
+              .bottom,
+      greaterThanOrEqualTo(8),
+    );
+    expect(
       find.text(languageProvider.tr('audio_detail_release_date')),
       findsOneWidget,
+    );
+    await tester.dragUntilVisible(
+      find.text(languageProvider.tr('audio_detail_sales_count')),
+      find.byType(ListView),
+      const Offset(0, -200),
     );
     expect(
       find.text(languageProvider.tr('audio_detail_sales_count')),

@@ -261,6 +261,10 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
           value: LibrarySortCriterion.addedAt,
           label: i18n.tr('sort_added_date'),
         ),
+        SortOption(
+          value: LibrarySortCriterion.playbackTime,
+          label: i18n.tr('sort_playback_time'),
+        ),
       ],
       selectedCriterion:
           settingsState?.librarySortCriterion ?? LibrarySortCriterion.name,

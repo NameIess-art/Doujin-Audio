@@ -35,6 +35,21 @@ int compareOptionalSortStrings(String? left, String? right) {
   );
 }
 
+int comparePlaybackTimeSortValues(
+  DateTime? left,
+  DateTime? right, {
+  DateTime? leftAddedAt,
+  DateTime? rightAddedAt,
+}) {
+  final leftTimestamp = left ?? leftAddedAt;
+  final rightTimestamp = right ?? rightAddedAt;
+  return compareOptionalSortValues(
+    leftTimestamp,
+    rightTimestamp,
+    (a, b) => b.compareTo(a),
+  );
+}
+
 int compareGroupedSortStrings(String? left, String? right, bool ascending) {
   final result = compareOptionalSortStrings(left, right);
   return ascending ? result : -result;

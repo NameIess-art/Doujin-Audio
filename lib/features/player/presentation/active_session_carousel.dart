@@ -26,8 +26,8 @@ import 'playback_error_text.dart';
 
 part 'active_session_carousel_widgets.dart';
 
-const double kActiveSessionCarouselBarHeight = 74;
-const double kActiveSessionCarouselCapsuleHeight = 88;
+const double kActiveSessionCarouselBarHeight = 56;
+const double kActiveSessionCarouselCapsuleHeight = 56;
 
 Future<String?> _sessionCoverFutureForTrack(
   LibraryFacade library,
@@ -337,8 +337,8 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
           ),
           if (sessions.length > 1)
             Positioned(
-              right: 14,
-              bottom: 3,
+              right: 12,
+              bottom: 1.5,
               child: IgnorePointer(
                 child: ValueListenableBuilder<double>(
                   valueListenable: _pageNotifier,
@@ -407,7 +407,7 @@ class _ActiveSessionPageTransform extends StatelessWidget {
         final scale = isBar
             ? 1.0
             : (lerpDouble(0.972, 1.0, selectedness) ?? 1.0);
-        final translateY = isBar ? 0.0 : (lerpDouble(4, 0, selectedness) ?? 0);
+        final translateY = isBar ? 0.0 : (lerpDouble(2.5, 0, selectedness) ?? 0);
 
         return Padding(
           padding: EdgeInsets.symmetric(horizontal: isBar ? 0 : 2),

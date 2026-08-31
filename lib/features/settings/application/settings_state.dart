@@ -25,9 +25,22 @@ enum InterruptionResumeBehavior { stayPaused, resume }
 
 enum StartupPlaybackRestoreBehavior { resume, pause }
 
-enum LibrarySortCriterion { name, voiceActor, duration, releaseDate, addedAt }
+enum LibrarySortCriterion {
+  name,
+  voiceActor,
+  duration,
+  releaseDate,
+  addedAt,
+  playbackTime,
+}
 
-enum PlaylistSortCriterion { name, voiceActor, releaseDate, addedAt }
+enum PlaylistSortCriterion {
+  name,
+  voiceActor,
+  releaseDate,
+  addedAt,
+  playbackTime,
+}
 
 @immutable
 class SettingsState {

@@ -319,7 +319,7 @@ extension _MainScreenLayout on _MainScreenState {
   }) {
     final systemBottom = MediaQuery.paddingOf(context).bottom;
     final maskHeight =
-        (overlaySessions.isNotEmpty ? 112.0 : 54.0) + systemBottom;
+        (overlaySessions.isNotEmpty ? 94.0 : 54.0) + systemBottom;
     return Stack(
       key: key,
       fit: StackFit.expand,
@@ -726,7 +726,7 @@ extension _MainScreenLayout on _MainScreenState {
       );
     }
     final systemBottom = MediaQuery.of(context).padding.bottom;
-    if (hasNowPlaying) return systemBottom + 150;
+    if (hasNowPlaying) return systemBottom + 130;
     return systemBottom + 60;
   }
 }

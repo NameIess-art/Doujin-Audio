@@ -13,6 +13,7 @@ void main() {
       duration: const Duration(minutes: 2),
       releaseDate: DateTime(2024),
       addedAt: DateTime(2024, 2),
+      lastPlayedAt: DateTime(2024, 3),
     );
     final second = LibrarySortValue(
       name: 'Beta 10',
@@ -21,20 +22,44 @@ void main() {
       duration: const Duration(minutes: 4),
       releaseDate: DateTime(2025),
       addedAt: DateTime(2024, 3),
+      lastPlayedAt: DateTime(2024, 4),
     );
 
-    test('supports every criterion and reverses only value direction', () {
-      for (final criterion in LibrarySortCriterion.values) {
+    test(
+      'supports every non-playback criterion and reverses value direction',
+      () {
+        for (final criterion in LibrarySortCriterion.values.where(
+          (criterion) => criterion != LibrarySortCriterion.playbackTime,
+        )) {
+          expect(
+            compareLibrarySortValues(first, second, criterion, true),
+            lessThan(0),
+          );
+          expect(
+            compareLibrarySortValues(first, second, criterion, false),
+            greaterThan(0),
+          );
+        }
         expect(
-          compareLibrarySortValues(first, second, criterion, true),
-          lessThan(0),
-        );
-        expect(
-          compareLibrarySortValues(first, second, criterion, false),
+          compareLibrarySortValues(
+            first,
+            second,
+            LibrarySortCriterion.playbackTime,
+            true,
+          ),
           greaterThan(0),
         );
-      }
-    });
+        expect(
+          compareLibrarySortValues(
+            first,
+            second,
+            LibrarySortCriterion.playbackTime,
+            false,
+          ),
+          lessThan(0),
+        );
+      },
+    );
 
     test('unknown values sort after known values', () {
       const unknown = LibrarySortValue(
@@ -44,6 +69,7 @@ void main() {
         duration: null,
         releaseDate: null,
         addedAt: null,
+        lastPlayedAt: null,
       );
       expect(compareOptionalSortStrings(null, 'Actor'), greaterThan(0));
       expect(
@@ -74,6 +100,7 @@ void main() {
       voiceActor: 'Actor A',
       releaseDate: DateTime(2024),
       addedAt: DateTime(2024, 2),
+      lastPlayedAt: DateTime(2024, 3),
     );
     final second = PlaylistSortValue(
       name: 'Queue 2',
@@ -81,10 +108,13 @@ void main() {
       voiceActor: 'Actor B',
       releaseDate: DateTime(2025),
       addedAt: DateTime(2024, 3),
+      lastPlayedAt: DateTime(2024, 4),
     );
 
-    test('supports every criterion and descending order', () {
-      for (final criterion in PlaylistSortCriterion.values) {
+    test('supports every non-playback criterion and descending order', () {
+      for (final criterion in PlaylistSortCriterion.values.where(
+        (criterion) => criterion != PlaylistSortCriterion.playbackTime,
+      )) {
         expect(
           comparePlaylistSortValues(first, second, criterion, true),
           lessThan(0),
@@ -94,8 +124,60 @@ void main() {
           greaterThan(0),
         );
       }
+      expect(
+        comparePlaylistSortValues(
+          first,
+          second,
+          PlaylistSortCriterion.playbackTime,
+          true,
+        ),
+        greaterThan(0),
+      );
+      expect(
+        comparePlaylistSortValues(
+          first,
+          second,
+          PlaylistSortCriterion.playbackTime,
+          false,
+        ),
+        lessThan(0),
+      );
     });
   });
+
+  test(
+    'playback time compares last played or added timestamps newest-first',
+    () {
+      final earlier = DateTime(2024);
+      final later = DateTime(2025);
+      final olderAdded = DateTime(2023);
+      final newerAdded = DateTime(2026);
+
+      expect(comparePlaybackTimeSortValues(earlier, later), greaterThan(0));
+      expect(
+        comparePlaybackTimeSortValues(null, later, leftAddedAt: olderAdded),
+        greaterThan(0),
+      );
+      expect(
+        comparePlaybackTimeSortValues(null, later, leftAddedAt: newerAdded),
+        lessThan(0),
+      );
+      expect(
+        comparePlaybackTimeSortValues(
+          null,
+          null,
+          leftAddedAt: newerAdded,
+          rightAddedAt: olderAdded,
+        ),
+        lessThan(0),
+      );
+      expect(-comparePlaybackTimeSortValues(earlier, later), lessThan(0));
+      expect(
+        -comparePlaybackTimeSortValues(null, later, leftAddedAt: olderAdded),
+        lessThan(0),
+      );
+    },
+  );
 
   test('library grouping order follows sort direction', () {
     expect(

@@ -326,6 +326,46 @@ void main() {
     expect(depth.storage[0], inExclusiveRange(0.94, 1));
   });
 
+  testWidgets('fade style uses pure opacity without transform or scaling', (
+    tester,
+  ) async {
+    final key = UniqueKey();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => buildAppPageTransition(
+            context: context,
+            animation: const AlwaysStoppedAnimation<double>(0.5),
+            secondaryAnimation: const AlwaysStoppedAnimation<double>(0),
+            style: AppPageTransitionStyle.fade,
+            child: SizedBox(key: key),
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(key),
+        matching: find.byType(FadeTransition),
+      ),
+      findsWidgets,
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(key),
+        matching: find.byType(Transform),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.ancestor(
+        of: find.byKey(key),
+        matching: find.byType(ScaleTransition),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets('reduced motion makes routes, expansion and tabs immediate', (
     tester,
   ) async {

@@ -425,7 +425,10 @@ void main() {
       expect(prepareCount, 0);
       expect(session.loadedPath, isNull);
 
-      await playback.toggleSessionPlayPause(session.id);
+      final toggle = playback.toggleSessionPlayPause(session.id);
+
+      expect(session.lastPlayedAt, isNotNull);
+      await toggle;
 
       expect(prepareCount, 1);
       expect(session.loadedPath, track.path);
@@ -566,6 +569,7 @@ void main() {
 
       await playback.toggleSessionPlayPause(session.id);
 
+      expect(session.lastPlayedAt, isNotNull);
       expect(prepareCount, 0);
       expect(startCount, 1);
     },
@@ -1344,6 +1348,81 @@ void main() {
     expect(queueSession.playbackQueue?.entries, hasLength(1));
   });
 
+  test(
+    'queue reorder publishes its new order before native synchronization',
+    () async {
+      final database = _RecordingTestPersistenceRepository();
+      final library = LibraryFacade.create(databaseRepository: database);
+      final playback = PlaybackFacade.create(databaseRepository: database)
+        ..configurePersistence(enabled: false);
+      final first = MusicTrack(
+        path: '/tracks/first.mp3',
+        displayName: 'First',
+        groupKey: '/tracks',
+        groupTitle: 'Tracks',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      final second = MusicTrack(
+        path: '/tracks/second.mp3',
+        displayName: 'Second',
+        groupKey: '/tracks',
+        groupTitle: 'Tracks',
+        groupSubtitle: '',
+        isSingle: true,
+      );
+      final session = _session('queue-reorder')
+        ..playbackQueue = PlaybackQueueDefinition(
+          name: 'Queue',
+          entries: <PlaybackQueueEntry>[
+            PlaybackQueueEntry(
+              id: 'first',
+              kind: PlaybackQueueEntryKind.track,
+              title: first.displayName,
+              tracks: <MusicTrack>[first],
+            ),
+            PlaybackQueueEntry(
+              id: 'second',
+              kind: PlaybackQueueEntryKind.track,
+              title: second.displayName,
+              tracks: <MusicTrack>[second],
+            ),
+          ],
+        );
+      final synchronizationStarted = Completer<void>();
+      final synchronizationFinished = Completer<void>();
+      var stateChanges = 0;
+      addTearDown(() async {
+        await session.shutdown();
+        await playback.dispose();
+        await library.dispose();
+      });
+      playback
+        ..attachSessionRuntime(
+          onSessionRegistered: (_) {},
+          onSessionsReordered: () {},
+          onSessionStateChanged: () => stateChanges++,
+        )
+        ..attachPlaybackQueueSynchronizer((_, {selectFirst = false}) async {
+          synchronizationStarted.complete();
+          await synchronizationFinished.future;
+        })
+        ..registerSession(session);
+
+      final reorder = playback.reorderPlaybackQueueEntry(session.id, 0, 2);
+      await synchronizationStarted.future;
+
+      expect(session.playbackQueue?.entries.map((entry) => entry.id), <String>[
+        'second',
+        'first',
+      ]);
+      expect(stateChanges, 1);
+
+      synchronizationFinished.complete();
+      await reorder;
+    },
+  );
+
   _backgroundBucketTests();
 }
 
@@ -1379,6 +1458,12 @@ final class _RecordingTestPersistenceRepository
   Future<void> updateSessionOrder(List<String> sessionIds) async {
     orderSaves++;
   }
+
+  @override
+  Future<void> updatePlaybackQueueEntryOrder(
+    String sessionId,
+    List<String> entryIds,
+  ) async {}
 }
 
 LibraryFacade _createLibraryFacade() {

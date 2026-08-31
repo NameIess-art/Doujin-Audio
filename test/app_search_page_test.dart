@@ -4,7 +4,7 @@ import 'package:doujin_audio/core/widgets/app_edge_fade_mask.dart';
 import 'package:doujin_audio/core/widgets/app_search_page.dart';
 
 void main() {
-  testWidgets('search route uses a fade-through transition', (tester) async {
+  testWidgets('search route uses a fade transition without scaling', (tester) async {
     late BuildContext routeContext;
     await tester.pumpWidget(
       MaterialApp(
@@ -29,7 +29,7 @@ void main() {
     );
 
     expect(transition, isA<FadeTransition>());
-    expect((transition as FadeTransition).child, isA<ScaleTransition>());
+    expect((transition as FadeTransition).child, isNot(isA<ScaleTransition>()));
   });
 
   testWidgets(
@@ -94,7 +94,7 @@ void main() {
               find.byKey(const ValueKey<String>('app_search_field_shell')),
             )
             .height,
-        36,
+        38,
       );
       expect(
         tester
@@ -102,7 +102,7 @@ void main() {
               find.byKey(const ValueKey<String>('app_search_category_shell')),
             )
             .height,
-        36,
+        38,
       );
       expect(
         find.byKey(const ValueKey<String>('direct_search_content')),

@@ -1115,7 +1115,7 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                     structureState,
                   ),
                   trailing: SizedBox(
-                    height: 44,
+                    height: 38,
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       mainAxisAlignment: MainAxisAlignment.end,

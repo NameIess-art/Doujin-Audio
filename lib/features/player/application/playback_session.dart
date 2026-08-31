@@ -19,6 +19,7 @@ class PlaybackSession {
     required this.volume,
     required this.createdAt,
     required this.state,
+    this.lastPlayedAt,
     this.customQueueTracks,
     this.playbackQueue,
     this.currentQueueIndex = 0,
@@ -26,6 +27,7 @@ class PlaybackSession {
 
   final String id;
   final DateTime createdAt;
+  DateTime? lastPlayedAt;
   final List<StreamSubscription<dynamic>> subscriptions = [];
   final StreamController<PlayerState> _stateController =
       StreamController<PlayerState>.broadcast();

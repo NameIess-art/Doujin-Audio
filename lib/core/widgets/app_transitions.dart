@@ -8,7 +8,7 @@ const kAppMotionFast = Duration(milliseconds: 180);
 const kAppMotionStandard = Duration(milliseconds: 220);
 const kAppMotionSlow = Duration(milliseconds: 300);
 
-enum AppPageTransitionStyle { fadeThrough, sharedAxisX, sharedAxisZ }
+enum AppPageTransitionStyle { fade, fadeThrough, sharedAxisX, sharedAxisZ }
 
 enum AppIndexedStackTransitionStyle { none, directional, crossFade }
 
@@ -289,12 +289,12 @@ Widget buildAppPageTransition({
   required Widget child,
   required AppPageTransitionStyle style,
 }) {
-  if (style == AppPageTransitionStyle.fadeThrough) {
-    return buildAppScaleFadeTransition(
+  if (style == AppPageTransitionStyle.fade ||
+      style == AppPageTransitionStyle.fadeThrough) {
+    return buildAppFadeTransition(
       context: context,
       animation: animation,
       child: child,
-      beginScale: 0.92,
     );
   }
   return _buildSharedAxisTransition(

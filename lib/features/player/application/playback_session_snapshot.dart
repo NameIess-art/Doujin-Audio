@@ -32,6 +32,7 @@ class PlaybackSessionSnapshot {
   PlaybackSessionSnapshot({
     required this.id,
     required this.createdAt,
+    required this.lastPlayedAt,
     required this.currentTrackPath,
     required this.loadedPath,
     required this.loopMode,
@@ -64,6 +65,7 @@ class PlaybackSessionSnapshot {
     return PlaybackSessionSnapshot(
       id: session.id,
       createdAt: session.createdAt,
+      lastPlayedAt: session.lastPlayedAt,
       currentTrackPath: session.currentTrackPath,
       loadedPath: session.loadedPath,
       loopMode: session.loopMode,
@@ -98,6 +100,7 @@ class PlaybackSessionSnapshot {
 
   final String id;
   final DateTime createdAt;
+  final DateTime? lastPlayedAt;
   final String currentTrackPath;
   final String? loadedPath;
   final SessionLoopMode loopMode;
@@ -130,6 +133,7 @@ class PlaybackSessionSnapshot {
     return other is PlaybackSessionSnapshot &&
         other.id == id &&
         other.createdAt == createdAt &&
+        other.lastPlayedAt == lastPlayedAt &&
         other.currentTrackPath == currentTrackPath &&
         other.loadedPath == loadedPath &&
         other.loopMode == loopMode &&
@@ -157,6 +161,7 @@ class PlaybackSessionSnapshot {
   int get hashCode => Object.hashAll(<Object?>[
     id,
     createdAt,
+    lastPlayedAt,
     currentTrackPath,
     loadedPath,
     loopMode,

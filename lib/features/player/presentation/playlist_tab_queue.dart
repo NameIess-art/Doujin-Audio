@@ -685,10 +685,8 @@ class _PlaybackQueueAudioEditPageState
         if (previous != null && next > previous) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (_addedQueueScrollController.hasClients) {
-              _addedQueueScrollController.animateTo(
+              _addedQueueScrollController.jumpTo(
                 _addedQueueScrollController.position.maxScrollExtent,
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeOutCubic,
               );
             }
           });

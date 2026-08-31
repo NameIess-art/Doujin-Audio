@@ -69,14 +69,6 @@ PlaylistSortValue _playlistSortValue(
   final currentTrack = trackForSession(session);
   final queueTrack = queue?.expandedTracks.firstOrNull;
   final track = currentTrack ?? queueTrack;
-  final lastPlayedAt = <MusicTrack>[?currentTrack, ...?queue?.expandedTracks]
-      .fold<DateTime?>(null, (latest, track) {
-        final value = track.lastPlayedAt;
-        if (value != null && (latest == null || value.isAfter(latest))) {
-          return value;
-        }
-        return latest;
-      });
   final detail = track == null ? null : _detailForTrack(track, library);
   final voiceActors =
       detail?.voiceActors ??
@@ -91,7 +83,7 @@ PlaylistSortValue _playlistSortValue(
         detail?.releaseDate ??
         dateTimeFromSortMetadata(track?.remoteMetadata?['releaseDate']),
     addedAt: session.createdAt,
-    lastPlayedAt: lastPlayedAt,
+    lastPlayedAt: session.lastPlayedAt,
   );
 }
 

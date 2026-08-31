@@ -1178,7 +1178,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
                 onTitleSwipeLeft: widget.onTitleSwipeLeft,
                 onTitleSwipeRight: widget.onTitleSwipeRight,
                 trailing: SizedBox(
-                  height: 44,
+                  height: 38,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.end,

@@ -12,7 +12,7 @@ PageRouteBuilder<T> buildAppSearchPageRoute<T>({
 }) {
   return buildAppPageRoute<T>(
     context: context,
-    style: AppPageTransitionStyle.fadeThrough,
+    style: AppPageTransitionStyle.fade,
     child: child,
   );
 }
@@ -56,7 +56,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
   final Color? accentColor;
 
   static double controlsTopInset(BuildContext context) =>
-      MediaQuery.paddingOf(context).top + 94;
+      MediaQuery.paddingOf(context).top + 92;
 
   @override
   Widget build(BuildContext context) {
@@ -102,9 +102,9 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                     Expanded(
                       child: SizedBox(
                         key: const ValueKey<String>('app_search_field_shell'),
-                        height: 36,
+                        height: 38,
                         child: _SearchFloatingCapsule(
-                          radius: 18,
+                          radius: 19,
                           blurEnabled: blurEnabled,
                           child: TextSelectionTheme(
                             data: TextSelectionThemeData(
@@ -131,12 +131,12 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                                 prefixIcon: Icon(
                                   Icons.search_rounded,
                                   color: cs.onSurfaceVariant,
-                                  size: 19,
+                                  size: 20,
                                 ),
                                 prefixIconConstraints:
                                     const BoxConstraints.tightFor(
-                                      width: 36,
-                                      height: 36,
+                                      width: 38,
+                                      height: 38,
                                     ),
                                 hintText: hintText,
                                 hintStyle: theme.textTheme.bodyMedium?.copyWith(
@@ -158,20 +158,20 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                     ),
                     const SizedBox(width: 8),
                     SizedBox.square(
-                      dimension: 36,
+                      dimension: 38,
                       child: _SearchFloatingCapsule(
-                        radius: 18,
+                        radius: 19,
                         blurEnabled: blurEnabled,
                         child: IconButton(
                           key: const ValueKey<String>('app_search_close'),
                           onPressed: onCloseOrClear,
-                          icon: const Icon(Icons.close_rounded, size: 19),
+                          icon: const Icon(Icons.close_rounded, size: 20),
                           color: cs.onSurfaceVariant,
                           padding: EdgeInsets.zero,
                           visualDensity: VisualDensity.compact,
                           style: IconButton.styleFrom(
-                            minimumSize: const Size(36, 36),
-                            maximumSize: const Size(36, 36),
+                            minimumSize: const Size(38, 38),
+                            maximumSize: const Size(38, 38),
                             padding: EdgeInsets.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
@@ -183,9 +183,9 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
                 const SizedBox(height: 6),
                 SizedBox(
                   key: const ValueKey<String>('app_search_category_shell'),
-                  height: 36,
+                  height: 38,
                   child: _SearchFloatingCapsule(
-                    radius: 18,
+                    radius: 19,
                     blurEnabled: blurEnabled,
                     child: ListView.separated(
                       key: const ValueKey<String>('app_search_categories'),

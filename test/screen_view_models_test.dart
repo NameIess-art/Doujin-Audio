@@ -270,6 +270,16 @@ void main() {
       expect(playingStructure, pausedStructure);
       expect(playingCard, isNot(pausedCard));
 
+      playbackSession.lastPlayedAt = DateTime(2026, 1, 2);
+      final playedStructure = playlistStructureStateFromPlaybackState(
+        PlaybackStateSliceData(
+          activeSessions: [snapshot(playbackSession)],
+          playingSessionCount: 1,
+          isInitialized: true,
+        ),
+      );
+      expect(playedStructure, isNot(playingStructure));
+
       playbackSession.currentTrackPath = '/tracks/b.mp3';
       final nextTrackStructure = playlistStructureStateFromPlaybackState(
         PlaybackStateSliceData(

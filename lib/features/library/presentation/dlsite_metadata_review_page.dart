@@ -480,7 +480,6 @@ class _DlsiteMetadataReviewPageState
                   children: [
                     if (widget.allowSkip) ...[
                       HeaderFloatingSurface(
-                        height: 38,
                         padding: const EdgeInsets.symmetric(horizontal: 12),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(19),

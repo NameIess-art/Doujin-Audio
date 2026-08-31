@@ -422,8 +422,8 @@ void main() {
     final harness = await _pumpAppShell(tester, includePlaybackSession: false);
 
     await _swipeToAsmrPage(tester);
-    await _pumpMainScreenAnimations(tester);
-    await tester.pump(const Duration(milliseconds: 100));
+    await _waitForMainPage(tester, 0);
+    await tester.pump(const Duration(seconds: 4));
 
     expect(
       find.text(harness.language.tr('asmr_category_collected')),
@@ -449,6 +449,7 @@ void main() {
     expect(find.byType(LibraryLikeSkeletonCard), findsWidgets);
     expect(find.text(harness.language.tr('asmr_empty_category')), findsNothing);
 
+    await tester.pump(const Duration(seconds: 4));
     await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 350));

@@ -95,9 +95,9 @@ extension PlaybackQueuePathCoordinator on PlaybackFacade {
     final item = entries.removeAt(oldIndex);
     entries.insert(newIndex, item);
     session.playbackQueue = queue.copyWith(entries: entries);
-    await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
     _service.markActiveSessionsDirty();
     _onSessionStateChanged?.call();
+    await _synchronizePlaybackQueueSession?.call(session, selectFirst: false);
     await databaseRepository.updatePlaybackQueueEntryOrder(
       session.id,
       entries.map((entry) => entry.id).toList(growable: false),

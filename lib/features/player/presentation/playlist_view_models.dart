@@ -113,6 +113,7 @@ class PlaylistStructureEntry {
         other.sessionId == sessionId &&
         other.trackPath == trackPath &&
         other.isPlaybackQueue == isPlaybackQueue &&
+        other.session.lastPlayedAt == session.lastPlayedAt &&
         other.queueColorValue == queueColorValue &&
         other.queueContentSignature == queueContentSignature;
   }
@@ -122,6 +123,7 @@ class PlaylistStructureEntry {
     sessionId,
     trackPath,
     isPlaybackQueue,
+    session.lastPlayedAt,
     queueColorValue,
     queueContentSignature,
   );

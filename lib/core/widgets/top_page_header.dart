@@ -432,7 +432,7 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
       final topCapsuleOpacity =
           (1.0 - Curves.easeIn.transform(collapseT)).clamp(0.0, 1.0);
 
-      const topCapsuleHeight = 36.0;
+      const topCapsuleHeight = 38.0;
       const rowGap = 6.0;
       const secondRowHeight = 38.0;
       const expandedHeight = topCapsuleHeight + rowGap + secondRowHeight;
@@ -804,7 +804,7 @@ class HeaderTopCapsule extends StatelessWidget {
     this.data,
     this.leading,
     this.trailing,
-    this.height = 36,
+    this.height = 38,
   });
 
   final String title;

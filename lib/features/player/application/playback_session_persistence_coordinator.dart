@@ -64,6 +64,9 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
         createdAt: item.createdAtMs == null
             ? DateTime.now()
             : DateTime.fromMillisecondsSinceEpoch(item.createdAtMs!),
+        lastPlayedAt: item.lastPlayedAtMs == null
+            ? null
+            : DateTime.fromMillisecondsSinceEpoch(item.lastPlayedAtMs!),
         state: PlayerState(false, ProcessingState.idle),
         customQueueTracks: customQueueTracks,
         playbackQueue: item.playbackQueue,
@@ -169,7 +172,7 @@ extension PlaybackSessionPersistenceCoordinator on PlaybackFacade {
       audioEffects: session.audioEffects,
       createdAtMs: session.createdAt.millisecondsSinceEpoch,
       updatedAtMs: now.millisecondsSinceEpoch,
-      lastPlayedAtMs: session.state.playing ? now.millisecondsSinceEpoch : null,
+      lastPlayedAtMs: session.lastPlayedAt?.millisecondsSinceEpoch,
       sortOrder: sortOrder,
     );
   }

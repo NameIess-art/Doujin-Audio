@@ -308,6 +308,76 @@ void main() {
     );
   });
 
+  testWidgets('settings category headers become sticky floating pills', (
+    tester,
+  ) async {
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(harness.dispose);
+    await tester.pumpWidget(harness.build(const SettingsTab()));
+    await tester.pump();
+
+    final i18n = harness.languageProvider;
+    await tester.tap(find.text(i18n.tr('section_appearance')));
+    await tester.pumpAndSettle();
+
+    final categoryHeader = find.byType(TopPageHeader);
+    final startupPill = find.byKey(
+      const ValueKey<String>('settings_section_pill_appearance_0'),
+    );
+    expect(startupPill, findsOneWidget);
+    expect(
+      tester.getTopLeft(startupPill).dy,
+      greaterThan(tester.getRect(categoryHeader).bottom),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('settings_sticky_section_pill')),
+      findsNothing,
+    );
+
+    final categoryList = find.byType(ListView).last;
+    await tester.drag(categoryList, const Offset(0, -100));
+    await tester.pumpAndSettle();
+
+    final stickyPill = find.byKey(
+      const ValueKey<String>('settings_sticky_section_pill'),
+    );
+    expect(stickyPill, findsOneWidget);
+    expect(
+      find.descendant(
+        of: stickyPill,
+        matching: find.text(i18n.tr('settings_group_page_display')),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.getTopLeft(stickyPill).dy,
+      greaterThanOrEqualTo(tester.getRect(categoryHeader).bottom),
+    );
+
+    await tester.drag(categoryList, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(
+      find.descendant(
+        of: stickyPill,
+        matching: find.text(i18n.tr('settings_group_theme_layout')),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byIcon(Icons.arrow_back_rounded));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(i18n.tr('section_language')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('settings_section_pill_language_0')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('settings_sticky_section_pill')),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'data storage category places storage overview above data and support',
     (tester) async {
@@ -1297,6 +1367,8 @@ void main() {
       SwitchListTile,
       i18n.tr('differentiate_asmr_theme'),
     );
+    await Scrollable.ensureVisible(tester.element(switchTile), alignment: 0.5);
+    await tester.pumpAndSettle();
     await tester.tap(switchTile);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('app_theme_color_tile')), findsOneWidget);
@@ -1304,6 +1376,8 @@ void main() {
     final appThemeColorTile = find.byKey(
       const ValueKey('app_theme_color_tile'),
     );
+    await tester.ensureVisible(appThemeColorTile);
+    await tester.pumpAndSettle();
     final bottomNavigationTile = find.widgetWithText(
       SwitchListTile,
       i18n.tr('bottom_navigation_style'),
@@ -1324,10 +1398,20 @@ void main() {
       closeTo(3, 0.001),
     );
 
+    await Scrollable.ensureVisible(tester.element(switchTile), alignment: 0.5);
+    await tester.pumpAndSettle();
     await tester.tap(switchTile);
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('asmr_theme_color_tile')), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('asmr_theme_color_tile')));
+    final asmrThemeColorTile = find.byKey(
+      const ValueKey('asmr_theme_color_tile'),
+    );
+    await Scrollable.ensureVisible(
+      tester.element(asmrThemeColorTile),
+      alignment: 0.5,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(asmrThemeColorTile);
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('theme_color_orange')));
     await tester.pumpAndSettle();

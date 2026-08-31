@@ -384,7 +384,7 @@ class _SettingsCategoryTile extends StatelessWidget {
   }
 }
 
-class _SettingsCategoryPage extends ConsumerWidget {
+class _SettingsCategoryPage extends ConsumerStatefulWidget {
   const _SettingsCategoryPage({
     required this.category,
     required this.updateInfoListenable,
@@ -410,120 +410,220 @@ class _SettingsCategoryPage extends ConsumerWidget {
   final VoidCallback onCheckForUpdates;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_SettingsCategoryPage> createState() =>
+      _SettingsCategoryPageState();
+}
+
+class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
+  final ScrollController _scrollController = ScrollController();
+  final Map<int, GlobalKey> _sectionTitleKeys = <int, GlobalKey>{};
+  List<_SettingsStickySection> _stickySections =
+      const <_SettingsStickySection>[];
+  String? _pinnedSectionTitle;
+  bool _stickySectionSyncScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_scheduleStickySectionSync);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_scheduleStickySectionSync)
+      ..dispose();
+    super.dispose();
+  }
+
+  double _headerHeight(BuildContext context) =>
+      MediaQuery.paddingOf(context).top +
+      AppPageHeaderMetrics.padding.vertical +
+      AppPageHeaderMetrics.contentHeight +
+      AppPageHeaderMetrics.bottomSpacing;
+
+  List<Widget> _withStickySectionTitles(List<Widget> sections) {
+    final stickySections = <_SettingsStickySection>[];
+    final keyedSections = <Widget>[];
+    for (var index = 0; index < sections.length; index++) {
+      final section = sections[index];
+      if (section is! _SettingsSectionCard) {
+        keyedSections.add(section);
+        continue;
+      }
+      final titleKey = _sectionTitleKeys.putIfAbsent(
+        index,
+        () => GlobalKey(
+          debugLabel: 'settings_section_${widget.category.name}_$index',
+        ),
+      );
+      stickySections.add(
+        _SettingsStickySection(title: section.title, titleKey: titleKey),
+      );
+      keyedSections.add(
+        _SettingsSectionCard(
+          title: section.title,
+          leadingContent: section.leadingContent,
+          titleKey: titleKey,
+          sectionId: '${widget.category.name}_$index',
+          children: section.children,
+        ),
+      );
+    }
+    _stickySections = stickySections;
+    _scheduleStickySectionSync();
+    return keyedSections;
+  }
+
+  void _scheduleStickySectionSync() {
+    if (_stickySectionSyncScheduled) return;
+    _stickySectionSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _stickySectionSyncScheduled = false;
+      if (!mounted) return;
+      final anchor = _headerHeight(context);
+      String? nextTitle;
+      for (final section in _stickySections) {
+        final box =
+            section.titleKey.currentContext?.findRenderObject() as RenderBox?;
+        if (box == null) continue;
+        if (box.localToGlobal(Offset.zero).dy <= anchor) {
+          nextTitle = section.title;
+        }
+      }
+      if (nextTitle == _pinnedSectionTitle) return;
+      setState(() => _pinnedSectionTitle = nextTitle);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     final settings = ref.read(settingsRepositoryProvider);
     final settingsController = ref.read(settingsCommandControllerProvider);
     final cs = Theme.of(context).colorScheme;
 
-    Widget content({
-      double topPadding = AppPageHeaderMetrics.firstContentSpacing,
-    }) {
-      return ListView(
-        padding: EdgeInsets.fromLTRB(16, topPadding, 16, 24),
-        children: [
-          _SettingsTileTheme(
-            child: Column(
-              children: switch (category) {
-                _SettingsCategory.language => _buildSettingsLanguageSection(
-                  context: context,
-                  i18n: i18n,
-                  settings: settings,
-                  cs: cs,
+    return ValueListenableBuilder<AppUpdateInfo?>(
+      valueListenable: widget.updateInfoListenable,
+      builder: (context, updateInfo, _) {
+        final sections = _withStickySectionTitles(switch (widget.category) {
+          _SettingsCategory.language => _buildSettingsLanguageSection(
+            context: context,
+            i18n: i18n,
+            settings: settings,
+            cs: cs,
+          ),
+          _SettingsCategory.common => _buildSettingsGeneralSection(
+            i18n: i18n,
+            settings: settings,
+            settingsController: settingsController,
+            cs: cs,
+          ),
+          _SettingsCategory.appearance => _buildSettingsAppearanceSection(
+            context: context,
+            ref: ref,
+            i18n: i18n,
+            settings: settings,
+            settingsController: settingsController,
+            cs: cs,
+            onShowSubtitleWindowSettings: widget.onShowSubtitleWindowSettings,
+            onShowCardInfoFieldsSettings: widget.onShowCardInfoFieldsSettings,
+          ),
+          _SettingsCategory.playback => _buildSettingsPlaybackSection(
+            i18n: i18n,
+            settings: settings,
+            settingsController: settingsController,
+            cs: cs,
+          ),
+          _SettingsCategory.asmrDownload => _buildSettingsAsmrSection(
+            i18n: i18n,
+            settings: settings,
+            cs: cs,
+            onChooseAsmrDownloadDestination:
+                widget.onChooseAsmrDownloadDestination,
+          ),
+          _SettingsCategory.dataStorage => _buildSettingsDataSection(
+            i18n: i18n,
+            settingsController: settingsController,
+            cs: cs,
+            onOpenDataAndSupport: widget.onOpenDataAndSupport,
+            onClearApplicationCache: widget.onClearApplicationCache,
+          ),
+          _SettingsCategory.updatesPermissions => _buildSettingsUpdateSection(
+            i18n: i18n,
+            settings: settings,
+            cs: cs,
+            updateInfo: updateInfo,
+            currentVersion: widget.currentVersion,
+            onOpenPermissionCenter: widget.onOpenPermissionCenter,
+            onCheckForUpdates: widget.onCheckForUpdates,
+          ),
+          _SettingsCategory.about => const <Widget>[],
+        });
+        final headerHeight = _headerHeight(context);
+
+        return Scaffold(
+          backgroundColor: cs.surface,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: ListView(
+                  controller: _scrollController,
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    headerHeight +
+                        AppPageHeaderMetrics.firstContentSpacing +
+                        AppSpacing.xs,
+                    16,
+                    24,
+                  ),
+                  children: [
+                    _SettingsTileTheme(child: Column(children: sections)),
+                  ],
                 ),
-                _SettingsCategory.common => _buildSettingsGeneralSection(
-                  i18n: i18n,
-                  settings: settings,
-                  settingsController: settingsController,
-                  cs: cs,
-                ),
-                _SettingsCategory.appearance => _buildSettingsAppearanceSection(
-                  context: context,
-                  ref: ref,
-                  i18n: i18n,
-                  settings: settings,
-                  settingsController: settingsController,
-                  cs: cs,
-                  onShowSubtitleWindowSettings: onShowSubtitleWindowSettings,
-                  onShowCardInfoFieldsSettings: onShowCardInfoFieldsSettings,
-                ),
-                _SettingsCategory.playback => _buildSettingsPlaybackSection(
-                  i18n: i18n,
-                  settings: settings,
-                  settingsController: settingsController,
-                  cs: cs,
-                ),
-                _SettingsCategory.asmrDownload => _buildSettingsAsmrSection(
-                  i18n: i18n,
-                  settings: settings,
-                  cs: cs,
-                  onChooseAsmrDownloadDestination:
-                      onChooseAsmrDownloadDestination,
-                ),
-                _SettingsCategory.dataStorage => _buildSettingsDataSection(
-                  i18n: i18n,
-                  settingsController: settingsController,
-                  cs: cs,
-                  onOpenDataAndSupport: onOpenDataAndSupport,
-                  onClearApplicationCache: onClearApplicationCache,
-                ),
-                _SettingsCategory.updatesPermissions => [
-                  ValueListenableBuilder<AppUpdateInfo?>(
-                    valueListenable: updateInfoListenable,
-                    builder: (context, updateInfo, _) => Column(
-                      children: _buildSettingsUpdateSection(
-                        i18n: i18n,
-                        settings: settings,
-                        cs: cs,
-                        updateInfo: updateInfo,
-                        currentVersion: currentVersion,
-                        onOpenPermissionCenter: onOpenPermissionCenter,
-                        onCheckForUpdates: onCheckForUpdates,
+              ),
+              if (_pinnedSectionTitle != null)
+                Positioned(
+                  top: headerHeight,
+                  left: 16,
+                  right: 16,
+                  child: IgnorePointer(
+                    child: ExcludeSemantics(
+                      child: _SettingsSectionTitlePill(
+                        key: const ValueKey<String>(
+                          'settings_sticky_section_pill',
+                        ),
+                        title: _pinnedSectionTitle!,
                       ),
                     ),
                   ),
-                ],
-                _SettingsCategory.about => const <Widget>[],
-              },
-            ),
-          ),
-        ],
-      );
-    }
-
-    final headerHeight =
-        MediaQuery.paddingOf(context).top +
-        AppPageHeaderMetrics.padding.vertical +
-        AppPageHeaderMetrics.contentHeight +
-        AppPageHeaderMetrics.bottomSpacing;
-
-    return Scaffold(
-      backgroundColor: cs.surface,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            child: content(
-              topPadding:
-                  headerHeight + AppPageHeaderMetrics.firstContentSpacing,
-            ),
-          ),
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: TopPageHeader(
-              icon: category.icon,
-              title: i18n.tr(category.labelKey),
-              leading: IconButton(
-                onPressed: () => Navigator.of(context).maybePop(),
-                icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
-                tooltip: i18n.tr('back'),
+                ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: TopPageHeader(
+                  icon: widget.category.icon,
+                  title: i18n.tr(widget.category.labelKey),
+                  leading: IconButton(
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: Icon(Icons.arrow_back_rounded, color: cs.onSurface),
+                    tooltip: i18n.tr('back'),
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
+}
+
+class _SettingsStickySection {
+  const _SettingsStickySection({required this.title, required this.titleKey});
+
+  final String title;
+  final GlobalKey titleKey;
 }

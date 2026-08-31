@@ -212,37 +212,72 @@ class _SettingsSectionCard extends StatelessWidget {
     required this.title,
     required this.children,
     this.leadingContent,
+    this.titleKey,
+    this.sectionId,
   });
 
   final String title;
   final List<Widget> children;
   final Widget? leadingContent;
+  final Key? titleKey;
+  final String? sectionId;
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-            child: Text(
-              title,
-              style: theme.textTheme.titleSmall?.copyWith(
-                fontSize: 15,
-                color: theme.colorScheme.onSurfaceVariant,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+          KeyedSubtree(
+            key: sectionId == null
+                ? null
+                : ValueKey<String>('settings_section_pill_$sectionId'),
+            child: _SettingsSectionTitlePill(key: titleKey, title: title),
           ),
+          const SizedBox(height: 8),
           if (leadingContent != null) ...[
             leadingContent!,
             const SizedBox(height: 12),
           ],
           _SettingsGroupCard(children: children),
         ],
+      ),
+    );
+  }
+}
+
+class _SettingsSectionTitlePill extends StatelessWidget {
+  const _SettingsSectionTitlePill({super.key, required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      header: true,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: HeaderFloatingSurface(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.sizeOf(context).width - 64,
+            ),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

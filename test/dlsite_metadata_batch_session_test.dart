@@ -1,0 +1,119 @@
+import 'dart:async';
+
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/dlsite_metadata.dart';
+import 'package:doujin_audio/features/library/application/dlsite_metadata_batch_session.dart';
+import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
+import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+void main() {
+  AudioLibraryCategoryEntry entry(String id) {
+    final target = AudioDetailTarget.libraryRootFolder('/library/$id');
+    return AudioLibraryCategoryEntry(
+      target: target,
+      title: id,
+      path: target.targetPath,
+      isFolder: true,
+      detail: AudioDetail.empty(target).copyWith(rjCode: 'RJ000$id'),
+      tracks: const [],
+    );
+  }
+
+  DlsiteMetadata metadata(String id) => DlsiteMetadata(
+    rjCode: 'RJ000$id',
+    workTitle: 'Work $id',
+    circleName: 'Circle',
+    voiceActors: const [],
+    tags: const [],
+  );
+
+  test('maps lookup outcomes to found, not found, and failed states', () async {
+    final searching = Completer<List<DlsiteMetadata>>();
+    final session = DlsiteMetadataBatchSession(
+      entries: [entry('001'), entry('002'), entry('003'), entry('004')],
+      lookup: (query) => switch (query.rjCode) {
+        'RJ000001' => Future<List<DlsiteMetadata>>.value([metadata('001')]),
+        'RJ000002' => Future<List<DlsiteMetadata>>.error(
+          const DlsiteMetadataException(
+            'not found',
+            kind: DlsiteMetadataFailureKind.notFound,
+          ),
+        ),
+        'RJ000003' => Future<List<DlsiteMetadata>>.error(StateError('offline')),
+        _ => searching.future,
+      },
+    );
+    addTearDown(session.dispose);
+
+    session.start();
+    await Future<void>.delayed(Duration.zero);
+
+    expect(session.items[0].status, DlsiteMetadataBatchLookupStatus.found);
+    expect(session.items[1].status, DlsiteMetadataBatchLookupStatus.notFound);
+    expect(session.items[2].status, DlsiteMetadataBatchLookupStatus.failed);
+    expect(session.items[3].status, DlsiteMetadataBatchLookupStatus.searching);
+
+    searching.complete([metadata('004')]);
+    await Future<void>.delayed(Duration.zero);
+    expect(session.items[3].status, DlsiteMetadataBatchLookupStatus.found);
+  });
+
+  test('keeps at most three lookups active and retries failures', () async {
+    final pending = <String, Completer<List<DlsiteMetadata>>>{};
+    final calls = <String, int>{};
+    final session = DlsiteMetadataBatchSession(
+      entries: [entry('001'), entry('002'), entry('003'), entry('004')],
+      lookup: (query) {
+        final id = query.rjCode!;
+        calls[id] = (calls[id] ?? 0) + 1;
+        return (pending[id] ??= Completer<List<DlsiteMetadata>>()).future;
+      },
+    );
+    addTearDown(session.dispose);
+
+    session.start();
+    await Future<void>.delayed(Duration.zero);
+    expect(calls.keys, unorderedEquals(['RJ000001', 'RJ000002', 'RJ000003']));
+
+    pending['RJ000001']!.complete([metadata('001')]);
+    await Future<void>.delayed(Duration.zero);
+    expect(calls.keys, contains('RJ000004'));
+
+    pending['RJ000002']!.completeError(StateError('offline'));
+    await Future<void>.delayed(Duration.zero);
+    expect(session.items[1].status, DlsiteMetadataBatchLookupStatus.failed);
+
+    pending.remove('RJ000002');
+    session.retry(1);
+    await Future<void>.delayed(Duration.zero);
+    expect(calls['RJ000002'], 2);
+  });
+
+  test('retains confirmed metadata and saves only confirmed works', () async {
+    final saved = <DlsiteMetadataBatchItem>[];
+    final session = DlsiteMetadataBatchSession(
+      entries: [entry('001'), entry('002')],
+      lookup: (query) async => [metadata(query.rjCode!.substring(5))],
+      apply: (item) async {
+        saved.add(item);
+      },
+    );
+    addTearDown(session.dispose);
+
+    session.start();
+    await Future<void>.delayed(Duration.zero);
+    final confirmed = metadata('001').copyWith(workTitle: 'Edited work');
+    session.confirm(0, metadata: confirmed, saveCover: true);
+
+    expect(session.items[0].status, DlsiteMetadataBatchLookupStatus.confirmed);
+    expect(session.items[0].reviewCandidates.first.workTitle, 'Edited work');
+    expect(session.confirmedCount, 1);
+
+    final result = await session.applyConfirmed();
+    expect(result.savedCount, 1);
+    expect(result.failedCount, 0);
+    expect(saved.single.entry.title, '001');
+    expect(saved.single.confirmedMetadata?.workTitle, 'Edited work');
+  });
+}

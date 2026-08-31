@@ -6,7 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/theme/app_styles.dart';
 import '../../../core/ui/ui_operation_service.dart';
-import '../application/dlsite_metadata_query.dart';
+import '../../../core/widgets/app_feedback.dart';
+import '../application/dlsite_metadata_batch_session.dart';
 import '../domain/audio_library_category.dart';
 import 'dlsite_metadata_review_page.dart';
 import '../../../core/widgets/app_transitions.dart';
@@ -40,12 +41,8 @@ class _DlsiteMetadataBatchPageState
   List<AudioLibraryCategoryEntry> _specificEntries =
       const <AudioLibraryCategoryEntry>[];
   _BatchMetadataScope _scope = _BatchMetadataScope.anyMissing;
-  _BatchMetadataSummary? _summary;
   Object? _error;
   bool _loading = true;
-  bool _running = false;
-  int _currentIndex = 0;
-  int _activeTotal = 0;
 
   List<AudioLibraryCategoryEntry> get _anyMissingEntries => _entries
       .where((entry) => entry.detail.hasMissingMetadata)
@@ -129,111 +126,31 @@ class _DlsiteMetadataBatchPageState
   }
 
   Future<void> _run() async {
-    if (_running) return;
     final queue = List<AudioLibraryCategoryEntry>.of(_selectedEntries);
-    var applied = 0;
-    var skipped = 0;
-    var saveCover = true;
-    final processedIndexes = <int>{};
-    var currentIndex = 0;
-    setState(() {
-      _running = true;
-      _summary = null;
-      _currentIndex = 0;
-      _activeTotal = queue.length;
-    });
-
-    while (currentIndex >= 0 && currentIndex < queue.length) {
-      if (!mounted) return;
-      setState(() {
-        _currentIndex = currentIndex + 1;
-      });
-      final entry = queue[currentIndex];
-      final query = DlsiteMetadataQuery.fromDetail(entry.detail);
-      if (!query.hasQuery) {
-        skipped++;
-        processedIndexes.add(currentIndex);
-        currentIndex = _nextUnprocessedIndex(
-          processedIndexes,
-          currentIndex,
-          queue.length,
+    if (queue.isEmpty) return;
+    final language = ref
+        .read(settingsRepositoryProvider)
+        .slice
+        .state
+        .dlsiteMetadataLanguage
+        .resolve(
+          ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(appLanguageProviderInstanceProvider).language,
         );
-        continue;
-      }
-      final result = await Navigator.of(context)
-          .push<DlsiteMetadataReviewResult>(
-            buildAppPageRoute(
-              context: context,
-              style: AppPageTransitionStyle.sharedAxisZ,
-              child: DlsiteMetadataReviewPage(
-                detail: entry.detail,
-                rjCode: query.rjCode,
-                searchTitles: query.searchTitles,
-                batchIndex: currentIndex + 1,
-                batchTotal: queue.length,
-                allowSkip: true,
-                initialSaveCover: saveCover,
-              ),
-            ),
-          );
-      if (!mounted) return;
-      if (result == null) {
-        setState(() {
-          _running = false;
-          _summary = _BatchMetadataSummary(
-            total: queue.length,
-            applied: applied,
-            skipped: skipped,
-            unprocessed: queue.length - processedIndexes.length,
-          );
-        });
-        return;
-      }
-      if (result.saveCover != null) {
-        saveCover = result.saveCover!;
-      }
-      if (result.isWorkNavigation) {
-        currentIndex += result.workNavigationOffset;
-        continue;
-      }
-      processedIndexes.add(currentIndex);
-      if (result.isApplied) {
-        applied++;
-      } else {
-        skipped++;
-      }
-      currentIndex = _nextUnprocessedIndex(
-        processedIndexes,
-        currentIndex,
-        queue.length,
-      );
-      await Future<void>.delayed(Duration.zero);
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _running = false;
-      _summary = _BatchMetadataSummary(
-        total: queue.length,
-        applied: applied,
-        skipped: skipped,
-        unprocessed: 0,
-      );
-    });
-  }
-
-  int _nextUnprocessedIndex(
-    Set<int> processedIndexes,
-    int currentIndex,
-    int total,
-  ) {
-    for (var index = currentIndex + 1; index < total; index++) {
-      if (!processedIndexes.contains(index)) return index;
-    }
-    for (var index = 0; index < total; index++) {
-      if (!processedIndexes.contains(index)) return index;
-    }
-    return total;
+    final session = DlsiteMetadataBatchSession.forLibrary(
+      entries: queue,
+      library: ref.read(libraryFacadeProvider),
+      language: language,
+    );
+    await Navigator.of(context).push<void>(
+      buildAppPageRoute(
+        context: context,
+        style: AppPageTransitionStyle.sharedAxisZ,
+        child: DlsiteMetadataBatchResultsPage(session: session),
+      ),
+    );
   }
 
   @override
@@ -259,11 +176,6 @@ class _DlsiteMetadataBatchPageState
                   )
                 : _error != null
                 ? _BatchMetadataErrorView(onRetry: _load)
-                : _summary != null
-                ? _BatchMetadataSummaryView(
-                    summary: _summary!,
-                    onDone: () => Navigator.of(context).maybePop(),
-                  )
                 : _BatchMetadataSetupView(
                     scope: _scope,
                     allCount: _entries.length,
@@ -271,9 +183,6 @@ class _DlsiteMetadataBatchPageState
                     anyMissingCount: _anyMissingEntries.length,
                     hasRjCodeCount: _hasRjCodeEntries.length,
                     specificCount: _specificEntries.length,
-                    running: _running,
-                    currentIndex: _currentIndex,
-                    activeTotal: _activeTotal,
                     onScopeChanged: (scope) {
                       setState(() {
                         _scope = scope;
@@ -303,20 +212,6 @@ class _DlsiteMetadataBatchPageState
   }
 }
 
-class _BatchMetadataSummary {
-  const _BatchMetadataSummary({
-    required this.total,
-    required this.applied,
-    required this.skipped,
-    required this.unprocessed,
-  });
-
-  final int total;
-  final int applied;
-  final int skipped;
-  final int unprocessed;
-}
-
 class _BatchMetadataSetupView extends StatelessWidget {
   const _BatchMetadataSetupView({
     required this.scope,
@@ -325,9 +220,6 @@ class _BatchMetadataSetupView extends StatelessWidget {
     required this.anyMissingCount,
     required this.hasRjCodeCount,
     required this.specificCount,
-    required this.running,
-    required this.currentIndex,
-    required this.activeTotal,
     required this.onScopeChanged,
     required this.onPickSpecific,
     required this.onStart,
@@ -339,9 +231,6 @@ class _BatchMetadataSetupView extends StatelessWidget {
   final int anyMissingCount;
   final int hasRjCodeCount;
   final int specificCount;
-  final bool running;
-  final int currentIndex;
-  final int activeTotal;
   final ValueChanged<_BatchMetadataScope> onScopeChanged;
   final VoidCallback onPickSpecific;
   final VoidCallback onStart;
@@ -352,24 +241,6 @@ class _BatchMetadataSetupView extends StatelessWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    if (running) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            Text(
-              i18n.tr('batch_metadata_progress', {
-                'current': currentIndex,
-                'total': activeTotal,
-              }),
-            ),
-          ],
-        ),
-      );
-    }
-
     return ListView(
       padding: EdgeInsets.fromLTRB(16, _headerContentTopInset(context), 16, 24),
       children: [
@@ -687,14 +558,74 @@ class _DlsiteMetadataWorkPickerPageState
   }
 }
 
-class _BatchMetadataSummaryView extends StatelessWidget {
-  const _BatchMetadataSummaryView({
-    required this.summary,
-    required this.onDone,
-  });
+class DlsiteMetadataBatchResultsPage extends StatefulWidget {
+  const DlsiteMetadataBatchResultsPage({super.key, required this.session});
 
-  final _BatchMetadataSummary summary;
-  final VoidCallback onDone;
+  final DlsiteMetadataBatchSession session;
+
+  @override
+  State<DlsiteMetadataBatchResultsPage> createState() =>
+      _DlsiteMetadataBatchResultsPageState();
+}
+
+class _DlsiteMetadataBatchResultsPageState
+    extends State<DlsiteMetadataBatchResultsPage> {
+  bool _savingAll = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.session.start();
+  }
+
+  @override
+  void dispose() {
+    widget.session.dispose();
+    super.dispose();
+  }
+
+  Future<void> _handleItemTap(int index) async {
+    final item = widget.session.items[index];
+    if (item.isReviewable) {
+      await Navigator.of(context).push<void>(
+        buildAppPageRoute(
+          context: context,
+          style: AppPageTransitionStyle.sharedAxisZ,
+          child: DlsiteMetadataBatchReviewPage(
+            session: widget.session,
+            initialIndex: index,
+          ),
+        ),
+      );
+      return;
+    }
+    if (item.status != DlsiteMetadataBatchLookupStatus.searching) {
+      widget.session.retry(index);
+    }
+  }
+
+  Future<void> _saveAll() async {
+    if (_savingAll || widget.session.confirmedCount == 0) return;
+    setState(() {
+      _savingAll = true;
+    });
+    final result = await widget.session.applyConfirmed();
+    if (!mounted) return;
+    if (result.failedCount > 0) {
+      setState(() {
+        _savingAll = false;
+      });
+      showAppSnackBar(
+        context,
+        ProviderScope.containerOf(context, listen: false)
+            .read(appLanguageProviderInstanceProvider)
+            .tr('audio_detail_save_failed'),
+        tone: AppFeedbackTone.warning,
+      );
+      return;
+    }
+    Navigator.of(context).pop();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -702,25 +633,289 @@ class _BatchMetadataSummaryView extends StatelessWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
-    return ListView(
-      padding: EdgeInsets.fromLTRB(16, _headerContentTopInset(context), 16, 24),
-      children: [
-        Text(
-          i18n.tr('batch_metadata_summary'),
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 16),
-        Text('${i18n.tr('batch_metadata_total')}: ${summary.total}'),
-        Text('${i18n.tr('batch_metadata_applied')}: ${summary.applied}'),
-        Text('${i18n.tr('batch_metadata_skipped')}: ${summary.skipped}'),
-        Text(
-          '${i18n.tr('batch_metadata_unprocessed')}: ${summary.unprocessed}',
-        ),
-        const SizedBox(height: 24),
-        FilledButton(onPressed: onDone, child: Text(i18n.tr('done'))),
-      ],
+    return Scaffold(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: AnimatedBuilder(
+              animation: widget.session,
+              builder: (context, _) {
+                final items = widget.session.items;
+                return ListView.builder(
+                  key: const ValueKey<String>('batch_metadata_results_list'),
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    _headerContentTopInset(context),
+                    16,
+                    78 + MediaQuery.paddingOf(context).bottom,
+                  ),
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final entry = item.entry;
+                    final title = entry.detail.workTitle.isNotEmpty
+                        ? entry.detail.workTitle
+                        : entry.title;
+                    return ListTile(
+                      key: ValueKey<String>('batch_metadata_result_$index'),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      title: Text(
+                        title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: entry.detail.rjCode.isEmpty
+                          ? null
+                          : Text(entry.detail.rjCode),
+                      trailing: _BatchMetadataStatusIcon(
+                        key: ValueKey<String>('batch_metadata_status_$index'),
+                        status: item.status,
+                      ),
+                      onTap: () => _handleItemTap(index),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              key: const ValueKey<String>('batch_metadata_results_header'),
+              icon: Icons.library_add_check_rounded,
+              title: i18n.tr('batch_metadata'),
+              leading: const BackButton(),
+            ),
+          ),
+          Positioned(
+            right: 16,
+            bottom: 16 + MediaQuery.paddingOf(context).bottom,
+            child: AnimatedBuilder(
+              animation: widget.session,
+              builder: (context, _) => HeaderFloatingSurface(
+                key: const ValueKey<String>('batch_metadata_results_done'),
+                height: 46,
+                radius: 23,
+                padding: EdgeInsets.zero,
+                child: Material(
+                  color: Theme.of(context).colorScheme.primary,
+                  borderRadius: BorderRadius.circular(23),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(23),
+                    onTap: _savingAll || widget.session.confirmedCount == 0
+                        ? null
+                        : _saveAll,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _savingAll
+                              ? SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onPrimary,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.check_rounded,
+                                  size: 18,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onPrimary,
+                                ),
+                          const SizedBox(width: 6),
+                          Text(
+                            i18n.tr('confirm'),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.onPrimary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
+}
+
+class DlsiteMetadataBatchReviewPage extends StatefulWidget {
+  const DlsiteMetadataBatchReviewPage({
+    super.key,
+    required this.session,
+    required this.initialIndex,
+  });
+
+  final DlsiteMetadataBatchSession session;
+  final int initialIndex;
+
+  @override
+  State<DlsiteMetadataBatchReviewPage> createState() =>
+      _DlsiteMetadataBatchReviewPageState();
+}
+
+class _DlsiteMetadataBatchReviewPageState
+    extends State<DlsiteMetadataBatchReviewPage> {
+  late int _currentIndex = widget.initialIndex;
+  bool _saveCover = true;
+
+  DlsiteMetadataBatchItem get _currentItem =>
+      widget.session.items[_currentIndex];
+
+  void _navigate(int offset) {
+    final nextIndex = widget.session.reviewableIndexFrom(_currentIndex, offset);
+    if (nextIndex == null) return;
+    setState(() {
+      _currentIndex = nextIndex;
+    });
+  }
+
+  void _complete(DlsiteMetadataReviewResult result) {
+    if (result.saveCover != null) _saveCover = result.saveCover!;
+    final metadata = result.metadata;
+    if (result.isConfirmed && metadata != null) {
+      widget.session.confirm(
+        _currentIndex,
+        metadata: metadata,
+        saveCover: result.saveCover ?? false,
+      );
+    }
+    final nextIndex = widget.session.reviewableIndexFrom(_currentIndex, 1);
+    if (nextIndex == null) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() {
+      _currentIndex = nextIndex;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final item = _currentItem;
+    return DlsiteMetadataReviewPage(
+      key: ValueKey<String>(
+        AudioLibraryCategorySnapshot.targetKey(item.entry.target),
+      ),
+      detail: item.entry.detail,
+      batchIndex: _currentIndex + 1,
+      batchTotal: widget.session.items.length,
+      allowSkip: true,
+      initialSaveCover: _saveCover,
+      initialCandidates: item.reviewCandidates,
+      canNavigatePrevious:
+          widget.session.reviewableIndexFrom(_currentIndex, -1) != null,
+      canNavigateNext:
+          widget.session.reviewableIndexFrom(_currentIndex, 1) != null,
+      onBatchNavigate: _navigate,
+      onCompleted: _complete,
+    );
+  }
+}
+
+class _BatchMetadataStatusIcon extends StatelessWidget {
+  const _BatchMetadataStatusIcon({super.key, required this.status});
+
+  final DlsiteMetadataBatchLookupStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    final cs = Theme.of(context).colorScheme;
+    if (status == DlsiteMetadataBatchLookupStatus.searching) {
+      final label = i18n.tr('batch_metadata_status_searching');
+      return Tooltip(
+        message: label,
+        child: Semantics(
+          label: label,
+          child: _RotatingBatchMetadataStatusIcon(color: cs.primary),
+        ),
+      );
+    }
+    final (IconData icon, Color color, String label) = switch (status) {
+      DlsiteMetadataBatchLookupStatus.found => (
+        Icons.pending_actions_rounded,
+        Colors.orange,
+        i18n.tr('batch_metadata_status_found'),
+      ),
+      DlsiteMetadataBatchLookupStatus.confirmed => (
+        Icons.check_circle_rounded,
+        Colors.green,
+        i18n.tr('batch_metadata_status_confirmed'),
+      ),
+      DlsiteMetadataBatchLookupStatus.notFound => (
+        Icons.search_off_rounded,
+        cs.onSurfaceVariant,
+        i18n.tr('batch_metadata_status_not_found'),
+      ),
+      DlsiteMetadataBatchLookupStatus.failed => (
+        Icons.error_outline_rounded,
+        cs.error,
+        i18n.tr('batch_metadata_status_failed'),
+      ),
+      DlsiteMetadataBatchLookupStatus.searching => throw StateError(
+        'Searching status is handled above.',
+      ),
+    };
+    return Tooltip(
+      message: label,
+      child: Semantics(
+        label: label,
+        child: Icon(icon, color: color, size: 22),
+      ),
+    );
+  }
+}
+
+class _RotatingBatchMetadataStatusIcon extends StatefulWidget {
+  const _RotatingBatchMetadataStatusIcon({required this.color});
+
+  final Color color;
+
+  @override
+  State<_RotatingBatchMetadataStatusIcon> createState() =>
+      _RotatingBatchMetadataStatusIconState();
+}
+
+class _RotatingBatchMetadataStatusIconState
+    extends State<_RotatingBatchMetadataStatusIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RotationTransition(
+    turns: _controller,
+    child: Icon(Icons.autorenew_rounded, color: widget.color, size: 22),
+  );
 }
 
 class _BatchMetadataErrorView extends StatelessWidget {

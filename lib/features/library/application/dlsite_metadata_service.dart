@@ -11,11 +11,20 @@ import '../../../core/media/dlsite_metadata.dart';
 import '../../../core/platform/file_cache_platform_gateway.dart';
 import '../../../core/media/path_matcher.dart';
 
+enum DlsiteMetadataFailureKind { request, notFound, invalidQuery }
+
 class DlsiteMetadataException implements Exception {
-  const DlsiteMetadataException(this.message, {this.isNetworkFailure = false});
+  const DlsiteMetadataException(
+    this.message, {
+    this.isNetworkFailure = false,
+    this.kind = DlsiteMetadataFailureKind.request,
+  });
 
   final String message;
   final bool isNetworkFailure;
+  final DlsiteMetadataFailureKind kind;
+
+  bool get isNotFound => kind == DlsiteMetadataFailureKind.notFound;
 
   @override
   String toString() => message;
@@ -58,7 +67,10 @@ class DlsiteMetadataService {
   }) async {
     final normalized = AudioDetail.findRjCodeInText(rjCode);
     if (normalized == null) {
-      throw const DlsiteMetadataException('Invalid RJ code');
+      throw const DlsiteMetadataException(
+        'Invalid RJ code',
+        kind: DlsiteMetadataFailureKind.invalidQuery,
+      );
     }
 
     final languages = <AppLanguage>[
@@ -105,7 +117,10 @@ class DlsiteMetadataService {
       }
     }
     if (lastError is DlsiteMetadataException) throw lastError;
-    throw const DlsiteMetadataException('No DLsite metadata found');
+    throw const DlsiteMetadataException(
+      'No DLsite metadata found',
+      kind: DlsiteMetadataFailureKind.notFound,
+    );
   }
 
   Future<List<DlsiteMetadata>> searchByTitleCandidates(
@@ -156,7 +171,10 @@ class DlsiteMetadataService {
     }
 
     if (resultsByRjCode.isEmpty) {
-      throw const DlsiteMetadataException('No DLsite metadata found');
+      throw const DlsiteMetadataException(
+        'No DLsite metadata found',
+        kind: DlsiteMetadataFailureKind.notFound,
+      );
     }
     final results = resultsByRjCode.values.toList()
       ..sort((a, b) {
@@ -213,11 +231,13 @@ class DlsiteMetadataService {
     required String coverUrl,
     required String folderPath,
     required String rjCode,
+    String? fileName,
     AppLanguage language = AppLanguage.ja,
   }) async {
     final uri = Uri.parse(coverUrl);
     final extension = _coverExtension(uri);
-    final fileName = 'dlsite_${rjCode.toUpperCase()}_cover$extension';
+    final resolvedFileName =
+        fileName ?? 'dlsite_${rjCode.toUpperCase()}_cover$extension';
     final request = await _httpClient.getUrl(uri).timeout(_requestTimeout);
     _applyHeaders(request, language);
     final response = await request.close().timeout(_requestTimeout);
@@ -249,7 +269,7 @@ class DlsiteMetadataService {
           response.headers.contentType?.mimeType ?? _coverMimeType(extension);
       final savedCover = await _fileCacheGateway.writeFileBytesToFolder(
         folder: folderPath,
-        name: fileName,
+        name: resolvedFileName,
         bytes: Uint8List.fromList(bytes),
         mimeType: mimeType,
       );
@@ -259,7 +279,8 @@ class DlsiteMetadataService {
       return savedCover;
     }
 
-    final destination = File(path.join(folderPath, fileName));
+    final destination = File(path.join(folderPath, resolvedFileName));
+    await destination.parent.create(recursive: true);
     final sink = destination.openWrite();
     var received = 0;
     var completed = false;
@@ -339,7 +360,10 @@ class DlsiteMetadataService {
     final response = await _get(uri, language: language);
     final product = decodeDlsiteProductJsonResponse(response);
     if (product == null) {
-      throw const DlsiteMetadataException('No DLsite metadata found');
+      throw const DlsiteMetadataException(
+        'No DLsite metadata found',
+        kind: DlsiteMetadataFailureKind.notFound,
+      );
     }
 
     final metadata = DlsiteMetadata.fromProductJson(product);

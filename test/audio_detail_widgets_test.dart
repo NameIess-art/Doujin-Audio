@@ -97,14 +97,6 @@ void _expectPrimaryFilledButton(WidgetTester tester, Finder finder) {
 }
 
 void main() {
-  test('metadata review work navigation results retain their direction', () {
-    expect(
-      const DlsiteMetadataReviewResult.previousWork().workNavigationOffset,
-      -1,
-    );
-    expect(const DlsiteMetadataReviewResult.nextWork().workNavigationOffset, 1);
-  });
-
   AppRuntimeTestFixture.initialize();
   late Database testDatabase;
 
@@ -249,6 +241,7 @@ void main() {
         fixture.notificationCoordinatorService;
     final settingsRepository = fixture.settings;
     final languageProvider = fixture.languageProvider;
+    DlsiteMetadataReviewResult? completion;
 
     await tester.pumpWidget(
       buildAppRuntimeTestApp(
@@ -274,6 +267,12 @@ void main() {
           batchIndex: 2,
           batchTotal: 3,
           allowSkip: true,
+          canNavigatePrevious: true,
+          canNavigateNext: true,
+          onBatchNavigate: (_) {},
+          onCompleted: (result) {
+            completion = result;
+          },
         ),
       ),
     );
@@ -311,6 +310,21 @@ void main() {
     );
     expect(previousWork.onPressed, isNotNull);
     expect(nextWork.onPressed, isNotNull);
+    final workNavigation = find.byKey(
+      const ValueKey<String>('dlsite_review_work_navigation'),
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('dlsite_review_header')),
+        matching: workNavigation,
+      ),
+      findsNothing,
+    );
+    expect(tester.getTopLeft(workNavigation).dy, tester.getTopLeft(skip).dy);
+    expect(
+      tester.getCenter(workNavigation).dx,
+      lessThan(tester.getCenter(skip).dx),
+    );
     final targetName = tester.widget<Text>(
       find.descendant(
         of: find.byKey(const ValueKey<String>('dlsite_review_target_name')),
@@ -326,6 +340,10 @@ void main() {
           .height,
       greaterThan(44),
     );
+    await tester.tap(confirm);
+    await tester.pump();
+    expect(completion?.isConfirmed, isTrue);
+    expect(completion?.metadata?.workTitle, 'ASMR fetched title');
     expect(
       tester
               .getRect(

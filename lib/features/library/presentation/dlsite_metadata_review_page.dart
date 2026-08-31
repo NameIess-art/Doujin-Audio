@@ -15,36 +15,29 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 
-enum DlsiteMetadataReviewOutcome { applied, skipped, previousWork, nextWork }
+enum DlsiteMetadataReviewOutcome { applied, confirmed, skipped }
 
 class DlsiteMetadataReviewResult {
   const DlsiteMetadataReviewResult.applied(this.detail, this.saveCover)
-    : outcome = DlsiteMetadataReviewOutcome.applied;
+    : outcome = DlsiteMetadataReviewOutcome.applied,
+      metadata = null;
+
+  const DlsiteMetadataReviewResult.confirmed(this.metadata, this.saveCover)
+    : outcome = DlsiteMetadataReviewOutcome.confirmed,
+      detail = null;
 
   const DlsiteMetadataReviewResult.skipped([this.saveCover])
     : outcome = DlsiteMetadataReviewOutcome.skipped,
-      detail = null;
-
-  const DlsiteMetadataReviewResult.previousWork([this.saveCover])
-    : outcome = DlsiteMetadataReviewOutcome.previousWork,
-      detail = null;
-
-  const DlsiteMetadataReviewResult.nextWork([this.saveCover])
-    : outcome = DlsiteMetadataReviewOutcome.nextWork,
-      detail = null;
+      detail = null,
+      metadata = null;
 
   final DlsiteMetadataReviewOutcome outcome;
   final AudioDetail? detail;
+  final DlsiteMetadata? metadata;
   final bool? saveCover;
 
   bool get isApplied => outcome == DlsiteMetadataReviewOutcome.applied;
-
-  bool get isWorkNavigation =>
-      outcome == DlsiteMetadataReviewOutcome.previousWork ||
-      outcome == DlsiteMetadataReviewOutcome.nextWork;
-
-  int get workNavigationOffset =>
-      outcome == DlsiteMetadataReviewOutcome.previousWork ? -1 : 1;
+  bool get isConfirmed => outcome == DlsiteMetadataReviewOutcome.confirmed;
 }
 
 class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
@@ -58,7 +51,14 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
     this.allowSkip = false,
     this.missingOnly = false,
     this.initialSaveCover = true,
-  }) : assert(rjCode != null || searchTitles.length > 0);
+    this.initialCandidates,
+    this.canNavigatePrevious = false,
+    this.canNavigateNext = false,
+    this.onBatchNavigate,
+    this.onCompleted,
+  }) : assert(
+         initialCandidates != null || rjCode != null || searchTitles.length > 0,
+       );
 
   final AudioDetail detail;
   final String? rjCode;
@@ -68,6 +68,11 @@ class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
   final bool allowSkip;
   final bool missingOnly;
   final bool initialSaveCover;
+  final List<DlsiteMetadata>? initialCandidates;
+  final bool canNavigatePrevious;
+  final bool canNavigateNext;
+  final ValueChanged<int>? onBatchNavigate;
+  final ValueChanged<DlsiteMetadataReviewResult>? onCompleted;
 
   @override
   ConsumerState<DlsiteMetadataReviewPage> createState() =>
@@ -126,6 +131,11 @@ class _DlsiteMetadataReviewPageState
       _candidates = const <DlsiteMetadata>[];
       _candidateIndex = 0;
     });
+    final initialCandidates = widget.initialCandidates;
+    if (initialCandidates != null) {
+      _showCandidate(0, initialCandidates);
+      return;
+    }
     try {
       final candidates = await ref
           .read(uiOperationServiceProvider)
@@ -220,6 +230,11 @@ class _DlsiteMetadataReviewPageState
           : double.tryParse(_ratingController.text.trim()),
     );
 
+    if (widget.onCompleted != null) {
+      _finish(DlsiteMetadataReviewResult.confirmed(edited, _saveCover));
+      return;
+    }
+
     try {
       final language = ref
           .read(settingsRepositoryProvider)
@@ -257,9 +272,7 @@ class _DlsiteMetadataReviewPageState
           tone: AppFeedbackTone.warning,
         );
       }
-      Navigator.of(
-        context,
-      ).pop(DlsiteMetadataReviewResult.applied(result.detail, _saveCover));
+      _finish(DlsiteMetadataReviewResult.applied(result.detail, _saveCover));
     } catch (_) {
       if (!mounted) return;
       setState(() {
@@ -277,16 +290,21 @@ class _DlsiteMetadataReviewPageState
 
   void _skip() {
     if (_saving) return;
-    Navigator.of(context).pop(DlsiteMetadataReviewResult.skipped(_saveCover));
+    _finish(DlsiteMetadataReviewResult.skipped(_saveCover));
   }
 
   void _navigateWork(int offset) {
     if (_saving) return;
-    Navigator.of(context).pop(
-      offset < 0
-          ? DlsiteMetadataReviewResult.previousWork(_saveCover)
-          : DlsiteMetadataReviewResult.nextWork(_saveCover),
-    );
+    widget.onBatchNavigate?.call(offset);
+  }
+
+  void _finish(DlsiteMetadataReviewResult result) {
+    final onCompleted = widget.onCompleted;
+    if (onCompleted != null) {
+      onCompleted(result);
+      return;
+    }
+    Navigator.of(context).pop(result);
   }
 
   @override
@@ -446,6 +464,46 @@ class _DlsiteMetadataReviewPageState
               bottom: 16 + MediaQuery.paddingOf(context).bottom,
               child: Row(
                 children: [
+                  if (widget.onBatchNavigate != null) ...[
+                    HeaderFloatingSurface(
+                      key: const ValueKey<String>(
+                        'dlsite_review_work_navigation',
+                      ),
+                      height: 46,
+                      radius: 23,
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'dlsite_review_previous_work',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 20,
+                            onPressed: !widget.canNavigatePrevious || _saving
+                                ? null
+                                : () => _navigateWork(-1),
+                            tooltip: i18n.tr('previous'),
+                            icon: const Icon(Icons.chevron_left_rounded),
+                          ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'dlsite_review_next_work',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 20,
+                            onPressed: !widget.canNavigateNext || _saving
+                                ? null
+                                : () => _navigateWork(1),
+                            tooltip: i18n.tr('next'),
+                            icon: const Icon(Icons.chevron_right_rounded),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                  ],
                   Expanded(
                     child: HeaderFloatingSurface(
                       key: const ValueKey<String>('dlsite_review_skip'),
@@ -500,45 +558,6 @@ class _DlsiteMetadataReviewPageState
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if ((widget.batchTotal ?? 0) > 1) ...[
-                      HeaderActionPill(
-                        key: const ValueKey<String>(
-                          'dlsite_review_work_navigation',
-                        ),
-                        padding: const EdgeInsets.symmetric(horizontal: 2),
-                        children: [
-                          IconButton(
-                            key: const ValueKey<String>(
-                              'dlsite_review_previous_work',
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            iconSize: 20,
-                            onPressed: (widget.batchIndex ?? 1) <= 1 || _saving
-                                ? null
-                                : () => _navigateWork(-1),
-                            tooltip: i18n.tr('previous'),
-                            icon: const Icon(Icons.chevron_left_rounded),
-                          ),
-                          IconButton(
-                            key: const ValueKey<String>(
-                              'dlsite_review_next_work',
-                            ),
-                            visualDensity: VisualDensity.compact,
-                            iconSize: 20,
-                            onPressed:
-                                (widget.batchIndex ?? widget.batchTotal!) >=
-                                        widget.batchTotal! ||
-                                    _saving
-                                ? null
-                                : () => _navigateWork(1),
-                            tooltip: i18n.tr('next'),
-                            icon: const Icon(Icons.chevron_right_rounded),
-                          ),
-                        ],
-                      ),
-                      if (_candidates.length > 1 && !_loading)
-                        const SizedBox(width: 8),
-                    ],
                     if (_candidates.length > 1 && !_loading)
                       HeaderActionPill(
                         padding: const EdgeInsets.symmetric(horizontal: 2),

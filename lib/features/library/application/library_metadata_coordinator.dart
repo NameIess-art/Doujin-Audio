@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:path/path.dart' as path;
+
 import '../../../core/app_language.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../../../core/media/audio_detail.dart';
@@ -534,8 +536,9 @@ final class LibraryMetadataCoordinator {
       try {
         final downloaded = await _metadataService.downloadCover(
           coverUrl: metadata.coverUrl!,
-          folderPath: next.target.targetPath,
+          folderPath: _metadataCoverFolder(next.target.targetPath),
           rjCode: metadata.rjCode,
+          fileName: 'cover.jpg',
           language: language,
         );
         coverPath = downloaded.displayPath;
@@ -554,6 +557,11 @@ final class LibraryMetadataCoordinator {
       coverPath: coverPath,
       coverError: coverError,
     );
+  }
+
+  String _metadataCoverFolder(String targetPath) {
+    if (PathMatcher.isContentUri(targetPath)) return targetPath;
+    return path.normalize(path.join(targetPath, '..', 'cover'));
   }
 
   bool _isCurrent(int epoch) => !_disposed && epoch == _epoch;

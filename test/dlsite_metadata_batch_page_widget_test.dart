@@ -1,13 +1,142 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
+import 'package:doujin_audio/core/media/audio_detail.dart';
+import 'package:doujin_audio/core/media/dlsite_metadata.dart';
 import 'package:doujin_audio/core/widgets/top_page_header.dart';
+import 'package:doujin_audio/features/library/application/dlsite_metadata_batch_session.dart';
+import 'package:doujin_audio/features/library/application/dlsite_metadata_service.dart';
 import 'package:doujin_audio/features/library/domain/audio_library_category.dart';
 import 'package:doujin_audio/features/library/presentation/dlsite_metadata_batch_page.dart';
 
 void main() {
+  AudioLibraryCategoryEntry resultEntry(String id) {
+    final target = AudioDetailTarget.libraryRootFolder('/library/$id');
+    return AudioLibraryCategoryEntry(
+      target: target,
+      title: 'Work $id',
+      path: target.targetPath,
+      isFolder: true,
+      detail: AudioDetail.empty(target).copyWith(rjCode: 'RJ000$id'),
+      tracks: const [],
+    );
+  }
+
+  DlsiteMetadata resultMetadata(String id) => DlsiteMetadata(
+    rjCode: 'RJ000$id',
+    workTitle: 'Fetched $id',
+    circleName: 'Circle',
+    voiceActors: const [],
+    tags: const [],
+  );
+
+  testWidgets('batch results render and update all lookup status icons', (
+    tester,
+  ) async {
+    final pending = Completer<List<DlsiteMetadata>>();
+    final session = DlsiteMetadataBatchSession(
+      entries: [
+        resultEntry('001'),
+        resultEntry('002'),
+        resultEntry('003'),
+        resultEntry('004'),
+      ],
+      lookup: (query) => switch (query.rjCode) {
+        'RJ000001' => Future<List<DlsiteMetadata>>.value([
+          resultMetadata('001'),
+        ]),
+        'RJ000002' => Future<List<DlsiteMetadata>>.error(
+          const DlsiteMetadataException(
+            'not found',
+            kind: DlsiteMetadataFailureKind.notFound,
+          ),
+        ),
+        'RJ000003' => Future<List<DlsiteMetadata>>.error(StateError('offline')),
+        _ => pending.future,
+      },
+    );
+    final languageProvider = AppLanguageProvider();
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: DlsiteMetadataBatchResultsPage(session: session),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('batch_metadata_results_header')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('batch_metadata_results_done')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('batch_metadata_status_0')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('batch_metadata_status_0')),
+        matching: find.byIcon(Icons.pending_actions_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('batch_metadata_status_1')),
+        matching: find.byIcon(Icons.search_off_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('batch_metadata_status_2')),
+        matching: find.byIcon(Icons.error_outline_rounded),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('batch_metadata_status_3')),
+        matching: find.byIcon(Icons.autorenew_rounded),
+      ),
+      findsOneWidget,
+    );
+
+    pending.complete([resultMetadata('004')]);
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('batch_metadata_status_3')),
+        matching: find.byIcon(Icons.pending_actions_rounded),
+      ),
+      findsOneWidget,
+    );
+    session.confirm(3, metadata: resultMetadata('004'), saveCover: false);
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('batch_metadata_status_3')),
+        matching: find.byIcon(Icons.check_circle_rounded),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('work picker uses floating header and completion controls', (
     tester,
   ) async {
@@ -62,6 +191,57 @@ void main() {
       findsOneWidget,
     );
     expect(find.byType(HeaderFloatingSurface), findsNWidgets(3));
+  });
+
+  testWidgets('batch result rows match the work picker row height', (
+    tester,
+  ) async {
+    final languageProvider = AppLanguageProvider();
+    final entry = resultEntry('001');
+    final session = DlsiteMetadataBatchSession(
+      entries: [entry],
+      lookup: (_) =>
+          Future<List<DlsiteMetadata>>.value([resultMetadata('001')]),
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: DlsiteMetadataBatchResultsPage(session: session),
+        ),
+      ),
+    );
+    await tester.pump();
+    final resultRowHeight = tester
+        .getSize(find.byKey(const ValueKey<String>('batch_metadata_result_0')))
+        .height;
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLanguageProviderInstanceProvider.overrideWithValue(
+            languageProvider,
+          ),
+        ],
+        child: MaterialApp(
+          home: DlsiteMetadataWorkPickerPage(
+            entries: [entry],
+            initialSelection: const [],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      resultRowHeight,
+      tester.getSize(find.byType(CheckboxListTile)).height,
+    );
   });
 
   testWidgets('batch setup content follows the one-line header closely', (

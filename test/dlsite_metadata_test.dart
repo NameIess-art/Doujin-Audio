@@ -76,6 +76,39 @@ void main() {
     },
   );
 
+  test(
+    'writes a cover with the requested name into a new cover folder',
+    () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final root = await Directory.systemTemp.createTemp('dlsite_cover_path_');
+      final subscription = server.listen((request) async {
+        request.response.add(const <int>[1, 2, 3]);
+        await request.response.close();
+      });
+      addTearDown(() async {
+        await subscription.cancel();
+        await server.close(force: true);
+        if (await root.exists()) await root.delete(recursive: true);
+      });
+
+      final coverFolder = Directory(
+        '${root.path}${Platform.pathSeparator}cover',
+      );
+      final saved = await DlsiteMetadataService().downloadCover(
+        coverUrl: 'http://${server.address.address}:${server.port}/cover.webp',
+        folderPath: coverFolder.path,
+        rjCode: 'RJ01014447',
+        fileName: 'cover.jpg',
+      );
+
+      expect(
+        saved.displayPath,
+        '${coverFolder.path}${Platform.pathSeparator}cover.jpg',
+      );
+      expect(await File(saved.displayPath).readAsBytes(), const <int>[1, 2, 3]);
+    },
+  );
+
   test('parses DLsite product json into editable metadata', () {
     final metadata = DlsiteMetadata.fromProductJson({
       'workno': 'RJ01014447',

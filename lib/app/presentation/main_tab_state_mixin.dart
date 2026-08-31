@@ -48,6 +48,8 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   void jumpToTop() {
     final controller = mainScrollController;
     if (!controller.hasClients) return;
+    final scrollHold = controller.position.hold(() {});
+    scrollHold.cancel();
     const fakeAnimationStartOffset = 360.0;
     final animationStartOffset =
         controller.position.maxScrollExtent < fakeAnimationStartOffset

@@ -49,23 +49,7 @@ mixin MainTabStateMixin<T extends StatefulWidget> on State<T> {
   void jumpToTop() {
     final controller = mainScrollController;
     if (!controller.hasClients) return;
-    const fakeAnimationStartOffset = 360.0;
-    final animationStartOffset =
-        controller.position.maxScrollExtent < fakeAnimationStartOffset
-        ? controller.position.maxScrollExtent
-        : fakeAnimationStartOffset;
-    if (controller.offset > animationStartOffset) {
-      controller.jumpTo(animationStartOffset);
-    }
-    if (MediaQuery.disableAnimationsOf(context)) {
-      controller.jumpTo(0);
-      return;
-    }
-    controller.animateTo(
-      0,
-      duration: const Duration(milliseconds: 260),
-      curve: Curves.easeOutCubic,
-    );
+    controller.jumpTo(0);
   }
 
   void measureHeader() {

@@ -1162,6 +1162,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               right: 0,
               child: TopPageHeader(
                 key: headerKey,
+                icon: Icons.library_music_rounded,
                 collapseController: _scrollController,
                 topCapsuleTitle: i18n.tr('music_library'),
                 topCapsuleData: i18n.tr('library_header_stats', {

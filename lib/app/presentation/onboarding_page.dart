@@ -223,7 +223,10 @@ class PrivacySummaryPage extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     return Scaffold(
-      appBar: AppPageAppBar(title: Text(i18n.tr('privacy_summary_title'))),
+      appBar: AppPageAppBar(
+        icon: Icons.privacy_tip_rounded,
+        title: Text(i18n.tr('privacy_summary_title')),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [

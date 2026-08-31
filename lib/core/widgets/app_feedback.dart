@@ -311,6 +311,15 @@ void _showTopFeedback(
           showCountdown: showCountdown,
           onRemove: () => removeEntry(AppFeedbackDismissReason.timeout),
           builder: (wrapperContext, remainingSeconds) {
+            final isRemovalAction =
+                hasAction &&
+                replacementGroup == _undoableRemovalFeedbackGroup &&
+                remainingSeconds != null;
+            final resolvedActionLabel = hasAction
+                ? (isRemovalAction
+                    ? '$actionLabel (${remainingSeconds}s)'
+                    : actionLabel)
+                : null;
             return Dismissible(
               key: ValueKey<Object>(dismissKey),
               onDismissed: (_) => removeEntry(AppFeedbackDismissReason.swipe),
@@ -322,7 +331,7 @@ void _showTopFeedback(
                   iconColor: iconColor,
                   title: title,
                   message: message,
-                  remainingSeconds: remainingSeconds,
+                  remainingSeconds: hasAction ? null : remainingSeconds,
                   trailing: hasAction
                       ? TextButton(
                           style: TextButton.styleFrom(
@@ -338,7 +347,7 @@ void _showTopFeedback(
                             removeEntry(AppFeedbackDismissReason.action);
                             onAction();
                           },
-                          child: Text(actionLabel),
+                          child: Text(resolvedActionLabel!),
                         )
                       : null,
                 ),

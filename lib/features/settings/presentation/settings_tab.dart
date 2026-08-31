@@ -85,7 +85,10 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
   int get tabIndex => widget.tabIndex;
 
   @override
-  double get defaultHeaderHeight => AppPageHeaderMetrics.toolbarHeight;
+  double get defaultHeaderHeight =>
+      AppPageHeaderMetrics.mainTabPadding.top +
+      36.0 +
+      AppPageHeaderMetrics.mainTabPadding.bottom;
 
   @override
   ScrollController get mainScrollController => _scrollController;
@@ -210,18 +213,12 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     return ScrollActivityGate(
       child: Stack(
         children: [
-          Positioned(
-            top: headerHeight - 80,
-            bottom: 0,
-            left: 0,
-            right: 0,
+          Positioned.fill(
             child: ListView(
               controller: _scrollController,
-              // Offset top padding since Positioned already shifts it.
-              // Expand internal padding by 80px to match the expanded Positioned bounds.
               padding: EdgeInsets.fromLTRB(
                 16,
-                80 + AppPageHeaderMetrics.firstContentSpacing,
+                headerHeight + AppPageHeaderMetrics.firstContentSpacing,
                 16,
                 bottomInset + AppSpacing.sm,
               ),
@@ -256,8 +253,8 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
             right: 0,
             child: TopPageHeader(
               key: headerKey,
+              icon: Icons.tune_rounded,
               topCapsuleTitle: i18n.tr('settings'),
-              title: '',
             ),
           ),
         ],

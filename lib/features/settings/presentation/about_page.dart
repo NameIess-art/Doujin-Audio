@@ -160,6 +160,7 @@ class AboutPage extends ConsumerWidget {
             left: 0,
             right: 0,
             child: TopPageHeader(
+              icon: Icons.info_outline_rounded,
               leading: BackButton(
                 color: Theme.of(context).colorScheme.onSurface,
               ),

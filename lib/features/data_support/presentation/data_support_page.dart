@@ -12,6 +12,7 @@ import '../../../app/presentation/onboarding_page.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_buttons.dart';
+import '../../../core/widgets/top_page_header.dart';
 
 class DataSupportPage extends ConsumerStatefulWidget {
   const DataSupportPage({super.key});
@@ -233,15 +234,11 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          AppBar(
+          AppPageAppBar(
+            icon: Icons.storage_rounded,
             title: Text(i18n.tr('data_and_support')),
             automaticallyImplyLeading: false,
-            backgroundColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            shadowColor: Colors.transparent,
-            elevation: 0,
-            scrolledUnderElevation: 0,
-            forceMaterialTransparency: true,
+            useGlassSurface: false,
           ),
           Flexible(
             child: ListView(

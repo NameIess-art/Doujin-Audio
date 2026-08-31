@@ -128,6 +128,7 @@ class _PermissionStatusPageState extends ConsumerState<PermissionStatusPage>
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppPageAppBar(
+          icon: Icons.verified_user_rounded,
           title: Text(i18n.tr('permission_center')),
           automaticallyImplyLeading: false,
           useGlassSurface: false,

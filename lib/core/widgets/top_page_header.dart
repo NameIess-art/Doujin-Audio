@@ -7,12 +7,12 @@ import '../../app/state/app_runtime_providers.dart';
 import '../../app/theme/app_design_tokens.dart';
 import '../../app/theme/app_styles.dart';
 import 'app_edge_fade_mask.dart';
-import 'marquee_text.dart';
 
 class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
   const AppPageAppBar({
     super.key,
     required this.title,
+    this.icon,
     this.leading,
     this.actions,
     this.automaticallyImplyLeading = true,
@@ -21,6 +21,7 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   final Widget title;
+  final IconData? icon;
   final Widget? leading;
   final List<Widget>? actions;
   final bool automaticallyImplyLeading;
@@ -33,8 +34,20 @@ class AppPageAppBar extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    Widget resolvedTitle = title;
+    if (icon != null) {
+      resolvedTitle = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 18, color: cs.primary),
+          const SizedBox(width: 8),
+          Flexible(child: title),
+        ],
+      );
+    }
     final appBar = AppBar(
-      title: title,
+      title: resolvedTitle,
       leading: leading,
       actions: actions,
       automaticallyImplyLeading: automaticallyImplyLeading,
@@ -56,7 +69,7 @@ class TopPageHeader extends ConsumerStatefulWidget {
   const TopPageHeader({
     super.key,
     this.icon,
-    required this.title,
+    this.title = '',
     this.titleWidget,
     this.leading,
     this.trailing,
@@ -259,23 +272,40 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
     Widget buildHeaderContent(double collapseT) {
       final hasTopCapsule =
           widget.topCapsuleTitle != null || widget.topCapsuleChild != null;
-      final hasMainRow =
+      final hasSecondaryContent =
           widget.title.isNotEmpty ||
           widget.titleWidget != null ||
           widget.leading != null ||
           widget.trailing != null;
+      final hasSwipe =
+          widget.onTitleSwipeLeft != null || widget.onTitleSwipeRight != null;
 
-      Widget buildSecondaryCapsuleRow() {
-        Widget wrapButton(Widget button) {
-          if (button is HeaderFloatingButton || button is HeaderActionPill) {
-            return button;
-          }
+      Widget wrapButton(Widget button) {
+        if (button is IconButton) {
           return HeaderFloatingButton(
             child: button,
           );
         }
+        return button;
+      }
 
-        final titleCapsule = HeaderFloatingSurface(
+      Widget buildTitleContent() {
+        if (widget.titleWidget != null) {
+          final content = Align(
+            alignment: Alignment.centerLeft,
+            child: widget.titleWidget!,
+          );
+          if (!hasSwipe) return content;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onHorizontalDragStart: _handleTitleDragStart,
+            onHorizontalDragUpdate: _handleTitleDragUpdate,
+            onHorizontalDragEnd: _handleTitleDragEnd,
+            child: content,
+          );
+        }
+
+        final surface = HeaderFloatingSurface(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Row(
             children: [
@@ -286,39 +316,38 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
               Expanded(
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: widget.titleWidget ??
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            resolvedTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              fontWeight: FontWeight.w800,
-                              color: cs.onSurface,
-                              fontSize: 14,
-                              letterSpacing: 0.1,
-                            ),
-                          ),
-                          if (widget.subtitle != null &&
-                              widget.subtitle!.isNotEmpty)
-                            Text(
-                              widget.subtitle!,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: cs.onSurfaceVariant.withValues(
-                                  alpha: 0.85,
-                                ),
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                        ],
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        resolvedTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w800,
+                          color: cs.onSurface,
+                          fontSize: 13.5,
+                          letterSpacing: 0.1,
+                        ),
                       ),
+                      if (widget.subtitle != null &&
+                          widget.subtitle!.isNotEmpty)
+                        Text(
+                          widget.subtitle!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant.withValues(
+                              alpha: 0.85,
+                            ),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
               if (widget.titleSuffix != null) ...[
@@ -329,247 +358,135 @@ class _TopPageHeaderState extends ConsumerState<TopPageHeader> {
           ),
         );
 
+        if (!hasSwipe) return surface;
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragStart: _handleTitleDragStart,
+          onHorizontalDragUpdate: _handleTitleDragUpdate,
+          onHorizontalDragEnd: _handleTitleDragEnd,
+          child: surface,
+        );
+      }
+
+      Widget buildSecondaryCapsuleRow({double trailingOpacity = 1.0}) {
         return Row(
           children: [
             if (widget.leading != null) ...[
               wrapButton(widget.leading!),
               const SizedBox(width: 8),
             ],
-            Expanded(child: titleCapsule),
+            Expanded(child: buildTitleContent()),
             if (widget.trailing != null) ...[
               const SizedBox(width: 8),
-              wrapButton(widget.trailing!),
+              Opacity(
+                opacity: trailingOpacity,
+                child: wrapButton(widget.trailing!),
+              ),
             ],
           ],
         );
       }
 
-      if (!hasTopCapsule) {
-        return Padding(
-          padding: widget.padding,
-          child: buildSecondaryCapsuleRow(),
-        );
-      }
-
-      final mainCollapseT = hasTopCapsule ? 0.0 : collapseT;
-      final titleCollapseT = Curves.easeOutCubic.transform(mainCollapseT);
-      final auxiliaryCollapseT = Curves.easeInOutCubic.transform(mainCollapseT);
-      final expandedTitleStyle = Theme.of(context).textTheme.headlineMedium
-          ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0);
-      final collapsedTitleStyle = Theme.of(context).textTheme.titleMedium
-          ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: 0);
-      final titleStyle =
-          TextStyle.lerp(
-            expandedTitleStyle,
-            collapsedTitleStyle,
-            titleCollapseT,
-          ) ??
-          expandedTitleStyle;
-      final titleHeight =
-          (titleStyle?.fontSize ?? 28) * (titleStyle?.height ?? 1.2);
-      final resolvedPadding = EdgeInsetsGeometry.lerp(
-        widget.padding,
-        widget.collapsedPadding,
-        titleCollapseT,
-      )!;
-      final resolvedBottomSpacing = dart_ui.lerpDouble(
-        widget.bottomSpacing,
-        widget.collapsedBottomSpacing,
-        titleCollapseT,
-      )!;
-      final subtitleFactor = 1 - auxiliaryCollapseT;
-      final trailingFactor = 1 - auxiliaryCollapseT;
-      final trailingOffset = (1 - trailingFactor) * 6;
-      final prefersExpandedText =
-          MediaQuery.textScalerOf(context).scale(1) > 1.3;
-
-      final topCapsuleFactor =
-          (1.0 - Curves.easeOutCubic.transform(collapseT)).clamp(0.0, 1.0);
       final topCapsuleWidget = widget.topCapsuleChild ??
           (widget.topCapsuleTitle != null
               ? HeaderTopCapsule(
                   title: widget.topCapsuleTitle!,
                   data: widget.topCapsuleData,
-                  leading: widget.topCapsuleLeading,
+                  leading: widget.topCapsuleLeading ??
+                      (widget.icon != null
+                          ? Icon(widget.icon, size: 16, color: cs.primary)
+                          : null),
                   trailing: widget.topCapsuleTrailing,
                 )
               : null);
 
-      Widget buildTopCapsule() {
-        if (topCapsuleWidget == null) return const SizedBox.shrink();
-        return ClipRect(
-          child: Align(
-            alignment: Alignment.topCenter,
-            heightFactor: topCapsuleFactor,
-            child: Opacity(
-              opacity: topCapsuleFactor,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  bottom: hasMainRow ? (6.0 * topCapsuleFactor) : 0.0,
-                ),
-                child: topCapsuleWidget,
-              ),
-            ),
-          ),
+      if (hasTopCapsule && !hasSecondaryContent) {
+        final titleCollapseT = Curves.easeOutCubic.transform(collapseT);
+        final resolvedPadding = EdgeInsetsGeometry.lerp(
+          widget.padding,
+          widget.collapsedPadding,
+          titleCollapseT,
+        )!;
+        return Padding(
+          padding: resolvedPadding,
+          child: topCapsuleWidget ?? const SizedBox.shrink(),
         );
       }
 
+      if (!hasTopCapsule) {
+        final titleCollapseT = Curves.easeOutCubic.transform(collapseT);
+        final resolvedPadding = EdgeInsetsGeometry.lerp(
+          widget.padding,
+          widget.collapsedPadding,
+          titleCollapseT,
+        )!;
+        final trailingOpacity = widget.collapseController != null
+            ? (1.0 - titleCollapseT).clamp(0.0, 1.0)
+            : 1.0;
+        return Padding(
+          padding: resolvedPadding,
+          child: buildSecondaryCapsuleRow(trailingOpacity: trailingOpacity),
+        );
+      }
+
+      final topCapsuleOpacity =
+          (1.0 - Curves.easeIn.transform(collapseT)).clamp(0.0, 1.0);
+
+      const topCapsuleHeight = 36.0;
+      const rowGap = 6.0;
+      const secondRowHeight = 38.0;
+      const expandedHeight = topCapsuleHeight + rowGap + secondRowHeight;
+      const collapsedHeight = secondRowHeight;
+
+      final currentHeight = dart_ui.lerpDouble(
+        expandedHeight,
+        collapsedHeight,
+        collapseT,
+      )!;
+      final secondRowTop = dart_ui.lerpDouble(
+        topCapsuleHeight + rowGap,
+        0.0,
+        collapseT,
+      )!;
+      final topCapsuleTop = dart_ui.lerpDouble(
+        0.0,
+        -12.0,
+        collapseT,
+      )!;
+
       return Padding(
-        padding: resolvedPadding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (hasTopCapsule) buildTopCapsule(),
-            if (hasMainRow) ...[
-              Row(
-                children: [
-                  SizedBox(
-                    height: AppPageHeaderMetrics.contentHeight * trailingFactor,
-                  ),
-                  if (widget.leading != null) ...[
-                    SizedBox.square(
-                      dimension: AppPageHeaderMetrics.contentHeight,
-                      child: widget.leading!,
-                    ),
-                    const SizedBox(width: AppSpacing.xs),
-                  ],
-                  Expanded(
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Builder(
-                        builder: (context) {
-                          final hasSwipe =
-                              widget.titleWidget == null &&
-                              (widget.onTitleSwipeLeft != null ||
-                                  widget.onTitleSwipeRight != null);
-                          return GestureDetector(
-                            behavior: hasSwipe
-                                ? HitTestBehavior.opaque
-                                : HitTestBehavior.deferToChild,
-                            onHorizontalDragStart: hasSwipe
-                                ? _handleTitleDragStart
-                                : null,
-                            onHorizontalDragUpdate: hasSwipe
-                                ? _handleTitleDragUpdate
-                                : null,
-                            onHorizontalDragEnd: hasSwipe
-                                ? _handleTitleDragEnd
-                                : null,
-                            child: widget.titleWidget != null
-                                ? Semantics(
-                                    header: true,
-                                    label: resolvedTitle,
-                                    child: DefaultTextStyle.merge(
-                                      style: titleStyle,
-                                      child: widget.titleWidget!,
-                                    ),
-                                  )
-                                : widget.marqueeTitle
-                                ? SizedBox(
-                                    height: titleHeight,
-                                    child: MarqueeText(
-                                      text: resolvedTitle,
-                                      style: titleStyle,
-                                      scrollSpeed: 24,
-                                      edgePadding: 2,
-                                      forceMarquee: widget.forceMarqueeTitle,
-                                    ),
-                                  )
-                                : Semantics(
-                                    header: true,
-                                    child: Text(
-                                      resolvedTitle,
-                                      maxLines: prefersExpandedText ? 2 : 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: titleStyle,
-                                    ),
-                                  ),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                  if (widget.titleSuffix != null) ...[
-                    const SizedBox(width: AppSpacing.xs),
-                    widget.titleSuffix!,
-                  ],
-                  if (widget.trailing != null) ...[
-                    SizedBox(width: AppSpacing.sm * trailingFactor),
-                    ClipRect(
-                      child: Align(
-                        widthFactor: trailingFactor,
-                        heightFactor: trailingFactor,
-                        alignment: Alignment.centerRight,
-                        child: Opacity(
-                          opacity: trailingFactor,
-                          child: Transform.translate(
-                            offset: Offset(trailingOffset, 0),
-                            child: IgnorePointer(
-                              ignoring: trailingFactor < 0.05,
-                              child: ExcludeSemantics(
-                                excluding: trailingFactor < 0.05,
-                                child: widget.trailing!,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              if (widget.subtitle != null)
-                ClipRect(
-                  child: Align(
-                    heightFactor: subtitleFactor,
-                    alignment: Alignment.topLeft,
-                    child: Opacity(
-                      opacity: subtitleFactor,
-                      child: Padding(
-                        padding: const EdgeInsets.only(top: AppSpacing.xxs),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final style = Theme.of(context).textTheme.bodySmall
-                                ?.copyWith(
-                                  fontSize: widget.subtitleFontSize ?? 11,
-                                  height: 1.16,
-                                  color: cs.onSurfaceVariant,
-                                  fontWeight: FontWeight.w600,
-                                );
-                            final text = Text(
-                              widget.subtitle!,
-                              maxLines: widget.subtitleMaxLines,
-                              softWrap: prefersExpandedText,
-                              overflow: TextOverflow.ellipsis,
-                              style: style,
-                            );
-                            if (!widget.fitSubtitleToWidth ||
-                                prefersExpandedText) {
-                              return text;
-                            }
-                            return SizedBox(
-                              width: constraints.maxWidth,
-                              height: (widget.subtitleFontSize ?? 11) * 1.18,
-                              child: FittedBox(
-                                fit: BoxFit.scaleDown,
-                                alignment: Alignment.centerLeft,
-                                child: Text(
-                                  widget.subtitle!,
-                                  maxLines: 1,
-                                  softWrap: false,
-                                  style: style,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+        padding: widget.padding,
+        child: SizedBox(
+          height: currentHeight,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              if (topCapsuleWidget != null)
+                Positioned(
+                  top: topCapsuleTop,
+                  left: 0,
+                  right: 0,
+                  height: topCapsuleHeight,
+                  child: Opacity(
+                    opacity: topCapsuleOpacity,
+                    child: IgnorePointer(
+                      ignoring: collapseT > 0.8,
+                      child: ExcludeSemantics(
+                        excluding: collapseT > 0.8,
+                        child: topCapsuleWidget,
                       ),
                     ),
                   ),
                 ),
+              Positioned(
+                top: secondRowTop,
+                left: 0,
+                right: 0,
+                height: secondRowHeight,
+                child: buildSecondaryCapsuleRow(),
+              ),
             ],
-            SizedBox(height: resolvedBottomSpacing),
-          ],
+          ),
         ),
       );
     }

@@ -252,6 +252,7 @@ class _DlsiteMetadataBatchPageState
             left: 0,
             right: 0,
             child: TopPageHeader(
+              icon: Icons.library_add_check_rounded,
               title: i18n.tr('batch_metadata'),
               leading: const BackButton(),
             ),

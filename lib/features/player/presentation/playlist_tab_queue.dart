@@ -647,14 +647,55 @@ class PlaybackQueueEditPage extends ConsumerWidget {
   }
 }
 
-class PlaybackQueueAudioEditPage extends ConsumerWidget {
+class PlaybackQueueAudioEditPage extends ConsumerStatefulWidget {
   const PlaybackQueueAudioEditPage({super.key, required this.sessionId});
   final String sessionId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<PlaybackQueueAudioEditPage> createState() =>
+      _PlaybackQueueAudioEditPageState();
+}
+
+class _PlaybackQueueAudioEditPageState
+    extends ConsumerState<PlaybackQueueAudioEditPage> {
+  final ScrollController _addedQueueScrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _addedQueueScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sessionId = widget.sessionId;
     final structure = ref.watch(playlistStructureUiProvider);
     final playback = ref.read(playbackFacadeProvider);
+
+    ref.listen(
+      playlistStructureUiProvider.select((s) {
+        final q = s.entries
+            .where((entry) => entry.sessionId == sessionId)
+            .firstOrNull
+            ?.session
+            .playbackQueue;
+        return q?.entries.length ?? 0;
+      }),
+      (previous, next) {
+        if (previous != null && next > previous) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (_addedQueueScrollController.hasClients) {
+              _addedQueueScrollController.animateTo(
+                _addedQueueScrollController.position.maxScrollExtent,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+              );
+            }
+          });
+        }
+      },
+    );
+
     final queue = structure.entries
         .where((entry) => entry.sessionId == sessionId)
         .firstOrNull
@@ -671,6 +712,9 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
     if (queue == null) return const SizedBox.shrink();
 
     final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final playlistAreaBackground =
+        isDark ? cs.surfaceContainerLowest : cs.surfaceContainer;
 
     final headerHeight =
         MediaQuery.paddingOf(context).top +
@@ -683,10 +727,8 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
       body: Stack(
         children: [
           Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.only(top: headerHeight),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+            child: LayoutBuilder(
+              builder: (context, constraints) {
                 final isLandscape =
                     constraints.maxWidth > constraints.maxHeight;
                 final removalState = ref.watch(undoableRemovalStateProvider);
@@ -698,136 +740,217 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
                     )
                     .toList(growable: false);
 
-                final addedToQueueSection = Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                final addedToQueueSection = Stack(
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.xs,
-                        AppSpacing.sm,
-                        AppSpacing.xs,
-                        AppSpacing.xs,
-                      ),
-                      child: Text(
-                        i18n.tr('queue_added_audio'),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                    if (queueEntries.isEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xs,
-                        ),
-                        child: ListTile(
-                          title: Text(i18n.tr('empty_playback_queue')),
-                        ),
-                      )
-                    else
-                      Expanded(
-                        child: ReorderableListView.builder(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: AppSpacing.xs,
-                          ),
-                          buildDefaultDragHandles: false,
-                          proxyDecorator: (child, index, animation) => child,
-                          itemCount: queueEntries.length,
-                          onReorder: (oldIndex, newIndex) {
-                            playback.reorderPlaybackQueueEntry(
-                              sessionId,
-                              oldIndex,
-                              newIndex,
-                            );
-                          },
-                          itemBuilder: (context, index) {
-                            final entry = queueEntries[index];
-                            return _AnimatedQueueEntryCard(
-                              key: ValueKey(entry.id),
-                              onRemove: () => _stagePlaybackQueueEntryRemoval(
-                                context,
-                                ref,
-                                sessionId: sessionId,
-                                entryId: entry.id,
+                    Positioned.fill(
+                      child: queueEntries.isEmpty
+                          ? Padding(
+                              padding: EdgeInsets.only(top: headerHeight + 48),
+                              child: ListTile(
+                                title: Text(i18n.tr('empty_playback_queue')),
                               ),
-                              builder: (context, triggerRemove) {
-                                return _QueueAudioEditCard(
-                                  track: entry.tracks.firstOrNull,
-                                  title: entry.title,
-                                  subtitle: i18n.tr('audio_count', {
-                                    'count': entry.tracks.length,
-                                  }),
-                                  trailing: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      IconButton(
-                                        tooltip: i18n.tr('remove'),
-                                        constraints:
-                                            const BoxConstraints.tightFor(
-                                              width: 40,
-                                              height: 32,
-                                            ),
-                                        padding: EdgeInsets.zero,
-                                        visualDensity: VisualDensity.compact,
-                                        icon: const Icon(
-                                          Icons.remove_circle_outline_rounded,
-                                          size: 22,
-                                        ),
-                                        onPressed: triggerRemove,
-                                      ),
-                                      ReorderableDragStartListener(
-                                        index: index,
-                                        child: Container(
-                                          width: 40,
-                                          height: 32,
-                                          alignment: Alignment.center,
-                                          child: const Icon(
-                                            Icons.drag_handle_rounded,
-                                            size: 22,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+                            )
+                          : ReorderableListView.builder(
+                              scrollController: _addedQueueScrollController,
+                              padding: EdgeInsets.fromLTRB(
+                                AppSpacing.xs,
+                                headerHeight + 44,
+                                AppSpacing.xs,
+                                AppSpacing.xs,
+                              ),
+                              buildDefaultDragHandles: false,
+                              proxyDecorator: (child, index, animation) => child,
+                              itemCount: queueEntries.length,
+                              onReorder: (oldIndex, newIndex) {
+                                playback.reorderPlaybackQueueEntry(
+                                  sessionId,
+                                  oldIndex,
+                                  newIndex,
                                 );
                               },
-                            );
-                          },
+                              itemBuilder: (context, index) {
+                                final entry = queueEntries[index];
+                                return _AnimatedQueueEntryCard(
+                                  key: ValueKey(entry.id),
+                                  onRemove: () => _stagePlaybackQueueEntryRemoval(
+                                    context,
+                                    ref,
+                                    sessionId: sessionId,
+                                    entryId: entry.id,
+                                  ),
+                                  builder: (context, triggerRemove) {
+                                    return _QueueAudioEditCard(
+                                      track: entry.tracks.firstOrNull,
+                                      title: entry.title,
+                                      subtitle: i18n.tr('audio_count', {
+                                        'count': entry.tracks.length,
+                                      }),
+                                      trailing: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        mainAxisAlignment: MainAxisAlignment.center,
+                                        children: [
+                                          IconButton(
+                                            tooltip: i18n.tr('remove'),
+                                            constraints:
+                                                const BoxConstraints.tightFor(
+                                                  width: 40,
+                                                  height: 32,
+                                                ),
+                                            padding: EdgeInsets.zero,
+                                            visualDensity: VisualDensity.compact,
+                                            icon: const Icon(
+                                              Icons.remove_circle_outline_rounded,
+                                              size: 22,
+                                            ),
+                                            onPressed: triggerRemove,
+                                          ),
+                                          ReorderableDragStartListener(
+                                            index: index,
+                                            child: Container(
+                                              width: 40,
+                                              height: 32,
+                                              alignment: Alignment.center,
+                                              child: const Icon(
+                                                Icons.drag_handle_rounded,
+                                                size: 22,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                    Positioned(
+                      top: headerHeight,
+                      left: 0,
+                      right: 0,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          AppSpacing.xs,
+                          AppSpacing.sm,
+                          AppSpacing.xs,
+                          AppSpacing.xs,
+                        ),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: HeaderFloatingSurface(
+                            height: 32,
+                            radius: 16,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.queue_music_rounded,
+                                  size: 16,
+                                  color: cs.primary,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  i18n.tr('queue_added_audio'),
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .titleSmall
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w700,
+                                        color: cs.onSurface,
+                                        fontSize: 13,
+                                      ),
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
+                    ),
                   ],
                 );
 
-                final playlistAudioSection = Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        AppSpacing.xs,
-                        AppSpacing.sm,
-                        AppSpacing.xs,
-                        AppSpacing.xs,
-                      ),
-                      child: Text(
-                        i18n.tr('playback_list_audio'),
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                    ),
-                    Expanded(
-                      child: ListView.builder(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: AppSpacing.xs,
+                final sectionTopOffset = isLandscape ? headerHeight : 0.0;
+
+                final playlistAudioSection = DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: playlistAreaBackground,
+                  ),
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: ListView.builder(
+                          padding: EdgeInsets.fromLTRB(
+                            AppSpacing.xs,
+                            sectionTopOffset + 44,
+                            AppSpacing.xs,
+                            AppSpacing.xs,
+                          ),
+                          itemCount: ordinarySessions.length,
+                          itemBuilder: (context, index) {
+                            final source = ordinarySessions[index];
+                            return _QueueSourceAudioTile(
+                              queueSessionId: sessionId,
+                              source: source,
+                            );
+                          },
                         ),
-                        itemCount: ordinarySessions.length,
-                        itemBuilder: (context, index) {
-                          final source = ordinarySessions[index];
-                          return _QueueSourceAudioTile(
-                            queueSessionId: sessionId,
-                            source: source,
-                          );
-                        },
                       ),
-                    ),
-                  ],
+                      Positioned(
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        height: sectionTopOffset + 48,
+                        child: AppEdgeFadeMask(
+                          direction: AppEdgeFadeDirection.towardTop,
+                          color: playlistAreaBackground,
+                        ),
+                      ),
+                      Positioned(
+                        top: sectionTopOffset,
+                        left: 0,
+                        right: 0,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(
+                            AppSpacing.xs,
+                            AppSpacing.sm,
+                            AppSpacing.xs,
+                            AppSpacing.xs,
+                          ),
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: HeaderFloatingSurface(
+                              height: 32,
+                              radius: 16,
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.playlist_play_rounded,
+                                    size: 17,
+                                    color: cs.primary,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    i18n.tr('playback_list_audio'),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleSmall
+                                        ?.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          color: cs.onSurface,
+                                          fontSize: 13,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 );
 
                 if (isLandscape) {
@@ -866,12 +989,12 @@ class PlaybackQueueAudioEditPage extends ConsumerWidget {
               },
             ),
           ),
-        ),
-        Positioned(
+          Positioned(
             top: 0,
             left: 0,
             right: 0,
             child: TopPageHeader(
+              icon: Icons.queue_music_rounded,
               leading: IconButton(
                 tooltip: i18n.tr('close'),
                 onPressed: () => Navigator.of(context).maybePop(),
@@ -905,11 +1028,16 @@ class _QueueSourceAudioTile extends ConsumerWidget {
       context,
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
+    final cs = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final playlistAreaBackground =
+        isDark ? cs.surfaceContainerLowest : cs.surfaceContainer;
     return _QueueAudioEditCard(
       track: track,
       title: track.displayName,
       subtitle: track.groupTitle,
       rowHeight: track.isSingle ? _playlistRowHeight : 88.0,
+      color: playlistAreaBackground,
       trailing: Column(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
@@ -964,6 +1092,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
     required this.subtitle,
     required this.trailing,
     this.rowHeight = _playlistRowHeight,
+    this.color,
   });
 
   final MusicTrack? track;
@@ -971,6 +1100,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
   final String subtitle;
   final Widget trailing;
   final double rowHeight;
+  final Color? color;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -986,7 +1116,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 0,
-      color: cs.surface,
+      color: color ?? cs.surface,
       shadowColor: Colors.transparent,
       surfaceTintColor: Colors.transparent,
       shape: _playlistRowShape,
@@ -1038,7 +1168,7 @@ class _QueueAudioEditCard extends ConsumerWidget {
                         children: [
                           Text(
                             subtitle,
-                            maxLines: 1,
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context).textTheme.bodySmall
                                 ?.copyWith(

@@ -1134,7 +1134,7 @@ void main() {
     expect(find.byKey(const ValueKey('save_equalizer_preset')), findsOneWidget);
     expect(runtimeGraph.settings.customEqPresets, contains(customPreset));
 
-    await tester.tap(find.text(languageProvider.tr('undo')));
+    await tester.tap(find.textContaining(languageProvider.tr('undo')));
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 200)),
     );
@@ -1965,10 +1965,12 @@ void main() {
     final sourceCard = tester.widget<Card>(
       find.ancestor(of: addAudio, matching: find.byType(Card)).first,
     );
-    expect(sourceCard.margin, EdgeInsets.zero);
+    final sourceElement = tester.element(addAudio);
+    final isDark = Theme.of(sourceElement).brightness == Brightness.dark;
+    final cs = Theme.of(sourceElement).colorScheme;
     expect(
       sourceCard.color,
-      Theme.of(tester.element(addAudio)).colorScheme.surface,
+      isDark ? cs.surfaceContainerLowest : cs.surfaceContainer,
     );
     expect((sourceCard.shape! as RoundedRectangleBorder).side, BorderSide.none);
 
@@ -1988,10 +1990,107 @@ void main() {
       platformCalls.where((call) => call.method == 'HapticFeedback.vibrate'),
       hasLength(3),
     );
-    await tester.tap(find.text(fixture.languageProvider.tr('undo')));
+    await tester.tap(find.textContaining(fixture.languageProvider.tr('undo')));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'playback queue audio edit page renders floating capsule section headers and scrolls on add',
+    (tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final track1 = testMusicTrack(
+        name: 'Track 1',
+        path: '/library/work/track1.mp3',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        isSingle: true,
+      );
+      final track2 = testMusicTrack(
+        name: 'Track 2',
+        path: '/library/work/track2.mp3',
+        groupKey: '/library/work',
+        groupTitle: 'Work',
+        isSingle: true,
+      );
+      fixture.runtimeGraph.library.addTracks(
+        <MusicTrack>[track1, track2],
+        notify: false,
+        persist: false,
+      );
+      final sourceSession1 = PlaybackSession(
+        id: 'source-1',
+        currentTrackPath: track1.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: PlayerState(false, ProcessingState.ready),
+      );
+      final sourceSession2 = PlaybackSession(
+        id: 'source-2',
+        currentTrackPath: track2.path,
+        loopMode: SessionLoopMode.single,
+        nonSingleLoopMode: SessionLoopMode.single,
+        volume: 1,
+        createdAt: DateTime(2026),
+        state: PlayerState(false, ProcessingState.ready),
+      );
+      addTearDown(sourceSession1.shutdown);
+      addTearDown(sourceSession2.shutdown);
+      final queueSession = fixture.runtimeGraph.playback.createPlaybackQueue(
+        'Test Queue',
+      );
+      addTearDown(queueSession.shutdown);
+      fixture.playbackService.registerSession(sourceSession1);
+      fixture.playbackService.registerSession(sourceSession2);
+      fixture.playbackService.syncSlice(
+        activeSessions: <PlaybackSession>[
+          sourceSession1,
+          sourceSession2,
+          queueSession,
+        ],
+        playingSessionCount: 0,
+        focusedSessionId: sourceSession1.id,
+        multiThreadPlaybackEnabled: false,
+        coverGeneration: 0,
+        isInitialized: true,
+      );
+
+      await tester.pumpWidget(
+        fixture.build(
+          PlaybackQueueAudioEditPage(sessionId: queueSession.id),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Check section header floating capsules
+      expect(
+        find.text(fixture.languageProvider.tr('queue_added_audio')),
+        findsOneWidget,
+      );
+      expect(
+        find.text(fixture.languageProvider.tr('playback_list_audio')),
+        findsOneWidget,
+      );
+      expect(find.byType(HeaderFloatingSurface), findsNWidgets(4));
+
+      // Add audio to queue
+      final addButtons = find.byTooltip(
+        fixture.languageProvider.tr('add_audio_to_queue'),
+      );
+      expect(addButtons, findsNWidgets(2));
+      await tester.tap(addButtons.first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 350));
+      expect(
+        find.byTooltip(fixture.languageProvider.tr('remove')),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 10));
+    },
+  );
 
   testWidgets('playlist resolves ASMR metadata from the session queue', (
     tester,

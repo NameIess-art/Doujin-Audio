@@ -564,6 +564,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           right: 0,
           child: TopPageHeader(
             key: _headerKey,
+            icon: Icons.cloud_rounded,
             collapseController: _scrollController,
             topCapsuleTitle: 'ASMR.ONE',
             topCapsuleData: asmrStatsText,

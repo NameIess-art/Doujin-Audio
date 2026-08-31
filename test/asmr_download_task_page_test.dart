@@ -53,13 +53,14 @@ void main() {
     await tester.tap(
       find.byKey(const ValueKey<String>('asmr_download_remove_entry_option')),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
 
     expect(manager.getTask(1), isNotNull);
     expect(find.text('Work'), findsNothing);
-    expect(find.text('Undo'), findsOneWidget);
+    expect(find.textContaining('Undo'), findsOneWidget);
 
-    await tester.tap(find.text('Undo'));
+    await tester.tap(find.textContaining('Undo'));
     await tester.pumpAndSettle();
 
     expect(manager.getTask(1), isNotNull);

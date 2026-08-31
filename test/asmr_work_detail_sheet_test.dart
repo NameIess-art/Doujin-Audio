@@ -1,4 +1,5 @@
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/core/widgets/top_page_header.dart';
 import 'package:doujin_audio/features/asmr/domain/asmr_models.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_download_page.dart';
 import 'package:doujin_audio/features/asmr/presentation/asmr_work_detail_sheet.dart';
@@ -37,6 +38,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(AsmrDownloadPage), findsOneWidget);
+    expect(find.byType(TopPageHeader), findsOneWidget);
+    expect(find.byType(HeaderFloatingSurface), findsWidgets);
     expect(
       tester.widget<AsmrDownloadPage>(find.byType(AsmrDownloadPage)).work.id,
       work.id,

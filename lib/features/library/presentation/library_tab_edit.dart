@@ -452,22 +452,16 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
           ListView.builder(
             padding: EdgeInsets.fromLTRB(
               16,
-              MediaQuery.paddingOf(context).top + 60,
+              MediaQuery.paddingOf(context).top + 98,
               16,
               24,
             ),
             itemCount: localSnapshotPending || isEmpty
-                ? 2
+                ? 1
                 : snapshotError
-                ? editTree.length + 2
-                : editTree.length + 1,
+                ? editTree.length + 1
+                : editTree.length,
             itemBuilder: (context, index) {
-              if (index == 0) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: _buildSearchBar(i18n),
-                );
-              }
               if (localSnapshotPending) {
                 return Padding(
                   padding: const EdgeInsets.only(top: 96),
@@ -478,7 +472,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
                   ),
                 );
               }
-              if (snapshotError && index == 1) {
+              if (snapshotError && index == 0) {
                 return Padding(
                   padding: const EdgeInsets.only(top: 96),
                   child: Center(
@@ -521,7 +515,7 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
                   ),
                 );
               }
-              final node = editTree[index - (snapshotError ? 2 : 1)];
+              final node = editTree[index - (snapshotError ? 1 : 0)];
               return _LibraryEditTreeNodeWidget(
                 key: ValueKey(node.pathValue),
                 libraryPath: widget.libraryPath,
@@ -556,6 +550,10 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
                 onPressed: () => _confirmRemoveLibrary(context),
                 icon: Icon(Icons.delete_outline_rounded, color: cs.error),
               ),
+              additionalChild: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                child: _buildSearchBar(i18n),
+              ),
             ),
           ),
         ],
@@ -566,18 +564,22 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
   Widget _buildSearchBar(AppLanguageProvider i18n) {
     final cs = Theme.of(context).colorScheme;
     final hasText = _searchController.text.isNotEmpty;
-    return SizedBox(
-      height: 34,
+    return HeaderFloatingSurface(
       child: TextField(
         controller: _searchController,
-        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13),
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(fontSize: 13.5),
+        textAlignVertical: TextAlignVertical.center,
         decoration: InputDecoration(
-          filled: true,
-          fillColor: cs.surfaceContainerHigh,
+          filled: false,
+          fillColor: Colors.transparent,
           prefixIcon: Icon(
             Icons.search_rounded,
             color: cs.onSurfaceVariant,
             size: 18,
+          ),
+          prefixIconConstraints: const BoxConstraints.tightFor(
+            width: 36,
+            height: 38,
           ),
           suffixIcon: hasText
               ? IconButton(
@@ -589,32 +591,20 @@ class _LibraryEditPageState extends ConsumerState<LibraryEditPage>
                   },
                   color: cs.onSurfaceVariant,
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(
-                    minWidth: 34,
-                    minHeight: 34,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 36,
+                    height: 38,
                   ),
                 )
               : null,
           hintText: i18n.tr('search_audio_placeholder'),
           hintStyle: Theme.of(
             context,
-          ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(999),
-            borderSide: BorderSide.none,
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(999),
-            borderSide: BorderSide.none,
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(999),
-            borderSide: BorderSide.none,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 7,
-          ),
+          ).textTheme.bodyMedium?.copyWith(color: cs.onSurfaceVariant, fontSize: 13.5),
+          border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
+          contentPadding: const EdgeInsets.only(right: 12),
           isDense: true,
         ),
         onChanged: (value) {

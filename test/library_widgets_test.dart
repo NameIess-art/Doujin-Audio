@@ -266,15 +266,15 @@ void main() {
         tester.getSize(find.byType(TopPageHeader)).height;
     expect(scrolledHeaderHeight, lessThan(initialHeaderHeight));
 
-    final capsuleAlign = tester.widget<Align>(
+    final capsuleOpacity = tester.widget<Opacity>(
       find
           .ancestor(
             of: find.byType(HeaderTopCapsule),
-            matching: find.byType(Align),
+            matching: find.byType(Opacity),
           )
           .first,
     );
-    expect(capsuleAlign.heightFactor, 0.0);
+    expect(capsuleOpacity.opacity, 0.0);
 
     expect(find.text('Library Title'), findsOneWidget);
     final trailingAfterScroll = tester.getRect(
@@ -927,9 +927,12 @@ void main() {
         tester,
         find.textContaining(fixture.languageProvider.tr('audio_removed')),
       );
-      expect(find.text('撤销'), findsOneWidget);
+      expect(
+        find.textContaining(fixture.languageProvider.tr('undo')),
+        findsOneWidget,
+      );
 
-      await tester.tap(find.text('撤销'));
+      await tester.tap(find.textContaining(fixture.languageProvider.tr('undo')));
       await pumpUntilFound(tester, removedTrackFinder);
 
       expect(find.text('Keep this track', findRichText: true), findsOneWidget);
@@ -1017,7 +1020,10 @@ void main() {
       }
 
       expect(removalCompleted, isTrue);
-      expect(find.text(fixture.languageProvider.tr('undo')), findsOneWidget);
+      expect(
+        find.textContaining(fixture.languageProvider.tr('undo')),
+        findsOneWidget,
+      );
       expect(
         runtimeGraph.library.excludedTracksForLibrary(libraryPath),
         isEmpty,
@@ -1238,7 +1244,7 @@ void main() {
 
     await pumpUntilFound(
       tester,
-      find.text(fixture.languageProvider.tr('undo')),
+      find.textContaining(fixture.languageProvider.tr('undo')),
     );
     await pumpUntilNotFound(
       tester,
@@ -1384,7 +1390,7 @@ void main() {
         of: searchControls,
         matching: find.byType(BackdropFilter),
       ),
-      findsNWidgets(2),
+      findsNWidgets(3),
     );
     await settingsRepository.setUiBlurEffectEnabled(false);
     await tester.pump();
@@ -2199,6 +2205,102 @@ void main() {
     expect(tileRects.first.bottom, lessThanOrEqualTo(tileRects.last.top));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'library edit page renders search bar in header second row capsule and filters tree',
+    (WidgetTester tester) async {
+      final fixture = AppRuntimeWidgetTestFixture();
+      addTearDown(fixture.dispose);
+      final runtimeGraph = fixture.runtimeGraph;
+      final libraryService = fixture.libraryService;
+      final languageProvider = fixture.languageProvider;
+
+      const libraryRoot = '/library';
+      final firstTrack = testMusicTrack(
+        name: 'First Song',
+        path: '$libraryRoot/first.mp3',
+        groupKey: libraryRoot,
+        groupTitle: 'Library',
+      );
+      final secondTrack = testMusicTrack(
+        name: 'Second Track',
+        path: '$libraryRoot/second.mp3',
+        groupKey: libraryRoot,
+        groupTitle: 'Library',
+      );
+
+      runtimeGraph.library.addWatchedFolder(libraryRoot, notify: false);
+      runtimeGraph.library.addTracks(
+        <MusicTrack>[firstTrack, secondTrack],
+        notify: false,
+        persist: false,
+      );
+      libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+      final service = _QueuedEntryEditorService([
+        Future.value(
+          LibraryEntryDiskSnapshot(
+            audioFilePaths: <String>[firstTrack.path, secondTrack.path],
+            scannedFolderPaths: const <String>{},
+            authoritative: true,
+          ),
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        fixture.build(
+          LibraryEditPage(
+            libraryPath: libraryRoot,
+            entryEditorService: service,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('First Song', findRichText: true), findsOneWidget);
+      expect(find.text('Second Track', findRichText: true), findsOneWidget);
+
+      final searchField = find.byType(TextField);
+      expect(searchField, findsOneWidget);
+
+      // Verify search field is inside a HeaderFloatingSurface within TopPageHeader
+      final headerFinder = find.byType(TopPageHeader);
+      expect(headerFinder, findsOneWidget);
+      final searchInHeader = find.descendant(
+        of: headerFinder,
+        matching: find.byType(TextField),
+      );
+      expect(searchInHeader, findsOneWidget);
+
+      // Filter by "First"
+      await tester.enterText(searchField, 'First');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(find.text('First Song', findRichText: true), findsOneWidget);
+      expect(find.text('Second Track', findRichText: true), findsNothing);
+
+      // Filter by non-matching text
+      await tester.enterText(searchField, 'Nonexistent');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+
+      expect(find.text('First Song', findRichText: true), findsNothing);
+      expect(find.text('Second Track', findRichText: true), findsNothing);
+      expect(find.text(languageProvider.tr('no_search_results')), findsOneWidget);
+
+      // Clear search using clear button
+      final clearButton = find.byIcon(Icons.clear_rounded);
+      expect(clearButton, findsOneWidget);
+      await tester.tap(clearButton);
+      await tester.pump();
+
+      expect(find.text('First Song', findRichText: true), findsOneWidget);
+      expect(find.text('Second Track', findRichText: true), findsOneWidget);
+      expect(find.text(languageProvider.tr('no_search_results')), findsNothing);
+    },
+  );
 
   testWidgets(
     'library search expands matched work folders and collapses back',

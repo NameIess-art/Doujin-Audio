@@ -174,12 +174,13 @@ void main() {
 
     await tester.tap(find.text('Remove one'));
     await tester.pump();
-    expect(find.text('Undo'), findsOneWidget);
-    expect(find.text('Removed one (4s)'), findsOneWidget);
+    expect(find.text('Undo (4s)'), findsOneWidget);
+    expect(find.text('Removed one'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2));
     await tester.tap(find.text('Remove two'));
     await tester.pump();
-    expect(find.text('Removed 2 (4s)'), findsOneWidget);
+    expect(find.text('Undo (4s)'), findsOneWidget);
+    expect(find.text('Removed 2'), findsOneWidget);
     for (var i = 0; i < 35; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -226,7 +227,7 @@ void main() {
 
     await tester.tap(find.text('Remove'));
     await tester.pump();
-    await tester.tap(find.text('Undo'));
+    await tester.tap(find.text('Undo (4s)'));
     await tester.pump();
 
     expect(undos, 1);

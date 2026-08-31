@@ -279,6 +279,7 @@ class _DlsiteMetadataReviewPageState
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppPageAppBar(
+        icon: Icons.rate_review_rounded,
         title: Text(
           widget.batchIndex == null || widget.batchTotal == null
               ? i18n.tr('dlsite_review_title')

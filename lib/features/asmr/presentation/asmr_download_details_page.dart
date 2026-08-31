@@ -35,6 +35,7 @@ class AsmrDownloadDetailsPage extends ConsumerWidget {
               left: 0,
               right: 0,
               child: TopPageHeader(
+                icon: Icons.info_outline_rounded,
                 leading: const BackButton(),
                 title: i18n.tr('asmr_download_details_title'),
               ),
@@ -127,6 +128,7 @@ class AsmrDownloadDetailsPage extends ConsumerWidget {
             left: 0,
             right: 0,
             child: TopPageHeader(
+              icon: Icons.info_outline_rounded,
               leading: const BackButton(),
               title: i18n.tr('asmr_download_details_title'),
             ),

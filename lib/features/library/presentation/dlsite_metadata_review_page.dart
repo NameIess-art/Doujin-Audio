@@ -15,7 +15,7 @@ import '../../../core/widgets/async_cover_image.dart';
 import '../../../core/widgets/operation_feedback.dart';
 import '../../../core/widgets/top_page_header.dart';
 
-enum DlsiteMetadataReviewOutcome { applied, skipped }
+enum DlsiteMetadataReviewOutcome { applied, skipped, previousWork, nextWork }
 
 class DlsiteMetadataReviewResult {
   const DlsiteMetadataReviewResult.applied(this.detail, this.saveCover)
@@ -25,11 +25,26 @@ class DlsiteMetadataReviewResult {
     : outcome = DlsiteMetadataReviewOutcome.skipped,
       detail = null;
 
+  const DlsiteMetadataReviewResult.previousWork([this.saveCover])
+    : outcome = DlsiteMetadataReviewOutcome.previousWork,
+      detail = null;
+
+  const DlsiteMetadataReviewResult.nextWork([this.saveCover])
+    : outcome = DlsiteMetadataReviewOutcome.nextWork,
+      detail = null;
+
   final DlsiteMetadataReviewOutcome outcome;
   final AudioDetail? detail;
   final bool? saveCover;
 
   bool get isApplied => outcome == DlsiteMetadataReviewOutcome.applied;
+
+  bool get isWorkNavigation =>
+      outcome == DlsiteMetadataReviewOutcome.previousWork ||
+      outcome == DlsiteMetadataReviewOutcome.nextWork;
+
+  int get workNavigationOffset =>
+      outcome == DlsiteMetadataReviewOutcome.previousWork ? -1 : 1;
 }
 
 class DlsiteMetadataReviewPage extends ConsumerStatefulWidget {
@@ -265,6 +280,15 @@ class _DlsiteMetadataReviewPageState
     Navigator.of(context).pop(DlsiteMetadataReviewResult.skipped(_saveCover));
   }
 
+  void _navigateWork(int offset) {
+    if (_saving) return;
+    Navigator.of(context).pop(
+      offset < 0
+          ? DlsiteMetadataReviewResult.previousWork(_saveCover)
+          : DlsiteMetadataReviewResult.nextWork(_saveCover),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final i18n = ProviderScope.containerOf(
@@ -298,8 +322,9 @@ class _DlsiteMetadataReviewPageState
     });
 
     final defaultHeaderHeight = MediaQuery.paddingOf(context).top + 110.0;
-    final effectiveHeaderHeight =
-        _headerHeight > 0 ? _headerHeight : defaultHeaderHeight;
+    final effectiveHeaderHeight = _headerHeight > 0
+        ? _headerHeight
+        : defaultHeaderHeight;
     final listTopPadding = effectiveHeaderHeight + 8;
 
     return Scaffold(
@@ -414,54 +439,51 @@ class _DlsiteMetadataReviewPageState
                     ],
                   ),
           ),
-          if (_metadata != null)
+          if (_metadata != null && widget.allowSkip)
             Positioned(
+              left: 16,
               right: 16,
               bottom: 16 + MediaQuery.paddingOf(context).bottom,
-              child: HeaderFloatingSurface(
-                key: const ValueKey<String>('dlsite_review_confirm'),
-                height: 46,
-                radius: 23,
-                padding: EdgeInsets.zero,
-                child: Material(
-                  color: cs.primary,
-                  borderRadius: BorderRadius.circular(23),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(23),
-                    onTap: _saving ? null : _apply,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 18),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (_saving)
-                            SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: cs.onPrimary,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: HeaderFloatingSurface(
+                      key: const ValueKey<String>('dlsite_review_skip'),
+                      height: 46,
+                      radius: 23,
+                      padding: EdgeInsets.zero,
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(23),
+                          onTap: _saving ? null : _skip,
+                          child: Center(
+                            child: Text(
+                              i18n.tr('skip'),
+                              style: TextStyle(
+                                color: cs.primary,
+                                fontWeight: FontWeight.w700,
                               ),
-                            )
-                          else
-                            Icon(
-                              Icons.check_rounded,
-                              size: 18,
-                              color: cs.onPrimary,
-                            ),
-                          const SizedBox(width: 6),
-                          Text(
-                            i18n.tr('confirm'),
-                            style: TextStyle(
-                              color: cs.onPrimary,
-                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ],
+                        ),
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _ReviewConfirmButton(saving: _saving, onTap: _apply),
+                  ),
+                ],
+              ),
+            ),
+          if (_metadata != null && !widget.allowSkip)
+            Positioned(
+              right: 16,
+              bottom: 16 + MediaQuery.paddingOf(context).bottom,
+              child: SizedBox(
+                width: 112,
+                child: _ReviewConfirmButton(saving: _saving, onTap: _apply),
               ),
             ),
           Positioned(
@@ -478,23 +500,41 @@ class _DlsiteMetadataReviewPageState
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    if (widget.allowSkip) ...[
-                      HeaderFloatingSurface(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(19),
-                          onTap: _saving ? null : _skip,
-                          child: Center(
-                            child: Text(
-                              i18n.tr('skip'),
-                              style: TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                                color: cs.primary,
-                              ),
-                            ),
-                          ),
+                    if ((widget.batchTotal ?? 0) > 1) ...[
+                      HeaderActionPill(
+                        key: const ValueKey<String>(
+                          'dlsite_review_work_navigation',
                         ),
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        children: [
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'dlsite_review_previous_work',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 20,
+                            onPressed: (widget.batchIndex ?? 1) <= 1 || _saving
+                                ? null
+                                : () => _navigateWork(-1),
+                            tooltip: i18n.tr('previous'),
+                            icon: const Icon(Icons.chevron_left_rounded),
+                          ),
+                          IconButton(
+                            key: const ValueKey<String>(
+                              'dlsite_review_next_work',
+                            ),
+                            visualDensity: VisualDensity.compact,
+                            iconSize: 20,
+                            onPressed:
+                                (widget.batchIndex ?? widget.batchTotal!) >=
+                                        widget.batchTotal! ||
+                                    _saving
+                                ? null
+                                : () => _navigateWork(1),
+                            tooltip: i18n.tr('next'),
+                            icon: const Icon(Icons.chevron_right_rounded),
+                          ),
+                        ],
                       ),
                       if (_candidates.length > 1 && !_loading)
                         const SizedBox(width: 8),
@@ -525,9 +565,9 @@ class _DlsiteMetadataReviewPageState
                             iconSize: 20,
                             onPressed:
                                 _candidateIndex >= _candidates.length - 1 ||
-                                        _saving
-                                    ? null
-                                    : () => _showCandidate(_candidateIndex + 1),
+                                    _saving
+                                ? null
+                                : () => _showCandidate(_candidateIndex + 1),
                             tooltip: i18n.tr('next'),
                             icon: const Icon(Icons.chevron_right_rounded),
                           ),
@@ -560,6 +600,66 @@ class _DlsiteMetadataReviewPageState
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ReviewConfirmButton extends StatelessWidget {
+  const _ReviewConfirmButton({required this.saving, required this.onTap});
+
+  final bool saving;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final i18n = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appLanguageProviderInstanceProvider);
+    return HeaderFloatingSurface(
+      key: const ValueKey<String>('dlsite_review_confirm'),
+      height: 46,
+      radius: 23,
+      padding: EdgeInsets.zero,
+      child: Material(
+        color: cs.primary,
+        borderRadius: BorderRadius.circular(23),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(23),
+          onTap: saving ? null : onTap,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (saving)
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: cs.onPrimary,
+                    ),
+                  )
+                else
+                  Icon(Icons.check_rounded, size: 18, color: cs.onPrimary),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    i18n.tr('confirm'),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: cs.onPrimary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

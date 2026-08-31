@@ -97,6 +97,14 @@ void _expectPrimaryFilledButton(WidgetTester tester, Finder finder) {
 }
 
 void main() {
+  test('metadata review work navigation results retain their direction', () {
+    expect(
+      const DlsiteMetadataReviewResult.previousWork().workNavigationOffset,
+      -1,
+    );
+    expect(const DlsiteMetadataReviewResult.nextWork().workNavigationOffset, 1);
+  });
+
   AppRuntimeTestFixture.initialize();
   late Database testDatabase;
 
@@ -285,10 +293,24 @@ void main() {
     );
     final confirm = find.byKey(const ValueKey<String>('dlsite_review_confirm'));
     expect(confirm, findsOneWidget);
+    final skip = find.byKey(const ValueKey<String>('dlsite_review_skip'));
+    expect(skip, findsOneWidget);
     expect(
       find.descendant(of: find.byType(ListView), matching: confirm),
       findsNothing,
     );
+    expect(
+      tester.getSize(skip).width,
+      closeTo(tester.getSize(confirm).width, 0.001),
+    );
+    final previousWork = tester.widget<IconButton>(
+      find.byKey(const ValueKey<String>('dlsite_review_previous_work')),
+    );
+    final nextWork = tester.widget<IconButton>(
+      find.byKey(const ValueKey<String>('dlsite_review_next_work')),
+    );
+    expect(previousWork.onPressed, isNotNull);
+    expect(nextWork.onPressed, isNotNull);
     final targetName = tester.widget<Text>(
       find.descendant(
         of: find.byKey(const ValueKey<String>('dlsite_review_target_name')),

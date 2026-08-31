@@ -134,6 +134,8 @@ class _DlsiteMetadataBatchPageState
     var applied = 0;
     var skipped = 0;
     var saveCover = true;
+    final processedIndexes = <int>{};
+    var currentIndex = 0;
     setState(() {
       _running = true;
       _summary = null;
@@ -141,15 +143,21 @@ class _DlsiteMetadataBatchPageState
       _activeTotal = queue.length;
     });
 
-    for (var index = 0; index < queue.length; index++) {
+    while (currentIndex >= 0 && currentIndex < queue.length) {
       if (!mounted) return;
       setState(() {
-        _currentIndex = index + 1;
+        _currentIndex = currentIndex + 1;
       });
-      final entry = queue[index];
+      final entry = queue[currentIndex];
       final query = DlsiteMetadataQuery.fromDetail(entry.detail);
       if (!query.hasQuery) {
         skipped++;
+        processedIndexes.add(currentIndex);
+        currentIndex = _nextUnprocessedIndex(
+          processedIndexes,
+          currentIndex,
+          queue.length,
+        );
         continue;
       }
       final result = await Navigator.of(context)
@@ -161,7 +169,7 @@ class _DlsiteMetadataBatchPageState
                 detail: entry.detail,
                 rjCode: query.rjCode,
                 searchTitles: query.searchTitles,
-                batchIndex: index + 1,
+                batchIndex: currentIndex + 1,
                 batchTotal: queue.length,
                 allowSkip: true,
                 initialSaveCover: saveCover,
@@ -176,19 +184,29 @@ class _DlsiteMetadataBatchPageState
             total: queue.length,
             applied: applied,
             skipped: skipped,
-            unprocessed: queue.length - index,
+            unprocessed: queue.length - processedIndexes.length,
           );
         });
         return;
       }
+      if (result.saveCover != null) {
+        saveCover = result.saveCover!;
+      }
+      if (result.isWorkNavigation) {
+        currentIndex += result.workNavigationOffset;
+        continue;
+      }
+      processedIndexes.add(currentIndex);
       if (result.isApplied) {
         applied++;
       } else {
         skipped++;
       }
-      if (result.saveCover != null) {
-        saveCover = result.saveCover!;
-      }
+      currentIndex = _nextUnprocessedIndex(
+        processedIndexes,
+        currentIndex,
+        queue.length,
+      );
       await Future<void>.delayed(Duration.zero);
     }
 
@@ -202,6 +220,20 @@ class _DlsiteMetadataBatchPageState
         unprocessed: 0,
       );
     });
+  }
+
+  int _nextUnprocessedIndex(
+    Set<int> processedIndexes,
+    int currentIndex,
+    int total,
+  ) {
+    for (var index = currentIndex + 1; index < total; index++) {
+      if (!processedIndexes.contains(index)) return index;
+    }
+    for (var index = 0; index < total; index++) {
+      if (!processedIndexes.contains(index)) return index;
+    }
+    return total;
   }
 
   @override

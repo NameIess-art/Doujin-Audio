@@ -7,6 +7,10 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
     required this.isActive,
     required this.expanded,
     required this.onExpansionChanged,
+    required this.isSelectionMode,
+    required this.isSelected,
+    required this.onLongPress,
+    required this.onToggleSelect,
   });
 
   final AsmrWork work;
@@ -14,6 +18,10 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
   final bool isActive;
   final bool expanded;
   final ValueChanged<bool> onExpansionChanged;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback onLongPress;
+  final VoidCallback onToggleSelect;
 
   @override
   ConsumerState<_AsmrWorkTreeCard> createState() => _AsmrWorkTreeCardState();
@@ -159,98 +167,117 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     );
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
-    return SwipeRevealCard(
-      shape: cardShape,
-      color: asmrBlue,
-      actionLabel: i18n.tr('asmr_detail_action'),
-      removeTooltip: i18n.tr('asmr_detail_tooltip'),
-      primaryActionTooltip: i18n.tr('asmr_detail_action'),
-      primaryActionIcon: Icons.info_outline_rounded,
-      destructive: false,
-      secondaryActionLabel: i18n.tr(
-        widget.work.isFavorite
-            ? 'asmr_unfavorite_action'
-            : 'asmr_favorite_action',
-      ),
-      secondaryActionTooltip: i18n.tr(
-        widget.work.isFavorite
-            ? 'asmr_unfavorite_action'
-            : 'asmr_add_favorite_tooltip',
-      ),
-      secondaryActionIcon: widget.work.isFavorite
-          ? Icons.favorite_rounded
-          : Icons.favorite_border_rounded,
-      tertiaryActionLabel: i18n.tr('asmr_download_action'),
-      tertiaryActionTooltip: i18n.tr('asmr_download_work_tooltip'),
-      verticalActions: true,
-      onTertiaryAction: () => unawaited(_openDownloadPage(context)),
-      onSecondaryAction: () => unawaited(_toggleFavorite(context)),
-      onRemove: () => unawaited(showAsmrWorkDetailSheet(context, widget.work)),
-      onWillReveal: _expansionController.collapse,
-      closedColor: cs.surface,
-      child: Card(
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.hardEdge,
+    return GestureDetector(
+      onLongPress: widget.onLongPress,
+      onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
+      child: SwipeRevealCard(
         shape: cardShape,
-        color: Colors.transparent,
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        child: Theme(
-          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-          child: ExpansionTile(
-            controller: _expansionController,
-            initiallyExpanded: widget.expanded,
-            expansionAnimationStyle: appExpansionAnimationStyle(context),
-            minTileHeight: _rootTileHeight,
-            onExpansionChanged: (expanded) {
-              if (widget.expanded == expanded) {
-                return;
-              }
-              widget.onExpansionChanged(expanded);
-              if (expanded) {
-                unawaited(_loadTrackTree());
-              }
-            },
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(
-                LibraryLikeCardMetrics.cardRadius,
-              ),
-            ),
-            collapsedShape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(
-                LibraryLikeCardMetrics.cardRadius,
-              ),
-            ),
-            showTrailingIcon: false,
-            tilePadding: LibraryLikeCardMetrics.rootTilePadding,
-            childrenPadding: const EdgeInsets.fromLTRB(8, 0, 0, 0),
-            title: SearchHighlightScope(
-              query: widget.searchQuery,
-              child: LibraryLikeMetadataWorkCardContent(
-                title: widget.work.title,
-                fields: fields,
-                metadata: _workMetadata(widget.work),
-                circleLabel: i18n.tr('asmr_circle_label'),
-                tagsLabel: i18n.tr('asmr_tags_label'),
-                releaseDateLabel: i18n.tr('card_info_release_date'),
-                salesCountLabel: i18n.tr('card_info_sales_count'),
-                ratingLabel: i18n.tr('card_info_rating'),
-                listSeparator: '\u3001',
-                coverBuilder: (coverWidth) => _AsmrWorkCover(
-                  url: _asmrWorkListCoverUrl(widget.work),
-                  width: coverWidth,
-                  duration: widget.work.duration,
-                  isActive: widget.isActive,
+        enabled: !widget.isSelectionMode,
+        color: asmrBlue,
+        actionLabel: i18n.tr('asmr_detail_action'),
+        removeTooltip: i18n.tr('asmr_detail_tooltip'),
+        primaryActionTooltip: i18n.tr('asmr_detail_action'),
+        primaryActionIcon: Icons.info_outline_rounded,
+        destructive: false,
+        secondaryActionLabel: i18n.tr(
+          widget.work.isFavorite
+              ? 'asmr_unfavorite_action'
+              : 'asmr_favorite_action',
+        ),
+        secondaryActionTooltip: i18n.tr(
+          widget.work.isFavorite
+              ? 'asmr_unfavorite_action'
+              : 'asmr_add_favorite_tooltip',
+        ),
+        secondaryActionIcon: widget.work.isFavorite
+            ? Icons.favorite_rounded
+            : Icons.favorite_border_rounded,
+        tertiaryActionLabel: i18n.tr('asmr_download_action'),
+        tertiaryActionTooltip: i18n.tr('asmr_download_work_tooltip'),
+        verticalActions: true,
+        onTertiaryAction: () => unawaited(_openDownloadPage(context)),
+        onSecondaryAction: () => unawaited(_toggleFavorite(context)),
+        onRemove: () =>
+            unawaited(showAsmrWorkDetailSheet(context, widget.work)),
+        onWillReveal: _expansionController.collapse,
+        closedColor: cs.surface,
+        child: Badge(
+          alignment: Alignment.bottomLeft,
+          offset: const Offset(6, -6),
+          isLabelVisible: widget.isSelected,
+          backgroundColor: const Color(0xFF4CAF50),
+          largeSize: 22,
+          label: const Icon(Icons.check_rounded, size: 14, color: Colors.white),
+          child: Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.hardEdge,
+            shape: cardShape,
+            color: widget.isSelected
+                ? cs.primaryContainer.withValues(alpha: 0.25)
+                : Colors.transparent,
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            child: Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                controller: _expansionController,
+                initiallyExpanded: widget.expanded,
+                expansionAnimationStyle: appExpansionAnimationStyle(context),
+                minTileHeight: _rootTileHeight,
+                enabled: !widget.isSelectionMode,
+                onExpansionChanged: (expanded) {
+                  if (widget.expanded == expanded) {
+                    return;
+                  }
+                  widget.onExpansionChanged(expanded);
+                  if (expanded) {
+                    unawaited(_loadTrackTree());
+                  }
+                },
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(
+                    LibraryLikeCardMetrics.cardRadius,
+                  ),
                 ),
-                onPlay: () => unawaited(_playWork(context)),
-                expanded: widget.expanded,
-                showExpandIndicator: true,
-                playTooltip: i18n.tr('asmr_add_to_playlist'),
-                accentColor: asmrBlue,
-                enableMarquee: false,
-                enableTitleMarquee: false,
-                playLoading: playBusy,
+                collapsedShape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(
+                    LibraryLikeCardMetrics.cardRadius,
+                  ),
+                ),
+                showTrailingIcon: false,
+                tilePadding: LibraryLikeCardMetrics.rootTilePadding,
+                childrenPadding: const EdgeInsets.fromLTRB(8, 0, 0, 0),
+                title: SearchHighlightScope(
+                  query: widget.searchQuery,
+                  child: LibraryLikeMetadataWorkCardContent(
+                    title: widget.work.title,
+                    fields: fields,
+                    metadata: _workMetadata(widget.work),
+                    circleLabel: i18n.tr('asmr_circle_label'),
+                    tagsLabel: i18n.tr('asmr_tags_label'),
+                    releaseDateLabel: i18n.tr('card_info_release_date'),
+                    salesCountLabel: i18n.tr('card_info_sales_count'),
+                    ratingLabel: i18n.tr('card_info_rating'),
+                    listSeparator: '\u3001',
+                    coverBuilder: (coverWidth) => _AsmrWorkCover(
+                      url: _asmrWorkListCoverUrl(widget.work),
+                      width: coverWidth,
+                      duration: widget.work.duration,
+                      isActive: widget.isActive,
+                    ),
+                    onPlay: () => unawaited(_playWork(context)),
+                    expanded: widget.expanded,
+                    showExpandIndicator: true,
+                    playTooltip: i18n.tr('asmr_add_to_playlist'),
+                    accentColor: asmrBlue,
+                    enableMarquee: false,
+                    enableTitleMarquee: false,
+                    playLoading: playBusy,
+                  ),
+                ),
               ),
             ),
           ),

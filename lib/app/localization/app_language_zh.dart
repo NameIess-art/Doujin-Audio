@@ -761,6 +761,10 @@ const Map<String, String> appLanguageZh = {
   'queue_add_audio_first': '请先向队列添加音频',
   'edit': '编辑',
   'save': '保存',
-  'multi_select': '多选',
+  'multi_select': '多选模式',
+  'batch_add_to_playlist': '添加至播放列表',
+  'batch_download': '批量下载',
+  'batch_favorite': '批量收藏',
+  'batch_unfavorite': '批量取消收藏',
   'selected_count': '已选择 {count} 项',
 };

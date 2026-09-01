@@ -718,6 +718,41 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
     await _stagePlaybackSessionRemovals(context, ref, toRemove);
   }
 
+  Future<void> _handleCreatePlaybackQueue(
+    List<PlaylistStructureEntry> visibleEntries,
+    PlaybackFacade playback,
+    AudioPathCoordinator paths,
+  ) async {
+    final selectedTracks = <MusicTrack>[];
+    for (final entry in visibleEntries) {
+      if (!_selectedSessionIds.contains(entry.sessionId) ||
+          entry.isPlaybackQueue) {
+        continue;
+      }
+      final track = paths.sessionTrackForPath(
+        entry.session.id,
+        entry.trackPath,
+      );
+      if (track != null) selectedTracks.add(track);
+    }
+    if (selectedTracks.isEmpty) return;
+
+    final queueCount = playback.sessions.values
+        .where((session) => session.isPlaybackQueue)
+        .length;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    final queue = playback.createPlaybackQueue(
+      i18n.tr('default_playback_queue_name', {
+        'number': (queueCount + 1).toString(),
+      }),
+    );
+    final coordinator = ref.read(playbackQueueCoordinatorProvider);
+    for (final track in selectedTracks) {
+      await coordinator.addWork(queue.id, track);
+    }
+    if (mounted) _exitSelectionMode();
+  }
+
   @override
   int get tabIndex => widget.tabIndex;
 
@@ -1049,9 +1084,21 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                       count > 0 && (multiThreadEnabled || count <= 1);
                   final isPauseEnabled = count > 0;
                   final isRemoveEnabled = count > 0;
+                  final canCreateQueue = visibleEntries.any((entry) {
+                    if (!_selectedSessionIds.contains(entry.sessionId) ||
+                        entry.isPlaybackQueue) {
+                      return false;
+                    }
+                    return paths.sessionTrackForPath(
+                          entry.session.id,
+                          entry.trackPath,
+                        ) !=
+                        null;
+                  });
 
                   return TopPageHeader(
                     key: const ValueKey('playlist_batch_selection_header'),
+                    icon: Icons.graphic_eq_rounded,
                     topCapsuleTitle: i18n.tr('multi_select'),
                     topCapsuleData: i18n.tr('selected_count', {
                       'count': count.toString(),
@@ -1092,6 +1139,27 @@ class _PlaylistTabState extends ConsumerState<PlaylistTab>
                         ),
                         _AnimatedHeaderAction(
                           delayIndex: 2,
+                          child: IconButton(
+                            key: const ValueKey('batch_create_queue_button'),
+                            onPressed: canCreateQueue
+                                ? () => _handleCreatePlaybackQueue(
+                                    visibleEntries,
+                                    playback,
+                                    paths,
+                                  )
+                                : null,
+                            icon: const Icon(Icons.playlist_add_rounded),
+                            tooltip: i18n.tr('add_playback_queue'),
+                            iconSize: 18,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
+                          ),
+                        ),
+                        _AnimatedHeaderAction(
+                          delayIndex: 3,
                           child: IconButton(
                             key: const ValueKey('batch_remove_button'),
                             onPressed: isRemoveEnabled

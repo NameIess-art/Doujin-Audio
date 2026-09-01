@@ -849,6 +849,10 @@ const Map<String, String> appLanguageEn = {
   'queue_add_audio_first': 'Add audio to the queue first',
   'edit': 'Edit',
   'save': 'Save',
-  'multi_select': 'Multi-select',
+  'multi_select': 'Multi-select mode',
+  'batch_add_to_playlist': 'Add to playlist',
+  'batch_download': 'Batch download',
+  'batch_favorite': 'Batch favorite',
+  'batch_unfavorite': 'Batch unfavorite',
   'selected_count': '{count} selected',
 };

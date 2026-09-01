@@ -9,6 +9,10 @@ class _LibraryTreeItem extends StatelessWidget {
     this.index,
     this.onFolderExpansionChanged,
     this.renderChildrenInline = true,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
+    this.onToggleSelect,
   });
 
   final LibraryNode node;
@@ -18,6 +22,10 @@ class _LibraryTreeItem extends StatelessWidget {
   final void Function(FolderNode folder, bool expanded)?
   onFolderExpansionChanged;
   final bool renderChildrenInline;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onToggleSelect;
 
   @override
   Widget build(BuildContext context) {
@@ -29,12 +37,20 @@ class _LibraryTreeItem extends StatelessWidget {
         renderChildrenInline: renderChildrenInline,
         searchQuery: searchQuery,
         index: index,
+        isSelectionMode: isSelectionMode,
+        isSelected: isSelected,
+        onLongPress: onLongPress,
+        onToggleSelect: onToggleSelect,
       );
     } else if (node is TrackNode) {
       return _TrackNodeWidget(
         trackNode: node as TrackNode,
         searchQuery: searchQuery,
         index: index,
+        isSelectionMode: isSelectionMode,
+        isSelected: isSelected,
+        onLongPress: onLongPress,
+        onToggleSelect: onToggleSelect,
       );
     }
     return const SizedBox.shrink();
@@ -49,6 +65,10 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
     this.index,
     this.onFolderExpansionChanged,
     this.renderChildrenInline = true,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
+    this.onToggleSelect,
   });
 
   final FolderNode folder;
@@ -58,6 +78,10 @@ class _FolderNodeWidget extends ConsumerStatefulWidget {
   final void Function(FolderNode folder, bool expanded)?
   onFolderExpansionChanged;
   final bool renderChildrenInline;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onToggleSelect;
 
   @override
   ConsumerState<_FolderNodeWidget> createState() => _FolderNodeWidgetState();
@@ -257,6 +281,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
         minTileHeight: isRootFolder
             ? _rootFolderTileHeight
             : _childFolderTileHeight,
+        enabled: !widget.isSelectionMode,
         onExpansionChanged: (expanded) {
           if (_expanded == expanded) return;
           setState(() {
@@ -426,31 +451,46 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
       return content;
     }
 
-    return SwipeRevealCard(
-      shape: cardShape,
-      closedColor: cs.surface,
-      actionLabel: i18n.tr('remove'),
-      removeTooltip: i18n.tr('remove_audio_folder'),
-      secondaryActionLabel: i18n.tr('audio_detail'),
-      secondaryActionTooltip: i18n.tr('audio_detail'),
-      verticalActions: true,
-      onSecondaryAction: () => unawaited(
-        showAudioDetailSheet(
-          context,
-          AudioDetailTarget.libraryRootFolder(widget.folder.path),
-        ),
-      ),
-      onRemove: () => _removeFolder(context),
-      onWillReveal: _expansionController.collapse,
-      child: Card(
-        margin: EdgeInsets.zero,
-        clipBehavior: Clip.antiAlias,
+    return GestureDetector(
+      onLongPress: widget.onLongPress,
+      onTap: widget.isSelectionMode ? widget.onToggleSelect : null,
+      child: SwipeRevealCard(
         shape: cardShape,
-        color: Colors.transparent,
-        elevation: 0,
-        shadowColor: Colors.transparent,
-        surfaceTintColor: Colors.transparent,
-        child: content,
+        enabled: !widget.isSelectionMode,
+        closedColor: cs.surface,
+        actionLabel: i18n.tr('remove'),
+        removeTooltip: i18n.tr('remove_audio_folder'),
+        secondaryActionLabel: i18n.tr('audio_detail'),
+        secondaryActionTooltip: i18n.tr('audio_detail'),
+        verticalActions: true,
+        onSecondaryAction: () => unawaited(
+          showAudioDetailSheet(
+            context,
+            AudioDetailTarget.libraryRootFolder(widget.folder.path),
+          ),
+        ),
+        onRemove: () => _removeFolder(context),
+        onWillReveal: _expansionController.collapse,
+        child: Badge(
+          alignment: Alignment.bottomLeft,
+          offset: const Offset(6, -6),
+          isLabelVisible: widget.isSelected,
+          backgroundColor: const Color(0xFF4CAF50),
+          largeSize: 22,
+          label: const Icon(Icons.check_rounded, size: 14, color: Colors.white),
+          child: Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            shape: cardShape,
+            color: widget.isSelected
+                ? cs.primaryContainer.withValues(alpha: 0.25)
+                : Colors.transparent,
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            child: content,
+          ),
+        ),
       ),
     );
   }
@@ -461,11 +501,19 @@ class _TrackNodeWidget extends ConsumerWidget {
     required this.trackNode,
     this.searchQuery = '',
     this.index,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
+    this.onToggleSelect,
   });
 
   final TrackNode trackNode;
   final String searchQuery;
   final int? index;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onToggleSelect;
 
   Future<void> _removeTrack(
     BuildContext context,
@@ -542,72 +590,95 @@ class _TrackNodeWidget extends ConsumerWidget {
     }
 
     Widget buildSingleTrackCard(bool useFeaturedCard) {
-      return SwipeRevealCard(
-        shape: cardShape,
-        closedColor: cs.surface,
-        actionLabel: i18n.tr('remove'),
-        removeTooltip: i18n.tr('remove_audio'),
-        secondaryActionLabel: i18n.tr('audio_detail'),
-        secondaryActionTooltip: i18n.tr('audio_detail'),
-        verticalActions: useFeaturedCard,
-        onSecondaryAction: () => unawaited(
-          showAudioDetailSheet(
-            context,
-            AudioDetailTarget.singleAudioFile(track.path),
-          ),
-        ),
-        onRemove: () => _removeTrack(context, ref, track),
-        child: Card(
-          margin: EdgeInsets.zero,
-          clipBehavior: Clip.antiAlias,
+      return GestureDetector(
+        onLongPress: onLongPress,
+        onTap: isSelectionMode ? onToggleSelect : null,
+        child: SwipeRevealCard(
           shape: cardShape,
-          color: (isAlreadyPlaying && !track.isVideo)
-              ? Color.alphaBlend(
-                  cs.primaryContainer.withValues(alpha: 0.40),
-                  cs.surface,
-                )
-              : Colors.transparent,
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          child: useFeaturedCard
-              ? ListTile(
-                  contentPadding: LibraryLikeCardMetrics.rootTilePadding,
-                  minTileHeight: _FolderNodeWidgetState._rootFolderTileHeight,
-                  title: _SingleMediaFileCardContent(
-                    track: track,
-                    title: track.displayName,
-                    detail: singleDetail,
-                    detailLoading: isSingleDetailLoading,
-                    index: index,
-                    onPlay: () => unawaited(playSingleTrack()),
-                  ),
-                )
-              : Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: _SingleAudioFileCardContent(
-                          title: track.displayName,
-                          detail: singleDetail,
-                          detailLoading: isSingleDetailLoading,
-                        ),
+          enabled: !isSelectionMode,
+          closedColor: cs.surface,
+          actionLabel: i18n.tr('remove'),
+          removeTooltip: i18n.tr('remove_audio'),
+          secondaryActionLabel: i18n.tr('audio_detail'),
+          secondaryActionTooltip: i18n.tr('audio_detail'),
+          verticalActions: useFeaturedCard,
+          onSecondaryAction: () => unawaited(
+            showAudioDetailSheet(
+              context,
+              AudioDetailTarget.singleAudioFile(track.path),
+            ),
+          ),
+          onRemove: () => _removeTrack(context, ref, track),
+          child: Badge(
+            alignment: Alignment.bottomLeft,
+            offset: const Offset(6, -6),
+            isLabelVisible: isSelected,
+            backgroundColor: const Color(0xFF4CAF50),
+            largeSize: 22,
+            label: const Icon(
+              Icons.check_rounded,
+              size: 14,
+              color: Colors.white,
+            ),
+            child: Card(
+              margin: EdgeInsets.zero,
+              clipBehavior: Clip.antiAlias,
+              shape: cardShape,
+              color: isSelected
+                  ? cs.primaryContainer.withValues(alpha: 0.25)
+                  : (isAlreadyPlaying && !track.isVideo)
+                  ? Color.alphaBlend(
+                      cs.primaryContainer.withValues(alpha: 0.40),
+                      cs.surface,
+                    )
+                  : Colors.transparent,
+              elevation: 0,
+              shadowColor: Colors.transparent,
+              surfaceTintColor: Colors.transparent,
+              child: useFeaturedCard
+                  ? ListTile(
+                      contentPadding: LibraryLikeCardMetrics.rootTilePadding,
+                      minTileHeight:
+                          _FolderNodeWidgetState._rootFolderTileHeight,
+                      title: _SingleMediaFileCardContent(
+                        track: track,
+                        title: track.displayName,
+                        detail: singleDetail,
+                        detailLoading: isSingleDetailLoading,
+                        index: index,
+                        onPlay: () => unawaited(playSingleTrack()),
                       ),
-                      IconButton(
-                        onPressed: () => unawaited(playSingleTrack()),
-                        style: IconButton.styleFrom(
-                          foregroundColor: cs.primary,
-                          minimumSize: const Size(40, 44),
-                          maximumSize: const Size(40, 44),
-                          padding: EdgeInsets.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        icon: const Icon(Icons.add_circle_rounded, size: 25),
+                    )
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 6, 12),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: _SingleAudioFileCardContent(
+                              title: track.displayName,
+                              detail: singleDetail,
+                              detailLoading: isSingleDetailLoading,
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: () => unawaited(playSingleTrack()),
+                            style: IconButton.styleFrom(
+                              foregroundColor: cs.primary,
+                              minimumSize: const Size(40, 44),
+                              maximumSize: const Size(40, 44),
+                              padding: EdgeInsets.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            icon: const Icon(
+                              Icons.add_circle_rounded,
+                              size: 25,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+            ),
+          ),
         ),
       );
     }

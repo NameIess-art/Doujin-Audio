@@ -24,9 +24,8 @@ double _headerContentTopInset(BuildContext context) =>
     AppPageHeaderMetrics.firstContentSpacing;
 
 class DlsiteMetadataBatchPage extends ConsumerStatefulWidget {
-  const DlsiteMetadataBatchPage({super.key, @visibleForTesting this.entries});
+  const DlsiteMetadataBatchPage({super.key, this.entries});
 
-  @visibleForTesting
   final List<AudioLibraryCategoryEntry>? entries;
 
   @override

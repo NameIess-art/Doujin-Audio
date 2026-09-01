@@ -2059,9 +2059,7 @@ void main() {
       );
 
       await tester.pumpWidget(
-        fixture.build(
-          PlaybackQueueAudioEditPage(sessionId: queueSession.id),
-        ),
+        fixture.build(PlaybackQueueAudioEditPage(sessionId: queueSession.id)),
       );
       await tester.pumpAndSettle();
 
@@ -3209,6 +3207,18 @@ void main() {
       );
       final removeIconButton = find.byKey(
         const ValueKey<String>('batch_remove_button'),
+      );
+      final createQueueIconButton = find.byKey(
+        const ValueKey<String>('batch_create_queue_button'),
+      );
+      expect(createQueueIconButton, findsOneWidget);
+      expect(
+        tester.widget<IconButton>(createQueueIconButton).tooltip,
+        fixture.languageProvider.tr('add_playback_queue'),
+      );
+      expect(
+        tester.widget<IconButton>(createQueueIconButton).onPressed,
+        isNotNull,
       );
       expect(
         tester.widget<IconButton>(playIconButton).tooltip,

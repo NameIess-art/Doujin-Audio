@@ -777,6 +777,10 @@ const Map<String, String> appLanguageJa = {
   'queue_add_audio_first': '先に音声をキューへ追加してください',
   'edit': '編集',
   'save': '保存',
-  'multi_select': '複数選択',
+  'multi_select': '複数選択モード',
+  'batch_add_to_playlist': 'プレイリストに追加',
+  'batch_download': '一括ダウンロード',
+  'batch_favorite': '一括お気に入り',
+  'batch_unfavorite': '一括お気に入り解除',
   'selected_count': '{count}件 選択中',
 };

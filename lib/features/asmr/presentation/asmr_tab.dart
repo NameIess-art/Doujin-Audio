@@ -96,6 +96,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   bool _accountHydrationScheduled = false;
   bool _accountHydrationCompleted = false;
   late final AppLanguageProvider _languageProvider;
+  bool _isSelectionMode = false;
+  final Set<int> _selectedWorkIds = <int>{};
 
   @override
   bool get wantKeepAlive => true;
@@ -360,9 +362,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       ),
       labelKey: 'loading_dot',
       task: () =>
-          ref
-              .read(asmrLibraryControllerProvider)
-              ?.refreshCategory(category) ??
+          ref.read(asmrLibraryControllerProvider)?.refreshCategory(category) ??
           Future<void>.value(),
     );
   }
@@ -371,6 +371,8 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     if (_selectedCategory == category) return;
     setState(() {
       _selectedCategory = category;
+      _isSelectionMode = false;
+      _selectedWorkIds.clear();
     });
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller != null && controller.worksFor(category).isEmpty) {
@@ -387,6 +389,79 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     }
   }
 
+  void _enterSelectionMode(AsmrWork work) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      _isSelectionMode = true;
+      _selectedWorkIds
+        ..clear()
+        ..add(work.id);
+    });
+  }
+
+  void _exitSelectionMode() {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
+    setState(() {
+      _isSelectionMode = false;
+      _selectedWorkIds.clear();
+    });
+  }
+
+  void _toggleWorkSelection(AsmrWork work) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      if (!_selectedWorkIds.add(work.id)) {
+        _selectedWorkIds.remove(work.id);
+        if (_selectedWorkIds.isEmpty) _isSelectionMode = false;
+      }
+    });
+  }
+
+  List<AsmrWork> _selectedWorks() {
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return const <AsmrWork>[];
+    return controller
+        .filteredWorksFor(_selectedCategory)
+        .where((work) => _selectedWorkIds.contains(work.id))
+        .toList(growable: false);
+  }
+
+  Future<void> _addSelectedWorksToPlaylist() async {
+    final playback = ref.read(asmrPlaybackCoordinatorProvider);
+    if (playback == null) return;
+    for (final work in _selectedWorks()) {
+      await playback.playWork(work, autoPlay: false);
+    }
+    if (mounted) _exitSelectionMode();
+  }
+
+  Future<void> _toggleSelectedFavorites() async {
+    final controller = ref.read(asmrLibraryControllerProvider);
+    if (controller == null) return;
+    final selected = _selectedWorks();
+    final shouldFavorite = selected.any((work) => !work.isFavorite);
+    for (final work in selected) {
+      if (work.isFavorite == shouldFavorite) continue;
+      await controller.toggleFavorite(work);
+    }
+    if (mounted) _exitSelectionMode();
+  }
+
+  Future<void> _downloadSelectedWorks() async {
+    final works = _selectedWorks();
+    _exitSelectionMode();
+    for (final work in works) {
+      if (!mounted) return;
+      await Navigator.of(context).push<void>(
+        buildAppPageRoute<void>(
+          context: context,
+          style: AppPageTransitionStyle.sharedAxisZ,
+          child: AsmrDownloadPage(work: work),
+        ),
+      );
+    }
+  }
+
   Widget _buildCategorySwitcher(AppLanguageProvider i18n) {
     return HeaderSegmentedCategoryBar<AsmrCategoryType>(
       items: _headerCategories,
@@ -396,9 +471,7 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     );
   }
 
-  Future<void> _refreshCategoryWithFeedback({
-    bool showSnackbar = false,
-  }) async {
+  Future<void> _refreshCategoryWithFeedback({bool showSnackbar = false}) async {
     final asmrBlue = AppDesignTokens.of(context).asmrAccent;
     final controller = ref.read(asmrLibraryControllerProvider);
     if (controller == null) return;
@@ -509,18 +582,23 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
         : _minimumExpandedHeaderHeight(context);
     final headerContentHeight = effectiveHeaderHeight + 4.0;
     final globalInitialized = globalState?.initialized ?? false;
-    final categoryState = ref.watch(
-      asmrCategoryStateProvider((
-        category: _selectedCategory,
-        searchQuery: '',
-      )),
-    ).value;
+    final categoryState = ref
+        .watch(
+          asmrCategoryStateProvider((
+            category: _selectedCategory,
+            searchQuery: '',
+          )),
+        )
+        .value;
     final totalWorks = (categoryState?.totalCount ?? 0) > 0
         ? categoryState!.totalCount
         : (categoryState?.works.length ?? 0);
-    final asmrStatsText = i18n.tr(
-      'asmr_header_stats',
-      {'count': totalWorks.toString()},
+    final asmrStatsText = i18n.tr('asmr_header_stats', {
+      'count': totalWorks.toString(),
+    });
+    final selectedWorks = _selectedWorks();
+    final hasUnfavoritedSelection = selectedWorks.any(
+      (work) => !work.isFavorite,
     );
 
     return Stack(
@@ -555,6 +633,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
               topInset: headerContentHeight,
               bottomInset: bottomInset,
               onRefresh: _refreshCategoryWithFeedback,
+              isSelectionMode: _isSelectionMode,
+              selectedWorkIds: _selectedWorkIds,
+              onEnterSelectionMode: _enterSelectionMode,
+              onToggleSelection: _toggleWorkSelection,
             ),
           ),
         ),
@@ -562,66 +644,142 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           top: 0,
           left: 0,
           right: 0,
-          child: TopPageHeader(
-            key: _headerKey,
-            icon: Icons.cloud_rounded,
-            collapseController: _scrollController,
-            topCapsuleTitle: 'ASMR.ONE',
-            topCapsuleData: asmrStatsText,
-            title: 'ASMR.ONE',
-            titleWidget: _buildCategorySwitcher(i18n),
-            onTitleSwipeLeft: widget.onTitleSwipeLeft,
-            onTitleSwipeRight: widget.onTitleSwipeRight,
-            trailing: SizedBox(
-              height: 38,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  HeaderFloatingButton(
-                    child: IconButton(
-                      key: const ValueKey<String>('asmr_search_button'),
-                      onPressed: _openSearchPage,
-                      icon: const Icon(Icons.search_rounded),
-                      tooltip: i18n.tr('search'),
-                      iconSize: 20,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 38,
-                        height: 38,
-                      ),
-                    ),
-                  ),
-                  if (isLandscape) ...[
-                    const SizedBox(width: 8),
-                    HeaderFloatingButton(
-                      child: IconButton(
-                        onPressed: globalInitialized
-                            ? () => unawaited(
-                                _refreshCategoryWithFeedback(showSnackbar: true),
-                              )
-                            : null,
-                        icon: const Icon(Icons.refresh_rounded),
-                        tooltip: i18n.tr('refresh'),
-                        iconSize: 20,
+          child: _isSelectionMode
+              ? TopPageHeader(
+                  key: const ValueKey('asmr_batch_selection_header'),
+                  icon: Icons.cloud_rounded,
+                  topCapsuleTitle: i18n.tr('multi_select'),
+                  topCapsuleData: i18n.tr('selected_count', {
+                    'count': selectedWorks.length.toString(),
+                  }),
+                  titleWidget: const SizedBox.shrink(),
+                  leading: HeaderActionPill(
+                    children: [
+                      IconButton(
+                        key: const ValueKey('asmr_batch_add_button'),
+                        onPressed: selectedWorks.isEmpty
+                            ? null
+                            : _addSelectedWorksToPlaylist,
+                        icon: const Icon(Icons.playlist_add_rounded),
+                        tooltip: i18n.tr('batch_add_to_playlist'),
+                        iconSize: 18,
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints.tightFor(
-                          width: 38,
-                          height: 38,
+                          width: 32,
+                          height: 32,
                         ),
                       ),
-                    ),
-                  ],
-                  if (hasDownloadManager)
-                    const _AsmrDownloadProgressInlineButton(),
-                  const SizedBox(width: 8),
-                  HeaderFloatingButton(
-                    child: _AsmrAccountButton(onPressed: _showAccountDialog),
+                      IconButton(
+                        key: const ValueKey('asmr_batch_download_button'),
+                        onPressed: selectedWorks.isEmpty
+                            ? null
+                            : _downloadSelectedWorks,
+                        icon: const Icon(Icons.download_rounded),
+                        tooltip: i18n.tr('batch_download'),
+                        iconSize: 18,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                      ),
+                      IconButton(
+                        key: const ValueKey('asmr_batch_favorite_button'),
+                        onPressed: selectedWorks.isEmpty
+                            ? null
+                            : _toggleSelectedFavorites,
+                        icon: Icon(
+                          hasUnfavoritedSelection
+                              ? Icons.favorite_border_rounded
+                              : Icons.favorite_rounded,
+                        ),
+                        tooltip: i18n.tr(
+                          hasUnfavoritedSelection
+                              ? 'batch_favorite'
+                              : 'batch_unfavorite',
+                        ),
+                        iconSize: 18,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
-            ),
-          ),
+                  trailing: HeaderFloatingButton(
+                    child: IconButton(
+                      key: const ValueKey('asmr_exit_selection_button'),
+                      onPressed: _exitSelectionMode,
+                      icon: const Icon(Icons.close_rounded),
+                      tooltip: i18n.tr('cancel'),
+                    ),
+                  ),
+                )
+              : TopPageHeader(
+                  key: _headerKey,
+                  icon: Icons.cloud_rounded,
+                  collapseController: _scrollController,
+                  topCapsuleTitle: 'ASMR.ONE',
+                  topCapsuleData: asmrStatsText,
+                  title: 'ASMR.ONE',
+                  titleWidget: _buildCategorySwitcher(i18n),
+                  onTitleSwipeLeft: widget.onTitleSwipeLeft,
+                  onTitleSwipeRight: widget.onTitleSwipeRight,
+                  trailing: SizedBox(
+                    height: 38,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        HeaderFloatingButton(
+                          child: IconButton(
+                            key: const ValueKey<String>('asmr_search_button'),
+                            onPressed: _openSearchPage,
+                            icon: const Icon(Icons.search_rounded),
+                            tooltip: i18n.tr('search'),
+                            iconSize: 20,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 38,
+                              height: 38,
+                            ),
+                          ),
+                        ),
+                        if (isLandscape) ...[
+                          const SizedBox(width: 8),
+                          HeaderFloatingButton(
+                            child: IconButton(
+                              onPressed: globalInitialized
+                                  ? () => unawaited(
+                                      _refreshCategoryWithFeedback(
+                                        showSnackbar: true,
+                                      ),
+                                    )
+                                  : null,
+                              icon: const Icon(Icons.refresh_rounded),
+                              tooltip: i18n.tr('refresh'),
+                              iconSize: 20,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints.tightFor(
+                                width: 38,
+                                height: 38,
+                              ),
+                            ),
+                          ),
+                        ],
+                        if (hasDownloadManager)
+                          const _AsmrDownloadProgressInlineButton(),
+                        const SizedBox(width: 8),
+                        HeaderFloatingButton(
+                          child: _AsmrAccountButton(
+                            onPressed: _showAccountDialog,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
         ),
       ],
     );

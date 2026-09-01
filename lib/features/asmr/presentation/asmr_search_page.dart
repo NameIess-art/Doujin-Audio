@@ -156,6 +156,10 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       topInset: AppSearchPageScaffold.controlsTopInset(context),
       bottomInset: MediaQuery.paddingOf(context).bottom + 16,
       onRefresh: _refresh,
+      isSelectionMode: false,
+      selectedWorkIds: const <int>{},
+      onEnterSelectionMode: (_) {},
+      onToggleSelection: (_) {},
     );
     return AppSearchPageScaffold<AsmrCategoryType>(
       controller: _controller,

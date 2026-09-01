@@ -36,6 +36,10 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
     required this.topInset,
     required this.bottomInset,
     required this.onRefresh,
+    required this.isSelectionMode,
+    required this.selectedWorkIds,
+    required this.onEnterSelectionMode,
+    required this.onToggleSelection,
   });
 
   final bool isActive;
@@ -46,6 +50,10 @@ class _AsmrCategoryList extends ConsumerStatefulWidget {
   final double topInset;
   final double bottomInset;
   final Future<void> Function() onRefresh;
+  final bool isSelectionMode;
+  final Set<int> selectedWorkIds;
+  final ValueChanged<AsmrWork> onEnterSelectionMode;
+  final ValueChanged<AsmrWork> onToggleSelection;
 
   @override
   ConsumerState<_AsmrCategoryList> createState() => _AsmrCategoryListState();
@@ -72,6 +80,16 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
   @override
   void didUpdateWidget(covariant _AsmrCategoryList oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (!oldWidget.isSelectionMode && widget.isSelectionMode) {
+      _expandedWorkIds.clear();
+      _expandedFolderPaths.clear();
+      _treeExpansionMotions.clear();
+      for (final timer in _treeExpansionMotionTimers.values) {
+        timer.cancel();
+      }
+      _treeExpansionMotionTimers.clear();
+      _visibleItemsExpansionVersion++;
+    }
     if (oldWidget.category != widget.category ||
         normalizeSearchQuery(oldWidget.searchQuery) !=
             normalizeSearchQuery(widget.searchQuery)) {
@@ -560,6 +578,10 @@ class _AsmrCategoryListState extends ConsumerState<_AsmrCategoryList>
             searchQuery: widget.searchQuery,
             isActive: widget.isActive,
             expanded: _expandedWorkIds.contains(item.work.id),
+            isSelectionMode: widget.isSelectionMode,
+            isSelected: widget.selectedWorkIds.contains(item.work.id),
+            onLongPress: () => widget.onEnterSelectionMode(item.work),
+            onToggleSelect: () => widget.onToggleSelection(item.work),
             onExpansionChanged: (expanded) =>
                 _handleWorkExpansion(item.work.id, expanded),
           ),

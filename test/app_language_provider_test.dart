@@ -43,17 +43,22 @@ void main() {
 
       await provider.setLanguage(AppLanguage.zh);
       expect(provider.tr('add_playback_queue'), '创建播放队列');
+      expect(provider.tr('multi_select'), '多选模式');
+      expect(provider.tr('batch_favorite'), '批量收藏');
+      expect(provider.tr('batch_unfavorite'), '批量取消收藏');
       expect(provider.tr('audio_detail_title'), '详细信息');
       expect(provider.tr('asmr_detail_other'), '其他信息');
       expect(provider.tr('asmr_category_rating'), '评分');
 
       await provider.setLanguage(AppLanguage.en);
       expect(provider.tr('add_playback_queue'), 'Create playback queue');
+      expect(provider.tr('multi_select'), 'Multi-select mode');
       expect(provider.tr('audio_detail_title'), 'Details');
       expect(provider.tr('asmr_detail_other'), 'Other information');
 
       await provider.setLanguage(AppLanguage.ja);
       expect(provider.tr('add_playback_queue'), '再生キューを作成');
+      expect(provider.tr('multi_select'), '複数選択モード');
       expect(provider.tr('audio_detail_title'), '詳細情報');
       expect(provider.tr('asmr_detail_other'), 'その他の情報');
     },

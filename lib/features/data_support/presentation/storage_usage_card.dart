@@ -56,28 +56,10 @@ class _StorageUsageCardState extends ConsumerState<StorageUsageCard> {
           return _StorageUsageCard(snapshot: snapshot.data!);
         }
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const _StorageUsageLoadingCard();
+          return const _StorageUsageCard(snapshot: null);
         }
         return _StorageUsageUnavailableCard(onRetry: _reloadStorageUsage);
       },
-    );
-  }
-}
-
-class _StorageUsageLoadingCard extends StatelessWidget {
-  const _StorageUsageLoadingCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Card(
-      key: const ValueKey('data-support-storage-loading'),
-      elevation: 0,
-      color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
-      child: const SizedBox(
-        height: 132,
-        child: Center(child: CircularProgressIndicator()),
-      ),
     );
   }
 }
@@ -116,7 +98,7 @@ class _StorageUsageUnavailableCard extends StatelessWidget {
 class _StorageUsageCard extends StatelessWidget {
   const _StorageUsageCard({required this.snapshot});
 
-  final StorageUsageSnapshot snapshot;
+  final StorageUsageSnapshot? snapshot;
 
   @override
   Widget build(BuildContext context) {
@@ -126,26 +108,29 @@ class _StorageUsageCard extends StatelessWidget {
     ).read(appLanguageProviderInstanceProvider);
     final cs = Theme.of(context).colorScheme;
     final tokens = AppDesignTokens.of(context);
+    final current = snapshot;
+    final isLoaded = current != null;
+
     final audioLibrarySegment = (
-      bytes: snapshot.audioLibraryBytes,
+      bytes: current?.audioLibraryBytes ?? 0,
       color: cs.primary,
       label: i18n.tr('storage_usage_audio_library'),
       key: 'audio-library',
     );
     final applicationCacheSegment = (
-      bytes: snapshot.applicationCacheBytes,
+      bytes: current?.applicationCacheBytes ?? 0,
       color: tokens.warning,
       label: i18n.tr('storage_usage_app_cache'),
       key: 'app-cache',
     );
     final otherUsedSegment = (
-      bytes: snapshot.otherUsedBytes,
+      bytes: current?.otherUsedBytes ?? 0,
       color: cs.secondary,
       label: i18n.tr('storage_usage_other'),
       key: 'other',
     );
     final availableSegment = (
-      bytes: snapshot.availableBytes,
+      bytes: current?.availableBytes ?? 0,
       color: cs.outline,
       label: i18n.tr('storage_usage_available'),
       key: 'available',
@@ -167,7 +152,11 @@ class _StorageUsageCard extends StatelessWidget {
       elevation: 0,
       color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
       child: Padding(
-        key: const ValueKey('data-support-storage-card'),
+        key: ValueKey(
+          isLoaded
+              ? 'data-support-storage-card'
+              : 'data-support-storage-loading',
+        ),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -195,7 +184,9 @@ class _StorageUsageCard extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  AppCacheService.formatBytes(snapshot.totalBytes),
+                  isLoaded
+                      ? AppCacheService.formatBytes(current.totalBytes)
+                      : '--',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
@@ -211,25 +202,27 @@ class _StorageUsageCard extends StatelessWidget {
                 child: ColoredBox(
                   color: cs.surfaceContainerHighest,
                   child: SizedBox.expand(
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (final segment in barSegments)
-                          if (segment.bytes > 0)
-                            Expanded(
-                              key: ValueKey(
-                                'data-support-storage-segment-${segment.key}',
-                              ),
-                              flex: _storageSegmentFlex(
-                                segment.bytes,
-                                snapshot.totalBytes,
-                              ),
-                              child: ColoredBox(
-                                color: segment.color.withValues(alpha: 1),
-                              ),
-                            ),
-                      ],
-                    ),
+                    child: isLoaded && current.totalBytes > 0
+                        ? Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              for (final segment in barSegments)
+                                if (segment.bytes > 0)
+                                  Expanded(
+                                    key: ValueKey(
+                                      'data-support-storage-segment-${segment.key}',
+                                    ),
+                                    flex: _storageSegmentFlex(
+                                      segment.bytes,
+                                      current.totalBytes,
+                                    ),
+                                    child: ColoredBox(
+                                      color: segment.color.withValues(alpha: 1),
+                                    ),
+                                  ),
+                            ],
+                          )
+                        : null,
                   ),
                 ),
               ),
@@ -241,7 +234,9 @@ class _StorageUsageCard extends StatelessWidget {
                 child: _StorageUsageLegendRow(
                   color: segment.color,
                   label: segment.label,
-                  value: AppCacheService.formatBytes(segment.bytes),
+                  value: isLoaded
+                      ? AppCacheService.formatBytes(segment.bytes)
+                      : '--',
                 ),
               ),
           ],

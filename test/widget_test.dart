@@ -1890,7 +1890,19 @@ void main() {
       (widget) => widget is Semantics && widget.properties.label == label,
     );
 
-    expect(pageIndicator('1 / 2'), findsOneWidget);
+    final indicatorFinder = pageIndicator('1 / 2');
+    expect(indicatorFinder, findsOneWidget);
+    final activeCardFinder = find.byKey(
+      ValueKey<String>('active_session_card_${firstSession.id}'),
+    );
+    expect(activeCardFinder, findsOneWidget);
+    final indicatorRect = tester.getRect(indicatorFinder);
+    final cardRect = tester.getRect(activeCardFinder);
+    expect(indicatorRect.right, lessThan(cardRect.right));
+    expect(indicatorRect.left, greaterThan(cardRect.left));
+    expect(indicatorRect.bottom, lessThanOrEqualTo(cardRect.bottom));
+    expect(indicatorRect.top, greaterThan(cardRect.top));
+
     await tester.drag(find.byType(PageView), const Offset(400, 0));
     await tester.pumpAndSettle();
     expect(pageIndicator('2 / 2'), findsOneWidget);

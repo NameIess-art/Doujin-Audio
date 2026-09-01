@@ -1,27 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/presentation/app_settings_group_card.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../core/logging/app_log_service.dart';
 import '../application/data_support_file_service.dart';
 import '../../../core/ui/ui_operation_service.dart';
-import '../../../app/theme/app_design_tokens.dart';
 import '../../../core/widgets/app_feedback.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../app/presentation/onboarding_page.dart';
 import '../../../core/widgets/confirm_action_dialog.dart';
 import '../../../core/widgets/app_dialog.dart';
 import '../../../core/widgets/app_buttons.dart';
-import '../../../core/widgets/top_page_header.dart';
+import '../../../core/widgets/app_settings_action_tile.dart';
 
-class DataSupportPage extends ConsumerStatefulWidget {
-  const DataSupportPage({super.key});
+class DataSupportSettingsControls extends ConsumerStatefulWidget {
+  const DataSupportSettingsControls({super.key});
 
   @override
-  ConsumerState<DataSupportPage> createState() => _DataSupportPageState();
+  ConsumerState<DataSupportSettingsControls> createState() =>
+      _DataSupportSettingsControlsState();
 }
 
-class _DataSupportPageState extends ConsumerState<DataSupportPage> {
+class _DataSupportSettingsControlsState
+    extends ConsumerState<DataSupportSettingsControls> {
   UiOperationService get _operationService =>
       ref.read(uiOperationServiceProvider);
   late final DataSupportFileService _fileService;
@@ -229,143 +231,50 @@ class _DataSupportPageState extends ConsumerState<DataSupportPage> {
         .isBusy;
     final dataOperationBusy =
         diagnosticsBusy || backupExportBusy || backupRestoreBusy;
-    return SizedBox(
-      width: double.infinity,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          AppPageAppBar(
-            icon: Icons.storage_rounded,
-            title: Text(i18n.tr('data_and_support')),
-            automaticallyImplyLeading: false,
-            useGlassSurface: false,
-          ),
-          Flexible(
-            child: ListView(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-              children: [
-                Text(
-                  i18n.tr('data_and_support_subtitle'),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  height: 4,
-                  child: dataOperationBusy
-                      ? const LinearProgressIndicator()
-                      : null,
-                ),
-                const SizedBox(height: 8),
-                _ActionCard(
-                  key: const ValueKey('data-support-export-backup'),
-                  title: i18n.tr('export_backup'),
-                  subtitle: i18n.tr('export_backup_subtitle'),
-                  icon: Icons.archive_outlined,
-                  busy: backupExportBusy,
-                  onTap: dataOperationBusy ? null : _exportBackup,
-                ),
-                _ActionCard(
-                  key: const ValueKey('data-support-restore-backup'),
-                  title: i18n.tr('restore_backup'),
-                  subtitle: i18n.tr('restore_backup_subtitle'),
-                  icon: Icons.settings_backup_restore_rounded,
-                  busy: backupRestoreBusy,
-                  onTap: dataOperationBusy ? null : _restoreBackup,
-                ),
-                _ActionCard(
-                  key: const ValueKey('data-support-export-diagnostics'),
-                  title: i18n.tr('export_diagnostics'),
-                  subtitle: i18n.tr('export_diagnostics_subtitle'),
-                  icon: Icons.support_agent_rounded,
-                  busy: diagnosticsBusy,
-                  onTap: dataOperationBusy ? null : _exportDiagnostics,
-                ),
-                _ActionCard(
-                  key: const ValueKey('data-support-privacy-summary'),
-                  title: i18n.tr('privacy_summary_title'),
-                  subtitle: i18n.tr('privacy_summary_local_body'),
-                  icon: Icons.privacy_tip_outlined,
-                  onTap: () => Navigator.of(context).push(
-                    buildAppPageRoute<void>(
-                      context: context,
-                      child: const PrivacySummaryPage(),
-                    ),
-                  ),
-                ),
-              ],
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: 4,
+          child: dataOperationBusy ? const LinearProgressIndicator() : null,
+        ),
+        AppSettingsGroupCard(
+          children: [
+            AppSettingsActionTile(
+              key: const ValueKey('data-support-export-backup'),
+              title: i18n.tr('export_backup'),
+              icon: Icons.archive_outlined,
+              busy: backupExportBusy,
+              onTap: dataOperationBusy ? null : _exportBackup,
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActionCard extends StatelessWidget {
-  const _ActionCard({
-    super.key,
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    required this.onTap,
-    this.busy = false,
-  });
-
-  final String title;
-  final String subtitle;
-  final IconData icon;
-  final VoidCallback? onTap;
-  final bool busy;
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final tokens = AppDesignTokens.of(context);
-    return Card(
-      elevation: 0,
-      color: cs.surfaceContainerHigh.withValues(alpha: 0.6),
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(tokens.radiusCard),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: ListTile(
-        minTileHeight: 76,
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          width: tokens.iconContainerSize,
-          height: tokens.iconContainerSize,
-          alignment: Alignment.center,
-          child: Icon(icon, color: cs.onSurface, size: 20),
-        ),
-        title: Text(
-          title,
-          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-            fontWeight: FontWeight.w700,
-            fontSize: 15,
-          ),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            subtitle,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: cs.onSurfaceVariant,
-              height: 1.3,
+            AppSettingsActionTile(
+              key: const ValueKey('data-support-restore-backup'),
+              title: i18n.tr('restore_backup'),
+              icon: Icons.settings_backup_restore_rounded,
+              busy: backupRestoreBusy,
+              onTap: dataOperationBusy ? null : _restoreBackup,
             ),
-          ),
+            AppSettingsActionTile(
+              key: const ValueKey('data-support-export-diagnostics'),
+              title: i18n.tr('export_diagnostics'),
+              icon: Icons.support_agent_rounded,
+              busy: diagnosticsBusy,
+              onTap: dataOperationBusy ? null : _exportDiagnostics,
+            ),
+            AppSettingsActionTile(
+              key: const ValueKey('data-support-privacy-summary'),
+              title: i18n.tr('privacy_summary_title'),
+              icon: Icons.privacy_tip_outlined,
+              onTap: () => Navigator.of(context).push(
+                buildAppPageRoute<void>(
+                  context: context,
+                  child: const PrivacySummaryPage(),
+                ),
+              ),
+            ),
+          ],
         ),
-        trailing: busy
-            ? const SizedBox.square(
-                dimension: 20,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Icon(Icons.chevron_right_rounded, color: cs.onSurfaceVariant),
-      ),
+      ],
     );
   }
 }

@@ -193,9 +193,26 @@ class _DlsiteMetadataBatchPageState
                       }
                     },
                     onPickSpecific: _pickSpecific,
-                    onStart: _run,
                   ),
           ),
+          if (!_loading && _error == null)
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16 + MediaQuery.paddingOf(context).bottom,
+              child: FilledButton.icon(
+                onPressed: _run,
+                icon: const Icon(Icons.play_arrow_rounded),
+                label: Text(i18n.tr('batch_metadata_start')),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
           Positioned(
             top: 0,
             left: 0,
@@ -222,7 +239,6 @@ class _BatchMetadataSetupView extends StatelessWidget {
     required this.specificCount,
     required this.onScopeChanged,
     required this.onPickSpecific,
-    required this.onStart,
   });
 
   final _BatchMetadataScope scope;
@@ -233,7 +249,6 @@ class _BatchMetadataSetupView extends StatelessWidget {
   final int specificCount;
   final ValueChanged<_BatchMetadataScope> onScopeChanged;
   final VoidCallback onPickSpecific;
-  final VoidCallback onStart;
 
   @override
   Widget build(BuildContext context) {
@@ -242,7 +257,12 @@ class _BatchMetadataSetupView extends StatelessWidget {
       listen: false,
     ).read(appLanguageProviderInstanceProvider);
     return ListView(
-      padding: EdgeInsets.fromLTRB(16, _headerContentTopInset(context), 16, 24),
+      padding: EdgeInsets.fromLTRB(
+        16,
+        _headerContentTopInset(context),
+        16,
+        88 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
         Text(
           i18n.tr('batch_metadata_hint'),
@@ -310,19 +330,6 @@ class _BatchMetadataSetupView extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 24),
-        FilledButton.icon(
-          onPressed: onStart,
-          icon: const Icon(Icons.play_arrow_rounded),
-          label: Text(i18n.tr('batch_metadata_start')),
-          style: FilledButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            textStyle: const TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 15,
             ),
           ),
         ),

@@ -262,7 +262,16 @@ void main() {
 
     expect(
       tester.widget<ListView>(find.byType(ListView)).padding,
-      const EdgeInsets.fromLTRB(16, 58, 16, 24),
+      const EdgeInsets.fromLTRB(16, 58, 16, 88),
+    );
+    final start = find.widgetWithText(
+      FilledButton,
+      languageProvider.tr('batch_metadata_start'),
+    );
+    expect(start, findsOneWidget);
+    expect(
+      tester.getRect(start).bottom,
+      closeTo(tester.getSize(find.byType(Scaffold)).height - 16, 0.1),
     );
   });
 

@@ -5,12 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:doujin_audio/app/localization/app_language_provider.dart';
+import 'package:doujin_audio/app/presentation/app_settings_group_card.dart';
 import 'package:doujin_audio/app/state/app_runtime_providers.dart';
 import 'package:doujin_audio/core/ui/ui_operation_service.dart';
 import 'package:doujin_audio/core/platform/file_cache_platform_gateway.dart';
 import 'package:doujin_audio/core/media/music_track.dart';
 import 'package:doujin_audio/features/data_support/application/storage_usage_service.dart';
-import 'package:doujin_audio/features/data_support/presentation/data_support_page.dart';
+import 'package:doujin_audio/features/data_support/presentation/data_support_settings_controls.dart';
 import 'package:doujin_audio/features/data_support/presentation/storage_usage_card.dart';
 import 'package:doujin_audio/features/settings/application/app_update_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -82,19 +83,14 @@ void main() {
               storageService(),
             ),
           ],
-          child: const MaterialApp(home: DataSupportPage()),
+          child: const MaterialApp(
+            home: Scaffold(body: DataSupportSettingsControls()),
+          ),
         ),
       );
       await tester.pump();
       await tester.pump();
 
-      final appBar = tester.widget<AppBar>(find.byType(AppBar));
-      expect(appBar.backgroundColor, Colors.transparent);
-      expect(appBar.forceMaterialTransparency, isTrue);
-      expect(
-        find.byKey(const ValueKey<String>('app_page_header_blur')),
-        findsNothing,
-      );
       expect(
         find.byKey(const ValueKey('data-support-storage-card')),
         findsNothing,
@@ -108,6 +104,26 @@ void main() {
         find.byKey(const ValueKey('data-support-restore-backup')),
         findsOneWidget,
       );
+      expect(find.byType(AppSettingsGroupCard), findsOneWidget);
+      expect(find.byType(Card), findsNWidgets(cardKeys.length));
+      expect(find.byType(Divider), findsNothing);
+      final cards = find.byType(Card);
+      for (var index = 0; index < cardKeys.length - 1; index++) {
+        final gap =
+            tester.getTopLeft(cards.at(index + 1)).dy -
+            tester.getBottomRight(cards.at(index)).dy;
+        expect(gap, closeTo(3, 0.001));
+      }
+      final firstCardShape =
+          tester.widget<Card>(cards.first).shape! as RoundedRectangleBorder;
+      final firstBorderRadius = firstCardShape.borderRadius as BorderRadius;
+      expect(firstBorderRadius.topLeft, const Radius.circular(12));
+      expect(firstBorderRadius.bottomLeft, const Radius.circular(6));
+      final lastCardShape =
+          tester.widget<Card>(cards.last).shape! as RoundedRectangleBorder;
+      final lastBorderRadius = lastCardShape.borderRadius as BorderRadius;
+      expect(lastBorderRadius.topLeft, const Radius.circular(6));
+      expect(lastBorderRadius.bottomLeft, const Radius.circular(12));
 
       final firstCard = find.byKey(cardKeys.first);
       final firstCardContext = tester.element(firstCard);
@@ -118,6 +134,17 @@ void main() {
         firstCardIcon.color,
         Theme.of(firstCardContext).colorScheme.onSurface,
       );
+      for (final key in cardKeys) {
+        final tile = find.descendant(
+          of: find.byKey(key),
+          matching: find.byType(ListTile),
+        );
+        expect(tester.widget<ListTile>(tile).subtitle, isNull);
+        expect(
+          find.ancestor(of: tile, matching: find.byType(Card)),
+          findsOneWidget,
+        );
+      }
 
       final cardElements = <Key, Element>{};
       final inkElements = <Key, Element>{};
@@ -204,7 +231,9 @@ void main() {
             storageService(),
           ),
         ],
-        child: const MaterialApp(home: DataSupportPage()),
+        child: const MaterialApp(
+          home: Scaffold(body: DataSupportSettingsControls()),
+        ),
       ),
     );
     await tester.pumpAndSettle();

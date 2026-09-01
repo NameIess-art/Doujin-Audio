@@ -294,6 +294,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
       height: 1.25,
       color: Theme.of(context).colorScheme.onSurfaceVariant,
     );
+    final bottomActionInset = 88.0 + MediaQuery.paddingOf(context).bottom;
 
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -304,7 +305,7 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
               16,
               _videoConverterHeaderContentTopInset(context),
               16,
-              24,
+              bottomActionInset,
             ),
             children: [
               Card(
@@ -506,45 +507,49 @@ class _VideoConverterTabState extends ConsumerState<VideoConverterTab> {
                   ),
                 ),
               ],
-              const SizedBox(height: 24),
-              if (_isConverting)
-                FilledButton.icon(
-                  onPressed: _isCanceling
-                      ? null
-                      : () => unawaited(_cancelConversion()),
-                  icon: Icon(
-                    _isCanceling
-                        ? Icons.hourglass_top_rounded
-                        : Icons.cancel_rounded,
-                  ),
-                  label: Text(
-                    i18n.tr(
+            ],
+          ),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16 + MediaQuery.paddingOf(context).bottom,
+            child: _isConverting
+                ? FilledButton.icon(
+                    onPressed: _isCanceling
+                        ? null
+                        : () => unawaited(_cancelConversion()),
+                    icon: Icon(
                       _isCanceling
-                          ? 'canceling_conversion'
-                          : 'cancel_conversion',
+                          ? Icons.hourglass_top_rounded
+                          : Icons.cancel_rounded,
+                    ),
+                    label: Text(
+                      i18n.tr(
+                        _isCanceling
+                            ? 'canceling_conversion'
+                            : 'cancel_conversion',
+                      ),
+                    ),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.error,
+                      foregroundColor: Theme.of(context).colorScheme.onError,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  )
+                : FilledButton.icon(
+                    onPressed:
+                        _selectedVideoPath != null &&
+                            outputDirectoryPath != null
+                        ? () => _startConversion(settings)
+                        : null,
+                    icon: const Icon(Icons.transform_rounded),
+                    label: Text(i18n.tr('start_conversion')),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      textStyle: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                   ),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.error,
-                    foregroundColor: Theme.of(context).colorScheme.onError,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                )
-              else
-                FilledButton.icon(
-                  onPressed:
-                      _selectedVideoPath != null && outputDirectoryPath != null
-                      ? () => _startConversion(settings)
-                      : null,
-                  icon: const Icon(Icons.transform_rounded),
-                  label: Text(i18n.tr('start_conversion')),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    textStyle: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                ),
-            ],
           ),
           Positioned(
             top: 0,

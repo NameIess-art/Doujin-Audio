@@ -517,9 +517,9 @@ const Map<String, String> appLanguageEn = {
   'settings_group_audio_recovery': 'Audio and recovery',
   'settings_group_download': 'Download',
   'settings_group_download_files': 'Files and naming',
-  'settings_group_data': 'Data',
+  'settings_group_data': 'Data & Support',
   'settings_group_cache': 'Cache',
-  'settings_group_permissions': 'Permissions',
+  'settings_group_permissions': 'Permissions & Background',
   'settings_group_updates': 'Updates',
   'section_appearance': 'Appearance',
   'section_appearance_subtitle': 'Theme, layout, and subtitle appearance',
@@ -548,8 +548,6 @@ const Map<String, String> appLanguageEn = {
   'section_updates_permissions': 'Updates & Permissions',
   'section_updates_permissions_subtitle':
       'Permissions, updates, and background access',
-  'permission_center': 'Permissions & background',
-  'permission_center_subtitle': 'Manage optional app permissions.',
   'permission_enabled': 'Enabled',
   'permission_not_enabled': 'Disabled',
   'permission_state_authorized': 'Allowed',
@@ -570,9 +568,6 @@ const Map<String, String> appLanguageEn = {
       'Only needed to show global subtitles over other apps.',
   'permission_update_install_description':
       'Only used to install GitHub Release updates you explicitly download.',
-  'data_and_support': 'Data & support',
-  'data_and_support_subtitle':
-      'Export diagnostics and review the privacy summary.',
   'storage_usage_title': 'Storage space',
   'storage_usage_total': 'Total device storage',
   'storage_usage_audio_library': 'Local audio library',

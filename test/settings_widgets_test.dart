@@ -129,10 +129,7 @@ void main() {
     );
     final categoryHeader = find.byType(TopPageHeader);
     final categoryHeaderWidget = tester.widget<TopPageHeader>(categoryHeader);
-    expect(
-      find.byType(BackdropFilter),
-      findsWidgets,
-    );
+    expect(find.byType(BackdropFilter), findsWidgets);
     expect(categoryHeaderWidget.padding, AppPageHeaderMetrics.padding);
     expect(
       categoryHeaderWidget.bottomSpacing,
@@ -274,6 +271,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(updatesCategory);
     await tester.pumpAndSettle();
+    final notificationTile = find.text(
+      i18n.tr('notification_permission_status'),
+    );
+    expect(notificationTile, findsOneWidget);
+    expect(
+      find.ancestor(of: notificationTile, matching: find.byType(Card)),
+      findsOneWidget,
+    );
+    expect(find.text(i18n.tr('install_permission_title')), findsOneWidget);
     expect(find.text(i18n.tr('check_updates')), findsOneWidget);
     expect(
       find.textContaining(i18n.tr('current_version_label', {'version': ''})),
@@ -325,10 +331,19 @@ void main() {
       const ValueKey<String>('settings_section_pill_appearance_0'),
     );
     expect(startupPill, findsOneWidget);
-    expect(
-      tester.getTopLeft(startupPill).dy,
-      greaterThan(tester.getRect(categoryHeader).bottom),
+    final startupSurface = find.descendant(
+      of: startupPill,
+      matching: find.byType(HeaderFloatingSurface),
     );
+    expect(startupSurface, findsOneWidget);
+    // Width is determined by text length rather than stretching to full width
+    expect(tester.getSize(startupSurface).width, lessThan(300));
+    expect(tester.getTopLeft(startupSurface).dx, equals(16.0));
+    // Initial distance between title bar capsule bottom and category pill top is 14.0px
+    final initialAppearanceGap =
+        tester.getTopLeft(startupPill).dy -
+        tester.getRect(categoryHeader).bottom;
+    expect(initialAppearanceGap, closeTo(14.0, 0.5));
     expect(
       find.byKey(const ValueKey<String>('settings_sticky_section_pill')),
       findsNothing,
@@ -349,12 +364,24 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(
-      tester.getTopLeft(stickyPill).dy,
-      greaterThanOrEqualTo(tester.getRect(categoryHeader).bottom),
+    final stickySurface = find.descendant(
+      of: stickyPill,
+      matching: find.byType(HeaderFloatingSurface),
     );
+    expect(tester.getSize(stickySurface).width, lessThan(300));
+    expect(tester.getTopLeft(stickySurface).dx, equals(16.0));
+    // Pinned gap between title bar capsule bottom and sticky pill top is 6.0px (consistent with main header two rows)
+    expect(
+      tester.getTopLeft(stickyPill).dy - tester.getRect(categoryHeader).bottom,
+      closeTo(6.0, 0.5),
+    );
+    // When section is pinned, its inline pill is hidden to avoid duplicate pills on screen
+    final inlineVisibility = tester.widget<Visibility>(
+      find.ancestor(of: startupPill, matching: find.byType(Visibility)).first,
+    );
+    expect(inlineVisibility.visible, isFalse);
 
-    await tester.drag(categoryList, const Offset(0, -600));
+    await tester.drag(categoryList, const Offset(0, -250));
     await tester.pumpAndSettle();
     expect(
       find.descendant(
@@ -366,6 +393,20 @@ void main() {
 
     await tester.tap(find.byIcon(Icons.arrow_back_rounded));
     await tester.pumpAndSettle();
+
+    // Check main settings page content gap
+    final mainSettingsHeader = find.byType(TopPageHeader);
+    final firstMainCard = find
+        .ancestor(
+          of: find.text(i18n.tr('section_language')),
+          matching: find.byType(Card),
+        )
+        .first;
+    final mainPageGap =
+        tester.getTopLeft(firstMainCard).dy -
+        tester.getRect(mainSettingsHeader).bottom;
+    expect(mainPageGap, closeTo(14.0, 0.5));
+
     await tester.tap(find.text(i18n.tr('section_language')));
     await tester.pumpAndSettle();
     expect(
@@ -376,10 +417,21 @@ void main() {
       find.byKey(const ValueKey<String>('settings_sticky_section_pill')),
       findsNothing,
     );
+    final languageHeader = find.byType(TopPageHeader);
+    final languageFirstCard = find
+        .ancestor(
+          of: find.text(i18n.tr('interface_language')),
+          matching: find.byType(Card),
+        )
+        .first;
+    final languagePageGap =
+        tester.getTopLeft(languageFirstCard).dy -
+        tester.getRect(languageHeader).bottom;
+    expect(languagePageGap, closeTo(mainPageGap, 0.5));
   });
 
   testWidgets(
-    'data storage category places storage overview above data and support',
+    'data storage category places storage overview above embedded support actions',
     (tester) async {
       final harness = AppRuntimeWidgetTestFixture();
       addTearDown(harness.dispose);
@@ -395,15 +447,40 @@ void main() {
       final storage = find.byKey(
         const ValueKey('data-support-storage-unavailable'),
       );
-      final dataAndSupport = find.widgetWithText(
-        ListTile,
-        i18n.tr('data_and_support'),
+      final exportBackup = find.byKey(
+        const ValueKey<String>('data-support-export-backup'),
+      );
+      final restoreBackup = find.byKey(
+        const ValueKey<String>('data-support-restore-backup'),
+      );
+      final exportDiagnostics = find.byKey(
+        const ValueKey<String>('data-support-export-diagnostics'),
+      );
+      final privacySummary = find.byKey(
+        const ValueKey<String>('data-support-privacy-summary'),
       );
       expect(storage, findsOneWidget);
-      expect(dataAndSupport, findsOneWidget);
+      expect(exportBackup, findsOneWidget);
+      expect(restoreBackup, findsOneWidget);
+      expect(exportDiagnostics, findsOneWidget);
+      expect(privacySummary, findsOneWidget);
       expect(
         tester.getTopLeft(storage).dy,
-        lessThan(tester.getTopLeft(dataAndSupport).dy),
+        lessThan(tester.getTopLeft(exportBackup).dy),
+      );
+      final exportCard = find.ancestor(
+        of: exportBackup,
+        matching: find.byType(Card),
+      );
+      expect(exportCard, findsOneWidget);
+      final restoreCard = find.ancestor(
+        of: restoreBackup,
+        matching: find.byType(Card),
+      );
+      expect(restoreCard, findsOneWidget);
+      expect(
+        tester.getTopLeft(restoreCard).dy - tester.getBottomLeft(exportCard).dy,
+        closeTo(3, 0.001),
       );
     },
   );
@@ -570,7 +647,7 @@ void main() {
     await tester.pumpAndSettle();
 
     _expectIconCentersAligned(tester, const [
-      Icons.admin_panel_settings_rounded,
+      Icons.notifications_rounded,
       Icons.system_update_alt_rounded,
       Icons.update_rounded,
     ]);
@@ -1579,20 +1656,14 @@ void _expectIconCentersAligned(WidgetTester tester, List<IconData> icons) {
   final listFinder = find.byType(ListView);
   final expectedCenter = tester
       .getCenter(
-        find.descendant(
-          of: listFinder,
-          matching: find.byIcon(icons.first),
-        ),
+        find.descendant(of: listFinder, matching: find.byIcon(icons.first)),
       )
       .dx;
   for (final icon in icons.skip(1)) {
     expect(
       tester
           .getCenter(
-            find.descendant(
-              of: listFinder,
-              matching: find.byIcon(icon),
-            ),
+            find.descendant(of: listFinder, matching: find.byIcon(icon)),
           )
           .dx,
       closeTo(expectedCenter, 0.01),

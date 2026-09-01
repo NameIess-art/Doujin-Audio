@@ -12,28 +12,14 @@ List<Widget> _buildSettingsDataSection({
   required AppLanguageProvider i18n,
   required SettingsCommandController settingsController,
   required ColorScheme cs,
-  required VoidCallback onOpenDataAndSupport,
   required VoidCallback onClearApplicationCache,
 }) {
   return <Widget>[
     _SettingsSectionCard(
       title: i18n.tr('settings_group_data'),
       leadingContent: const StorageUsageCard(),
-      children: [
-        ListTile(
-          onTap: onOpenDataAndSupport,
-          title: _settingsTitle(i18n.tr('data_and_support')),
-          leading: _settingsIcon(Icons.health_and_safety_rounded, cs.onSurface),
-          trailing: Icon(
-            Icons.chevron_right_rounded,
-            size: 20,
-            color: cs.onSurfaceVariant,
-          ),
-          shape: const RoundedRectangleBorder(
-            borderRadius: AppRadius.borderCard,
-          ),
-        ),
-      ],
+      childrenUseOwnCards: true,
+      children: const [DataSupportSettingsControls()],
     ),
     _SettingsSectionCard(
       title: i18n.tr('settings_group_cache'),

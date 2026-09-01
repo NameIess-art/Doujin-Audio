@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../application/app_bootstrap_controller.dart';
 import '../state/app_runtime_providers.dart';
+import '../theme/app_styles.dart';
 import '../../features/settings/application/app_preferences.dart';
 import '../../core/widgets/app_transitions.dart';
 import '../../core/widgets/top_page_header.dart';
@@ -223,27 +224,52 @@ class PrivacySummaryPage extends ConsumerWidget {
     ref.watch(appLanguageStateProvider);
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     return Scaffold(
-      appBar: AppPageAppBar(
-        icon: Icons.privacy_tip_rounded,
-        title: Text(i18n.tr('privacy_summary_title')),
-      ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      body: Stack(
         children: [
-          _PrivacySection(
-            icon: Icons.storage_rounded,
-            title: i18n.tr('privacy_summary_local_title'),
-            body: i18n.tr('privacy_summary_local_body'),
+          ListView(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              MediaQuery.paddingOf(context).top +
+                  AppPageHeaderMetrics.padding.vertical +
+                  AppPageHeaderMetrics.contentHeight +
+                  AppPageHeaderMetrics.bottomSpacing +
+                  AppPageHeaderMetrics.firstContentSpacing,
+              16,
+              32,
+            ),
+            children: [
+              _PrivacySection(
+                icon: Icons.storage_rounded,
+                title: i18n.tr('privacy_summary_local_title'),
+                body: i18n.tr('privacy_summary_local_body'),
+              ),
+              _PrivacySection(
+                icon: Icons.public_rounded,
+                title: i18n.tr('privacy_summary_network_title'),
+                body: i18n.tr('privacy_summary_network_body'),
+              ),
+              _PrivacySection(
+                icon: Icons.support_agent_rounded,
+                title: i18n.tr('privacy_summary_diagnostics_title'),
+                body: i18n.tr('privacy_summary_diagnostics_body'),
+              ),
+            ],
           ),
-          _PrivacySection(
-            icon: Icons.public_rounded,
-            title: i18n.tr('privacy_summary_network_title'),
-            body: i18n.tr('privacy_summary_network_body'),
-          ),
-          _PrivacySection(
-            icon: Icons.support_agent_rounded,
-            title: i18n.tr('privacy_summary_diagnostics_title'),
-            body: i18n.tr('privacy_summary_diagnostics_body'),
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: TopPageHeader(
+              icon: Icons.privacy_tip_rounded,
+              title: i18n.tr('privacy_summary_title'),
+              leading: HeaderFloatingButton(
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_rounded),
+                  tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+              ),
+            ),
           ),
         ],
       ),

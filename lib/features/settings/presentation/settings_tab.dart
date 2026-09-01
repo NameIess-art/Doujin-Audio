@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/localization/app_language_provider.dart';
 import '../../../app/state/app_runtime_providers.dart';
 import '../../../app/presentation/app_presentation_providers.dart';
+import '../../../app/presentation/app_settings_group_card.dart';
 import '../application/app_cache_service.dart';
 import '../application/settings_command_controller.dart';
 import '../application/app_update_service.dart';
@@ -31,11 +32,11 @@ import '../../../core/widgets/unified_dropdown.dart';
 import '../../../core/widgets/app_bottom_sheet.dart';
 import '../../../core/widgets/app_transitions.dart';
 import '../../../app/state/subtitle_settings_provider.dart';
-import '../../data_support/presentation/data_support_page.dart';
+import '../../data_support/presentation/data_support_settings_controls.dart';
 import '../../data_support/presentation/storage_usage_card.dart';
 import '../../asmr/domain/asmr_download.dart';
 import '../../asmr/presentation/asmr_language_labels.dart';
-import 'permission_status_page.dart';
+import 'permission_settings_controls.dart';
 import 'app_update_flow.dart';
 import 'about_page.dart';
 import '../../../app/presentation/main_tab_state_mixin.dart';
@@ -128,20 +129,6 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
     if (state == AppLifecycleState.resumed) {
       unawaited(_permissionActionController.handleAppResumed());
     }
-  }
-
-  void _openPermissionCenter() {
-    AppBottomSheet.show<void>(
-      context: context,
-      builder: (_) => const PermissionStatusPage(),
-    );
-  }
-
-  void _openDataAndSupport() {
-    AppBottomSheet.show<void>(
-      context: context,
-      builder: (_) => const DataSupportPage(),
-    );
   }
 
   void _openAboutPage() {
@@ -279,9 +266,7 @@ class _SettingsTabState extends ConsumerState<SettingsTab>
           onShowCardInfoFieldsSettings: () =>
               _showCardInfoFieldsSettings(context),
           onChooseAsmrDownloadDestination: _chooseAsmrDownloadDestination,
-          onOpenDataAndSupport: _openDataAndSupport,
           onClearApplicationCache: () => _clearApplicationCache(context),
-          onOpenPermissionCenter: _openPermissionCenter,
           onCheckForUpdates: () => _checkForUpdates(context),
         ),
       ),
@@ -349,8 +334,7 @@ class _SettingsCategoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    return _settingsCard(
-      context: context,
+    return AppSettingsCard(
       isFirst: isFirst,
       isLast: isLast,
       child: ListTile(
@@ -392,9 +376,7 @@ class _SettingsCategoryPage extends ConsumerStatefulWidget {
     required this.onShowSubtitleWindowSettings,
     required this.onShowCardInfoFieldsSettings,
     required this.onChooseAsmrDownloadDestination,
-    required this.onOpenDataAndSupport,
     required this.onClearApplicationCache,
-    required this.onOpenPermissionCenter,
     required this.onCheckForUpdates,
   }) : assert(category != _SettingsCategory.about);
 
@@ -404,9 +386,7 @@ class _SettingsCategoryPage extends ConsumerStatefulWidget {
   final VoidCallback onShowSubtitleWindowSettings;
   final VoidCallback onShowCardInfoFieldsSettings;
   final VoidCallback onChooseAsmrDownloadDestination;
-  final VoidCallback onOpenDataAndSupport;
   final VoidCallback onClearApplicationCache;
-  final VoidCallback onOpenPermissionCenter;
   final VoidCallback onCheckForUpdates;
 
   @override
@@ -419,7 +399,9 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
   final Map<int, GlobalKey> _sectionTitleKeys = <int, GlobalKey>{};
   List<_SettingsStickySection> _stickySections =
       const <_SettingsStickySection>[];
-  String? _pinnedSectionTitle;
+  int? _pinnedSectionIndex;
+  int? _overlappingNextSectionIndex;
+  double? _overlappingNextSectionTop;
   bool _stickySectionSyncScheduled = false;
 
   @override
@@ -436,27 +418,43 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
     super.dispose();
   }
 
-  double _headerHeight(BuildContext context) =>
+  double _contentTopInset(BuildContext context) =>
       MediaQuery.paddingOf(context).top +
       AppPageHeaderMetrics.padding.vertical +
       AppPageHeaderMetrics.contentHeight +
-      AppPageHeaderMetrics.bottomSpacing;
+      AppPageHeaderMetrics.bottomSpacing +
+      AppPageHeaderMetrics.firstContentSpacing;
+
+  double _pinnedTop(BuildContext context) =>
+      MediaQuery.paddingOf(context).top +
+      AppPageHeaderMetrics.padding.top +
+      38.0 +
+      6.0;
 
   List<Widget> _withStickySectionTitles(List<Widget> sections) {
     final stickySections = <_SettingsStickySection>[];
     final keyedSections = <Widget>[];
+    var cardIndex = 0;
     for (var index = 0; index < sections.length; index++) {
       final section = sections[index];
       if (section is! _SettingsSectionCard) {
         keyedSections.add(section);
         continue;
       }
+      final currentCardIndex = cardIndex++;
       final titleKey = _sectionTitleKeys.putIfAbsent(
-        index,
+        currentCardIndex,
         () => GlobalKey(
-          debugLabel: 'settings_section_${widget.category.name}_$index',
+          debugLabel:
+              'settings_section_${widget.category.name}_$currentCardIndex',
         ),
       );
+      final isPinnedOrPast =
+          _pinnedSectionIndex != null &&
+          currentCardIndex <= _pinnedSectionIndex!;
+      final isOverlappingNext =
+          _overlappingNextSectionIndex != null &&
+          currentCardIndex == _overlappingNextSectionIndex!;
       stickySections.add(
         _SettingsStickySection(title: section.title, titleKey: titleKey),
       );
@@ -465,7 +463,9 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
           title: section.title,
           leadingContent: section.leadingContent,
           titleKey: titleKey,
-          sectionId: '${widget.category.name}_$index',
+          sectionId: '${widget.category.name}_$currentCardIndex',
+          hideTitlePill: isPinnedOrPast || isOverlappingNext,
+          childrenUseOwnCards: section.childrenUseOwnCards,
           children: section.children,
         ),
       );
@@ -481,18 +481,62 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _stickySectionSyncScheduled = false;
       if (!mounted) return;
-      final anchor = _headerHeight(context);
-      String? nextTitle;
-      for (final section in _stickySections) {
-        final box =
-            section.titleKey.currentContext?.findRenderObject() as RenderBox?;
-        if (box == null) continue;
-        if (box.localToGlobal(Offset.zero).dy <= anchor) {
-          nextTitle = section.title;
+      final pinnedTop = _pinnedTop(context);
+      int? nextPinnedIndex;
+      int? nextOverlappingIndex;
+      double? nextOverlappingTop;
+
+      if (_scrollController.hasClients && _scrollController.offset > 0) {
+        int? firstMountedIndex;
+        int? lastPastMountedIndex;
+
+        for (var i = 0; i < _stickySections.length; i++) {
+          final section = _stickySections[i];
+          final box =
+              section.titleKey.currentContext?.findRenderObject() as RenderBox?;
+          if (box == null || !box.hasSize) continue;
+          final dy = box.localToGlobal(Offset.zero).dy;
+          firstMountedIndex ??= i;
+          if (dy <= pinnedTop + 0.5) {
+            lastPastMountedIndex = i;
+          }
+        }
+
+        if (lastPastMountedIndex != null) {
+          nextPinnedIndex = lastPastMountedIndex;
+        } else if (firstMountedIndex != null && firstMountedIndex > 0) {
+          nextPinnedIndex = firstMountedIndex - 1;
+        } else if (firstMountedIndex == null && _stickySections.isNotEmpty) {
+          nextPinnedIndex = _stickySections.length - 1;
+        }
+
+        if (nextPinnedIndex != null &&
+            nextPinnedIndex + 1 < _stickySections.length) {
+          final nextIndex = nextPinnedIndex + 1;
+          final nextBox =
+              _stickySections[nextIndex].titleKey.currentContext
+                      ?.findRenderObject()
+                  as RenderBox?;
+          if (nextBox != null && nextBox.hasSize) {
+            final nextDy = nextBox.localToGlobal(Offset.zero).dy;
+            if (nextDy < pinnedTop + 38.0 && nextDy > pinnedTop) {
+              nextOverlappingIndex = nextIndex;
+              nextOverlappingTop = nextDy;
+            }
+          }
         }
       }
-      if (nextTitle == _pinnedSectionTitle) return;
-      setState(() => _pinnedSectionTitle = nextTitle);
+
+      if (nextPinnedIndex == _pinnedSectionIndex &&
+          nextOverlappingIndex == _overlappingNextSectionIndex &&
+          nextOverlappingTop == _overlappingNextSectionTop) {
+        return;
+      }
+      setState(() {
+        _pinnedSectionIndex = nextPinnedIndex;
+        _overlappingNextSectionIndex = nextOverlappingIndex;
+        _overlappingNextSectionTop = nextOverlappingTop;
+      });
     });
   }
 
@@ -547,7 +591,6 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
             i18n: i18n,
             settingsController: settingsController,
             cs: cs,
-            onOpenDataAndSupport: widget.onOpenDataAndSupport,
             onClearApplicationCache: widget.onClearApplicationCache,
           ),
           _SettingsCategory.updatesPermissions => _buildSettingsUpdateSection(
@@ -556,12 +599,12 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
             cs: cs,
             updateInfo: updateInfo,
             currentVersion: widget.currentVersion,
-            onOpenPermissionCenter: widget.onOpenPermissionCenter,
             onCheckForUpdates: widget.onCheckForUpdates,
           ),
           _SettingsCategory.about => const <Widget>[],
         });
-        final headerHeight = _headerHeight(context);
+        final contentTopInset = _contentTopInset(context);
+        final pinnedTop = _pinnedTop(context);
 
         return Scaffold(
           backgroundColor: cs.surface,
@@ -570,22 +613,16 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
               Positioned.fill(
                 child: ListView(
                   controller: _scrollController,
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    headerHeight +
-                        AppPageHeaderMetrics.firstContentSpacing +
-                        AppSpacing.xs,
-                    16,
-                    24,
-                  ),
+                  padding: EdgeInsets.fromLTRB(16, contentTopInset, 16, 24),
                   children: [
                     _SettingsTileTheme(child: Column(children: sections)),
                   ],
                 ),
               ),
-              if (_pinnedSectionTitle != null)
+              if (_pinnedSectionIndex != null &&
+                  _pinnedSectionIndex! < _stickySections.length)
                 Positioned(
-                  top: headerHeight,
+                  top: pinnedTop,
                   left: 16,
                   right: 16,
                   child: IgnorePointer(
@@ -594,7 +631,26 @@ class _SettingsCategoryPageState extends ConsumerState<_SettingsCategoryPage> {
                         key: const ValueKey<String>(
                           'settings_sticky_section_pill',
                         ),
-                        title: _pinnedSectionTitle!,
+                        title: _stickySections[_pinnedSectionIndex!].title,
+                      ),
+                    ),
+                  ),
+                ),
+              if (_overlappingNextSectionIndex != null &&
+                  _overlappingNextSectionTop != null &&
+                  _overlappingNextSectionIndex! < _stickySections.length)
+                Positioned(
+                  top: _overlappingNextSectionTop!,
+                  left: 16,
+                  right: 16,
+                  child: IgnorePointer(
+                    child: ExcludeSemantics(
+                      child: _SettingsSectionTitlePill(
+                        key: const ValueKey<String>(
+                          'settings_overlapping_section_pill',
+                        ),
+                        title: _stickySections[_overlappingNextSectionIndex!]
+                            .title,
                       ),
                     ),
                   ),

@@ -272,112 +272,134 @@ class _ActiveSessionCarouselState extends ConsumerState<ActiveSessionCarousel> {
       height: isBar
           ? kActiveSessionCarouselBarHeight
           : kActiveSessionCarouselCapsuleHeight,
-      child: Stack(
-        children: [
-          Listener(
-            onPointerSignal: (signal) {
-              if (signal is PointerScrollEvent && sessions.length > 1) {
-                final currentPage = _pageNotifier.value.round();
-                final delta = signal.scrollDelta.dy > 0
-                    ? 1
-                    : signal.scrollDelta.dy < 0
-                    ? -1
-                    : 0;
-                if (delta != 0) {
-                  _moveToPage(
-                    currentPage + delta,
-                    duration: const Duration(milliseconds: 250),
-                  );
-                }
-              }
-            },
-            child: PageView.builder(
-              controller: _pageController,
-              scrollBehavior: ScrollConfiguration.of(context).copyWith(
-                dragDevices: {
-                  PointerDeviceKind.touch,
-                  PointerDeviceKind.mouse,
-                  PointerDeviceKind.trackpad,
-                },
-              ),
-              physics: sessions.length == 1
-                  ? const NeverScrollableScrollPhysics()
-                  : const BouncingScrollPhysics(),
-              itemCount: sessions.length == 1 ? 1 : null,
-              itemBuilder: (context, index) {
-                final sessionIndex = _sessionIndexForPage(
-                  index,
-                  sessions.length,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final totalWidth = constraints.maxWidth;
+          final cardRightInset = isBar
+              ? 0.0
+              : ((totalWidth * (1.0 - viewportFraction) / 2) + 2.0).clamp(
+                  0.0,
+                  totalWidth,
                 );
-                final session = sessions[sessionIndex];
-                final track = ref
-                    .read(audioPathCoordinatorProvider)
-                    .sessionTrackForPath(session.id, session.currentTrackPath);
+          final indicatorRight = cardRightInset + (isBar ? 14.0 : 16.0);
+          final indicatorBottom = isBar ? 2.5 : 4.0;
 
-                return _ActiveSessionPageTransform(
-                  pageListenable: _pageNotifier,
-                  index: index,
-                  isBar: isBar,
-                  child: RepaintBoundary(
-                    child: _ActiveSessionCard(
-                      session: session,
-                      position: sessionIndex,
-                      count: sessions.length,
-                      coverPathFuture: _sessionCoverFutureForTrack(
-                        library,
-                        track,
-                      ),
-                      compact: widget.compactForFab,
-                      onOpen: () => _openSessionDetail(context, session),
-                    ),
+          return Stack(
+            children: [
+              Listener(
+                onPointerSignal: (signal) {
+                  if (signal is PointerScrollEvent && sessions.length > 1) {
+                    final currentPage = _pageNotifier.value.round();
+                    final delta = signal.scrollDelta.dy > 0
+                        ? 1
+                        : signal.scrollDelta.dy < 0
+                        ? -1
+                        : 0;
+                    if (delta != 0) {
+                      _moveToPage(
+                        currentPage + delta,
+                        duration: const Duration(milliseconds: 250),
+                      );
+                    }
+                  }
+                },
+                child: PageView.builder(
+                  controller: _pageController,
+                  scrollBehavior: ScrollConfiguration.of(context).copyWith(
+                    dragDevices: {
+                      PointerDeviceKind.touch,
+                      PointerDeviceKind.mouse,
+                      PointerDeviceKind.trackpad,
+                    },
                   ),
-                );
-              },
-            ),
-          ),
-          if (sessions.length > 1)
-            Positioned(
-              right: 12,
-              bottom: 1.5,
-              child: IgnorePointer(
-                child: ValueListenableBuilder<double>(
-                  valueListenable: _pageNotifier,
-                  builder: (context, page, child) {
-                    final activePage = _sessionIndexForPage(
-                      page.round(),
+                  physics: sessions.length == 1
+                      ? const NeverScrollableScrollPhysics()
+                      : const BouncingScrollPhysics(),
+                  itemCount: sessions.length == 1 ? 1 : null,
+                  itemBuilder: (context, index) {
+                    final sessionIndex = _sessionIndexForPage(
+                      index,
                       sessions.length,
                     );
-                    return Semantics(
-                      label: '${activePage + 1} / ${sessions.length}',
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          for (var index = 0; index < sessions.length; index++)
-                            AnimatedContainer(
-                              duration: MediaQuery.disableAnimationsOf(context)
-                                  ? Duration.zero
-                                  : const Duration(milliseconds: 150),
-                              margin: const EdgeInsets.symmetric(horizontal: 2),
-                              width: index == activePage ? 12 : 5,
-                              height: 5,
-                              decoration: BoxDecoration(
-                                color: index == activePage
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant
-                                          .withValues(alpha: 0.55),
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                            ),
-                        ],
+                    final session = sessions[sessionIndex];
+                    final track = ref
+                        .read(audioPathCoordinatorProvider)
+                        .sessionTrackForPath(
+                          session.id,
+                          session.currentTrackPath,
+                        );
+
+                    return _ActiveSessionPageTransform(
+                      pageListenable: _pageNotifier,
+                      index: index,
+                      isBar: isBar,
+                      child: RepaintBoundary(
+                        child: _ActiveSessionCard(
+                          session: session,
+                          position: sessionIndex,
+                          count: sessions.length,
+                          coverPathFuture: _sessionCoverFutureForTrack(
+                            library,
+                            track,
+                          ),
+                          compact: widget.compactForFab,
+                          onOpen: () => _openSessionDetail(context, session),
+                        ),
                       ),
                     );
                   },
                 ),
               ),
-            ),
-        ],
+              if (sessions.length > 1)
+                Positioned(
+                  right: indicatorRight,
+                  bottom: indicatorBottom,
+                  child: IgnorePointer(
+                    child: ValueListenableBuilder<double>(
+                      valueListenable: _pageNotifier,
+                      builder: (context, page, child) {
+                        final activePage = _sessionIndexForPage(
+                          page.round(),
+                          sessions.length,
+                        );
+                        return Semantics(
+                          label: '${activePage + 1} / ${sessions.length}',
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              for (var index = 0;
+                                  index < sessions.length;
+                                  index++)
+                                AnimatedContainer(
+                                  duration:
+                                      MediaQuery.disableAnimationsOf(context)
+                                          ? Duration.zero
+                                          : const Duration(milliseconds: 150),
+                                  margin: const EdgeInsets.symmetric(
+                                    horizontal: 2,
+                                  ),
+                                  width: index == activePage ? 12 : 5,
+                                  height: 5,
+                                  decoration: BoxDecoration(
+                                    color: index == activePage
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant
+                                            .withValues(alpha: 0.55),
+                                    borderRadius: BorderRadius.circular(3),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

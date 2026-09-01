@@ -157,54 +157,8 @@ class _SettingsGroupCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (var index = 0; index < children.length; index++)
-          _settingsCard(
-            context: context,
-            child: children[index],
-            isFirst: index == 0,
-            isLast: index == children.length - 1,
-          ),
-      ],
-    );
+    return AppSettingsGroupCard(children: children);
   }
-}
-
-Widget _settingsCard({
-  required BuildContext context,
-  required Widget child,
-  bool isFirst = false,
-  bool isLast = false,
-}) {
-  final theme = Theme.of(context);
-  final cs = theme.colorScheme;
-  final tokens = AppDesignTokens.of(context);
-  final outerRadius = tokens.radiusCard;
-  const innerRadius = 6.0;
-  return Padding(
-    padding: EdgeInsets.only(bottom: isLast ? 0 : 3),
-    child: Card(
-      clipBehavior: Clip.antiAlias,
-      color: cs.surfaceContainerLow,
-      elevation: 0,
-      margin: EdgeInsets.zero,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.only(
-          topLeft: Radius.circular(isFirst ? outerRadius : innerRadius),
-          topRight: Radius.circular(isFirst ? outerRadius : innerRadius),
-          bottomLeft: Radius.circular(isLast ? outerRadius : innerRadius),
-          bottomRight: Radius.circular(isLast ? outerRadius : innerRadius),
-        ),
-        side: BorderSide(
-          color: cs.outlineVariant.withValues(alpha: tokens.subtleBorderAlpha),
-        ),
-      ),
-      child: child,
-    ),
-  );
 }
 
 class _SettingsSectionCard extends StatelessWidget {
@@ -214,6 +168,8 @@ class _SettingsSectionCard extends StatelessWidget {
     this.leadingContent,
     this.titleKey,
     this.sectionId,
+    this.hideTitlePill = false,
+    this.childrenUseOwnCards = false,
   });
 
   final String title;
@@ -221,6 +177,8 @@ class _SettingsSectionCard extends StatelessWidget {
   final Widget? leadingContent;
   final Key? titleKey;
   final String? sectionId;
+  final bool hideTitlePill;
+  final bool childrenUseOwnCards;
 
   @override
   Widget build(BuildContext context) {
@@ -229,18 +187,31 @@ class _SettingsSectionCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          KeyedSubtree(
-            key: sectionId == null
-                ? null
-                : ValueKey<String>('settings_section_pill_$sectionId'),
-            child: _SettingsSectionTitlePill(key: titleKey, title: title),
+          Visibility(
+            visible: !hideTitlePill,
+            maintainSize: true,
+            maintainAnimation: true,
+            maintainState: true,
+            child: KeyedSubtree(
+              key: sectionId == null
+                  ? null
+                  : ValueKey<String>('settings_section_pill_$sectionId'),
+              child: _SettingsSectionTitlePill(key: titleKey, title: title),
+            ),
           ),
           const SizedBox(height: 8),
           if (leadingContent != null) ...[
             leadingContent!,
             const SizedBox(height: 12),
           ],
-          _SettingsGroupCard(children: children),
+          if (childrenUseOwnCards)
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: children,
+            )
+          else
+            _SettingsGroupCard(children: children),
         ],
       ),
     );
@@ -264,17 +235,21 @@ class _SettingsSectionTitlePill extends StatelessWidget {
             constraints: BoxConstraints(
               maxWidth: MediaQuery.sizeOf(context).width - 64,
             ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface,
-                  fontWeight: FontWeight.w700,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurface,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
         ),

@@ -6,30 +6,13 @@ List<Widget> _buildSettingsUpdateSection({
   required ColorScheme cs,
   required AppUpdateInfo? updateInfo,
   required Future<AppVersionInfo> currentVersion,
-  required VoidCallback onOpenPermissionCenter,
   required VoidCallback onCheckForUpdates,
 }) {
   return <Widget>[
     _SettingsSectionCard(
       title: i18n.tr('settings_group_permissions'),
-      children: [
-        ListTile(
-          onTap: onOpenPermissionCenter,
-          title: _settingsTitle(i18n.tr('permission_center')),
-          leading: _settingsIcon(
-            Icons.admin_panel_settings_rounded,
-            cs.onSurface,
-          ),
-          trailing: Icon(
-            Icons.chevron_right_rounded,
-            size: 20,
-            color: cs.onSurfaceVariant,
-          ),
-          shape: const RoundedRectangleBorder(
-            borderRadius: AppRadius.borderCard,
-          ),
-        ),
-      ],
+      childrenUseOwnCards: true,
+      children: const [PermissionSettingsControls()],
     ),
     _SettingsSectionCard(
       title: i18n.tr('settings_group_updates'),

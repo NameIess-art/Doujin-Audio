@@ -558,8 +558,6 @@ void main() {
         'section_playback',
         'section_data_storage',
         'section_updates_permissions',
-        'permission_center',
-        'data_and_support',
         'no_audio_files',
         'no_search_results',
         'batch_metadata_load_failed',

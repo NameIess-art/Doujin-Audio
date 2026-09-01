@@ -1020,6 +1020,62 @@ void main() {
     );
   });
 
+  testWidgets('ASMR quick return to top keeps content below expanded header', (
+    tester,
+  ) async {
+    final activePageIndex = ValueNotifier<int>(0);
+    final controller = _QueuedEmptyAsmrLibraryController();
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(activePageIndex.dispose);
+    addTearDown(controller.dispose);
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        AsmrTab(activeTabIndexListenable: activePageIndex),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    Finder contentList() => find.descendant(
+      of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
+      matching: find.byKey(const ValueKey('content')),
+    );
+
+    final scrollController = tester.widget<ListView>(contentList()).controller!;
+    scrollController.jumpTo(120);
+    await tester.pump();
+
+    activePageIndex.value = 1;
+    await tester.pump();
+    activePageIndex.value = 0;
+    await tester.pump();
+    await tester.pump();
+
+    ProviderScope.containerOf(
+      tester.element(find.byType(AsmrTab)),
+      listen: false,
+    ).read(mainScreenControllerProvider).requestScrollToTop(0);
+    await tester.pump();
+    await tester.pump();
+
+    final firstCard = find
+        .descendant(of: contentList(), matching: find.byType(SwipeRevealCard))
+        .first;
+    final headerBottom = tester.getBottomLeft(find.byType(TopPageHeader)).dy;
+    final firstCardTop = tester.getTopLeft(firstCard).dy;
+
+    expect(scrollController.offset, 0);
+    expect(firstCardTop, greaterThanOrEqualTo(headerBottom));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
   testWidgets('ASMR track tree builds descendants only after expansion', (
     tester,
   ) async {

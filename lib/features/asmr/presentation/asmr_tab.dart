@@ -339,7 +339,10 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
     final box = _headerKey.currentContext?.findRenderObject() as RenderBox?;
     if (box != null && mounted) {
       final measuredHeight = box.size.height;
-      final h = measuredHeight;
+      final minimumExpandedHeight = _minimumExpandedHeaderHeight(context);
+      final h = measuredHeight < minimumExpandedHeight
+          ? minimumExpandedHeight
+          : measuredHeight;
       if (h > 0 &&
           (force || _headerHeight == 0 || (h - _headerHeight).abs() > 0.5)) {
         setState(() => _headerHeight = h);

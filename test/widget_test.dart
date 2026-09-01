@@ -487,6 +487,69 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('ASMR search results support multi-selection mode', (
+    tester,
+  ) async {
+    final controller = _QueuedEmptyAsmrLibraryController();
+    final harness = AppRuntimeWidgetTestFixture();
+    addTearDown(controller.dispose);
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey<String>('asmr_search_button')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 550));
+
+    final firstWork = find.text('Loaded work', findRichText: true);
+    final secondWork = find.text('Second loaded work', findRichText: true);
+    expect(firstWork, findsOneWidget);
+    expect(secondWork, findsOneWidget);
+
+    await tester.longPress(firstWork);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('asmr_search_batch_selection_header')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('asmr_search_batch_add_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      findsNothing,
+    );
+
+    await tester.tap(secondWork);
+    await tester.pumpAndSettle();
+    expect(
+      find.text(harness.languageProvider.tr('selected_count', {'count': '2'})),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('asmr_search_exit_selection_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('asmr_search_batch_selection_header')),
+      findsNothing,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('app_search_field')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets(
     'first ASMR activation keeps an immobile skeleton until load completes',
     (tester) async {
@@ -1018,6 +1081,59 @@ void main() {
       tester.getBottomLeft(workCards.at(0)).dy,
       closeTo(tester.getTopLeft(workCards.at(1)).dy, 0.01),
     );
+  });
+
+  testWidgets('ASMR empty card info keeps every work compact while loading', (
+    tester,
+  ) async {
+    final controller = _QueuedEmptyAsmrLibraryController();
+    final harness = AppRuntimeWidgetTestFixture(
+      configureSettingsRepository: (settings) {
+        settings.cardInfoFields = const <CardInfoField>[];
+        settings.syncSlice(isInitialized: true);
+      },
+    );
+    addTearDown(controller.dispose);
+    addTearDown(harness.dispose);
+
+    await tester.pumpWidget(
+      harness.build(
+        const AsmrTab(),
+        overrides: [
+          asmrLibraryControllerProvider.overrideWithValue(controller),
+        ],
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    final contentList = find.descendant(
+      of: find.byKey(const ValueKey(AsmrCategoryType.collected)),
+      matching: find.byKey(const ValueKey('content')),
+    );
+    final workContents = find.descendant(
+      of: contentList,
+      matching: find.byType(LibraryLikeWorkCardContent),
+    );
+    final workCards = find.descendant(
+      of: contentList,
+      matching: find.byType(SwipeRevealCard),
+    );
+
+    expect(workContents, findsNWidgets(2));
+    expect(workCards, findsNWidgets(2));
+    for (final content in workContents.evaluate()) {
+      expect(
+        tester.getSize(find.byWidget(content.widget)).height,
+        LibraryLikeCardMetrics.compactContentHeight,
+      );
+    }
+    for (final card in workCards.evaluate()) {
+      expect(
+        tester.getSize(find.byWidget(card.widget)).height,
+        LibraryLikeCardMetrics.compactRootTileHeight,
+      );
+    }
   });
 
   testWidgets('ASMR quick return to top keeps content below expanded header', (

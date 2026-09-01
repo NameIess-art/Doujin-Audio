@@ -653,7 +653,6 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
     this.enableTitleMarquee = true,
     this.playLoading = false,
     this.extraTrailing,
-    this.hasResolvedCover = false,
   });
 
   final String title;
@@ -676,7 +675,6 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
   final bool enableTitleMarquee;
   final bool playLoading;
   final Widget? extraTrailing;
-  final bool hasResolvedCover;
 
   @override
   Widget build(BuildContext context) {
@@ -704,7 +702,7 @@ class LibraryLikeMetadataWorkCardContent extends StatelessWidget {
       enableTitleMarquee: enableTitleMarquee,
       playLoading: playLoading,
       extraTrailing: extraTrailing,
-      compactCoverLayout: fields.isEmpty && hasResolvedCover,
+      compactCoverLayout: fields.isEmpty,
     );
   }
 }

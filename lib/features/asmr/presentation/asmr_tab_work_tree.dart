@@ -46,21 +46,10 @@ class _AsmrWorkTreeCard extends ConsumerStatefulWidget {
 class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
   static const double _rootTileHeight = LibraryLikeCardMetrics.rootTileHeight;
   final ExpansibleController _expansionController = ExpansibleController();
-  bool _hasResolvedCover = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _hasResolvedCover = _hasCachedCoverFor(widget.work);
-  }
 
   @override
   void didUpdateWidget(covariant _AsmrWorkTreeCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.work.id != widget.work.id ||
-        oldWidget.work.preferredCoverUrl != widget.work.preferredCoverUrl) {
-      _hasResolvedCover = _hasCachedCoverFor(widget.work);
-    }
     if (oldWidget.expanded == widget.expanded) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -70,17 +59,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         _expansionController.collapse();
       }
     });
-  }
-
-  bool _hasCachedCoverFor(AsmrWork work) {
-    final coverUrl = _asmrWorkListCoverUrl(work);
-    return coverUrl.isNotEmpty &&
-        ref
-                .read(libraryFacadeProvider)
-                .resolvedCoverPathForRemoteCover(coverUrl)
-                ?.trim()
-                .isNotEmpty ==
-            true;
   }
 
   T _readOrWatch<T>(ProviderListenable<T> provider) {
@@ -193,7 +171,7 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         (state) => state.value?.cardInfoFields ?? CardInfoField.defaults,
       ),
     );
-    final useCompactCard = fields.isEmpty && _hasResolvedCover;
+    final useCompactCard = fields.isEmpty;
     const cardShape = LibraryLikeCardMetrics.cardShape;
 
     return GestureDetector(
@@ -299,7 +277,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
                   enableMarquee: false,
                   enableTitleMarquee: false,
                   playLoading: playBusy,
-                  hasResolvedCover: _hasResolvedCover,
                 ),
               ),
             ),

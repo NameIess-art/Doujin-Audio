@@ -824,12 +824,6 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
           onPlay: firstTrack == null
               ? () {}
               : () => unawaited(_play(context, playback)),
-          hasResolvedCover:
-              library
-                  .resolvedCoverPathForFolder(entry.path)
-                  ?.trim()
-                  .isNotEmpty ==
-              true,
         ),
       );
     }

@@ -18,6 +18,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   AsmrCategoryType _category = AsmrCategoryType.collected;
   String _query = '';
   bool _showSearchPlaceholder = false;
+  bool _isSelectionMode = false;
+  final Set<int> _selectedWorkIds = <int>{};
   int _requestSerial = 0;
   late final AppLanguageProvider _languageProvider;
 
@@ -45,7 +47,10 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       if (!mounted) return;
       final query = value.trim();
       if (_query == query) return;
-      setState(() => _query = query);
+      setState(() {
+        _query = query;
+        _clearSelection();
+      });
       if (query.isNotEmpty) _jumpCurrentCategoryToTop();
       unawaited(_refresh(showSearchPlaceholder: query.isNotEmpty));
     });
@@ -54,7 +59,12 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   Future<void> _onSubmitted(String value) async {
     _debounceTimer?.cancel();
     final query = value.trim();
-    if (_query != query) setState(() => _query = query);
+    if (_query != query) {
+      setState(() {
+        _query = query;
+        _clearSelection();
+      });
+    }
     FocusManager.instance.primaryFocus?.unfocus();
     if (query.isNotEmpty) _jumpCurrentCategoryToTop();
     await _refresh(showSearchPlaceholder: query.isNotEmpty);
@@ -71,13 +81,17 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       _query = '';
       _showSearchPlaceholder = false;
       _requestSerial += 1;
+      _clearSelection();
     });
     unawaited(_refresh());
   }
 
   void _selectCategory(AsmrCategoryType category) {
     if (_category == category) return;
-    setState(() => _category = category);
+    setState(() {
+      _category = category;
+      _clearSelection();
+    });
     _jumpCurrentCategoryToTop();
     unawaited(_refresh(showSearchPlaceholder: _query.isNotEmpty));
   }
@@ -85,6 +99,74 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
   void _jumpCurrentCategoryToTop() {
     final controller = _scrollControllers[_category];
     if (controller != null && controller.hasClients) controller.jumpTo(0);
+  }
+
+  void _clearSelection() {
+    _isSelectionMode = false;
+    _selectedWorkIds.clear();
+  }
+
+  void _enterSelectionMode(AsmrWork work) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      _isSelectionMode = true;
+      _selectedWorkIds
+        ..clear()
+        ..add(work.id);
+    });
+  }
+
+  void _exitSelectionMode() {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.tap);
+    setState(_clearSelection);
+  }
+
+  void _toggleWorkSelection(AsmrWork work) {
+    AppInteractionFeedback.trigger(AppInteractionFeedbackType.selection);
+    setState(() {
+      if (!_selectedWorkIds.add(work.id)) {
+        _selectedWorkIds.remove(work.id);
+        if (_selectedWorkIds.isEmpty) _isSelectionMode = false;
+      }
+    });
+  }
+
+  List<AsmrWork> _selectedWorks() => _selectedAsmrWorks(
+    ref,
+    category: _category,
+    searchQuery: _query,
+    selectedWorkIds: _selectedWorkIds,
+  );
+
+  Future<void> _addSelectedWorksToPlaylist() async {
+    final addedCount = await _addAsmrWorksToPlaylist(ref, _selectedWorks());
+    if (!mounted) return;
+    final i18n = ref.read(appLanguageProviderInstanceProvider);
+    _exitSelectionMode();
+    showAppSnackBar(
+      context,
+      addedCount > 0
+          ? i18n.tr('batch_added_to_playlist', {'count': addedCount.toString()})
+          : i18n.tr('operation_failed_retry'),
+      tone: addedCount > 0
+          ? AppFeedbackTone.success
+          : AppFeedbackTone.destructive,
+      icon: addedCount > 0
+          ? Icons.playlist_add_check_rounded
+          : Icons.error_outline_rounded,
+      iconColor: AppDesignTokens.of(context).asmrAccent,
+    );
+  }
+
+  Future<void> _toggleSelectedFavorites() async {
+    await _toggleAsmrWorksFavorite(ref, _selectedWorks());
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _downloadSelectedWorks() async {
+    final works = _selectedWorks();
+    _exitSelectionMode();
+    await _downloadAsmrWorks(context, works);
   }
 
   Future<void> _refresh({bool showSearchPlaceholder = false}) async {
@@ -153,14 +235,18 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       isLoadPending: _showSearchPlaceholder,
       scrollController: _scrollControllers[_category]!,
       searchQuery: _query,
-      topInset: AppSearchPageScaffold.controlsTopInset(context),
+      topInset: _isSelectionMode
+          ? AppPageHeaderMetrics.expandedToolbarHeight +
+                MediaQuery.paddingOf(context).top
+          : AppSearchPageScaffold.controlsTopInset(context),
       bottomInset: MediaQuery.paddingOf(context).bottom + 16,
       onRefresh: _refresh,
-      isSelectionMode: false,
-      selectedWorkIds: const <int>{},
-      onEnterSelectionMode: (_) {},
-      onToggleSelection: (_) {},
+      isSelectionMode: _isSelectionMode,
+      selectedWorkIds: _selectedWorkIds,
+      onEnterSelectionMode: _enterSelectionMode,
+      onToggleSelection: _toggleWorkSelection,
     );
+    final selectedWorks = _selectedWorks();
     return AppSearchPageScaffold<AsmrCategoryType>(
       controller: _controller,
       focusNode: _focusNode,
@@ -173,6 +259,21 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       onCloseOrClear: _closeOrClear,
       blurEnabled: blurEnabled,
       accentColor: accent,
+      controlsOverlay: _isSelectionMode
+          ? _AsmrBatchSelectionHeader(
+              keyPrefix: 'asmr_search',
+              i18n: i18n,
+              selectedWorks: selectedWorks,
+              onAddToPlaylist: selectedWorks.isEmpty
+                  ? null
+                  : _addSelectedWorksToPlaylist,
+              onDownload: selectedWorks.isEmpty ? null : _downloadSelectedWorks,
+              onToggleFavorite: selectedWorks.isEmpty
+                  ? null
+                  : _toggleSelectedFavorites,
+              onExit: _exitSelectionMode,
+            )
+          : null,
       body: body,
     );
   }

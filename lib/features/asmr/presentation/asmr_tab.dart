@@ -70,6 +70,155 @@ class AsmrTab extends ConsumerStatefulWidget {
   ConsumerState<AsmrTab> createState() => _AsmrTabState();
 }
 
+List<AsmrWork> _selectedAsmrWorks(
+  WidgetRef ref, {
+  required AsmrCategoryType category,
+  required String searchQuery,
+  required Set<int> selectedWorkIds,
+}) {
+  final controller = ref.read(asmrLibraryControllerProvider);
+  if (controller == null) return const <AsmrWork>[];
+  return controller
+      .filteredWorksFor(category, searchQuery: searchQuery)
+      .where((work) => selectedWorkIds.contains(work.id))
+      .toList(growable: false);
+}
+
+Future<int> _addAsmrWorksToPlaylist(WidgetRef ref, List<AsmrWork> works) async {
+  final playback = ref.read(asmrPlaybackCoordinatorProvider);
+  if (playback == null) return 0;
+  var addedCount = 0;
+  for (final work in works) {
+    try {
+      await playback.playWork(work, autoPlay: false);
+      addedCount += 1;
+    } catch (_) {
+      // Continue adding the remaining selected works.
+    }
+  }
+  return addedCount;
+}
+
+Future<void> _toggleAsmrWorksFavorite(
+  WidgetRef ref,
+  List<AsmrWork> works,
+) async {
+  final controller = ref.read(asmrLibraryControllerProvider);
+  if (controller == null) return;
+  final shouldFavorite = works.any((work) => !work.isFavorite);
+  for (final work in works) {
+    if (work.isFavorite == shouldFavorite) continue;
+    await controller.toggleFavorite(work);
+  }
+}
+
+Future<void> _downloadAsmrWorks(
+  BuildContext context,
+  List<AsmrWork> works,
+) async {
+  for (final work in works) {
+    if (!context.mounted) return;
+    await Navigator.of(context).push<void>(
+      buildAppPageRoute<void>(
+        context: context,
+        style: AppPageTransitionStyle.sharedAxisZ,
+        child: AsmrDownloadPage(work: work),
+      ),
+    );
+  }
+}
+
+class _AsmrBatchSelectionHeader extends StatelessWidget {
+  const _AsmrBatchSelectionHeader({
+    required this.keyPrefix,
+    required this.i18n,
+    required this.selectedWorks,
+    required this.onAddToPlaylist,
+    required this.onDownload,
+    required this.onToggleFavorite,
+    required this.onExit,
+  });
+
+  final String keyPrefix;
+  final AppLanguageProvider i18n;
+  final List<AsmrWork> selectedWorks;
+  final VoidCallback? onAddToPlaylist;
+  final VoidCallback? onDownload;
+  final VoidCallback? onToggleFavorite;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasUnfavoritedSelection = selectedWorks.any(
+      (work) => !work.isFavorite,
+    );
+    return TopPageHeader(
+      key: ValueKey<String>('${keyPrefix}_batch_selection_header'),
+      icon: Icons.cloud_rounded,
+      topCapsuleTitle: i18n.tr('multi_select'),
+      topCapsuleData: i18n.tr('selected_count', {
+        'count': selectedWorks.length.toString(),
+      }),
+      titleWidget: const SizedBox.shrink(),
+      leading: HeaderActionPill(
+        children: [
+          AppHeaderActionTransition(
+            child: IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_add_button'),
+              onPressed: onAddToPlaylist,
+              icon: const Icon(Icons.playlist_add_rounded),
+              tooltip: i18n.tr('batch_add_to_playlist'),
+              iconSize: 18,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
+          ),
+          AppHeaderActionTransition(
+            delayIndex: 1,
+            child: IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_download_button'),
+              onPressed: onDownload,
+              icon: const Icon(Icons.download_rounded),
+              tooltip: i18n.tr('batch_download'),
+              iconSize: 18,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
+          ),
+          AppHeaderActionTransition(
+            delayIndex: 2,
+            child: IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_favorite_button'),
+              onPressed: onToggleFavorite,
+              icon: Icon(
+                hasUnfavoritedSelection
+                    ? Icons.favorite_border_rounded
+                    : Icons.favorite_rounded,
+              ),
+              tooltip: i18n.tr(
+                hasUnfavoritedSelection ? 'batch_favorite' : 'batch_unfavorite',
+              ),
+              iconSize: 18,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
+          ),
+        ],
+      ),
+      trailing: AppHeaderLeadingTransition(
+        child: HeaderFloatingButton(
+          child: IconButton(
+            key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
+            onPressed: onExit,
+            icon: const Icon(Icons.close_rounded),
+            tooltip: i18n.tr('cancel'),
+          ),
+        ),
+      ),
+    ).withAppHeaderTransition();
+  }
+}
+
 class _AsmrTabState extends ConsumerState<AsmrTab>
     with AutomaticKeepAliveClientMixin, MainTabStateMixin<AsmrTab> {
   static const _headerCategories = <AsmrCategoryType>[
@@ -421,26 +570,16 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   List<AsmrWork> _selectedWorks() {
-    final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller == null) return const <AsmrWork>[];
-    return controller
-        .filteredWorksFor(_selectedCategory)
-        .where((work) => _selectedWorkIds.contains(work.id))
-        .toList(growable: false);
+    return _selectedAsmrWorks(
+      ref,
+      category: _selectedCategory,
+      searchQuery: '',
+      selectedWorkIds: _selectedWorkIds,
+    );
   }
 
   Future<void> _addSelectedWorksToPlaylist() async {
-    final playback = ref.read(asmrPlaybackCoordinatorProvider);
-    if (playback == null) return;
-    var addedCount = 0;
-    for (final work in _selectedWorks()) {
-      try {
-        await playback.playWork(work, autoPlay: false);
-        addedCount += 1;
-      } catch (_) {
-        // Continue adding the remaining selected works.
-      }
-    }
+    final addedCount = await _addAsmrWorksToPlaylist(ref, _selectedWorks());
     if (!mounted) return;
     final i18n = ref.read(appLanguageProviderInstanceProvider);
     _exitSelectionMode();
@@ -460,30 +599,14 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
   }
 
   Future<void> _toggleSelectedFavorites() async {
-    final controller = ref.read(asmrLibraryControllerProvider);
-    if (controller == null) return;
-    final selected = _selectedWorks();
-    final shouldFavorite = selected.any((work) => !work.isFavorite);
-    for (final work in selected) {
-      if (work.isFavorite == shouldFavorite) continue;
-      await controller.toggleFavorite(work);
-    }
+    await _toggleAsmrWorksFavorite(ref, _selectedWorks());
     if (mounted) setState(() {});
   }
 
   Future<void> _downloadSelectedWorks() async {
     final works = _selectedWorks();
     _exitSelectionMode();
-    for (final work in works) {
-      if (!mounted) return;
-      await Navigator.of(context).push<void>(
-        buildAppPageRoute<void>(
-          context: context,
-          style: AppPageTransitionStyle.sharedAxisZ,
-          child: AsmrDownloadPage(work: work),
-        ),
-      );
-    }
+    await _downloadAsmrWorks(context, works);
   }
 
   Widget _buildCategorySwitcher(AppLanguageProvider i18n) {
@@ -626,9 +749,6 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
       'count': totalWorks.toString(),
     });
     final selectedWorks = _selectedWorks();
-    final hasUnfavoritedSelection = selectedWorks.any(
-      (work) => !work.isFavorite,
-    );
 
     return Stack(
       clipBehavior: Clip.none,
@@ -677,87 +797,21 @@ class _AsmrTabState extends ConsumerState<AsmrTab>
           left: 0,
           right: 0,
           child: _isSelectionMode
-              ? TopPageHeader(
-                  key: const ValueKey('asmr_batch_selection_header'),
-                  icon: Icons.cloud_rounded,
-                  topCapsuleTitle: i18n.tr('multi_select'),
-                  topCapsuleData: i18n.tr('selected_count', {
-                    'count': selectedWorks.length.toString(),
-                  }),
-                  titleWidget: const SizedBox.shrink(),
-                  leading: HeaderActionPill(
-                    children: [
-                      AppHeaderActionTransition(
-                        child: IconButton(
-                          key: const ValueKey('asmr_batch_add_button'),
-                          onPressed: selectedWorks.isEmpty
-                              ? null
-                              : _addSelectedWorksToPlaylist,
-                          icon: const Icon(Icons.playlist_add_rounded),
-                          tooltip: i18n.tr('batch_add_to_playlist'),
-                          iconSize: 18,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 32,
-                            height: 32,
-                          ),
-                        ),
-                      ),
-                      AppHeaderActionTransition(
-                        delayIndex: 1,
-                        child: IconButton(
-                          key: const ValueKey('asmr_batch_download_button'),
-                          onPressed: selectedWorks.isEmpty
-                              ? null
-                              : _downloadSelectedWorks,
-                          icon: const Icon(Icons.download_rounded),
-                          tooltip: i18n.tr('batch_download'),
-                          iconSize: 18,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 32,
-                            height: 32,
-                          ),
-                        ),
-                      ),
-                      AppHeaderActionTransition(
-                        delayIndex: 2,
-                        child: IconButton(
-                          key: const ValueKey('asmr_batch_favorite_button'),
-                          onPressed: selectedWorks.isEmpty
-                              ? null
-                              : _toggleSelectedFavorites,
-                          icon: Icon(
-                            hasUnfavoritedSelection
-                                ? Icons.favorite_border_rounded
-                                : Icons.favorite_rounded,
-                          ),
-                          tooltip: i18n.tr(
-                            hasUnfavoritedSelection
-                                ? 'batch_favorite'
-                                : 'batch_unfavorite',
-                          ),
-                          iconSize: 18,
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 32,
-                            height: 32,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  trailing: AppHeaderLeadingTransition(
-                    child: HeaderFloatingButton(
-                      child: IconButton(
-                        key: const ValueKey('asmr_exit_selection_button'),
-                        onPressed: _exitSelectionMode,
-                        icon: const Icon(Icons.close_rounded),
-                        tooltip: i18n.tr('cancel'),
-                      ),
-                    ),
-                  ),
-                ).withAppHeaderTransition()
+              ? _AsmrBatchSelectionHeader(
+                  keyPrefix: 'asmr',
+                  i18n: i18n,
+                  selectedWorks: selectedWorks,
+                  onAddToPlaylist: selectedWorks.isEmpty
+                      ? null
+                      : _addSelectedWorksToPlaylist,
+                  onDownload: selectedWorks.isEmpty
+                      ? null
+                      : _downloadSelectedWorks,
+                  onToggleFavorite: selectedWorks.isEmpty
+                      ? null
+                      : _toggleSelectedFavorites,
+                  onExit: _exitSelectionMode,
+                )
               : TopPageHeader(
                   key: _headerKey,
                   icon: Icons.cloud_rounded,

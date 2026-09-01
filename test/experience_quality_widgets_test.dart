@@ -454,11 +454,11 @@ void main() {
   });
 
   testWidgets(
-    'metadata card compacts only for empty fields with a resolved cover',
+    'metadata card keeps the configured compact layout while the cover loads',
     (tester) async {
       const coverKey = ValueKey('metadata-compact-cover');
 
-      Widget buildCard({required bool hasResolvedCover}) {
+      Widget buildCard({required bool loading}) {
         return _buildSurface(
           LibraryLikeMetadataWorkCardContent(
             title: 'Work',
@@ -471,7 +471,7 @@ void main() {
             ratingLabel: 'Rating',
             onPlay: () {},
             playTooltip: 'add',
-            hasResolvedCover: hasResolvedCover,
+            loading: loading,
             coverBuilder: (coverWidth) => SizedBox(
               key: coverKey,
               width: coverWidth,
@@ -481,13 +481,13 @@ void main() {
         );
       }
 
-      await tester.pumpWidget(buildCard(hasResolvedCover: false));
+      await tester.pumpWidget(buildCard(loading: true));
       expect(
         tester.getSize(find.byType(LibraryLikeWorkCardContent)).height,
-        LibraryLikeCardMetrics.contentHeight,
+        LibraryLikeCardMetrics.compactContentHeight,
       );
 
-      await tester.pumpWidget(buildCard(hasResolvedCover: true));
+      await tester.pumpWidget(buildCard(loading: false));
       expect(
         tester.getSize(find.byType(LibraryLikeWorkCardContent)).height,
         LibraryLikeCardMetrics.compactContentHeight,

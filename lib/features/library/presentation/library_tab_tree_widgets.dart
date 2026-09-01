@@ -114,12 +114,10 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   FolderNode? _loadedFolder;
   bool _isLoadingChildren = false;
   bool _hasLoadError = false;
-  bool _hasResolvedCover = false;
 
   @override
   void initState() {
     super.initState();
-    _hasResolvedCover = _hasCachedCoverFor(widget.folder.path);
     if (widget.renderChildrenInline &&
         widget.initiallyExpanded &&
         widget.folder.children.isEmpty) {
@@ -133,12 +131,6 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
   void didUpdateWidget(covariant _FolderNodeWidget oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.folder, widget.folder)) {
-      if (!PathMatcher.equalsNormalized(
-        oldWidget.folder.path,
-        widget.folder.path,
-      )) {
-        _hasResolvedCover = _hasCachedCoverFor(widget.folder.path);
-      }
       final retainLoadedChildren =
           _loadedFolder != null &&
           widget.folder.children.isEmpty &&
@@ -177,14 +169,6 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
       });
     }
   }
-
-  bool _hasCachedCoverFor(String folderPath) =>
-      ref
-          .read(libraryFacadeProvider)
-          .resolvedCoverPathForFolder(folderPath)
-          ?.trim()
-          .isNotEmpty ==
-      true;
 
   Future<void> _loadChildren({bool refresh = false}) async {
     if ((!refresh && _loadedFolder != null) ||
@@ -309,8 +293,7 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
             ),
           )
         : const <CardInfoField>[];
-    final useCompactRootCard =
-        isRootFolder && rootCardInfoFields.isEmpty && _hasResolvedCover;
+    final useCompactRootCard = isRootFolder && rootCardInfoFields.isEmpty;
 
     Widget content = Theme(
       data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -366,7 +349,6 @@ class _FolderNodeWidgetState extends ConsumerState<_FolderNodeWidget> {
                 onPlay: () => unawaited(_playFolder(context, playback)),
                 index: widget.index,
                 isSelected: widget.isSelected,
-                hasResolvedCover: _hasResolvedCover,
               )
             : Row(
                 children: [
@@ -997,7 +979,6 @@ class _RootFolderCardContent extends StatelessWidget {
     required this.onPlay,
     this.isSelected = false,
     this.index,
-    required this.hasResolvedCover,
   });
 
   final String folderPath;
@@ -1010,7 +991,6 @@ class _RootFolderCardContent extends StatelessWidget {
   final VoidCallback onPlay;
   final bool isSelected;
   final int? index;
-  final bool hasResolvedCover;
 
   @override
   Widget build(BuildContext context) {
@@ -1022,7 +1002,6 @@ class _RootFolderCardContent extends StatelessWidget {
       showExpandIndicator: hasChildren,
       onPlay: onPlay,
       index: index,
-      hasResolvedCover: hasResolvedCover,
       coverBuilder: (coverWidth) => Stack(
         clipBehavior: Clip.none,
         children: [
@@ -1053,7 +1032,6 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
     this.expanded = false,
     this.showExpandIndicator = false,
     this.index,
-    this.hasResolvedCover = false,
   });
 
   final String title;
@@ -1064,7 +1042,6 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
   final bool expanded;
   final bool showExpandIndicator;
   final int? index;
-  final bool hasResolvedCover;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1094,7 +1071,6 @@ class _AudioDetailWorkCardContent extends ConsumerWidget {
       playTooltip: i18n.tr('play'),
       enableMarquee: false,
       enableTitleMarquee: false,
-      hasResolvedCover: hasResolvedCover,
     );
   }
 }

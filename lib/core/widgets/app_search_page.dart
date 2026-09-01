@@ -40,6 +40,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
     required this.blurEnabled,
     required this.body,
     this.accentColor,
+    this.controlsOverlay,
   });
 
   final TextEditingController controller;
@@ -54,6 +55,7 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
   final bool blurEnabled;
   final Widget body;
   final Color? accentColor;
+  final Widget? controlsOverlay;
 
   static double controlsTopInset(BuildContext context) =>
       MediaQuery.paddingOf(context).top + 92;
@@ -89,162 +91,172 @@ class AppSearchPageScaffold<T> extends StatelessWidget {
               direction: AppEdgeFadeDirection.towardTop,
             ),
           ),
-          Positioned(
-            key: const ValueKey<String>('app_search_controls_overlay'),
-            top: MediaQuery.paddingOf(context).top + 6,
-            left: 16,
-            right: 16,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: SizedBox(
-                        key: const ValueKey<String>('app_search_field_shell'),
-                        height: 38,
+          if (controlsOverlay != null)
+            Positioned(
+              key: const ValueKey<String>('app_search_controls_overlay'),
+              top: 0,
+              left: 0,
+              right: 0,
+              child: controlsOverlay!,
+            )
+          else
+            Positioned(
+              key: const ValueKey<String>('app_search_controls_overlay'),
+              top: MediaQuery.paddingOf(context).top + 6,
+              left: 16,
+              right: 16,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: SizedBox(
+                          key: const ValueKey<String>('app_search_field_shell'),
+                          height: 38,
+                          child: _SearchFloatingCapsule(
+                            radius: 19,
+                            blurEnabled: blurEnabled,
+                            child: TextSelectionTheme(
+                              data: TextSelectionThemeData(
+                                cursorColor: accent,
+                                selectionColor: accent.withValues(alpha: 0.24),
+                                selectionHandleColor: accent,
+                              ),
+                              child: TextField(
+                                key: const ValueKey<String>('app_search_field'),
+                                controller: controller,
+                                focusNode: focusNode,
+                                autofocus: true,
+                                cursorColor: accent,
+                                textInputAction: TextInputAction.search,
+                                textAlignVertical: TextAlignVertical.center,
+                                onChanged: onChanged,
+                                onSubmitted: onSubmitted,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  fontSize: 14,
+                                ),
+                                decoration: InputDecoration(
+                                  filled: false,
+                                  fillColor: Colors.transparent,
+                                  prefixIcon: Icon(
+                                    Icons.search_rounded,
+                                    color: cs.onSurfaceVariant,
+                                    size: 20,
+                                  ),
+                                  prefixIconConstraints:
+                                      const BoxConstraints.tightFor(
+                                        width: 38,
+                                        height: 38,
+                                      ),
+                                  hintText: hintText,
+                                  hintStyle: theme.textTheme.bodyMedium
+                                      ?.copyWith(
+                                        color: cs.onSurfaceVariant,
+                                        fontSize: 14,
+                                      ),
+                                  border: InputBorder.none,
+                                  enabledBorder: InputBorder.none,
+                                  focusedBorder: InputBorder.none,
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.only(
+                                    right: 10,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox.square(
+                        dimension: 38,
                         child: _SearchFloatingCapsule(
                           radius: 19,
                           blurEnabled: blurEnabled,
-                          child: TextSelectionTheme(
-                            data: TextSelectionThemeData(
-                              cursorColor: accent,
-                              selectionColor: accent.withValues(alpha: 0.24),
-                              selectionHandleColor: accent,
-                            ),
-                            child: TextField(
-                              key: const ValueKey<String>('app_search_field'),
-                              controller: controller,
-                              focusNode: focusNode,
-                              autofocus: true,
-                              cursorColor: accent,
-                              textInputAction: TextInputAction.search,
-                              textAlignVertical: TextAlignVertical.center,
-                              onChanged: onChanged,
-                              onSubmitted: onSubmitted,
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontSize: 14,
-                              ),
-                              decoration: InputDecoration(
-                                filled: false,
-                                fillColor: Colors.transparent,
-                                prefixIcon: Icon(
-                                  Icons.search_rounded,
-                                  color: cs.onSurfaceVariant,
-                                  size: 20,
-                                ),
-                                prefixIconConstraints:
-                                    const BoxConstraints.tightFor(
-                                      width: 38,
-                                      height: 38,
-                                    ),
-                                hintText: hintText,
-                                hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                  fontSize: 14,
-                                ),
-                                border: InputBorder.none,
-                                enabledBorder: InputBorder.none,
-                                focusedBorder: InputBorder.none,
-                                isDense: true,
-                                contentPadding: const EdgeInsets.only(
-                                  right: 10,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    SizedBox.square(
-                      dimension: 38,
-                      child: _SearchFloatingCapsule(
-                        radius: 19,
-                        blurEnabled: blurEnabled,
-                        child: IconButton(
-                          key: const ValueKey<String>('app_search_close'),
-                          onPressed: onCloseOrClear,
-                          icon: const Icon(Icons.close_rounded, size: 20),
-                          color: cs.onSurfaceVariant,
-                          padding: EdgeInsets.zero,
-                          visualDensity: VisualDensity.compact,
-                          style: IconButton.styleFrom(
-                            minimumSize: const Size(38, 38),
-                            maximumSize: const Size(38, 38),
+                          child: IconButton(
+                            key: const ValueKey<String>('app_search_close'),
+                            onPressed: onCloseOrClear,
+                            icon: const Icon(Icons.close_rounded, size: 20),
+                            color: cs.onSurfaceVariant,
                             padding: EdgeInsets.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            visualDensity: VisualDensity.compact,
+                            style: IconButton.styleFrom(
+                              minimumSize: const Size(38, 38),
+                              maximumSize: const Size(38, 38),
+                              padding: EdgeInsets.zero,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                SizedBox(
-                  key: const ValueKey<String>('app_search_category_shell'),
-                  height: 38,
-                  child: _SearchFloatingCapsule(
-                    radius: 19,
-                    blurEnabled: blurEnabled,
-                    child: ListView.separated(
-                      key: const ValueKey<String>('app_search_categories'),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 4,
-                        vertical: 3,
-                      ),
-                      scrollDirection: Axis.horizontal,
-                      physics: const BouncingScrollPhysics(),
-                      itemCount: categories.length,
-                      separatorBuilder: (_, _) => const SizedBox(width: 2),
-                      itemBuilder: (context, index) {
-                        final category = categories[index];
-                        final selected = category.value == selectedCategory;
-                        return Semantics(
-                          button: true,
-                          selected: selected,
-                          child: InkWell(
-                            key: ValueKey<String>(
-                              'app_search_category_${category.value}',
-                            ),
-                            borderRadius: BorderRadius.circular(15),
-                            onTap: () => onCategorySelected(category.value),
-                            child: AnimatedContainer(
-                              duration: tokens.motionFast,
-                              alignment: Alignment.center,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  SizedBox(
+                    key: const ValueKey<String>('app_search_category_shell'),
+                    height: 38,
+                    child: _SearchFloatingCapsule(
+                      radius: 19,
+                      blurEnabled: blurEnabled,
+                      child: ListView.separated(
+                        key: const ValueKey<String>('app_search_categories'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 4,
+                          vertical: 3,
+                        ),
+                        scrollDirection: Axis.horizontal,
+                        physics: const BouncingScrollPhysics(),
+                        itemCount: categories.length,
+                        separatorBuilder: (_, _) => const SizedBox(width: 2),
+                        itemBuilder: (context, index) {
+                          final category = categories[index];
+                          final selected = category.value == selectedCategory;
+                          return Semantics(
+                            button: true,
+                            selected: selected,
+                            child: InkWell(
+                              key: ValueKey<String>(
+                                'app_search_category_${category.value}',
                               ),
-                              decoration: BoxDecoration(
-                                color: selected
-                                    ? accent.withValues(alpha: 0.19)
-                                    : Colors.transparent,
-                                borderRadius: BorderRadius.circular(15),
-                              ),
-                              child: Text(
-                                category.label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.labelMedium?.copyWith(
+                              borderRadius: BorderRadius.circular(15),
+                              onTap: () => onCategorySelected(category.value),
+                              child: AnimatedContainer(
+                                duration: tokens.motionFast,
+                                alignment: Alignment.center,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                ),
+                                decoration: BoxDecoration(
                                   color: selected
-                                      ? accent
-                                      : cs.onSurfaceVariant,
-                                  fontWeight: selected
-                                      ? FontWeight.w700
-                                      : FontWeight.w600,
-                                  fontSize: 12.5,
+                                      ? accent.withValues(alpha: 0.19)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                                child: Text(
+                                  category.label,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.labelMedium?.copyWith(
+                                    color: selected
+                                        ? accent
+                                        : cs.onSurfaceVariant,
+                                    fontWeight: selected
+                                        ? FontWeight.w700
+                                        : FontWeight.w600,
+                                    fontSize: 12.5,
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
-                        );
-                      },
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

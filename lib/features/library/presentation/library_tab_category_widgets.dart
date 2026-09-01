@@ -249,6 +249,12 @@ extension _LibrarySearchPageCategoryView on _LibrarySearchPageState {
                   folder: _folderForCategoryEntry(libraryFacade, entry),
                   secondaryIcon: _categoryIcon(),
                   secondaryText: _entrySecondaryText(i18n, entry),
+                  isSelectionMode: _isSelectionMode,
+                  isSelected: _selectedLibraryPaths.contains(
+                    PathMatcher.normalize(entry.path),
+                  ),
+                  onLongPress: () => _enterCategorySelectionMode(entry),
+                  onToggleSelect: () => _toggleCategorySelection(entry),
                 ),
               );
             },
@@ -674,12 +680,20 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
     required this.folder,
     required this.secondaryIcon,
     required this.secondaryText,
+    this.isSelectionMode = false,
+    this.isSelected = false,
+    this.onLongPress,
+    this.onToggleSelect,
   });
 
   final AudioLibraryCategoryEntry entry;
   final FolderNode? folder;
   final IconData secondaryIcon;
   final String secondaryText;
+  final bool isSelectionMode;
+  final bool isSelected;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onToggleSelect;
 
   Future<void> _remove(BuildContext context, WidgetRef ref) async {
     await _stageLibraryRemoval(
@@ -749,43 +763,54 @@ class _AudioLibraryCategoryEntryCard extends ConsumerWidget {
         folder: folderNode,
         initiallyExpanded: false,
         searchQuery: '',
+        isSelectionMode: isSelectionMode,
+        isSelected: isSelected,
+        onLongPress: onLongPress,
+        onToggleSelect: onToggleSelect,
       );
     }
 
     Widget buildEntryCard(bool useFeaturedCard) {
-      return SwipeRevealCard(
-        shape: cardShape,
-        closedColor: cs.surface,
-        actionLabel: i18n.tr('remove'),
-        removeTooltip: entry.isFolder
-            ? i18n.tr('remove_audio_folder')
-            : i18n.tr('remove_audio'),
-        secondaryActionLabel: i18n.tr('audio_detail'),
-        secondaryActionTooltip: i18n.tr('audio_detail'),
-        verticalActions: useFeaturedCard,
-        onSecondaryAction: () =>
-            unawaited(showAudioDetailSheet(context, entry.target)),
-        onRemove: () => _remove(context, ref),
-        child: Card(
-          margin: EdgeInsets.zero,
-          clipBehavior: Clip.antiAlias,
+      return GestureDetector(
+        onLongPress: onLongPress,
+        onTap: isSelectionMode ? onToggleSelect : null,
+        child: SwipeRevealCard(
           shape: cardShape,
-          color: isAlreadyPlaying
-              ? Color.alphaBlend(
-                  cs.primaryContainer.withValues(alpha: 0.40),
-                  cs.surface,
-                )
-              : Colors.transparent,
-          elevation: 0,
-          shadowColor: Colors.transparent,
-          surfaceTintColor: Colors.transparent,
-          child: _buildEntryContent(
-            context,
-            library,
-            playback,
-            firstTrack,
-            cardHeight,
-            useFeaturedCardOverride: useFeaturedCard,
+          enabled: !isSelectionMode,
+          closedColor: cs.surface,
+          actionLabel: i18n.tr('remove'),
+          removeTooltip: entry.isFolder
+              ? i18n.tr('remove_audio_folder')
+              : i18n.tr('remove_audio'),
+          secondaryActionLabel: i18n.tr('audio_detail'),
+          secondaryActionTooltip: i18n.tr('audio_detail'),
+          verticalActions: useFeaturedCard,
+          onSecondaryAction: () =>
+              unawaited(showAudioDetailSheet(context, entry.target)),
+          onRemove: () => _remove(context, ref),
+          child: Card(
+            margin: EdgeInsets.zero,
+            clipBehavior: Clip.antiAlias,
+            shape: cardShape,
+            color: isSelected
+                ? cs.primaryContainer.withValues(alpha: 0.25)
+                : (isAlreadyPlaying
+                      ? Color.alphaBlend(
+                          cs.primaryContainer.withValues(alpha: 0.40),
+                          cs.surface,
+                        )
+                      : Colors.transparent),
+            elevation: 0,
+            shadowColor: Colors.transparent,
+            surfaceTintColor: Colors.transparent,
+            child: _buildEntryContent(
+              context,
+              library,
+              playback,
+              firstTrack,
+              cardHeight,
+              useFeaturedCardOverride: useFeaturedCard,
+            ),
           ),
         ),
       );

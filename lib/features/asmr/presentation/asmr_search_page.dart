@@ -237,7 +237,8 @@ class _AsmrSearchPageState extends ConsumerState<_AsmrSearchPage> {
       searchQuery: _query,
       topInset: _isSelectionMode
           ? AppPageHeaderMetrics.expandedToolbarHeight +
-                MediaQuery.paddingOf(context).top
+                MediaQuery.paddingOf(context).top +
+                AppPageHeaderMetrics.bottomSpacing
           : AppSearchPageScaffold.controlsTopInset(context),
       bottomInset: MediaQuery.paddingOf(context).bottom + 16,
       onRefresh: _refresh,

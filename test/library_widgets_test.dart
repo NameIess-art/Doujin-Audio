@@ -220,7 +220,8 @@ void main() {
         runtimeGraph: fixture.runtimeGraph,
         persistenceRepository: fixture.persistenceRepository,
         nativePlaybackRepository: fixture.nativePlaybackRepository,
-        playbackCommandRunner: AppRuntimeWidgetTestFixture.playbackCommandRunner,
+        playbackCommandRunner:
+            AppRuntimeWidgetTestFixture.playbackCommandRunner,
         libraryService: fixture.libraryService,
         playbackService: fixture.playbackService,
         timerService: fixture.timerService,
@@ -251,8 +252,9 @@ void main() {
     );
     await tester.pump();
 
-    final initialHeaderHeight =
-        tester.getSize(find.byType(TopPageHeader)).height;
+    final initialHeaderHeight = tester
+        .getSize(find.byType(TopPageHeader))
+        .height;
     expect(find.byType(HeaderTopCapsule), findsOneWidget);
     expect(find.text('Library Title'), findsOneWidget);
     final trailingBeforeScroll = tester.getRect(
@@ -262,8 +264,9 @@ void main() {
     controller.jumpTo(100);
     await tester.pump();
 
-    final scrolledHeaderHeight =
-        tester.getSize(find.byType(TopPageHeader)).height;
+    final scrolledHeaderHeight = tester
+        .getSize(find.byType(TopPageHeader))
+        .height;
     expect(scrolledHeaderHeight, lessThan(initialHeaderHeight));
 
     final capsuleOpacity = tester.widget<Opacity>(
@@ -851,6 +854,72 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('library search results support multi-selection mode', (
+    WidgetTester tester,
+  ) async {
+    final fixture = AppRuntimeWidgetTestFixture();
+    addTearDown(fixture.dispose);
+    const folderPath = '/library/search-selection';
+    fixture.runtimeGraph.library.addWatchedFolder(folderPath, notify: false);
+    fixture.runtimeGraph.library.addTracks(
+      <MusicTrack>[
+        testMusicTrack(
+          name: 'Selectable search work',
+          path: '$folderPath/track.mp3',
+          groupKey: folderPath,
+          groupTitle: 'Selectable search work',
+        ),
+      ],
+      notify: false,
+      persist: false,
+    );
+    fixture.libraryService.syncSlice(isInitialized: true, detailRevision: 0);
+
+    await tester.pumpWidget(fixture.build(const LibraryTab()));
+    await tester.pump();
+    await pumpUntilLibraryTreeReady(tester, fixture.runtimeGraph.library);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('library_search_button')),
+    );
+    await pumpUntilFound(
+      tester,
+      find.byKey(const ValueKey<String>('app_search_field')),
+    );
+    await pumpUntilFound(
+      tester,
+      find.text('search-selection', findRichText: true),
+    );
+
+    final searchFolder = find.byKey(
+      const ValueKey<String>('search_/library/search-selection'),
+    );
+    final searchFolderTitle = find.descendant(
+      of: searchFolder,
+      matching: find.text('search-selection', findRichText: true),
+    );
+    await tester.longPress(searchFolderTitle);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        const ValueKey<String>('library_search_batch_selection_header'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('library_search_batch_add_button')),
+      findsOneWidget,
+    );
+
+    await tester.tap(searchFolderTitle);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(
+        const ValueKey<String>('library_search_batch_selection_header'),
+      ),
+      findsNothing,
+    );
+  });
+
   testWidgets(
     'removing a folder audio keeps the folder expanded and shows context',
     (WidgetTester tester) async {
@@ -932,7 +1001,9 @@ void main() {
         findsOneWidget,
       );
 
-      await tester.tap(find.textContaining(fixture.languageProvider.tr('undo')));
+      await tester.tap(
+        find.textContaining(fixture.languageProvider.tr('undo')),
+      );
       await pumpUntilFound(tester, removedTrackFinder);
 
       expect(find.text('Keep this track', findRichText: true), findsOneWidget);
@@ -2288,7 +2359,10 @@ void main() {
 
       expect(find.text('First Song', findRichText: true), findsNothing);
       expect(find.text('Second Track', findRichText: true), findsNothing);
-      expect(find.text(languageProvider.tr('no_search_results')), findsOneWidget);
+      expect(
+        find.text(languageProvider.tr('no_search_results')),
+        findsOneWidget,
+      );
 
       // Clear search using clear button
       final clearButton = find.byIcon(Icons.clear_rounded);

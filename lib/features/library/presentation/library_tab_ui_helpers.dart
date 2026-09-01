@@ -2,6 +2,120 @@ part of 'library_tab.dart';
 
 enum _LibraryRemovalTarget { track, folder, library }
 
+class _LibraryBatchSelection {
+  const _LibraryBatchSelection({
+    required this.path,
+    required this.firstTrack,
+    required this.target,
+    required this.removalTarget,
+  });
+
+  factory _LibraryBatchSelection.fromNode(LibraryNode node) {
+    return switch (node) {
+      FolderNode() => _LibraryBatchSelection(
+        path: node.path,
+        firstTrack: node.firstTrack,
+        target: AudioDetailTarget.libraryRootFolder(node.path),
+        removalTarget: _LibraryRemovalTarget.folder,
+      ),
+      TrackNode() => _LibraryBatchSelection(
+        path: node.path,
+        firstTrack: node.track,
+        target: AudioDetailTarget.singleAudioFile(node.track.path),
+        removalTarget: _LibraryRemovalTarget.track,
+      ),
+      _ => throw StateError('Unexpected library selection.'),
+    };
+  }
+
+  factory _LibraryBatchSelection.fromCategoryEntry(
+    AudioLibraryCategoryEntry entry,
+  ) => _LibraryBatchSelection(
+    path: entry.path,
+    firstTrack: entry.firstTrack,
+    target: entry.target,
+    removalTarget: entry.isFolder
+        ? _LibraryRemovalTarget.folder
+        : _LibraryRemovalTarget.track,
+  );
+
+  final String path;
+  final MusicTrack? firstTrack;
+  final AudioDetailTarget target;
+  final _LibraryRemovalTarget removalTarget;
+}
+
+Future<void> _addLibraryBatchSelectionsToPlaylist({
+  required BuildContext context,
+  required WidgetRef ref,
+  required List<_LibraryBatchSelection> selections,
+  required VoidCallback exitSelectionMode,
+}) async {
+  final playback = ref.read(playbackFacadeProvider);
+  var addedCount = 0;
+  for (final selection in selections) {
+    final track = selection.firstTrack;
+    if (track != null && await playback.spawnSession(track)) {
+      addedCount += 1;
+    }
+  }
+  if (!context.mounted) return;
+  final i18n = ref.read(appLanguageProviderInstanceProvider);
+  exitSelectionMode();
+  showAppSnackBar(
+    context,
+    addedCount > 0
+        ? i18n.tr('batch_added_to_playlist', {'count': addedCount.toString()})
+        : i18n.tr('operation_failed_retry'),
+    tone: addedCount > 0
+        ? AppFeedbackTone.success
+        : AppFeedbackTone.destructive,
+    icon: addedCount > 0
+        ? Icons.playlist_add_check_rounded
+        : Icons.error_outline_rounded,
+  );
+}
+
+Future<void> _completeLibraryBatchSelectionsMetadata({
+  required BuildContext context,
+  required WidgetRef ref,
+  required List<_LibraryBatchSelection> selections,
+  required VoidCallback exitSelectionMode,
+}) async {
+  final targets = selections.map((selection) => selection.target).toSet();
+  final snapshot = await ref
+      .read(libraryFacadeProvider)
+      .audioLibraryCategorySnapshot();
+  final entries = snapshot.entries
+      .where((entry) => targets.contains(entry.target))
+      .toList(growable: false);
+  if (!context.mounted || entries.isEmpty) return;
+  exitSelectionMode();
+  await Navigator.of(context).push(
+    buildAppPageRoute<void>(
+      context: context,
+      child: DlsiteMetadataBatchPage(entries: entries),
+    ),
+  );
+}
+
+Future<void> _removeLibraryBatchSelections({
+  required BuildContext context,
+  required WidgetRef ref,
+  required List<_LibraryBatchSelection> selections,
+  required VoidCallback exitSelectionMode,
+}) async {
+  exitSelectionMode();
+  for (final selection in selections) {
+    await _stageLibraryRemoval(
+      context,
+      ref,
+      targetPath: selection.path,
+      target: selection.removalTarget,
+    );
+  }
+}
+
 UndoableRemovalKey _libraryRemovalKey(String targetPath) =>
     UndoableRemovalKey('library', PathMatcher.normalize(targetPath));
 

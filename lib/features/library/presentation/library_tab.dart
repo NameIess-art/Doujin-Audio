@@ -121,6 +121,90 @@ class _VisibleLibraryItem {
   final String? errorFolderPath;
 }
 
+class _LibraryBatchSelectionHeader extends StatelessWidget {
+  const _LibraryBatchSelectionHeader({
+    required this.keyPrefix,
+    required this.i18n,
+    required this.selectedCount,
+    required this.onAddToPlaylist,
+    required this.onCompleteMetadata,
+    required this.onRemove,
+    required this.onExit,
+  });
+
+  final String keyPrefix;
+  final AppLanguageProvider i18n;
+  final int selectedCount;
+  final VoidCallback? onAddToPlaylist;
+  final VoidCallback? onCompleteMetadata;
+  final VoidCallback? onRemove;
+  final VoidCallback onExit;
+
+  @override
+  Widget build(BuildContext context) {
+    return TopPageHeader(
+      key: ValueKey<String>('${keyPrefix}_batch_selection_header'),
+      icon: Icons.library_music_rounded,
+      topCapsuleTitle: i18n.tr('multi_select'),
+      topCapsuleData: i18n.tr('selected_count', {
+        'count': selectedCount.toString(),
+      }),
+      titleWidget: const SizedBox.shrink(),
+      leading: HeaderActionPill(
+        children: [
+          AppHeaderActionTransition(
+            child: IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_add_button'),
+              onPressed: onAddToPlaylist,
+              icon: const Icon(Icons.playlist_add_rounded),
+              tooltip: i18n.tr('batch_add_to_playlist'),
+              iconSize: 18,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
+          ),
+          AppHeaderActionTransition(
+            delayIndex: 1,
+            child: IconButton(
+              key: ValueKey<String>(
+                '${keyPrefix}_batch_metadata_action_button',
+              ),
+              onPressed: onCompleteMetadata,
+              icon: const Icon(Icons.library_add_check_rounded),
+              tooltip: i18n.tr('batch_metadata'),
+              iconSize: 18,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
+          ),
+          AppHeaderActionTransition(
+            delayIndex: 2,
+            child: IconButton(
+              key: ValueKey<String>('${keyPrefix}_batch_remove_button'),
+              onPressed: onRemove,
+              icon: const Icon(Icons.delete_outline_rounded),
+              tooltip: i18n.tr('remove'),
+              iconSize: 18,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+            ),
+          ),
+        ],
+      ),
+      trailing: AppHeaderLeadingTransition(
+        child: HeaderFloatingButton(
+          child: IconButton(
+            key: ValueKey<String>('${keyPrefix}_exit_selection_button'),
+            onPressed: onExit,
+            icon: const Icon(Icons.close_rounded),
+            tooltip: i18n.tr('cancel'),
+          ),
+        ),
+      ),
+    ).withAppHeaderTransition();
+  }
+}
+
 class LibraryTab extends ConsumerStatefulWidget {
   const LibraryTab({
     super.key,
@@ -600,85 +684,16 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
     });
   }
 
-  List<LibraryNode> _selectedLibraryNodes(List<LibraryNode> tree) => tree
+  List<_LibraryBatchSelection> _selectedLibrarySelections(
+    List<LibraryNode> tree,
+  ) => tree
       .where(_isSelectableLibraryNode)
       .where(
         (node) =>
             _selectedLibraryPaths.contains(_selectionKeyForLibraryNode(node)),
       )
+      .map(_LibraryBatchSelection.fromNode)
       .toList(growable: false);
-
-  MusicTrack? _firstTrackForLibraryNode(LibraryNode node) => switch (node) {
-    FolderNode() => node.firstTrack,
-    TrackNode() => node.track,
-    _ => null,
-  };
-
-  Future<void> _addSelectedToPlaylist(List<LibraryNode> selected) async {
-    final playback = ref.read(playbackFacadeProvider);
-    var addedCount = 0;
-    for (final node in selected) {
-      final track = _firstTrackForLibraryNode(node);
-      if (track != null && await playback.spawnSession(track)) {
-        addedCount += 1;
-      }
-    }
-    if (!mounted) return;
-    final i18n = ref.read(appLanguageProviderInstanceProvider);
-    _exitSelectionMode();
-    showAppSnackBar(
-      context,
-      addedCount > 0
-          ? i18n.tr('batch_added_to_playlist', {'count': addedCount.toString()})
-          : i18n.tr('operation_failed_retry'),
-      tone: addedCount > 0
-          ? AppFeedbackTone.success
-          : AppFeedbackTone.destructive,
-      icon: addedCount > 0
-          ? Icons.playlist_add_check_rounded
-          : Icons.error_outline_rounded,
-    );
-  }
-
-  Future<void> _completeSelectedMetadata(List<LibraryNode> selected) async {
-    final targets = selected
-        .map(
-          (node) => switch (node) {
-            FolderNode() => AudioDetailTarget.libraryRootFolder(node.path),
-            TrackNode() => AudioDetailTarget.singleAudioFile(node.track.path),
-            _ => throw StateError('Unexpected library selection.'),
-          },
-        )
-        .toSet();
-    final snapshot = await ref
-        .read(libraryFacadeProvider)
-        .audioLibraryCategorySnapshot();
-    final entries = snapshot.entries
-        .where((entry) => targets.contains(entry.target))
-        .toList(growable: false);
-    if (!mounted || entries.isEmpty) return;
-    _exitSelectionMode();
-    await Navigator.of(context).push(
-      buildAppPageRoute<void>(
-        context: context,
-        child: DlsiteMetadataBatchPage(entries: entries),
-      ),
-    );
-  }
-
-  Future<void> _removeSelectedLibraryNodes(List<LibraryNode> selected) async {
-    _exitSelectionMode();
-    for (final node in selected) {
-      await _stageLibraryRemoval(
-        context,
-        ref,
-        targetPath: node.path,
-        target: node is FolderNode
-            ? _LibraryRemovalTarget.folder
-            : _LibraryRemovalTarget.track,
-      );
-    }
-  }
 
   Future<void> _scheduleWatchedFoldersRefresh({
     bool silent = false,
@@ -1062,7 +1077,7 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
       tree: tree,
       structureRevision: listStateStructureRevision,
     );
-    final selectedNodes = _selectedLibraryNodes(tree);
+    final selectedSelections = _selectedLibrarySelections(tree);
     final bottomInset = MobileOverlayInset.of(context);
 
     final headerControlsFullHeight = this.headerControlsFullHeight;
@@ -1299,89 +1314,36 @@ class _LibraryTabState extends ConsumerState<LibraryTab>
               left: 0,
               right: 0,
               child: _isSelectionMode
-                  ? TopPageHeader(
-                      key: const ValueKey('library_batch_selection_header'),
-                      icon: Icons.library_music_rounded,
-                      topCapsuleTitle: i18n.tr('multi_select'),
-                      topCapsuleData: i18n.tr('selected_count', {
-                        'count': selectedNodes.length.toString(),
-                      }),
-                      titleWidget: const SizedBox.shrink(),
-                      leading: HeaderActionPill(
-                        children: [
-                          AppHeaderActionTransition(
-                            child: IconButton(
-                              key: const ValueKey('library_batch_add_button'),
-                              onPressed: selectedNodes.isEmpty
-                                  ? null
-                                  : () => _addSelectedToPlaylist(selectedNodes),
-                              icon: const Icon(Icons.playlist_add_rounded),
-                              tooltip: i18n.tr('batch_add_to_playlist'),
-                              iconSize: 18,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 32,
-                                height: 32,
-                              ),
+                  ? _LibraryBatchSelectionHeader(
+                      keyPrefix: 'library',
+                      i18n: i18n,
+                      selectedCount: selectedSelections.length,
+                      onAddToPlaylist: selectedSelections.isEmpty
+                          ? null
+                          : () => _addLibraryBatchSelectionsToPlaylist(
+                              context: context,
+                              ref: ref,
+                              selections: selectedSelections,
+                              exitSelectionMode: _exitSelectionMode,
                             ),
-                          ),
-                          AppHeaderActionTransition(
-                            delayIndex: 1,
-                            child: IconButton(
-                              key: const ValueKey(
-                                'library_batch_metadata_action_button',
-                              ),
-                              onPressed: selectedNodes.isEmpty
-                                  ? null
-                                  : () => _completeSelectedMetadata(
-                                      selectedNodes,
-                                    ),
-                              icon: const Icon(Icons.library_add_check_rounded),
-                              tooltip: i18n.tr('batch_metadata'),
-                              iconSize: 18,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 32,
-                                height: 32,
-                              ),
+                      onCompleteMetadata: selectedSelections.isEmpty
+                          ? null
+                          : () => _completeLibraryBatchSelectionsMetadata(
+                              context: context,
+                              ref: ref,
+                              selections: selectedSelections,
+                              exitSelectionMode: _exitSelectionMode,
                             ),
-                          ),
-                          AppHeaderActionTransition(
-                            delayIndex: 2,
-                            child: IconButton(
-                              key: const ValueKey(
-                                'library_batch_remove_button',
-                              ),
-                              onPressed: selectedNodes.isEmpty
-                                  ? null
-                                  : () => _removeSelectedLibraryNodes(
-                                      selectedNodes,
-                                    ),
-                              icon: const Icon(Icons.delete_outline_rounded),
-                              tooltip: i18n.tr('remove'),
-                              iconSize: 18,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints.tightFor(
-                                width: 32,
-                                height: 32,
-                              ),
+                      onRemove: selectedSelections.isEmpty
+                          ? null
+                          : () => _removeLibraryBatchSelections(
+                              context: context,
+                              ref: ref,
+                              selections: selectedSelections,
+                              exitSelectionMode: _exitSelectionMode,
                             ),
-                          ),
-                        ],
-                      ),
-                      trailing: AppHeaderLeadingTransition(
-                        child: HeaderFloatingButton(
-                          child: IconButton(
-                            key: const ValueKey(
-                              'library_exit_selection_button',
-                            ),
-                            onPressed: _exitSelectionMode,
-                            icon: const Icon(Icons.close_rounded),
-                            tooltip: i18n.tr('cancel'),
-                          ),
-                        ),
-                      ),
-                    ).withAppHeaderTransition()
+                      onExit: _exitSelectionMode,
+                    )
                   : TopPageHeader(
                       key: headerKey,
                       icon: Icons.library_music_rounded,

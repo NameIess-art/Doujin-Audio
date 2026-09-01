@@ -787,10 +787,15 @@ void main() {
           skipOffstage: false,
         )
         .first;
+    final asmrSwipeCard = tester.widget<SwipeRevealCard>(asmrCard);
     expect(
       tester.getTopLeft(asmrCard).dy,
       closeTo(tester.getTopLeft(localCard).dy, 0.01),
     );
+    expect(asmrSwipeCard.verticalActions, isTrue);
+    expect(asmrSwipeCard.onTertiaryAction, isNull);
+    expect(asmrSwipeCard.secondaryActionIcon, Icons.info_outline_rounded);
+    expect(asmrSwipeCard.primaryActionIcon, Icons.favorite_border_rounded);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 10));
     unawaited(coverUi.dispose());
@@ -1663,9 +1668,7 @@ void main() {
             ),
           )
           .borderRadius,
-      BorderRadius.circular(
-        LibraryLikeCardMetrics.coverRadius + 4,
-      ),
+      BorderRadius.circular(LibraryLikeCardMetrics.coverRadius + 4),
     );
     expect(
       tester

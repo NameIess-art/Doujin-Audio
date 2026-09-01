@@ -176,16 +176,6 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
     );
   }
 
-  Future<void> _openDownloadPage(BuildContext context) async {
-    await Navigator.of(context).push(
-      buildAppPageRoute<void>(
-        context: context,
-        style: AppPageTransitionStyle.sharedAxisZ,
-        child: AsmrDownloadPage(work: widget.work),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     _readOrWatch(appLanguageStateProvider);
@@ -213,31 +203,31 @@ class _AsmrWorkTreeCardState extends ConsumerState<_AsmrWorkTreeCard> {
         shape: cardShape,
         enabled: !widget.isSelectionMode,
         color: asmrBlue,
-        actionLabel: i18n.tr('asmr_detail_action'),
-        removeTooltip: i18n.tr('asmr_detail_tooltip'),
-        primaryActionTooltip: i18n.tr('asmr_detail_action'),
-        primaryActionIcon: Icons.info_outline_rounded,
-        destructive: false,
-        secondaryActionLabel: i18n.tr(
+        actionLabel: i18n.tr(
           widget.work.isFavorite
               ? 'asmr_unfavorite_action'
               : 'asmr_favorite_action',
         ),
-        secondaryActionTooltip: i18n.tr(
+        removeTooltip: i18n.tr(
           widget.work.isFavorite
               ? 'asmr_unfavorite_action'
               : 'asmr_add_favorite_tooltip',
         ),
-        secondaryActionIcon: widget.work.isFavorite
+        primaryActionTooltip: i18n.tr(
+          widget.work.isFavorite
+              ? 'asmr_unfavorite_action'
+              : 'asmr_add_favorite_tooltip',
+        ),
+        primaryActionIcon: widget.work.isFavorite
             ? Icons.favorite_rounded
             : Icons.favorite_border_rounded,
-        tertiaryActionLabel: i18n.tr('asmr_download_action'),
-        tertiaryActionTooltip: i18n.tr('asmr_download_work_tooltip'),
+        destructive: false,
+        secondaryActionLabel: i18n.tr('asmr_detail_action'),
+        secondaryActionTooltip: i18n.tr('asmr_detail_tooltip'),
         verticalActions: true,
-        onTertiaryAction: () => unawaited(_openDownloadPage(context)),
-        onSecondaryAction: () => unawaited(_toggleFavorite(context)),
-        onRemove: () =>
+        onSecondaryAction: () =>
             unawaited(showAsmrWorkDetailSheet(context, widget.work)),
+        onRemove: () => unawaited(_toggleFavorite(context)),
         onWillReveal: _expansionController.collapse,
         closedColor: cs.surface,
         child: Card(
